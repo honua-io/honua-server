@@ -14,9 +14,12 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Honua.Geocoding.Features.Geocoding.Abstractions;
+using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Protocols.GeoServices.GeocodeServer;
 using Honua.Protocols.GeoServices.ImageServer;
 using Honua.Protocols.GeoServices.Soap;
 using Honua.ServiceDefaults;
@@ -38,6 +41,7 @@ internal static class GeoservicesCatalogEndpoints
     private const string MapServerProtocolName = "MapServer";
     private const string ImageServerProtocolName = "ImageServer";
     private const string GPServerProtocolName = "GPServer";
+    private const string GeocodeServerProtocolName = "GeocodeServer";
     private const string SceneServerProtocolName = "SceneServer";
     private const string VectorTileServerProtocolName = "VectorTileServer";
     private const string Soap11ContentType = "text/xml; charset=utf-8";
@@ -850,6 +854,11 @@ internal static class GeoservicesCatalogEndpoints
             entries.Sort(ServiceDirectoryEntryComparer);
         }
 
+        if (!featureMapOnly)
+        {
+            AppendGeocodeServerEntry(context, entries, baseUrl, logger);
+        }
+
         // A graph can contain more than one publication/service record that projects to
         // the same Esri directory name and type. ArcGIS clients treat the directory key as
         // (name,type); returning duplicates makes authenticated discovery ambiguous and can
@@ -874,6 +883,41 @@ internal static class GeoservicesCatalogEndpoints
             accessError,
             accessStatusCode,
             imageServerServices.Count > 0 && successfulImageServerProbes == 0 && failedImageServerProbes > 0);
+    }
+
+    private static void AppendGeocodeServerEntry(
+        HttpContext context, List<ServiceDirectoryEntry> entries, string baseUrl, ILogger logger)
+    {
+        try
+        {
+            var options = context.RequestServices.GetService<IOptions<GeocodingConfiguration>>()?.Value;
+            if (options is not { Enabled: true })
+            {
+                return;
+            }
+
+            var provider = context.RequestServices.GetService<IGeocodeProviderRegistry>()?.GetProvider(options.DefaultProvider);
+            if (provider is null)
+            {
+                return;
+            }
+
+            var capabilities = GeocodeServerCapabilities.ApplyLicense(
+                provider.Capabilities, context.RequestServices.GetRequiredService<ILicenseEntitlementService>());
+            entries.Add(new ServiceDirectoryEntry
+            {
+                Name = options.LocatorName,
+                Type = GeocodeServerProtocolName,
+                Url = $"{baseUrl}/rest/services/{Uri.EscapeDataString(options.LocatorName)}/{GeocodeServerProtocolName}",
+                SoapCapabilities = GeocodeServerCapabilities.Format(capabilities)
+            });
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException and not OperationCanceledException)
+        {
+            // Provider factories are optional dependencies. A broken locator must not
+            // hide otherwise accessible feature, map, raster, or scene services.
+            GeoservicesCatalogEndpointLogging.LogGeocodeProjectionFailed(logger, exception);
+        }
     }
 
     private static List<ServiceDirectoryEntry> DeduplicateServiceDirectoryEntries(
@@ -1238,6 +1282,10 @@ internal static partial class GeoservicesCatalogEndpointLogging
     [LoggerMessage(EventId = 9403, Level = LogLevel.Error,
         Message = "ArcGIS SOAP services catalog operation {Operation} failed.")]
     public static partial void LogSoapCatalogOperationFailed(ILogger logger, string operation, Exception exception);
+
+    [LoggerMessage(EventId = 9404, Level = LogLevel.Warning,
+        Message = "Failed to project the configured geocoder into the services catalog.")]
+    public static partial void LogGeocodeProjectionFailed(ILogger logger, Exception exception);
 }
 
 /// <summary>

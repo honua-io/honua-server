@@ -16,6 +16,16 @@ provider's advertised capabilities on every build, so a regression fails the bui
 For the operation-by-operation comparison against Esri GeocodeServer, see
 [GeoServices REST parity](../compatibility/geoservices-parity.md).
 
+## Service discovery
+
+The REST services directory and SOAP `GetServiceDescriptions` / `GetServiceDescriptionsEx`
+catalogs advertise the configured `Geocoding:LocatorName` (default `World`) as a
+`GeocodeServer` when geocoding is enabled and its default provider is configured. The
+canonical URL uses the named locator and the configured public base URL or request path
+base. The unnamed GeocodeServer route remains a compatibility alias. Catalog capabilities
+match the locator metadata, including licensed batch support. The locator is anonymous;
+its visibility does not expose protected feature or map services.
+
 ## Status vocabulary
 
 - **Supported** — the operation is implemented and exercised by tests.

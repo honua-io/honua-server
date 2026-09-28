@@ -16,6 +16,7 @@ using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
@@ -108,8 +109,8 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
         var catalog = new RbacTestLayerCatalog(
             alphaServiceMetadata: restricted, betaServiceMetadata: restricted,
             alphaLayerMetadata: restricted, betaLayerMetadata: restricted);
-        using var factory = ServiceRbacTestFixture.CreateFactory(
-            () => catalog,
+        using var factory = CreateFactory(
+            catalog,
             services =>
             {
                 services.AddSingleton(Substitute.For<IRasterStore>());
@@ -603,10 +604,21 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
             betaLayerMetadata: publicPolicy);
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(RbacTestLayerCatalog catalog)
+    private static WebApplicationFactory<Program> CreateFactory(
+        RbacTestLayerCatalog catalog, Action<IServiceCollection>? configureServices = null)
         => ServiceRbacTestFixture.CreateFactory(
             () => catalog,
-            services => services.AddSingleton(Substitute.For<IRasterStore>()));
+            services =>
+            {
+                services.AddSingleton(Substitute.For<IRasterStore>());
+                configureServices?.Invoke(services);
+            }).WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, configuration) =>
+                // These fixtures exercise discovery of graph services only, including
+                // entirely denied catalogs. Public locator visibility has separate coverage.
+                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Geocoding:Enabled"] = "false"
+                })));
 
     private sealed record CatalogEntry(string Name, string Type, string Url);
 
