@@ -20,6 +20,7 @@ namespace Honua.Server.Tests.Features.FeatureStore;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.TestQuality)]
+[Operation(Operations.Query)]
 public sealed class PostgresScopedPlannerBatchIntegrationTests(DatabaseFixtureAdapter fixture, ITestOutputHelper output)
 {
     private const string LocalPlannerSetting = "SELECT set_config('max_parallel_workers_per_gather', '0', true)";
