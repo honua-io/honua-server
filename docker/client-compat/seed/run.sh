@@ -44,6 +44,11 @@ bash tests/seed/apply-yaml-seed.sh tests/seed/client-compat-auth-wave1.yaml
 echo "Applying portal-compat YAML seed: tests/seed/portal-compat.yaml"
 bash tests/seed/apply-yaml-seed.sh tests/seed/portal-compat.yaml
 
+# Fail bootstrap if the desktop fixture only advertises support without usable
+# attachment bytes or relationship rows. Native UI receipts are collected later.
+echo "Publishing and verifying desktop attachments and related records"
+python3 /usr/local/bin/publish-attachments.py
+
 # PMTiles archive for the pmtiles/archive-read certification cell. Published
 # through the running server: LocalFileStorage indexes its objects once at
 # construction, so an archive written to disk afterwards is invisible to the tile
