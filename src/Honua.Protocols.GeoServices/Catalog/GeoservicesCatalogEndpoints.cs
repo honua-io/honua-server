@@ -709,7 +709,8 @@ internal static class GeoservicesCatalogEndpoints
         ILicenseStatusProvider licenseStatusProvider,
         ILogger logger,
         MetadataV2GraphSnapshot? scopedSnapshot = null,
-        bool featureMapOnly = false)
+        bool featureMapOnly = false,
+        string? serviceNameFilter = null)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -725,6 +726,12 @@ internal static class GeoservicesCatalogEndpoints
 
         foreach (var service in snapshot.Graph.Services.OrderBy(static s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase))
         {
+            if (serviceNameFilter is not null
+                && !string.Equals(service.Metadata.Name, serviceNameFilter, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             if (!service.IsRoutable())
             {
                 continue;
@@ -856,7 +863,7 @@ internal static class GeoservicesCatalogEndpoints
 
         if (!featureMapOnly)
         {
-            AppendGeocodeServerEntry(context, entries, baseUrl, logger);
+            AppendGeocodeServerEntry(context, entries, baseUrl, logger, serviceNameFilter);
         }
 
         // A graph can contain more than one publication/service record that projects to
@@ -886,12 +893,22 @@ internal static class GeoservicesCatalogEndpoints
     }
 
     private static void AppendGeocodeServerEntry(
-        HttpContext context, List<ServiceDirectoryEntry> entries, string baseUrl, ILogger logger)
+        HttpContext context,
+        List<ServiceDirectoryEntry> entries,
+        string baseUrl,
+        ILogger logger,
+        string? serviceNameFilter = null)
     {
         try
         {
             var options = context.RequestServices.GetService<IOptions<GeocodingConfiguration>>()?.Value;
             if (options is not { Enabled: true })
+            {
+                return;
+            }
+
+            if (serviceNameFilter is not null
+                && !string.Equals(options.LocatorName, serviceNameFilter, StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
@@ -1009,7 +1026,8 @@ internal static class GeoservicesCatalogEndpoints
             graphProvider,
             rasterStore,
             licenseStatusProvider,
-            logger).ConfigureAwait(false);
+            logger,
+            serviceNameFilter: folderName).ConfigureAwait(false);
         if (projection.AccessError is not null)
         {
             return projection.AccessError;

@@ -18,11 +18,16 @@ internal static class GeocodeServerCapabilities
 
     public static string Format(GeocodeProviderCapabilities capabilities)
     {
-        var availableCapabilities = new List<string>(capacity: 4)
+        var availableCapabilities = new List<string>(capacity: 4);
+        if (capabilities.SupportsForwardGeocode)
         {
-            "Geocode",
-            "ReverseGeocode"
-        };
+            availableCapabilities.Add("Geocode");
+        }
+
+        if (capabilities.SupportsReverseGeocode)
+        {
+            availableCapabilities.Add("ReverseGeocode");
+        }
 
         if (capabilities.SupportsSuggest)
         {
