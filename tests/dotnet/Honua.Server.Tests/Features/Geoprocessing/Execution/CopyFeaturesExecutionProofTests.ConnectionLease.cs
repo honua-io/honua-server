@@ -19,6 +19,8 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 public sealed partial class CopyFeaturesExecutionProofTests
 {
     [IntegrationTheory]
+    [Protocol(TestProtocols.Infrastructure)]
+    [Operation(Operations.ContractTesting)]
     [InlineData(false)]
     [InlineData(true)]
     public async Task CopyFeatures_WrappedConnection_ReleasesOwnerOnSuccessAndFailure(bool failCopy)
