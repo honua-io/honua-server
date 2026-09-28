@@ -5,7 +5,8 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Transactions;
-using Honua.TestKit;
+using Honua.Server.Tests.Infrastructure;
+using Honua.TestKit.Attributes;
 using Npgsql;
 using Xunit.Abstractions;
 
@@ -17,11 +18,11 @@ namespace Honua.Server.Tests.Features.FeatureStore;
 /// the NoResetOnClose setting used by the production data source factory.
 /// </summary>
 [Collection("Database")]
-public sealed class PostgresScopedPlannerBatchIntegrationTests(PostgresFixture fixture, ITestOutputHelper output)
+public sealed class PostgresScopedPlannerBatchIntegrationTests(DatabaseFixtureAdapter fixture, ITestOutputHelper output)
 {
     private const string LocalPlannerSetting = "SELECT set_config('max_parallel_workers_per_gather', '0', true)";
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData("unprepared")]
     [InlineData("prepared")]
     [InlineData("auto-prepared")]
@@ -69,7 +70,7 @@ public sealed class PostgresScopedPlannerBatchIntegrationTests(PostgresFixture f
         await AssertPooledSettingAsync(source, processId);
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task Batch_DisposeBeforeReadingSecondResult_RestoresSettingBeforePooledReuse()
     {
         await using var source = CreateDataSource();
@@ -93,7 +94,7 @@ public sealed class PostgresScopedPlannerBatchIntegrationTests(PostgresFixture f
         await AssertPooledSettingAsync(source, processId);
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task Batch_SqlError_RollsBackSettingBeforePooledReuse()
     {
         await using var source = CreateDataSource();
@@ -112,7 +113,7 @@ public sealed class PostgresScopedPlannerBatchIntegrationTests(PostgresFixture f
         await AssertPooledSettingAsync(source, processId);
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task Batch_CancelDuringSecondStatement_RollsBackSettingBeforePooledReuse()
     {
         await using var source = CreateDataSource();
@@ -153,7 +154,7 @@ public sealed class PostgresScopedPlannerBatchIntegrationTests(PostgresFixture f
         await AssertPooledSettingAsync(source, processId);
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task Batch_ExplicitTransaction_LocalSettingOutlivesBatchUntilRollback()
     {
         await using var source = CreateDataSource();
@@ -173,7 +174,7 @@ public sealed class PostgresScopedPlannerBatchIntegrationTests(PostgresFixture f
         (await ReadSettingAsync(connection)).Should().Be("2");
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task Batch_AmbientTransaction_LocalSettingOutlivesBatchUntilScopeEnds()
     {
         await using var source = CreateDataSource();
@@ -199,7 +200,7 @@ public sealed class PostgresScopedPlannerBatchIntegrationTests(PostgresFixture f
         await AssertPooledSettingAsync(source, processId);
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task Batch_BoundedSpatialSelect_ChangesActualPlanAndPreservesOrderedOutput()
     {
         await using var source = CreateDataSource();
@@ -228,7 +229,7 @@ public sealed class PostgresScopedPlannerBatchIntegrationTests(PostgresFixture f
         }
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task Batch_PreexistingPreparedPlan_IsNotRetunedByTransactionLocalSetting()
     {
         await using var source = CreateDataSource();
@@ -256,7 +257,7 @@ public sealed class PostgresScopedPlannerBatchIntegrationTests(PostgresFixture f
         }
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task Batch_PreparedBeforeExecution_CreatesPlanUnderLocalSetting()
     {
         await using var source = CreateDataSource();
