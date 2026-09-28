@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
@@ -13,6 +12,7 @@ using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Infrastructure.Caching;
 using Honua.Db.Postgres.Features.Security;
 using Honua.TestKit;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
@@ -40,7 +40,7 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
 
     public Task DisposeAsync() => fixture.DropDatabaseAsync(new NpgsqlConnectionStringBuilder(_sourceString).Database!);
 
-    [Fact]
+    [IntegrationTest]
     public async Task BoundReader_EnforcesSharedLimit_AndReleasesEarlyDisposedStream()
     {
         using var harness = new Harness(fixture.DataSource);
@@ -70,7 +70,7 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
         harness.Gate.AvailableSlots.Should().Be(1);
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task BoundPool_UsesConfiguredLimitsAndSessionSettings_InTheSourceDatabase()
     {
         using var harness = new Harness(fixture.DataSource);
@@ -87,7 +87,7 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
         harness.Metrics.GetPoolUtilization().Should().Be(1);
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task EncryptedBinding_ResolvesBeforeAdmission_AndDoesNotDoubleAcquire()
     {
         using var harness = new Harness(fixture.DataSource);
@@ -114,7 +114,7 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
         }
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task OpenFailure_ReleasesAdmission_AndRecordsFailureWithoutSuccessfulLeaseDuration()
     {
         using var harness = new Harness(fixture.DataSource);
@@ -129,7 +129,7 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
         harness.Gate.AvailableSlots.Should().Be(0);
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task CancellationWhileWaitingForPhysicalPool_ReleasesAdmissionWithoutRecordingFailure()
     {
         using var harness = new Harness(fixture.DataSource);
@@ -147,7 +147,7 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
         harness.Gate.GetSnapshot().DurationEwmaMs.Should().Be(0);
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task RotationWhileQueued_ResolvesPoolAfterAdmission()
     {
         using var harness = new Harness(fixture.DataSource);
@@ -166,7 +166,7 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
         harness.Gate.AvailableSlots.Should().Be(1);
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task RotationBetweenResolutionAndOpen_RetriesOnceWithinSameAdmissionSlot()
     {
         using var harness = new Harness(fixture.DataSource);
