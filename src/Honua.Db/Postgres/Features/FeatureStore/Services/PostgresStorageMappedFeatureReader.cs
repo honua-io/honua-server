@@ -122,7 +122,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         CancellationToken cancellationToken = default)
     {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
+        return await QueryCoreAsync(query, cancellationToken).ConfigureAwait(false);
+    }
 
+    // Only public entry points resolve security. Nested count/page operations use
+    // this same resolved query, including when no row filter or field mask applies.
+    private async Task<QueryResult<Feature>> QueryCoreAsync(
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
         if (IsNearestNeighborQuery(query))
         {
             var nearestItems = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
@@ -131,7 +139,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 : QueryResult<Feature>.Create(nearestItems.Length, nearestItems, hasMoreResults: false);
         }
 
-        var totalCount = await CountAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        var totalCount = await CountCoreAsync(query, cancellationToken).ConfigureAwait(false);
         if (totalCount == 0)
         {
             return QueryResult<Feature>.Empty();
@@ -183,7 +191,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         CancellationToken cancellationToken = default)
     {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
+        return await CountCoreAsync(query, cancellationToken).ConfigureAwait(false);
+    }
 
+    private async Task<long> CountCoreAsync(FeatureQuery query, CancellationToken cancellationToken)
+    {
         var sql = new SqlBuilder();
         sql.Append(CultureInfo.InvariantCulture, $"SELECT COUNT(*)::bigint FROM {BuildFeatureSource(query, sql)}");
         AppendFilter(sql, query);
@@ -337,7 +349,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
         if (!query.Limit.HasValue || query.Limit.Value == int.MaxValue)
         {
-            var result = await QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            var result = await QueryCoreAsync(query, cancellationToken).ConfigureAwait(false);
             return PagedQueryResult<Feature>.Create(result.Items, result.HasMoreResults, result.TotalCount);
         }
 
