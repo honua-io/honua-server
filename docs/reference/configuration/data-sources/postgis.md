@@ -121,6 +121,15 @@ is returned. This also protects multiplexed logical connections between commands
 Shutdown retires all cached pools with the same lifetime guarantees. Legacy bindings without a stable connection
 ID use a separate pool for each distinct connection string.
 
+Named secure and source-bound pools are retired when their registered connection
+is deleted locally. Pools with no active or opening leases also expire after
+`Limits:Connections:ConnectionIdleLifetimeSeconds`, checked every
+`ConnectionPruningIntervalSeconds`. This bounds idle pools on other server
+instances and requests that finish opening after a deletion. The idle period
+starts when the last lease returns. Minimum pool size applies while the source
+pool remains active; a later request recreates an expired pool. Active leases
+finish normally, and the primary default database pool is unaffected.
+
 The full admission set (adaptive bounds, target lease duration, update interval) is in the [environment variable reference](../environment-variables.md#admission-and-pooling). Pool and admission behavior can be observed at `GET /monitoring/metrics/connection-pool`.
 
 ## Indexing numeric source columns
