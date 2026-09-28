@@ -1132,6 +1132,9 @@ builder.Services.AddHonuaHeadRequestSupport();
 // Add comprehensive IOptions configuration validation
 builder.Services.AddConfigurationOptionsValidation();
 
+// Bound EventSource logger retention after all provider registrations, while
+// preserving Serilog forwarding and the rest of the diagnostic providers.
+builder.Services.CacheEventSourceLoggersForSerilogForwarding();
 var app = builder.Build();
 
 // A PostgreSQL production composition is never allowed to construct an unguarded migration
