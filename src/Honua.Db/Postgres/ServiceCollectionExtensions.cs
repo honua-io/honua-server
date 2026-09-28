@@ -180,7 +180,8 @@ internal static class ServiceCollectionExtensions
 
         // Register refactored feature store implementation
         services.AddRefactoredFeatureStore(configuration["Database:Schema"],
-            configuration.GetValue<bool>("Database:PreferSerialBoundedSpatialReads"));
+            configuration.GetValue<bool>("Database:PreferSerialBoundedSpatialReads"),
+            configuration.GetValue<bool>("Database:DisableJitForSourceSpatialCounts"));
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
             new FeatureDataProviderRegistry(serviceProvider.GetServices<IFeatureDataProvider>()));
         services.TryAddScoped(serviceProvider =>
