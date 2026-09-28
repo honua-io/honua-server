@@ -42,7 +42,7 @@ public class ImageServerIdentifyHandlerTests
 
     // Esri's NLCDLandCover2001 and CharlotteLAS sample services return a feature set,
     // not an array of Honua-specific id/name/footprint records (#5238).
-    [Theory]
+    [UnitTheory]
     [InlineData(true)]
     [InlineData(false)]
     [Operation(Operations.Identify)]
