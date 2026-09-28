@@ -263,7 +263,7 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
         var resolutions = 0;
         await using var connection = await harness.Primary.OpenConnectionAsync(() =>
         {
-            harness.Gate.AvailableSlots.Should().Be(0);
+            harness.Gate.AvailableSlots.Should().Be(admissionEnabled ? 0 : 1);
             resolutions++;
             var acquisition = harness.Cache.Acquire("bound-id:source", _sourceString, preservePrimarySchema: false);
             retired = acquisition.DataSource;
