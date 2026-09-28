@@ -101,11 +101,18 @@ public sealed class ReadPolicyLookupTests
         {
             await rlsStore.CreatePolicyAsync(new RlsPolicy
             {
-                Service = service, Role = role, Layer = layer, Attribute = attribute, ClaimType = "region"
+                Service = service,
+                Role = role,
+                Layer = layer,
+                Attribute = attribute,
+                ClaimType = "region"
             });
             await maskStore.CreatePolicyAsync(new FieldMaskPolicy
             {
-                Service = service, Role = role, Layer = layer, Attribute = attribute
+                Service = service,
+                Role = role,
+                Layer = layer,
+                Attribute = attribute
             });
         }
     }
@@ -157,7 +164,9 @@ public sealed class ReadPolicyLookupTests
         })).ToArray();
         var snapshot = new MetadataV2GraphSnapshot(new MetadataV2Graph
         {
-            Resources = [resource], Services = services, Publications = publications
+            Resources = [resource],
+            Services = services,
+            Publications = publications
         }, "test", DateTimeOffset.UtcNow);
         provider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(ValueTask.FromResult(snapshot));
         return provider;
