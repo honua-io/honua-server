@@ -27,6 +27,10 @@ public sealed class GeocodingConfigurationValidator : ConfigurationValidator<Geo
         {
             errors.Add("Geocoding:LocatorName is required.");
         }
+        else if (!GeocodeLocatorNameRules.IsValid(options.LocatorName))
+        {
+            errors.Add($"Geocoding:LocatorName: {GeocodeLocatorNameRules.ValidationMessage}");
+        }
 
         if (options.DefaultSpatialReferenceWkid <= 0)
         {

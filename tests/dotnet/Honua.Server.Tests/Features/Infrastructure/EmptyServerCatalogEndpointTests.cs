@@ -54,6 +54,8 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["HONUA_GEOPROCESSING_SEED_DEFAULT_SERVICE"] = "false",
+                    // The default public locator is independent of graph publications.
+                    ["Geocoding:Enabled"] = "false",
                 })))
             .ConfigureServices(services =>
             {

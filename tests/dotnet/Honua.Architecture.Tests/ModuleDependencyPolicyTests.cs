@@ -197,6 +197,9 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Protocols, ModuleRole.Jobs),
         (ModuleRole.Protocols, ModuleRole.Geoprocessing),
         (ModuleRole.Protocols, ModuleRole.Routing),
+        // GeoServices locator discovery consumes the canonical provider registry and
+        // configuration, keeping REST/SOAP catalogs aligned with the geocoder runtime.
+        (ModuleRole.Protocols, ModuleRole.Geocoding),
         (ModuleRole.Protocols, ModuleRole.Scene),
         (ModuleRole.Protocols, ModuleRole.ServiceDefaults),
         (ModuleRole.Protocols, ModuleRole.Protocols),
