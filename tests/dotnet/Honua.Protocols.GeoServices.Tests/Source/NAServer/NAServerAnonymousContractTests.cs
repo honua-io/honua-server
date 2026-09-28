@@ -90,4 +90,23 @@ public sealed class NAServerAnonymousContractTests : IAsyncLifetime
         body.Should().NotContain("\"serviceItemId\"");
         body.Should().NotContain("\"objectIdFieldName\"");
     }
+
+    [IntegrationTest]
+    [Operation(Operations.ServiceArea)]
+    [Endpoint("GET /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea")]
+    public async Task ServiceArea_GetWithoutCredentialsAndDevAuthOff_ReturnsPolygons()
+    {
+        using var client = _fixture.CreateClient();
+        using var response = await client.GetAsync(
+            "/rest/services/Routing/NAServer/ServiceArea/solveServiceArea" +
+            "?f=json&facilities=-157.858333%2C21.306944&defaultBreaks=5%2C10");
+
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        var root = document.RootElement;
+        root.GetProperty("saPolygons").GetProperty("features").GetArrayLength().Should().Be(2);
+        root.TryGetProperty("layers", out _).Should().BeFalse();
+        root.TryGetProperty("services", out _).Should().BeFalse();
+    }
 }

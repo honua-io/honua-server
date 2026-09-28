@@ -1158,7 +1158,8 @@
               "/MapServer/allLayersAndTables"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/MapServer/allLayersAndTables"
+              "GET /rest/services/{serviceId}/MapServer/allLayersAndTables",
+              "POST /rest/services/{serviceId}/MapServer/allLayersAndTables"
             ],
             "capabilityMaturity": [
               "implemented"
@@ -1265,7 +1266,8 @@
               "/MapServer/layers"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/MapServer/layers"
+              "GET /rest/services/{serviceId}/MapServer/layers",
+              "POST /rest/services/{serviceId}/MapServer/layers"
             ],
             "capabilityMaturity": [
               "implemented"
@@ -3756,6 +3758,7 @@
               "/NAServer/ServiceArea/solveServiceArea"
             ],
             "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea",
               "POST /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea"
             ],
             "capabilityMaturity": [

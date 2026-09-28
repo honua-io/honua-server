@@ -235,6 +235,11 @@ stable across releases.
 
 ## MapServer + WMS / WMTS
 
+The `layers` and `allLayersAndTables` metadata resources accept GET and POST.
+Both verbs return the same layer/table document through the existing metadata
+access checks. These server contract tests do not establish native client certification.
+
+
 WMTS is **Preview in 2026.1**, including the MapServer and OGC service aliases.
 
 Esri spec: [Map Service](https://developers.arcgis.com/rest/services-reference/enterprise/map-service/).
@@ -390,7 +395,7 @@ inputs declare different references, or whose `inSR` contradicts a declared refe
 | Operation(s) | Status | Notes |
 | --- | --- | --- |
 | Route/solve (GET, POST) | Implemented | Parses query-string or form `stops`, `inSR`/`outSR`, `returnRoutes`, `returnDirections`, `barriers`/`polylineBarriers`/`polygonBarriers`, and `travelMode` through one handler; delegates to the configured routing provider and returns Esri route/directions feature sets. |
-| ServiceArea/solveServiceArea | Implemented | Parses `facilities`, `defaultBreaks`, `inSR`/`outSR`, `travelDirection`, `barriers`/`polylineBarriers`/`polygonBarriers`, and `travelMode`; honours provider-advertised FromFacility/ToFacility support and returns Esri `saPolygons`. |
+| ServiceArea/solveServiceArea | Implemented | GET query parameters and POST form parameters use the same handler. Parses `facilities`, `defaultBreaks`, `inSR`/`outSR`, `travelDirection`, `barriers`/`polylineBarriers`/`polygonBarriers`, and `travelMode`; honours provider-advertised FromFacility/ToFacility support and returns Esri `saPolygons`. |
 | ClosestFacility/solveClosestFacility | Implemented | Parses `incidents`, `facilities`, `defaultTargetFacilityCount`, `travelDirection`, `defaultCutoff`/`cutoff`, barriers, and `travelMode`; ranks facilities per incident by the selected dataset-backed profile impedance over `pgr_dijkstraCost` and materializes the closest routes, returning ranked Esri routes (`IncidentID`/`FacilityID`/`FacilityRank`/`Total_*`) plus optional directions. Bounded by `Routing:MaxIncidents`/`Routing:MaxClosestFacilities`. |
 | ODCostMatrix/solveODCostMatrix | Partial (cost-only + straight lines) | Parses `origins`, `destinations`, `inSR`/`outSR`, `defaultCutoff`, `defaultTargetDestinationCount` (k-nearest), `outputType`, barriers, and `travelMode`; computes an origins×destinations impedance matrix via `pgr_dijkstraCost`. `esriNAODOutputNoLines` preserves the attribute-only fast path. `esriNAODOutputStraightLines` adds a two-vertex Esri polyline from each original origin to destination in the requested `outSR`; the pgRouting provider batch-transforms all returned cells through PostGIS in one query, while providers that do not advertise straight-line support receive a precise 400. `esriNAODOutputTrueShape` and `esriNAODOutputTrueShapeWithMeasure` return a precise GeoServices 400 until bounded provider path geometry is implemented. Bounded by `Routing:MaxOrigins`/`Routing:MaxDestinations`. Asymmetric per-mode impedance remains deferred. |
 | LocationAllocation/solveLocationAllocation | Partial (minimize-impedance + maximize-coverage + minimize-facilities) | Parses candidate `facilities`, weighted `demandPoints`, `problemType`, `numberFacilitiesToFind`, and `impedanceCutoff`; builds a candidate×demand cost matrix over `pgr_dijkstraCost` and returns chosen facilities plus per-demand allocations. `esriMFPMinimizeFacilities` requires a cutoff and uses deterministic greedy set cover: O(F²D) time, O(D) memory, and the standard H(D)-approximation bound on facility count (exact for a single candidate/pick), with cancellation checks and configured facility/demand caps. The remaining Esri inventory is intentionally rejected with a precise GeoServices 400 because the canonical request lacks required semantics: maximize-attendance needs impedance transformation model/factor, maximize-capacitated-coverage needs facility capacities, and maximize/target-market-share need competitor facilities and attractiveness weights. This inventory follows the [Esri Location Allocation REST contract](https://developers.arcgis.com/rest/routing/location-allocation-service/). |
