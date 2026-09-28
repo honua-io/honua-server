@@ -288,6 +288,8 @@ public sealed class PostgresBoundedSpatialPlannerIntegrationTests(DatabaseFixtur
             }
             catch (OperationCanceledException)
             {
+                // Observe cancellation before disposing the reader's connection;
+                // the assertion below verifies the pending task was cancelled.
             }
         }
 

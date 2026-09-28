@@ -387,6 +387,7 @@ public sealed class PostgresScopedPlannerBatchIntegrationTests(DatabaseFixtureAd
         {
             while (await reader.ReadAsync(cancellationToken))
             {
+                // Consume every row so the probe reaches the batch's final Sync.
             }
         } while (await reader.NextResultAsync(cancellationToken));
     }
