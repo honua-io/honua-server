@@ -198,9 +198,8 @@ internal sealed partial class RedisCacheIndexMaintenance : IAsyncDisposable
             _database.Database, "SCAN", [_serverCursor, "MATCH", _pattern, "COUNT", PageSize, "TYPE", "set"],
             CommandFlags.None).ConfigureAwait(false));
         _serverCursor = result.Cursor;
-        foreach (var key in result.Items)
+        foreach (var value in result.Items.Select(key => (string?)key))
         {
-            var value = (string?)key;
             if (value is not null && value.StartsWith(_prefix + "scope:", StringComparison.Ordinal) &&
                 value.EndsWith(IndexSuffix, StringComparison.Ordinal))
             {
