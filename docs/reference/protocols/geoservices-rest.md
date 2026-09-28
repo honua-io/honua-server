@@ -87,7 +87,7 @@ Base: `/rest/services/{serviceId}/MapServer` (service and `/{layerId}` metadata 
 | Find | `/find` (GET, POST) | `searchText`, `searchFields`, `layers`, `contains`. |
 | Generate KML | `/generateKml` (GET, POST) | |
 | Query | `/{layerId}/query`, `/query` (GET, POST) | Same query parameters as FeatureServer. |
-| Layer metadata | `/layers`, `/allLayersAndTables`, `/{layerId}/{featureId}`, `/queryDomains` | |
+| Layer metadata | `/layers`, `/allLayersAndTables`, `/queryDomains` (GET, POST); `/{layerId}/{featureId}` (GET) | |
 | Related/attachments | `/{layerId}/queryRelatedRecords`, `/{layerId}/queryAttachments`, `/{layerId}/generateRenderer` | |
 | Cached tiles | `/tile/{z}/{y}/{x}` | |
 | OGC pass-through | `/WMS`, `/WMTS`, `/WMTS/{**restPath}` | See [WMS, WFS, WCS, WMTS](wms-wfs-wcs-wmts.md). |
@@ -168,7 +168,7 @@ Operations: `findAddressCandidates`, `reverseGeocode`, `suggest`, `geocodeAddres
 
 ## NAServer (network analysis)
 
-Route solves are available over GET and POST; ServiceArea, ClosestFacility, ODCostMatrix, and LocationAllocation solves are POST-only. All five live under `/rest/services/{serviceId}/NAServer` and read query-string or form parameters; see the parity matrix for per-solver limitations.
+Route and ServiceArea solves are available over GET and POST; ClosestFacility, ODCostMatrix, and LocationAllocation solves are POST-only. All five live under `/rest/services/{serviceId}/NAServer` and read query-string or form parameters; see the parity matrix for per-solver limitations.
 
 The synchronous `FindRoutes` subset is available at both `GPServer/FindRoutes/execute` and `NAServer/FindRoutes/execute` over GET and POST, with task metadata at the corresponding `FindRoutes` URL. It visits stops in input order and reports travel time in minutes. `Measurement_Units` supports only `Minutes`; `Reorder_Stops_to_Find_Optimal_Routes` supports only `false`. Other units, reordering, unknown options and conflicting aliases return errors before solving. An omitted `Travel_Mode` uses the provider default; supplied modes and barriers must be supported by that provider. This subset does not establish full `arcpy.nax` ready-to-use routing compatibility (tracked in #5192).
 

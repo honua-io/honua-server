@@ -15,6 +15,7 @@ public static partial class EndpointRegistry
         // Bounded synchronous ready-to-use tool alias (#5192).
         new("GET", "/rest/services/{serviceId}/NAServer/FindRoutes/execute"),
         new("POST", "/rest/services/{serviceId}/NAServer/FindRoutes/execute"),
+        new("GET", "/rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea"),
         new("POST", "/rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea"),
         new("POST", "/rest/services/{serviceId}/NAServer/ClosestFacility/solveClosestFacility"),
         new("POST", "/rest/services/{serviceId}/NAServer/ODCostMatrix/solveODCostMatrix"),
