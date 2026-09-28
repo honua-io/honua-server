@@ -1541,7 +1541,12 @@
       "lanes": {
         "pro-ui": {
           "state": "blocked",
-          "citation": "honua-esri-compat evidence/native-pro-ops-20260926-a: re-cited on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43). The previous citation named honua-server#5012, which is CLOSED - the POST route it reported is fixed. The present blocker is the fixture, not the server and not the client: honua.attachments holds 0 rows, no Metadata v2 resource declares editing.supportsAttachments, and FeatureServerUtilities.V2.cs gates hasAttachments on ResourceSupportsAttachmentsV2(resource) && supportsAttachmentUploads, so hasAttachments:false on layer 0 is the correct answer for this data. Surveying every feature service on the candidate - browser_compat, portal_public, test_service - found no attachment-bearing layer anywhere. NOT driven in the UI: a run would only have re-recorded the fixture's emptiness. Unblocking needs a seeded attachment on a resource that declares support."
+          "citation": "honua-esri-compat evidence/native-pro-ops-20260926-a: re-cited on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43). The previous citation named honua-server#5012, which is CLOSED - the POST route it reported is fixed. The present blocker is the fixture, not the server and not the client: honua.attachments holds 0 rows, no Metadata v2 resource declares editing.supportsAttachments, and FeatureServerUtilities.V2.cs gates hasAttachments on ResourceSupportsAttachmentsV2(resource) && supportsAttachmentUploads, so hasAttachments:false on layer 0 is the correct answer for this data. Surveying every feature service on the candidate - browser_compat, portal_public, test_service - found no attachment-bearing layer anywhere. NOT driven in the UI: a run would only have re-recorded the fixture's emptiness. Unblocking needs a seeded attachment on a resource that declares support.",
+          "previous_failure": {
+            "state": "fail",
+            "issue": "honua-server#5012",
+            "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+          }
         },
         "arcpy": {
           "state": "n/a-no-client",
@@ -1569,7 +1574,12 @@
       "lanes": {
         "pro-ui": {
           "state": "blocked",
-          "citation": "honua-esri-compat evidence/native-pro-ops-20260926-a: re-cited on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43). The previous citation named honua-server#5021, which is CLOSED. The present blocker is the fixture: honua.relationships holds 0 rows, the service reports relationships: [] and queryRelatedRecords answers a 404 error envelope. No feature service on the candidate declares a relationship class. NOT driven in the UI, for the same reason as featureserver.attachments. Unblocking needs a seeded relationship class between two layers."
+          "citation": "honua-esri-compat evidence/native-pro-ops-20260926-a: re-cited on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43). The previous citation named honua-server#5021, which is CLOSED. The present blocker is the fixture: honua.relationships holds 0 rows, the service reports relationships: [] and queryRelatedRecords answers a 404 error envelope. No feature service on the candidate declares a relationship class. NOT driven in the UI, for the same reason as featureserver.attachments. Unblocking needs a seeded relationship class between two layers.",
+          "previous_failure": {
+            "state": "fail",
+            "issue": "honua-server#5021",
+            "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+          }
         },
         "arcpy": {
           "state": "n/a-no-client",
@@ -2617,7 +2627,12 @@
         },
         "arcpy": {
           "state": "blocked",
-          "citation": "honua-esri-compat scratch measurement 2026-09-26 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43): the seat's entitlement is desktopBasicN - ArcGIS Pro BASIC - and this tool requires Standard or Advanced. Confirmed twice and independently: the entitlement read from the issuing portal, and arcpy.GetInstallInfo()['LicenseLevel'] == 'Basic' from the running client. Measured directly, arcpy.management.ReconcileVersions and arcpy.management.CreateReplica both answer 'ERROR 000824: The tool is not licensed'. This is a client seat ceiling, not a Honua defect, and no server change can clear it. Recorded as a PERMANENT block by decision on honua-server#5259: the matrix is certified at Basic and says so in its headline, rather than leaving these cells drifting as silently open work. Closing them needs a Standard or Advanced seat. ReconcileVersions is the tool this cell needs and it is the one measured at 000824."
+          "citation": "honua-esri-compat scratch measurement 2026-09-26 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43): the seat's entitlement is desktopBasicN - ArcGIS Pro BASIC - and this tool requires Standard or Advanced. Confirmed twice and independently: the entitlement read from the issuing portal, and arcpy.GetInstallInfo()['LicenseLevel'] == 'Basic' from the running client. Measured directly, arcpy.management.ReconcileVersions and arcpy.management.CreateReplica both answer 'ERROR 000824: The tool is not licensed'. This is a client seat ceiling, not a Honua defect, and no server change can clear it. Recorded as a PERMANENT block by decision on honua-server#5259: the matrix is certified at Basic and says so in its headline, rather than leaving these cells drifting as silently open work. Closing them needs a Standard or Advanced seat. ReconcileVersions is the tool this cell needs and it is the one measured at 000824.",
+          "previous_failure": {
+            "state": "fail",
+            "issue": "honua-server#5036",
+            "evidence": "honua-esri-compat/evidence/arcpy-standalone-probes-20260919/versionmanagement-arcpy.md - ArcGIS Pro/arcpy 3.7.1.1904: CreateVersion on the FeatureServer URL fails ERROR 000301 workspace is of the wrong type after 14 GET admin/services/test_service.MapServer -> 404; no request reaches the VersionManagementServer, which answers its own resources"
+          }
         },
         "qgis-ui": {
           "state": "n/a-no-client",
