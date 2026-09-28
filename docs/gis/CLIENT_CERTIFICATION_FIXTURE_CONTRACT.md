@@ -16,7 +16,7 @@ Expansion (explicitly out of scope here):
 
 | Revision | Value |
 |---|---|
-| `fixtureRevision` | `sha256:e9354b5d54abdb904684bee0f836ef3cd47b983ce27b7c3b243aea850e2ee252` |
+| `fixtureRevision` | `sha256:a58bef19c3c1c38b24a3a00de53b9210c6d80fe3b08972e3ebca073a7fdee599` |
 | `serverConfigRevision` | `sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a` |
 | `authPolicyRevision` | `sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9` |
 
@@ -40,13 +40,14 @@ lowercase hex characters. Reproduce with `sha256sum <path>`.
 Because step 3 reproduces `sha256sum` output exactly, the whole algorithm is reproducible by hand:
 
 ```console
-$ LC_ALL=C sha256sum docker/client-compat/seed/publish-cog.py \
+$ LC_ALL=C sha256sum docker/client-compat/seed/publish-attachments.py \
+    docker/client-compat/seed/publish-cog.py \
     docker/client-compat/seed/publish-pmtiles.py docker/client-compat/seed/publish-scene.py \
     docker/client-compat/seed/run.sh tests/seed/apply-yaml-seed.sh \
     tests/seed/browser-compat.yaml tests/seed/client-compat-auth-wave1.yaml \
     tests/seed/client-compat-v1.sql tests/seed/portal-compat.yaml \
     | sha256sum
-e9354b5d54abdb904684bee0f836ef3cd47b983ce27b7c3b243aea850e2ee252  -
+a58bef19c3c1c38b24a3a00de53b9210c6d80fe3b08972e3ebca073a7fdee599  -
 $ LC_ALL=C sha256sum tests/config/client-compat-server-v1.json | sha256sum
 d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a  -
 ```
@@ -62,6 +63,7 @@ not file-backed, which is why it is digested from its declaration rather than fr
 
 | Path | Role |
 |---|---|
+| `docker/client-compat/seed/publish-attachments.py` | fixture |
 | `docker/client-compat/seed/publish-cog.py` | fixture |
 | `docker/client-compat/seed/publish-pmtiles.py` | fixture |
 | `docker/client-compat/seed/publish-scene.py` | fixture |
@@ -74,7 +76,7 @@ not file-backed, which is why it is digested from its declaration rather than fr
 | `tests/config/client-compat-server-v1.json` | server-config |
 
 `docker/client-compat/seed/publish-*.py` are fixture inputs because they determine the derived
-PMTiles, COG, and scene artifacts. Their code changes must advance `fixtureRevision`.
+attachment payloads and PMTiles, COG, and scene artifacts. Their code changes must advance `fixtureRevision`.
 
 `docker/client-compat/seed/run.sh` is a fixture input because it defines *which* seed files are
 applied and in what order; adding a fixture input necessarily edits it and therefore moves
