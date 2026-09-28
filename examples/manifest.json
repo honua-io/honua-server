@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1143,
+    "total": 1144,
     "byStatus": {
-      "not-executable": 1130,
+      "not-executable": 1131,
       "unvalidated": 10,
       "passed": 3
     }
@@ -13697,6 +13697,19 @@
       },
       "fence": 2,
       "line": 37,
+      "language": "sql"
+    },
+    {
+      "id": "f29f4a5d863f0ec3",
+      "kind": "docs-fence",
+      "path": "docs/reference/configuration/data-sources/postgis.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 3,
+      "line": 135,
       "language": "sql"
     },
     {
