@@ -143,14 +143,11 @@ public sealed class ReadPolicyLookupTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => masks.ResolveAsync(resource, token));
     }
 
-    private static IMetadataV2GraphProvider CreateGraph(MetadataV2Resource resource, int serviceCount)
+    private static StubGraphProvider CreateGraph(MetadataV2Resource resource, int serviceCount)
     {
-        var provider = Substitute.For<IMetadataV2GraphProvider>();
         if (serviceCount < 0)
         {
-            provider.GetCurrentAsync(Arg.Any<CancellationToken>())
-                .Returns(ValueTask.FromException<MetadataV2GraphSnapshot>(new InvalidOperationException("Graph unavailable")));
-            return provider;
+            return new StubGraphProvider(null);
         }
 
         var services = new[] { "alpha", "beta" }.Take(serviceCount)
@@ -168,7 +165,17 @@ public sealed class ReadPolicyLookupTests
             Services = services,
             Publications = publications
         }, "test", DateTimeOffset.UtcNow);
-        provider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(ValueTask.FromResult(snapshot));
-        return provider;
+        return new StubGraphProvider(snapshot);
+    }
+
+    private sealed class StubGraphProvider(MetadataV2GraphSnapshot? snapshot) : IMetadataV2GraphProvider
+    {
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+            => snapshot is null
+                ? ValueTask.FromException<MetadataV2GraphSnapshot>(new InvalidOperationException("Graph unavailable"))
+                : ValueTask.FromResult(snapshot);
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<MetadataV2GraphSnapshot?>(null);
     }
 }
