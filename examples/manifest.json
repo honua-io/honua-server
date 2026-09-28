@@ -4240,7 +4240,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 292,
+      "line": 309,
       "language": "console"
     },
     {
