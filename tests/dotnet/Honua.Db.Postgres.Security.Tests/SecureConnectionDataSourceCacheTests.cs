@@ -16,7 +16,7 @@ namespace Honua.Db.Postgres.Security.Tests;
 /// — most importantly the embedded <c>search_path</c> — as the default
 /// <see cref="NpgsqlDataSource"/> built in <c>ServiceCollectionExtensions</c>.
 /// </summary>
-public sealed class SecureConnectionDataSourceCacheTests
+public sealed partial class SecureConnectionDataSourceCacheTests
 {
     private const string SampleConnectionString =
         "Host=example.com;Port=5432;Database=honua_test;Username=app;Password=secret;SslMode=Disable";
