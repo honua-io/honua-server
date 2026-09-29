@@ -15,6 +15,7 @@ using Honua.TestKit.Attributes;
 using Microsoft.Extensions.ObjectPool;
 using NetTopologySuite.IO;
 using NSubstitute;
+using NSubstitute.Extensions;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
@@ -129,7 +130,7 @@ public sealed class PostgresFirstPageCountIntegrationTests(PostgresFixture fixtu
     public async Task QueryAsync_FullFirstPageWithConcurrentWrites_PreservesPageAndReconcilesTotal(int laterCount)
     {
         var opens = 0;
-        _provider.OpenConnectionAsync(Arg.Any<CancellationToken>()).Returns(async call =>
+        _provider.Configure().OpenConnectionAsync(Arg.Any<CancellationToken>()).Returns(async call =>
         {
             if (Interlocked.Increment(ref opens) == 2)
             {

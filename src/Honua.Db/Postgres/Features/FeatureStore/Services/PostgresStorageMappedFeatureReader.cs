@@ -157,6 +157,14 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         }
 
         var totalCount = await CountCoreAsync(query, cancellationToken).ConfigureAwait(false);
+        if (!items.IsDefault)
+        {
+            // READ COMMITTED permits deletes between the page and count snapshots.
+            // Retain the materialized first page and never report fewer matches
+            // than the rows that this response already contains.
+            totalCount = Math.Max(totalCount, items.Length);
+        }
+
         if (totalCount == 0)
         {
             return QueryResult<Feature>.Empty();
