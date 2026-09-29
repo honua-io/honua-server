@@ -141,6 +141,21 @@ All WFS versions share `GET/POST /wfs`. WFS 2.0 operations:
 | `Transaction` | Insert/Update/Delete (CITE-validated transactional slice). |
 | `ListStoredQueries`, `DescribeStoredQueries`, `CreateStoredQuery`, `DropStoredQuery` | Stored query management. |
 
+WFS 1.0.0 and 1.1.0 also accept XML `Transaction` requests for Insert, Update and
+Delete. These adapters normalize legacy GML and feature-ID filters into the
+shared authorization and editing pipeline and return the matching legacy
+transaction response. WFS 1.0 geometry uses x/y order; WFS 1.1 follows the
+declared CRS axis order. The legacy adapter currently accepts two-dimensional
+geometry; lock IDs and release actions remain unsupported. This does not extend
+the recorded WFS 2.0 transactional CITE result to legacy transactional profiles.
+
+Native PyQGIS diagnostics on 3.44.14 and 4.2.2 verify 2D point CRUD, denied saves,
+retained buffers and recovery using their respective 1.0.0 and 1.1.0 transaction
+requests. Both installed clients still read an empty GML string as null even when
+the stored value is empty. Keep that fidelity limitation and the untested bulk,
+partial-result and other geometry variants visible in the
+[client certification checklist](../../gis/CLIENT_CERTIFICATION_CHECKLIST.md).
+
 > Open `https://server.example.com/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=roads&COUNT=10` in a browser.
 
 ## WCS 2.0.1 operations
