@@ -47,6 +47,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private readonly string _qualifiedTableName;
     private readonly string? _managedFeatureSchema;
     private readonly bool _preferSerialBoundedSpatialReads;
+    private readonly bool _preferSerialSourceSpatialCounts;
     private readonly string _primaryKeyColumn;
     private readonly string? _geometryColumn;
     private readonly int _storageSrid;
@@ -76,6 +77,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         _mapping = mapping ?? throw new ArgumentNullException(nameof(mapping));
         _managedFeatureSchema = string.IsNullOrWhiteSpace(managedFeatureSchema) ? null : managedFeatureSchema.Trim();
         _preferSerialBoundedSpatialReads = preferSerialBoundedSpatialReads;
+        _preferSerialSourceSpatialCounts = preferSerialSourceSpatialCounts;
         _connection = connection;
         _boundConnectionProvider = boundConnectionProvider;
         _connectionEncryptionService = connectionEncryptionService;
@@ -202,6 +204,20 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         AppendFilter(sql, query);
 
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        // SET LOCAL would outlive this count in a caller-owned transaction.
+        if (connection.Transaction is null && ShouldUseSerialSourceSpatialCount(query))
+        {
+            await using var batch = CreateSerialSourceSpatialCountBatch(connection, sql);
+            await using var reader = await batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false) ||
+                !await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException("The scoped planner batch did not return a count.");
+            }
+
+            return reader.GetInt64(0);
+        }
+
         await using var command = CreateReadCommand(connection, sql);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
