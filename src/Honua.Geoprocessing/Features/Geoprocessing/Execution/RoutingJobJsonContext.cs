@@ -10,4 +10,6 @@ namespace Honua.Geoprocessing.Execution;
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(RouteSolveRequest))]
 [JsonSerializable(typeof(ServiceAreaSolveRequest))]
+[JsonSerializable(typeof(RouteJobRequest))]
+[JsonSerializable(typeof(ServiceAreaJobRequest))]
 internal sealed partial class RoutingJobJsonContext : JsonSerializerContext;

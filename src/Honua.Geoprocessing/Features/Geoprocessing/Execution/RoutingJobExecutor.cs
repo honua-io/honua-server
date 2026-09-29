@@ -58,7 +58,7 @@ internal sealed partial class RoutingJobExecutor(
             bool solved;
             if (processId == RoutingProcessDefinitions.Route)
             {
-                var request = JsonSerializer.Deserialize(requestJson, RoutingJobJsonContext.Default.RouteSolveRequest);
+                var request = JsonSerializer.Deserialize(requestJson, RoutingJobJsonContext.Default.RouteJobRequest)?.ToCanonicalRequest();
                 var error = request is null ? "A route request is required." : RoutingRequestValidation.ValidateRoute(request, configuration, capabilities);
                 if (error is not null)
                 {
@@ -71,7 +71,7 @@ internal sealed partial class RoutingJobExecutor(
             }
             else
             {
-                var request = JsonSerializer.Deserialize(requestJson, RoutingJobJsonContext.Default.ServiceAreaSolveRequest);
+                var request = JsonSerializer.Deserialize(requestJson, RoutingJobJsonContext.Default.ServiceAreaJobRequest)?.ToCanonicalRequest();
                 var error = request is null ? "A service-area request is required." : RoutingRequestValidation.ValidateServiceArea(request, configuration, capabilities);
                 if (error is not null)
                 {

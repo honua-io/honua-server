@@ -7,10 +7,10 @@
     "catalogSourceRevision": "14d101ec17f4b7ccdc6106ee2cb5bd4d621d779f",
     "candidateBinding": "https://github.com/honua-io/honua-server/issues/3848",
     "layerReceiptEnforcement": "PR Gate step 'Prove the layer execution cases ran, not skipped' reads back layer-execution-proof.trx and fails unless every evidence test these rows still call proven in the Category=LayerExecutionProof files reports its own Passed receipt: source.honua-layer, source.esri-featureserver and sink.honua-layer. dotnet test exits 0 on a filter that matches nothing and on a cleanly-skipping fixture, so the step count alone could not tell a real PostGIS run from no run at all.",
-    "catalogSourceContentDigest": "sha256:0e816225317d0abcb71ea3eec2b7bb04491bf0d4cf43b4b82cc6ab6c0435208c",
+    "catalogSourceContentDigest": "sha256:fae555c4a5c13d68a16381dbccc1f9292089de61104ccb8ae386f24a10240b25",
     "workspaceRetryAudit": "certification/gp-workspace-retry-audit-20260914.md",
     "workspaceStoreAudit": "certification/gp-workspace-store-audit-20260914.md",
-    "routingExecutionAuditRecordedAt": "2026-09-29T07:25:38.776071+00:00",
+    "routingExecutionAuditRecordedAt": "2026-09-29T23:09:13.062402+00:00",
     "routingReceiptEnforcement": "Routing Nightly with HONUA_ROUTING_TEST=1 verifies non-skipped TRX passes for every routing evidence method cited here. The two new catalog rows prove bounded shared-executor content on real pgRouting; they do not certify ArcPy or ArcGIS Pro. The previous 98 process implementations were not changed by the routing registration addition."
   },
   "scope": "Every process returned by BuiltInProcessCatalog.ListProcesses(). A proven row requires concrete input, the production operation/executor path, and a semantic output-content assertion.",

@@ -14,11 +14,19 @@ public static class RoutingRequestValidation
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(capabilities);
+        var travelMode = request.TravelMode ?? request.TravelProfile;
+        // The legacy driving profile denotes the default for providers with no named modes.
+        // An explicit TravelMode must still be advertised, even when it is "driving".
+        if (request.TravelMode is null && capabilities.SupportedTravelModes.Count == 0
+            && string.Equals(travelMode, "driving", StringComparison.OrdinalIgnoreCase))
+        {
+            travelMode = null;
+        }
         return !capabilities.SupportsRoute
             ? "Route solves are not supported by the configured routing provider."
             : ValidatePoints(request.Stops, 2, configuration.MaxStops, request.InSrid, request.OutSrid)
                 ?? ValidateBarriers(request.Barriers, configuration.MaxBarriers)
-                ?? ValidateCapabilities(capabilities, request.Barriers, request.TravelMode ?? request.TravelProfile);
+                ?? ValidateCapabilities(capabilities, request.Barriers, travelMode);
     }
 
     /// <summary>Validates a canonical service-area request, including worker-side input limits.</summary>

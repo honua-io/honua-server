@@ -18,7 +18,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-public sealed class RoutingJobExecutorTests
+public sealed partial class RoutingJobExecutorTests
 {
     [UnitTheory]
     [InlineData("{\"stops\":[]}")]
