@@ -27,6 +27,7 @@ internal sealed partial class JobExecutionService(
     ILicenseOperationPolicy? licensePolicy = null) : BackgroundService
 {
     private const string SafeExecutionFailureMessage = "Job execution failed.";
+    private const string DrainDeadlineFailureMessage = "Worker drain deadline expired.";
     private const int PreDispatchRecoveryAttempts = 2;
 
     /// <summary>
@@ -41,6 +42,47 @@ internal sealed partial class JobExecutionService(
     private readonly TimeSpan _partitionLeaseDuration = DefaultPartitionLeaseDuration;
     private readonly TimeSpan _partitionLeaseRenewInterval = DefaultPartitionLeaseRenewInterval;
     private readonly TimeSpan _partitionLeaseContentionDelay = DefaultPartitionLeaseContentionDelay;
+    private readonly CancellationTokenSource _draining = new();
+    private int _drainDeadlineExpired;
+
+    /// <summary>
+    /// Stop taking work before cancelling execution. A rolling deployment must let the owned
+    /// job finish while its heartbeat is still live. Expiring the host's shutdown deadline
+    /// fails the owned attempt without retrying it on the replacement serving revision.
+    /// </summary>
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        await _draining.CancelAsync().ConfigureAwait(false);
+        try
+        {
+            if (ExecuteTask is { } execution)
+            {
+                await execution.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Set this before Base.StopAsync cancels execution so the worker can distinguish
+            // an expired planned drain from unexpected loss of its infrastructure.
+            Volatile.Write(ref _drainDeadlineExpired, 1);
+        }
+        finally
+        {
+            // Base.StopAsync cancels execution before awaiting it. Once the host deadline
+            // has fired, retain the store/queue for a separate bounded terminal-cleanup
+            // budget instead of returning immediately with the already-cancelled token.
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await base.StopAsync(Volatile.Read(ref _drainDeadlineExpired) != 0
+                ? cleanup.Token
+                : cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    public override void Dispose()
+    {
+        base.Dispose();
+        _draining.Dispose();
+    }
 
     internal JobExecutionService(
         IJobQueue jobQueue,
@@ -128,6 +170,8 @@ internal sealed partial class JobExecutionService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        using var claimCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, _draining.Token);
+        var claimToken = claimCancellation.Token;
         var workerId = GenerateWorkerId();
 
         if (_acceptedKinds.Count == 0)
@@ -135,9 +179,9 @@ internal sealed partial class JobExecutionService(
             Log.NoExecutorsRegistered(logger, workerId);
             try
             {
-                await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken).ConfigureAwait(false);
+                await Task.Delay(Timeout.InfiniteTimeSpan, claimToken).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (claimToken.IsCancellationRequested)
             {
                 // Expected: host shutdown cancelled the infinite delay for this
                 // executor-less worker. Nothing to clean up — fall through to stop logging.
@@ -149,14 +193,14 @@ internal sealed partial class JobExecutionService(
 
         Log.WorkerStarted(logger, workerId);
 
-        while (!stoppingToken.IsCancellationRequested)
+        while (!claimToken.IsCancellationRequested)
         {
             string? claimedId = null;
 
             try
             {
                 claimedId = await jobQueue.TryClaimAsync(
-                    workerId, _acceptedKinds, _acceptedRuntimeProfiles, stoppingToken).ConfigureAwait(false);
+                    workerId, _acceptedKinds, _acceptedRuntimeProfiles, claimToken).ConfigureAwait(false);
 
                 if (claimedId != null)
                 {
@@ -164,7 +208,7 @@ internal sealed partial class JobExecutionService(
                     continue;
                 }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (claimToken.IsCancellationRequested)
             {
                 // If shutdown arrived during the pre-execution phase of
                 // ProcessJobAsync, the job is still claimed but was never
@@ -206,9 +250,9 @@ internal sealed partial class JobExecutionService(
 
             try
             {
-                await Task.Delay(PollInterval, stoppingToken).ConfigureAwait(false);
+                await Task.Delay(PollInterval, claimToken).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (claimToken.IsCancellationRequested)
             {
                 break;
             }
@@ -525,9 +569,18 @@ internal sealed partial class JobExecutionService(
 
             if (stoppingToken.IsCancellationRequested)
             {
-                activity?.SetStatus(ActivityStatusCode.Error, "Worker shutdown.");
-                await AbandonJobAsync(running, workerId, "Worker shutdown.",
-                    CancellationToken.None, forceRequeue: true).ConfigureAwait(false);
+                if (Volatile.Read(ref _drainDeadlineExpired) != 0)
+                {
+                    activity?.SetStatus(ActivityStatusCode.Error, DrainDeadlineFailureMessage);
+                    await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
+                        DrainDeadlineFailureMessage, CancellationToken.None).ConfigureAwait(false);
+                }
+                else
+                {
+                    activity?.SetStatus(ActivityStatusCode.Error, "Worker shutdown.");
+                    await AbandonJobAsync(running, workerId, "Worker shutdown.",
+                        CancellationToken.None, forceRequeue: true).ConfigureAwait(false);
+                }
                 return;
             }
 
@@ -608,6 +661,16 @@ internal sealed partial class JobExecutionService(
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
             await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
                 "license expired", CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (stoppingToken.IsCancellationRequested &&
+            Volatile.Read(ref _drainDeadlineExpired) != 0 && !timeoutCts.IsCancellationRequested && ex is not OutOfMemoryException)
+        {
+            // A planned drain must not turn either cancellation or a late executor failure
+            // into another dispatch on the replacement revision.
+            await StopHeartbeatPumpAsync().ConfigureAwait(false);
+            activity?.SetStatus(ActivityStatusCode.Error, DrainDeadlineFailureMessage);
+            await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
+                DrainDeadlineFailureMessage, CancellationToken.None).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -946,8 +1009,8 @@ internal sealed partial class JobExecutionService(
             UpdatedAt = now,
             CompletedAt = now,
             ErrorMessage = reason,
-            ArtifactReferences = reason == "license expired" ? [] : job.ArtifactReferences,
-            PercentComplete = reason == "license expired" ? null : job.PercentComplete,
+            ArtifactReferences = reason is "license expired" or DrainDeadlineFailureMessage ? [] : job.ArtifactReferences,
+            PercentComplete = reason is "license expired" or DrainDeadlineFailureMessage ? null : job.PercentComplete,
             CurrentPhase = terminalStatus == ExecutionJobStatus.Cancelled ? "Cancelled" : "Failed"
         };
 

@@ -110,6 +110,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 _includeConfiguredSchemaAdoption,
                 _migrations.ConfiguredSchemaAdoptionMigration);
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
+            VerifyReaderCompatibility(upgrader, migrationsAssembly, usesCanonicalMigrationRoots);
             if (connection is not null)
             {
                 await VerifyPreMigrationConsistencyAsync(connection, journalIsNonEmpty, cancellationToken)
@@ -126,6 +127,10 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 executedButNotDiscoveredScripts,
                 classifications,
                 journalIsNonEmpty);
+        }
+        catch (DatabaseSchemaCompatibilityException ex)
+        {
+            return DatabaseMigrationPlan.Failed(ex, ex.Message);
         }
         // Intentionally broad: map any planning failure (bad connection string, DbUp/journal errors,
         // etc.) to the typed DatabaseMigrationPlan.Failed result with a sanitized message; the raw
@@ -295,6 +300,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 _includeConfiguredSchemaAdoption,
                 _migrations.ConfiguredSchemaAdoptionMigration);
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
+            VerifyReaderCompatibility(upgrader, migrationsAssembly, usesCanonicalMigrationRoots);
             if (usesCanonicalMigrationRoots)
             {
                 await VerifyPreMigrationConsistencyAsync(lockConnection, journalIsNonEmpty, cancellationToken)
@@ -345,7 +351,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
 
             return DatabaseMigrationResult.Succeeded(appliedScripts);
         }
-        catch (DatabaseSchemaFloorException ex)
+        catch (Exception ex) when (ex is DatabaseSchemaFloorException or DatabaseSchemaCompatibilityException)
         {
             return DatabaseMigrationResult.Failed(ex, ex.Message);
         }
@@ -370,6 +376,23 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         {
             SearchPath = "public",
         }.ConnectionString;
+
+    private static void VerifyReaderCompatibility(UpgradeEngine upgrader, Assembly migrationsAssembly, bool canonical)
+    {
+        // Include every known script, even conditionally omitted raster/adoption scripts. A
+        // journal entry for a known-but-disabled script is not evidence of a newer reader.
+        var known = migrationsAssembly.GetManifestResourceNames().ToHashSet(StringComparer.Ordinal);
+        if (canonical)
+        {
+            known.UnionWith(typeof(PostgresDatabaseMigrationRunner).Assembly.GetManifestResourceNames());
+        }
+
+        var unknown = upgrader.GetExecutedScripts().Where(name => !known.Contains(name)).Order(StringComparer.Ordinal).ToArray();
+        if (unknown.Length > 0)
+        {
+            throw new DatabaseSchemaCompatibilityException(unknown);
+        }
+    }
 
     private static UpgradeEngine BuildUpgrader(
         string connectionString,

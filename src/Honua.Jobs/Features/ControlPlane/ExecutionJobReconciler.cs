@@ -158,7 +158,12 @@ internal sealed partial class ExecutionJobReconciler(
             reconcileOutcome = "license_expired";
             await FailExpiredJobAsync(operationId, persistedSuccess).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A serving-task switch does not fail or cancel the independent provider job.
+            reconcileOutcome = "host_stopping";
+        }
+        catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
         {
             reconcileOutcome = "lease_lost";
             Log.ExecutionJobLeaseLost(logger, operationId);
@@ -207,7 +212,8 @@ internal sealed partial class ExecutionJobReconciler(
                 // the lease-renewal loop's Task.Delay/RenewLeaseAsync calls. Nothing to log.
             }
 
-            await jobStore.ReleaseLeaseAsync(operationId, _ownerId, cancellationToken).ConfigureAwait(false);
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await jobStore.ReleaseLeaseAsync(operationId, _ownerId, cleanup.Token).ConfigureAwait(false);
         }
     }
 

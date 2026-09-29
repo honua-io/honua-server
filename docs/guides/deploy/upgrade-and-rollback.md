@@ -12,8 +12,61 @@ You'll roll a new Honua version forward safely — preflight first, backward-com
 ## Policy
 
 1. Zero-downtime upgrades are supported only for backward-compatible (expand-contract) migrations: add columns/tables first, deploy, drop old columns in a later release. Potentially breaking migrations carry an explicit `-- honua:compatibility-review` marker in the SQL — treat those as gated rollouts with a documented rollback path. On an existing database you can require explicit approval before those apply: set `Database__MigrationSafety__ContractApplyPolicy=Gate` (fresh installs are unaffected), set `HONUA_APPROVE_CONTRACT_MIGRATIONS` to the nonce printed by the migration safety error, and optionally run a pre-migration backup hook via `Database__MigrationSafety__BackupCommand` — see [Deploy with Docker Compose — Upgrade & Rollback](docker-compose.md#upgrade--rollback).
-2. The default recovery is rolling back the application image; the previous version keeps working against the expanded schema.
-3. Database restore is the last resort, only when a destructive migration or data corruption makes the previous version unusable.
+2. Application rollback is allowed only when the previous reader recognizes every applied migration. On startup an unrecognized journal entry raises `DatabaseSchemaCompatibilityException` with code `schema_reader_incompatible`, before serving. This check also runs with `HONUA_SKIP_MIGRATIONS=true` and cannot be bypassed by degraded-start mode. Even an additive migration needs reader qualification; its presence alone is not proof an older image can serve it.
+3. Database restore is the last resort when the previous version cannot safely serve the live schema or the data is corrupt.
+
+### In-flight geoprocessing jobs
+
+During an ECS traffic shift, removing a task from the ALB does not cancel its GP
+job. On graceful host shutdown the worker stops claiming new jobs, keeps its
+heartbeat and ownership, and waits for its current execution to publish its
+result and terminal state. Configure the host shutdown timeout and ECS stop
+timeout to cover the admitted job duration. If that deadline expires while the
+worker can still finish cleanup, the job fails with `Worker drain deadline expired.`;
+partial artifact references are removed and the job is not retried by the replacement
+worker. The host waits up to five additional seconds for terminal cleanup before
+releasing its store and queue resources. Reserve that cleanup budget in the task's
+stop timeout. A forced kill uses the separate crash-recovery path and is not an
+exactly-once execution guarantee. Long jobs should use a worker independent of the
+serving task.
+
+On Lambda + Batch, changing the serving alias leaves the original Batch worker
+running. A replacement controller uses the persisted provider identity and
+execution specification, including the original worker definition. It observes
+that job rather than submitting it again. Ambiguous submissions use the existing
+deterministic-name discovery path; automatic SDK retries of `SubmitJob` are
+disabled because the provider call has no idempotency token. Keep the durable
+Redis store and worker definitions available across both directions of a switch.
+
+The frozen reader baseline is `certification/schema-reader-baseline.json`.
+Every migration, including each newly added script, must also be hash-pinned in
+`certification/schema-migration-hashes.json`; extend that ledger when adding an
+expand migration. Keep existing hashes and script names immutable. A new ledger
+entry does not extend the frozen reader baseline or exempt a script from contract
+checks. Hashes are uppercase SHA-256 over UTF-8 SQL with LF line endings.
+New scripts classified as contracting fail the gate even with a compatibility
+review annotation. A contract-phase release requires an explicit new rollback
+boundary and backup/restore plan; an annotation alone does not permit it in a
+rolling update.
+
+The shared runtime classifier detects removals of views, types, routines, triggers,
+policies and indexes, as well as table contractions, renames, schema moves and
+truncation. Historical scripts that acquire a contract classification under these
+broader checks use their exact frozen name and hash as the review record; their SQL
+is never rewritten to add annotations. They still require contract-apply approval
+when pending against a nonempty migration journal. Fresh installs remain unaffected.
+
+The release promise journey must retain the GP operation ID before each update
+or rollback, wait for that same job afterward, and verify the decoded output and
+its metadata, one execution, one terminal transition, no remaining queue claim,
+and the original Batch provider ID where applicable. Exercise an incompatible
+reader separately and record `schema_reader_incompatible` as a startup refusal,
+never as successful serving. Local handoff tests use real Redis and the geometry
+executor with substituted AWS transport; they do not replace the two-candidate
+ECS and Lambda + Batch journey receipts.
+Qualify the actual rollback image: it must itself contain the drain and schema-reader
+protections described here. Installing a newer image cannot add those checks to an
+older image.
 
 ### Configuration binding correction
 

@@ -48,6 +48,12 @@ internal sealed class PostgresCoreSchemaMigrationManifest
 
     public string ApplicationMigrationAssemblyName { get; }
 
+    /// <summary>
+    /// Complete reader-qualified migration identities supplied by the application. Synthetic
+    /// manifests may omit this when testing an isolated schema floor.
+    /// </summary>
+    public IReadOnlySet<string>? KnownMigrationNames { get; init; }
+
     public string MetadataV2SnapshotMigration { get; }
 
     public string MetadataV2ReleasePackagesMigration { get; }

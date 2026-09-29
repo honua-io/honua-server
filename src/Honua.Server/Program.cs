@@ -1960,7 +1960,7 @@ async Task RunDatabaseMigrationsAsync()
         {
             migrationState.MarkFailed("Database schema diverges from the migration journal.");
             Honua.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, ex.Message, ex);
-            if (!app.Environment.IsDevelopment())
+            if (ex is Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException || !app.Environment.IsDevelopment())
             {
                 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
             }
@@ -2021,8 +2021,9 @@ async Task RunDatabaseMigrationsAsync()
             // In non-Development environments, re-throw so the app fails to start
             // (gives a clear CrashLoopBackOff signal in Kubernetes) — unless degraded
             // start is enabled and the failure is transient connectivity (#1632).
-            if (!app.Environment.IsDevelopment()
-                && !TryEnterDegradedStart("migrations", error, migrationsPending: true))
+            if (error is Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException ||
+                (!app.Environment.IsDevelopment()
+                && !TryEnterDegradedStart("migrations", error, migrationsPending: true)))
             {
                 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
                 return; // unreachable; satisfies the compiler
@@ -2057,8 +2058,9 @@ async Task RunDatabaseMigrationsAsync()
         // In non-Development environments, re-throw so the app fails to start
         // (gives a clear CrashLoopBackOff signal in Kubernetes) — unless degraded
         // start is enabled and the failure is transient connectivity (#1632).
-        if (!app.Environment.IsDevelopment()
-            && !TryEnterDegradedStart("migrations", ex, migrationsPending: true))
+        if (ex is Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException ||
+            (!app.Environment.IsDevelopment()
+            && !TryEnterDegradedStart("migrations", ex, migrationsPending: true)))
         {
             throw;
         }
