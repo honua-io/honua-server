@@ -156,7 +156,9 @@ public sealed class GeoJsonFeatureBaseBuilderTests(ITestOutputHelper output)
         };
         var feature = Feature.Create(1, null, new Dictionary<string, object?>
         {
-            ["name"] = "park", ["status"] = "open", ["secret"] = "private"
+            ["name"] = "park",
+            ["status"] = "open",
+            ["secret"] = "private"
         }.ToImmutableDictionary());
         var options = GeoJsonFeatureBaseBuilder.PrepareOptions(resource,
             new GeoJsonFeatureBuildOptions(
