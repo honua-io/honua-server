@@ -133,7 +133,7 @@
       {
         "id": "native-versioning",
         "status": "open",
-        "required_work": "Keep the preview branch profile separate. The current 367-case Esri inventory has no dedicated VersionManagementServer manifest; reconcile its native workflows and REST operations before claiming that inventory complete. On server fa2c29dc4 with the experimental branch flag and Enterprise development entitlements, ArcPy 3.7.2 recognizes the remote workspace through root and /arcgis URLs, but supplied-token portal sign-in, branch-layer recognition, ListVersions and CreateVersion fail. An independent username/password replay on ba7f4ba96 fails during portal discovery before requesting token issuance, with the same later native failures. Preserve both authentication failures and ERROR 000301 as repair work; six passing REST/SQL checks on fa2c29dc4 and 57 regression tests on ba7f4ba96 do not certify native workflows or prove a license exclusion."
+        "required_work": "Keep the preview branch profile separate. The 367-case Esri inventory already includes an 11-case VersionManagementServer manifest: seven implemented/partial groups and four recorded gaps. Its geoservices rules wire only service metadata and list/version-info REST probes; five supported lifecycle groups remain pending. Map those grouped operations to independent native cases and repair stale descriptions, including the capability-string claim corrected by server PR5335. On server fa2c29dc4 with the experimental branch flag and Enterprise development entitlements, ArcPy 3.7.2 recognizes the remote workspace through root and /arcgis URLs, but supplied-token portal sign-in, branch-layer recognition, ListVersions and CreateVersion fail. An independent username/password replay on ba7f4ba96 fails during portal discovery before requesting token issuance, with the same later native failures. Preserve both authentication failures and ERROR 000301 as repair work; six passing REST/SQL checks on fa2c29dc4 and 57 regression tests on ba7f4ba96 do not certify native workflows or prove a license exclusion."
       },
       {
         "id": "maturity-and-profile",
@@ -162,7 +162,9 @@
           "https://doc.esri.com/en/arcgis-pro/latest/arcpy/functions/workspace-properties.html",
           "https://doc.esri.com/en/arcgis-pro/latest/arcpy/functions/dataset-properties.html",
           "https://doc.esri.com/en/arcgis-pro/latest/arcpy/data-access/listversions.html",
-          "https://github.com/honua-io/honua-esri-compat/blob/ac7c5b624cdb3c27b6cdd73c3f72ef8cad8ba563/docs/reports/native-version-workspace-2026-09-29.md"
+          "https://github.com/honua-io/honua-esri-compat/blob/ac7c5b624cdb3c27b6cdd73c3f72ef8cad8ba563/docs/reports/native-version-workspace-2026-09-29.md",
+          "https://github.com/honua-io/honua-esri-compat/blob/b076f60ce576401f8a9f16bc0a2306683b2033a6/matrix/version-management-server.matrix.json",
+          "https://github.com/honua-io/honua-esri-compat/blob/b076f60ce576401f8a9f16bc0a2306683b2033a6/src/honua_esri_compat/lanes/geoservices.py#L659"
         ],
         "protocols": [
           "featureserver",
