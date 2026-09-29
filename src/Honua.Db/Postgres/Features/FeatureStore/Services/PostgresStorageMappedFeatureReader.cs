@@ -450,11 +450,17 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 SELECT {_primaryKeyColumn}::bigint AS objectid,
                        {geometrySelect} AS geometry,
                        {attributesSelect} AS attributes{distanceSelect}
-                FROM {BuildFeatureSource(query, sql)}
                 """);
-            AppendFilter(sql, query);
-            AppendOrderBy(sql, query);
-            AppendPagination(sql, query, probeLimit);
+            if (query.Limit.HasValue || query.Offset.HasValue || IsNearestNeighborQuery(query))
+            {
+                AppendPagedFeatureSource(sql, query, probeLimit);
+            }
+            else
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" FROM {BuildFeatureSource(query, sql)}");
+                AppendFilter(sql, query);
+                AppendOrderBy(sql, query);
+            }
         }
         if (query.Distinct)
         {
@@ -1180,28 +1186,29 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         };
 
     private void AppendOrderBy(SqlBuilder sql, FeatureQuery query)
+        => sql.Append(CultureInfo.InvariantCulture,
+            $" ORDER BY {string.Join(", ", BuildOrderExpressions(sql, query).Select(term => term.Expression + term.Suffix))}");
+
+    private IEnumerable<(string Expression, string Suffix)> BuildOrderExpressions(SqlBuilder sql, FeatureQuery query)
     {
         if (IsNearestNeighborQuery(query))
         {
-            sql.Append(CultureInfo.InvariantCulture, $" ORDER BY {BuildNearestNeighborOrderExpression(query, sql)}");
-            return;
+            yield return (BuildNearestNeighborOrderExpression(query, sql), string.Empty);
+            yield break;
         }
 
         if (query.OrderBy.HasValue && !query.OrderBy.Value.IsDefaultOrEmpty)
         {
-            var clauses = new List<string>();
             foreach (var clause in query.OrderBy.Value)
             {
                 var column = ResolveSortColumnExpression(clause.Field, sql);
-                clauses.Add(
-                    $"{column} {(clause.Ascending ? "ASC" : "DESC")}{FeatureQueryBuilder.GetNullOrderingSuffix(clause.NullOrdering)}");
+                yield return (column,
+                    $" {(clause.Ascending ? "ASC" : "DESC")}{FeatureQueryBuilder.GetNullOrderingSuffix(clause.NullOrdering)}");
             }
-
-            sql.Append(CultureInfo.InvariantCulture, $" ORDER BY {string.Join(", ", clauses)}");
-            return;
+            yield break;
         }
 
-        sql.Append(CultureInfo.InvariantCulture, $" ORDER BY {_primaryKeyColumn}");
+        yield return (_primaryKeyColumn, string.Empty);
     }
 
     private static void AppendDistinctOrderBy(SqlBuilder sql, FeatureQuery query)
