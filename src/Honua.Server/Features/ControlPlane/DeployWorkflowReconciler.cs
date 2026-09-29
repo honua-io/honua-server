@@ -150,7 +150,12 @@ internal sealed partial class DeployWorkflowReconciler(
                 }
             }
         }
-        catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Update/rollback may stop the very host driving it. Keep the durable phase
+            // nonterminal so the replacement controller can continue the same operation.
+        }
+        catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
         {
             Log.WorkflowOperationLeaseLost(logger, operationId);
             return;
@@ -195,7 +200,8 @@ internal sealed partial class DeployWorkflowReconciler(
                 // so its resulting OperationCanceledException is normal shutdown, not an error.
             }
 
-            await workflowStore.ReleaseLeaseAsync(operationId, _ownerId, cancellationToken).ConfigureAwait(false);
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await workflowStore.ReleaseLeaseAsync(operationId, _ownerId, cleanup.Token).ConfigureAwait(false);
         }
     }
 

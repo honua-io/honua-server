@@ -41,6 +41,39 @@ internal sealed partial class JobExecutionService(
     private readonly TimeSpan _partitionLeaseDuration = DefaultPartitionLeaseDuration;
     private readonly TimeSpan _partitionLeaseRenewInterval = DefaultPartitionLeaseRenewInterval;
     private readonly TimeSpan _partitionLeaseContentionDelay = DefaultPartitionLeaseContentionDelay;
+    private readonly CancellationTokenSource _draining = new();
+
+    /// <summary>
+    /// Stop taking work before cancelling execution. A rolling deployment must let the owned
+    /// job finish while its heartbeat is still live. Only the host's shutdown deadline forces
+    /// cancellation and the existing interrupted-attempt recovery path.
+    /// </summary>
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        await _draining.CancelAsync().ConfigureAwait(false);
+        try
+        {
+            if (ExecuteTask is { } execution)
+            {
+                await execution.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The host's graceful-drain budget has elapsed. Base.StopAsync cancels the
+            // execution token, retaining the established shutdown recovery semantics.
+        }
+        finally
+        {
+            await base.StopAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    public override void Dispose()
+    {
+        base.Dispose();
+        _draining.Dispose();
+    }
 
     internal JobExecutionService(
         IJobQueue jobQueue,
@@ -128,6 +161,8 @@ internal sealed partial class JobExecutionService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        using var claimCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, _draining.Token);
+        var claimToken = claimCancellation.Token;
         var workerId = GenerateWorkerId();
 
         if (_acceptedKinds.Count == 0)
@@ -135,9 +170,9 @@ internal sealed partial class JobExecutionService(
             Log.NoExecutorsRegistered(logger, workerId);
             try
             {
-                await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken).ConfigureAwait(false);
+                await Task.Delay(Timeout.InfiniteTimeSpan, claimToken).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (claimToken.IsCancellationRequested)
             {
                 // Expected: host shutdown cancelled the infinite delay for this
                 // executor-less worker. Nothing to clean up — fall through to stop logging.
@@ -149,14 +184,14 @@ internal sealed partial class JobExecutionService(
 
         Log.WorkerStarted(logger, workerId);
 
-        while (!stoppingToken.IsCancellationRequested)
+        while (!claimToken.IsCancellationRequested)
         {
             string? claimedId = null;
 
             try
             {
                 claimedId = await jobQueue.TryClaimAsync(
-                    workerId, _acceptedKinds, _acceptedRuntimeProfiles, stoppingToken).ConfigureAwait(false);
+                    workerId, _acceptedKinds, _acceptedRuntimeProfiles, claimToken).ConfigureAwait(false);
 
                 if (claimedId != null)
                 {
@@ -164,7 +199,7 @@ internal sealed partial class JobExecutionService(
                     continue;
                 }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (claimToken.IsCancellationRequested)
             {
                 // If shutdown arrived during the pre-execution phase of
                 // ProcessJobAsync, the job is still claimed but was never
@@ -206,9 +241,9 @@ internal sealed partial class JobExecutionService(
 
             try
             {
-                await Task.Delay(PollInterval, stoppingToken).ConfigureAwait(false);
+                await Task.Delay(PollInterval, claimToken).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (claimToken.IsCancellationRequested)
             {
                 break;
             }

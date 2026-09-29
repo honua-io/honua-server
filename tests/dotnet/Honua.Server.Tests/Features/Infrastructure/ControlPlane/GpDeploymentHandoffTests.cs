@@ -10,6 +10,8 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Honua.TestKit;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.IO;
@@ -23,12 +25,13 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// tests; the release journey must also run between two candidate images on ECS and Lambda/Batch.
 /// </summary>
 [Collection("Redis")]
+[Protocol(TestProtocols.Infrastructure)]
+[Operation(Operations.TestInfrastructure)]
 public sealed class GpDeploymentHandoffTests(RedisFixture redis)
 {
-    [Theory]
+    [IntegrationTheory]
     [InlineData("rc.3", "rc.4")]
     [InlineData("rc.4", "rc.3")]
-    [Trait("Category", "Integration")]
     public async Task BatchHandoff_ReplacementControllerRetainsOriginalWorkerAndOutput(string sourceRevision, string targetRevision)
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
@@ -40,15 +43,20 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
             .Returns(call => new AwsBatchSubmitResult { JobId = providerId, JobName = call.Arg<AwsBatchJobSubmission>().JobName });
         client.DescribeJobAsync(providerId, Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new AwsBatchJobState { JobId = providerId, Status = "RUNNING" });
+        var sourceWorker = sourceRevision == "rc.3" ? "worker:1" : "worker:2";
+        var targetWorker = targetRevision == "rc.3" ? "worker:1" : "worker:2";
         var sourceBackend = new AwsBatchComputeBackend(client, NullLogger<AwsBatchComputeBackend>.Instance);
-        var targetBackend = new AwsBatchComputeBackend(client, NullLogger<AwsBatchComputeBackend>.Instance);
+        var targetBackend = new AwsBatchComputeBackend(client, Options.Create(new AwsBatchExecutionOptions
+        {
+            JobDefinitions = [new AwsBatchJobDefinitionContractOptions { JobDefinition = targetWorker, MaxSupportedContractVersion = 1 }]
+        }), NullLogger<AwsBatchComputeBackend>.Instance);
         var progress = Substitute.For<IUniversalProgressStore>();
         var source = new ExecutionJobReconciler(store, [sourceBackend], progress, NullLogger<ExecutionJobReconciler>.Instance);
         var target = new ExecutionJobReconciler(store, [targetBackend], progress, NullLogger<ExecutionJobReconciler>.Instance);
         var local = CreateJob(sourceRevision, targetRevision);
         var parameters = new Dictionary<string, string>(local.Spec.Parameters)
         {
-            [AwsBatchParameterKeys.JobDefinitionArn] = "worker:1",
+            [AwsBatchParameterKeys.JobDefinitionArn] = sourceWorker,
             [AwsBatchParameterKeys.JobQueueArn] = "queue"
         };
         var job = local with
@@ -58,6 +66,7 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
         (await store.TryCreateAsync(job)).Should().BeTrue();
         await source.ReconcileExecutionJobAsync(job.OperationId);
         (await store.GetAsync(job.OperationId))!.ProviderOperationId.Should().Be(providerId);
+        (await store.GetAsync(job.OperationId))!.Status.Should().Be(ExecutionJobStatus.Queued);
 
         // The AWS transport is substituted; provider execution uses the real durable worker,
         // Redis queue and geometry executor. Changing a serving revision never stops this worker.
@@ -84,6 +93,7 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
             executor.Executions.Should().Be(1);
             callback.Count.Should().Be(1);
             terminal.ProviderOperationId.Should().Be(providerId);
+            terminal.Spec.Parameters[AwsBatchParameterKeys.JobDefinitionArn].Should().Be(sourceWorker);
             await client.Received(1).SubmitJobAsync(Arg.Any<AwsBatchJobSubmission>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
             await client.DidNotReceiveWithAnyArgs().CancelJobAsync(default!, default!, default);
             await client.DidNotReceiveWithAnyArgs().TerminateJobAsync(default!, default!, default);
@@ -96,10 +106,9 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
         }
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData("rc.3", "rc.4")]
     [InlineData("rc.4", "rc.3")]
-    [Trait("Category", "Integration")]
     public async Task EcsDrain_WithRunningGeometryJob_CompletesOnce(string sourceRevision, string targetRevision)
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
@@ -192,7 +201,7 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
         job.Status.Should().Be(ExecutionJobStatus.Succeeded);
         job.AttemptCount.Should().Be(expectedAttempts);
         job.CompletedAt.Should().NotBeNull();
-        var uri = job.ArtifactReferences.Should().ContainSingle().Subject;
+        var uri = job.ArtifactReferences.Should().ContainSingle().Which;
         const string prefix = "data:application/geo+json;base64,";
         uri.Should().StartWith(prefix);
         using var output = JsonDocument.Parse(Convert.FromBase64String(uri[prefix.Length..]));

@@ -43,6 +43,26 @@ public sealed class DatabaseMigrationSafetyTests
             new Dictionary<string, string>()).Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExpandOnlyGate_ChangedOrDeletedBaselineMigration_IsRejected(bool deleted)
+    {
+        const string original = "CREATE TABLE fixture (id integer);";
+        var baseline = new Dictionary<string, string>
+        {
+            ["001.sql"] = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(original)))
+        };
+        var proposed = new Dictionary<string, string>();
+        if (!deleted)
+        {
+            proposed["001.sql"] = "CREATE TABLE fixture (id text);";
+        }
+
+        RollingUpgradeViolations(proposed, baseline).Should().ContainSingle()
+            .Which.Should().Contain("001.sql");
+    }
+
     private static IEnumerable<string> RollingUpgradeViolations(
         IReadOnlyDictionary<string, string> scripts, IReadOnlyDictionary<string, string> baseline)
     {
