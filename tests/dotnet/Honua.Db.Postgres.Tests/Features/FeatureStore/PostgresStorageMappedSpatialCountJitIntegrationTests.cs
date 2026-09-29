@@ -2,15 +2,14 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Data.Common;
-using System.Text.Json;
 using System.Transactions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
-using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
-using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
@@ -27,7 +26,7 @@ using NSubstitute;
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 [Collection("Database")]
-public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(PostgresFixture fixture) : IAsyncLifetime
+public sealed class PostgresStorageMappedSpatialCountJitIntegrationTests(PostgresFixture fixture) : IAsyncLifetime
 {
     private string _schema = null!;
     private NpgsqlDataSource _source = null!;
@@ -36,7 +35,7 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
 
     public async Task InitializeAsync()
     {
-        _schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStorageMappedSpatialCountSerialIntegrationTests));
+        _schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStorageMappedSpatialCountJitIntegrationTests));
         await fixture.ExecuteAsync($$"""
             CREATE TABLE {{_schema}}.points (id bigint PRIMARY KEY, geom geometry(Point, 4326));
             INSERT INTO {{_schema}}.points VALUES
@@ -87,8 +86,8 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
     }
 
     [IntegrationTheory]
-    [InlineData(false, "2")]
-    [InlineData(true, "0")]
+    [InlineData(false, "on")]
+    [InlineData(true, "off")]
     public async Task CountAsync_SpatialCount_UsesOptInSettingAndRestoresPooledSession(bool enabled, string expected)
     {
         var reader = CreateReader(enabled);
@@ -109,6 +108,11 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
     [IntegrationTest]
     public async Task CountAsync_PreparedPlans_KeepOrdinaryAndScopedQueriesSeparate()
     {
+        await using (var setupConnection = await _source.OpenConnectionAsync())
+        {
+            await using var setupCommand = new NpgsqlCommand("SET jit_above_cost = 0", setupConnection);
+            await setupCommand.ExecuteNonQueryAsync();
+        }
         foreach (var enabled in new[] { false, true, false, true })
         {
             await fixture.ExecuteAsync($"TRUNCATE {_schema}.observations");
@@ -117,7 +121,7 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
             {
                 (await reader.CountAsync(1, BboxQuery())).Should().Be(3);
             }
-            await AssertObservedAsync(enabled ? "0" : "2");
+            await AssertObservedAsync(enabled ? "off" : "on");
             await AssertSessionRestoredAsync();
         }
 
@@ -130,113 +134,7 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
             statements.Add(results.GetString(0));
         }
         statements.Should().Contain(sql => sql.StartsWith("SELECT COUNT(*)", StringComparison.Ordinal));
-        statements.Should().Contain(sql => sql.StartsWith("SELECT ALL /* honua:serial-source-count */ COUNT(*)", StringComparison.Ordinal));
-    }
-
-    [IntegrationTest]
-    public async Task CountAsync_AutoPreparedCounts_KeepParallelAndSerialPlansSeparate()
-    {
-        await fixture.ExecuteAsync($$"""
-            TRUNCATE {{_schema}}.points;
-            INSERT INTO {{_schema}}.points
-            SELECT id, ST_SetSRID(ST_MakePoint((id % 360) - 180, ((id / 360) % 180) - 90), 4326)
-            FROM generate_series(1, 100000) AS id;
-            ANALYZE {{_schema}}.points;
-            """);
-        await using (var setup = await _source.OpenConnectionAsync())
-        {
-            await using var command = new NpgsqlCommand("""
-                SET min_parallel_table_scan_size = 0;
-                SET parallel_setup_cost = 0;
-                SET parallel_tuple_cost = 0;
-                SET enable_indexscan = off;
-                SET enable_bitmapscan = off;
-                """, setup);
-            await command.ExecuteNonQueryAsync();
-        }
-        var query = BboxQuery() with
-        {
-            SpatialFilter = BboxQuery().SpatialFilter!.Value with
-            {
-                EnvelopeMinX = -180,
-                EnvelopeMinY = -90,
-                EnvelopeMaxX = 180,
-                EnvelopeMaxY = 90
-            }
-        };
-        foreach (var enabled in new[] { false, true, false, true })
-        {
-            for (var attempt = 0; attempt < 3; attempt++)
-            {
-                (await CreateReader(enabled, observe: false).CountAsync(1, query)).Should().Be(100000);
-            }
-            await AssertSessionRestoredAsync();
-        }
-        await using var connection = await _source.OpenConnectionAsync();
-        var statements = new List<(string Name, string Sql)>();
-        await using (var command = new NpgsqlCommand(
-            "SELECT name, statement FROM pg_prepared_statements WHERE generic_plans > 0 AND statement LIKE $1", connection))
-        {
-            // Bind the source-specific pattern so this auto-prepared inspection
-            // query cannot match itself through a COUNT(*) string literal.
-            command.Parameters.AddWithValue($"SELECT%COUNT(*)%FROM \"{_schema}\".\"points\"%");
-            await using var results = await command.ExecuteReaderAsync();
-            while (await results.ReadAsync())
-            {
-                statements.Add((results.GetString(0), results.GetString(1)));
-            }
-        }
-        statements.Should().HaveCount(2);
-        foreach (var (name, sql) in statements)
-        {
-            var quotedName = name.Replace("\"", "\"\"", StringComparison.Ordinal);
-            await using var command = new NpgsqlCommand(
-                $"EXPLAIN (FORMAT JSON) EXECUTE \"{quotedName}\"(-180, -90, 180, 90)", connection);
-            using var plan = JsonDocument.Parse((string)(await command.ExecuteScalarAsync())!);
-            HasParallelNode(plan.RootElement[0].GetProperty("Plan")).Should().Be(
-                !sql.Contains("honua:serial-source-count", StringComparison.Ordinal),
-                "the ordinary control must have a parallel plan and the serial identity must not reuse it");
-        }
-    }
-
-    private static bool HasParallelNode(JsonElement plan) =>
-        plan.GetProperty("Node Type").GetString() is "Gather" or "Gather Merge" ||
-        plan.TryGetProperty("Plans", out var children) && children.EnumerateArray().Any(HasParallelNode);
-
-    [IntegrationTest]
-    public async Task CountAsync_CombinedPolicies_RestoreSettingsAndSeparatePreparedCounts()
-    {
-        foreach (var (serial, jit) in new[] { (false, false), (true, false), (false, true), (true, true), (false, false) })
-        {
-            await fixture.ExecuteAsync($"TRUNCATE {_schema}.observations");
-            for (var attempt = 0; attempt < 3; attempt++)
-            {
-                (await CreateReader(serial, disableJit: jit).CountAsync(1, BboxQuery())).Should().Be(3);
-            }
-            await AssertObservedAsync(serial ? "0" : "2", jit ? "off" : "on");
-            await AssertSessionRestoredAsync();
-        }
-
-        await using var connection = await _source.OpenConnectionAsync();
-        await using var command = new NpgsqlCommand(
-            "SELECT statement FROM pg_prepared_statements WHERE generic_plans > 0 AND statement LIKE $1", connection);
-        command.Parameters.AddWithValue($"SELECT%COUNT(*)%FROM \"{_schema}\".\"read_points\"%");
-        await using var results = await command.ExecuteReaderAsync();
-        var statements = new List<string>();
-        while (await results.ReadAsync())
-        {
-            statements.Add(results.GetString(0));
-        }
-        statements.Should().HaveCount(4);
-        foreach (var prefix in new[]
-        {
-            "SELECT COUNT(*)", "SELECT ALL COUNT(*)",
-            "SELECT ALL /* honua:serial-source-count */ COUNT(*)",
-            "SELECT ALL /* honua:serial-jit-off-source-count */ COUNT(*)"
-        })
-        {
-            statements.Should().Contain(sql => sql.StartsWith(prefix, StringComparison.Ordinal));
-        }
+        statements.Should().Contain(sql => sql.StartsWith("SELECT ALL COUNT(*)", StringComparison.Ordinal));
     }
 
     [IntegrationTheory]
@@ -244,23 +142,18 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
     [InlineData("unknown-geometry")]
     [InlineData("explicit-polygon")]
     [InlineData("nonspatial")]
-    [InlineData("distinct")]
-    [InlineData("contains")]
-    [InlineData("line-metadata")]
     public async Task CountAsync_OutsideScopedProfile_KeepsOrdinaryPlanning(string shape)
     {
         var query = shape switch
         {
             "explicit-polygon" => BboxQuery() with { SpatialFilter = BboxQuery().SpatialFilter!.Value with { IsSimpleEnvelope = false } },
             "nonspatial" => BboxQuery() with { SpatialFilter = null },
-            "distinct" => BboxQuery() with { Distinct = true },
-            "contains" => BboxQuery() with { SpatialFilter = BboxQuery().SpatialFilter!.Value with { SpatialRelationship = SpatialRelationship.Contains } },
             _ => BboxQuery()
         };
         var baseline = await CreateReader(false).CountAsync(1, query);
-        var reader = CreateReader(true, sourceBacked: shape != "managed", knownGeometry: shape != "unknown-geometry", geometryType: shape == "line-metadata" ? MetadataV2GeometryType.LineString : MetadataV2GeometryType.Point);
+        var reader = CreateReader(true, sourceBacked: shape != "managed", knownGeometry: shape != "unknown-geometry");
         (await reader.CountAsync(1, query)).Should().Be(baseline);
-        await AssertObservedAsync("2");
+        await AssertObservedAsync("on");
         await AssertSessionRestoredAsync();
     }
 
@@ -272,11 +165,11 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
             await using var lease = await _provider.OpenNpgsqlConnectionAsync();
             lease.Transaction.Should().NotBeNull();
             (await CreateReader(true).CountAsync(1, BboxQuery())).Should().Be(3);
-            await using var command = new NpgsqlCommand("SELECT current_setting('max_parallel_workers_per_gather')", lease);
-            (await command.ExecuteScalarAsync()).Should().Be("2");
+            await using var command = new NpgsqlCommand("SELECT current_setting('jit')", lease);
+            (await command.ExecuteScalarAsync()).Should().Be("on");
             return true;
         }, _ => true, CancellationToken.None);
-        await AssertObservedAsync("2");
+        await AssertObservedAsync("on");
         await AssertSessionRestoredAsync();
     }
 
@@ -288,7 +181,7 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
             (await CreateReader(true).CountAsync(1, BboxQuery())).Should().Be(3);
             scope.Complete();
         }
-        await AssertObservedAsync("2");
+        await AssertObservedAsync("on");
         await AssertSessionRestoredAsync();
     }
 
@@ -297,14 +190,14 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
     {
         var page = await CreateReader(true).QueryPageAsync(1, BboxQuery());
         page.Items.Select(item => item.Id).Should().Equal(1L, 2L, 3L);
-        await AssertObservedAsync("2");
+        await AssertObservedAsync("on");
         await AssertSessionRestoredAsync();
     }
 
     [IntegrationTest]
     public async Task CountAsync_SqlError_RollsBackLocalSettingOnSamePooledConnection()
     {
-        await ReplaceProbeAsync("IF current_setting('max_parallel_workers_per_gather') = '0' THEN RAISE EXCEPTION 'count probe failure'; END IF;");
+        await ReplaceProbeAsync("IF current_setting('jit') = 'off' THEN RAISE EXCEPTION 'count probe failure'; END IF;");
         var call = () => CreateReader(true).CountAsync(1, BboxQuery());
         (await call.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.RaiseException);
         await AssertSessionRestoredAsync();
@@ -314,7 +207,7 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
     [IntegrationTest]
     public async Task CountAsync_CancelledQuery_RestoresSessionAndReleasesLease()
     {
-        await ReplaceProbeAsync("IF current_setting('max_parallel_workers_per_gather') = '0' THEN PERFORM pg_sleep(30); END IF;");
+        await ReplaceProbeAsync("IF current_setting('jit') = 'off' THEN PERFORM pg_sleep(30); END IF;");
         using var cancellation = new CancellationTokenSource();
         var pending = CreateReader(true).CountAsync(1, BboxQuery(), cancellation.Token);
         try
@@ -333,7 +226,7 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
                     await Task.Delay(25, deadline.Token);
                 }
             }
-            sleeping.Should().BeTrue("the count must reach the probe with parallel workers disabled before cancellation");
+            sleeping.Should().BeTrue("the count must reach the probe with JIT disabled before cancellation");
             await cancellation.CancelAsync();
             await FluentActions.Awaiting(async () =>
             {
@@ -347,8 +240,10 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
             {
                 await pending;
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
             {
+                // Cancellation is expected here; awaiting the task ensures the
+                // canceled query has released its pooled connection.
             }
         }
         await AssertSessionRestoredAsync();
@@ -377,13 +272,25 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
         }
         await AssertSessionRestoredAsync();
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
-        await using var command = new NpgsqlCommand($"SELECT array_agg(DISTINCT workers ORDER BY workers) FROM {_schema}.observations", connection);
-        ((string[])(await command.ExecuteScalarAsync())!).Should().Equal("0", "2");
+        await using var command = new NpgsqlCommand($"SELECT array_agg(DISTINCT jit ORDER BY jit) FROM {_schema}.observations", connection);
+        ((string[])(await command.ExecuteScalarAsync())!).Should().Equal("off", "on");
+    }
+
+    [IntegrationTest]
+    public async Task ShortPage_ReusesExactTotalWithoutApplyingCountPlannerSetting()
+    {
+        var result = await CreateReader(true).QueryAsync(1, BboxQuery());
+
+        result.TotalCount.Should().Be(3);
+        result.Items.Select(item => item.Id).Should().Equal(1L, 2L, 3L);
+        result.HasMoreResults.Should().BeFalse();
+        await AssertObservedAsync("on");
+        await AssertSessionRestoredAsync();
     }
 
     [IntegrationTheory]
-    [InlineData(null, "2")]
-    [InlineData("true", "0")]
+    [InlineData(null, "on")]
+    [InlineData("true", "off")]
     public async Task RegisteredFeatureStore_ConfigurationReachesBoundReader(string? setting, string expected)
     {
         var values = new Dictionary<string, string?>
@@ -392,7 +299,7 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
         };
         if (setting is not null)
         {
-            values["Database:PreferSerialSourceSpatialCounts"] = setting;
+            values["Database:DisableJitForSourceSpatialCounts"] = setting;
         }
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
         var services = new ServiceCollection();
@@ -418,43 +325,16 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
     }
 
     [IntegrationTest]
-    public async Task CountAsync_SessionAlreadySerial_PreservesOriginalSetting()
+    public async Task CountAsync_SessionAlreadyJitDisabled_PreservesOriginalSetting()
     {
         await using (var connection = await _source.OpenConnectionAsync())
         {
-            await using var command = new NpgsqlCommand("SET max_parallel_workers_per_gather = 0", connection);
+            await using var command = new NpgsqlCommand("SET jit = off", connection);
             await command.ExecuteNonQueryAsync();
         }
         (await CreateReader(true).CountAsync(1, BboxQuery())).Should().Be(3);
-        await AssertObservedAsync("0");
-        await AssertSessionRestoredAsync("0");
-    }
-
-    [IntegrationTheory]
-    [InlineData(SpatialRelationship.Intersects, 3L)]
-    [InlineData(SpatialRelationship.EnvelopeIntersects, 4L)]
-    public async Task CountAsync_PrecisionBoundary_PreservesRequestedPredicate(SpatialRelationship relationship, long expected)
-    {
-        // PostGIS float bbox keys can include a point just outside this double
-        // precision edge. Preserve exact intersection for Intersects and the
-        // existing bbox-only semantics for an explicit EnvelopeIntersects request.
-        await fixture.ExecuteAsync($"INSERT INTO {_schema}.points VALUES (7, ST_SetSRID(ST_MakePoint(1.00000001, 0), 4326))");
-        var query = BboxQuery() with
-        {
-            SpatialFilter = BboxQuery().SpatialFilter!.Value with { SpatialRelationship = relationship }
-        };
-        (await CreateReader(true).CountAsync(1, query)).Should().Be(expected);
-        await AssertObservedAsync("0");
-        await AssertSessionRestoredAsync();
-    }
-
-    [IntegrationTest]
-    public async Task CountAsync_BranchVersion_PreservesUnsupportedSourceGuard()
-    {
-        var query = BboxQuery() with { VersionContext = new VersionContext { VersionId = Guid.NewGuid() } };
-        var call = () => CreateReader(true).CountAsync(1, query);
-        await call.Should().ThrowAsync<NotSupportedException>();
-        await AssertSessionRestoredAsync();
+        await AssertObservedAsync("off");
+        await AssertSessionRestoredAsync("off");
     }
 
     private Task ReplaceProbeAsync(string statement) => fixture.ExecuteAsync($$"""
@@ -462,18 +342,18 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
         LANGUAGE plpgsql VOLATILE AS $body$ BEGIN {{statement}} RETURN value; END $body$;
         """);
 
-    private async Task AssertObservedAsync(string expected, string expectedJit = "on")
+    private async Task AssertObservedAsync(string expected)
     {
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
         await using var command = new NpgsqlCommand($"SELECT DISTINCT jit, workers FROM {_schema}.observations", connection);
         await using var reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue("the source geometry must be evaluated");
-        reader.GetString(0).Should().Be(expectedJit, "the independent JIT option controls only the count policy");
-        reader.GetString(1).Should().Be(expected);
+        reader.GetString(0).Should().Be(expected);
+        reader.GetString(1).Should().Be("2", "the JIT profile must not force serial planning");
         (await reader.ReadAsync()).Should().BeFalse();
     }
 
-    private async Task AssertSessionRestoredAsync(string expectedWorkers = "2", string expectedJit = "on")
+    private async Task AssertSessionRestoredAsync(string expectedJit = "on")
     {
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await using var connection = await _source.OpenConnectionAsync(deadline.Token);
@@ -482,7 +362,7 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
         await using var reader = await command.ExecuteReaderAsync(deadline.Token);
         (await reader.ReadAsync(deadline.Token)).Should().BeTrue();
         reader.GetString(0).Should().Be(expectedJit);
-        reader.GetString(1).Should().Be(expectedWorkers);
+        reader.GetString(1).Should().Be("2");
     }
 
     private static FeatureQuery BboxQuery() => new()
@@ -501,17 +381,16 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
         }
     };
 
-    private PostgresStorageMappedFeatureReader CreateReader(bool enabled, bool sourceBacked = true, bool knownGeometry = true, MetadataV2GeometryType geometryType = MetadataV2GeometryType.Point, bool observe = true, bool disableJit = false) => new(
+    private PostgresStorageMappedFeatureReader CreateReader(bool enabled, bool sourceBacked = true, bool knownGeometry = true) => new(
         _provider,
         new DefaultObjectPoolProvider().Create(new DefaultPooledObjectPolicy<Dictionary<string, object?>>()),
-        CreateResource(knownGeometry, geometryType), CreateMapping(sourceBacked) with { TableName = observe ? "read_points" : "points" },
-        connection: null, connectionEncryptionService: null,
-        disableJitForSourceSpatialCounts: disableJit, preferSerialSourceSpatialCounts: enabled);
+        CreateResource(knownGeometry), CreateMapping(sourceBacked),
+        connection: null, connectionEncryptionService: null, disableJitForSourceSpatialCounts: enabled);
 
-    private static MetadataV2Resource CreateResource(bool knownGeometry, MetadataV2GeometryType geometryType = MetadataV2GeometryType.Point) => new()
+    private static MetadataV2Resource CreateResource(bool knownGeometry) => new()
     {
-        Metadata = new MetadataV2ObjectMetadata { Id = "serial-count", Name = "serial-count" },
-        Spatial = knownGeometry ? new MetadataV2ResourceSpatial { GeometryType = geometryType } : null,
+        Metadata = new MetadataV2ObjectMetadata { Id = "jit-count", Name = "jit-count" },
+        Spatial = knownGeometry ? new MetadataV2ResourceSpatial { GeometryType = MetadataV2GeometryType.Point } : null,
         SchemaFields = [new() { Name = "id", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] }]
     };
 

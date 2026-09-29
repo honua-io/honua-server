@@ -5,7 +5,6 @@ using System.Transactions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
-using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
@@ -13,7 +12,9 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 internal sealed partial class PostgresStorageMappedFeatureReader
 {
     private bool ShouldUseSerialSourceSpatialCount(FeatureQuery query) =>
-        _preferSerialSourceSpatialCounts &&
+        _preferSerialSourceSpatialCounts && CanUseScopedSourceSpatialCount(query);
+
+    private bool CanUseScopedSourceSpatialCount(FeatureQuery query) =>
         _mapping.IsSourceBacked &&
         _geometryColumn != null &&
         _resource.ReadGeometryType() == MetadataV2GeometryType.Point &&

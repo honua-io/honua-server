@@ -188,7 +188,7 @@ the normalized ascending primary-ID sort), and no distinct, branch-version or nu
 Unknown geometry types, ambient transactions and borrowed mutation transactions
 retain ordinary planning.
 This option does not change counts, statistics, streaming, tiles, larger pages,
-later pages or custom sorts. Count planning has a separate option below.
+later pages or custom sorts. Count planning has separate options below.
 
 For an eligible read, Honua batches a transaction-local
 `max_parallel_workers_per_gather=0` setting with the original parameterized
@@ -205,31 +205,52 @@ enabling it; limiting returned rows does not limit the work required to find the
 
 ## Source-backed spatial counts
 
-`Database__PreferSerialSourceSpatialCounts=true` opts into serial execution plans
-for counts on source-backed PostGIS point layers. The default is `false`. This
-setting is independent of `PreferSerialBoundedSpatialReads`: enabling it changes
-count planning, without changing feature SELECT planning.
+`Database__DisableJitForSourceSpatialCounts=true` disables PostgreSQL JIT only
+within eligible count queries. The default is `false`. Eligible queries count
+source-backed point layers with a simple intersects/envelope bbox. Distinct
+queries, non-default branches, unknown geometry types, ambient transactions and
+borrowed mutation transactions retain ordinary planning. Page size and offset do
+not restrict eligibility: the exact count still considers all matching rows.
 
-Eligible counts use a simple envelope with an `Intersects` or explicit
-`EnvelopeIntersects` relationship. Honua preserves the requested predicate,
-including exact intersection for `Intersects`, filters and authorization. Counts
-have no page-size limit; their work depends on the complete matching set. Unknown
-or non-point geometry, non-envelope predicates, distinct requests, non-default
-versions and caller-owned explicit or ambient transactions retain their existing
-behavior.
+Honua batches transaction-local `jit=off` with the original parameterized count.
+The setting ends with that batch, including SQL errors and cancellation, and the
+scoped count uses a distinct `SELECT ALL` identity to avoid reusing a generic plan
+prepared by the ordinary path. Spatial predicates, security filters and exact
+count results are unchanged. The profile does not alter parallel-worker settings
+or the planning of feature reads, statistics or tiles. It can be enabled
+independently of `PreferSerialBoundedSpatialReads`.
 
-Honua batches transaction-local `max_parallel_workers_per_gather=0` with the
-parameterized count. The setting ends when the batch completes or fails, including
-cancellation, and does not leak into pooled connections. The count statement has
-a separate preparation identity so a generic plan from an ordinary count cannot
-be reused by the serial profile. PostgreSQL JIT settings are unchanged. Honua's
-Native AOT compilation mode is also unchanged.
+This profile targets SQL compilation overhead observed in broad point-bbox
+counts. PostgreSQL JIT is separate from Honua Native AOT. It can help short queries
+where compilation costs outweigh execution savings; larger or more complex
+queries may benefit from JIT. Measure representative selectivities and concurrent
+workloads before enabling it. Keep this tuned profile separate from shipping
+defaults in benchmark reports.
 
-This option targets worker-startup overhead observed in a 100K-point SQL
+`Database__PreferSerialSourceSpatialCounts=true` independently opts into serial
+execution plans for the same eligible counts. Its default is `false`. It batches
+transaction-local `max_parallel_workers_per_gather=0` with the count, without
+changing feature SELECT planning or PostgreSQL JIT unless the JIT option is also
+enabled. Explicit `EnvelopeIntersects` requests retain their existing bbox-only
+predicate; exact `Intersects` requests retain exact intersection.
+
+When both count options are enabled, both settings precede the same count in one
+implicit batch transaction. Ordinary, JIT-only, serial-only and combined counts
+use distinct SQL preparation identities so their generic plans cannot mix on a
+pooled connection. Both settings end on success, SQL errors and cancellation;
+caller-owned transactions retain their original planning behavior. Short first
+pages that already prove the exact total do not execute a count or apply either
+count setting.
+
+Serial counts target worker-startup overhead observed in a 100K-point SQL
 diagnostic. That experiment is not an application throughput result or evidence
-that serial execution wins for every dataset or selectivity. Validate both
-throughput and tail latency under representative concurrent traffic before
-enabling it. No global database setting or migration is required.
+that serial execution wins for every dataset or selectivity. Validate throughput
+and tail latency under representative concurrent traffic before enabling it. No
+global database setting or migration is required, and Honua remains Native AOT.
+
+See PostgreSQL's [JIT decision documentation](https://www.postgresql.org/docs/17/jit-decision.html)
+and Npgsql's [batch transaction behavior](https://www.npgsql.org/doc/basic-usage.html#batching)
+for the underlying planner and transaction semantics.
 
 ## Related pages
 
