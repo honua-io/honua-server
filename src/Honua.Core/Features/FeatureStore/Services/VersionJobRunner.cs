@@ -61,7 +61,17 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
         VersionReconcilePolicy policy,
         VersionConflictDetection detection = VersionConflictDetection.ByAttribute,
         CancellationToken cancellationToken = default)
-        => StartAsync(service, versionId, VersionJobKind.Reconcile, policy, detection, cancellationToken);
+        => StartReconcileAsync(service, versionId, policy, detection, false, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<VersionJob> StartReconcileAsync(
+        string service,
+        Guid versionId,
+        VersionReconcilePolicy policy,
+        VersionConflictDetection detection,
+        bool withPost,
+        CancellationToken cancellationToken = default)
+        => StartAsync(service, versionId, VersionJobKind.Reconcile, policy, detection, withPost, cancellationToken);
 
     /// <inheritdoc />
     public Task<VersionJob> StartPostAsync(
@@ -70,7 +80,7 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
         CancellationToken cancellationToken = default)
         => StartAsync(
             service, versionId, VersionJobKind.Post, VersionReconcilePolicy.None,
-            VersionConflictDetection.ByAttribute, cancellationToken);
+            VersionConflictDetection.ByAttribute, false, cancellationToken);
 
     /// <inheritdoc />
     public Task<VersionJob?> GetJobAsync(Guid jobId, CancellationToken cancellationToken = default)
@@ -82,6 +92,7 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
         VersionJobKind kind,
         VersionReconcilePolicy policy,
         VersionConflictDetection detection,
+        bool withPost,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(service);
@@ -94,7 +105,9 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
             Status: VersionJobStatus.Pending,
             Policy: policy,
             CreatedAt: DateTimeOffset.UtcNow,
-            ConflictDetection: detection);
+            ConflictDetection: detection,
+            WithPost: withPost,
+            Posted: false);
 
         await _jobStore.SaveAsync(job, cancellationToken).ConfigureAwait(false);
 
@@ -151,8 +164,8 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
             activity?.SetTag("honua.version.conflict_count", completed.ConflictCount);
             activity?.SetTag("honua.version.auto_resolved_count", completed.AutoResolvedCount);
             activity?.SetTag("honua.version.applied_changes", completed.AppliedChanges);
-            activity?.SetTag("honua.version.outcome", "succeeded");
-            activity?.SetStatus(ActivityStatusCode.Ok);
+            activity?.SetTag("honua.version.outcome", completed.Status == VersionJobStatus.Succeeded ? "succeeded" : "failed");
+            activity?.SetStatus(completed.Status == VersionJobStatus.Succeeded ? ActivityStatusCode.Ok : ActivityStatusCode.Error);
             await store.SaveAsync(completed, CancellationToken.None).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
@@ -227,7 +240,7 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
     {
         var result = await manager.ReconcileAsync(job.VersionId, job.Policy, job.ConflictDetection, cancellationToken).ConfigureAwait(false);
         var conflictCount = result.Conflicts.IsDefaultOrEmpty ? 0 : result.Conflicts.Length;
-        return job with
+        var reconciled = job with
         {
             Status = VersionJobStatus.Succeeded,
             CompletedAt = DateTimeOffset.UtcNow,
@@ -236,6 +249,11 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
             CanPost = result.CanPost,
             ServerGeneration = result.NewCommonAncestorGeneration,
         };
+        // Use the same canonical post as the synchronous path. It revalidates DEFAULT
+        // drift under its own version lock, so an intervening edit cannot be overwritten.
+        return job.WithPost && result.CanPost && conflictCount == 0
+            ? await RunPostAsync(manager, reconciled, cancellationToken).ConfigureAwait(false)
+            : reconciled;
     }
 
     private static async Task<VersionJob> RunPostAsync(
@@ -246,12 +264,16 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
         var result = await manager.PostAsync(job.VersionId, cancellationToken).ConfigureAwait(false);
         return job with
         {
-            Status = VersionJobStatus.Succeeded,
+            Status = result.Posted ? VersionJobStatus.Succeeded : VersionJobStatus.Failed,
             CompletedAt = DateTimeOffset.UtcNow,
             AppliedChanges = result.AppliedChanges,
             ServerGeneration = result.ServerGeneration,
             BlockedByConflicts = result.BlockedByConflicts,
-            CanPost = !result.BlockedByConflicts,
+            CanPost = result.Posted && !result.BlockedByConflicts,
+            Posted = result.Posted,
+            ErrorMessage = result.Posted ? null : result.BlockedByConflicts
+                ? "The version has unresolved conflicts. Reconcile and resolve conflicts before posting."
+                : "The version could not be posted. Reconcile before retrying.",
         };
     }
 

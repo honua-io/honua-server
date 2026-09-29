@@ -75,6 +75,25 @@ Registered but **not implemented** (return a spec-shaped not-implemented error):
 
 Use the `@honua/sdk-js` FeatureLayer client and call `applyEdits({ adds: [{ geometry: { x: -122.4, y: 37.8 }, attributes: { name: "New point" } }] })`.
 
+### Preview version-management responses
+
+The version-management service returns an object of boolean capability flags.
+Only request options advertised by those flags are supported. Requests to create
+a version at a historical `moment`, or to post a subset using `rows`, return a
+not-implemented error before changing data or starting a job. They cannot silently
+create from the current state or post the whole branch.
+
+Asynchronous reconcile and post jobs report `Pending`, `InProgress`, `Completed`
+or `Failed`, with submission and update timestamps. Terminal responses include
+`success`; refused posts report failure and a structured error. A clean reconcile
+with `withPost=true` performs the canonical post operation and reports whether
+the edits reached DEFAULT through `didPost`. A successful reconcile alone does
+not prove that edits were posted.
+
+These protocol contracts do not establish ArcGIS Pro or ArcPy workspace
+compatibility. Consult the [client certification checklist](../../gis/CLIENT_CERTIFICATION_CHECKLIST.md)
+for native-client evidence and outstanding coverage.
+
 ## MapServer
 
 Base: `/rest/services/{serviceId}/MapServer` (service and `/{layerId}` metadata via GET or POST).

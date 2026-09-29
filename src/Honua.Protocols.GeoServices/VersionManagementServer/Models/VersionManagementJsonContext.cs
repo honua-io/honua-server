@@ -14,6 +14,8 @@ namespace Honua.Protocols.GeoServices.VersionManagementServer.Models;
     PropertyNameCaseInsensitive = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(VersionManagementServiceInfo))]
+[JsonSerializable(typeof(VersionManagementCapabilities))]
+[JsonSerializable(typeof(VersionManagementError))]
 [JsonSerializable(typeof(VersionInfo))]
 [JsonSerializable(typeof(VersionInfo[]))]
 [JsonSerializable(typeof(VersionListResponse))]
