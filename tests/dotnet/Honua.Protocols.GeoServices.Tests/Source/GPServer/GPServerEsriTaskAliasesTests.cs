@@ -159,10 +159,10 @@ public sealed class GPServerEsriTaskAliasesTests
     public void AliasContract_MatchesThePublishedParityAliasClaim()
     {
         // The GeoServices parity claim (docs/gis/data/geoservices-parity-judgment.json:
-        // "37 unambiguous aliases ... are published alongside canonical process IDs")
+        // "39 unambiguous aliases ... are published alongside canonical process IDs")
         // counts this contract. Changing one without the other is the drift #4781 filed:
         // update the judgement source and rerun scripts/generate-geoservices-parity.sh.
-        GPServerEsriTaskAliases.Contract.Should().HaveCount(37);
+        GPServerEsriTaskAliases.Contract.Should().HaveCount(39);
     }
 
     // Process IDs that carry an Esri alias, read from the real contract so this file can

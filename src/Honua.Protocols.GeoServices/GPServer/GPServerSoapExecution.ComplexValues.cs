@@ -408,7 +408,7 @@ internal static partial class GPServerSoapExecution
     private static XElement BuildComplexOutput(GPResultResponse output)
         => output.DataType switch
         {
-            "GPFeatureRecordSetLayer" or "GPRecordSet" => BuildRecordSetOutput(output),
+            "GPFeatureRecordSetLayer" or "GPRecordSet" => BuildRecordSetValue(output),
             "GPRasterDataLayer" or "GPRasterData" or "GPDataFile" => BuildDataReferenceOutput(output),
             _ => throw Invalid($"SOAP output type '{output.DataType}' is not supported.")
         };
@@ -429,7 +429,7 @@ internal static partial class GPServerSoapExecution
                 new XElement("URL", url.OriginalString)));
     }
 
-    private static XElement BuildRecordSetOutput(GPResultResponse output)
+    internal static XElement BuildRecordSetValue(GPResultResponse output)
     {
         if (output.Value is not JsonElement { ValueKind: JsonValueKind.Object } set ||
             !set.TryGetProperty("fields", out var fieldsJson) || fieldsJson.ValueKind != JsonValueKind.Array ||

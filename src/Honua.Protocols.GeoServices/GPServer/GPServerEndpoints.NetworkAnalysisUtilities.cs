@@ -76,7 +76,7 @@ internal static partial class GPServerEndpoints
         // ignored, matching the ArcGIS Enterprise reference response.
         parameters.TryGetValue("serviceName", out var serviceName);
         parameters.TryGetValue("toolName", out var toolName);
-        var document = NAServerMetadata.BuildGetToolInfoResult(serviceName, toolName, capabilities, configuration);
+        var document = NAServerMetadata.BuildGetToolInfoResult(serviceName, toolName, capabilities, configuration, dataset);
         return Results.Text(NAServerMetadata.Serialize(document, pretty), NetworkAnalysisUtilitiesContentType);
     }
 

@@ -337,6 +337,7 @@ internal static class GeoprocessingServiceCollectionExtensions
     /// </summary>
     private static void AddProcessExecutors(IServiceCollection services)
     {
+        Register<RoutingJobExecutor>(services);
         Register<GeometryBufferJobExecutor>(services);
         Register<GeometryClipJobExecutor>(services);
         Register<GeometryIntersectJobExecutor>(services);

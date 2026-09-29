@@ -78,7 +78,8 @@ public sealed class ProcessCatalogTests
         // + 1 delegated imagery/ML inference op (imagery.classify, cloud-backend
         // delegation with no bundled model runtime) added by #2241.
         // + 1 async batch enrichment op (enrichment.enrich) added by #2283.
-        all.Should().HaveCount(98);
+        // + 2 durable routing processes (routing.route, routing.service-area).
+        all.Should().HaveCount(100);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
 
