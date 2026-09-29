@@ -7,6 +7,8 @@ namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
 internal sealed partial class Wfs20Handler
 {
+    private static readonly string[] LegacyTransactionSummaryNames = ["totalInserted", "totalUpdated", "totalDeleted"];
+
     // QGIS uses WFS 1.0/1.1 Transaction even when the read connection negotiated 2.0.
     // Adapt only the wire representation; authorization and edits remain canonical.
     internal static XElement NormalizeLegacyTransaction(XElement root)
@@ -95,7 +97,7 @@ internal sealed partial class Wfs20Handler
         {
             if (canonical.Element(wfs20 + "TransactionSummary") is { } summary)
             {
-                var totals = new[] { "totalInserted", "totalUpdated", "totalDeleted" }
+                var totals = LegacyTransactionSummaryNames
                     .Select(name => new XElement(wfs20 + name, summary.Element(wfs20 + name)?.Value ?? "0"))
                     .ToArray();
                 summary.ReplaceNodes(totals);
