@@ -43,7 +43,8 @@ Every migration, including each newly added script, must also be hash-pinned in
 `certification/schema-migration-hashes.json`; extend that ledger when adding an
 expand migration. Keep existing hashes and script names immutable. A new ledger
 entry does not extend the frozen reader baseline or exempt a script from contract
-checks. New scripts classified as contracting fail the gate even with a compatibility
+checks. Hashes are uppercase SHA-256 over UTF-8 SQL with LF line endings.
+New scripts classified as contracting fail the gate even with a compatibility
 review annotation. A contract-phase release requires an explicit new rollback
 boundary and backup/restore plan; an annotation alone does not permit it in a
 rolling update.

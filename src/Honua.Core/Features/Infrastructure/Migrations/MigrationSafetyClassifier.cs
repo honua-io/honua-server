@@ -16,9 +16,9 @@ namespace Honua.Core.Features.Infrastructure.Migrations;
 /// during a rolling version step two server versions must coexist over one schema, so a
 /// migration that removes or narrows schema (a <em>contract</em>-phase change) must be
 /// deliberately reviewed and never ride along a rolling deploy. <see cref="Expand"/>
-/// changes are additive and always rollout-safe; contract changes are only safe when the
-/// author has declared why via the <c>-- honua:compatibility-review reason=&lt;...&gt;</c>
-/// marker.
+/// changes are additive. Contract changes require an explicit
+/// <c>-- honua:compatibility-review reason=&lt;...&gt;</c> marker or an exact frozen
+/// reader-baseline review record, followed by controlled contract-phase deployment.
 /// </remarks>
 public enum MigrationSafetyClassification
 {
@@ -110,12 +110,12 @@ public static class MigrationSafetyClassifier
 
     private static readonly (string RuleName, Regex Pattern)[] PotentiallyBreakingPatterns =
     [
-        CreatePattern("drop-column", @"\bALTER\s+TABLE\b[^;]*?\bDROP\s+COLUMN\b"),
-        CreatePattern("rename-column", @"\bALTER\s+TABLE\b[^;]*?\bRENAME\s+COLUMN\b"),
-        CreatePattern("rename-table", @"\bALTER\s+TABLE\b[^;]*?\bRENAME\s+TO\b"),
+        CreatePattern("drop-column", @"\bALTER\s+(?:FOREIGN\s+)?TABLE\b[^;]*?\bDROP\s+COLUMN\b"),
+        CreatePattern("rename-column", @"\bALTER\s+(?:FOREIGN\s+)?TABLE\b[^;]*?\bRENAME\s+COLUMN\b"),
+        CreatePattern("rename-table", @"\bALTER\s+(?:FOREIGN\s+)?TABLE\b[^;]*?\bRENAME\s+TO\b"),
         CreatePattern("rename-index", @"\bALTER\s+INDEX\b[^;]*?\bRENAME\s+TO\b"),
-        CreatePattern("alter-column-type", @"\bALTER\s+TABLE\b[^;]*?\bALTER\s+COLUMN\b[^;]*?\bTYPE\b"),
-        CreatePattern("set-not-null", @"\bALTER\s+TABLE\b[^;]*?\bALTER\s+COLUMN\b[^;]*?\bSET\s+NOT\s+NULL\b"),
+        CreatePattern("alter-column-type", @"\bALTER\s+(?:FOREIGN\s+)?TABLE\b[^;]*?\bALTER\s+COLUMN\b[^;]*?\bTYPE\b"),
+        CreatePattern("set-not-null", @"\bALTER\s+(?:FOREIGN\s+)?TABLE\b[^;]*?\bALTER\s+COLUMN\b[^;]*?\bSET\s+NOT\s+NULL\b"),
         CreatePattern("drop-table", @"\bDROP\s+TABLE\b"),
         CreatePattern("drop-schema", @"\bDROP\s+SCHEMA\b"),
         CreatePattern("drop-sequence", @"\bDROP\s+SEQUENCE\b"),
@@ -126,8 +126,8 @@ public static class MigrationSafetyClassifier
         CreatePattern("drop-policy", @"\bDROP\s+(?:POLICY|RULE)\b"),
         CreatePattern("drop-index", @"\bDROP\s+INDEX\b"),
         CreatePattern("drop-other-object", @"\bDROP\s+(?!COLUMN\b|TABLE\b|SCHEMA\b|SEQUENCE\b|(?:MATERIALIZED\s+)?VIEW\b|TYPE\b|DOMAIN\b|FUNCTION\b|PROCEDURE\b|ROUTINE\b|AGGREGATE\b|(?:EVENT\s+)?TRIGGER\b|POLICY\b|RULE\b|INDEX\b|NOT\s+NULL\b)[A-Z_""%]"),
-        CreatePattern("rename-object", @"\bALTER\s+(?:VIEW|MATERIALIZED\s+VIEW|TYPE|DOMAIN|FUNCTION|PROCEDURE|ROUTINE|AGGREGATE|TRIGGER|POLICY|RULE|SEQUENCE|SCHEMA)\b[^;]*?\bRENAME\b"),
-        CreatePattern("move-object-schema", @"\bALTER\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW|TYPE|DOMAIN|FUNCTION|PROCEDURE|ROUTINE|AGGREGATE|SEQUENCE)\b[^;]*?\bSET\s+SCHEMA\b"),
+        CreatePattern("rename-object", @"\bALTER\s+(?!(?:FOREIGN\s+)?TABLE\b|INDEX\b)\S[^;]*?\bRENAME\b"),
+        CreatePattern("move-object-schema", @"\bALTER\s+[^;]*?\bSET\s+SCHEMA\b"),
         CreatePattern("truncate-table", @"\bTRUNCATE\b"),
     ];
 

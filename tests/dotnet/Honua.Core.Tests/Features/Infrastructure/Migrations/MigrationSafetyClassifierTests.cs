@@ -23,6 +23,7 @@ public sealed class MigrationSafetyClassifierTests
     [InlineData("ALTER TABLE honua.layers ALTER COLUMN metadata TYPE TEXT;", "alter-column-type")]
     [InlineData("ALTER TABLE honua.layers ALTER COLUMN service_name SET NOT NULL;", "set-not-null")]
     [InlineData("DROP TABLE honua.layers;", "drop-table")]
+    [InlineData("ALTER FOREIGN TABLE honua.remote_layers DROP COLUMN name;", "drop-column")]
     [InlineData("DROP VIEW honua.layer_summary;", "drop-view")]
     [InlineData("DROP MATERIALIZED VIEW honua.cached_layers;", "drop-view")]
     [InlineData("DROP TYPE honua.layer_kind;", "drop-type")]
