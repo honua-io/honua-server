@@ -12,14 +12,10 @@ Generated base URLs retain the prefix. If `Public:BaseUrl` or `PUBLIC_BASE_URL` 
 configured, that explicit public URL remains authoritative; include `/arcgis` in
 it when that is the externally advertised mount point.
 
-An ArcPy standalone routing dictionary can therefore use:
-
-```python
-target = {
-    "url": "https://your-honua-host/arcgis/rest/services/geoprocessing/GPServer",
-    "utilityUrl": "https://your-honua-host/arcgis/rest/services/geoprocessing/GPServer",
-}
-```
+For ArcPy standalone routing discovery, the dictionary's `url` and `utilityUrl`
+can both address `/arcgis/rest/services/geoprocessing/GPServer` on the Honua host.
+The client can then discover the SOAP catalog at `/arcgis/services` and reach
+the utility tasks under the same mount point.
 
 The alias addresses client connection discovery, not missing routing tools.
 `arcpy.nax.Route` and `ServiceArea` still require the ready-to-use GP tool contracts
