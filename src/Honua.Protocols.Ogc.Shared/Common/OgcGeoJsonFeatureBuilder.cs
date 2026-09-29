@@ -18,7 +18,8 @@ internal static class OgcGeoJsonFeatureBuilder
         OgcFeaturesGeometryServices geometryServices,
         IReadOnlySet<string>? projectedProperties = null,
         Func<long, object?>? idFactory = null,
-        ImmutableArray<Link>? links = null)
+        ImmutableArray<Link>? links = null,
+        GeoJsonFeatureBaseBuilder.PreparedSchema? schema = null)
     {
         var geometry = geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
         return CreateCore(
@@ -27,8 +28,9 @@ internal static class OgcGeoJsonFeatureBuilder
                 resource,
                 new GeoJsonFeatureBuildOptions(
                     ProjectedProperties: projectedProperties,
-                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(resource),
-                    IdFactory: idFactory ?? (_ => OgcFeatureIdentifierResolver.GetPublicId(feature, resource)))),
+                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(resource, schema),
+                    IdFactory: idFactory ?? (_ => OgcFeatureIdentifierResolver.GetPublicId(feature, resource)),
+                    Schema: schema)),
             geometry,
             links);
     }
@@ -40,7 +42,8 @@ internal static class OgcGeoJsonFeatureBuilder
         OgcFeaturesGeometryServices geometryServices,
         IReadOnlySet<string>? projectedProperties = null,
         Func<long, object?>? idFactory = null,
-        ImmutableArray<Link>? links = null)
+        ImmutableArray<Link>? links = null,
+        GeoJsonFeatureBaseBuilder.PreparedSchema? schema = null)
     {
         var geometry = geometryServices.ConvertGeoJsonToSimpleGeometry(feature.GeometryGeoJson, axisOrder);
         return CreateCore(
@@ -49,15 +52,17 @@ internal static class OgcGeoJsonFeatureBuilder
                 resource,
                 new GeoJsonFeatureBuildOptions(
                     ProjectedProperties: projectedProperties,
-                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(resource),
-                    IdFactory: idFactory ?? (_ => OgcFeatureIdentifierResolver.GetPublicId(feature, resource)))),
+                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(resource, schema),
+                    IdFactory: idFactory ?? (_ => OgcFeatureIdentifierResolver.GetPublicId(feature, resource)),
+                    Schema: schema)),
             geometry,
             links);
     }
 
-    private static bool ShouldIncludePublicIdentifierProperty(MetadataV2Resource resource)
+    private static bool ShouldIncludePublicIdentifierProperty(
+        MetadataV2Resource resource, GeoJsonFeatureBaseBuilder.PreparedSchema? schema)
     {
-        var name = resource.FindPrimaryIdField()?.Name ?? "objectid";
+        var name = schema?.ObjectIdFieldName ?? resource.FindPrimaryIdField()?.Name ?? "objectid";
         return !name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase);
     }
 

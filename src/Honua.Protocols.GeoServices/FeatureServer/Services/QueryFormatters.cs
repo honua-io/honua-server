@@ -453,7 +453,7 @@ internal sealed class QueryFormatter : IQueryFormatter
     internal static GeoJsonFeatureBuildOptions CreateFeatureServerGeoJsonBuildOptions(
         MetadataV2Resource resource,
         IReadOnlySet<string>? projectedProperties)
-        => new(
+        => GeoJsonFeatureBaseBuilder.PrepareOptions(resource, new(
             ProjectedProperties: projectedProperties,
             IncludeObjectIdProperty: true,
             // GeoJSON properties must mirror the f=json attributes, which carry only the
@@ -461,7 +461,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             // two formats stay faithful (the OID is also exposed via the feature `id`).
             IncludeObjectIdAlias: false,
             IncludeAdditionalAttributes: true,
-            ResolveIdFromProperties: true);
+            ResolveIdFromProperties: true));
 
     internal static GeoServicesFieldInfo[] BuildQueryFields(
         MetadataV2Resource resource,

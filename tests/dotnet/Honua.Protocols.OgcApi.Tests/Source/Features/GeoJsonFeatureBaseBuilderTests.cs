@@ -15,11 +15,15 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 public sealed class GeoJsonFeatureBaseBuilderTests(ITestOutputHelper output)
 {
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public void Create_PreservesVisibilityProjectionDatesAndIdentifiers(bool additional, bool encoded)
+    [InlineData(false, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, false)]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, true)]
+    public void Create_PreservesVisibilityProjectionDatesAndIdentifiers(bool additional, bool encoded, bool prepared)
     {
         var resource = new MetadataV2Resource
         {
@@ -55,6 +59,11 @@ public sealed class GeoJsonFeatureBaseBuilderTests(ITestOutputHelper output)
             IncludeObjectIdProperty: true, IncludeObjectIdAlias: true,
             IncludeAdditionalAttributes: additional, ResolveIdFromProperties: true);
 
+        if (prepared)
+        {
+            options = GeoJsonFeatureBaseBuilder.PrepareOptions(resource, options);
+        }
+
         var result = encoded
             ? GeoJsonFeatureBaseBuilder.Create(EncodedGeoJsonFeature.Create(7, null, attributes), resource, options)
             : GeoJsonFeatureBaseBuilder.Create(Feature.Create(7, null, attributes), resource, options);
@@ -69,6 +78,57 @@ public sealed class GeoJsonFeatureBaseBuilderTests(ITestOutputHelper output)
         result.Properties["nested"].Should().BeSameAs(nested);
         result.Properties.Keys.Should().NotContain(["secret", "SECRET", "NAME", "unselected", "shape"]);
         result.Properties.ContainsKey("extra").Should().Be(additional);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Create_PreparedPageAvoidsRepeatedSchemaAllocation(bool additional)
+    {
+        var fields = Enumerable.Range(0, 16)
+            .Select(index => new MetadataV2Field { Name = $"field{index}", Type = MetadataV2FieldType.String })
+            .ToArray();
+        var resource = new MetadataV2Resource { SchemaFields = fields };
+        var feature = Feature.Create(1, null,
+            fields.ToImmutableDictionary(field => field.Name, _ => (object?)"value"));
+        var options = new GeoJsonFeatureBuildOptions(IncludeAdditionalAttributes: additional);
+
+        long Measure(bool prepared)
+        {
+            var start = GC.GetAllocatedBytesForCurrentThread();
+            var responseOptions = prepared ? GeoJsonFeatureBaseBuilder.PrepareOptions(resource, options) : options;
+            for (var index = 0; index < 100; index++)
+            {
+                var result = GeoJsonFeatureBaseBuilder.Create(feature, resource, responseOptions);
+                GC.KeepAlive(result.Properties);
+            }
+            return GC.GetAllocatedBytesForCurrentThread() - start;
+        }
+
+        _ = Measure(false);
+        _ = Measure(true);
+        var ordinary = Measure(false);
+        var prepared = Measure(true);
+        output.WriteLine($"100-feature page bytes: ordinary={ordinary}; prepared={prepared}; additional={additional}");
+        prepared.Should().BeLessThan((long)(ordinary * 0.85),
+            "a response should prepare its field metadata once, including preparation in the measured allocation");
+    }
+
+    [Fact]
+    public void Create_PreparedOptionsRejectDifferentResource()
+    {
+        var resource = new MetadataV2Resource
+        {
+            SchemaFields = [new() { Name = "secret", Type = MetadataV2FieldType.String }]
+        };
+        var restricted = resource with
+        {
+            SchemaFields = [new() { Name = "secret", Type = MetadataV2FieldType.String, Hidden = true }]
+        };
+        var options = GeoJsonFeatureBaseBuilder.PrepareOptions(resource);
+        var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty.Add("secret", "private"));
+        var call = () => GeoJsonFeatureBaseBuilder.Create(feature, restricted, options);
+        call.Should().Throw<ArgumentException>();
     }
 
     [Fact]

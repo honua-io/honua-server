@@ -16,9 +16,10 @@ internal readonly record struct GeoJsonFeatureBuildOptions(
     bool IncludeObjectIdProperty = false,
     bool IncludeObjectIdAlias = false,
     bool IncludeAdditionalAttributes = false,
-    bool ResolveIdFromProperties = false);
+    bool ResolveIdFromProperties = false,
+    GeoJsonFeatureBaseBuilder.PreparedSchema? Schema = null);
 
-internal static class GeoJsonFeatureBaseBuilder
+internal static partial class GeoJsonFeatureBaseBuilder
 {
     internal static GeoJsonFeatureBase Create(
         Feature feature,
@@ -49,8 +50,14 @@ internal static class GeoJsonFeatureBaseBuilder
         bool hasGeometry,
         GeoJsonFeatureBuildOptions options)
     {
-        var objectIdFieldName = ResolveObjectIdFieldName(resource);
-        var properties = BuildProperties(featureId, attributes, resource, objectIdFieldName, options);
+        var schema = options.Schema ?? new PreparedSchema(resource, options.IncludeAdditionalAttributes);
+        if (!ReferenceEquals(schema.Resource, resource) ||
+            schema.IncludeAdditionalAttributes != options.IncludeAdditionalAttributes)
+        {
+            throw new ArgumentException("Prepared GeoJSON fields must belong to this resource and attribute policy.", nameof(options));
+        }
+        var objectIdFieldName = schema.ObjectIdFieldName;
+        var properties = BuildProperties(featureId, attributes, schema, objectIdFieldName, options);
         var id = options.IdFactory?.Invoke(featureId)
             ?? (options.ResolveIdFromProperties
                 ? ResolveId(properties, objectIdFieldName, featureId)
@@ -62,7 +69,7 @@ internal static class GeoJsonFeatureBaseBuilder
     private static Dictionary<string, object?> BuildProperties(
         long featureId,
         IReadOnlyDictionary<string, object?> attributes,
-        MetadataV2Resource resource,
+        PreparedSchema schema,
         string objectIdFieldName,
         GeoJsonFeatureBuildOptions options)
     {
@@ -71,45 +78,13 @@ internal static class GeoJsonFeatureBaseBuilder
         var shouldProjectAll = projectedProperties is null;
         var shouldIncludeObjectId = options.IncludeObjectIdProperty;
 
-        // These sets only classify attributes outside the declared-field pass.
-        var declaredAttributeFields = options.IncludeAdditionalAttributes
-            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            : null;
-        var visibleAttributeFields = options.IncludeAdditionalAttributes
-            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            : null;
-        // Date/datetime fields must be emitted as RFC 3339 strings to honor the
-        // GeoJSON/OGC contract (and the collection's queryables schema). Stored
-        // values arrive in different CLR shapes depending on the write path
-        // (epoch-millisecond long from Esri applyEdits vs ISO string from seeds),
-        // so map field name -> whether it is a date-only field and coerce on write.
-        var dateOnlyFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var dateTimeFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var field in resource.SchemaFields.Where(field => !IsGeometryField(field)))
+        var declaredAttributeFields = schema.DeclaredAttributeFields;
+        var visibleAttributeFields = schema.VisibleAttributeFields;
+        var dateOnlyFields = schema.DateOnlyFields;
+        var dateTimeFields = schema.DateTimeFields;
+
+        foreach (var field in schema.VisibleFields)
         {
-            declaredAttributeFields?.Add(field.Name);
-            if (!field.Hidden)
-            {
-                visibleAttributeFields?.Add(field.Name);
-            }
-
-            if (field.Type == MetadataV2FieldType.Date)
-            {
-                dateOnlyFields.Add(field.Name);
-            }
-            else if (field.Type == MetadataV2FieldType.DateTime)
-            {
-                dateTimeFields.Add(field.Name);
-            }
-        }
-
-        foreach (var field in resource.SchemaFields.Where(static field => !field.Hidden))
-        {
-            if (IsGeometryField(field))
-            {
-                continue;
-            }
-
             var fieldName = field.Name;
             var isObjectIdField = fieldName.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase);
 
