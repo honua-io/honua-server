@@ -128,9 +128,12 @@ CUSTOMER_READINESS_GOAL = (
 COVERAGE_GAPS = {
     "source-inventory": "Reconcile both directions: 118 capability keys and 1,306 server surfaces; the QGIS base has 117 and 1,270, with an overlay at 1,271.",
     "native-case-crosswalk": "Map the 367 Esri operation/parameter cases and 6,767 QGIS review obligations to native child cases, shared witnesses or evidenced dispositions. Inventory counts are not test counts.",
-    "authentication": "Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows.",
+    "authentication": "Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows. Preserve default WFS failures, cache-disabled provider reads, Browser catalog transitions and protected-first GetFeature denial as distinct PyQGIS diagnostics. Disabling both URL-only memory caches before the first request restores catalog recovery on both installed versions; catalog visibility does not prove a denied data request. Complete retained-layer reload, other auth methods, least-privilege roles, dependent resources and authenticated project reopen on the shipping candidate; no N/A or shipping promotion.",
     "workflow-variants": "Bind schema/paging, edits/relationships/attachments, offline/versioning, imagery/tiles, processing parameters, project reopen and recovery variants to executable cases and independent oracles.",
-    "versions-and-licenses": "Retain QGIS 4.2.2 as a separate unresolved review target; bind installed client builds, license levels, extensions and portal privileges before accepting a licensed skip.",
+    "native-editing": "Map single-feature, bulk and multi-layer edits to independent inputs, SQL persistence, native readback, denied commits, retained buffers and recovery. Final Debug/JIT PyQGIS diagnostics at server 64066504d2e5578ec781ef1c2722a6696a7e1084 pass 9/9 FeatureServer and 9/9 OAPIF per installed version; WFS passes 8/9 per version and retains empty-string-to-null readback failures. Separate default WFS batch diagnostics pass 5/5 per version: two-feature insert/delete, storage-rejected insert/update, atomic SQL rollback and correction/retry in the same retained buffer. These are individual single-layer requests, not a mixed editing session or a multi-layer transaction. Complete best-effort/unknown-commit, mixed-stage and concurrent-edit recovery, other geometry/CRS, scoped roles, relationships/attachments and project-reopen variants, plus the other native lanes and the frozen shipping replay. Do not count unit or historical receipt validation as fresh native acceptance.",
+    "vector-data-fidelity": "Bind fractional timestamps, empty strings versus null, provider-specific IDs/CRS, all page contents, export and cold project reopen to native children on both QGIS versions. Replay the local GeoJSON timestamp fix on the shipping candidate. Both installed GML decoders turn seven independent empty-string encodings into null while five controls match; this is decoder evidence, not a live workflow pass. Preserve the WFS data-loss failure and original oracle, review other installed native entrypoints and customer workarounds, and do not award whole-client/protocol N/A.",
+    "versions-and-licenses": "Retain QGIS 4.2.2 as a separate unresolved review target. The updated installation reports ArcPy 3.7.2/build1901 and ArcGISPro.exe 3.7.2.1904, Named User/ArcView. Treat that as a new target: keep 3.7.1 receipts historical, and bind operation-specific licenses, extensions and portal privileges before accepting a licensed skip.",
+    "native-versioning": "Keep the preview branch profile separate. The current 367-case Esri inventory has no dedicated VersionManagementServer manifest; reconcile its native workflows and REST operations before claiming that inventory complete. On server fa2c29dc4 with the experimental branch flag and Enterprise development entitlements, ArcPy 3.7.2 recognizes the remote workspace through root and /arcgis URLs, but supplied-token portal sign-in, branch-layer recognition, ListVersions and CreateVersion fail. An independent username/password replay on ba7f4ba96 fails during portal discovery before requesting token issuance, with the same later native failures. Preserve both authentication failures and ERROR 000301 as repair work; six passing REST/SQL checks on fa2c29dc4 and 57 regression tests on ba7f4ba96 do not certify native workflows or prove a license exclusion.",
     "maturity-and-profile": "Classify source maturity and selected configuration independently of client support; retain lower-priority preview/experimental work and explicit priorities 5238, 5192 and 5036.",
     "exclusion-review": "Review operation-specific N/A and skip evidence. Preserve genuine exclusions; repair harness failures. A missing fixture, disabled flag or failed connection alone proves no server implementation gap.",
     "candidate-and-receipts": "Join native cases to hashed receipts, independent expected results and the same frozen NativeAOT/Production candidate. The historical checklist string validator is not this acceptance join.",
@@ -164,9 +167,140 @@ DISPOSITION_RULES = {
 }
 
 # Manual review identifies native paths and limitations, never a Honua pass.
-# Latest Esri documentation was reviewed on this date and still needs binding to
-# the installed 3.7.1.1904 client. QGIS documentation is versioned at 3.44.
+# Latest Esri documentation still needs binding to the installed client.
+# Each QGIS review records its documentation version or installed source revision.
 MANUAL_REVIEWS = [
+    {
+        "id": "pro-372-native-branch-workspace", "reviewed_at": "2026-09-29",
+        "documentation_version": "ArcGIS Pro latest; observed ArcPy 3.7.2/build1901 and executable 3.7.2.1904",
+        "url": "https://doc.esri.com/en/arcgis-pro/latest/tool-reference/data-management/create-version.html",
+        "related_sources": [
+            "https://doc.esri.com/en/arcgis-pro/latest/arcpy/functions/signintoportal.html",
+            "https://doc.esri.com/en/arcgis-pro/latest/arcpy/functions/workspace-properties.html",
+            "https://doc.esri.com/en/arcgis-pro/latest/arcpy/functions/dataset-properties.html",
+            "https://doc.esri.com/en/arcgis-pro/latest/arcpy/data-access/listversions.html",
+            "https://github.com/honua-io/honua-esri-compat/blob/ac7c5b624cdb3c27b6cdd73c3f72ef8cad8ba563/docs/reports/native-version-workspace-2026-09-29.md",
+        ],
+        "protocols": ["featureserver", "portal-sharing", "versionmanagementserver"],
+        "lanes": ["pro-ui", "arcpy"],
+        "finding": "A fresh signed-in Named User/Basic installation is available. Each of the independent HTTPS supplied-token and native username/password diagnostics records two workspace-description passes and eight failed native operations across root and alias. Server metadata advertises branch layers, yet native Describe reports isBranchVersioned=false; CreateVersion returns ERROR 000301. The supplied-token request hits a referer-binding mismatch. Username/password sign-in fails during discovery: /arcgisuris.xml returns 404 and no token-issuance request follows. This trace does not prove that the missing XML route is the cause. Neither run establishes a license exclusion or native UI acceptance.",
+        "next_check": "Isolate portal discovery and branch recognition with vendor documentation, positive controls, exact metadata and request traces. Complete operation-specific entitlements, VMS inventory/case mapping, native UI and frozen NativeAOT/Production replay. Keep #5036 open and preserve both authentication variants' failed observations and any later successful configuration.",
+    },
+    {
+        "id": "qgis-native-wfs-batch-transactions", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS API commitChanges contract; installed QGIS 3.44.14 revision 1a4cda5f262 and 4.2.2 revision f1431de8676; OGC WFS 1.1 clause 12",
+        "url": "https://api.qgis.org/api/classQgsVectorLayer.html",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgswfsprovider.cpp",
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsprovider.cpp",
+            "https://docs.ogc.org/is/04-094r1/04-094r1.html",
+            "https://github.com/honua-io/honua-client-compat/blob/c4caed8e49505785f9b359e58fd704731309be44/docs/reports/pyqgis-native-edit-batches-2026-09-29.json",
+        ],
+        "protocols": ["wfs"], "lanes": ["pyqgis"],
+        "finding": "QGIS preserves failed edit buffers for correction but commits distinct operation stages. Fresh native runs on both installed versions pass five default single-layer WFS batch cases each against unchanged server assemblies built from 64066504. A named database constraint rejects one member of a two-feature insert or update after ordinary request validation. Each native request contains both records, reports failure, retains both edits and leaves every SQL row unchanged. Correcting that buffer commits the independently specified values once; fresh native readback verifies IDs, attributes and coordinates. Two-feature add/delete also pass. OGC WFS 1.1 separately describes partial-failure TransactionResults; positive-count client success checks still require a best-effort audit.",
+        "next_check": "The exact batch oracle, storage controls and per-child receipts are published in client-compat PR #2, merged as c4caed8 with both contract workflows green. Revalidate best-effort/unknown outcomes, mixed save stages, multiple layers and concurrent changes. The older empty-string and default cache failures stay open. Merge the server fixes and replay on the frozen NativeAOT/Production candidate with native UI and the remaining clients; award no shipping acceptance from this Debug/JIT run.",
+    },
+    {
+        "id": "qgis-34414-native-edit-contracts", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 3.44.14, installed source revision 1a4cda5f262",
+        "url": "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/arcgisrest/qgsafsshareddata.cpp",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgswfsprovider.cpp",
+            "https://www.rfc-editor.org/info/rfc7396/",
+            "https://github.com/honua-io/honua-client-compat/blob/c4caed8e49505785f9b359e58fd704731309be44/docs/reports/pyqgis-native-edits-2026-09-29.json",
+        ],
+        "protocols": ["featureserver", "wfs", "ogc-api-features"], "lanes": ["pyqgis"],
+        "finding": "AFS postData treats a successful HTTP exchange as success; top-level HTTP-200 error envelopes can leave empty mutation result lists and falsely successful saves. Actual native denied edits previously discarded buffers. WFS sends a 1.0.0 transaction even from a 2.0.0 read connection. The repaired server returns write HTTP failures and adapts legacy transactions through the canonical pipeline. Final native edits pass 9/9 AFS, 9/9 OAPIF and 8/9 WFS with SQL persistence and same-buffer recovery. WFS empty string is stored intact but read as null.",
+        "next_check": "Preserve the failed fidelity case and exact Debug/JIT receipts. Complete bulk/atomic/partial/unknown-commit, other geometry and authentication variants; validate UI and shipping replay. The client diagnostic index and harness fixes are merged in PR #2; the server fixes still require delivery and revalidation. No native UI or shipping passes are awarded.",
+    },
+    {
+        "id": "qgis-422-native-edit-contracts", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 4.2.2, installed source revision f1431de8676",
+        "url": "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsprovider.cpp#L1600",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsprovider.cpp#L1642",
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/core/qgsgml.cpp",
+            "https://github.com/honua-io/honua-client-compat/blob/c4caed8e49505785f9b359e58fd704731309be44/docs/reports/pyqgis-native-edits-2026-09-29.json",
+        ],
+        "protocols": ["featureserver", "wfs", "ogc-api-features"], "lanes": ["pyqgis"],
+        "finding": "Unlike the installed 3.44 provider, this WFS provider sends 1.1.0 transactions for a 2.0.0 read connection and uses geographic CRS axis order. Its transactionSuccess checks positive summary totals; it does not interpret Honua partial-failure extensions. Separate native execution verifies corrected 2D point coordinates, persistent edits, explicit rejection and retained-buffer recovery: 9/9 AFS, 9/9 OAPIF, 8/9 WFS. The remaining WFS empty-string/null failure has exact expected/observed values and unchanged SQL evidence.",
+        "next_check": "Keep best-effort/partial-result behavior outside the demonstrated single-feature profile until independently tested. Retain the empty-string failure, broaden geometry/CRS and authentication coverage, and replay native UI and Python workflows against the frozen shipping candidate. Source adaptation and unit tests cannot replace native passes.",
+    },
+    {
+        "id": "qgis-34414-wfs-cache-and-gml", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 3.44.14, installed source revision 1a4cda5f262",
+        "url": "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgsbasenetworkrequest.cpp#L84",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgswfsdataitems.cpp#L103",
+            "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgswfsprovider.cpp#L2754",
+            "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/core/qgsgml.cpp",
+            "https://github.com/qgis/QGIS/blob/1a4cda5f262/tests/src/core/testqgsgml.cpp",
+            "https://api.qgis.org/api/3.44/classQgsDataItem.html",
+        ],
+        "protocols": ["wfs"], "lanes": ["pyqgis"],
+        "finding": "Browser discovery uses a second URL-only response cache in addition to the parsed provider capabilities cache. Both use qgis/wfsMemoryCacheAllowed on insertion, after their cache lookup. A new profile/process with the setting false restores all six public-first and seven protected-first catalog transitions; default runs retain old catalogs without new requests. Protected-first provider data requests separately prove AccessDenied. Native QgsGml returns null for seven empty-string encodings while explicit nil, absent, whitespace, Unicode and escaped-text controls match.",
+        "next_check": "Preserve separate operation scopes and default failures. Validate retained-layer reload, native UI settings/recovery, other installed WFS entrypoints and empty-string-preserving alternatives against original inputs. Repeat on the frozen shipping candidate; these are Debug/JIT diagnostics with zero UI/shipping acceptance.",
+    },
+    {
+        "id": "qgis-422-wfs-cache-and-gml", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 4.2.2, installed source revision f1431de8676",
+        "url": "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgsbasenetworkrequest.cpp#L89",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsdataitems.cpp#L114",
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsprovider.cpp#L1947",
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/core/qgsgml.cpp",
+        ],
+        "protocols": ["wfs"], "lanes": ["pyqgis"],
+        "finding": "This installed version independently reproduces both URL-only cache paths and all seven empty-string-to-null decoder failures. Cache-disabled Browser discovery passes six public-first and seven protected-first transitions with fresh native GetCapabilities exchanges. Cache-disabled provider loading recovers valid reads, but hidden discovery prevents those invalid loads from proving an actual data-request denial; the separate protected-first default-cache control supplies that narrower proof.",
+        "next_check": "Retain version-specific source hashes, settings, native traces and terminal exits. Review the remaining reload/fidelity/UI paths, and repeat the declared configuration against the same shipping candidate used by the other lanes. No whole-client/protocol exclusion follows from these failures.",
+    },
+    {
+        "id": "qgis-34414-auth-recovery", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 3.44.14, installed source revision 1a4cda5f262",
+        "url": "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgswfsprovider.cpp#L2754",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/core/providers/arcgis/qgsarcgisrestquery.cpp#L213",
+            "https://docs.qgis.org/3.44/en/docs/pyqgis_developer_cookbook/authentication.html",
+        ],
+        "protocols": ["featureserver", "ogc-api-features", "wfs"], "lanes": ["pyqgis"],
+        "finding": "Stock APIHeader can propagate X-API-Key through these native provider paths. AFS parses HTTP-200 error envelopes into provider errors. WFS caches capabilities by request URL for 60 seconds without credential identity; anonymous-first discovery blocks a subsequent protected load. A valid cached WFS schema can remain valid while actual GetFeature requests receive AccessDenied and return no data.",
+        "next_check": "Retain exact native requests, header classifications, provider errors and independent protected payloads. Keep public-first and protected-first results separate, validate a supported cache-recovery configuration without suppressing the failed default, and complete token/OAuth/scoped-user and project-persistence variants on the shipping candidate.",
+    },
+    {
+        "id": "qgis-422-auth-recovery", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 4.2.2, installed source revision f1431de8676",
+        "url": "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsprovider.cpp#L1947",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/core/providers/arcgis/qgsarcgisrestquery.cpp",
+        ],
+        "protocols": ["featureserver", "ogc-api-features", "wfs"], "lanes": ["pyqgis"],
+        "finding": "The installed 4.2.2 source has the same URL-only WFS capabilities cache. Its separate native runs reproduce the public-first recovery failure, a successful cold authorized load, and explicit denied GetFeature responses despite a valid schema. Layer validity is not a data-authorization assertion.",
+        "next_check": "Preserve this installed version's own profiles, traces and process exits. Keep the recovery failure open, review native configuration and UI behavior, and replay all required authentication variants on the same shipping candidate used by the other lanes.",
+    },
+    {
+        "id": "qgis-34414-vector-identity", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 3.44.14, installed source revision 1a4cda5f262",
+        "url": "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/oapif/qgsoapifprovider.cpp#L716",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/core/qgsgml.cpp#L1492",
+            "https://docs.ogc.org/is/17-069r4/17-069r4.html",
+        ],
+        "protocols": ["ogc-api-features", "wfs"], "lanes": ["pyqgis"],
+        "finding": "The OAPIF provider maps layer-local FIDs to separate remote IDs; an Esri objectid property is not a universal native identity contract. OGC Core defaults to CRS84 longitude/latitude. Exact installed-revision GML source and observed empty-string/null conversion are retained for review; this is not an approved exclusion.",
+        "next_check": "Use independent fixture keys for payload comparisons and native FID selection; test remote-ID edits separately. Preserve empty-string/null assertions while reviewing valid GML encodings and supported native alternatives. Revalidate every required child against the frozen shipping candidate.",
+    },
+    {
+        "id": "qgis-422-vector-identity", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 4.2.2, installed source revision f1431de8676",
+        "url": "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/oapif/qgsoapifprovider.cpp#L816",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/core/qgsgml.cpp#L1434",
+            "https://docs.ogc.org/is/17-069r4/17-069r4.html",
+        ],
+        "protocols": ["ogc-api-features", "wfs"], "lanes": ["pyqgis"],
+        "finding": "This installed revision independently maintains a native-FID/remote-ID mapping and exposes default OAPIF geometry as CRS84. The same empty-string/null failure was observed through its stock WFS provider; the 3.44 result must not substitute for this version's evidence.",
+        "next_check": "Keep the 4.2.2 execution/profile binding separate. Complete WFS decoder/workaround review, remote-ID editing and native UI coverage, then replay the required cases on the same shipping candidate as the other clients.",
+    },
     {
         "id": "qgis-service-paths", "reviewed_at": "2026-09-28",
         "documentation_version": "QGIS 3.44",
@@ -205,7 +339,7 @@ MANUAL_REVIEWS = [
 
 def scope_contract() -> dict:
     return {
-        "revision": "2026-09-28.1",
+        "revision": "2026-09-29.7",
         "authority": AUTHORITY_URL,
         "objective": CUSTOMER_READINESS_GOAL,
         "audit": AUDIT_URL,
@@ -227,7 +361,7 @@ def scope_contract() -> dict:
             "Published support table names tested versions, licenses, enabled features, results, evidenced exclusions, licensed skips and known limitations; preview readiness is separately reported.",
         ],
         "explicit_priority_issues": [5238, 5192, 5036],
-        "additional_version_reviews": ["QGIS 4.2.2 UI", "PyQGIS 4.2.2"],
+        "additional_version_reviews": ["QGIS 4.2.2 UI", "PyQGIS 4.2.2", "ArcGIS Pro 3.7.2.1904 UI", "ArcPy 3.7.2/build1901 (Pro executable 3.7.2.1904)"],
         "reviewed_maturity": {
             "source": "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs",
             "candidate_revision": "ab2e3ed3d58196658fbd98567de65eec4db7dc64",
@@ -277,10 +411,10 @@ NEEDS_CITATION = {"n/a-no-client", "n/a-superseded", "blocked"}
 # Per lane, because the lanes do not all have access to the same precision. The
 # arcpy lane records the version arcpy itself reports, and
 # arcpy.GetInstallInfo()["Version"] returns the three-part product version
-# "3.7.1" with no build number - the probes have no way to write "3.7.1.1904".
-# Demanding the four-part token there would not tighten the gate, it would only
-# force the evidence to be rewritten into something the client never said, which
-# is exactly the relabelling AGENTS.md forbids. The seat is the same one the
+# "3.7.1" with no desktop file-version resource. Those historical probes did
+# not capture the executable's independent four-part version; newer probes do.
+# Do not rewrite old observations to add evidence they did not retain. The seat
+# for those historical receipts is the same one the
 # pro-ui lane drives: a single ArcGIS Pro 3.7.1.1904 install on the certification
 # runner, so "3.7.1" and "3.7.1.1904" name one build here.
 #
@@ -2005,7 +2139,11 @@ def main() -> int:
         print(f"wrote {DOC_PATH.relative_to(REPO_ROOT)}")
 
     overall = summary["overall"]
-    print(f"OK  {len(rows)} operations x {len(LANES)} lanes = {overall['cells']} cells")
+    print(f"OK historical projection: {len(rows)} operations x {len(LANES)} lanes = {overall['cells']} cells")
+    scope = document["scope_contract"]
+    print(f"    certification={scope['certification_verdict']}  "
+          f"coverage_complete={scope['coverage_complete']}  "
+          f"accepted_shipping_passes={scope['accepted_shipping_passes']}")
     print(f"    closed {overall['closed']}  open {overall['open']}")
     for lane in LANES:
         states = summary["per_lane"][lane]
