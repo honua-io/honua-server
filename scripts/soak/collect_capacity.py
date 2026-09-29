@@ -42,7 +42,11 @@ def in_band_error(body: bytes, content_type: str) -> bool:
         document = json.loads(body)
     except (ValueError, UnicodeError):
         return True
-    return isinstance(document, dict) and (bool(document.get("error")) or str(document.get("type", "")).startswith("https://httpstatuses.com/"))
+    return isinstance(document, dict) and (
+        bool(document.get("error"))
+        or document.get("jobStatus") in {"esriJobFailed", "esriJobTimedOut"}
+        or str(document.get("type", "")).startswith("https://httpstatuses.com/")
+    )
 
 
 class RequestLedger:
@@ -118,6 +122,10 @@ def protocol(path):
         return "OGC-API-Tiles"
     if path.startswith("/ogc"):
         return "OGC-API-Features"
+    if "/GPServer" in path:
+        return "GPServer"
+    if path.startswith(("/api/", "/monitoring/")):
+        return "admin"
     return "health"
 
 
@@ -160,6 +168,29 @@ async def observe_request(session, url, ledger, path):
     except (aiohttp.ClientError, TimeoutError):
         pass  # Transport failures are counted 599s, never omitted observations.
     ledger.record(now(), math.ceil((time.perf_counter()-started)*1000), status, error, protocol(path))
+
+
+class RecordingTransport(httpx.AsyncBaseTransport):
+    """Include workload probes and GP control requests in the same population."""
+
+    def __init__(self, ledger):
+        self.ledger = ledger
+        self.transport = httpx.AsyncHTTPTransport()
+
+    async def handle_async_request(self, request):
+        started = time.perf_counter()
+        status, error = 599, True
+        try:
+            response = await self.transport.handle_async_request(request)
+            body = await response.aread()
+            status = response.status_code
+            error = in_band_error(body, response.headers.get("Content-Type", ""))
+            return response
+        finally:
+            self.ledger.record(now(), math.ceil((time.perf_counter()-started)*1000), status, error, protocol(request.url.path))
+
+    async def aclose(self):
+        await self.transport.aclose()
 
 
 class Collector:
@@ -212,7 +243,8 @@ class Collector:
             await self.driver.observe_deployment(client)
             dimensions["tenants"] = 1 if self.driver.deployment["tenantSource"] == "Default" and not self.driver._capabilities.get("admin.multi-tenancy", {}).get("available") else None
             catalog = await self.driver._get_json(client, "/rest/services?f=json")
-            dimensions["services"] = len(catalog["services"])
+            # Multiple protocol adapters may list the same logical service.
+            dimensions["services"] = len({service["name"] for service in catalog["services"]})
             service = await self.driver._get_json(client, "/rest/services/test/FeatureServer?f=json")
             layers = service["layers"]
             dimensions["layersPerService"] = len(layers)
@@ -242,7 +274,8 @@ class Collector:
         try:
             inspection = json.loads(await command("docker", "inspect", "honua-capacity-soak-honua-1"))[0]
             configured = dict(item.split("=", 1) for item in inspection["Config"]["Env"] if "=" in item)
-            dimensions["gpWorkers"] = int(configured["ExecutionAdmission__MaxConcurrentJobsGlobal"])
+            configured_workers = int(configured["ExecutionAdmission__MaxConcurrentJobsGlobal"])
+            dimensions["gpWorkers"] = gp["executing"] if gp else None
             # GP workers share the server container's CPU allocation. Include all
             # work on that CPU resource, rather than treating a busy single slot
             # as 100% CPU saturation regardless of the work it is doing.
@@ -250,7 +283,7 @@ class Collector:
             cpu_count = int(await command("docker", "info", "--format", "{{.NCPU}}"))
             metric["worker"] = float(cpu_percent.rstrip("%"))/(100*cpu_count)
             proofs["workerCpu"] = dict(percent=float(cpu_percent.rstrip("%")), allocatedCpus=cpu_count)
-            proofs["workerConfiguration"] = dimensions["gpWorkers"]
+            proofs["workerConfiguration"] = configured_workers
             redis = await command("docker", "exec", "honua-capacity-soak-redis-1", "redis-cli", "INFO", "clients")
             clients = dict(line.split(":", 1) for line in redis.splitlines() if ":" in line)
             maximum = (await command("docker", "exec", "honua-capacity-soak-redis-1", "redis-cli", "--raw", "CONFIG", "GET", "maxclients")).splitlines()[-1]
@@ -303,7 +336,7 @@ class Collector:
         replica = json.loads(await command("docker", "inspect", "honua-capacity-soak-honua-1"))[0]
         self.ledger.incarnation = replica["Id"]
         headers = {"X-API-Key": self.args.admin_key}
-        async with httpx.AsyncClient(timeout=10, headers=headers) as client, aiohttp.ClientSession(headers=headers, timeout=aiohttp.ClientTimeout(total=30), connector=aiohttp.TCPConnector(limit=256)) as session:
+        async with httpx.AsyncClient(timeout=10, headers=headers, transport=RecordingTransport(self.ledger)) as client, aiohttp.ClientSession(headers=headers, timeout=aiohttp.ClientTimeout(total=30), connector=aiohttp.TCPConnector(limit=256)) as session:
             await self.driver.observe_deployment(client)
             assert_candidate(self.args.candidate_sha, os.environ["GITHUB_SHA"], self.driver.deployment["observedRevision"])
             await self.establish_payload(client)
@@ -343,7 +376,7 @@ class Collector:
                     observedRevision=self.driver.deployment["observedRevision"], producer=producer,
                     topology=dict(replicas=[dict(id="honua", failureDomain="local-docker-host", imageDigest=self.args.image_digest)],
                                   database=dict(kind="postgres", failureDomain="local-docker-host"), redis=dict(kind="redis", failureDomain="local-docker-host"),
-                                  gpWorkers=self.workloads[0]["dimensions"]["gpWorkers"]),
+                                  gpWorkers=self.workloads[0]["proofs"].get("workerConfiguration")),
                     window=dict(startedAt=iso(self.ledger.started), endedAt=iso(self.ledger.ended)),
                     samplingFailures=self.failures, populationMode="complete-disjoint-intervals", samplePeriodSeconds=60,
                     requestCount=self.ledger.observed_count, requests=self.ledger.intervals(),

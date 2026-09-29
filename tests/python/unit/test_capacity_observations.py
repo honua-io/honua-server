@@ -186,6 +186,8 @@ def test_real_http_outcomes_include_in_band_errors_and_timeouts():
                 await asyncio.sleep(.1)
             if kind == "malformed":
                 return web.Response(text="{", content_type="application/json")
+            if kind == "gpfailed":
+                return web.json_response(dict(jobStatus="esriJobFailed"))
             return web.json_response({"error": {"code": 400}} if kind == "inband" else {"features": []}, status=500 if kind == "server" else 200)
         app = web.Application()
         app.router.add_get("/{kind}", respond)
@@ -208,6 +210,15 @@ def test_real_http_outcomes_include_in_band_errors_and_timeouts():
             assert ledger.observed_count == 5
             assert all(b["durationMs"] >= 0 and b["protocol"] == "FeatureServer" for b in buckets)
             assert next(b["durationMs"] for b in buckets if b["httpStatus"] == 599) >= 25
+            # The GP/probe client must join the same population, including a
+            # semantic job failure carried by HTTP 200.
+            ledger.ended = None
+            async with httpx.AsyncClient(transport=collector_module.RecordingTransport(ledger)) as client:
+                response = await client.get(f"http://127.0.0.1:{port}/gpfailed")
+                assert response.json() == dict(jobStatus="esriJobFailed")
+            ledger.ended = now()
+            assert ledger.observed_count == 6
+            assert sum(b["count"] for row in ledger.intervals() for b in row["buckets"] if b["inBandError"]) == 4
         finally:
             await runner.cleanup()
     asyncio.run(exercise())

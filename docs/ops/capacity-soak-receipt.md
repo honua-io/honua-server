@@ -61,7 +61,7 @@ feature, catalogue, per-layer counts and tenant scope. The canonical feature
 encoding is compact JSON with Unicode preserved, including geometry and all
 returned attributes.
 
-Each completed load request belongs to exactly one replica/container-incarnation
+Each completed load, GP or probe request belongs to exactly one replica/container-incarnation
 and one UTC interval of at most 30 seconds. The joint histogram retains count,
 measured duration (rounded up to a millisecond), HTTP status, in-band error and
 protocol. HTTP 200 error documents and malformed JSON remain failures. Transport

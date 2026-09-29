@@ -1,3 +1,8 @@
+---
+type: reference
+title: "2026.1 capacity evidence producer"
+description: "Server producer status and candidate requirements for the frozen release capacity envelope."
+---
 # 2026.1 capacity evidence producer
 
 The normative capacity envelope is owned by
