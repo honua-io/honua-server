@@ -123,7 +123,7 @@
       {
         "id": "vector-data-fidelity",
         "status": "open",
-        "required_work": "Bind fractional timestamps, empty strings versus null, provider-specific IDs/CRS, all page contents, export and cold project reopen to native children on both QGIS versions. Replay the local GeoJSON timestamp fix on the shipping candidate. Both installed GML decoders turn seven independent empty-string encodings into null while five controls match; this is decoder evidence, not a live workflow pass. Preserve the WFS data-loss failure and original oracle, review other installed native entrypoints and customer workarounds, and do not award whole-client/protocol N/A."
+        "required_work": "Bind fractional timestamps, empty strings versus null, provider-specific IDs/CRS, all page contents, export and cold project reopen to native children on both QGIS versions. Replay the GeoJSON timestamp fix merged in server PR5335 on the shipping candidate. Both installed GML decoders turn seven independent empty-string encodings into null while five controls match; this is decoder evidence, not a live workflow pass. Preserve the WFS data-loss failure and original oracle, review other installed native entrypoints and customer workarounds, and do not award whole-client/protocol N/A."
       },
       {
         "id": "versions-and-licenses",
@@ -196,7 +196,7 @@
           "pyqgis"
         ],
         "finding": "QGIS preserves failed edit buffers for correction but commits distinct operation stages. Fresh native runs on both installed versions pass five default single-layer WFS batch cases each against unchanged server assemblies built from 64066504. A named database constraint rejects one member of a two-feature insert or update after ordinary request validation. Each native request contains both records, reports failure, retains both edits and leaves every SQL row unchanged. Correcting that buffer commits the independently specified values once; fresh native readback verifies IDs, attributes and coordinates. Two-feature add/delete also pass. OGC WFS 1.1 separately describes partial-failure TransactionResults; positive-count client success checks still require a best-effort audit.",
-        "next_check": "The exact batch oracle, storage controls and per-child receipts are published in client-compat PR #2, merged as c4caed8 with both contract workflows green. Revalidate best-effort/unknown outcomes, mixed save stages, multiple layers and concurrent changes. The older empty-string and default cache failures stay open. Merge the server fixes and replay on the frozen NativeAOT/Production candidate with native UI and the remaining clients; award no shipping acceptance from this Debug/JIT run."
+        "next_check": "The batch oracle, storage controls and diagnostic index are published in client-compat PR #2, merged as c4caed8 with both contract workflows green. The server fixes are merged as f126f8613 in PR5335. Revalidate best-effort/unknown outcomes, mixed save stages, multiple layers and concurrent changes. The older empty-string and default cache failures stay open. Replay on the frozen NativeAOT/Production candidate with native UI and the remaining clients; award no shipping acceptance from this Debug/JIT run."
       },
       {
         "id": "qgis-34414-native-edit-contracts",
@@ -217,7 +217,7 @@
           "pyqgis"
         ],
         "finding": "AFS postData treats a successful HTTP exchange as success; top-level HTTP-200 error envelopes can leave empty mutation result lists and falsely successful saves. Actual native denied edits previously discarded buffers. WFS sends a 1.0.0 transaction even from a 2.0.0 read connection. The repaired server returns write HTTP failures and adapts legacy transactions through the canonical pipeline. Final native edits pass 9/9 AFS, 9/9 OAPIF and 8/9 WFS with SQL persistence and same-buffer recovery. WFS empty string is stored intact but read as null.",
-        "next_check": "Preserve the failed fidelity case and exact Debug/JIT receipts. Complete bulk/atomic/partial/unknown-commit, other geometry and authentication variants; validate UI and shipping replay. The client diagnostic index and harness fixes are merged in PR #2; the server fixes still require delivery and revalidation. No native UI or shipping passes are awarded."
+        "next_check": "Preserve the failed fidelity case and exact Debug/JIT receipts. Complete bulk/atomic/partial/unknown-commit, other geometry and authentication variants; validate UI and shipping replay. The client diagnostic index and harness fixes are merged in PR #2, and the server fixes as f126f8613 in PR5335; native revalidation on the frozen shipping candidate remains required. No native UI or shipping passes are awarded."
       },
       {
         "id": "qgis-422-native-edit-contracts",
