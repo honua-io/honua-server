@@ -208,6 +208,18 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
     {
         await SeedSmallintBoundariesAsync();
         await using var connection = await _fixture.DataSource.OpenConnectionAsync();
+        // A pooled backend can retain pg_temp after earlier tests drop their temp
+        // tables. Exercise that history, then explicitly satisfy the catalog-first
+        // guard so this test reaches the true-verdict relation-lock path.
+        await using (var setup = new NpgsqlCommand("""
+            CREATE TEMP TABLE smallint_lock_guard_probe (id integer);
+            DROP TABLE smallint_lock_guard_probe;
+            SET search_path = pg_catalog, public, pg_temp;
+            """, connection))
+        {
+            await setup.ExecuteNonQueryAsync();
+        }
+
         await using var blocker = await _fixture.DataSource.OpenConnectionAsync();
         await using var ddl = await _fixture.DataSource.OpenConnectionAsync();
         var key = Random.Shared.NextInt64(1, long.MaxValue);
