@@ -2,6 +2,12 @@
 
 This matrix defines the shared certification vocabulary for cross-client interoperability testing. It establishes a common core of test cases that all client lanes must address, plus lane-specific extensions.
 
+For QGIS UI, PyQGIS, ArcGIS Pro UI and ArcPy scope and completion, use the
+[four-client certification checklist](CLIENT_CERTIFICATION_CHECKLIST.md).
+This document supplies shared evidence IDs across clients; it is not a second
+desktop completion denominator. Server parity inventories and platform release
+requirements retain their separate roles.
+
 **Scope boundary**: this matrix tracks _client interoperability_ — whether a given client can successfully consume Honua Server APIs. It does not replace the [FeatureServer Coverage Matrix](../reference/compatibility/geoservices-parity.md), [MapServer Coverage Matrix](../reference/compatibility/geoservices-parity.md), or OGC coverage docs, which track _server API parity_.
 
 ## Certification Categories
