@@ -266,6 +266,38 @@ public sealed class CapabilityGateResolverTests
         options.Capabilities.Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData("VERSIONING.BRANCH", true)]
+    [InlineData("VeRsIoNiNg.BrAnCh", true)]
+    [InlineData("VERSIONING.BRANCH", false)]
+    [InlineData("versioning.branch", true)]
+    public void PerCapabilityConfiguration_HonorsKeyCasingWithoutEnablingOtherFeatures(
+        string configuredId, bool enabled)
+    {
+        // Windows Python uppercases inherited environment names. IConfiguration
+        // preserves key spelling but resolves keys without regard to case.
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["CAPABILITIES:EXPERIMENTAL:ENABLED"] = "false",
+                [$"CAPABILITIES:EXPERIMENTAL:{configuredId}:ENABLED"] = enabled.ToString(),
+            })
+            .Build();
+        using var provider = new ServiceCollection()
+            .AddCapabilityFlagOptions(configuration)
+            .BuildServiceProvider();
+
+        var options = provider.GetRequiredService<IOptions<CapabilityFlagOptions>>().Value;
+
+        options.Enabled.Should().BeFalse();
+        options.IsExperimentalEnabled("versioning.branch").Should().Be(enabled);
+        options.IsExperimentalEnabled("serve.sensorthings").Should().BeFalse();
+        CapabilityFlagOptions.IsExperimentalEnabled(configuration, "versioning.branch")
+            .Should().Be(enabled);
+        CapabilityFlagOptions.IsExperimentalEnabled(configuration, "serve.sensorthings")
+            .Should().BeFalse();
+    }
+
     [Fact]
     public void IsExperimentalEnabled_FromConfiguration_HonorsGlobalSwitch()
     {
