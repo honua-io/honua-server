@@ -298,7 +298,7 @@ internal static partial class MapServerEndpoints
             // for interoperability; do not advertise the full ArcGIS dynamic-layer contract.
             SupportsDynamicLayers = false,
             SingleFusedMapCache = false,
-            Units = ResolveMapUnits(serviceSpatialReference),
+            Units = GeoServicesMetadataUnits.Resolve(serviceSpatialReference),
             Capabilities = BuildMapServerCapabilities(),
             SupportedExtensions = supportedExtensions,
             FullExtent = serviceExtent,
@@ -712,11 +712,6 @@ internal static partial class MapServerEndpoints
         {
             Wkid = spatialReference.ResolveSrid() ?? SpatialReference.WGS84.Wkid
         };
-
-    private static string ResolveMapUnits(MetadataV2SpatialReference spatialReference)
-        => spatialReference.IsGeographic || spatialReference.ResolveSrid() == SpatialReference.WGS84.Wkid
-            ? "esriDecimalDegrees"
-            : "esriMeters";
 
     private static bool HasMapServerGeometry(MetadataV2Resource resource)
     {

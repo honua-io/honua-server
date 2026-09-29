@@ -99,6 +99,7 @@ internal static partial class FeatureServerEndpoints
             Tables = [.. publications.Where(pair => pair.Resource.Type == MetadataV2ResourceType.Table)
                 .Select(pair => MapLayerInfoV2(pair.Resource, pair.Publication, snapshot))],
             SpatialReference = spatialReference,
+            Units = GeoServicesMetadataUnits.Resolve(service.SpatialReference),
             InitialExtent = serviceExtent,
             FullExtent = serviceExtent,
             MaxRecordCount = queryLimits.MaxRecordCount,
