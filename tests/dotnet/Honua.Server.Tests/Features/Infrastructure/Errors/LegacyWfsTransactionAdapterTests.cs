@@ -27,12 +27,15 @@ public sealed class LegacyWfsTransactionAdapterTests
             </wfs:Transaction>
             """);
         var before = source.ToString();
-        var normalized = Wfs20Handler.NormalizeWfs10Transaction(source);
-        normalized.Descendants(Gml + "Point").Single().Attribute("srsName")!.Value.Should().Be("EPSG:4326");
+        var normalized = Wfs20Handler.NormalizeLegacyTransaction(source);
+        normalized.Descendants(Gml + "Point").Single().Attribute("srsName")!.Value.Should().Be("urn:ogc:def:crs:EPSG::4326");
         normalized.Descendants(Gml + "pos").Single().Value.Should().Be("-157.8 21.3");
         normalized.Descendants(Fes + "ResourceId").Single().Attribute("rid")!.Value.Should().Be("places.42");
         normalized.Descendants(XName.Get("Point", "urn:owned")).Single().Value.Should().Be("ordinary field");
         normalized.Descendants(XName.Get("name", "urn:owned")).Single().IsEmpty.Should().BeTrue();
+        var geometry = Wfs20Handler.ParseTransactionGeometry(normalized.Descendants(Gml + "Point").Single(), 4326);
+        geometry.Coordinate.X.Should().Be(-157.8);
+        geometry.Coordinate.Y.Should().Be(21.3);
         source.ToString().Should().Be(before);
     }
 
@@ -46,7 +49,7 @@ public sealed class LegacyWfsTransactionAdapterTests
               <Insert><place xmlns="urn:owned"><geometry><gml:Point><gml:coordinates>{coordinates}</gml:coordinates></gml:Point></geometry></place></Insert>
             </Transaction>
             """);
-        var action = () => Wfs20Handler.NormalizeWfs10Transaction(source);
+        var action = () => Wfs20Handler.NormalizeLegacyTransaction(source);
         action.Should().Throw<NotSupportedException>();
     }
 
@@ -59,12 +62,47 @@ public sealed class LegacyWfsTransactionAdapterTests
               <wfs:InsertResults><wfs:Feature handle="first"><fes:ResourceId rid="places.43"/></wfs:Feature></wfs:InsertResults>
             </wfs:TransactionResponse>
             """;
-        var response = XElement.Parse(Wfs20Handler.FormatWfs10TransactionResponse(canonical));
+        var response = XElement.Parse(Wfs20Handler.FormatLegacyTransactionResponse(canonical, "1.0.0"));
         response.Name.Should().Be(Wfs + "WFS_TransactionResponse");
         response.Attribute("version")!.Value.Should().Be("1.0.0");
         response.Element(Wfs + "InsertResult")!.Attribute("handle")!.Value.Should().Be("first");
         response.Descendants(Ogc + "FeatureId").Single().Attribute("fid")!.Value.Should().Be("places.43");
         response.Descendants(Wfs + "SUCCESS").Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Wfs11Geometry_KeepsGeographicAxisOrder()
+    {
+        var root = XElement.Parse("""
+            <Transaction xmlns="http://www.opengis.net/wfs" xmlns:gml="http://www.opengis.net/gml" version="1.1.0">
+              <Insert><place xmlns="urn:owned"><geometry><gml:Point srsName="urn:ogc:def:crs:EPSG::4326">
+                <gml:pos srsDimension="2">21.3 -157.8</gml:pos>
+              </gml:Point></geometry></place></Insert>
+            </Transaction>
+            """);
+        var normalized = Wfs20Handler.NormalizeLegacyTransaction(root);
+        var geometry = Wfs20Handler.ParseTransactionGeometry(normalized.Descendants(Gml + "Point").Single(), 4326);
+        geometry.Coordinate.X.Should().Be(-157.8);
+        geometry.Coordinate.Y.Should().Be(21.3);
+    }
+
+    [Fact]
+    public void Wfs11Response_UsesLegacyNamespacesAndCompleteOrderedSummary()
+    {
+        var canonical = """
+            <wfs:TransactionResponse xmlns:wfs="http://www.opengis.net/wfs/2.0" xmlns:fes="http://www.opengis.net/fes/2.0">
+              <wfs:TransactionSummary><wfs:totalInserted>1</wfs:totalInserted></wfs:TransactionSummary>
+              <wfs:InsertResults><wfs:Feature><fes:ResourceId rid="places.43"/></wfs:Feature></wfs:InsertResults>
+            </wfs:TransactionResponse>
+            """;
+        var response = XElement.Parse(Wfs20Handler.FormatLegacyTransactionResponse(canonical, "1.1.0"));
+        response.Name.Should().Be(Wfs + "TransactionResponse");
+        response.Attribute("version")!.Value.Should().Be("1.1.0");
+        response.Element(Wfs + "TransactionSummary")!.Elements().Select(element => element.Name.LocalName)
+            .Should().Equal("totalInserted", "totalUpdated", "totalDeleted");
+        response.Element(Wfs + "TransactionSummary")!.Elements().Select(element => element.Value)
+            .Should().Equal("1", "0", "0");
+        response.Descendants(Ogc + "FeatureId").Single().Attribute("fid")!.Value.Should().Be("places.43");
     }
 
     [Theory]
@@ -77,7 +115,7 @@ public sealed class LegacyWfsTransactionAdapterTests
               <honua:OperationResults><honua:OperationResult committed="{committed}"/></honua:OperationResults>
             </wfs:TransactionResponse>
             """;
-        var response = XElement.Parse(Wfs20Handler.FormatWfs10TransactionResponse(canonical));
+        var response = XElement.Parse(Wfs20Handler.FormatLegacyTransactionResponse(canonical, "1.0.0"));
         response.Descendants(Wfs + "SUCCESS").Should().BeEmpty();
         response.Descendants(Wfs + "PARTIAL").Should().ContainSingle();
     }

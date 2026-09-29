@@ -254,7 +254,7 @@ internal static class Wfs20DispatcherEndpoint
 
         try
         {
-            if (version == Wfs10Version &&
+            if (IsLegacyWfsVersion(version) &&
                 string.Equals(requestParam, Wfs20Utilities.Operations.Transaction, StringComparison.OrdinalIgnoreCase))
             {
                 context.Items[StandardErrorResponseFormatter.WfsRequestVersionItemKey] = version;

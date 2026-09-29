@@ -196,10 +196,10 @@ internal static class StandardErrorResponseFormatter
         var wfsVersion = context.Items.TryGetValue(WfsRequestVersionItemKey, out var parsedVersion)
             ? parsedVersion as string
             : context.Request.Query.TryGetValue("VERSION", out var versionValue)
-            ? versionValue.ToString()
-            : context.Request.Query.TryGetValue("version", out var versionLowerValue)
-                ? versionLowerValue.ToString()
-                : null;
+                ? versionValue.ToString()
+                : context.Request.Query.TryGetValue("version", out var versionLowerValue)
+                    ? versionLowerValue.ToString()
+                    : null;
 
         string xmlContent;
         if (string.Equals(wfsVersion, "1.0.0", StringComparison.Ordinal))

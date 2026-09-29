@@ -263,6 +263,7 @@ internal sealed partial class Wfs20Handler
         AppendWfs11Operation(sb, "GetCapabilities", wfsUrl);
         AppendWfs11Operation(sb, "DescribeFeatureType", wfsUrl);
         AppendWfs11Operation(sb, "GetFeature", wfsUrl);
+        AppendWfs11Operation(sb, "Transaction", wfsUrl);
         sb.AppendLine("  </ows:OperationsMetadata>");
     }
 
