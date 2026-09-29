@@ -685,6 +685,80 @@ public sealed class GrpcFeatureServiceTests
 
     [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_DoesNotRepeatTheObjectIdAsAnAttribute()
+    {
+        // honua-server#5330: the id travels in Feature.id; the storage primary-key
+        // attribute is not repeated in the attribute map, in any casing.
+        var features = ImmutableArray.Create(
+            Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty
+                .Add("OBJECTID", 7L)
+                .Add("name", "A")));
+        _featureReader.QueryAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, features));
+
+        var response = await _sut.QueryFeatures(
+            new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = 0, Where = "1=1" },
+            CreateCallContext());
+
+        response.ObjectIdFieldName.Should().Be("objectid");
+        response.Features[0].Id.Should().Be(7);
+        response.Features[0].Attributes.Keys.Should().BeEquivalentTo(["name"]);
+        response.Fields.Single(field => field.Name == "name").Alias.Should().NotBeEmpty();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_ReturnDistinctObjectIds_KeepsTheIdAttribute()
+    {
+        // Distinct projections carry the requested values only in the attribute map
+        // (Feature.Id is 0), so nothing is stripped.
+        var features = ImmutableArray.Create(
+            Feature.Create(0, null, ImmutableDictionary<string, object?>.Empty.Add("objectid", 7L)));
+        _featureReader.QueryAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, features));
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            Where = "1=1",
+            ReturnDistinct = true,
+            ReturnGeometry = false
+        };
+        request.OutFields.Add("objectid");
+
+        var response = await _sut.QueryFeatures(request, CreateCallContext());
+
+        response.Features[0].Attributes.Keys.Should().BeEquivalentTo(["objectid"]);
+        response.Features[0].Attributes["objectid"].Int64Value.Should().Be(7);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeaturesStream")]
+    public async Task QueryFeaturesStream_DoesNotRepeatTheObjectIdAsAnAttribute()
+    {
+        var features = new[]
+        {
+            Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty
+                .Add("objectid", 7L)
+                .Add("name", "A")),
+        }.ToAsyncEnumerable();
+        _streamingStore.StreamFeaturesAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(features);
+
+        var writer = new TestServerStreamWriter<Proto.FeaturePage>();
+        await _sut.QueryFeaturesStream(
+            new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = 0, Where = "1=1" },
+            writer,
+            CreateCallContext());
+
+        var feature = writer.Pages.SelectMany(page => page.Features).Single();
+        feature.Id.Should().Be(7);
+        feature.Attributes.Keys.Should().BeEquivalentTo(["name"]);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_ReturnsSpatialReferenceGeometryTypeAndFieldsFromMetadata()
     {
         // REST-parity contract (#2252): a standard feature query response carries the

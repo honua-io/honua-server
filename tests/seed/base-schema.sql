@@ -745,6 +745,11 @@ BEGIN
                                 END,
                                 'description', lf.description,
                                 'nullable', lf.nullable,
+                                -- Mirror the production publish path
+                                -- (MapLayerFieldToMetadataV2: Length = MaxLength) so
+                                -- protocol field metadata keeps the declared string
+                                -- length (honua-server#5330).
+                                'length', lf.max_length,
                                 'editable', CASE regexp_replace(lower(COALESCE(lf.field_type, '')), '[^a-z0-9]+', '', 'g')
                                     WHEN 'geometry' THEN false
                                     WHEN 'geography' THEN false
