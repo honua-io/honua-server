@@ -480,7 +480,6 @@ class SoakDriver:
 
             queued_ages: list[float] = []
             executing = 0
-            now = time.monotonic()
             for job_id, timing in list(pending.items()):
                 try:
                     document = await self._get_json(
@@ -493,8 +492,9 @@ class SoakDriver:
                     continue
                 status = document.get("jobStatus", "")
                 if status == "esriJobSubmitted":
-                    timing["lastQueued"] = now
-                    queued_ages.append(now - timing["submitted"])
+                    observed_at = time.monotonic()
+                    timing["lastQueued"] = observed_at
+                    queued_ages.append(observed_at - timing["submitted"])
                     continue
                 if status in ("esriJobExecuting", "esriJobCancelling"):
                     executing += 1

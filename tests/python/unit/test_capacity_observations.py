@@ -369,6 +369,35 @@ def test_captured_gp_errors_invalidate_observations_without_task_exception():
     assert emit(source)[0]["status"] == "incomplete"
 
 
+def test_queue_age_uses_the_time_of_the_observed_status_response(monkeypatch):
+    import argparse
+    from types import SimpleNamespace
+    import drive_soak
+
+    elapsed = 0
+    monkeypatch.setattr(drive_soak, "time", SimpleNamespace(monotonic=lambda: elapsed))
+
+    async def exercise():
+        driver = drive_soak.SoakDriver(argparse.Namespace(base_url="http://fixture", admin_key="fixture", unexercised=[], gp_interval=1), LOCK)
+
+        def serve(request):
+            nonlocal elapsed
+            if request.method == "POST":
+                elapsed = 2
+                return httpx.Response(200, json={"jobId": "job-1"})
+            elapsed = 5
+            return httpx.Response(200, json={"jobStatus": "esriJobSubmitted"})
+
+        async def stop(started, interval):
+            driver._stop.set()
+
+        driver._sleep_until_next = stop
+        async with httpx.AsyncClient(transport=httpx.MockTransport(serve)) as client:
+            await driver.drive_gp_queue(client)
+        assert driver.gp.samples[-1]["oldestQueueAgeSeconds"] == 5
+    asyncio.run(exercise())
+
+
 @pytest.mark.parametrize("outcome", ["success", "http-rejection", "inband-error", "feature-failure", "lost-ordinate"])
 def test_maximum_payload_requires_an_accepted_http_write_and_exact_roundtrip(outcome):
     import argparse
