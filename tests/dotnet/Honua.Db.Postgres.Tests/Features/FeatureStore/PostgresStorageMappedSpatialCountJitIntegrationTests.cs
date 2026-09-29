@@ -262,7 +262,9 @@ public sealed class PostgresStorageMappedSpatialCountJitIntegrationTests(Postgre
         }
         else
         {
-            var result = await reader.QueryAsync(1, BboxQuery());
+            // A full first page still needs a count; a short page can now prove
+            // its total directly and intentionally never enters the count batch.
+            var result = await reader.QueryAsync(1, BboxQuery() with { Limit = 3 });
             result.TotalCount.Should().Be(3);
             result.Items.Select(item => item.Id).Should().Equal(1L, 2L, 3L);
         }
@@ -270,6 +272,18 @@ public sealed class PostgresStorageMappedSpatialCountJitIntegrationTests(Postgre
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
         await using var command = new NpgsqlCommand($"SELECT array_agg(DISTINCT jit ORDER BY jit) FROM {_schema}.observations", connection);
         ((string[])(await command.ExecuteScalarAsync())!).Should().Equal("off", "on");
+    }
+
+    [IntegrationTest]
+    public async Task ShortPage_ReusesExactTotalWithoutApplyingCountPlannerSetting()
+    {
+        var result = await CreateReader(true).QueryAsync(1, BboxQuery());
+
+        result.TotalCount.Should().Be(3);
+        result.Items.Select(item => item.Id).Should().Equal(1L, 2L, 3L);
+        result.HasMoreResults.Should().BeFalse();
+        await AssertObservedAsync("on");
+        await AssertSessionRestoredAsync();
     }
 
     [IntegrationTheory]
