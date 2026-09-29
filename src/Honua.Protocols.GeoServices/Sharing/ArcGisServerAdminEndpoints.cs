@@ -175,7 +175,8 @@ public static class ArcGisServerAdminEndpoints
                 branchVersioningEnabled: branchVersioning,
                 versionManagementEnabled: versionManagement,
                 offlineSyncEnabled: CapabilityFlagOptions.IsExperimentalEnabled(
-                    context.RequestServices.GetRequiredService<IConfiguration>(), "sync.offline"));
+                    context.RequestServices.GetRequiredService<IConfiguration>(), "sync.offline"),
+                pathBase: context.Request.PathBase);
             featureCapabilities = effectiveFeatureMetadata.Capabilities;
             allowGeometryUpdates = effectiveFeatureMetadata.AllowGeometryUpdates;
         }

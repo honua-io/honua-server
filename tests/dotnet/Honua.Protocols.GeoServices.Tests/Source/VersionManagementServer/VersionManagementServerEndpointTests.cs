@@ -470,18 +470,20 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         doc.RootElement.TryGetProperty("success", out _).Should().BeTrue();
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("")]
+    [InlineData("/arcgis")]
     [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/reconcile")]
     [InterfaceOperation(TestProtocols.VersionManagementServer, "reconcile")]
-    public async Task Reconcile_Async_Returns202WithPollableJob()
+    public async Task Reconcile_Async_Returns202WithPollableJob(string prefix)
     {
         var created = await CreateVersionAsync("admin.reconcile_async");
         var guid = created.GetProperty("versionGuid").GetString();
 
         // async=true starts a durable, pollable job and returns 202 with a job handle (#1553).
         var response = await PostFormAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/reconcile",
+            $"{prefix}/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/reconcile",
             ("async", "true"), ("f", "json"));
         response.StatusCode.Should().Be(HttpStatusCode.Accepted,
             "async reconcile should be accepted; body: {0}", await response.Content.ReadAsStringAsync());
@@ -494,11 +496,12 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
             jobId = doc.RootElement.GetProperty("jobId").GetString()!;
             jobId.Should().NotBeNullOrWhiteSpace();
             statusUrl = doc.RootElement.GetProperty("statusUrl").GetString()!;
-            statusUrl.Should().Contain(jobId);
+            statusUrl.Should().Be($"{prefix}{ServiceBase}/versions/{guid}/jobs/{jobId}");
         }
 
         // Poll the job-status endpoint until the job reaches a terminal state.
         var terminal = await PollJobStatusAsync(statusUrl);
+        terminal.GetProperty("statusUrl").GetString().Should().Be(statusUrl);
         terminal.GetProperty("status").GetString().Should().BeOneOf("succeeded", "running", "pending");
     }
 
