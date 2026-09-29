@@ -480,7 +480,7 @@ public static class VersionManagementServerEndpoints
         {
             var job = await jobRunner.StartReconcileAsync(serviceId, versionId, policy, detection, cancellationToken)
                 .ConfigureAwait(false);
-            return AcceptedJob(context, serviceId, versionGuid, job);
+            return AcceptedJob(serviceId, versionGuid, job);
         }
 
         var withPost = ParseFlag(values!, "withPost");
@@ -652,7 +652,7 @@ public static class VersionManagementServerEndpoints
         if (ParseAsyncRequested(values!))
         {
             var job = await jobRunner.StartPostAsync(serviceId, versionId, cancellationToken).ConfigureAwait(false);
-            return AcceptedJob(context, serviceId, versionGuid, job);
+            return AcceptedJob(serviceId, versionGuid, job);
         }
 
         try
@@ -733,7 +733,7 @@ public static class VersionManagementServerEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Version job '{jobId}' was not found.");
         }
 
-        return Results.Json(ToJobResponse(context, serviceId, versionGuid, job),
+        return Results.Json(ToJobResponse(serviceId, versionGuid, job),
             VersionManagementJsonContext.Default.VersionJobResponse, contentType: "application/json");
     }
 
@@ -1193,9 +1193,9 @@ public static class VersionManagementServerEndpoints
     /// <summary>
     /// Builds the HTTP 202 Accepted response carrying the started job handle and its status-poll URL.
     /// </summary>
-    private static IResult AcceptedJob(HttpContext context, string serviceId, string versionGuid, VersionJob job)
+    private static IResult AcceptedJob(string serviceId, string versionGuid, VersionJob job)
     {
-        var response = ToJobResponse(context, serviceId, versionGuid, job);
+        var response = ToJobResponse(serviceId, versionGuid, job);
         return Results.Json(response, VersionManagementJsonContext.Default.VersionJobResponse,
             statusCode: StatusCodes.Status202Accepted, contentType: "application/json");
     }
@@ -1210,12 +1210,12 @@ public static class VersionManagementServerEndpoints
             ex.Message,
             ["A reconcile or post for this version is already in progress. Retry once it completes, or poll the in-flight job."]);
 
-    private static VersionJobResponse ToJobResponse(HttpContext context, string serviceId, string versionGuid, VersionJob job) => new()
+    private static VersionJobResponse ToJobResponse(string serviceId, string versionGuid, VersionJob job) => new()
     {
         JobId = job.JobId.ToString(),
         Kind = job.Kind == VersionJobKind.Reconcile ? "reconcile" : "post",
         Status = JobStatusToString(job.Status),
-        StatusUrl = $"{context.Request.PathBase}/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/jobs/{job.JobId}",
+        StatusUrl = $"/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/jobs/{job.JobId}",
         ConflictCount = job.ConflictCount,
         AutoResolvedCount = job.AutoResolvedCount,
         CanPost = job.CanPost,

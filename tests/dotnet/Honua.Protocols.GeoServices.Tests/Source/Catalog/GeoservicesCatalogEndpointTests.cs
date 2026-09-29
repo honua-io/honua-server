@@ -37,22 +37,6 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     public GeoservicesCatalogEndpointTests(WebAppFixture fixture) => _fixture = fixture;
 
     [IntegrationTheory]
-    [InlineData("")]
-    [InlineData("/arcgis")]
-    [Operation(Operations.GetMetadata)]
-    [Endpoint("GET /rest")]
-    public async Task SiteRoot_RedirectRetainsApplicationPrefix(string prefix)
-    {
-        using var client = _fixture.CreateClient(allowAutoRedirect: false);
-        using var response = await client.GetAsync($"{prefix}/rest");
-
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.Redirect);
-        response.Headers.Location!.OriginalString.Should().Be($"{prefix}/rest/services");
-        using var catalog = await client.GetAsync(response.Headers.Location);
-        catalog.Be200Ok();
-    }
-
-    [IntegrationTheory]
     [InlineData("GET")]
     [InlineData("POST")]
     [Operation(Operations.GetMetadata)]

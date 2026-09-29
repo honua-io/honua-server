@@ -164,40 +164,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         await response.AssertGeoServicesErrorAsync(400);
     }
 
-    [IntegrationTheory]
-    [InlineData("https://gis.public.example.test/arcgis")]
-    [InlineData("https://gis.public.example.test")]
-    [Operation(Operations.QueryAttachments)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments")]
-    public async Task QueryAttachments_ConfiguredBaseUrl_DoesNotDuplicateApplicationPrefix(string publicBaseUrl)
-    {
-        var fixture = new WebAppFixture()
-            .ConfigureWebHost(builder => builder.UseSetting("Public:BaseUrl", publicBaseUrl));
-        await fixture.InitializeAsync();
-        var storage = fixture.GetService<ICloudFileStorage>();
-        try
-        {
-            await AttachmentTestData.SeedAsync(fixture.Postgres, storage, TestLayerId, TestFeatureId);
-            using var response = await fixture.Client.GetAsync(
-                $"/arcgis/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryAttachments?objectIds={TestFeatureId}&returnUrl=true");
-            response.BeSuccessful();
-            var result = JsonSerializer.Deserialize(await response.Content.ReadAsStringAsync(),
-                FeatureServerJsonContext.Default.AttachmentQueryResponse)!;
-            var attachment = result.AttachmentGroups.Single().AttachmentInfos.Single(item => item.Name == "test1.txt");
-            attachment.Url.Should().Be(
-                $"{publicBaseUrl}/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/{attachment.Id}");
-
-            using var download = await fixture.Client.GetAsync(new Uri(attachment.Url!).PathAndQuery);
-            download.BeSuccessful();
-            (await download.Content.ReadAsByteArrayAsync()).Should().Equal(AttachmentTestData.SeededTextFileBytes.ToArray());
-        }
-        finally
-        {
-            await AttachmentTestData.CleanupAsync(fixture.Postgres, storage, TestLayerId, TestFeatureId);
-            await fixture.DisposeAsync();
-        }
-    }
-
     [IntegrationTest]
     [Operation(Operations.QueryAttachments)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments")]

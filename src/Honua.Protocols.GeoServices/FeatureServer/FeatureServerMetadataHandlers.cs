@@ -149,8 +149,7 @@ internal static partial class FeatureServerEndpoints
                 supportsAttachmentUploads: supportsAttachmentUploads,
                 branchVersioningEnabled: branchVersioningEnabled,
                 versionManagementEnabled: IsVersionManagementAvailable(context, branchVersioningEnabled),
-                offlineSyncEnabled: offlineSyncEnabled,
-                pathBase: context.Request.PathBase);
+                offlineSyncEnabled: offlineSyncEnabled);
 
             FeatureServerLog.ServiceMetadataReturned(logger, service.Metadata.Name, response.Layers.Length);
 

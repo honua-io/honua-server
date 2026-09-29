@@ -126,14 +126,12 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
         doc.RootElement.GetProperty("count").GetInt32().Should().BeGreaterThanOrEqualTo(0);
     }
 
-    [IntegrationTheory]
-    [InlineData("")]
-    [InlineData("/arcgis")]
+    [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
-    public async Task ServiceMetadata_AdvertisesBranchVersioning(string prefix)
+    public async Task ServiceMetadata_AdvertisesBranchVersioning()
     {
-        var response = await _fixture.Client.GetAsync($"{prefix}/rest/services/{ServiceId}/FeatureServer?f=json");
+        var response = await _fixture.Client.GetAsync($"/rest/services/{ServiceId}/FeatureServer?f=json");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -141,12 +139,8 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
             "the request must succeed: {0}", doc.RootElement.GetRawText());
         doc.RootElement.GetProperty("supportsBranchVersioning").GetBoolean().Should().BeTrue();
         doc.RootElement.GetProperty("hasVersionedData").GetBoolean().Should().BeTrue();
-        var versionManagementUrl = doc.RootElement.GetProperty("versionManagementServerUrl").GetString();
-        versionManagementUrl.Should().Be($"{prefix}/rest/services/{ServiceId}/VersionManagementServer");
-        using var versionManagement = await _fixture.Client.GetAsync(versionManagementUrl + "?f=json");
-        versionManagement.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var metadata = JsonDocument.Parse(await versionManagement.Content.ReadAsStringAsync());
-        metadata.RootElement.GetProperty("defaultVersionName").GetString().Should().Be("sde.DEFAULT");
+        doc.RootElement.GetProperty("versionManagementServerUrl").GetString()
+            .Should().Be($"/rest/services/{ServiceId}/VersionManagementServer");
     }
 
     [IntegrationTest]
