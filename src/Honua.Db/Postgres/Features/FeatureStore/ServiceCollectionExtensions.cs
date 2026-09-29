@@ -34,9 +34,11 @@ internal static class ServiceCollectionExtensions
     /// <param name="schemaName">Optional database schema name</param>
     /// <param name="preferSerialBoundedSpatialReads">Opt in to serial plans for small first-page source-backed point bbox reads.</param>
     /// <param name="disableJitForSourceSpatialCounts">Opt in to disabling JIT within source-backed point bbox count queries.</param>
+    /// <param name="preferSerialSourceSpatialCounts">Opt in to serial plans for source-backed point bbox counts.</param>
     /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddRefactoredFeatureStore(this IServiceCollection services, string? schemaName = null,
-        bool preferSerialBoundedSpatialReads = false, bool disableJitForSourceSpatialCounts = false)
+        bool preferSerialBoundedSpatialReads = false, bool disableJitForSourceSpatialCounts = false,
+        bool preferSerialSourceSpatialCounts = false)
     {
         var poolProvider = new DefaultObjectPoolProvider();
 
@@ -106,7 +108,8 @@ internal static class ServiceCollectionExtensions
                 schemaName,
                 provider.GetRequiredService<PostgresBoundConnectionProvider>(),
                 preferSerialBoundedSpatialReads,
-                disableJitForSourceSpatialCounts));
+                disableJitForSourceSpatialCounts,
+                preferSerialSourceSpatialCounts: preferSerialSourceSpatialCounts));
 
         // Register segregated interfaces
         services.AddScoped<IFeatureDataProvider>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());

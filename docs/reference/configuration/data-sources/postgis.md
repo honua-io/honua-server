@@ -187,8 +187,8 @@ reads have a simple intersects/envelope bbox, an effective first-page limit of
 the normalized ascending primary-ID sort), and no distinct, branch-version or null-geometry request.
 Unknown geometry types, ambient transactions and borrowed mutation transactions
 retain ordinary planning.
-Counts, statistics, streaming, tiles, larger pages, later pages and custom sorts
-also retain ordinary planning.
+This option does not change counts, statistics, streaming, tiles, larger pages,
+later pages or custom sorts. Count planning has separate options below.
 
 For an eligible read, Honua batches a transaction-local
 `max_parallel_workers_per_gather=0` setting with the original parameterized
@@ -226,6 +226,27 @@ where compilation costs outweigh execution savings; larger or more complex
 queries may benefit from JIT. Measure representative selectivities and concurrent
 workloads before enabling it. Keep this tuned profile separate from shipping
 defaults in benchmark reports.
+
+`Database__PreferSerialSourceSpatialCounts=true` independently opts into serial
+execution plans for the same eligible counts. Its default is `false`. It batches
+transaction-local `max_parallel_workers_per_gather=0` with the count, without
+changing feature SELECT planning or PostgreSQL JIT unless the JIT option is also
+enabled. Explicit `EnvelopeIntersects` requests retain their existing bbox-only
+predicate; exact `Intersects` requests retain exact intersection.
+
+When both count options are enabled, both settings precede the same count in one
+implicit batch transaction. Ordinary, JIT-only, serial-only and combined counts
+use distinct SQL preparation identities so their generic plans cannot mix on a
+pooled connection. Both settings end on success, SQL errors and cancellation;
+caller-owned transactions retain their original planning behavior. Short first
+pages that already prove the exact total do not execute a count or apply either
+count setting.
+
+Serial counts target worker-startup overhead observed in a 100K-point SQL
+diagnostic. That experiment is not an application throughput result or evidence
+that serial execution wins for every dataset or selectivity. Validate throughput
+and tail latency under representative concurrent traffic before enabling it. No
+global database setting or migration is required, and Honua remains Native AOT.
 
 See PostgreSQL's [JIT decision documentation](https://www.postgresql.org/docs/17/jit-decision.html)
 and Npgsql's [batch transaction behavior](https://www.npgsql.org/doc/basic-usage.html#batching)

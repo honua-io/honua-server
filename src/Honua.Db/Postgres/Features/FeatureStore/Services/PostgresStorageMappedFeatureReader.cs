@@ -48,6 +48,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private readonly string? _managedFeatureSchema;
     private readonly bool _preferSerialBoundedSpatialReads;
     private readonly bool _disableJitForSourceSpatialCounts;
+    private readonly bool _preferSerialSourceSpatialCounts;
     private readonly string _primaryKeyColumn;
     private readonly string? _geometryColumn;
     private readonly int _storageSrid;
@@ -69,7 +70,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         string? managedFeatureSchema = null,
         PostgresBoundConnectionProvider? boundConnectionProvider = null,
         bool preferSerialBoundedSpatialReads = false,
-        bool disableJitForSourceSpatialCounts = false)
+        bool disableJitForSourceSpatialCounts = false,
+        bool preferSerialSourceSpatialCounts = false)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _dictionaryPool = dictionaryPool ?? throw new ArgumentNullException(nameof(dictionaryPool));
@@ -78,6 +80,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         _managedFeatureSchema = string.IsNullOrWhiteSpace(managedFeatureSchema) ? null : managedFeatureSchema.Trim();
         _preferSerialBoundedSpatialReads = preferSerialBoundedSpatialReads;
         _disableJitForSourceSpatialCounts = disableJitForSourceSpatialCounts;
+        _preferSerialSourceSpatialCounts = preferSerialSourceSpatialCounts;
         _connection = connection;
         _boundConnectionProvider = boundConnectionProvider;
         _connectionEncryptionService = connectionEncryptionService;
@@ -230,10 +233,14 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         // A caller-owned transaction would retain SET LOCAL beyond this count.
-        if (connection.Transaction is null && ShouldDisableJitForSpatialCount(query))
+        var useSerialPlan = ShouldUseSerialSourceSpatialCount(query);
+        var disableJit = ShouldDisableJitForSpatialCount(query);
+        if (connection.Transaction is null && (useSerialPlan || disableJit))
         {
-            await using var batch = CreateScopedPlannerReadBatch(connection, sql,
-                "SELECT pg_catalog.set_config('jit', 'off', true)");
+            await using var batch = useSerialPlan
+                ? CreateSerialSourceSpatialCountBatch(connection, sql, disableJit)
+                : CreateScopedPlannerReadBatch(connection, sql,
+                    "SELECT pg_catalog.set_config('jit', 'off', true)");
             await using var reader = await batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false) ||
                 !await reader.ReadAsync(cancellationToken).ConfigureAwait(false))

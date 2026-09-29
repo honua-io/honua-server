@@ -13,22 +13,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 internal sealed partial class PostgresStorageMappedFeatureReader
 {
     private bool ShouldDisableJitForSpatialCount(FeatureQuery query) =>
-        _disableJitForSourceSpatialCounts &&
-        _mapping.IsSourceBacked &&
-        _geometryColumn != null &&
-        _resource.ReadGeometryType() == MetadataV2GeometryType.Point &&
-        !query.Distinct &&
-        query.VersionContext is not { IsDefault: false } &&
-        query.SpatialFilter is
-        {
-            IsSimpleEnvelope: true,
-            EnvelopeMinX: not null,
-            EnvelopeMinY: not null,
-            EnvelopeMaxX: not null,
-            EnvelopeMaxY: not null,
-            SpatialRelationship: SpatialRelationship.Intersects or SpatialRelationship.EnvelopeIntersects
-        } &&
-        Transaction.Current == null;
+        _disableJitForSourceSpatialCounts && CanUseScopedSourceSpatialCount(query);
 
     private bool ShouldUseSerialSpatialPlan(FeatureQuery query) =>
         _preferSerialBoundedSpatialReads &&

@@ -57,6 +57,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     private readonly string? _managedFeatureSchema;
     private readonly bool _preferSerialBoundedSpatialReads;
     private readonly bool _disableJitForSourceSpatialCounts;
+    private readonly bool _preferSerialSourceSpatialCounts;
     private readonly LayerReadSecurityResolver _readSecurity;
     private readonly PostgresBoundConnectionProvider? _boundConnectionProvider;
 
@@ -90,7 +91,8 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         string? managedFeatureSchema = null,
         PostgresBoundConnectionProvider? boundConnectionProvider = null,
         bool preferSerialBoundedSpatialReads = false,
-        bool disableJitForSourceSpatialCounts = false)
+        bool disableJitForSourceSpatialCounts = false,
+        bool preferSerialSourceSpatialCounts = false)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
@@ -105,6 +107,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         _managedFeatureSchema = string.IsNullOrWhiteSpace(managedFeatureSchema) ? null : managedFeatureSchema.Trim();
         _preferSerialBoundedSpatialReads = preferSerialBoundedSpatialReads;
         _disableJitForSourceSpatialCounts = disableJitForSourceSpatialCounts;
+        _preferSerialSourceSpatialCounts = preferSerialSourceSpatialCounts;
         _rlsFilterSource = rlsFilterSource;
         _fieldMaskSource = fieldMaskSource;
         _readSecurity = new LayerReadSecurityResolver(v2Provider, filterExpressionService, rlsFilterSource, fieldMaskSource);
@@ -141,7 +144,8 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             _managedFeatureSchema,
             _boundConnectionProvider,
             _preferSerialBoundedSpatialReads,
-            _disableJitForSourceSpatialCounts);
+            _disableJitForSourceSpatialCounts,
+            preferSerialSourceSpatialCounts: _preferSerialSourceSpatialCounts);
     }
 
     public ITileProvider CreateTileProviderForBinding(FeatureProviderBinding binding)
