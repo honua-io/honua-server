@@ -120,6 +120,27 @@ public sealed class PostgresFirstPageCountIntegrationTests(PostgresFixture fixtu
     }
 
     [IntegrationTest]
+    public async Task QueryAsync_NearestNeighbors_RetainsNearestCountWithoutAnExtraRead()
+    {
+        var result = await CreateReader().QueryAsync(1, new FeatureQuery
+        {
+            Limit = 100,
+            SpatialFilter = new SpatialFilter
+            {
+                Geometry = new WKTReader().Read("POINT(0 0)").AsBinary(),
+                Srid = 4326,
+                SpatialRelationship = SpatialRelationship.NearestNeighbor,
+                NearestCount = 2
+            }
+        });
+
+        result.TotalCount.Should().Be(2);
+        result.Items.Select(feature => feature.Id).Should().Equal(1L, 2L);
+        result.HasMoreResults.Should().BeFalse();
+        await _provider.Received(1).OpenConnectionAsync(Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
     public async Task QueryAsync_DistinctPage_RetainsExistingCountSemantics()
     {
         var result = await CreateReader().QueryAsync(1,

@@ -142,14 +142,31 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 : QueryResult<Feature>.Create(nearestItems.Length, nearestItems, hasMoreResults: false);
         }
 
+        var offset = query.Offset.GetValueOrDefault();
+        ImmutableArray<Feature> items = default;
+        if (!query.Distinct && offset == 0 && query.Limit is int limit && limit > 0)
+        {
+            items = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
+            // A short first page proves the exact total in that SELECT's snapshot.
+            // Full pages still need a separate count; as before, the two reads
+            // do not establish a shared snapshot unless the caller supplies one.
+            if (items.Length < limit)
+            {
+                return QueryResult<Feature>.Create(items.Length, items, hasMoreResults: false);
+            }
+        }
+
         var totalCount = await CountCoreAsync(query, cancellationToken).ConfigureAwait(false);
         if (totalCount == 0)
         {
             return QueryResult<Feature>.Empty();
         }
 
-        var items = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
-        var offset = query.Offset.GetValueOrDefault();
+        if (items.IsDefault)
+        {
+            items = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
+        }
+
         var hasMoreResults = offset + items.Length < totalCount;
         return QueryResult<Feature>.Create(totalCount, items, hasMoreResults);
     }
