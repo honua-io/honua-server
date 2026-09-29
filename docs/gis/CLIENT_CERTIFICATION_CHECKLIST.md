@@ -122,6 +122,27 @@ Twelve focused denial-evidence regressions passed; the required client check
 verified shared snapshots but remains incomplete because pytest is unavailable.
 The same Debug/JIT Development scope and zero shipping/UI acceptance apply.
 
+The WFS follow-up is client-compat local commit
+`6b8a1a8f718bed79430b1d761724b4edd7e3f2c9`, with the diagnostic index
+`docs/reports/pyqgis-wfs-cache-and-gml-2026-09-29.json` and workspace receipts
+`pyqgis-native-auth-wfs-review` and `pyqgis-gml-empty-c`. It identifies a second
+URL-only response cache used by native Browser data items. Disabling the existing
+`qgis/wfsMemoryCacheAllowed` setting before the first request in a new profile
+passes all six public-first and seven protected-first catalog transitions on
+each version. Default catalogs remain stale after credential changes. These are
+Browser API observations, not UI interactions or new server disclosures.
+
+Cache-disabled provider reads and valid recovery pass; four negative loads per
+version stop at hidden discovery and do not prove explicit data-request denial.
+Their strict denial assertions remain unresolved. Separate protected-first
+provider controls still prove GetFeature denial. Both native GML decoders turn
+seven independent empty-string encodings into null, with five passing controls;
+the original live WFS fidelity failures remain open. Other installed entrypoints,
+retained-layer reload, UI recovery and shipping replay still require work.
+Twenty-two denial/discovery evidence regressions pass; the full required client
+check still stops at missing pytest. This follow-up is unpublished and grants
+no client/protocol exclusion, shipping pass or UI pass.
+
 ## Completion and validation
 
 Certification is complete for a declared version/license/configuration profile
@@ -166,9 +187,9 @@ to executable native cases, not additional test passes or a new denominator.
 |---|---|---|
 | `source-inventory` | open | Reconcile both directions: 118 capability keys and 1,306 server surfaces; the QGIS base has 117 and 1,270, with an overlay at 1,271. |
 | `native-case-crosswalk` | open | Map the 367 Esri operation/parameter cases and 6,767 QGIS review obligations to native child cases, shared witnesses or evidenced dispositions. Inventory counts are not test counts. |
-| `authentication` | open | Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows. Preserve the owned APIHeader sequence and WFS ordering control as distinct PyQGIS diagnostics. Anonymous-first WFS credential recovery fails before an authenticated request because of the reviewed URL-only capabilities cache; no N/A or shipping promotion. Complete other auth methods, least-privilege roles, dependent resources and authenticated project reopen. |
+| `authentication` | open | Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows. Preserve default WFS failures, cache-disabled provider reads, Browser catalog transitions and protected-first GetFeature denial as distinct PyQGIS diagnostics. Disabling both URL-only memory caches before the first request restores catalog recovery on both installed versions; catalog visibility does not prove a denied data request. Complete retained-layer reload, other auth methods, least-privilege roles, dependent resources and authenticated project reopen on the shipping candidate; no N/A or shipping promotion. |
 | `workflow-variants` | open | Bind schema/paging, edits/relationships/attachments, offline/versioning, imagery/tiles, processing parameters, project reopen and recovery variants to executable cases and independent oracles. |
-| `vector-data-fidelity` | open | Bind fractional timestamps, empty strings versus null, provider-specific IDs/CRS, all page contents, export and cold project reopen to native children on both QGIS versions. Replay the local GeoJSON timestamp fix on the shipping candidate. WFS empty-string loss remains an observed failure pending provider/workaround review; do not change its oracle or award N/A. |
+| `vector-data-fidelity` | open | Bind fractional timestamps, empty strings versus null, provider-specific IDs/CRS, all page contents, export and cold project reopen to native children on both QGIS versions. Replay the local GeoJSON timestamp fix on the shipping candidate. Both installed GML decoders turn seven independent empty-string encodings into null while five controls match; this is decoder evidence, not a live workflow pass. Preserve the WFS data-loss failure and original oracle, review other installed native entrypoints and customer workarounds, and do not award whole-client/protocol N/A. |
 | `versions-and-licenses` | open | Retain QGIS 4.2.2 as a separate unresolved review target; bind installed client builds, license levels, extensions and portal privileges before accepting a licensed skip. |
 | `maturity-and-profile` | open | Classify source maturity and selected configuration independently of client support; retain lower-priority preview/experimental work and explicit priorities 5238, 5192 and 5036. |
 | `exclusion-review` | open | Review operation-specific N/A and skip evidence. Preserve genuine exclusions; repair harness failures. A missing fixture, disabled flag or failed connection alone proves no server implementation gap. |

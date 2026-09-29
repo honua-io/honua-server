@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "description": "Authoritative four-client scope contract and historical operation tracker. Closed totals include exclusions and are not certification acceptance. Coverage reviews, licensed skips, maturity and candidate-bound native evidence are governed separately in scope_contract.",
   "scope_contract": {
-    "revision": "2026-09-29.2",
+    "revision": "2026-09-29.3",
     "authority": "https://github.com/honua-io/honua-server/blob/trunk/docs/gis/CLIENT_CERTIFICATION_CHECKLIST.md",
     "objective": "Demonstrate that customers can reliably use Honua's advertised supported workflows in QGIS, PyQGIS, ArcGIS Pro and ArcPy on declared client versions and license profiles. Reconcile the client surface into one traceable matrix, repair server and harness defects, and pass every required native workflow and regression gate against the same frozen shipping NativeAOT/Production candidate. Publish reproducible setup instructions, evidence and precise limitations. Accept documented client exclusions and licensed skips only within their stated profile; keep preview/experimental readiness separate.",
     "audit": "https://github.com/honua-io/honua-client-compat/blob/9c9b327c81811948a96a9d94371ede2f3d26273c/docs/reports/client-surface-completeness-2026-09-28.json",
@@ -106,7 +106,7 @@
       {
         "id": "authentication",
         "status": "open",
-        "required_work": "Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows. Preserve the owned APIHeader sequence and WFS ordering control as distinct PyQGIS diagnostics. Anonymous-first WFS credential recovery fails before an authenticated request because of the reviewed URL-only capabilities cache; no N/A or shipping promotion. Complete other auth methods, least-privilege roles, dependent resources and authenticated project reopen."
+        "required_work": "Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows. Preserve default WFS failures, cache-disabled provider reads, Browser catalog transitions and protected-first GetFeature denial as distinct PyQGIS diagnostics. Disabling both URL-only memory caches before the first request restores catalog recovery on both installed versions; catalog visibility does not prove a denied data request. Complete retained-layer reload, other auth methods, least-privilege roles, dependent resources and authenticated project reopen on the shipping candidate; no N/A or shipping promotion."
       },
       {
         "id": "workflow-variants",
@@ -116,7 +116,7 @@
       {
         "id": "vector-data-fidelity",
         "status": "open",
-        "required_work": "Bind fractional timestamps, empty strings versus null, provider-specific IDs/CRS, all page contents, export and cold project reopen to native children on both QGIS versions. Replay the local GeoJSON timestamp fix on the shipping candidate. WFS empty-string loss remains an observed failure pending provider/workaround review; do not change its oracle or award N/A."
+        "required_work": "Bind fractional timestamps, empty strings versus null, provider-specific IDs/CRS, all page contents, export and cold project reopen to native children on both QGIS versions. Replay the local GeoJSON timestamp fix on the shipping candidate. Both installed GML decoders turn seven independent empty-string encodings into null while five controls match; this is decoder evidence, not a live workflow pass. Preserve the WFS data-loss failure and original oracle, review other installed native entrypoints and customer workarounds, and do not award whole-client/protocol N/A."
       },
       {
         "id": "versions-and-licenses",
@@ -140,6 +140,46 @@
       }
     ],
     "manual_reviews": [
+      {
+        "id": "qgis-34414-wfs-cache-and-gml",
+        "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 3.44.14, installed source revision 1a4cda5f262",
+        "url": "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgsbasenetworkrequest.cpp#L84",
+        "related_sources": [
+          "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgswfsdataitems.cpp#L103",
+          "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgswfsprovider.cpp#L2754",
+          "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/core/qgsgml.cpp",
+          "https://github.com/qgis/QGIS/blob/1a4cda5f262/tests/src/core/testqgsgml.cpp",
+          "https://api.qgis.org/api/3.44/classQgsDataItem.html"
+        ],
+        "protocols": [
+          "wfs"
+        ],
+        "lanes": [
+          "pyqgis"
+        ],
+        "finding": "Browser discovery uses a second URL-only response cache in addition to the parsed provider capabilities cache. Both use qgis/wfsMemoryCacheAllowed on insertion, after their cache lookup. A new profile/process with the setting false restores all six public-first and seven protected-first catalog transitions; default runs retain old catalogs without new requests. Protected-first provider data requests separately prove AccessDenied. Native QgsGml returns null for seven empty-string encodings while explicit nil, absent, whitespace, Unicode and escaped-text controls match.",
+        "next_check": "Preserve separate operation scopes and default failures. Validate retained-layer reload, native UI settings/recovery, other installed WFS entrypoints and empty-string-preserving alternatives against original inputs. Repeat on the frozen shipping candidate; these are Debug/JIT diagnostics with zero UI/shipping acceptance."
+      },
+      {
+        "id": "qgis-422-wfs-cache-and-gml",
+        "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 4.2.2, installed source revision f1431de8676",
+        "url": "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgsbasenetworkrequest.cpp#L89",
+        "related_sources": [
+          "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsdataitems.cpp#L114",
+          "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsprovider.cpp#L1947",
+          "https://github.com/qgis/QGIS/blob/f1431de8676/src/core/qgsgml.cpp"
+        ],
+        "protocols": [
+          "wfs"
+        ],
+        "lanes": [
+          "pyqgis"
+        ],
+        "finding": "This installed version independently reproduces both URL-only cache paths and all seven empty-string-to-null decoder failures. Cache-disabled Browser discovery passes six public-first and seven protected-first transitions with fresh native GetCapabilities exchanges. Cache-disabled provider loading recovers valid reads, but hidden discovery prevents those invalid loads from proving an actual data-request denial; the separate protected-first default-cache control supplies that narrower proof.",
+        "next_check": "Retain version-specific source hashes, settings, native traces and terminal exits. Review the remaining reload/fidelity/UI paths, and repeat the declared configuration against the same shipping candidate used by the other lanes. No whole-client/protocol exclusion follows from these failures."
+      },
       {
         "id": "qgis-34414-auth-recovery",
         "reviewed_at": "2026-09-29",
