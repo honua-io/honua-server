@@ -32,6 +32,22 @@ public interface IVersionJobRunner
         VersionConflictDetection detection = VersionConflictDetection.ByAttribute,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Starts a reconcile job that can also post after a clean reconcile.</summary>
+    /// <param name="service">Owning service identity.</param>
+    /// <param name="versionId">Version to reconcile.</param>
+    /// <param name="policy">Auto-resolution policy.</param>
+    /// <param name="detection">Conflict-detection granularity.</param>
+    /// <param name="withPost">Whether to post after a clean reconcile.</param>
+    /// <param name="cancellationToken">Cancellation token for the start request, not the job.</param>
+    /// <returns>The created job record.</returns>
+    Task<VersionJob> StartReconcileAsync(
+        string service,
+        Guid versionId,
+        VersionReconcilePolicy policy,
+        VersionConflictDetection detection,
+        bool withPost,
+        CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Starts an asynchronous post job for a version and returns the created job handle.
     /// </summary>
