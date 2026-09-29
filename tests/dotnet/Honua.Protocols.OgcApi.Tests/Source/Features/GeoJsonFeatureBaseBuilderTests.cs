@@ -46,7 +46,7 @@ public sealed class GeoJsonFeatureBaseBuilderTests(ITestOutputHelper output)
             ["name"] = "park",
             ["NAME"] = "must not duplicate",
             ["date"] = 0L,
-            ["timestamp"] = new DateTimeOffset(1970, 1, 1, 2, 0, 0, TimeSpan.FromHours(2)),
+            ["timestamp"] = new DateTimeOffset(1970, 1, 1, 2, 0, 0, TimeSpan.FromHours(2)).AddTicks(1_234_567),
             ["nullable"] = null,
             ["nested"] = nested,
             ["SECRET"] = "private",
@@ -72,7 +72,7 @@ public sealed class GeoJsonFeatureBaseBuilderTests(ITestOutputHelper output)
         result.HasGeometry.Should().BeFalse();
         result.Properties.Should().Contain("name", "park");
         result.Properties.Should().Contain("date", "1970-01-01");
-        result.Properties.Should().Contain("timestamp", "1970-01-01T00:00:00Z");
+        result.Properties.Should().Contain("timestamp", "1970-01-01T00:00:00.1234567Z");
         result.Properties.Should().Contain("objectid", 7L).And.Contain("OBJECTID", 7L);
         result.Properties["nullable"].Should().BeNull();
         result.Properties["nested"].Should().BeSameAs(nested);
@@ -129,6 +129,43 @@ public sealed class GeoJsonFeatureBaseBuilderTests(ITestOutputHelper output)
         var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty.Add("secret", "private"));
         var call = () => GeoJsonFeatureBaseBuilder.Create(feature, restricted, options);
         call.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Create_PreparedOptionsRejectDifferentAttributePolicy()
+    {
+        var resource = new MetadataV2Resource { SchemaFields = [] };
+        var options = GeoJsonFeatureBaseBuilder.PrepareOptions(resource);
+        var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty.Add("extra", "value"));
+        var call = () => GeoJsonFeatureBaseBuilder.Create(feature, resource,
+            options with { IncludeAdditionalAttributes = true });
+        call.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Create_PreparedSchemaKeepsProjectionAndHiddenFieldRules()
+    {
+        var resource = new MetadataV2Resource
+        {
+            SchemaFields =
+            [
+                new() { Name = "name", Type = MetadataV2FieldType.String },
+                new() { Name = "status", Type = MetadataV2FieldType.String },
+                new() { Name = "secret", Type = MetadataV2FieldType.String, Hidden = true }
+            ]
+        };
+        var feature = Feature.Create(1, null, new Dictionary<string, object?>
+        {
+            ["name"] = "park", ["status"] = "open", ["secret"] = "private"
+        }.ToImmutableDictionary());
+        var options = GeoJsonFeatureBaseBuilder.PrepareOptions(resource,
+            new GeoJsonFeatureBuildOptions(
+                ProjectedProperties: new HashSet<string> { "name" }, IncludeAdditionalAttributes: true));
+        var first = GeoJsonFeatureBaseBuilder.Create(feature, resource, options);
+        var second = GeoJsonFeatureBaseBuilder.Create(feature, resource,
+            options with { ProjectedProperties = new HashSet<string> { "status", "secret" } });
+        first.Properties.Should().HaveCount(1).And.Contain("name", "park");
+        second.Properties.Should().HaveCount(1).And.Contain("status", "open");
     }
 
     [Fact]
