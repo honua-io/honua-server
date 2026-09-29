@@ -80,7 +80,8 @@ public sealed partial class GPServerDurableRuntimeTests
                 inputs["Break_Values"] = "2 5";
                 inputs["Travel_Direction"] = "Away From Facility";
             }
-            using var submit = await client.PostAsync(taskUrl + "/submitJob", new FormUrlEncodedContent(inputs));
+            using var submitContent = new FormUrlEncodedContent(inputs);
+            using var submit = await client.PostAsync(taskUrl + "/submitJob", submitContent);
             var submitText = await submit.Content.ReadAsStringAsync();
             submit.StatusCode.Should().Be(HttpStatusCode.OK, submitText);
             using var submitted = JsonDocument.Parse(submitText);
@@ -101,13 +102,13 @@ public sealed partial class GPServerDurableRuntimeTests
             solved.RootElement.GetProperty("value").GetBoolean().Should().BeTrue();
 
             var solveOperation = route ? "solve" : "solveServiceArea";
-            using var oracleResponse = await client.PostAsync($"/rest/services/{ServiceId}/NAServer/{solver}/{solveOperation}",
-                new FormUrlEncodedContent(new Dictionary<string, string>
+            using var oracleContent = new FormUrlEncodedContent(new Dictionary<string, string>
                 {
                     ["f"] = "json",
                     [route ? "stops" : "facilities"] = points,
                     ["defaultBreaks"] = "2,5",
-                }));
+                });
+            using var oracleResponse = await client.PostAsync($"/rest/services/{ServiceId}/NAServer/{solver}/{solveOperation}", oracleContent);
             var oracleText = await oracleResponse.Content.ReadAsStringAsync();
             oracleResponse.StatusCode.Should().Be(HttpStatusCode.OK, oracleText);
             using var oracle = JsonDocument.Parse(oracleText);

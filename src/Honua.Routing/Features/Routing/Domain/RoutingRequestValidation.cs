@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
+
 namespace Honua.Routing.Features.Routing.Domain;
 
 /// <summary>Validates canonical routing inputs against the provider that will solve them.</summary>
@@ -16,7 +18,7 @@ public static class RoutingRequestValidation
             ? "Route solves are not supported by the configured routing provider."
             : ValidatePoints(request.Stops, 2, configuration.MaxStops, request.InSrid, request.OutSrid)
                 ?? ValidateBarriers(request.Barriers, configuration.MaxBarriers)
-                ?? ValidateCapabilities(capabilities, request.Barriers, request.TravelMode);
+                ?? ValidateCapabilities(capabilities, request.Barriers, request.TravelMode ?? request.TravelProfile);
     }
 
     /// <summary>Validates a canonical service-area request, including worker-side input limits.</summary>
@@ -54,9 +56,54 @@ public static class RoutingRequestValidation
                     : null;
 
     private static string? ValidateBarriers(IReadOnlyList<RouteBarrier>? barriers, int maximum)
-        => barriers is null || barriers.Count > maximum || barriers.Any(barrier => barrier is null || string.IsNullOrWhiteSpace(barrier.GeometryGeoJson))
+        => barriers is null || barriers.Count > maximum || barriers.Any(barrier => barrier is null || !IsValidBarrierGeometry(barrier))
             ? "Routing barriers must contain valid geometries within the configured limit."
             : null;
+
+    private static bool IsValidBarrierGeometry(RouteBarrier barrier)
+    {
+        if (string.IsNullOrWhiteSpace(barrier.GeometryGeoJson))
+        {
+            return false;
+        }
+        try
+        {
+            using var document = JsonDocument.Parse(barrier.GeometryGeoJson);
+            var geometry = document.RootElement;
+            if (geometry.ValueKind != JsonValueKind.Object || !geometry.TryGetProperty("type", out var type)
+                || type.ValueKind != JsonValueKind.String || !geometry.TryGetProperty("coordinates", out var coordinates))
+            {
+                return false;
+            }
+            return (barrier.Kind, type.GetString()) switch
+            {
+                (RouteBarrierKind.Point, "Point") => Position(coordinates),
+                (RouteBarrierKind.Point, "MultiPoint") => ArrayOf(coordinates, 1, Position),
+                (RouteBarrierKind.Line, "LineString") => Line(coordinates),
+                (RouteBarrierKind.Line, "MultiLineString") => ArrayOf(coordinates, 1, Line),
+                (RouteBarrierKind.Polygon, "Polygon") => Polygon(coordinates),
+                (RouteBarrierKind.Polygon, "MultiPolygon") => ArrayOf(coordinates, 1, Polygon),
+                _ => false,
+            };
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool ArrayOf(JsonElement value, int minimum, Func<JsonElement, bool> validate)
+        => value.ValueKind == JsonValueKind.Array && value.GetArrayLength() >= minimum && value.EnumerateArray().All(validate);
+
+    private static bool Position(JsonElement value)
+        => ArrayOf(value, 2, ordinate => ordinate.ValueKind == JsonValueKind.Number
+            && ordinate.TryGetDouble(out var number) && double.IsFinite(number));
+
+    private static bool Line(JsonElement value) => ArrayOf(value, 2, Position);
+
+    private static bool Polygon(JsonElement value) => ArrayOf(value, 1, ring => ArrayOf(ring, 4, Position)
+        && ring[0].EnumerateArray().Select(ordinate => ordinate.GetDouble())
+            .SequenceEqual(ring[ring.GetArrayLength() - 1].EnumerateArray().Select(ordinate => ordinate.GetDouble())));
 
     /// <summary>
     /// Returns an error for an unsupported barrier kind or travel mode, or null when

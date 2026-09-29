@@ -204,17 +204,13 @@ internal static class RoutingGPTasks
                      ("facilityId", "FacilityID"), ("fromBreak", "FromBreak"), ("toBreak", "ToBreak"),
                  })
         {
-            foreach (var field in fields)
+            foreach (var field in fields.Where(field => field!["name"]!.GetValue<string>() == canonical))
             {
-                if (field!["name"]!.GetValue<string>() == canonical)
-                {
-                    field["name"] = esri;
-                    field["alias"] = esri;
-                }
+                field!["name"] = esri;
+                field["alias"] = esri;
             }
-            foreach (var feature in result["features"]!.AsArray())
+            foreach (var attributes in result["features"]!.AsArray().Select(feature => feature!["attributes"]!.AsObject()))
             {
-                var attributes = feature!["attributes"]!.AsObject();
                 if (attributes.Remove(canonical, out var attribute))
                 {
                     attributes[esri] = attribute;
