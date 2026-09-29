@@ -1,10 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.RegularExpressions;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Migrations;
 using Xunit;
@@ -64,7 +64,7 @@ public sealed class DatabaseMigrationSafetyTests
     }
 
     private static IEnumerable<string> RollingUpgradeViolations(
-        IReadOnlyDictionary<string, string> scripts, IReadOnlyDictionary<string, string> baseline)
+        Dictionary<string, string> scripts, Dictionary<string, string> baseline)
     {
         foreach (var (name, hash) in baseline)
         {
