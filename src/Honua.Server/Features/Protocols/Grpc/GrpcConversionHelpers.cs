@@ -225,16 +225,32 @@ internal static class GrpcConversionHelpers
     /// <summary>
     /// Converts a domain Feature to a proto Feature message.
     /// </summary>
+    /// <param name="feature">Canonical feature.</param>
+    /// <param name="includeGeometry">Whether to encode the geometry.</param>
+    /// <param name="geometryLimits">Geometry encoding limits.</param>
+    /// <param name="objectIdFieldName">
+    /// The layer's object-id field. <c>geospatial.v1.Feature</c> carries the id in
+    /// <see cref="Proto.Feature.Id"/>, so an attribute with this name (in any casing,
+    /// which covers the storage primary-key column) is not repeated in the attribute
+    /// map (honua-server#5330).
+    /// </param>
     public static Proto.Feature ToProtoFeature(
         Feature feature,
         bool includeGeometry = true,
-        GeometryLimits? geometryLimits = null)
+        GeometryLimits? geometryLimits = null,
+        string? objectIdFieldName = null)
     {
         var proto = new Proto.Feature { Id = feature.Id };
 
         foreach (var (key, value) in feature.Attributes)
         {
             if (FeatureAttributeVisibility.IsInternalAttribute(key))
+            {
+                continue;
+            }
+
+            if (objectIdFieldName is { Length: > 0 }
+                && string.Equals(key, objectIdFieldName, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -264,7 +280,10 @@ internal static class GrpcConversionHelpers
             Name = field.Name,
             FieldType = ToProtoFieldType(field.Type),
             Length = field.Length ?? 0,
-            Nullable = field.Nullable
+            Nullable = field.Nullable,
+            // Same display-name precedence as GeoServices REST field metadata
+            // (FeatureServerUtilities.V2 / QueryFormatters), honua-server#5330.
+            Alias = field.Alias ?? field.Title ?? field.Name
         };
     }
 

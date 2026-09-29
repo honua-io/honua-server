@@ -163,7 +163,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             response.Features.Add(GrpcConversionHelpers.ToProtoFeature(
                 feature,
                 queryContext.ReturnGeometry,
-                queryContext.GeometryLimits));
+                queryContext.GeometryLimits,
+                pkField));
         }
 
         response.ExceededTransferLimit = result.HasMoreResults;
@@ -198,7 +199,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             batch.Add(GrpcConversionHelpers.ToProtoFeature(
                 enumerator.Current,
                 queryContext.ReturnGeometry,
-                queryContext.GeometryLimits));
+                queryContext.GeometryLimits,
+                pkField));
 
             if (batch.Count < _streamBatchSize)
             {
