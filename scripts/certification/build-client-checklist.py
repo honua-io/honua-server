@@ -128,7 +128,7 @@ CUSTOMER_READINESS_GOAL = (
 COVERAGE_GAPS = {
     "source-inventory": "Reconcile both directions: 118 capability keys and 1,306 server surfaces; the QGIS base has 117 and 1,270, with an overlay at 1,271.",
     "native-case-crosswalk": "Map the 367 Esri operation/parameter cases and 6,767 QGIS review obligations to native child cases, shared witnesses or evidenced dispositions. Inventory counts are not test counts.",
-    "authentication": "Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows.",
+    "authentication": "Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows. Preserve the owned APIHeader sequence and WFS ordering control as distinct PyQGIS diagnostics. Anonymous-first WFS credential recovery fails before an authenticated request because of the reviewed URL-only capabilities cache; no N/A or shipping promotion. Complete other auth methods, least-privilege roles, dependent resources and authenticated project reopen.",
     "workflow-variants": "Bind schema/paging, edits/relationships/attachments, offline/versioning, imagery/tiles, processing parameters, project reopen and recovery variants to executable cases and independent oracles.",
     "vector-data-fidelity": "Bind fractional timestamps, empty strings versus null, provider-specific IDs/CRS, all page contents, export and cold project reopen to native children on both QGIS versions. Replay the local GeoJSON timestamp fix on the shipping candidate. WFS empty-string loss remains an observed failure pending provider/workaround review; do not change its oracle or award N/A.",
     "versions-and-licenses": "Retain QGIS 4.2.2 as a separate unresolved review target; bind installed client builds, license levels, extensions and portal privileges before accepting a licensed skip.",
@@ -168,6 +168,29 @@ DISPOSITION_RULES = {
 # Latest Esri documentation still needs binding to the installed client.
 # Each QGIS review records its documentation version or installed source revision.
 MANUAL_REVIEWS = [
+    {
+        "id": "qgis-34414-auth-recovery", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 3.44.14, installed source revision 1a4cda5f262",
+        "url": "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgswfsprovider.cpp#L2754",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/core/providers/arcgis/qgsarcgisrestquery.cpp#L213",
+            "https://docs.qgis.org/3.44/en/docs/pyqgis_developer_cookbook/authentication.html",
+        ],
+        "protocols": ["featureserver", "ogc-api-features", "wfs"], "lanes": ["pyqgis"],
+        "finding": "Stock APIHeader can propagate X-API-Key through these native provider paths. AFS parses HTTP-200 error envelopes into provider errors. WFS caches capabilities by request URL for 60 seconds without credential identity; anonymous-first discovery blocks a subsequent protected load. A valid cached WFS schema can remain valid while actual GetFeature requests receive AccessDenied and return no data.",
+        "next_check": "Retain exact native requests, header classifications, provider errors and independent protected payloads. Keep public-first and protected-first results separate, validate a supported cache-recovery configuration without suppressing the failed default, and complete token/OAuth/scoped-user and project-persistence variants on the shipping candidate.",
+    },
+    {
+        "id": "qgis-422-auth-recovery", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 4.2.2, installed source revision f1431de8676",
+        "url": "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsprovider.cpp#L1947",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/core/providers/arcgis/qgsarcgisrestquery.cpp",
+        ],
+        "protocols": ["featureserver", "ogc-api-features", "wfs"], "lanes": ["pyqgis"],
+        "finding": "The installed 4.2.2 source has the same URL-only WFS capabilities cache. Its separate native runs reproduce the public-first recovery failure, a successful cold authorized load, and explicit denied GetFeature responses despite a valid schema. Layer validity is not a data-authorization assertion.",
+        "next_check": "Preserve this installed version's own profiles, traces and process exits. Keep the recovery failure open, review native configuration and UI behavior, and replay all required authentication variants on the same shipping candidate used by the other lanes.",
+    },
     {
         "id": "qgis-34414-vector-identity", "reviewed_at": "2026-09-29",
         "documentation_version": "QGIS 3.44.14, installed source revision 1a4cda5f262",
@@ -230,7 +253,7 @@ MANUAL_REVIEWS = [
 
 def scope_contract() -> dict:
     return {
-        "revision": "2026-09-29.1",
+        "revision": "2026-09-29.2",
         "authority": AUTHORITY_URL,
         "objective": CUSTOMER_READINESS_GOAL,
         "audit": AUDIT_URL,

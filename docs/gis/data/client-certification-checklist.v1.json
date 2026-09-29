@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "description": "Authoritative four-client scope contract and historical operation tracker. Closed totals include exclusions and are not certification acceptance. Coverage reviews, licensed skips, maturity and candidate-bound native evidence are governed separately in scope_contract.",
   "scope_contract": {
-    "revision": "2026-09-29.1",
+    "revision": "2026-09-29.2",
     "authority": "https://github.com/honua-io/honua-server/blob/trunk/docs/gis/CLIENT_CERTIFICATION_CHECKLIST.md",
     "objective": "Demonstrate that customers can reliably use Honua's advertised supported workflows in QGIS, PyQGIS, ArcGIS Pro and ArcPy on declared client versions and license profiles. Reconcile the client surface into one traceable matrix, repair server and harness defects, and pass every required native workflow and regression gate against the same frozen shipping NativeAOT/Production candidate. Publish reproducible setup instructions, evidence and precise limitations. Accept documented client exclusions and licensed skips only within their stated profile; keep preview/experimental readiness separate.",
     "audit": "https://github.com/honua-io/honua-client-compat/blob/9c9b327c81811948a96a9d94371ede2f3d26273c/docs/reports/client-surface-completeness-2026-09-28.json",
@@ -106,7 +106,7 @@
       {
         "id": "authentication",
         "status": "open",
-        "required_work": "Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows."
+        "required_work": "Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows. Preserve the owned APIHeader sequence and WFS ordering control as distinct PyQGIS diagnostics. Anonymous-first WFS credential recovery fails before an authenticated request because of the reviewed URL-only capabilities cache; no N/A or shipping promotion. Complete other auth methods, least-privilege roles, dependent resources and authenticated project reopen."
       },
       {
         "id": "workflow-variants",
@@ -140,6 +140,45 @@
       }
     ],
     "manual_reviews": [
+      {
+        "id": "qgis-34414-auth-recovery",
+        "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 3.44.14, installed source revision 1a4cda5f262",
+        "url": "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgswfsprovider.cpp#L2754",
+        "related_sources": [
+          "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/core/providers/arcgis/qgsarcgisrestquery.cpp#L213",
+          "https://docs.qgis.org/3.44/en/docs/pyqgis_developer_cookbook/authentication.html"
+        ],
+        "protocols": [
+          "featureserver",
+          "ogc-api-features",
+          "wfs"
+        ],
+        "lanes": [
+          "pyqgis"
+        ],
+        "finding": "Stock APIHeader can propagate X-API-Key through these native provider paths. AFS parses HTTP-200 error envelopes into provider errors. WFS caches capabilities by request URL for 60 seconds without credential identity; anonymous-first discovery blocks a subsequent protected load. A valid cached WFS schema can remain valid while actual GetFeature requests receive AccessDenied and return no data.",
+        "next_check": "Retain exact native requests, header classifications, provider errors and independent protected payloads. Keep public-first and protected-first results separate, validate a supported cache-recovery configuration without suppressing the failed default, and complete token/OAuth/scoped-user and project-persistence variants on the shipping candidate."
+      },
+      {
+        "id": "qgis-422-auth-recovery",
+        "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 4.2.2, installed source revision f1431de8676",
+        "url": "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsprovider.cpp#L1947",
+        "related_sources": [
+          "https://github.com/qgis/QGIS/blob/f1431de8676/src/core/providers/arcgis/qgsarcgisrestquery.cpp"
+        ],
+        "protocols": [
+          "featureserver",
+          "ogc-api-features",
+          "wfs"
+        ],
+        "lanes": [
+          "pyqgis"
+        ],
+        "finding": "The installed 4.2.2 source has the same URL-only WFS capabilities cache. Its separate native runs reproduce the public-first recovery failure, a successful cold authorized load, and explicit denied GetFeature responses despite a valid schema. Layer validity is not a data-authorization assertion.",
+        "next_check": "Preserve this installed version's own profiles, traces and process exits. Keep the recovery failure open, review native configuration and UI behavior, and replay all required authentication variants on the same shipping candidate used by the other lanes."
+      },
       {
         "id": "qgis-34414-vector-identity",
         "reviewed_at": "2026-09-29",

@@ -100,6 +100,28 @@ they do not add shipping or native UI acceptance. Bind and publish the evidence,
 complete the provider review and replay the required native cases on the frozen
 shipping candidate before changing readiness.
 
+The authentication follow-up uses client-compat commit
+`b401cc96edbeef45e978f12f357238de488de2b9` and its
+`docs/reports/pyqgis-native-auth-recovery-2026-09-29.json` diagnostic index.
+That unpublished index maps each native child to an independent expectation and
+hashed evidence under `artifacts/windows-cert-20260928/pyqgis-native-auth-d`.
+The fixture has distinct public/protected WFS names and a protected sentinel
+whose attributes and coordinates were verified directly in SQL; all 107 public
+records remained unchanged. It tests APIHeader with an admin key, not scoped
+user roles or the full authentication surface.
+
+Both installed QGIS versions passed all eight FeatureServer and OGC API Features
+access/recovery cases, with clean native child exits. WFS's separate protected-first
+controls passed nine cases each, including explicit GetFeature denial and valid
+recovery. The default public-first sequence retains six failed protected cases
+per version: the URL-only capabilities cache prevents new authenticated requests.
+The control cannot replace those failures or justify N/A. The probe now reads
+GeoServices errors from the native provider and recognizes that WFS can retain
+a valid schema while GetFeature receives AccessDenied and returns zero features.
+Twelve focused denial-evidence regressions passed; the required client check
+verified shared snapshots but remains incomplete because pytest is unavailable.
+The same Debug/JIT Development scope and zero shipping/UI acceptance apply.
+
 ## Completion and validation
 
 Certification is complete for a declared version/license/configuration profile
@@ -144,7 +166,7 @@ to executable native cases, not additional test passes or a new denominator.
 |---|---|---|
 | `source-inventory` | open | Reconcile both directions: 118 capability keys and 1,306 server surfaces; the QGIS base has 117 and 1,270, with an overlay at 1,271. |
 | `native-case-crosswalk` | open | Map the 367 Esri operation/parameter cases and 6,767 QGIS review obligations to native child cases, shared witnesses or evidenced dispositions. Inventory counts are not test counts. |
-| `authentication` | open | Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows. |
+| `authentication` | open | Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows. Preserve the owned APIHeader sequence and WFS ordering control as distinct PyQGIS diagnostics. Anonymous-first WFS credential recovery fails before an authenticated request because of the reviewed URL-only capabilities cache; no N/A or shipping promotion. Complete other auth methods, least-privilege roles, dependent resources and authenticated project reopen. |
 | `workflow-variants` | open | Bind schema/paging, edits/relationships/attachments, offline/versioning, imagery/tiles, processing parameters, project reopen and recovery variants to executable cases and independent oracles. |
 | `vector-data-fidelity` | open | Bind fractional timestamps, empty strings versus null, provider-specific IDs/CRS, all page contents, export and cold project reopen to native children on both QGIS versions. Replay the local GeoJSON timestamp fix on the shipping candidate. WFS empty-string loss remains an observed failure pending provider/workaround review; do not change its oracle or award N/A. |
 | `versions-and-licenses` | open | Retain QGIS 4.2.2 as a separate unresolved review target; bind installed client builds, license levels, extensions and portal privileges before accepting a licensed skip. |
