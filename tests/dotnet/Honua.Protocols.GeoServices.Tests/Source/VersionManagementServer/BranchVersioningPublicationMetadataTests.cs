@@ -301,7 +301,13 @@ public sealed class BranchVersioningPublicationFixture : IAsyncLifetime
         using var document = JsonDocument.Parse(getBody);
         document.RootElement.TryGetProperty("error", out _).Should().BeFalse(getBody);
         document.RootElement.GetProperty("defaultVersionName").GetString().Should().Be("sde.DEFAULT");
-        document.RootElement.GetProperty("capabilities").GetString().Should().Contain("Create");
+        // VersionManagementServer capabilities are named booleans, unlike the
+        // comma-separated capabilities string on FeatureServer metadata.
+        var capabilities = document.RootElement.GetProperty("capabilities");
+        capabilities.ValueKind.Should().Be(JsonValueKind.Object);
+        capabilities.GetProperty("supportsAsyncReconcile").GetBoolean().Should().BeTrue();
+        capabilities.GetProperty("supportsAsyncPost").GetBoolean().Should().BeTrue();
+        capabilities.GetProperty("supportsPartialPost").GetBoolean().Should().BeFalse();
     }
 
     internal static async Task AssertVersionManagementErrorAsync(HttpResponseMessage response, int expectedCode, ITestOutputHelper output)
