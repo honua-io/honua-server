@@ -67,7 +67,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         IFieldMaskSource? fieldMaskSource = null,
         string? managedFeatureSchema = null,
         PostgresBoundConnectionProvider? boundConnectionProvider = null,
-        bool preferSerialBoundedSpatialReads = false)
+        bool preferSerialBoundedSpatialReads = false,
+        bool preferSerialSourceSpatialCounts = false)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _dictionaryPool = dictionaryPool ?? throw new ArgumentNullException(nameof(dictionaryPool));

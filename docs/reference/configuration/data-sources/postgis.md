@@ -187,8 +187,8 @@ reads have a simple intersects/envelope bbox, an effective first-page limit of
 the normalized ascending primary-ID sort), and no distinct, branch-version or null-geometry request.
 Unknown geometry types, ambient transactions and borrowed mutation transactions
 retain ordinary planning.
-Counts, statistics, streaming, tiles, larger pages, later pages and custom sorts
-also retain ordinary planning.
+This option does not change counts, statistics, streaming, tiles, larger pages,
+later pages or custom sorts. Count planning has a separate option below.
 
 For an eligible read, Honua batches a transaction-local
 `max_parallel_workers_per_gather=0` setting with the original parameterized
@@ -202,6 +202,34 @@ This profile targets parallel-worker startup overhead observed in bounded point
 bbox reads. It does not set a PostgreSQL global or session default. Benchmark
 representative selectivities and concurrent workloads on your deployment before
 enabling it; limiting returned rows does not limit the work required to find them.
+
+## Source-backed spatial counts
+
+`Database__PreferSerialSourceSpatialCounts=true` opts into serial execution plans
+for counts on source-backed PostGIS point layers. The default is `false`. This
+setting is independent of `PreferSerialBoundedSpatialReads`: enabling it changes
+count planning, without changing feature SELECT planning.
+
+Eligible counts use a simple envelope with an `Intersects` or explicit
+`EnvelopeIntersects` relationship. Honua preserves the requested predicate,
+including exact intersection for `Intersects`, filters and authorization. Counts
+have no page-size limit; their work depends on the complete matching set. Unknown
+or non-point geometry, non-envelope predicates, distinct requests, non-default
+versions and caller-owned explicit or ambient transactions retain their existing
+behavior.
+
+Honua batches transaction-local `max_parallel_workers_per_gather=0` with the
+parameterized count. The setting ends when the batch completes or fails, including
+cancellation, and does not leak into pooled connections. The count statement has
+a separate preparation identity so a generic plan from an ordinary count cannot
+be reused by the serial profile. PostgreSQL JIT settings are unchanged. Honua's
+Native AOT compilation mode is also unchanged.
+
+This option targets worker-startup overhead observed in a 100K-point SQL
+diagnostic. That experiment is not an application throughput result or evidence
+that serial execution wins for every dataset or selectivity. Validate both
+throughput and tail latency under representative concurrent traffic before
+enabling it. No global database setting or migration is required.
 
 ## Related pages
 
