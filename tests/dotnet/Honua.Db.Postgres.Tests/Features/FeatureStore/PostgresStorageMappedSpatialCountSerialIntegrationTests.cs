@@ -357,8 +357,9 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
             {
                 await pending;
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
             {
+                pending.IsCanceled.Should().BeTrue("cleanup should only observe cancellation from this test");
             }
         }
         await AssertSessionRestoredAsync();
