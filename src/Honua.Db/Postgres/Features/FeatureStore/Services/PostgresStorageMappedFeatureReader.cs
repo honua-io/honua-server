@@ -47,9 +47,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private readonly ILogger _logger;
     private readonly string _qualifiedTableName;
     private readonly string? _managedFeatureSchema;
-    private readonly bool _preferSerialBoundedSpatialReads;
+    private readonly bool? _preferSerialBoundedSpatialReads;
     private readonly bool _disableJitForSourceSpatialCounts;
-    private readonly bool _preferSerialSourceSpatialCounts;
+    private readonly bool? _preferSerialSourceSpatialCounts;
     private readonly string _primaryKeyColumn;
     private readonly string? _geometryColumn;
     private readonly int _storageSrid;
@@ -70,9 +70,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         IFieldMaskSource? fieldMaskSource = null,
         string? managedFeatureSchema = null,
         PostgresBoundConnectionProvider? boundConnectionProvider = null,
-        bool preferSerialBoundedSpatialReads = false,
+        bool? preferSerialBoundedSpatialReads = null,
         bool disableJitForSourceSpatialCounts = false,
-        bool preferSerialSourceSpatialCounts = false)
+        bool? preferSerialSourceSpatialCounts = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _dictionaryPool = dictionaryPool ?? throw new ArgumentNullException(nameof(dictionaryPool));
@@ -160,7 +160,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             }
         }
 
-        var totalCount = await CountCoreAsync(query, cancellationToken).ConfigureAwait(false);
+        var totalCount = await CountCoreAsync(query, isAssociatedFeatureRead: true, cancellationToken).ConfigureAwait(false);
         if (!items.IsDefault)
         {
             // READ COMMITTED permits deletes between the page and count snapshots.
@@ -223,10 +223,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         CancellationToken cancellationToken = default)
     {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
-        return await CountCoreAsync(query, cancellationToken).ConfigureAwait(false);
+        return await CountCoreAsync(query, isAssociatedFeatureRead: false, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<long> CountCoreAsync(FeatureQuery query, CancellationToken cancellationToken)
+    private async Task<long> CountCoreAsync(
+        FeatureQuery query, bool isAssociatedFeatureRead, CancellationToken cancellationToken)
     {
         var sql = new SqlBuilder();
         sql.Append(CultureInfo.InvariantCulture, $"SELECT COUNT(*)::bigint FROM {BuildFeatureSource(query, sql)}");
@@ -234,7 +235,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         // A caller-owned transaction would retain SET LOCAL beyond this count.
-        var useSerialPlan = ShouldUseSerialSourceSpatialCount(query);
+        var useSerialPlan = ShouldUseSerialSourceSpatialCount(query, isAssociatedFeatureRead);
         var disableJit = ShouldDisableJitForSpatialCount(query);
         if (connection.Transaction is null && (useSerialPlan || disableJit))
         {

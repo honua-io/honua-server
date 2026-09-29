@@ -16,7 +16,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         _disableJitForSourceSpatialCounts && CanUseScopedSourceSpatialCount(query);
 
     private bool ShouldUseSerialSpatialPlan(FeatureQuery query) =>
-        _preferSerialBoundedSpatialReads &&
+        _preferSerialBoundedSpatialReads is not false && CanUseBoundedSpatialPlan(query);
+
+    private bool CanUseBoundedSpatialPlan(FeatureQuery query) =>
         _mapping.IsSourceBacked &&
         _geometryColumn != null &&
         _resource.ReadGeometryType() == MetadataV2GeometryType.Point &&

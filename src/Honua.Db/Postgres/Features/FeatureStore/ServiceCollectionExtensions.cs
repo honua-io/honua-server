@@ -32,13 +32,13 @@ internal static class ServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The service collection</param>
     /// <param name="schemaName">Optional database schema name</param>
-    /// <param name="preferSerialBoundedSpatialReads">Opt in to serial plans for small first-page source-backed point bbox reads.</param>
+    /// <param name="preferSerialBoundedSpatialReads">Null enables automatic serial plans for small first-page source-backed point bbox reads; false opts out.</param>
     /// <param name="disableJitForSourceSpatialCounts">Opt in to disabling JIT within source-backed point bbox count queries.</param>
-    /// <param name="preferSerialSourceSpatialCounts">Opt in to serial plans for source-backed point bbox counts.</param>
+    /// <param name="preferSerialSourceSpatialCounts">Null scopes serial plans to counts associated with eligible bounded reads; true also enables standalone spatial counts.</param>
     /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddRefactoredFeatureStore(this IServiceCollection services, string? schemaName = null,
-        bool preferSerialBoundedSpatialReads = false, bool disableJitForSourceSpatialCounts = false,
-        bool preferSerialSourceSpatialCounts = false)
+        bool? preferSerialBoundedSpatialReads = null, bool disableJitForSourceSpatialCounts = false,
+        bool? preferSerialSourceSpatialCounts = null)
     {
         var poolProvider = new DefaultObjectPoolProvider();
 
