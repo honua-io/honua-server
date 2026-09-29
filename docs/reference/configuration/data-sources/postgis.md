@@ -203,34 +203,6 @@ bbox reads. It does not set a PostgreSQL global or session default. Benchmark
 representative selectivities and concurrent workloads on your deployment before
 enabling it; limiting returned rows does not limit the work required to find them.
 
-## Source-backed spatial counts
-
-`Database__DisableJitForSourceSpatialCounts=true` disables PostgreSQL JIT only
-within eligible count queries. The default is `false`. Eligible queries count
-source-backed point layers with a simple intersects/envelope bbox. Distinct
-queries, non-default branches, unknown geometry types, ambient transactions and
-borrowed mutation transactions retain ordinary planning. Page size and offset do
-not restrict eligibility: the exact count still considers all matching rows.
-
-Honua batches transaction-local `jit=off` with the original parameterized count.
-The setting ends with that batch, including SQL errors and cancellation, and the
-scoped count uses a distinct `SELECT ALL` identity to avoid reusing a generic plan
-prepared by the ordinary path. Spatial predicates, security filters and exact
-count results are unchanged. The profile does not alter parallel-worker settings
-or the planning of feature reads, statistics or tiles. It can be enabled
-independently of `PreferSerialBoundedSpatialReads`.
-
-This profile targets SQL compilation overhead observed in broad point-bbox
-counts. PostgreSQL JIT is separate from Honua Native AOT. It can help short queries
-where compilation costs outweigh execution savings; larger or more complex
-queries may benefit from JIT. Measure representative selectivities and concurrent
-workloads before enabling it. Keep this tuned profile separate from shipping
-defaults in benchmark reports.
-
-See PostgreSQL's [JIT decision documentation](https://www.postgresql.org/docs/17/jit-decision.html)
-and Npgsql's [batch transaction behavior](https://www.npgsql.org/doc/basic-usage.html#batching)
-for the underlying planner and transaction semantics.
-
 ## Related pages
 
 - [Data sources overview](README.md)
