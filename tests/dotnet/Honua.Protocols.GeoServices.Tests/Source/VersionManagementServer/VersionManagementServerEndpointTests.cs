@@ -478,7 +478,8 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.VersionManagementServer, "reconcile")]
     public async Task Reconcile_Async_Returns202WithPollableJob(string prefix)
     {
-        var created = await CreateVersionAsync("admin.reconcile_async");
+        // CI can reuse a persistent database across theory rows and reruns.
+        var created = await CreateVersionAsync($"admin.reconcile_async_{Guid.NewGuid():N}");
         var guid = created.GetProperty("versionGuid").GetString();
 
         // async=true starts a durable, pollable job and returns 202 with a job handle (#1553).

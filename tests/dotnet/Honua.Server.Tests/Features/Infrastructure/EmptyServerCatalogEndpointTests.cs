@@ -157,29 +157,34 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
     public async Task SiteRoot_RedirectsToTheServicesDirectory()
     {
         using var client = _fixture.CreateClient(allowAutoRedirect: false);
-        foreach (var path in new[] { "/", "/rest", "/arcgis" })
+        foreach (var (path, servicesDirectory) in new[]
+                 {
+                     ("/", "/rest/services"),
+                     ("/rest", "/rest/services"),
+                     ("/arcgis", "/arcgis/rest/services"),
+                 })
         {
             using var get = await client.GetAsync(path);
-            AssertRedirectsToServicesDirectory(get, path);
+            AssertRedirectsToServicesDirectory(get, path, servicesDirectory);
 
             using var headRequest = new HttpRequestMessage(HttpMethod.Head, path);
             using var head = await client.SendAsync(headRequest);
-            AssertRedirectsToServicesDirectory(head, path);
-        }
+            AssertRedirectsToServicesDirectory(head, path, servicesDirectory);
 
-        using var following = _fixture.CreateClient(allowAutoRedirect: true);
-        using var followed = await following.GetAsync("/");
-        followed.StatusCode.Should().Be(HttpStatusCode.OK);
-        followed.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+            using var following = _fixture.CreateClient(allowAutoRedirect: true);
+            using var followed = await following.GetAsync(path);
+            followed.StatusCode.Should().Be(HttpStatusCode.OK);
+            followed.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        }
     }
 
-    private static void AssertRedirectsToServicesDirectory(HttpResponseMessage response, string path)
+    private static void AssertRedirectsToServicesDirectory(HttpResponseMessage response, string path, string servicesDirectory)
     {
         response.StatusCode.Should().Be(HttpStatusCode.Redirect, $"{path} is an ArcGIS site-root probe and must not 404");
         response.Headers.Location.Should().NotBeNull();
         var location = response.Headers.Location!;
         var locationPath = location.IsAbsoluteUri ? location.AbsolutePath : location.OriginalString;
-        locationPath.Should().Be("/rest/services");
+        locationPath.Should().Be(servicesDirectory);
     }
 
     // --- GeoServices /rest/services ---
