@@ -289,7 +289,6 @@ internal static class GrpcConversionHelpers
             int number => number == featureId,
             short number => number == featureId,
             decimal number => number == featureId,
-            double number => number == featureId,
             string text => long.TryParse(text, System.Globalization.NumberStyles.Integer,
                 System.Globalization.CultureInfo.InvariantCulture, out var parsed) && parsed == featureId,
             System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Number } element
