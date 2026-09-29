@@ -5402,7 +5402,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 64,
+      "line": 117,
       "language": "bash"
     },
     {
@@ -5415,7 +5415,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 216,
+      "line": 269,
       "language": "bash"
     },
     {
