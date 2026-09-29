@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1144,
+    "total": 1143,
     "byStatus": {
-      "not-executable": 1131,
+      "not-executable": 1130,
       "unvalidated": 10,
       "passed": 3
     }
@@ -13401,19 +13401,6 @@
       "language": "bash"
     },
     {
-      "id": "60a5c8d0adce1031",
-      "kind": "docs-fence",
-      "path": "docs/ops/capacity-soak-receipt.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 2,
-      "line": 181,
-      "language": "bash"
-    },
-    {
       "id": "8bd0e41cf7c7c7a5",
       "kind": "docs-fence",
       "path": "docs/ops/capacity-soak-receipt.md",
@@ -13423,7 +13410,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 33,
+      "line": 21,
       "language": "bash"
     },
     {
