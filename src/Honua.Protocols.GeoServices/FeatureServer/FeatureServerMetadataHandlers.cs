@@ -149,7 +149,8 @@ internal static partial class FeatureServerEndpoints
                 supportsAttachmentUploads: supportsAttachmentUploads,
                 branchVersioningEnabled: branchVersioningEnabled,
                 versionManagementEnabled: IsVersionManagementAvailable(context, branchVersioningEnabled),
-                offlineSyncEnabled: offlineSyncEnabled);
+                offlineSyncEnabled: offlineSyncEnabled,
+                pathBase: context.Request.PathBase);
 
             FeatureServerLog.ServiceMetadataReturned(logger, service.Metadata.Name, response.Layers.Length);
 
@@ -353,7 +354,8 @@ internal static partial class FeatureServerEndpoints
                 supportsAttachmentUploads: supportsAttachmentUploads,
                 branchVersioningEnabled: await IsPublicationBranchVersioningAvailableAsync(
                     context, service, resource, publication, snapshot, cancellationToken).ConfigureAwait(false),
-                offlineSyncEnabled: offlineSyncEnabled);
+                offlineSyncEnabled: offlineSyncEnabled,
+                pathBase: context.Request.PathBase);
 
             FeatureServerLog.LayerMetadataReturned(logger, serviceId, resolvedLayerId, resource.Metadata.Name);
 

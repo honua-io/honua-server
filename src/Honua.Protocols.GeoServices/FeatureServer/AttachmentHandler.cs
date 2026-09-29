@@ -568,14 +568,14 @@ internal static partial class AttachmentHandler
             return null;
         }
 
-        var relativePath = $"{context.Request.PathBase}/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}";
+        var relativePath = $"/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}";
         if (BaseUrlResolver.TryGetConfiguredBaseUrl(context, out var configuredBaseUrl) &&
             !string.IsNullOrWhiteSpace(configuredBaseUrl))
         {
             return $"{configuredBaseUrl}{relativePath}";
         }
 
-        return relativePath;
+        return $"{context.Request.PathBase}{relativePath}";
     }
 
     #region Logging

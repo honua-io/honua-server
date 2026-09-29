@@ -155,8 +155,8 @@ internal static class GeoservicesCatalogEndpoints
         return endpoints;
     }
 
-    private static IResult HandleSiteRoot()
-        => Results.Redirect("/rest/services");
+    private static IResult HandleSiteRoot(HttpContext context)
+        => Results.Redirect($"{context.Request.PathBase}/rest/services");
 
     // ArcGIS Pro's site-root connection form probes GET /services before it posts
     // catalog operations, so the bare form answers with the same contract as ?wsdl.

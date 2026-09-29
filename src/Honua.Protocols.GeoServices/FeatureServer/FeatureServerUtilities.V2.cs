@@ -48,6 +48,7 @@ internal static partial class FeatureServerEndpoints
     /// <param name="branchVersioningEnabled">Whether branch versioning is available (Postgres + Pro entitlement).</param>
     /// <param name="versionManagementEnabled">Whether the experimental VMS lifecycle surface is enabled.</param>
     /// <param name="offlineSyncEnabled">Whether disconnected-sync routes are enabled by lifecycle configuration.</param>
+    /// <param name="pathBase">The active application mount path for service links.</param>
     internal static FeatureServerResponse MapServiceToResponseV2(
         MetadataV2Service service,
         IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
@@ -57,7 +58,8 @@ internal static partial class FeatureServerEndpoints
         bool supportsAttachmentUploads,
         bool branchVersioningEnabled,
         bool versionManagementEnabled,
-        bool offlineSyncEnabled)
+        bool offlineSyncEnabled,
+        PathString pathBase = default)
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(publications);
@@ -114,7 +116,7 @@ internal static partial class FeatureServerEndpoints
             IsDataVersioned = branchVersioningEnabled,
             SupportsBranchVersioning = versionManagementEnabled,
             VersionManagementServerUrl = versionManagementEnabled
-                ? $"/rest/services/{service.Metadata.Name}/VersionManagementServer"
+                ? $"{pathBase}/rest/services/{service.Metadata.Name}/VersionManagementServer"
                 : null,
         };
     }
