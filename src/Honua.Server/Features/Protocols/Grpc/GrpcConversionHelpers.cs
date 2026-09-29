@@ -229,10 +229,13 @@ internal static class GrpcConversionHelpers
     /// <param name="includeGeometry">Whether to encode the geometry.</param>
     /// <param name="geometryLimits">Geometry encoding limits.</param>
     /// <param name="objectIdFieldName">
-    /// The layer's object-id field. <c>geospatial.v1.Feature</c> carries the id in
-    /// <see cref="Proto.Feature.Id"/>, so an attribute with this name (in any casing,
-    /// which covers the storage primary-key column) is not repeated in the attribute
-    /// map (honua-server#5330).
+    /// The layer's object-id field, or <see langword="null"/> to keep every visible
+    /// attribute (for example distinct projections, whose attribute map is the result).
+    /// <c>geospatial.v1.Feature</c> carries the storage object id in
+    /// <see cref="Proto.Feature.Id"/>, so an attribute that only repeats that id under
+    /// this field name or the storage <c>objectid</c> column (any casing) is dropped
+    /// (honua-server#5330). An attribute whose value differs from the id, such as a
+    /// custom string public id, is kept.
     /// </param>
     public static Proto.Feature ToProtoFeature(
         Feature feature,
@@ -249,8 +252,7 @@ internal static class GrpcConversionHelpers
                 continue;
             }
 
-            if (objectIdFieldName is { Length: > 0 }
-                && string.Equals(key, objectIdFieldName, StringComparison.OrdinalIgnoreCase))
+            if (objectIdFieldName is { Length: > 0 } && IsRepeatedObjectId(key, value, feature.Id, objectIdFieldName))
             {
                 continue;
             }
@@ -268,6 +270,32 @@ internal static class GrpcConversionHelpers
         }
 
         return proto;
+    }
+
+    private const string StorageObjectIdColumn = "objectid";
+
+    private static bool IsRepeatedObjectId(string key, object? value, long featureId, string objectIdFieldName)
+    {
+        if (featureId == 0
+            || !(string.Equals(key, objectIdFieldName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, StorageObjectIdColumn, StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        return value switch
+        {
+            long number => number == featureId,
+            int number => number == featureId,
+            short number => number == featureId,
+            decimal number => number == featureId,
+            double number => number == featureId,
+            string text => long.TryParse(text, System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out var parsed) && parsed == featureId,
+            System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Number } element
+                => element.TryGetInt64(out var parsed) && parsed == featureId,
+            _ => false,
+        };
     }
 
     /// <summary>

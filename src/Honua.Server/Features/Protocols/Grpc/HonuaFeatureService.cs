@@ -164,7 +164,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                 feature,
                 queryContext.ReturnGeometry,
                 queryContext.GeometryLimits,
-                pkField));
+                query.Distinct ? null : pkField));
         }
 
         response.ExceededTransferLimit = result.HasMoreResults;
@@ -200,7 +200,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                 enumerator.Current,
                 queryContext.ReturnGeometry,
                 queryContext.GeometryLimits,
-                pkField));
+                query.Distinct ? null : pkField));
 
             if (batch.Count < _streamBatchSize)
             {

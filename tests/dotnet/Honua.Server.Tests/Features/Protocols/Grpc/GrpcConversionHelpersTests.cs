@@ -373,6 +373,33 @@ public sealed class GrpcConversionHelpersTests
     }
 
     [UnitTest]
+    public void ToProtoFeature_WithCustomPublicId_KeepsThePublicIdAndDropsOnlyTheStorageId()
+    {
+        // A layer whose id.primary field is a string public id: Feature.Id stays the
+        // storage object id, so only the storage "objectid" duplicate is dropped.
+        var feature = Feature.Create(42, null, ImmutableDictionary<string, object?>.Empty
+            .Add("objectid", 42L)
+            .Add("public_id", "PARK-0042")
+            .Add("NAME", "Golden Gate Park"));
+
+        var proto = GrpcConversionHelpers.ToProtoFeature(feature, objectIdFieldName: "public_id");
+
+        proto.Attributes.Keys.Should().BeEquivalentTo(["public_id", "NAME"]);
+        proto.Attributes["public_id"].StringValue.Should().Be("PARK-0042");
+    }
+
+    [UnitTest]
+    public void ToProtoFeature_WithIdFieldValueThatDiffersFromFeatureId_KeepsTheAttribute()
+    {
+        var feature = Feature.Create(42, null, ImmutableDictionary<string, object?>.Empty
+            .Add("OBJECTID", 7L));
+
+        var proto = GrpcConversionHelpers.ToProtoFeature(feature, objectIdFieldName: "OBJECTID");
+
+        proto.Attributes.Keys.Should().BeEquivalentTo(["OBJECTID"]);
+    }
+
+    [UnitTest]
     public void ToProtoFeature_WithoutObjectIdFieldName_KeepsEveryVisibleAttribute()
     {
         var feature = Feature.Create(42, null, ImmutableDictionary<string, object?>.Empty
