@@ -15,8 +15,10 @@ public sealed class PluginMetricsTests
     public void Measure_EmitsInvocationAndDuration_WithPluginTags()
     {
         var pluginId = UniquePluginId();
-        var invocations = new List<(string Plugin, string Extension)>();
-        var durations = new List<(string Plugin, string Extension)>();
+        // Other plugin tests emit through this static meter concurrently. Unique
+        // tags isolate assertions, but callback collection must also be thread-safe.
+        var invocations = new ConcurrentBag<(string Plugin, string Extension)>();
+        var durations = new ConcurrentBag<(string Plugin, string Extension)>();
         var meter = PluginMetrics.InstrumentMeter;
 
         using var listener = new MeterListener();
@@ -70,7 +72,7 @@ public sealed class PluginMetricsTests
     public void Measure_EmitsFailure_WhenMarkedFailed()
     {
         var pluginId = UniquePluginId();
-        var failures = new List<(string Plugin, string Extension)>();
+        var failures = new ConcurrentBag<(string Plugin, string Extension)>();
         var meter = PluginMetrics.InstrumentMeter;
 
         using var listener = new MeterListener();
