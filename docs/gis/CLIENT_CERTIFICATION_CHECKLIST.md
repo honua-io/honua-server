@@ -118,8 +118,9 @@ per version: the URL-only capabilities cache prevents new authenticated requests
 The control cannot replace those failures or justify N/A. The probe now reads
 GeoServices errors from the native provider and recognizes that WFS can retain
 a valid schema while GetFeature receives AccessDenied and returns zero features.
-Twelve focused denial-evidence regressions passed; the required client check
-verified shared snapshots but remains incomplete because pytest is unavailable.
+Twelve focused denial-evidence regressions passed; at that checkpoint the required
+client check verified shared snapshots but stopped because pytest was unavailable
+in the selected interpreter. The later editing follow-up below resolves that gate.
 The same Debug/JIT Development scope and zero shipping/UI acceptance apply.
 
 The WFS follow-up is client-compat local commit
@@ -139,9 +140,36 @@ provider controls still prove GetFeature denial. Both native GML decoders turn
 seven independent empty-string encodings into null, with five passing controls;
 the original live WFS fidelity failures remain open. Other installed entrypoints,
 retained-layer reload, UI recovery and shipping replay still require work.
-Twenty-two denial/discovery evidence regressions pass; the full required client
-check still stops at missing pytest. This follow-up is unpublished and grants
+Twenty-two denial/discovery evidence regressions pass; that checkpoint's full
+client check stopped at missing pytest. This follow-up is unpublished and grants
 no client/protocol exclusion, shipping pass or UI pass.
+
+The editing follow-up uses server code
+`64066504d2e5578ec781ef1c2722a6696a7e1084` and the client diagnostic index in
+`0c4ed8812f329d64672822870bf84aed2eb48df7`, at
+`docs/reports/pyqgis-native-edits-2026-09-29.json`. Workspace receipt
+`artifacts/windows-cert-20260928/pyqgis-native-edits-d/review.json` binds all six
+children to the independent oracle, runtime assemblies and observed exits.
+Both versions pass 9/9 FeatureServer, 9/9 OAPIF and 8/9 WFS cases. CRUD,
+buffered rollback, denied saves, retained buffers and same-buffer recovery are
+verified through SQL and fresh native layers. WFS's two failed cases preserve
+the exact empty-string/null discrepancy; the original expected value is unchanged.
+
+The fixes correct FeatureServer write failure signaling and adapt the native WFS
+1.0.0/1.1.0 transactions through the shared editing pipeline. Separate repairs
+declare the fixture geometry field and compare OAPIF nullable fields according
+to JSON Merge Patch semantics. Thirty-six focused server regressions and twelve
+editing harness regressions pass. An existing workspace Python 3.13.5 / pytest
+9.1.1 environment enabled the full client check, exposing thirteen failures.
+Recovering two artifacts from original files with matching historical hashes and
+regenerating the projection fixes those failures: 363 tests and 20 subtests pass.
+Historical receipts and validators were not weakened or relabeled.
+
+This remains a Debug/JIT Development, admin API-key, 2D point PyQGIS profile.
+Bulk/partial/unknown-commit behavior, other geometries and CRS, scoped roles,
+relationships, attachments, project reopen, the other native lanes and shipping
+replay remain explicit work. Fixes are local and unmerged. No historical checklist
+cell, exclusion or shipping/UI acceptance changes from these diagnostics.
 
 ## Completion and validation
 
@@ -189,6 +217,7 @@ to executable native cases, not additional test passes or a new denominator.
 | `native-case-crosswalk` | open | Map the 367 Esri operation/parameter cases and 6,767 QGIS review obligations to native child cases, shared witnesses or evidenced dispositions. Inventory counts are not test counts. |
 | `authentication` | open | Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows. Preserve default WFS failures, cache-disabled provider reads, Browser catalog transitions and protected-first GetFeature denial as distinct PyQGIS diagnostics. Disabling both URL-only memory caches before the first request restores catalog recovery on both installed versions; catalog visibility does not prove a denied data request. Complete retained-layer reload, other auth methods, least-privilege roles, dependent resources and authenticated project reopen on the shipping candidate; no N/A or shipping promotion. |
 | `workflow-variants` | open | Bind schema/paging, edits/relationships/attachments, offline/versioning, imagery/tiles, processing parameters, project reopen and recovery variants to executable cases and independent oracles. |
+| `native-editing` | open | Map single-feature, bulk and multi-layer edits to independent inputs, SQL persistence, native readback, denied commits, retained buffers and recovery. Final Debug/JIT PyQGIS diagnostics at server 64066504d2e5578ec781ef1c2722a6696a7e1084 pass 9/9 FeatureServer and 9/9 OAPIF per installed version; WFS passes 8/9 per version and retains empty-string-to-null readback failures. Fixes cover HTTP failure signaling, WFS 1.0/1.1 transaction adaptation, the fixture geometry declaration and OAPIF harness storage semantics. Full client harness check passes 363 tests plus 20 subtests after exact-byte evidence recovery. Complete bulk/partial/unknown-commit, other geometry/CRS, scoped roles, relationships/attachments and project-reopen variants, plus the other native lanes and the frozen shipping replay. Do not count unit or historical receipt validation as fresh native acceptance. |
 | `vector-data-fidelity` | open | Bind fractional timestamps, empty strings versus null, provider-specific IDs/CRS, all page contents, export and cold project reopen to native children on both QGIS versions. Replay the local GeoJSON timestamp fix on the shipping candidate. Both installed GML decoders turn seven independent empty-string encodings into null while five controls match; this is decoder evidence, not a live workflow pass. Preserve the WFS data-loss failure and original oracle, review other installed native entrypoints and customer workarounds, and do not award whole-client/protocol N/A. |
 | `versions-and-licenses` | open | Retain QGIS 4.2.2 as a separate unresolved review target; bind installed client builds, license levels, extensions and portal privileges before accepting a licensed skip. |
 | `maturity-and-profile` | open | Classify source maturity and selected configuration independently of client support; retain lower-priority preview/experimental work and explicit priorities 5238, 5192 and 5036. |

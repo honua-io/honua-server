@@ -130,6 +130,7 @@ COVERAGE_GAPS = {
     "native-case-crosswalk": "Map the 367 Esri operation/parameter cases and 6,767 QGIS review obligations to native child cases, shared witnesses or evidenced dispositions. Inventory counts are not test counts.",
     "authentication": "Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows. Preserve default WFS failures, cache-disabled provider reads, Browser catalog transitions and protected-first GetFeature denial as distinct PyQGIS diagnostics. Disabling both URL-only memory caches before the first request restores catalog recovery on both installed versions; catalog visibility does not prove a denied data request. Complete retained-layer reload, other auth methods, least-privilege roles, dependent resources and authenticated project reopen on the shipping candidate; no N/A or shipping promotion.",
     "workflow-variants": "Bind schema/paging, edits/relationships/attachments, offline/versioning, imagery/tiles, processing parameters, project reopen and recovery variants to executable cases and independent oracles.",
+    "native-editing": "Map single-feature, bulk and multi-layer edits to independent inputs, SQL persistence, native readback, denied commits, retained buffers and recovery. Final Debug/JIT PyQGIS diagnostics at server 64066504d2e5578ec781ef1c2722a6696a7e1084 pass 9/9 FeatureServer and 9/9 OAPIF per installed version; WFS passes 8/9 per version and retains empty-string-to-null readback failures. Fixes cover HTTP failure signaling, WFS 1.0/1.1 transaction adaptation, the fixture geometry declaration and OAPIF harness storage semantics. Full client harness check passes 363 tests plus 20 subtests after exact-byte evidence recovery. Complete bulk/partial/unknown-commit, other geometry/CRS, scoped roles, relationships/attachments and project-reopen variants, plus the other native lanes and the frozen shipping replay. Do not count unit or historical receipt validation as fresh native acceptance.",
     "vector-data-fidelity": "Bind fractional timestamps, empty strings versus null, provider-specific IDs/CRS, all page contents, export and cold project reopen to native children on both QGIS versions. Replay the local GeoJSON timestamp fix on the shipping candidate. Both installed GML decoders turn seven independent empty-string encodings into null while five controls match; this is decoder evidence, not a live workflow pass. Preserve the WFS data-loss failure and original oracle, review other installed native entrypoints and customer workarounds, and do not award whole-client/protocol N/A.",
     "versions-and-licenses": "Retain QGIS 4.2.2 as a separate unresolved review target; bind installed client builds, license levels, extensions and portal privileges before accepting a licensed skip.",
     "maturity-and-profile": "Classify source maturity and selected configuration independently of client support; retain lower-priority preview/experimental work and explicit priorities 5238, 5192 and 5036.",
@@ -168,6 +169,32 @@ DISPOSITION_RULES = {
 # Latest Esri documentation still needs binding to the installed client.
 # Each QGIS review records its documentation version or installed source revision.
 MANUAL_REVIEWS = [
+    {
+        "id": "qgis-34414-native-edit-contracts", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 3.44.14, installed source revision 1a4cda5f262",
+        "url": "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/arcgisrest/qgsafsshareddata.cpp",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgswfsprovider.cpp",
+            "https://www.rfc-editor.org/info/rfc7396/",
+            "https://github.com/honua-io/honua-client-compat/blob/0c4ed8812f329d64672822870bf84aed2eb48df7/docs/reports/pyqgis-native-edits-2026-09-29.json",
+        ],
+        "protocols": ["featureserver", "wfs", "ogc-api-features"], "lanes": ["pyqgis"],
+        "finding": "AFS postData treats a successful HTTP exchange as success; top-level HTTP-200 error envelopes can leave empty mutation result lists and falsely successful saves. Actual native denied edits previously discarded buffers. WFS sends a 1.0.0 transaction even from a 2.0.0 read connection. The repaired server returns write HTTP failures and adapts legacy transactions through the canonical pipeline. Final native edits pass 9/9 AFS, 9/9 OAPIF and 8/9 WFS with SQL persistence and same-buffer recovery. WFS empty string is stored intact but read as null.",
+        "next_check": "Preserve the failed fidelity case and exact Debug/JIT receipts. Complete bulk/atomic/partial/unknown-commit, other geometry and authentication variants; validate UI and shipping replay. The diagnostic index and fixes are local/unpublished; no native UI or shipping passes are awarded.",
+    },
+    {
+        "id": "qgis-422-native-edit-contracts", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 4.2.2, installed source revision f1431de8676",
+        "url": "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsprovider.cpp#L1600",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsprovider.cpp#L1642",
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/core/qgsgml.cpp",
+            "https://github.com/honua-io/honua-client-compat/blob/0c4ed8812f329d64672822870bf84aed2eb48df7/docs/reports/pyqgis-native-edits-2026-09-29.json",
+        ],
+        "protocols": ["featureserver", "wfs", "ogc-api-features"], "lanes": ["pyqgis"],
+        "finding": "Unlike the installed 3.44 provider, this WFS provider sends 1.1.0 transactions for a 2.0.0 read connection and uses geographic CRS axis order. Its transactionSuccess checks positive summary totals; it does not interpret Honua partial-failure extensions. Separate native execution verifies corrected 2D point coordinates, persistent edits, explicit rejection and retained-buffer recovery: 9/9 AFS, 9/9 OAPIF, 8/9 WFS. The remaining WFS empty-string/null failure has exact expected/observed values and unchanged SQL evidence.",
+        "next_check": "Keep best-effort/partial-result behavior outside the demonstrated single-feature profile until independently tested. Retain the empty-string failure, broaden geometry/CRS and authentication coverage, and replay native UI and Python workflows against the frozen shipping candidate. Source adaptation and unit tests cannot replace native passes.",
+    },
     {
         "id": "qgis-34414-wfs-cache-and-gml", "reviewed_at": "2026-09-29",
         "documentation_version": "QGIS 3.44.14, installed source revision 1a4cda5f262",
@@ -281,7 +308,7 @@ MANUAL_REVIEWS = [
 
 def scope_contract() -> dict:
     return {
-        "revision": "2026-09-29.3",
+        "revision": "2026-09-29.4",
         "authority": AUTHORITY_URL,
         "objective": CUSTOMER_READINESS_GOAL,
         "audit": AUDIT_URL,
