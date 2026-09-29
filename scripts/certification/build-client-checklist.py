@@ -12,10 +12,10 @@ Why this exists: coverage was previously answered from recall and from
 every state that is not a pass carries either an evidence reference or a citation,
 so an unreachable cell is closed by proof rather than by assertion.
 
-The two rules that make the target finishable:
+Historical operation accounting is distinct from certification acceptance:
 
-* A cell closes as ``pass`` (evidence naming the client build) or ``n/a-*`` (a
-  vendor-documentation or provider-registry citation). Nothing else counts.
+* A historical cell closes as ``pass`` or ``n/a-*``. Closed is not a pass rate;
+  this projection does not verify receipts or bind a shipping candidate.
 * ``n/a`` needs operation-specific evidence covering the native paths in scope.
   A failed URI, missing fixture or incomplete module inventory cannot close it.
 
@@ -102,6 +102,151 @@ def _load_certified_results() -> dict:
 # around them stays editable.
 DOC_BEGIN = "<!-- BEGIN GENERATED TABLES -->"
 DOC_END = "<!-- END GENERATED TABLES -->"
+
+AUTHORITY_URL = (
+    "https://github.com/honua-io/honua-server/blob/trunk/"
+    "docs/gis/CLIENT_CERTIFICATION_CHECKLIST.md"
+)
+AUDIT_URL = (
+    "https://github.com/honua-io/honua-client-compat/blob/"
+    "9c9b327c81811948a96a9d94371ede2f3d26273c/"
+    "docs/reports/client-surface-completeness-2026-09-28.json"
+)
+CUSTOMER_READINESS_GOAL = (
+    "Demonstrate that customers can reliably use Honua's advertised supported "
+    "workflows in QGIS, PyQGIS, ArcGIS Pro and ArcPy on declared client versions "
+    "and license profiles. Reconcile the client surface into one traceable matrix, "
+    "repair server and harness defects, and pass every required native workflow "
+    "and regression gate against the same frozen shipping NativeAOT/Production "
+    "candidate. Publish reproducible setup instructions, evidence and precise "
+    "limitations. Accept documented client exclusions and licensed skips only "
+    "within their stated profile; keep preview/experimental readiness separate."
+)
+
+# These are outstanding coverage reviews, not invented executable tests. Resolve
+# them into versioned native cases in the owning harness before freezing a claim.
+COVERAGE_GAPS = {
+    "source-inventory": "Reconcile both directions: 118 capability keys and 1,306 server surfaces; the QGIS base has 117 and 1,270, with an overlay at 1,271.",
+    "native-case-crosswalk": "Map the 367 Esri operation/parameter cases and 6,767 QGIS review obligations to native child cases, shared witnesses or evidenced dispositions. Inventory counts are not test counts.",
+    "authentication": "Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows.",
+    "workflow-variants": "Bind schema/paging, edits/relationships/attachments, offline/versioning, imagery/tiles, processing parameters, project reopen and recovery variants to executable cases and independent oracles.",
+    "versions-and-licenses": "Retain QGIS 4.2.2 as a separate unresolved review target; bind installed client builds, license levels, extensions and portal privileges before accepting a licensed skip.",
+    "maturity-and-profile": "Classify source maturity and selected configuration independently of client support; retain lower-priority preview/experimental work and explicit priorities 5238, 5192 and 5036.",
+    "exclusion-review": "Review operation-specific N/A and skip evidence. Preserve genuine exclusions; repair harness failures. A missing fixture, disabled flag or failed connection alone proves no server implementation gap.",
+    "candidate-and-receipts": "Join native cases to hashed receipts, independent expected results and the same frozen NativeAOT/Production candidate. The historical checklist string validator is not this acceptance join.",
+}
+
+DISPOSITION_RULES = {
+    "client-unsupported": {
+        "outcome": "n/a for the exact native client/version/operation",
+        "required_evidence": ["version-matched vendor documentation or upstream source", "review of applicable native providers and entrypoints"],
+    },
+    "license-unavailable": {
+        "outcome": "valid skip for the declared installed-license profile; no coverage claim for the unavailable operation",
+        "required_evidence": ["installed build and license/extension/portal-entitlement observation", "operation-specific vendor license requirement, including service-backed exceptions"],
+    },
+    "preview-not-selected": {
+        "outcome": "deferred in a separate preview/experimental profile; retain the obligation",
+        "required_evidence": ["source maturity and configuration gate", "declared profile selection and priority; explicit requested work remains tracked"],
+    },
+    "server-not-implemented": {
+        "outcome": "evidenced server capability gap; never client N/A",
+        "required_evidence": ["exact candidate route/capability/implementation source", "runtime discovery and request/response with prerequisites verified", "native reproducer and independent working control where available"],
+    },
+    "harness-defect": {
+        "outcome": "open repair and native replay",
+        "required_evidence": ["runner error and failing entrypoint", "vendor-supported or positive-control path", "repair regression test and native replay"],
+    },
+    "environment-unavailable": {
+        "outcome": "blocked or documented skip; no server/client absence inference",
+        "required_evidence": ["missing fixture, credentials, service configuration or automation dependency", "retry prerequisites"],
+    },
+}
+
+# Manual review identifies native paths and limitations, never a Honua pass.
+# Latest Esri documentation was reviewed on this date and still needs binding to
+# the installed 3.7.1.1904 client. QGIS documentation is versioned at 3.44.
+MANUAL_REVIEWS = [
+    {
+        "id": "qgis-service-paths", "reviewed_at": "2026-09-28",
+        "documentation_version": "QGIS 3.44",
+        "url": "https://doc.qgis.org/3.44/en/docs/user_manual/working_with_ogc/ogc_client_support.html",
+        "protocols": ["wfs", "ogc-api-features", "featureserver", "sensorthings"],
+        "lanes": ["qgis-ui", "pyqgis"],
+        "finding": "The manual documents WFS-T, OGC API Features editing, conditional ArcGIS Feature Service editing, and SensorThings connections, filters and entity expansion. Review the actual provider path before declaring unsupported.",
+        "next_check": "Compare the installed provider and advertised service capabilities, execute the documented native entrypoint, and retain requests plus independent readback. Keep UI and PyQGIS results distinct.",
+    },
+    {
+        "id": "pro-routing-license", "reviewed_at": "2026-09-28",
+        "documentation_version": "ArcGIS Pro latest; installed-build verification required",
+        "url": "https://doc.esri.com/en/arcgis-pro/latest/help/analysis/networks/what-is-network-analysis-using-web-services.html",
+        "protocols": ["naserver", "gpserver"], "lanes": ["pro-ui", "arcpy"],
+        "finding": "Service-backed network analysis does not require the local Network Analyst extension. Service access and supported native tool contracts still need verification.",
+        "next_check": "For #5192 compare native Route/ServiceArea binding and solve with an independent service control. Do not dismiss it solely because of a local extension license.",
+    },
+    {
+        "id": "pro-branch-prerequisites", "reviewed_at": "2026-09-28",
+        "documentation_version": "ArcGIS Pro latest; installed-build verification required",
+        "url": "https://doc.esri.com/en/arcgis-pro/latest/help/data/geodatabases/overview/manage-branch-versions.html",
+        "protocols": ["versionmanagementserver"], "lanes": ["pro-ui", "arcpy"],
+        "finding": "Branch workflows depend on web feature layer Version Management capability, active portal identity and version access. A disabled Versions command alone does not isolate licensing or server implementation.",
+        "next_check": "For #5036 bind the precise operation's license requirement and actual entitlement, compare service metadata and native recognition, then exercise available operations.",
+    },
+    {
+        "id": "pro-ogc-api-limits", "reviewed_at": "2026-09-28",
+        "documentation_version": "ArcGIS Pro latest; installed-build verification required",
+        "url": "https://doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html",
+        "protocols": ["ogc-api-features", "ogc-api-tiles"], "lanes": ["pro-ui", "arcpy"],
+        "finding": "The documented OGC API connection supports Features Part 1 and Tiles map tiles. This supports checking operation-specific limitations instead of declaring the entire protocol unavailable.",
+        "next_check": "Map each native operation and tile type; verify ArcPy entrypoints separately from application menu support.",
+    },
+]
+
+
+def scope_contract() -> dict:
+    return {
+        "revision": "2026-09-28.1",
+        "authority": AUTHORITY_URL,
+        "objective": CUSTOMER_READINESS_GOAL,
+        "audit": AUDIT_URL,
+        "coverage_complete": False,
+        "applicable_test_denominator": None,
+        "certification_verdict": "not-assessed",
+        "shipping_candidate": None,
+        "accepted_shipping_passes": 0,
+        "acceptance": "All required native cases in the declared version/license/configuration profile pass with verified candidate-bound evidence; genuine exclusions and licensed skips are separately evidenced and disclosed.",
+        "profiles": {
+            "supported": "Advertised supported workflows; security and data integrity first.",
+            "preview-experimental": "Separate, lower-priority readiness coverage; no automatic GA requirement or GA claim.",
+        },
+        "completion_evidence": [
+            "Reviewed mapping from manuals, source inventories and representative public examples to every required native workflow and variant; no unexplained omissions.",
+            "Actual UI and native Python receipts with independent expected results, exact client/license/configuration bindings and verified artifact hashes.",
+            "All required positive, denied-access, persistence and recovery cases pass on the final candidate; server, fixture and harness fixes are merged and required CI is green.",
+            "Customer setup steps replay successfully from a clean client profile with reproducible owned fixtures.",
+            "Published support table names tested versions, licenses, enabled features, results, evidenced exclusions, licensed skips and known limitations; preview readiness is separately reported.",
+        ],
+        "explicit_priority_issues": [5238, 5192, 5036],
+        "additional_version_reviews": ["QGIS 4.2.2 UI", "PyQGIS 4.2.2"],
+        "reviewed_maturity": {
+            "source": "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs",
+            "candidate_revision": "ab2e3ed3d58196658fbd98567de65eec4db7dc64",
+            "capabilities": {
+                "serve.sensorthings": "preview",
+                "serve.geoservices-imageserver": "preview",
+                "serve.wmts": "preview",
+                "serve.ogc-api-coverages": "preview",
+                "sync.offline": "preview",
+                "versioning.branch": "experimental",
+            },
+            "sensorthings_opt_in": "Capabilities:Experimental:serve.sensorthings:Enabled",
+            "remaining_classification": "review-required; implemented source status alone is not a GA profile decision",
+        },
+        "disposition_rules": DISPOSITION_RULES,
+        "coverage_gaps": [{"id": key, "status": "open", "required_work": value}
+                          for key, value in COVERAGE_GAPS.items()],
+        "manual_reviews": MANUAL_REVIEWS,
+    }
 
 LANES = ("pro-ui", "arcpy", "qgis-ui", "pyqgis")
 
@@ -1557,8 +1702,19 @@ def build_rows(apply_results: bool = True) -> list[dict]:
 
 def validate(rows: list[dict]) -> list[str]:
     problems: list[str] = []
+    expected = {(entry["protocol"], entry["version"], operation)
+                for entry in MATRIX for operation in entry["operations"]}
+    observed_keys = set()
     for row in rows:
+        row_key = (row["protocol"], row["version"], row["operation"])
         where = f"{row['protocol']} {row['version']} {row['operation']}"
+        if row_key in observed_keys:
+            problems.append(f"{where}: duplicate checklist row")
+        observed_keys.add(row_key)
+        if row_key not in expected:
+            problems.append(f"{where}: unknown checklist row")
+        for lane in set(row["lanes"]) - set(LANES):
+            problems.append(f"{where}: unknown lane {lane}")
         for lane in LANES:
             cell = row["lanes"].get(lane)
             if cell is None:
@@ -1611,6 +1767,8 @@ def validate(rows: list[dict]) -> list[str]:
                         problems.append(
                             f"{where}/{lane}: a pass must name a build under "
                             f"certification {tokens}, got {evidence!r}")
+    for key in sorted(expected - observed_keys):
+        problems.append(f"{key}: missing checklist row")
     return problems
 
 
@@ -1622,32 +1780,48 @@ def render_markdown(rows: list[dict], summary: dict) -> str:
         "<!-- Generated by scripts/certification/build-client-checklist.py."
         + " Do not edit by hand. -->",
         "",
-        "### Totals",
+        "### Customer-readiness goal",
         "",
-        "| Lane | Client build | Closed | Open | Breakdown |",
+        CUSTOMER_READINESS_GOAL,
+        "",
+        "### Coverage review",
+        "",
+        "**Certification: not assessed. The applicable denominator and shipping receipt join remain open.**",
+        "The following audit work belongs to this checklist. These are reviews to bind",
+        "to executable native cases, not additional test passes or a new denominator.",
+        "",
+        "| Review | State | Required work |",
+        "|---|---|---|",
+    ]
+    for key, work in COVERAGE_GAPS.items():
+        lines.append(f"| `{key}` | open | {work} |")
+    lines += [
+        "",
+        "### Historical operation totals",
+        "",
+        "| Lane | Client build | Recorded passes | Excluded | Open |",
         "|---|---|---|---|---|",
     ]
     for lane in LANES:
         totals = summary["per_lane"][lane]
-        closed = sum(count for state, count in totals.items() if state in CLOSED_STATES)
         opened = sum(count for state, count in totals.items() if state not in CLOSED_STATES)
-        breakdown = ", ".join(
-            f"{state} {totals[state]}" for state in sorted(totals))
+        excluded = sum(count for state, count in totals.items() if state.startswith("n/a-"))
         lines.append(
-            f"| `{lane}` | {CLIENT_BUILDS[lane]} | {closed}/{closed + opened} | "
-            f"{opened} | {breakdown} |"
+            f"| `{lane}` | {CLIENT_BUILDS[lane]} | {totals.get('pass', 0)} | "
+            f"{excluded} | {opened} |"
         )
 
     overall = summary["overall"]
     lines += [
         "",
-        f"**{overall['closed']} of {overall['cells']} cells closed; "
-        f"{overall['open']} open.**",
+        f"**{overall['recorded_passes']} recorded passes, {overall['excluded']} exclusions, "
+        f"{overall['open']} open cells ({overall['cells']} historical cells).**",
         "",
         "### Cells",
         "",
-        "A cell closes as `pass`, `n/a-no-client` or `n/a-superseded`. Every other",
-        "value is open work. The full evidence reference or citation for each cell is",
+        "Historical `closed` totals include `pass`, `n/a-no-client` and `n/a-superseded`.",
+        "Exclusions are not passes; historical passes are not fresh shipping acceptance.",
+        "The full evidence reference or citation for each cell is",
         "in `docs/gis/data/client-certification-checklist.v1.json`.",
         "",
     ]
@@ -1710,13 +1884,18 @@ def summarise(rows: list[dict]) -> dict:
         for lane in LANES:
             state = row["lanes"][lane]["state"]
             totals[lane][state] = totals[lane].get(state, 0) + 1
-    overall = {"cells": len(rows) * len(LANES), "closed": 0, "open": 0}
+    overall = {"cells": len(rows) * len(LANES), "closed": 0, "open": 0,
+               "recorded_passes": 0, "excluded": 0}
     for lane in LANES:
         for state, count in totals[lane].items():
             if state in CLOSED_STATES:
                 overall["closed"] += count
             else:
                 overall["open"] += count
+            if state == "pass":
+                overall["recorded_passes"] += count
+            elif state.startswith("n/a-"):
+                overall["excluded"] += count
     return {"per_lane": totals, "overall": overall}
 
 
@@ -1783,11 +1962,12 @@ def main() -> int:
     document = {
         "schema_version": "1.0",
         "description": (
-            "Four-lane client certification checklist. A cell closes as pass (with an "
-            "evidence reference naming the client build) or n/a-* (with a "
-            "vendor-documentation or provider-registry citation). blocked and "
-            "not-started are open."
+            "Authoritative four-client scope contract and historical operation tracker. "
+            "Closed totals include exclusions and are not certification acceptance. "
+            "Coverage reviews, licensed skips, maturity and candidate-bound native "
+            "evidence are governed separately in scope_contract."
         ),
+        "scope_contract": scope_contract(),
         "lanes": {lane: CLIENT_BUILDS[lane] for lane in LANES},
         "states": sorted(STATES),
         "closed_states": sorted(CLOSED_STATES),

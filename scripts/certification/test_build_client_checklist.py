@@ -15,6 +15,40 @@ spec.loader.exec_module(checklist)
 
 
 class ExclusionReviewTests(unittest.TestCase):
+    def test_missing_operation_cannot_shrink_the_checklist(self):
+        rows = checklist.build_rows()
+        removed = rows.pop()
+        problems = checklist.validate(rows)
+        self.assertTrue(any("missing checklist row" in error and
+                            removed["operation"] in error for error in problems))
+
+    def test_duplicate_operation_cannot_inflate_the_checklist(self):
+        rows = checklist.build_rows()
+        rows.append(copy.deepcopy(rows[0]))
+        self.assertTrue(any("duplicate checklist row" in error
+                            for error in checklist.validate(rows)))
+
+    def test_unknown_operation_and_lane_are_rejected(self):
+        rows = checklist.build_rows()
+        extra = copy.deepcopy(rows[0])
+        extra["operation"] = "unmapped-operation"
+        extra["lanes"]["rest-probe"] = {"state": "pass"}
+        rows.append(extra)
+        problems = checklist.validate(rows)
+        self.assertTrue(any("unknown checklist row" in error for error in problems))
+        self.assertTrue(any("unknown lane rest-probe" in error for error in problems))
+
+    def test_exclusions_are_reported_separately_from_passes(self):
+        rows = checklist.build_rows()
+        totals = checklist.summarise(rows)["overall"]
+        self.assertEqual(sum(cell["state"] == "pass" for row in rows
+                             for cell in row["lanes"].values()), totals["recorded_passes"])
+        self.assertGreater(totals["excluded"], 0)
+        self.assertEqual(totals["closed"], totals["recorded_passes"] + totals["excluded"])
+        rendered = checklist.render_markdown(rows, checklist.summarise(rows))
+        self.assertIn("Certification: not assessed", rendered)
+        self.assertIn("Exclusions are not passes", rendered)
+
     def test_check_rejects_stale_json_and_markdown_projections(self):
         # Compares against the COMMITTED artifacts, so it needs the full build,
         # measured results included - unlike the tests below, which exercise the
