@@ -1,24 +1,28 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Globalization;
 using System.Xml.Linq;
-using Honua.Infrastructure.Services;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
 internal sealed partial class Wfs20Handler
 {
-    // QGIS uses WFS 1.0 Transaction even when the read connection negotiated 2.0.
+    // QGIS uses WFS 1.0/1.1 Transaction even when the read connection negotiated 2.0.
     // Adapt only the wire representation; authorization and edits remain canonical.
-    internal static XElement NormalizeWfs10Transaction(XElement root)
+    internal static XElement NormalizeLegacyTransaction(XElement root)
     {
+        var version = root.Attribute("version")?.Value;
+        if (version is not ("1.0.0" or "1.1.0"))
+        {
+            throw new ArgumentException("Expected a WFS 1.0 or 1.1 transaction.");
+        }
+
         var normalized = new XElement(root);
         foreach (var action in normalized.Elements())
         {
             if (action.Name.LocalName is not ("Insert" or "Update" or "Delete"))
             {
-                throw new NotSupportedException("WFS 1.0 transactions support Insert, Update and Delete.");
+                throw new NotSupportedException("Legacy WFS transactions support Insert, Update and Delete.");
             }
         }
 
@@ -35,18 +39,11 @@ internal sealed partial class Wfs20Handler
         {
             EnsureTwoDimensionalLegacyGeometry(geometry);
             var converted = NormalizeLegacyFilterElement(geometry);
-            foreach (var element in converted.DescendantsAndSelf())
+            if (version == "1.0.0")
             {
-                if (element.Attribute("srsName") is { } srs)
-                {
-                    if (!SpatialReferenceHelpers.TryParseCrsDefinition(srs.Value, out var crs))
-                    {
-                        throw new ArgumentException("Unsupported transaction coordinate reference system.");
-                    }
-
-                    // WFS 1.0 coordinates use x/y, including QGIS's urn-form labels.
-                    srs.Value = "EPSG:" + crs.Srid.ToString(CultureInfo.InvariantCulture);
-                }
+                // Internal provenance, not a client-settable XML attribute. WFS 1.0
+                // uses x/y even with a geographic urn label or an omitted srsName.
+                converted.AddAnnotation(new LegacyWfs10Coordinates());
             }
 
             geometry.ReplaceWith(converted);
@@ -62,7 +59,7 @@ internal sealed partial class Wfs20Handler
             if (element.Attribute("srsDimension") is { Value: not "2" } ||
                 element.Name.LocalName == "Z")
             {
-                throw new NotSupportedException("WFS 1.0 transaction geometries currently require two dimensions.");
+                throw new NotSupportedException("Legacy WFS transaction geometries currently require two dimensions.");
             }
 
             if (element.Name.LocalName == "coordinates")
@@ -71,18 +68,22 @@ internal sealed partial class Wfs20Handler
                 var separator = element.Attribute("cs")?.Value ?? ",";
                 if (tuples.Any(tuple => tuple.Split(separator, StringSplitOptions.TrimEntries).Length != 2))
                 {
-                    throw new NotSupportedException("WFS 1.0 transaction geometries currently require two dimensions.");
+                    throw new NotSupportedException("Legacy WFS transaction geometries currently require two dimensions.");
                 }
             }
             else if (element.Name.LocalName == "pos" &&
                      element.Value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length != 2)
             {
-                throw new NotSupportedException("WFS 1.0 transaction geometries currently require two dimensions.");
+                throw new NotSupportedException("Legacy WFS transaction geometries currently require two dimensions.");
             }
         }
     }
 
-    internal static string FormatWfs10TransactionResponse(string canonicalResponse)
+    private sealed class LegacyWfs10Coordinates
+    {
+    }
+
+    internal static string FormatLegacyTransactionResponse(string canonicalResponse, string version)
     {
         XNamespace wfs = LegacyWfsNamespace;
         XNamespace ogc = OgcFilterNamespace;
@@ -90,6 +91,44 @@ internal sealed partial class Wfs20Handler
         XNamespace fes = Wfs20Utilities.FesNamespace;
         XNamespace honua = FeatureNamespaceUri;
         var canonical = XElement.Parse(canonicalResponse);
+        if (version == "1.1.0")
+        {
+            if (canonical.Element(wfs20 + "TransactionSummary") is { } summary)
+            {
+                var totals = new[] { "totalInserted", "totalUpdated", "totalDeleted" }
+                    .Select(name => new XElement(wfs20 + name, summary.Element(wfs20 + name)?.Value ?? "0"))
+                    .ToArray();
+                summary.ReplaceNodes(totals);
+            }
+
+            // WFS 1.1 keeps the summary/feature structure, but uses the legacy
+            // WFS namespace and ogc:FeatureId instead of fes:ResourceId.
+            foreach (var element in canonical.DescendantsAndSelf())
+            {
+                if (element.Name.Namespace == wfs20)
+                {
+                    element.Name = wfs + element.Name.LocalName;
+                }
+                else if (element.Name == fes + "ResourceId")
+                {
+                    var id = element.Attribute("rid")!.Value;
+                    element.Name = ogc + "FeatureId";
+                    element.Attribute("rid")!.Remove();
+                    element.SetAttributeValue("fid", id);
+                }
+            }
+
+            canonical.Attributes().Where(attribute => attribute.IsNamespaceDeclaration).Remove();
+            canonical.SetAttributeValue("version", version);
+            canonical.Attribute("timeStamp")?.Remove();
+            return canonical.ToString(SaveOptions.DisableFormatting);
+        }
+
+        if (version != "1.0.0")
+        {
+            throw new ArgumentException("Expected a WFS 1.0 or 1.1 transaction response.");
+        }
+
         var response = new XElement(wfs + "WFS_TransactionResponse",
             new XAttribute("version", "1.0.0"),
             new XAttribute(XNamespace.Xmlns + "wfs", wfs),
