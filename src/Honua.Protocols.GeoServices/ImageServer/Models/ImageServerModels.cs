@@ -729,7 +729,7 @@ public sealed class IdentifyResponse
     public Dictionary<string, object?>? Properties { get; init; }
 
     [JsonPropertyName("catalogItems")]
-    public CatalogItem[]? CatalogItems { get; init; }
+    public IdentifyCatalogItems? CatalogItems { get; init; }
 
     /// <summary>
     /// Additive identify entries for native ArcGIS REST raster clients which read
@@ -784,18 +784,21 @@ public sealed class ImageServerIdentifyResult
 }
 
 /// <summary>
-/// Catalog item for identify operations.
+/// Raster catalog feature set returned by identify, matching the Esri wire contract.
 /// </summary>
-public sealed class CatalogItem
+public sealed class IdentifyCatalogItems
 {
-    [JsonPropertyName("id")]
-    public required long Id { get; init; }
+    [JsonPropertyName("objectIdFieldName")]
+    public string ObjectIdFieldName { get; init; } = "OBJECTID";
 
-    [JsonPropertyName("name")]
-    public string? Name { get; init; }
+    [JsonPropertyName("geometryType")]
+    public string GeometryType { get; init; } = "esriGeometryPolygon";
 
-    [JsonPropertyName("footprint")]
-    public object? Footprint { get; init; }
+    [JsonPropertyName("spatialReference")]
+    public SpatialReference? SpatialReference { get; init; }
+
+    [JsonPropertyName("features")]
+    public CatalogQueryFeature[] Features { get; init; } = [];
 }
 
 /// <summary>
