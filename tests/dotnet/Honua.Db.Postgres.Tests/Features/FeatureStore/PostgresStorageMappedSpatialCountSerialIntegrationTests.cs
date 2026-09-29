@@ -172,9 +172,12 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
         await using var connection = await _source.OpenConnectionAsync();
         var statements = new List<(string Name, string Sql)>();
         await using (var command = new NpgsqlCommand(
-            "SELECT name, statement FROM pg_prepared_statements WHERE generic_plans > 0 AND statement LIKE 'SELECT%COUNT(*)%'", connection))
-        await using (var results = await command.ExecuteReaderAsync())
+            "SELECT name, statement FROM pg_prepared_statements WHERE generic_plans > 0 AND statement LIKE $1", connection))
         {
+            // Bind the source-specific pattern so this auto-prepared inspection
+            // query cannot match itself through a COUNT(*) string literal.
+            command.Parameters.AddWithValue($"SELECT%COUNT(*)%FROM \"{_schema}\".\"points\"%");
+            await using var results = await command.ExecuteReaderAsync();
             while (await results.ReadAsync())
             {
                 statements.Add((results.GetString(0), results.GetString(1)));
