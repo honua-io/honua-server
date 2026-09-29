@@ -363,14 +363,16 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     [UnitTheory]
     [InlineData(false)]
     [InlineData(true)]
-    public void BuildFeatureSelect_AttributesRemainTextAtReaderBoundary(bool distinct)
+    public void BuildFeatureSelect_AttributesUseJsonbExceptDistinctTextBoundary(bool distinct)
     {
         var query = new FeatureQuery { OutFields = ["name"], Distinct = distinct };
         var sql = typeof(PostgresStorageMappedFeatureReader)
             .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(CreateReader(CreateResource()), [query, false])!.ToString()!;
 
-        sql.Should().Contain("(jsonb_build_object($1::text, \"name\"))::text AS attributes");
+        sql.Should().Contain(distinct
+            ? "(jsonb_build_object($1::text, \"name\"))::text AS attributes"
+            : "(jsonb_build_object($1::text, \"name\")) AS attributes");
     }
 
     [UnitTest]
