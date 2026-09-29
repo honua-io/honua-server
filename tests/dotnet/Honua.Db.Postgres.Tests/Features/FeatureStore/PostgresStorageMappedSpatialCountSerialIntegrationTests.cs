@@ -258,20 +258,22 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
             _ => BboxQuery()
         };
         var baseline = await CreateReader(false).CountAsync(1, query);
-        var reader = CreateReader(true, sourceBacked: shape != "managed", knownGeometry: shape != "unknown-geometry", geometryType: shape == "line-metadata" ? MetadataV2GeometryType.LineString : MetadataV2GeometryType.Point);
+        var reader = CreateReader(true, sourceBacked: shape != "managed", knownGeometry: shape != "unknown-geometry", geometryType: shape == "line-metadata" ? MetadataV2GeometryType.LineString : MetadataV2GeometryType.Point, disableJit: true);
         (await reader.CountAsync(1, query)).Should().Be(baseline);
         await AssertObservedAsync("2");
         await AssertSessionRestoredAsync();
     }
 
-    [IntegrationTest]
-    public async Task CountAsync_BorrowedTransaction_DoesNotAlterCallerSettingsOrLifetime()
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CountAsync_BorrowedTransaction_DoesNotAlterCallerSettingsOrLifetime(bool disableJit)
     {
         await PostgresMutationTransaction.ExecuteAsync(_provider, async () =>
         {
             await using var lease = await _provider.OpenNpgsqlConnectionAsync();
             lease.Transaction.Should().NotBeNull();
-            (await CreateReader(true).CountAsync(1, BboxQuery())).Should().Be(3);
+            (await CreateReader(true, disableJit: disableJit).CountAsync(1, BboxQuery())).Should().Be(3);
             await using var command = new NpgsqlCommand("SELECT current_setting('max_parallel_workers_per_gather')", lease);
             (await command.ExecuteScalarAsync()).Should().Be("2");
             return true;
@@ -280,12 +282,14 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
         await AssertSessionRestoredAsync();
     }
 
-    [IntegrationTest]
-    public async Task CountAsync_AmbientTransaction_KeepsOrdinaryPlanning()
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CountAsync_AmbientTransaction_KeepsOrdinaryPlanning(bool disableJit)
     {
         using (var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled))
         {
-            (await CreateReader(true).CountAsync(1, BboxQuery())).Should().Be(3);
+            (await CreateReader(true, disableJit: disableJit).CountAsync(1, BboxQuery())).Should().Be(3);
             scope.Complete();
         }
         await AssertObservedAsync("2");
@@ -301,22 +305,28 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
         await AssertSessionRestoredAsync();
     }
 
-    [IntegrationTest]
-    public async Task CountAsync_SqlError_RollsBackLocalSettingOnSamePooledConnection()
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CountAsync_SqlError_RollsBackLocalSettingOnSamePooledConnection(bool disableJit)
     {
-        await ReplaceProbeAsync("IF current_setting('max_parallel_workers_per_gather') = '0' THEN RAISE EXCEPTION 'count probe failure'; END IF;");
-        var call = () => CreateReader(true).CountAsync(1, BboxQuery());
+        var expectedJit = disableJit ? "off" : "on";
+        await ReplaceProbeAsync($"IF current_setting('max_parallel_workers_per_gather') = '0' AND current_setting('jit') = '{expectedJit}' THEN RAISE EXCEPTION 'count probe failure'; END IF;");
+        var call = () => CreateReader(true, disableJit: disableJit).CountAsync(1, BboxQuery());
         (await call.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.RaiseException);
         await AssertSessionRestoredAsync();
         (await CreateReader(false).CountAsync(1, BboxQuery())).Should().Be(3);
     }
 
-    [IntegrationTest]
-    public async Task CountAsync_CancelledQuery_RestoresSessionAndReleasesLease()
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CountAsync_CancelledQuery_RestoresSessionAndReleasesLease(bool disableJit)
     {
-        await ReplaceProbeAsync("IF current_setting('max_parallel_workers_per_gather') = '0' THEN PERFORM pg_sleep(30); END IF;");
+        var expectedJit = disableJit ? "off" : "on";
+        await ReplaceProbeAsync($"IF current_setting('max_parallel_workers_per_gather') = '0' AND current_setting('jit') = '{expectedJit}' THEN PERFORM pg_sleep(30); END IF;");
         using var cancellation = new CancellationTokenSource();
-        var pending = CreateReader(true).CountAsync(1, BboxQuery(), cancellation.Token);
+        var pending = CreateReader(true, disableJit: disableJit).CountAsync(1, BboxQuery(), cancellation.Token);
         try
         {
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
@@ -382,9 +392,11 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
     }
 
     [IntegrationTheory]
-    [InlineData(null, "2")]
-    [InlineData("true", "0")]
-    public async Task RegisteredFeatureStore_ConfigurationReachesBoundReader(string? setting, string expected)
+    [InlineData(null, "2", false)]
+    [InlineData("true", "0", false)]
+    [InlineData(null, "2", true)]
+    [InlineData("true", "0", true)]
+    public async Task RegisteredFeatureStore_ConfigurationReachesBoundReader(string? setting, string expected, bool disableJit)
     {
         var values = new Dictionary<string, string?>
         {
@@ -393,6 +405,10 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
         if (setting is not null)
         {
             values["Database:PreferSerialSourceSpatialCounts"] = setting;
+        }
+        if (disableJit)
+        {
+            values["Database:DisableJitForSourceSpatialCounts"] = "true";
         }
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
         var services = new ServiceCollection();
@@ -413,7 +429,7 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
             new MetadataV2StorageBinding { ResourceId = resource.Metadata.Id }, CreateMapping(sourceBacked: true), 1, store, Connection: null);
         var reader = ((IBindableFeatureDataProvider)store).CreateReaderForBinding(binding);
         (await reader.CountAsync(1, BboxQuery())).Should().Be(3);
-        await AssertObservedAsync(expected);
+        await AssertObservedAsync(expected, disableJit ? "off" : "on");
         await AssertSessionRestoredAsync();
     }
 
@@ -455,6 +471,35 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
         var call = () => CreateReader(true).CountAsync(1, query);
         await call.Should().ThrowAsync<NotSupportedException>();
         await AssertSessionRestoredAsync();
+    }
+
+    [IntegrationTest]
+    public async Task ShortPage_CombinedCountPolicies_ReusesTotalWithoutTuningFeatureRead()
+    {
+        var result = await CreateReader(true, disableJit: true).QueryAsync(1, BboxQuery());
+        result.TotalCount.Should().Be(3);
+        result.Items.Select(feature => feature.Id).Should().Equal(1L, 2L, 3L);
+        result.HasMoreResults.Should().BeFalse();
+        await AssertObservedAsync("2");
+        await AssertSessionRestoredAsync();
+    }
+
+    [IntegrationTheory]
+    [InlineData("on", "2")]
+    [InlineData("on", "0")]
+    [InlineData("off", "2")]
+    [InlineData("off", "0")]
+    public async Task CountAsync_CombinedPolicies_PreserveOriginalSessionSettings(string jit, string workers)
+    {
+        await using (var connection = await _source.OpenConnectionAsync())
+        {
+            await using var command = new NpgsqlCommand(
+                $"SET jit = {jit}; SET max_parallel_workers_per_gather = {workers}", connection);
+            await command.ExecuteNonQueryAsync();
+        }
+        (await CreateReader(true, disableJit: true).CountAsync(1, BboxQuery())).Should().Be(3);
+        await AssertObservedAsync("0", "off");
+        await AssertSessionRestoredAsync(workers, jit);
     }
 
     private Task ReplaceProbeAsync(string statement) => fixture.ExecuteAsync($$"""

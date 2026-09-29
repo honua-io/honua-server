@@ -31,16 +31,22 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         } &&
         Transaction.Current == null;
 
-    private static NpgsqlBatch CreateSerialSourceSpatialCountBatch(NpgsqlConnection connection, SqlBuilder sql)
+    private static NpgsqlBatch CreateSerialSourceSpatialCountBatch(
+        NpgsqlConnection connection, SqlBuilder sql, bool disableJit)
     {
-        // Reuse the parameter binding and implicit-transaction cleanup of the
-        // serial feature-read path. The fixed tag additionally isolates counts
-        // from other scoped policies (such as JIT-only SELECT ALL counts).
-        var batch = CreateSerialSpatialReadBatch(connection, sql);
-        batch.BatchCommands[0].CommandText =
-            "SELECT pg_catalog.set_config('max_parallel_workers_per_gather', '0', true)";
+        // Both settings must execute before the count is bound/planned, within
+        // the same implicit transaction. A single setting SELECT keeps the count
+        // at the second result regardless of which independent options are on.
+        var settingSql = disableJit
+            ? "SELECT pg_catalog.set_config('jit', 'off', true), " +
+              "pg_catalog.set_config('max_parallel_workers_per_gather', '0', true)"
+            : "SELECT pg_catalog.set_config('max_parallel_workers_per_gather', '0', true)";
+        var batch = CreateScopedPlannerReadBatch(connection, sql, settingSql);
         var queryCommand = batch.BatchCommands[^1];
-        queryCommand.CommandText = "SELECT ALL /* honua:serial-source-count */" +
+        // Each policy needs its own generic plan, even on a shared pooled backend.
+        // Fixed trusted markers preserve the validated SELECT and its parameters.
+        var policyTag = disableJit ? "serial-jit-off-source-count" : "serial-source-count";
+        queryCommand.CommandText = $"SELECT ALL /* honua:{policyTag} */" +
             queryCommand.CommandText["SELECT ALL".Length..];
         return batch;
     }

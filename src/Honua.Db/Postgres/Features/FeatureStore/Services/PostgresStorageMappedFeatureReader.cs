@@ -238,7 +238,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         if (connection.Transaction is null && (useSerialPlan || disableJit))
         {
             await using var batch = useSerialPlan
-                ? CreateSerialSourceSpatialCountBatch(connection, sql)
+                ? CreateSerialSourceSpatialCountBatch(connection, sql, disableJit)
                 : CreateScopedPlannerReadBatch(connection, sql,
                     "SELECT pg_catalog.set_config('jit', 'off', true)");
             await using var reader = await batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
