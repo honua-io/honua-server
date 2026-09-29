@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts/soak"))
 import capacity_evidence as emitter
 import collect_capacity as collector_module
-from collect_capacity import RequestLedger, feature_bytes, iso, now, observe_request, padded_description
+import drive_soak
 
 LOCK_PATH = ROOT / "tests/python/fixtures/capacity/lock.json"
 LOCK = json.loads(LOCK_PATH.read_bytes())
@@ -31,7 +31,7 @@ ARTIFACT = "https://github.com/honua-io/honua-server/actions/runs/123/artifacts/
 
 def observations():
     start = datetime(2026, 9, 29, 2, tzinfo=timezone.utc)
-    window = dict(startedAt=iso(start), endedAt=iso(start+timedelta(hours=1)))
+    window = dict(startedAt=collector_module.iso(start), endedAt=collector_module.iso(start+timedelta(hours=1)))
     ledger = []
     for minute in range(60):
         buckets = [dict(count=count, durationMs=latency, httpStatus=200, inBandError=False, protocol="FeatureServer")
@@ -40,9 +40,9 @@ def observations():
             buckets[0]["count"] -= 2
             buckets.extend([dict(count=1, durationMs=200, httpStatus=status, inBandError=error, protocol="FeatureServer")
                             for status, error in ((500, False), (200, True))])
-        ledger.append(dict(replica="honua", incarnation="container-1", startedAt=iso(start+timedelta(minutes=minute)),
-                           endedAt=iso(start+timedelta(minutes=minute+1)), buckets=buckets))
-    times = [iso(start+timedelta(minutes=i)) for i in range(61)]
+        ledger.append(dict(replica="honua", incarnation="container-1", startedAt=collector_module.iso(start+timedelta(minutes=minute)),
+                           endedAt=collector_module.iso(start+timedelta(minutes=minute+1)), buckets=buckets))
+    times = [collector_module.iso(start+timedelta(minutes=i)) for i in range(61)]
     return dict(schema="honua.capacity-observations/v1", candidateIdentity=dict(serverRevision=REVISION, imageDigest=IMAGE),
                 observedRevision=REVISION, window=window, lockSha256=emitter.digest(LOCK_PATH.read_bytes()),
                 topology=dict(replicas=[dict(id="honua", failureDomain="local-docker-host", imageDigest=IMAGE)],
@@ -56,8 +56,8 @@ def observations():
                 metrics=[dict(at=at, worker=.2, database=.4, redis=.3, queueAgeSeconds=7) for at in times],
                 workloads=[dict(at=at, dimensions=copy.deepcopy(LOCK["supportedEnvelope"]), executionMode="candidate-topology", proxy=False) for at in times],
                 recoveries=[dict(dependency=name, failure="stop-start", probe="dependency-and-serving-query",
-                                 injectedAt=iso(start+timedelta(minutes=30)), detectedAt=iso(start+timedelta(minutes=30, seconds=1)),
-                                 recoveredAt=iso(start+timedelta(minutes=30, seconds=seconds)))
+                                 injectedAt=collector_module.iso(start+timedelta(minutes=30)), detectedAt=collector_module.iso(start+timedelta(minutes=30, seconds=1)),
+                                 recoveredAt=collector_module.iso(start+timedelta(minutes=30, seconds=seconds)))
                             for name, seconds in (("worker", 2), ("database", 3), ("redis", 4))])
 
 
@@ -90,8 +90,8 @@ def test_maximum_payload_preserves_geometry_and_attributes():
     feature = dict(attributes=dict(objectid=10000, name="Hawaiʻi", description="initial", missing=None),
                    geometry=dict(x=-157.8, y=21.3, z=4, m=7, spatialReference=dict(wkid=4326)))
     original = copy.deepcopy(feature)
-    feature["attributes"]["description"] = padded_description(feature, 1048576)
-    assert len(feature_bytes(feature)) == 1048576
+    feature["attributes"]["description"] = collector_module.padded_description(feature, 1048576)
+    assert len(collector_module.feature_bytes(feature)) == 1048576
     assert feature["geometry"] == original["geometry"]
     assert feature["attributes"]["objectid"] == 10000
     assert feature["attributes"]["name"] == "Hawaiʻi"
@@ -163,7 +163,7 @@ def test_artifact_from_another_run_is_refused():
 
 def test_disjoint_interval_boundaries_include_empty_intervals():
     start = datetime(2026, 9, 29, 2, tzinfo=timezone.utc)
-    ledger = RequestLedger("honua", "container-1")
+    ledger = collector_module.RequestLedger("honua", "container-1")
     ledger.started = start
     ledger.record(start, 10, 200, False, "FeatureServer")
     ledger.record(start+timedelta(seconds=30), 20, 500, False, "FeatureServer")
@@ -173,8 +173,8 @@ def test_disjoint_interval_boundaries_include_empty_intervals():
     assert len(rows) == 4
     assert [sum(b["count"] for b in row["buckets"]) for row in rows] == [1, 1, 0, 0]
     assert ledger.observed_count == 2
-    assert rows[0]["startedAt"] == iso(start)
-    assert rows[-1]["endedAt"] == iso(ledger.ended)
+    assert rows[0]["startedAt"] == collector_module.iso(start)
+    assert rows[-1]["endedAt"] == collector_module.iso(ledger.ended)
     assert all(a["endedAt"] == b["startedAt"] for a, b in zip(rows, rows[1:]))
 
 
@@ -198,13 +198,13 @@ def test_real_http_outcomes_include_in_band_errors_and_timeouts():
         site = web.TCPSite(runner, "127.0.0.1", 0)
         await site.start()
         port = site._server.sockets[0].getsockname()[1]
-        ledger = RequestLedger("honua", "fixture")
-        ledger.started = now()
+        ledger = collector_module.RequestLedger("honua", "fixture")
+        ledger.started = collector_module.now()
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=.03)) as session:
                 for kind in ("success", "server", "inband", "malformed", "problem", "timeout"):
-                    await observe_request(session, f"http://127.0.0.1:{port}/{kind}", ledger, "/rest/services/test/FeatureServer/0/query")
-            ledger.ended = now()
+                    await collector_module.observe_request(session, f"http://127.0.0.1:{port}/{kind}", ledger, "/rest/services/test/FeatureServer/0/query")
+            ledger.ended = collector_module.now()
             buckets = ledger.intervals()[0]["buckets"]
             outcomes = {(status, error): sum(b["count"] for b in buckets if (b["httpStatus"], b["inBandError"]) == (status, error))
                         for status, error in ((200, False), (500, False), (200, True), (599, True))}
@@ -218,7 +218,7 @@ def test_real_http_outcomes_include_in_band_errors_and_timeouts():
             async with httpx.AsyncClient(transport=collector_module.RecordingTransport(ledger)) as client:
                 response = await client.get(f"http://127.0.0.1:{port}/gpfailed")
                 assert response.json() == dict(jobStatus="esriJobFailed")
-            ledger.ended = now()
+            ledger.ended = collector_module.now()
             assert ledger.observed_count == 7
             assert sum(b["count"] for row in ledger.intervals() for b in row["buckets"] if b["inBandError"]) == 5
         finally:
@@ -231,7 +231,7 @@ def test_sampler_retains_served_dimensions_and_actual_dependency_measurements(mo
     from types import SimpleNamespace
 
     feature = dict(attributes=dict(objectid=10000, description=""), geometry=dict(x=-157.8, y=21.3, spatialReference=dict(wkid=4326)))
-    feature["attributes"]["description"] = padded_description(feature, 1048576)
+    feature["attributes"]["description"] = collector_module.padded_description(feature, 1048576)
 
     async def docker(*args):
         if args[:2] == ("docker", "inspect"):
@@ -277,7 +277,7 @@ def test_sampler_retains_served_dimensions_and_actual_dependency_measurements(mo
             async with httpx.AsyncClient() as client:
                 at = await collector.sample(client)
             assert collector.failures == []
-            assert collector.metrics == [dict(at=iso(at), worker=.1, database=.4, redis=.25, queueAgeSeconds=7)]
+            assert collector.metrics == [dict(at=collector_module.iso(at), worker=.1, database=.4, redis=.25, queueAgeSeconds=7)]
             # A configured target of 170 users / 100 queued jobs must not replace
             # two live users / three actually observed queued jobs.
             assert collector.workloads[0]["dimensions"] == dict(tenants=1, services=1, layersPerService=4, featuresPerLayer=10000,
@@ -290,10 +290,9 @@ def test_sampler_retains_served_dimensions_and_actual_dependency_measurements(mo
 
 def test_gp_polling_retains_executing_jobs_until_terminal_state():
     import argparse
-    from drive_soak import SoakDriver
 
     async def exercise():
-        driver = SoakDriver(argparse.Namespace(base_url="http://fixture", admin_key="fixture", unexercised=[], gp_interval=1), LOCK)
+        driver = drive_soak.SoakDriver(argparse.Namespace(base_url="http://fixture", admin_key="fixture", unexercised=[], gp_interval=1), LOCK)
         states = iter(("esriJobSubmitted", "esriJobExecuting", "esriJobExecuting", "esriJobSucceeded"))
         submissions = 0
         polls = 0
@@ -325,10 +324,9 @@ def test_gp_polling_retains_executing_jobs_until_terminal_state():
 @pytest.mark.parametrize("admit_queue", [True, False])
 def test_gp_driver_offers_the_queue_envelope_and_never_counts_rejections(admit_queue):
     import argparse
-    from drive_soak import SoakDriver
 
     async def exercise():
-        driver = SoakDriver(argparse.Namespace(base_url="http://fixture", admin_key="fixture", unexercised=[],
+        driver = drive_soak.SoakDriver(argparse.Namespace(base_url="http://fixture", admin_key="fixture", unexercised=[],
                                                gp_interval=1, gp_queue_depth=100, gp_workers=1), LOCK)
         submissions, cycles = 0, 0
 
@@ -372,7 +370,6 @@ def test_captured_gp_errors_invalidate_observations_without_task_exception():
 def test_queue_age_uses_the_time_of_the_observed_status_response(monkeypatch):
     import argparse
     from types import SimpleNamespace
-    import drive_soak
 
     elapsed = 0
     monkeypatch.setattr(drive_soak, "time", SimpleNamespace(monotonic=lambda: elapsed))
@@ -417,7 +414,7 @@ def test_maximum_payload_requires_an_accepted_http_write_and_exact_roundtrip(out
                 rows = json.loads(form["features"])
                 assert len(rows) == 1
                 submitted.append(rows[0])
-                assert len(feature_bytes(rows[0])) == 1048576
+                assert len(collector_module.feature_bytes(rows[0])) == 1048576
                 assert rows[0]["geometry"] == original["geometry"]
                 assert rows[0]["attributes"]["name"] == "fixture"
                 assert rows[0]["attributes"]["noData"] is None
@@ -445,7 +442,7 @@ def test_maximum_payload_requires_an_accepted_http_write_and_exact_roundtrip(out
                 if outcome == "success":
                     await collector.establish_payload(client)
                     assert stored["geometry"] == original["geometry"]
-                    assert len(feature_bytes(stored)) == 1048576
+                    assert len(collector_module.feature_bytes(stored)) == 1048576
                 else:
                     with pytest.raises(ValueError, match="maximum-payload"):
                         await collector.establish_payload(client)
