@@ -75,6 +75,12 @@ internal sealed partial class Wfs20Handler
                     "request");
             }
 
+            var legacyTransaction = string.Equals(root.Attribute("version")?.Value, "1.0.0", StringComparison.Ordinal);
+            if (legacyTransaction)
+            {
+                root = NormalizeWfs10Transaction(root);
+            }
+
             var rollbackOnFailure = ResolveRollbackOnFailure(context.Request, root);
             var prepared = await PrepareTransactionAsync(
                 context,
@@ -93,6 +99,10 @@ internal sealed partial class Wfs20Handler
                     // All actions matched zero features — ISO 19142 §15.2.5.3 no-op: return
                     // a valid TransactionResponse with all counts at zero rather than an error.
                     var emptyResponse = BuildTransactionResponseXml(prepared, FeatureEditResult.Success(0, 0, 0));
+                    if (legacyTransaction)
+                    {
+                        emptyResponse = FormatWfs10TransactionResponse(emptyResponse);
+                    }
                     return Results.Content(emptyResponse, "application/xml", Encoding.UTF8);
                 }
 
@@ -162,6 +172,10 @@ internal sealed partial class Wfs20Handler
             HonuaTelemetry.SetSuccess(activity, committedChangeCount);
 
             var responseXml = BuildTransactionResponseXml(prepared, editResult);
+            if (legacyTransaction)
+            {
+                responseXml = FormatWfs10TransactionResponse(responseXml);
+            }
             return Results.Content(responseXml, "application/xml", Encoding.UTF8);
         }
         catch (InvalidDataException ex)
