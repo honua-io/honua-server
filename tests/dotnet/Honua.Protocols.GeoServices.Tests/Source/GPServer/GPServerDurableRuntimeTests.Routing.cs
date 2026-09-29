@@ -103,11 +103,11 @@ public sealed partial class GPServerDurableRuntimeTests
 
             var solveOperation = route ? "solve" : "solveServiceArea";
             using var oracleContent = new FormUrlEncodedContent(new Dictionary<string, string>
-                {
-                    ["f"] = "json",
-                    [route ? "stops" : "facilities"] = points,
-                    ["defaultBreaks"] = "2,5",
-                });
+            {
+                ["f"] = "json",
+                [route ? "stops" : "facilities"] = points,
+                ["defaultBreaks"] = "2,5",
+            });
             using var oracleResponse = await client.PostAsync($"/rest/services/{ServiceId}/NAServer/{solver}/{solveOperation}", oracleContent);
             var oracleText = await oracleResponse.Content.ReadAsStringAsync();
             oracleResponse.StatusCode.Should().Be(HttpStatusCode.OK, oracleText);
