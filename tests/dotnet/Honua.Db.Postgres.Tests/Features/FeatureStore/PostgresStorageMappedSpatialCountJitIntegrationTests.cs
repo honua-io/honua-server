@@ -385,7 +385,9 @@ public sealed class PostgresStorageMappedSpatialCountJitIntegrationTests(Postgre
         _provider,
         new DefaultObjectPoolProvider().Create(new DefaultPooledObjectPolicy<Dictionary<string, object?>>()),
         CreateResource(knownGeometry), CreateMapping(sourceBacked),
-        connection: null, connectionEncryptionService: null, disableJitForSourceSpatialCounts: enabled);
+        connection: null, connectionEncryptionService: null,
+        preferSerialBoundedSpatialReads: false, disableJitForSourceSpatialCounts: enabled,
+        preferSerialSourceSpatialCounts: false);
 
     private static MetadataV2Resource CreateResource(bool knownGeometry) => new()
     {
