@@ -378,6 +378,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(connection);
+        await VerifyReaderCompatibilityAsync(connection, cancellationToken).ConfigureAwait(false);
         var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
 
         if (state.RequiresRasterFloor)
@@ -445,6 +446,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(connection);
+        await VerifyReaderCompatibilityAsync(connection, cancellationToken).ConfigureAwait(false);
         var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
 
         if (!state.JournalIsEmpty)
@@ -579,6 +581,39 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             .Where(family => !state.IsApplied(family.Migration))
             .Select(family => (family.Migration, Present: family.Tables.Where(state.Tables.Contains).ToArray()))
             .Where(family => family.Present.Length > 0);
+
+    private async Task VerifyReaderCompatibilityAsync(DbConnection connection, CancellationToken cancellationToken)
+    {
+        if (_migrations.KnownMigrationNames is not { } known)
+        {
+            return;
+        }
+
+        await using var exists = connection.CreateCommand();
+        exists.CommandText = "SELECT to_regclass('public.schema_versions') IS NOT NULL";
+        if (await exists.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not true)
+        {
+            return;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT scriptname FROM public.schema_versions ORDER BY scriptname";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var unknown = new List<string>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var name = reader.GetString(0);
+            if (!known.Contains(name))
+            {
+                unknown.Add(name);
+            }
+        }
+
+        if (unknown.Count > 0)
+        {
+            throw new DatabaseSchemaCompatibilityException(unknown);
+        }
+    }
 
     private void VerifyConsistency(SchemaState state)
     {

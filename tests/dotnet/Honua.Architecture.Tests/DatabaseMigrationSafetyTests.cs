@@ -2,6 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.RegularExpressions;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Migrations;
 using Xunit;
@@ -11,6 +14,56 @@ namespace Honua.Architecture.Tests;
 [Trait("Category", "Architecture")]
 public sealed class DatabaseMigrationSafetyTests
 {
+    [ArchitectureTest]
+    public void MigrationScripts_AfterReaderBaseline_MustRemainExpandOnly()
+    {
+        var root = FindProjectRoot(Directory.GetCurrentDirectory());
+        var baseline = JsonSerializer.Deserialize<Dictionary<string, string>>(
+            File.ReadAllText(Path.Combine(root, "certification", "schema-reader-baseline.json")))!;
+        var scripts = EnumerateMigrationFiles().ToDictionary(
+            path => Path.GetRelativePath(root, path).Replace('\\', '/'), File.ReadAllText);
+        RollingUpgradeViolations(scripts, baseline).Should().BeEmpty(
+            "the supported rolling update retains the previous reader's schema; a review annotation does not permit a contraction");
+    }
+
+    [Theory]
+    [InlineData("ALTER TABLE honua.layers DROP COLUMN name;")]
+    [InlineData("-- honua:compatibility-review reason=reviewed\nALTER TABLE honua.layers DROP COLUMN name;")]
+    [InlineData("ALTER TABLE honua.layers ALTER COLUMN name SET NOT NULL;")]
+    public void ExpandOnlyGate_SeededContractMigration_IsRejectedEvenWhenReviewed(string sql)
+    {
+        RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = sql }, new Dictionary<string, string>())
+            .Should().ContainSingle().Which.Should().Contain("new.sql");
+    }
+
+    [Fact]
+    public void ExpandOnlyGate_AdditiveMigration_IsAccepted()
+    {
+        RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = "ALTER TABLE honua.layers ADD COLUMN note text;" },
+            new Dictionary<string, string>()).Should().BeEmpty();
+    }
+
+    private static IEnumerable<string> RollingUpgradeViolations(
+        IReadOnlyDictionary<string, string> scripts, IReadOnlyDictionary<string, string> baseline)
+    {
+        foreach (var (name, hash) in baseline)
+        {
+            if (!scripts.TryGetValue(name, out var sql) ||
+                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sql.Replace("\r\n", "\n", StringComparison.Ordinal)))) != hash)
+            {
+                yield return $"{name}: an existing reader-baseline migration was changed or deleted";
+            }
+        }
+
+        foreach (var (name, sql) in scripts)
+        {
+            if (!baseline.ContainsKey(name) && MigrationSafetyClassifier.Classify(name, sql).IsBreaking)
+            {
+                yield return $"{name}: contracting migrations cannot ship in a rolling update";
+            }
+        }
+    }
+
     private static readonly Regex ConcurrentIndexPattern = new(
         @"\bCREATE\s+INDEX\s+CONCURRENTLY\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);

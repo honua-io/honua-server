@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Infrastructure.Monitoring;
 using Honua.TestKit;
@@ -10,6 +11,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
@@ -27,6 +29,40 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 /// </summary>
 public sealed class DatabaseMigrationStartupTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Startup_WithNewerUnqualifiedSchema_RefusesWithTypedError(bool skipMigrations)
+    {
+        using var baseFactory = new TestWebApplicationFactory();
+        var refusal = new DatabaseSchemaCompatibilityException(["Honua.Server.Migrations.999_Contract.sql"]);
+        using var factory = baseFactory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["HONUA_SKIP_MIGRATIONS"] = skipMigrations.ToString(),
+                ["Database:StartupResilience:DegradedStartEnabled"] = "true"
+            }));
+            builder.ConfigureTestServices(services =>
+            {
+                var runner = Substitute.For<IDatabaseMigrationRunner>();
+                runner.RunMigrationsAsync(Arg.Any<string>(), Arg.Any<System.Reflection.Assembly>(), Arg.Any<CancellationToken>())
+                    .Returns(DatabaseMigrationResult.Failed(refusal, refusal.Message));
+                var guard = Substitute.For<IDatabaseSchemaGuard>();
+                guard.VerifyAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                    .Returns(Task.FromException(refusal));
+                services.RemoveAll<IDatabaseMigrationRunner>();
+                services.RemoveAll<IDatabaseSchemaGuard>();
+                services.AddSingleton(runner);
+                services.AddSingleton(guard);
+            });
+        });
+
+        var start = () => factory.CreateClient();
+        start.Should().Throw<DatabaseSchemaCompatibilityException>()
+            .Which.UnknownMigrations.Should().Equal("Honua.Server.Migrations.999_Contract.sql");
+    }
+
     private const string TestEncryptionMasterKey =
         "test-master-key-that-is-at-least-32-characters-long-for-security";
     private const string TestEncryptionSalt =

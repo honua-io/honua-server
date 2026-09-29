@@ -20,6 +20,41 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Collection("ControlPlaneTransitionTelemetry")]
 public sealed class ExecutionJobReconcilerTests
 {
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task ReconcileExecutionJob_HostStopsDuringObservation_PreservesJobForReplacementServer()
+    {
+        using var shutdown = new CancellationTokenSource();
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns<Task<BatchComputeObservation>>(_ =>
+            {
+                shutdown.Cancel();
+                throw new OperationCanceledException(shutdown.Token);
+            });
+        var job = CreateJobRecord("handoff", ExecutionJobStatus.Running, "aws-batch", BatchComputeTargetKind.AwsBatch)
+            with { ProviderOperationId = "existing-batch-job" };
+        var store = new InMemoryExecutionJobStore(job);
+        var sut = new ExecutionJobReconciler(store, [backend], new InMemoryProgressStore(),
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync(job.OperationId, shutdown.Token);
+
+        var stored = (await store.GetAsync(job.OperationId))!;
+        stored.Status.Should().Be(ExecutionJobStatus.Running);
+        stored.ProviderOperationId.Should().Be("existing-batch-job");
+        stored.CompletedAt.Should().BeNull();
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation { Status = ExecutionJobStatus.Succeeded });
+        var replacement = new ExecutionJobReconciler(store, [backend], new InMemoryProgressStore(),
+            NullLogger<ExecutionJobReconciler>.Instance);
+        await replacement.ReconcileExecutionJobAsync(job.OperationId);
+        (await store.GetAsync(job.OperationId))!.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        await backend.DidNotReceive().StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

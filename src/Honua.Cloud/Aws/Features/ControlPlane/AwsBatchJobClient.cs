@@ -112,7 +112,9 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
     {
         ArgumentNullException.ThrowIfNull(submission);
 
-        using var client = CreateClient(region, serviceUrl);
+        // SubmitJob has no idempotency token. Retrying an ambiguous response inside the
+        // SDK can start two containers before our durable discovery path gets control.
+        using var client = CreateClient(region, serviceUrl, submitting: true);
         var request = new SubmitJobRequest
         {
             JobName = submission.JobName,
@@ -330,9 +332,13 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
     // LocalStack Pro Batch endpoint, or a real-cloud test endpoint) when supplied; when unset the
     // client uses the default regional endpoint, keeping production behaviour unchanged. AWS Batch
     // emulation is a LocalStack Pro feature, so this override is primarily for paid/real coverage.
-    internal static AmazonBatchClient CreateClient(string? region, string? serviceUrl)
+    internal static AmazonBatchClient CreateClient(string? region, string? serviceUrl, bool submitting = false)
     {
         var config = new AmazonBatchConfig();
+        if (submitting)
+        {
+            config.MaxErrorRetry = 0;
+        }
 
         // An explicit endpoint takes precedence for the request URL while the region (when set)
         // stays the SigV4 signing region. Unset = default regional endpoint.
