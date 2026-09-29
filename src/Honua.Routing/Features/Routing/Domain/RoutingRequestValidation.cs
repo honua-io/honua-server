@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
+
 namespace Honua.Routing.Features.Routing.Domain;
 
 /// <summary>Validates canonical routing inputs against the provider that will solve them.</summary>
@@ -12,11 +14,19 @@ public static class RoutingRequestValidation
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(capabilities);
+        var travelMode = request.TravelMode ?? request.TravelProfile;
+        // The legacy driving profile denotes the default for providers with no named modes.
+        // An explicit TravelMode must still be advertised, even when it is "driving".
+        if (request.TravelMode is null && capabilities.SupportedTravelModes.Count == 0
+            && string.Equals(travelMode, "driving", StringComparison.OrdinalIgnoreCase))
+        {
+            travelMode = null;
+        }
         return !capabilities.SupportsRoute
             ? "Route solves are not supported by the configured routing provider."
             : ValidatePoints(request.Stops, 2, configuration.MaxStops, request.InSrid, request.OutSrid)
                 ?? ValidateBarriers(request.Barriers, configuration.MaxBarriers)
-                ?? ValidateCapabilities(capabilities, request.Barriers, request.TravelMode);
+                ?? ValidateCapabilities(capabilities, request.Barriers, travelMode);
     }
 
     /// <summary>Validates a canonical service-area request, including worker-side input limits.</summary>
@@ -54,9 +64,69 @@ public static class RoutingRequestValidation
                     : null;
 
     private static string? ValidateBarriers(IReadOnlyList<RouteBarrier>? barriers, int maximum)
-        => barriers is null || barriers.Count > maximum || barriers.Any(barrier => barrier is null || string.IsNullOrWhiteSpace(barrier.GeometryGeoJson))
+        => barriers is null || barriers.Count > maximum || barriers.Any(barrier => barrier is null || !IsValidBarrierGeometry(barrier))
             ? "Routing barriers must contain valid geometries within the configured limit."
             : null;
+
+    private static bool IsValidBarrierGeometry(RouteBarrier barrier)
+    {
+        if (barrier.Kind == RouteBarrierKind.Line)
+        {
+            return NetworkTopologyEditValidation.TryValidateLinearGeoJson(barrier.GeometryGeoJson, out _);
+        }
+        if (string.IsNullOrWhiteSpace(barrier.GeometryGeoJson))
+        {
+            return false;
+        }
+        try
+        {
+            using var document = JsonDocument.Parse(barrier.GeometryGeoJson);
+            var geometry = document.RootElement;
+            if (geometry.ValueKind != JsonValueKind.Object
+                || !geometry.TryGetProperty("type", out var type) || type.ValueKind != JsonValueKind.String
+                || !geometry.TryGetProperty("coordinates", out var coordinates))
+            {
+                return false;
+            }
+            return (barrier.Kind, type.GetString()) switch
+            {
+                (RouteBarrierKind.Point, "Point") => IsPosition(coordinates),
+                (RouteBarrierKind.Point, "MultiPoint") => IsNonEmptyArrayOf(coordinates, IsPosition),
+                (RouteBarrierKind.Polygon, "Polygon") => IsPolygon(coordinates),
+                (RouteBarrierKind.Polygon, "MultiPolygon") => IsNonEmptyArrayOf(coordinates, IsPolygon),
+                _ => false,
+            };
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsPosition(JsonElement position)
+        => position.ValueKind == JsonValueKind.Array && position.GetArrayLength() >= 2
+            && position.EnumerateArray().All(ordinate => ordinate.ValueKind == JsonValueKind.Number
+                && ordinate.TryGetDouble(out var value) && double.IsFinite(value));
+
+    private static bool IsNonEmptyArrayOf(JsonElement coordinates, Func<JsonElement, bool> validate)
+        => coordinates.ValueKind == JsonValueKind.Array && coordinates.GetArrayLength() > 0
+            && coordinates.EnumerateArray().All(validate);
+
+    private static bool IsPolygon(JsonElement coordinates)
+        => IsNonEmptyArrayOf(coordinates, IsLinearRing);
+
+    private static bool IsLinearRing(JsonElement ring)
+    {
+        // RFC 7946 section 3.1.6: at least four positions, with identical first/last values.
+        // This checks structure and finite coordinates; it does not claim topological validity.
+        if (ring.ValueKind != JsonValueKind.Array || ring.GetArrayLength() < 4
+            || !ring.EnumerateArray().All(IsPosition))
+        {
+            return false;
+        }
+        return ring[0].EnumerateArray().Select(ordinate => ordinate.GetDouble())
+            .SequenceEqual(ring[ring.GetArrayLength() - 1].EnumerateArray().Select(ordinate => ordinate.GetDouble()));
+    }
 
     /// <summary>
     /// Returns an error for an unsupported barrier kind or travel mode, or null when
