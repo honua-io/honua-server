@@ -322,6 +322,41 @@ def test_gp_polling_retains_executing_jobs_until_terminal_state():
     asyncio.run(exercise())
 
 
+@pytest.mark.parametrize("admit_queue", [True, False])
+def test_gp_driver_offers_the_queue_envelope_and_never_counts_rejections(admit_queue):
+    import argparse
+    from drive_soak import SoakDriver
+
+    async def exercise():
+        driver = SoakDriver(argparse.Namespace(base_url="http://fixture", admin_key="fixture", unexercised=[],
+                                               gp_interval=1, gp_queue_depth=100, gp_workers=1), LOCK)
+        submissions, cycles = 0, 0
+
+        def serve(request):
+            nonlocal submissions
+            if request.method == "POST":
+                index = submissions
+                submissions += 1
+                return httpx.Response(200, json={"jobId": f"job-{index}"} if admit_queue or index == 0 else {"error": {"code": 503}})
+            return httpx.Response(200, json={"jobStatus": "esriJobExecuting" if request.url.path.endswith("job-0") else "esriJobSubmitted"})
+
+        async def next_poll(started, interval):
+            nonlocal cycles
+            cycles += 1
+            if cycles == 2:
+                driver._stop.set()
+
+        driver._sleep_until_next = next_poll
+        async with httpx.AsyncClient(transport=httpx.MockTransport(serve)) as client:
+            await driver.drive_gp_queue(client)
+        rows = [row for row in driver.gp.samples if "queueDepth" in row]
+        assert submissions == (101 if admit_queue else 201)
+        assert [row["queueDepth"] for row in rows] == ([100, 100] if admit_queue else [0, 0])
+        assert [row["executing"] for row in rows] == [1, 1]
+        assert [row["admissionRejections"] for row in rows] == ([0, 0] if admit_queue else [100, 200])
+    asyncio.run(exercise())
+
+
 def test_captured_gp_errors_invalidate_observations_without_task_exception():
     import argparse
     collector = collector_module.Collector(argparse.Namespace(base_url="http://fixture", admin_key="fixture"), LOCK)

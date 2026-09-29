@@ -203,7 +203,9 @@ class Collector:
         self._gp_error_cursor = 0
         self.stop = asyncio.Event()
         self.driver = SoakDriver(argparse.Namespace(base_url=args.base_url, admin_key=args.admin_key,
-                                                     unexercised=[], gp_interval=1), lock)
+                                                     unexercised=[], gp_interval=1,
+                                                     gp_queue_depth=lock["supportedEnvelope"]["gpQueueDepth"],
+                                                     gp_workers=lock["supportedEnvelope"]["gpWorkers"]), lock)
 
     async def establish_payload(self, client):
         """Exercise an exact-size HTTP feature update and verify its served result."""

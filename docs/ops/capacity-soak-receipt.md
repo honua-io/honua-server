@@ -77,7 +77,9 @@ pressure is the server container's CPU consumption divided by the available host
 CPUs (GP shares this process); database pressure is the server's measured pool
 utilization; Redis pressure is connected clients divided by its `maxclients`.
 The receipt gates the maximum of these three ratios. Queue depth and age are
-observed through submitted GP jobs; configured queue limits are not substituted
+observed through submitted GP jobs. The driver offers a bounded batch up to the
+queue target plus worker slots and replenishes terminal jobs; admission rejections
+are retained as failures, never counted as queued jobs. Configured limits are not substituted
 for observed depths. Missing samples and background-task errors remain explicit
 `samplingFailures` and cannot qualify.
 

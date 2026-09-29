@@ -439,28 +439,44 @@ class SoakDriver:
         pending: dict[str, dict[str, float]] = {}
         completed = 0
         rejected = 0
+
+        async def submit():
+            submitted = time.monotonic()
+            response = await client.post(
+                f"{self.base_url}/rest/services/{SERVICE}/GPServer/geometry.buffer/submitJob",
+                data={"f": "json", "wkb": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA", "srid": "4326", "distance": "10"},
+                headers=self.admin_headers,
+                timeout=30.0,
+            )
+            return submitted, response.json()
+
         while not self._stop.is_set():
             started = time.monotonic()
-            try:
-                response = await client.post(
-                    f"{self.base_url}/rest/services/{SERVICE}/GPServer/geometry.buffer/submitJob",
-                    data={"f": "json", "wkb": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA", "srid": "4326", "distance": "10"},
-                    headers=self.admin_headers,
-                    timeout=30.0,
-                )
-                document = response.json()
+            # Offer enough jobs to exercise the queue plus the worker slots.
+            # One submission per second cannot test a 100-job queue on a worker
+            # that drains faster than that. Retained executing/queued identities
+            # bound outstanding work; rejected jobs are never counted as queued.
+            target = getattr(self.args, "gp_queue_depth", None)
+            offered = 1 if target is None else max(0, target + self.args.gp_workers - len(pending))
+            submissions = await asyncio.gather(*(submit() for _ in range(offered)), return_exceptions=True)
+            for result in submissions:
+                if isinstance(result, Exception):
+                    self.gp.errors.append(f"submitJob: {result}")
+                    continue
+                submitted, document = result
+                if not isinstance(document, dict):
+                    self.gp.errors.append("submitJob: response is not a JSON object")
+                    continue
                 job_id = document.get("jobId")
                 if job_id:
-                    pending[job_id] = {"submitted": time.monotonic(), "lastQueued": time.monotonic()}
-                elif str(document.get("error", {}).get("code")) == "503":
+                    pending[job_id] = {"submitted": submitted, "lastQueued": submitted}
+                elif str((document.get("error") or {}).get("code")) == "503":
                     # Admission control refuses a submission while the single declared worker is
                     # busy rather than queueing it. That is the candidate's behaviour, not an
                     # error in the measurement: count it as evidence for the queue-depth dimension.
                     rejected += 1
                 else:
                     self.gp.errors.append(f"submitJob: {json.dumps(document)[:200]}")
-            except Exception as exc:  # noqa: BLE001
-                self.gp.errors.append(f"submitJob: {exc}")
 
             queued_ages: list[float] = []
             executing = 0
