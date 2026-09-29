@@ -120,6 +120,7 @@ jobs:
           for checkout in (".", "../candidate"):
               actual = subprocess.check_output(["git", "-C", checkout, "rev-parse", "HEAD"], text=True).strip()
               assert_candidate(candidate, os.environ["GITHUB_SHA"], actual)
+              assert_candidate(candidate, os.environ["GITHUB_WORKFLOW_SHA"], actual)
           if not re.fullmatch(r"ghcr.io/honua-io/honua-server@sha256:[0-9a-f]{64}", os.environ["CANDIDATE_IMAGE"]):
               sys.exit("candidate_image must be the manifest-pinned GHCR digest")
           PYTHON
@@ -438,18 +439,20 @@ jobs:
 
       - name: Summarise
         if: always()
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
         run: |
           {
             echo "## Candidate capacity soak"
             echo
-            echo "- candidate: \`${{ inputs.candidate_sha }}\`"
+            echo "- candidate: \`$CANDIDATE_SHA\`"
             echo "- lock: ${{ steps.lock.outputs.url }} (sha256 \`${{ steps.lock.outputs.sha256 }}\`)"
             echo "- steady state: ${{ steps.window.outputs.steady }}s at ${{ steps.profile.outputs.virtual_users }} virtual users"
             echo "- self-check against the frozen lock: ${{ steps.receipt.outputs.selfcheck }}"
             if [ -n "${{ steps.publish.outputs.url }}" ]; then
               echo "- receipt: ${{ steps.publish.outputs.url }}"
               echo
-              echo "\`capacity=${{ steps.publish.outputs.url }} candidate=${{ inputs.candidate_sha }}\`"
+              echo "\`capacity=${{ steps.publish.outputs.url }} candidate=$CANDIDATE_SHA\`"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 

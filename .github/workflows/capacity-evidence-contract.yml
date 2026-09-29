@@ -8,6 +8,7 @@ on:
       - 'scripts/soak/**'
       - 'tests/python/unit/test_capacity_*.py'
       - 'tests/python/fixtures/capacity/**'
+      - 'tests/dotnet/Honua.TestKit/Performance/LoadTestProfile.cs'
   workflow_dispatch:
 
 permissions:

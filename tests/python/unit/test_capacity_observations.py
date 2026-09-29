@@ -5,6 +5,7 @@ import asyncio
 import copy
 from datetime import datetime, timedelta, timezone
 import json
+import re
 from pathlib import Path
 import sys
 import subprocess
@@ -95,6 +96,14 @@ def test_maximum_payload_preserves_geometry_and_attributes():
     assert feature["attributes"]["objectid"] == 10000
     assert feature["attributes"]["name"] == "Hawaiʻi"
     assert feature["attributes"]["missing"] is None
+
+
+def test_collector_populations_match_the_canonical_soak_profile():
+    profile = (ROOT / "tests/dotnet/Honua.TestKit/Performance/LoadTestProfile.cs").read_text()
+    declaration = profile.split("public static LoadTestProfile Soak", 1)[1].split("= new(", 1)[1].split(";", 1)[0]
+    names = ("FeatureQueryUsers", "SpatialQueryUsers", "OgcFeaturesUsers", "CqlUsers", "ConnectionPoolUsers", "MemoryStressUsers", "ODataUsers", "TilesUsers")
+    counts = [int(re.search(rf"{name}:\s*(\d+)", declaration)[1]) for name in names]
+    assert counts == [count for _, count in collector_module.MIX]
 
 
 def test_zip_contains_exact_receipt_and_cited_raw_bytes(tmp_path):

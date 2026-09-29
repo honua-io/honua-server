@@ -360,6 +360,12 @@ def main():
     parser.add_argument("--ramp-up-seconds", type=int, default=300)
     args = parser.parse_args()
     lock = json.loads(args.lock.read_bytes())
+    if lock["soak"]["profile"] != "soak":
+        raise ValueError("collector only implements the frozen soak profile")
+    freeze = max(datetime.fromisoformat(value.replace("Z", "+00:00"))
+                 for value in (lock["frozenAt"], lock["receiptContract"]["frozenAt"]))
+    if now() <= freeze:
+        raise ValueError("capacity collection must begin after the committed freeze")
     if lock["supportedEnvelope"]["concurrentVirtualUsers"] != sum(copies for _, copies in MIX):
         raise ValueError("collector scenario mix differs from the frozen concurrency")
     if args.steady_seconds < lock["soak"]["minimumSteadyStateSeconds"]:
