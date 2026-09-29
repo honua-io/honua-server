@@ -7,15 +7,18 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import sys
+import subprocess
 import zipfile
 
 import aiohttp
 from aiohttp import web
 import pytest
+import httpx
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts/soak"))
 import capacity_evidence as emitter
+import collect_capacity as collector_module
 from collect_capacity import RequestLedger, feature_bytes, iso, now, observe_request, padded_description
 
 LOCK_PATH = ROOT / "tests/python/fixtures/capacity/lock.json"
@@ -201,6 +204,68 @@ def test_real_http_outcomes_include_in_band_errors_and_timeouts():
     asyncio.run(exercise())
 
 
+def test_sampler_retains_served_dimensions_and_actual_dependency_measurements(monkeypatch):
+    import argparse
+    from types import SimpleNamespace
+
+    feature = dict(attributes=dict(objectid=10000, description=""), geometry=dict(x=-157.8, y=21.3, spatialReference=dict(wkid=4326)))
+    feature["attributes"]["description"] = padded_description(feature, 1048576)
+
+    async def docker(*args):
+        if args[:2] == ("docker", "inspect"):
+            return json.dumps([{"Config": {"Env": ["ExecutionAdmission__MaxConcurrentJobsGlobal=1"]}}])
+        if args[:2] == ("docker", "stats"):
+            return "40.00%"
+        if args[:2] == ("docker", "info"):
+            return "4"
+        if "INFO" in args:
+            return "# Clients\nconnected_clients:25\nblocked_clients:0\n"
+        assert "maxclients" in args
+        return "maxclients\n100"
+
+    monkeypatch.setattr(collector_module, "command", docker)
+
+    async def exercise():
+        async def serve(request):
+            if request.path == "/api/v1/capabilities/manifest":
+                document = dict(server=dict(deploymentRevision=REVISION, deploymentEnvironment="Production"),
+                                scope=dict(tenantSource="Default"), capabilities=[])
+            elif request.path == "/rest/services":
+                document = dict(services=[dict(name="test")])
+            elif request.path.endswith("/FeatureServer"):
+                document = dict(layers=[dict(id=i) for i in range(4)])
+            elif request.path.endswith("/query"):
+                document = dict(count=10000) if request.query.get("returnCountOnly") == "true" else dict(features=[feature])
+            else:
+                assert request.path == "/monitoring/metrics/connection-pool"
+                document = dict(utilization=.4, hasUtilizationData=True)
+            return web.json_response(document)
+        app = web.Application()
+        app.router.add_get("/{tail:.*}", serve)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "127.0.0.1", 0)
+        await site.start()
+        port = site._server.sockets[0].getsockname()[1]
+        try:
+            collector = collector_module.Collector(argparse.Namespace(base_url=f"http://127.0.0.1:{port}", admin_key="fixture"), LOCK)
+            collector.payload_id = 10000
+            collector.users = [SimpleNamespace(done=lambda: False), SimpleNamespace(done=lambda: False), SimpleNamespace(done=lambda: True)]
+            collector.driver.gp.add(queueDepth=3, executing=1, oldestQueueAgeSeconds=7)
+            async with httpx.AsyncClient() as client:
+                at = await collector.sample(client)
+            assert collector.failures == []
+            assert collector.metrics == [dict(at=iso(at), worker=.1, database=.4, redis=.25, queueAgeSeconds=7)]
+            # A configured target of 170 users / 100 queued jobs must not replace
+            # two live users / three actually observed queued jobs.
+            assert collector.workloads[0]["dimensions"] == dict(tenants=1, services=1, layersPerService=4, featuresPerLayer=10000,
+                                                               maximumFeaturePayloadBytes=1048576, concurrentVirtualUsers=2, gpWorkers=1, gpQueueDepth=3)
+            assert collector.workloads[0]["proofs"]["layerCounts"] == [dict(count=10000)]*4
+        finally:
+            await runner.cleanup()
+    asyncio.run(exercise())
+
+
 def verify_release_contract(tools_path: Path, output: Path):
     """Run the real release verifier, including wrong-source ZIP attestation rejection.
 
@@ -230,6 +295,16 @@ def verify_release_contract(tools_path: Path, output: Path):
     failures = gate.bind_attestation(wrong, bundle_hash, result, REVISION)
     assert any("attested source commit" in failure for failure in failures), failures
     assert any("SLSA resolved source" in failure for failure in failures), failures
+    verification_path = output / "verified.json"
+    cli = [sys.executable, str(tools_path / "check_capacity_soak.py"), "--lock", str(LOCK_PATH),
+           "--receipt", str(output / "extracted/capacity-soak-receipt.json"), "--artifact-root", str(output / "extracted"),
+           "--expected-revision", REVISION, "--expected-image-digest", IMAGE, "--bundle", str(bundle), "--attestation", str(verification_path)]
+    verification_path.write_text(json.dumps(verified))
+    passed = subprocess.run(cli, capture_output=True, text=True)
+    assert passed.returncode == 0, passed.stdout + passed.stderr
+    verification_path.write_text(json.dumps(wrong))
+    refused = subprocess.run(cli, capture_output=True, text=True)
+    assert refused.returncode == 1 and "attested source commit" in refused.stdout, refused.stdout + refused.stderr
     print("release checker: positive ZIP accepted; wrong-source ZIP attestation rejected")
 
 
