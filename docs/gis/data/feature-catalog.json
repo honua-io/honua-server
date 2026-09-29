@@ -8231,7 +8231,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Infrastructure.EmptyServerCatalogEndpointTests.SiteRoot_RedirectsToTheServicesDirectory"
+        "Honua.Server.Tests.Features.Infrastructure.EmptyServerCatalogEndpointTests.SiteRoot_RedirectsToTheServicesDirectory",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SiteRoot_RedirectRetainsApplicationPrefix"
       ],
       "proof_ledger_surface": "geoservices-catalog",
       "maturity": "implemented",
@@ -10503,6 +10504,7 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishedBinding_AttachmentRoundTripUsesLiveParentInsteadOfSnapshot",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishedBinding_AttachmentsDoNotExposeParentRemainingOnlyInOldSnapshot",
         "Honua.Server.Tests.AttachmentEndpointTests.QueryAttachments_AlwaysEmitsParentGlobalIdKey",
+        "Honua.Server.Tests.AttachmentEndpointTests.QueryAttachments_ConfiguredBaseUrl_DoesNotDuplicateApplicationPrefix",
         "Honua.Server.Tests.AttachmentEndpointTests.QueryAttachments_FeatureWithNoAttachments_ReturnsEmptyArray",
         "Honua.Server.Tests.AttachmentEndpointTests.QueryAttachments_WithMalformedObjectIdsDelimiter_Returns400",
         "Honua.Server.Tests.AttachmentEndpointTests.QueryAttachments_WithObjectIdsAndReturnUrl_ReturnsGroupedResponseWithUrls",
