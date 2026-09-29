@@ -48,6 +48,10 @@ The canonical input is a typed routing request encoded as JSON. GPServer project
 `FindRoutes` and `GenerateServiceAreas` onto these jobs with the supported
 parameters declared in task metadata; the full Esri ready-to-use contract is not
 claimed. Ordered routes and service-area breaks use travel time in minutes.
+The pgRouting provider estimates service-area coverage from reachable network
+vertices; it does not reproduce Esri's detailed polygon generation. Consecutive
+breaks return rings that exclude earlier coverage, and a cutoff with no new area
+produces no polygon.
 Native ArcPy route and service-area construction has been exercised, but native
 solves still fail before submission with this bounded task contract. Full native
 execution, authentication and export remain open under
