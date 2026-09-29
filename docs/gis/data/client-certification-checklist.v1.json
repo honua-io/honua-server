@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "description": "Authoritative four-client scope contract and historical operation tracker. Closed totals include exclusions and are not certification acceptance. Coverage reviews, licensed skips, maturity and candidate-bound native evidence are governed separately in scope_contract.",
   "scope_contract": {
-    "revision": "2026-09-29.4",
+    "revision": "2026-09-29.5",
     "authority": "https://github.com/honua-io/honua-server/blob/trunk/docs/gis/CLIENT_CERTIFICATION_CHECKLIST.md",
     "objective": "Demonstrate that customers can reliably use Honua's advertised supported workflows in QGIS, PyQGIS, ArcGIS Pro and ArcPy on declared client versions and license profiles. Reconcile the client surface into one traceable matrix, repair server and harness defects, and pass every required native workflow and regression gate against the same frozen shipping NativeAOT/Production candidate. Publish reproducible setup instructions, evidence and precise limitations. Accept documented client exclusions and licensed skips only within their stated profile; keep preview/experimental readiness separate.",
     "audit": "https://github.com/honua-io/honua-client-compat/blob/9c9b327c81811948a96a9d94371ede2f3d26273c/docs/reports/client-surface-completeness-2026-09-28.json",
@@ -116,7 +116,7 @@
       {
         "id": "native-editing",
         "status": "open",
-        "required_work": "Map single-feature, bulk and multi-layer edits to independent inputs, SQL persistence, native readback, denied commits, retained buffers and recovery. Final Debug/JIT PyQGIS diagnostics at server 64066504d2e5578ec781ef1c2722a6696a7e1084 pass 9/9 FeatureServer and 9/9 OAPIF per installed version; WFS passes 8/9 per version and retains empty-string-to-null readback failures. Fixes cover HTTP failure signaling, WFS 1.0/1.1 transaction adaptation, the fixture geometry declaration and OAPIF harness storage semantics. Full client harness check passes 363 tests plus 20 subtests after exact-byte evidence recovery. Complete bulk/partial/unknown-commit, other geometry/CRS, scoped roles, relationships/attachments and project-reopen variants, plus the other native lanes and the frozen shipping replay. Do not count unit or historical receipt validation as fresh native acceptance."
+        "required_work": "Map single-feature, bulk and multi-layer edits to independent inputs, SQL persistence, native readback, denied commits, retained buffers and recovery. Final Debug/JIT PyQGIS diagnostics at server 64066504d2e5578ec781ef1c2722a6696a7e1084 pass 9/9 FeatureServer and 9/9 OAPIF per installed version; WFS passes 8/9 per version and retains empty-string-to-null readback failures. Separate default WFS batch diagnostics pass 5/5 per version: two-feature insert/delete, storage-rejected insert/update, atomic SQL rollback and correction/retry in the same retained buffer. These are individual single-layer requests, not a mixed editing session or a multi-layer transaction. Complete best-effort/unknown-commit, mixed-stage and concurrent-edit recovery, other geometry/CRS, scoped roles, relationships/attachments and project-reopen variants, plus the other native lanes and the frozen shipping replay. Do not count unit or historical receipt validation as fresh native acceptance."
       },
       {
         "id": "vector-data-fidelity",
@@ -145,6 +145,26 @@
       }
     ],
     "manual_reviews": [
+      {
+        "id": "qgis-native-wfs-batch-transactions",
+        "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS API commitChanges contract; installed QGIS 3.44.14 revision 1a4cda5f262 and 4.2.2 revision f1431de8676; OGC WFS 1.1 clause 12",
+        "url": "https://api.qgis.org/api/classQgsVectorLayer.html",
+        "related_sources": [
+          "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgswfsprovider.cpp",
+          "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsprovider.cpp",
+          "https://docs.ogc.org/is/04-094r1/04-094r1.html",
+          "https://github.com/honua-io/honua-client-compat/blob/a72ea9840c835928ea3c2527779d3019d4efcfa7/docs/reports/pyqgis-native-edit-batches-2026-09-29.json"
+        ],
+        "protocols": [
+          "wfs"
+        ],
+        "lanes": [
+          "pyqgis"
+        ],
+        "finding": "QGIS preserves failed edit buffers for correction but commits distinct operation stages. Fresh native runs on both installed versions pass five default single-layer WFS batch cases each against unchanged server assemblies built from 64066504. A named database constraint rejects one member of a two-feature insert or update after ordinary request validation. Each native request contains both records, reports failure, retains both edits and leaves every SQL row unchanged. Correcting that buffer commits the independently specified values once; fresh native readback verifies IDs, attributes and coordinates. Two-feature add/delete also pass. OGC WFS 1.1 separately describes partial-failure TransactionResults; positive-count client success checks still require a best-effort audit.",
+        "next_check": "Retain the exact batch oracle, storage controls and per-child receipts in the local unpublished batch report. Revalidate best-effort/unknown outcomes, mixed save stages, multiple layers and concurrent changes. The older empty-string and default cache failures stay open. Publish and replay on the frozen NativeAOT/Production candidate with native UI and the remaining clients; award no shipping acceptance from this Debug/JIT run."
+      },
       {
         "id": "qgis-34414-native-edit-contracts",
         "reviewed_at": "2026-09-29",
