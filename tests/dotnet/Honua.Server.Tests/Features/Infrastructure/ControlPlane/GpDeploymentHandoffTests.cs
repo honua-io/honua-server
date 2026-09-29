@@ -51,9 +51,15 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
             (await store.GetAsync(job.OperationId))!.ArtifactReferences.Should().ContainSingle();
             var drain = worker.StopAsync(deadline.Token);
             deadline.Cancel();
+            if (ignoresCancellation)
+            {
+                await executor.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                drain.IsCompleted.Should().BeFalse("shutdown must retain the store until terminal cleanup completes");
+                executor.Release.TrySetResult();
+            }
             await drain;
-            executor.Release.TrySetResult();
-            var terminal = await callback.Completed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            callback.Completed.Task.IsCompleted.Should().BeTrue("terminal cleanup must finish before StopAsync returns");
+            var terminal = await callback.Completed.Task;
             terminal.Status.Should().Be(ExecutionJobStatus.Failed);
             terminal.ErrorMessage.Should().Be("Worker drain deadline expired.");
             terminal.ArtifactReferences.Should().BeEmpty();
@@ -281,12 +287,14 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
         public bool IgnoreCancellation { get; init; }
         public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource CancellationObserved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int Executions;
 
         public async Task<JobExecutionResult> ExecuteAsync(ExecutionJobRecord job, IJobExecutionContext context,
             CancellationToken cancellationToken = default)
         {
+            using var cancellationRegistration = cancellationToken.Register(() => CancellationObserved.TrySetResult());
             Interlocked.Increment(ref Executions);
             if (PublishPartialOutput)
             {
