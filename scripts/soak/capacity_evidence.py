@@ -107,7 +107,9 @@ def receipt(lock: dict, lock_hash: str, source: dict, payload: bytes, artifact_u
                                executionMode="candidate-topology", proxy=False, sampleCount=len(workloads),
                                observationPopulation=dict(kind="ratio", numerator=sum(v == target for v in observed), denominator=len(observed), sampleCount=len(observed)),
                                rawArtifactIds=references)
-    complete = not source["samplingFailures"] and all(v is not None for v in values.values()) and all(w["status"] == "exercised" for w in exercised.values())
+    complete = (not source["samplingFailures"] and all(v is not None for v in values.values())
+                and all(w["status"] == "exercised" for w in exercised.values())
+                and {event["dependency"] for event in recoveries} == {"worker", "database", "redis"})
     return dict(common, schemaVersion=2, status="completed" if complete else "incomplete", evidenceScope="single-tenant-ga", profile="soak",
                 lockSha256=lock_hash, observedRevision=source["observedRevision"], steadyStateSeconds=duration,
                 envelope=lock["supportedEnvelope"], producer=source["producer"], signals=signals, workloads=exercised,

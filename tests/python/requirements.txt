@@ -9,6 +9,7 @@ pytest-timeout>=2.3.0
 
 # HTTP client
 httpx>=0.27.0
+aiohttp>=3.12.0  # Complete request populations in the candidate capacity collector
 requests>=2.31.0
 pystac>=1.10.0
 pystac-client>=0.8.0

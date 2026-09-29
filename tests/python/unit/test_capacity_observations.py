@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import copy
 from datetime import datetime, timedelta, timezone
-import importlib.util
 import json
 from pathlib import Path
 import sys
@@ -17,7 +16,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts/soak"))
 import capacity_evidence as emitter
-from collect_capacity import RequestLedger, iso, now, observe_request
+from collect_capacity import RequestLedger, feature_bytes, iso, now, observe_request, padded_description
 
 LOCK_PATH = ROOT / "tests/python/fixtures/capacity/lock.json"
 LOCK = json.loads(LOCK_PATH.read_bytes())
@@ -81,6 +80,18 @@ def test_analytical_population_values_and_metadata():
     for workload in result["workloads"].values():
         assert workload["sampleCount"] == 61
         assert workload["status"] == "exercised"
+
+
+def test_maximum_payload_preserves_geometry_and_attributes():
+    feature = dict(attributes=dict(objectid=10000, name="Hawaiʻi", description="initial", missing=None),
+                   geometry=dict(x=-157.8, y=21.3, z=4, m=7, spatialReference=dict(wkid=4326)))
+    original = copy.deepcopy(feature)
+    feature["attributes"]["description"] = padded_description(feature, 1048576)
+    assert len(feature_bytes(feature)) == 1048576
+    assert feature["geometry"] == original["geometry"]
+    assert feature["attributes"]["objectid"] == 10000
+    assert feature["attributes"]["name"] == "Hawaiʻi"
+    assert feature["attributes"]["missing"] is None
 
 
 def test_zip_contains_exact_receipt_and_cited_raw_bytes(tmp_path):

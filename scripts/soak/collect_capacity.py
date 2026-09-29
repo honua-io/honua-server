@@ -21,6 +21,7 @@ from urllib.parse import urlencode
 
 import aiohttp
 import httpx
+import psycopg
 
 from capacity_evidence import assert_candidate, digest
 from drive_soak import SoakDriver
@@ -120,6 +121,21 @@ def protocol(path):
     return "health"
 
 
+def feature_bytes(feature):
+    """Canonical UTF-8 feature payload, including attributes and geometry."""
+    return json.dumps(feature, separators=(",", ":"), ensure_ascii=False).encode()
+
+
+def padded_description(feature, target):
+    # Only ASCII padding is added. Its encoded length equals its character count;
+    # the observed remainder includes all actual metadata and geometry ordinates.
+    empty = dict(feature, attributes=dict(feature["attributes"], description=""))
+    length = target - len(feature_bytes(empty))
+    if length < 0:
+        raise ValueError("feature already exceeds the declared maximum payload")
+    return "x" * length
+
+
 async def command(*args):
     process = await asyncio.create_subprocess_exec(*args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     try:
@@ -152,9 +168,34 @@ class Collector:
         self.ledger = RequestLedger("honua", "pending")
         self.failures, self.metrics, self.workloads, self.recoveries = [], [], [], []
         self.users = []
+        self.payload_id = None
         self.stop = asyncio.Event()
         self.driver = SoakDriver(argparse.Namespace(base_url=args.base_url, admin_key=args.admin_key,
                                                      unexercised=[], gp_interval=1), lock)
+
+    async def establish_payload(self, client):
+        """Size one seeded feature before the measured run; preserve rows and geometry."""
+        document = await self.driver._get_json(client, "/rest/services/test/FeatureServer/0/query?f=json&where=1%3D1&outFields=*&returnGeometry=true&orderByFields=objectid%20DESC&resultRecordCount=1")
+        feature = document["features"][0]
+        self.payload_id = int(feature["attributes"]["objectid"])
+        target = self.lock["supportedEnvelope"]["maximumFeaturePayloadBytes"]
+        padding = padded_description(feature, target)
+        connection = await psycopg.AsyncConnection.connect(
+            host="localhost", port=os.environ["SOAK_DB_PORT"], dbname=os.environ["SOAK_DB_NAME"],
+            user=os.environ["SOAK_DB_USER"], password=os.environ["SOAK_DB_PASSWORD"])
+        async with connection:
+            async with connection.cursor() as cursor:
+                await cursor.execute("UPDATE public.features SET attributes=jsonb_set(attributes, '{description}', to_jsonb(%s::text)) WHERE layer_id=0 AND objectid=%s", (padding, self.payload_id))
+                if cursor.rowcount != 1:
+                    raise ValueError("maximum-payload fixture must update exactly one seeded row")
+        # A fresh predicate avoids any cached pre-seed query. Serving the result is
+        # the proof; a database-only size calculation is insufficient.
+        served = await self.driver._get_json(client, f"/rest/services/test/FeatureServer/0/query?f=json&where=objectid%3D{self.payload_id}&outFields=*&returnGeometry=true")
+        if len(served.get("features", [])) != 1 or len(feature_bytes(served["features"][0])) != target:
+            raise ValueError("candidate did not serve the exact maximum feature payload")
+        actual = served["features"][0]
+        if actual.get("geometry") != feature.get("geometry") or actual["attributes"]["description"] != padding:
+            raise ValueError("maximum-payload fixture changed geometry or lost attribute data")
 
     async def user(self, session, scenario, seed):
         rng, iteration = random.Random(seed), 0
@@ -180,9 +221,9 @@ class Collector:
             dimensions["featuresPerLayer"] = counts[0]["count"] if counts and all(c["count"] == counts[0]["count"] for c in counts) else None
             # The feature itself must be accepted and readable. A non-413 error is
             # not evidence of a successfully exercised maximum feature payload.
-            feature = await self.driver._get_json(client, "/rest/services/test/FeatureServer/0/query?f=json&where=objectid%3D1&outFields=*&returnGeometry=true")
+            feature = await self.driver._get_json(client, f"/rest/services/test/FeatureServer/0/query?f=json&where=objectid%3D{self.payload_id}&outFields=*&returnGeometry=true")
             features = feature.get("features", [])
-            dimensions["maximumFeaturePayloadBytes"] = len(json.dumps(features[0], separators=(",", ":"), ensure_ascii=False).encode()) if len(features) == 1 else None
+            dimensions["maximumFeaturePayloadBytes"] = len(feature_bytes(features[0])) if len(features) == 1 else None
             proofs["payloadSha256"] = digest(json.dumps(features, sort_keys=True).encode())
             pool = await self.driver._get_json(client, "/monitoring/metrics/connection-pool", admin=True)
             metric["database"] = pool["utilization"] if pool.get("hasUtilizationData") else None
@@ -202,8 +243,13 @@ class Collector:
             inspection = json.loads(await command("docker", "inspect", "honua-capacity-soak-honua-1"))[0]
             configured = dict(item.split("=", 1) for item in inspection["Config"]["Env"] if "=" in item)
             dimensions["gpWorkers"] = int(configured["ExecutionAdmission__MaxConcurrentJobsGlobal"])
-            # Worker pressure is observed executing jobs / configured worker slots.
-            metric["worker"] = gp["executing"]/dimensions["gpWorkers"] if gp else None
+            # GP workers share the server container's CPU allocation. Include all
+            # work on that CPU resource, rather than treating a busy single slot
+            # as 100% CPU saturation regardless of the work it is doing.
+            cpu_percent = await command("docker", "stats", "--no-stream", "--format", "{{.CPUPerc}}", "honua-capacity-soak-honua-1")
+            cpu_count = int(await command("docker", "info", "--format", "{{.NCPU}}"))
+            metric["worker"] = float(cpu_percent.rstrip("%"))/(100*cpu_count)
+            proofs["workerCpu"] = dict(percent=float(cpu_percent.rstrip("%")), allocatedCpus=cpu_count)
             proofs["workerConfiguration"] = dimensions["gpWorkers"]
             redis = await command("docker", "exec", "honua-capacity-soak-redis-1", "redis-cli", "INFO", "clients")
             clients = dict(line.split(":", 1) for line in redis.splitlines() if ":" in line)
@@ -260,6 +306,7 @@ class Collector:
         async with httpx.AsyncClient(timeout=10, headers=headers) as client, aiohttp.ClientSession(headers=headers, timeout=aiohttp.ClientTimeout(total=30), connector=aiohttp.TCPConnector(limit=256)) as session:
             await self.driver.observe_deployment(client)
             assert_candidate(self.args.candidate_sha, os.environ["GITHUB_SHA"], self.driver.deployment["observedRevision"])
+            await self.establish_payload(client)
             self.users = [asyncio.create_task(self.user(session, scenario, seed)) for scenario, copies in MIX for seed in range(copies)]
             gp = asyncio.create_task(self.driver.drive_gp_queue(client))
             fault = None
@@ -280,7 +327,14 @@ class Collector:
                 self.driver._stop.set()
                 if fault is not None and not fault.done():
                     fault.cancel()
-                await asyncio.gather(*self.users, gp, *([fault] if fault else []), return_exceptions=True)
+                tasks = [*self.users, gp, *([fault] if fault else [])]
+                try:
+                    results = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 60)
+                    for result in results:
+                        if isinstance(result, Exception):
+                            self.failures.append(f"collector task failed: {type(result).__name__}: {result}")
+                except TimeoutError:
+                    self.failures.append("collector tasks exceeded the 60-second drain budget")
         producer = dict(repository=os.environ["GITHUB_REPOSITORY"], workflowPath=".github/workflows/capacity-soak-candidate.yml",
                         workflowRef=os.environ["GITHUB_WORKFLOW_REF"], sourceRevision=os.environ["GITHUB_SHA"],
                         runId=int(os.environ["GITHUB_RUN_ID"]), runAttempt=int(os.environ["GITHUB_RUN_ATTEMPT"]), predicateType="https://slsa.dev/provenance/v1")

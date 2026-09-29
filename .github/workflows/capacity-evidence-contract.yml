@@ -1,0 +1,45 @@
+name: Capacity evidence contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/capacity-*.yml'
+      - '.github/workflows/load-soak-nightly.yml'
+      - 'scripts/soak/**'
+      - 'tests/python/unit/test_capacity_*.py'
+      - 'tests/python/fixtures/capacity/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Capacity producer contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/setup-python-ci
+        with:
+          python-version: '3.12'
+      - name: Install focused test dependencies
+        run: python -m pip install pytest 'httpx>=0.27' 'aiohttp>=3.12' 'psycopg[binary]>=3.1' 'pyyaml>=6'
+      - name: Exercise actual HTTP outcomes and analytical evidence populations
+        run: |
+          python -m pytest -c /dev/null --confcutdir=tests/python/unit \
+            tests/python/unit/test_capacity_observations.py \
+            tests/python/unit/test_capacity_soak_receipt.py \
+            tests/python/unit/test_capacity_soak_keyring.py -q
+      - name: Check the emitted ZIP with the independent frozen release verifier
+        env:
+          RELEASE_REF: 3970b22f05cc19a49b83703df416b4ecc04a35b4
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/release-tools"
+          for file in check_capacity_soak.py capacity_observations.py extract_capacity_evidence.py; do
+            curl --retry 5 --retry-all-errors --retry-max-time 300 --fail --silent --show-error --proto '=https' --tlsv1.2 \
+              "https://raw.githubusercontent.com/honua-io/honua-release/$RELEASE_REF/tools/$file" \
+              -o "$RUNNER_TEMP/release-tools/$file"
+          done
+          python tests/python/unit/test_capacity_observations.py "$RUNNER_TEMP/release-tools"
