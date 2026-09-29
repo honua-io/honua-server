@@ -67,7 +67,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             response.BeSuccessful();
             var result = JsonSerializer.Deserialize(await response.Content.ReadAsStringAsync(),
                 FeatureServerJsonContext.Default.AttachmentQueryResponse)!;
-            var attachment = result.AttachmentInfos.Single(item => item.Name == "test1.txt");
+            var attachment = result.AttachmentInfos!.Single(item => item.Name == "test1.txt");
             var resourcePath = $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/{attachment.Id}";
             attachment.Url.Should().Be($"{publicBaseUrl ?? prefix}{resourcePath}");
             if (publicBaseUrl is null || publicBaseUrl.EndsWith("/arcgis", StringComparison.Ordinal))
