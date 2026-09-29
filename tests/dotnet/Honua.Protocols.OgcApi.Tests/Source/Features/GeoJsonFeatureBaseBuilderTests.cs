@@ -1,0 +1,109 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Collections.Immutable;
+using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.GeoJson;
+using Xunit.Abstractions;
+
+namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
+
+[Trait("Category", "Unit")]
+[Trait("Tier", "Fast")]
+public sealed class GeoJsonFeatureBaseBuilderTests(ITestOutputHelper output)
+{
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void Create_PreservesVisibilityProjectionDatesAndIdentifiers(bool additional, bool encoded)
+    {
+        var resource = new MetadataV2Resource
+        {
+            SchemaFields =
+            [
+                new() { Name = "objectid", Type = MetadataV2FieldType.Integer, SemanticRoles = ["id.primary"] },
+                new() { Name = "name", Type = MetadataV2FieldType.String },
+                new() { Name = "date", Type = MetadataV2FieldType.Date },
+                new() { Name = "timestamp", Type = MetadataV2FieldType.DateTime },
+                new() { Name = "nullable", Type = MetadataV2FieldType.String },
+                new() { Name = "nested", Type = MetadataV2FieldType.String },
+                new() { Name = "secret", Type = MetadataV2FieldType.String, Hidden = true },
+                new() { Name = "unselected", Type = MetadataV2FieldType.String },
+                new() { Name = "shape", Type = MetadataV2FieldType.Geometry },
+            ]
+        };
+        var nested = new Dictionary<string, object?> { ["value"] = 42L };
+        var attributes = new Dictionary<string, object?>
+        {
+            ["name"] = "park",
+            ["NAME"] = "must not duplicate",
+            ["date"] = 0L,
+            ["timestamp"] = new DateTimeOffset(1970, 1, 1, 2, 0, 0, TimeSpan.FromHours(2)),
+            ["nullable"] = null,
+            ["nested"] = nested,
+            ["SECRET"] = "private",
+            ["unselected"] = "omit",
+            ["extra"] = "additional"
+        }.ToImmutableDictionary();
+        var options = new GeoJsonFeatureBuildOptions(
+            ProjectedProperties: new HashSet<string>(StringComparer.Ordinal)
+            { "name", "date", "timestamp", "nullable", "nested", "SECRET", "extra" },
+            IncludeObjectIdProperty: true, IncludeObjectIdAlias: true,
+            IncludeAdditionalAttributes: additional, ResolveIdFromProperties: true);
+
+        var result = encoded
+            ? GeoJsonFeatureBaseBuilder.Create(EncodedGeoJsonFeature.Create(7, null, attributes), resource, options)
+            : GeoJsonFeatureBaseBuilder.Create(Feature.Create(7, null, attributes), resource, options);
+
+        result.Id.Should().Be(7L);
+        result.HasGeometry.Should().BeFalse();
+        result.Properties.Should().Contain("name", "park");
+        result.Properties.Should().Contain("date", "1970-01-01");
+        result.Properties.Should().Contain("timestamp", "1970-01-01T00:00:00Z");
+        result.Properties.Should().Contain("objectid", 7L).And.Contain("OBJECTID", 7L);
+        result.Properties["nullable"].Should().BeNull();
+        result.Properties["nested"].Should().BeSameAs(nested);
+        result.Properties.Keys.Should().NotContain(["secret", "SECRET", "NAME", "unselected", "shape"]);
+        result.Properties.ContainsKey("extra").Should().Be(additional);
+    }
+
+    [Fact]
+    public void Create_DeclaredOnlyPageStaysWithinAllocationBudget()
+    {
+        var fields = Enumerable.Range(0, 16)
+            .Select(index => new MetadataV2Field { Name = $"field{index}", Type = MetadataV2FieldType.String })
+            .ToArray();
+        var resource = new MetadataV2Resource { SchemaFields = fields };
+        var feature = Feature.Create(1, null,
+            fields.ToImmutableDictionary(field => field.Name, _ => (object?)"value"));
+
+        long MeasurePage(bool additional)
+        {
+            var options = new GeoJsonFeatureBuildOptions(IncludeAdditionalAttributes: additional);
+            var start = GC.GetAllocatedBytesForCurrentThread();
+            for (var index = 0; index < 100; index++)
+            {
+                var result = GeoJsonFeatureBaseBuilder.Create(feature, resource, options);
+                GC.KeepAlive(result.Properties);
+            }
+
+            return GC.GetAllocatedBytesForCurrentThread() - start;
+        }
+
+        // Warm both paths before measuring allocations on this thread. Both pages
+        // contain exactly the same declared attributes; no wall-clock threshold.
+        _ = MeasurePage(false);
+        _ = MeasurePage(true);
+        var declared = MeasurePage(false);
+        var additional = MeasurePage(true);
+        output.WriteLine($"100-feature page bytes: declared={declared}; additional={additional}");
+        // The unchanged builder allocates 284,000 bytes for this page. Keep
+        // enough headroom for runtime variation while rejecting that baseline.
+        declared.Should().BeLessThanOrEqualTo(200_000,
+            "the ordinary declared-only response should avoid optional attribute bookkeeping");
+    }
+}

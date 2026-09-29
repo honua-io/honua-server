@@ -70,8 +70,13 @@ internal static class GeoJsonFeatureBaseBuilder
         var shouldProjectAll = projectedProperties is null;
         var shouldIncludeObjectId = options.IncludeObjectIdProperty;
 
-        var declaredAttributeFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var visibleAttributeFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // These sets only classify attributes outside the declared-field pass.
+        var declaredAttributeFields = options.IncludeAdditionalAttributes
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : null;
+        var visibleAttributeFields = options.IncludeAdditionalAttributes
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : null;
         // Date/datetime fields must be emitted as RFC 3339 strings to honor the
         // GeoJSON/OGC contract (and the collection's queryables schema). Stored
         // values arrive in different CLR shapes depending on the write path
@@ -81,10 +86,10 @@ internal static class GeoJsonFeatureBaseBuilder
         var dateTimeFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var field in resource.SchemaFields.Where(field => !IsGeometryField(field)))
         {
-            declaredAttributeFields.Add(field.Name);
+            declaredAttributeFields?.Add(field.Name);
             if (!field.Hidden)
             {
-                visibleAttributeFields.Add(field.Name);
+                visibleAttributeFields?.Add(field.Name);
             }
 
             if (field.Type == MetadataV2FieldType.Date)
@@ -127,7 +132,7 @@ internal static class GeoJsonFeatureBaseBuilder
             }
         }
 
-        if (options.IncludeAdditionalAttributes)
+        if (declaredAttributeFields is not null && visibleAttributeFields is not null)
         {
             foreach (var (fieldName, value) in attributes)
             {
