@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Shared.Models;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.TestKit;
 using Npgsql;
@@ -46,13 +45,7 @@ public sealed class SourceAttributeJsonDocumentAllocationTests(PostgresFixture f
                 if (directDocument)
                 {
                     using var document = reader.GetFieldValue<JsonDocument>(0);
-                    foreach (var property in document.RootElement.EnumerateObject())
-                    {
-                        var value = property.Value;
-                        destination[property.Name] = value.ValueKind is JsonValueKind.Object or JsonValueKind.Array
-                            ? value.Clone()
-                            : JsonElementConverter.ConvertToScalar(value);
-                    }
+                    FeatureAttributeJsonReader.ReadInto(document.RootElement, destination);
                 }
                 else
                 {
