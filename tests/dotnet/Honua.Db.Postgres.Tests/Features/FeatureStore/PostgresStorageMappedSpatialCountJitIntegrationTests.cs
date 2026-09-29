@@ -240,8 +240,10 @@ public sealed class PostgresStorageMappedSpatialCountJitIntegrationTests(Postgre
             {
                 await pending;
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
             {
+                // Cancellation is expected here; awaiting the task ensures the
+                // canceled query has released its pooled connection.
             }
         }
         await AssertSessionRestoredAsync();
