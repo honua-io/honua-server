@@ -45,6 +45,45 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
+    [IntegrationTheory]
+    [InlineData(null, "")]
+    [InlineData(null, "/arcgis")]
+    [InlineData("https://public.example/arcgis", "/arcgis")]
+    [InlineData("https://public.example/external", "/arcgis")]
+    [InlineData("https://public.example/arcgis", "")]
+    [Operation(Operations.QueryAttachments)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments")]
+    public async Task QueryAttachments_ReturnUrl_UsesPublicMountOnce(string? publicBaseUrl, string prefix)
+    {
+        var app = new WebAppFixture();
+        app.ConfigureWebHost(builder => builder.UseSetting("Public:BaseUrl", publicBaseUrl ?? ""));
+        await app.InitializeAsync();
+        var storage = app.GetService<ICloudFileStorage>();
+        await AttachmentTestData.SeedAsync(app.Postgres, storage, TestLayerId, TestFeatureId);
+        try
+        {
+            using var response = await app.Client.GetAsync(
+                $"{prefix}/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryAttachments?objectIds={TestFeatureId}&returnUrl=true");
+            response.BeSuccessful();
+            var result = JsonSerializer.Deserialize(await response.Content.ReadAsStringAsync(),
+                FeatureServerJsonContext.Default.AttachmentQueryResponse)!;
+            var attachment = result.AttachmentInfos.Single(item => item.Name == "test1.txt");
+            var resourcePath = $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/{attachment.Id}";
+            attachment.Url.Should().Be($"{publicBaseUrl ?? prefix}{resourcePath}");
+            if (publicBaseUrl is null || publicBaseUrl.EndsWith("/arcgis", StringComparison.Ordinal))
+            {
+                using var download = await app.Client.GetAsync(attachment.Url);
+                download.BeSuccessful();
+                (await download.Content.ReadAsByteArrayAsync()).Should().Equal(AttachmentTestData.SeededTextFileBytes.ToArray());
+            }
+        }
+        finally
+        {
+            await AttachmentTestData.CleanupAsync(app.Postgres, storage, TestLayerId, TestFeatureId);
+            await app.DisposeAsync();
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.QueryAttachments)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments")]

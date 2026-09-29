@@ -171,6 +171,16 @@ public sealed class BranchVersioningMetadataTests(ITestOutputHelper output) : IA
         service.RootElement.GetProperty("hasBranchVersionedData").GetBoolean().Should().Be(expectedData);
         service.RootElement.GetProperty("isDataVersioned").GetBoolean().Should().Be(expectedData);
         service.RootElement.TryGetProperty("versionManagementServerUrl", out _).Should().Be(expectedManagement);
+        if (expectedManagement)
+        {
+            using var prefixed = await ReadAsync($"/arcgis/rest/services/{BranchVersioningPublicationFixture.ServiceName}/FeatureServer?f=json");
+            var managementUrl = prefixed.RootElement.GetProperty("versionManagementServerUrl").GetString();
+            managementUrl.Should().Be($"/arcgis/rest/services/{BranchVersioningPublicationFixture.ServiceName}/VersionManagementServer");
+            using var management = await fixture.Client.GetAsync(managementUrl);
+            management.StatusCode.Should().Be(HttpStatusCode.OK);
+            service.RootElement.GetProperty("versionManagementServerUrl").GetString()
+                .Should().Be($"/rest/services/{BranchVersioningPublicationFixture.ServiceName}/VersionManagementServer");
+        }
         service.RootElement.GetProperty("layers").GetArrayLength().Should().BeGreaterThan(0,
             "the host-gate fixture must exercise representative managed publications");
 
