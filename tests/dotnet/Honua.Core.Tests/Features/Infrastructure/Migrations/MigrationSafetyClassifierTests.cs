@@ -5,6 +5,7 @@ using Honua.Core.Features.Infrastructure.Migrations;
 
 namespace Honua.Core.Tests.Features.Infrastructure.Migrations;
 
+[Trait("Tier", "Fast")]
 public sealed class MigrationSafetyClassifierTests
 {
     [Fact]
@@ -22,6 +23,19 @@ public sealed class MigrationSafetyClassifierTests
     [InlineData("ALTER TABLE honua.layers ALTER COLUMN metadata TYPE TEXT;", "alter-column-type")]
     [InlineData("ALTER TABLE honua.layers ALTER COLUMN service_name SET NOT NULL;", "set-not-null")]
     [InlineData("DROP TABLE honua.layers;", "drop-table")]
+    [InlineData("DROP VIEW honua.layer_summary;", "drop-view")]
+    [InlineData("DROP MATERIALIZED VIEW honua.cached_layers;", "drop-view")]
+    [InlineData("DROP TYPE honua.layer_kind;", "drop-type")]
+    [InlineData("DROP DOMAIN honua.layer_id;", "drop-type")]
+    [InlineData("DROP FUNCTION honua.read_layer(integer);", "drop-routine")]
+    [InlineData("DROP PROCEDURE honua.update_layer(integer);", "drop-routine")]
+    [InlineData("DROP TRIGGER changes ON honua.features;", "drop-trigger")]
+    [InlineData("DROP POLICY tenant_scope ON honua.features;", "drop-policy")]
+    [InlineData("DROP INDEX honua.layer_name_idx;", "drop-index")]
+    [InlineData("DROP EXTENSION postgis CASCADE;", "drop-other-object")]
+    [InlineData("ALTER VIEW honua.layers RENAME TO renamed;", "rename-object")]
+    [InlineData("ALTER TABLE honua.layers SET SCHEMA archived;", "move-object-schema")]
+    [InlineData("TRUNCATE honua.features;", "truncate-table")]
     [InlineData("DROP SCHEMA honua CASCADE;", "drop-schema")]
     [InlineData("DROP SEQUENCE honua.layers_id_seq;", "drop-sequence")]
     [InlineData("ALTER TABLE honua.layers RENAME TO layers_v2;", "rename-table")]
@@ -171,7 +185,7 @@ public sealed class MigrationSafetyClassifierTests
 
         result.Classification.Should().Be(MigrationSafetyClassification.ContractAnnotated);
         result.IsBreaking.Should().BeTrue();
-        result.BreakingRules.Should().ContainSingle("declared-contract-phase");
+        result.BreakingRules.Should().BeEquivalentTo(["declared-contract-phase", "move-object-schema"]);
     }
 
     [Fact]
@@ -189,7 +203,7 @@ public sealed class MigrationSafetyClassifierTests
         var result = MigrationSafetyClassifier.Classify("109_adopt_schema.sql", sql);
 
         result.Classification.Should().Be(MigrationSafetyClassification.ContractUnannotated);
-        result.BreakingRules.Should().ContainSingle("declared-contract-phase");
+        result.BreakingRules.Should().BeEquivalentTo(["declared-contract-phase", "move-object-schema"]);
     }
 
     [Fact]

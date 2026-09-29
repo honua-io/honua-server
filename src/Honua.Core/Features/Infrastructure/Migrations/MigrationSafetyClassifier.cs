@@ -3,6 +3,7 @@
 
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Honua.Core.Features.Infrastructure.Migrations;
@@ -29,7 +30,8 @@ public enum MigrationSafetyClassification
 
     /// <summary>
     /// A potentially backward-incompatible ("contract") change that carries the explicit
-    /// <c>honua:compatibility-review</c> marker declaring why it is rollout-safe. Must be
+    /// <c>honua:compatibility-review</c> marker or an exact name/hash entry in the frozen
+    /// reader baseline recording its historical review. Must be
     /// applied in the contract phase (expand → deploy → migrate → contract), not on a
     /// rolling deploy.
     /// </summary>
@@ -117,7 +119,19 @@ public static class MigrationSafetyClassifier
         CreatePattern("drop-table", @"\bDROP\s+TABLE\b"),
         CreatePattern("drop-schema", @"\bDROP\s+SCHEMA\b"),
         CreatePattern("drop-sequence", @"\bDROP\s+SEQUENCE\b"),
+        CreatePattern("drop-view", @"\bDROP\s+(?:MATERIALIZED\s+)?VIEW\b"),
+        CreatePattern("drop-type", @"\bDROP\s+(?:TYPE|DOMAIN)\b"),
+        CreatePattern("drop-routine", @"\bDROP\s+(?:FUNCTION|PROCEDURE|ROUTINE|AGGREGATE)\b"),
+        CreatePattern("drop-trigger", @"\bDROP\s+(?:EVENT\s+)?TRIGGER\b"),
+        CreatePattern("drop-policy", @"\bDROP\s+(?:POLICY|RULE)\b"),
+        CreatePattern("drop-index", @"\bDROP\s+INDEX\b"),
+        CreatePattern("drop-other-object", @"\bDROP\s+(?!COLUMN\b|TABLE\b|SCHEMA\b|SEQUENCE\b|(?:MATERIALIZED\s+)?VIEW\b|TYPE\b|DOMAIN\b|FUNCTION\b|PROCEDURE\b|ROUTINE\b|AGGREGATE\b|(?:EVENT\s+)?TRIGGER\b|POLICY\b|RULE\b|INDEX\b|NOT\s+NULL\b)[A-Z_""%]"),
+        CreatePattern("rename-object", @"\bALTER\s+(?:VIEW|MATERIALIZED\s+VIEW|TYPE|DOMAIN|FUNCTION|PROCEDURE|ROUTINE|AGGREGATE|TRIGGER|POLICY|RULE|SEQUENCE|SCHEMA)\b[^;]*?\bRENAME\b"),
+        CreatePattern("move-object-schema", @"\bALTER\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW|TYPE|DOMAIN|FUNCTION|PROCEDURE|ROUTINE|AGGREGATE|SEQUENCE)\b[^;]*?\bSET\s+SCHEMA\b"),
+        CreatePattern("truncate-table", @"\bTRUNCATE\b"),
     ];
+
+    private static readonly Lazy<Dictionary<string, string>> FrozenReaderMigrationHashes = new(LoadFrozenReaderMigrationHashes);
 
     /// <summary>
     /// Classifies a single migration script from its name and SQL contents.
@@ -137,7 +151,7 @@ public static class MigrationSafetyClassifier
         {
             classification = MigrationSafetyClassification.Expand;
         }
-        else if (HasCompatibilityReviewMarker(sql))
+        else if (HasCompatibilityReviewMarker(sql) || IsFrozenReaderMigration(scriptName, sql))
         {
             classification = MigrationSafetyClassification.ContractAnnotated;
         }
@@ -152,6 +166,33 @@ public static class MigrationSafetyClassifier
             Classification = classification,
             BreakingRules = breakingRules,
         };
+    }
+
+    private static bool IsFrozenReaderMigration(string scriptName, string sql)
+        => FrozenReaderMigrationHashes.Value.TryGetValue(scriptName, out var hash) &&
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sql.Replace("\r\n", "\n", StringComparison.Ordinal)))) == hash;
+
+    private static Dictionary<string, string> LoadFrozenReaderMigrationHashes()
+    {
+        // Expanding the detector must not require rewriting already-journaled SQL to add
+        // comments. The frozen reader baseline is its exact-byte historical review record.
+        // These scripts remain CONTRACT (and require the existing upgrade approval); only
+        // their missing inline annotation is supplied by the frozen record. The ongoing
+        // hash ledger deliberately grants no such exemption to future migrations.
+        using var stream = typeof(MigrationSafetyClassifier).Assembly.GetManifestResourceStream("Honua.Core.SchemaReaderBaseline.json")
+            ?? throw new InvalidOperationException("The frozen schema reader baseline is missing.");
+        using var document = JsonDocument.Parse(stream);
+        var hashes = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var entry in document.RootElement.EnumerateObject())
+        {
+            var name = Path.GetFileName(entry.Name);
+            var hash = entry.Value.GetString()!;
+            hashes.Add(name, hash);
+            hashes.Add((entry.Name.StartsWith("src/Honua.Server/", StringComparison.Ordinal)
+                ? "Honua.Server.Migrations."
+                : "Honua.Postgres.Migrations.") + name, hash);
+        }
+        return hashes;
     }
 
     /// <summary>

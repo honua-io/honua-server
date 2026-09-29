@@ -24,7 +24,9 @@ result and terminal state. Configure the host shutdown timeout and ECS stop
 timeout to cover the admitted job duration. If that deadline expires while the
 worker can still finish cleanup, the job fails with `Worker drain deadline expired.`;
 partial artifact references are removed and the job is not retried by the replacement
-worker. A forced kill uses the separate crash-recovery path and is not an
+worker. The host waits up to five additional seconds for terminal cleanup before
+releasing its store and queue resources. Reserve that cleanup budget in the task's
+stop timeout. A forced kill uses the separate crash-recovery path and is not an
 exactly-once execution guarantee. Long jobs should use a worker independent of the
 serving task.
 
@@ -36,12 +38,22 @@ deterministic-name discovery path; automatic SDK retries of `SubmitJob` are
 disabled because the provider call has no idempotency token. Keep the durable
 Redis store and worker definitions available across both directions of a switch.
 
-The migration architecture gate pins the existing migration scripts in
-`certification/schema-reader-baseline.json`. Existing scripts are immutable, and
-new scripts classified as contracting fail the gate even with a compatibility
+The frozen reader baseline is `certification/schema-reader-baseline.json`.
+Every migration, including each newly added script, must also be hash-pinned in
+`certification/schema-migration-hashes.json`; extend that ledger when adding an
+expand migration. Keep existing hashes and script names immutable. A new ledger
+entry does not extend the frozen reader baseline or exempt a script from contract
+checks. New scripts classified as contracting fail the gate even with a compatibility
 review annotation. A contract-phase release requires an explicit new rollback
 boundary and backup/restore plan; an annotation alone does not permit it in a
 rolling update.
+
+The shared runtime classifier detects removals of views, types, routines, triggers,
+policies and indexes, as well as table contractions, renames, schema moves and
+truncation. Historical scripts that acquire a contract classification under these
+broader checks use their exact frozen name and hash as the review record; their SQL
+is never rewritten to add annotations. They still require contract-apply approval
+when pending against a nonempty migration journal. Fresh installs remain unaffected.
 
 The release promise journey must retain the GP operation ID before each update
 or rollback, wait for that same job afterward, and verify the decoded output and

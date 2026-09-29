@@ -68,7 +68,13 @@ internal sealed partial class JobExecutionService(
         }
         finally
         {
-            await base.StopAsync(cancellationToken).ConfigureAwait(false);
+            // Base.StopAsync cancels execution before awaiting it. Once the host deadline
+            // has fired, retain the store/queue for a separate bounded terminal-cleanup
+            // budget instead of returning immediately with the already-cancelled token.
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await base.StopAsync(Volatile.Read(ref _drainDeadlineExpired) != 0
+                ? cleanup.Token
+                : cancellationToken).ConfigureAwait(false);
         }
     }
 

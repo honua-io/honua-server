@@ -11,9 +11,39 @@ using Xunit;
 namespace Honua.CloudIntegration.Tests;
 
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.LocalSubstrate)]
+[Trait("Tier", "Integration")]
 public sealed class SchemaRollbackBoundaryTests(LocalSubstratePostgresFixture postgres)
     : IClassFixture<LocalSubstratePostgresFixture>
 {
+    [SkippableTheory]
+    [InlineData("DROP VIEW layer_summary;")]
+    [InlineData("DROP TYPE layer_kind;")]
+    public async Task MigrationRunner_DestructiveObjectDrop_RejectsBeforeChangingDatabase(string contraction)
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is required for the contract DDL proof.");
+        var connectionString = await postgres.CreateFreshDatabaseAsync();
+        var name = $"contract_{Guid.NewGuid():N}";
+        const string original = "CREATE VIEW layer_summary AS SELECT 7 AS id; CREATE TYPE layer_kind AS ENUM ('retained');";
+        var older = SyntheticMigrationsCompiler.Compile(name, ("001.sql", original));
+        var newer = SyntheticMigrationsCompiler.Compile(name, ("001.sql", original), ("002.sql", contraction));
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
+        (await runner.RunMigrationsAsync(connectionString, older)).Successful.Should().BeTrue();
+        var rejected = await runner.RunMigrationsAsync(connectionString, newer);
+        rejected.Successful.Should().BeFalse();
+        rejected.ErrorMessage.Should().Contain("002.sql");
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT id FROM layer_summary";
+        (await command.ExecuteScalarAsync()).Should().Be(7);
+        command.CommandText = "SELECT 'retained'::layer_kind::text";
+        (await command.ExecuteScalarAsync()).Should().Be("retained");
+        command.CommandText = "SELECT COUNT(*) FROM public.schema_versions";
+        (await command.ExecuteScalarAsync()).Should().Be(1L);
+    }
+
     [SkippableFact]
     public async Task OlderReader_AfterNewerContractMigration_RefusesWithoutChangingData()
     {
