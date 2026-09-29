@@ -254,6 +254,19 @@ internal static class Wfs20DispatcherEndpoint
 
         try
         {
+            if (version == Wfs10Version &&
+                string.Equals(requestParam, Wfs20Utilities.Operations.Transaction, StringComparison.OrdinalIgnoreCase))
+            {
+                context.Items[StandardErrorResponseFormatter.WfsRequestVersionItemKey] = version;
+                var unsupported = ValidateUnsupportedTransactionParameters(parameters);
+                if (unsupported is not null)
+                {
+                    return Wfs20Handler.CreateLegacyWfsException(version, unsupported.ExceptionCode, unsupported.Detail, unsupported.Locator);
+                }
+
+                return await handler.HandleTransactionAsync(context, cancellationToken).ConfigureAwait(false);
+            }
+
             if (string.Equals(requestParam, Wfs20Utilities.Operations.GetCapabilities, StringComparison.OrdinalIgnoreCase))
             {
                 var baseUrl = BaseUrlResolver.GetBaseUrl(context);

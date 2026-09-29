@@ -26,6 +26,8 @@ namespace Honua.Infrastructure.Models;
 /// </remarks>
 internal static class StandardErrorResponseFormatter
 {
+    internal const string WfsRequestVersionItemKey = "Honua.Wfs.RequestVersion";
+
     /// <summary>
     /// Optional OData error formatter. When set, requests classified as OData
     /// (<see cref="ProtocolRequestClassifier.IsOData"/>) are formatted via the
@@ -191,7 +193,9 @@ internal static class StandardErrorResponseFormatter
         // PA-076: Select the version-appropriate exception envelope based on the VERSION query parameter.
         // WFS 1.0.0 → ogc:ServiceExceptionReport; WFS 1.1.0 → OWS 1.0 ows:ExceptionReport;
         // WFS 2.0.0 / absent → OWS 1.1 ows:ExceptionReport (current default, language required).
-        var wfsVersion = context.Request.Query.TryGetValue("VERSION", out var versionValue)
+        var wfsVersion = context.Items.TryGetValue(WfsRequestVersionItemKey, out var parsedVersion)
+            ? parsedVersion as string
+            : context.Request.Query.TryGetValue("VERSION", out var versionValue)
             ? versionValue.ToString()
             : context.Request.Query.TryGetValue("version", out var versionLowerValue)
                 ? versionLowerValue.ToString()
@@ -381,14 +385,33 @@ internal static class StandardErrorResponseFormatter
         // the body; policies that deliberately cache a deterministic refusal read the code back.
         BypassOutputCacheOnErrorEnvelopePolicy.MarkErrorEnvelope(context, bodyCode);
 
-        // PA-070/PA-117: Esri GeoServices REST spec: ALL responses (including errors) use HTTP 200 OK.
-        // The error is signalled exclusively through the JSON body {"error":{"code":N,...}}.
-        // The one exception is a caller that opts a specific rejection into its real status
-        // (GeoServicesUseHttpStatus); the body is the same envelope either way.
+        // Native editors can treat HTTP 200 with only a top-level error as a successful
+        // save (QGIS's add/update/delete providers do this). Rejected edits must also
+        // fail at the transport level, preserving the normal Esri JSON error envelope.
+        // Read operations retain their existing envelope transport convention.
         return Results.Json(
             apiErrorResponse,
             LimitsEnforcementJsonContext.Default.ApiErrorResponse,
-            statusCode: options.GeoServicesUseHttpStatus ? errorResponse.StatusCode : StatusCodes.Status200OK);
+            statusCode: options.GeoServicesUseHttpStatus || IsFeatureEditRequest(context.Request)
+                ? errorResponse.StatusCode
+                : StatusCodes.Status200OK);
+    }
+
+    private static bool IsFeatureEditRequest(HttpRequest request)
+    {
+        var path = request.Path.Value;
+        if (!HttpMethods.IsPost(request.Method) || path is null ||
+            !path.Contains("/FeatureServer/", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var trimmedPath = path.AsSpan().TrimEnd('/');
+        var operation = trimmedPath[(trimmedPath.LastIndexOf('/') + 1)..];
+        return operation.Equals("addFeatures", StringComparison.OrdinalIgnoreCase) ||
+            operation.Equals("updateFeatures", StringComparison.OrdinalIgnoreCase) ||
+            operation.Equals("deleteFeatures", StringComparison.OrdinalIgnoreCase) ||
+            operation.Equals("applyEdits", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
