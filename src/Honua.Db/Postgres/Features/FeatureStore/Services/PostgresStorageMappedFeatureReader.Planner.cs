@@ -12,6 +12,24 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class PostgresStorageMappedFeatureReader
 {
+    private bool ShouldDisableJitForSpatialCount(FeatureQuery query) =>
+        _disableJitForSourceSpatialCounts &&
+        _mapping.IsSourceBacked &&
+        _geometryColumn != null &&
+        _resource.ReadGeometryType() == MetadataV2GeometryType.Point &&
+        !query.Distinct &&
+        query.VersionContext is not { IsDefault: false } &&
+        query.SpatialFilter is
+        {
+            IsSimpleEnvelope: true,
+            EnvelopeMinX: not null,
+            EnvelopeMinY: not null,
+            EnvelopeMaxX: not null,
+            EnvelopeMaxY: not null,
+            SpatialRelationship: SpatialRelationship.Intersects or SpatialRelationship.EnvelopeIntersects
+        } &&
+        Transaction.Current == null;
+
     private bool ShouldUseSerialSpatialPlan(FeatureQuery query) =>
         _preferSerialBoundedSpatialReads &&
         _mapping.IsSourceBacked &&
@@ -52,18 +70,22 @@ internal sealed partial class PostgresStorageMappedFeatureReader
                    StringComparison.OrdinalIgnoreCase);
     }
 
-    private static NpgsqlBatch CreateSerialSpatialReadBatch(NpgsqlConnection connection, SqlBuilder sql)
+    private static NpgsqlBatch CreateSerialSpatialReadBatch(NpgsqlConnection connection, SqlBuilder sql) =>
+        CreateScopedPlannerReadBatch(connection, sql,
+            "SELECT set_config('max_parallel_workers_per_gather', '0', true)");
+
+    private static NpgsqlBatch CreateScopedPlannerReadBatch(NpgsqlConnection connection, SqlBuilder sql, string settingSql)
     {
         var commandText = sql.ToString();
         PostgresSqlSafety.ValidateReadOnlySingleStatement(commandText);
         if (!commandText.StartsWith("SELECT ", StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("The scoped spatial query must begin with SELECT.");
+            throw new InvalidOperationException("The scoped planner query must begin with SELECT.");
         }
 
         // ALL is the default SELECT modifier. It preserves the query while
-        // giving auto-preparation a distinct identity: a generic parallel plan
-        // prepared by the ordinary path cannot be reused inside this batch.
+        // giving auto-preparation a distinct identity. Tuned and ordinary reads
+        // retain separate generic plans on the same pooled connection.
         var queryCommand = new NpgsqlBatchCommand("SELECT ALL" + commandText["SELECT".Length..]);
         foreach (var parameter in sql.Parameters)
         {
@@ -74,8 +96,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         // including cancellation, SQL errors and reader disposal. Error barriers
         // would introduce transaction boundaries between these two statements.
         var batch = new NpgsqlBatch(connection) { EnableErrorBarriers = false };
-        batch.BatchCommands.Add(new NpgsqlBatchCommand(
-            "SELECT set_config('max_parallel_workers_per_gather', '0', true)"));
+        batch.BatchCommands.Add(new NpgsqlBatchCommand(settingSql));
         batch.BatchCommands.Add(queryCommand);
         return batch;
     }
