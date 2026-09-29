@@ -188,6 +188,8 @@ def test_real_http_outcomes_include_in_band_errors_and_timeouts():
                 return web.Response(text="{", content_type="application/json")
             if kind == "gpfailed":
                 return web.json_response(dict(jobStatus="esriJobFailed"))
+            if kind == "problem":
+                return web.json_response(dict(type="https://tools.ietf.org/html/rfc9110#section-15.5.1", title="Invalid request", status=400), content_type="application/problem+json")
             return web.json_response({"error": {"code": 400}} if kind == "inband" else {"features": []}, status=500 if kind == "server" else 200)
         app = web.Application()
         app.router.add_get("/{kind}", respond)
@@ -200,14 +202,14 @@ def test_real_http_outcomes_include_in_band_errors_and_timeouts():
         ledger.started = now()
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=.03)) as session:
-                for kind in ("success", "server", "inband", "malformed", "timeout"):
+                for kind in ("success", "server", "inband", "malformed", "problem", "timeout"):
                     await observe_request(session, f"http://127.0.0.1:{port}/{kind}", ledger, "/rest/services/test/FeatureServer/0/query")
             ledger.ended = now()
             buckets = ledger.intervals()[0]["buckets"]
             outcomes = {(status, error): sum(b["count"] for b in buckets if (b["httpStatus"], b["inBandError"]) == (status, error))
                         for status, error in ((200, False), (500, False), (200, True), (599, True))}
-            assert outcomes == {(200, False): 1, (500, False): 1, (200, True): 2, (599, True): 1}
-            assert ledger.observed_count == 5
+            assert outcomes == {(200, False): 1, (500, False): 1, (200, True): 3, (599, True): 1}
+            assert ledger.observed_count == 6
             assert all(b["durationMs"] >= 0 and b["protocol"] == "FeatureServer" for b in buckets)
             assert next(b["durationMs"] for b in buckets if b["httpStatus"] == 599) >= 25
             # The GP/probe client must join the same population, including a
@@ -217,8 +219,8 @@ def test_real_http_outcomes_include_in_band_errors_and_timeouts():
                 response = await client.get(f"http://127.0.0.1:{port}/gpfailed")
                 assert response.json() == dict(jobStatus="esriJobFailed")
             ledger.ended = now()
-            assert ledger.observed_count == 6
-            assert sum(b["count"] for row in ledger.intervals() for b in row["buckets"] if b["inBandError"]) == 4
+            assert ledger.observed_count == 7
+            assert sum(b["count"] for row in ledger.intervals() for b in row["buckets"] if b["inBandError"]) == 5
         finally:
             await runner.cleanup()
     asyncio.run(exercise())

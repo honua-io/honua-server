@@ -43,6 +43,7 @@ def in_band_error(body: bytes, content_type: str) -> bool:
         return True
     return isinstance(document, dict) and (
         bool(document.get("error"))
+        or "application/problem+json" in content_type.lower()
         or document.get("jobStatus") in ("esriJobFailed", "esriJobTimedOut")
         or str(document.get("type", "")).startswith("https://httpstatuses.com/")
     )
