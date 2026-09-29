@@ -29,6 +29,52 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Operation(Operations.TestInfrastructure)]
 public sealed class GpDeploymentHandoffTests(RedisFixture redis)
 {
+    [IntegrationTest]
+    public async Task EcsDrain_DeadlineExpires_FailsOnceWithoutReexecutingOrExposingPartialOutput()
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisExecutionJobStore(connection, NullLogger<RedisExecutionJobStore>.Instance);
+        var queue = new RedisJobQueue(connection, store, NullLogger<RedisJobQueue>.Instance);
+        var executor = new HeldCentroidExecutor { PublishPartialOutput = true };
+        var callback = new TerminalRecorder();
+        using var worker = CreateWorker(queue, store, executor, callback);
+        var job = CreateJob("rc.3", "rc.4");
+        (await store.TryCreateAsync(job)).Should().BeTrue();
+        await queue.EnqueueAsync(job.OperationId);
+        using var deadline = new CancellationTokenSource();
+        try
+        {
+            await worker.StartAsync(CancellationToken.None);
+            await executor.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            (await store.GetAsync(job.OperationId))!.ArtifactReferences.Should().ContainSingle();
+            var drain = worker.StopAsync(deadline.Token);
+            deadline.Cancel();
+            await drain;
+            var terminal = await callback.Completed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            terminal.Status.Should().Be(ExecutionJobStatus.Failed);
+            terminal.ErrorMessage.Should().Be("Worker drain deadline expired.");
+            terminal.ArtifactReferences.Should().BeEmpty();
+            terminal.AttemptCount.Should().Be(1);
+            terminal.CompletedAt.Should().NotBeNull();
+            executor.Executions.Should().Be(1);
+            callback.Count.Should().Be(1);
+            (await queue.GetQueueDepthAsync()).Should().Be(0);
+            await queue.EnqueueAsync(job.OperationId);
+            (await queue.TryClaimAsync("replacement")).Should().BeNull();
+        }
+        finally
+        {
+            deadline.Cancel();
+            executor.Release.TrySetResult();
+            await worker.StopAsync(deadline.Token);
+            if (worker.ExecuteTask is { } execution)
+            {
+                await execution.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+            await queue.RemoveAsync(job.OperationId);
+        }
+    }
+
     [IntegrationTheory]
     [InlineData("rc.3", "rc.4")]
     [InlineData("rc.4", "rc.3")]
@@ -228,6 +274,7 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
 
     private sealed class HeldCentroidExecutor : IJobExecutor
     {
+        public bool PublishPartialOutput { get; init; }
         public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -237,6 +284,10 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
             CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref Executions);
+            if (PublishPartialOutput)
+            {
+                await context.PublishArtifactAsync("data:application/json;base64,e30=", cancellationToken);
+            }
             Started.TrySetResult();
             await Release.Task.WaitAsync(cancellationToken);
             var options = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
