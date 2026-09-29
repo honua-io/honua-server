@@ -35,7 +35,8 @@ public sealed class ExecutionJobReconcilerTests
                 throw new OperationCanceledException(shutdown.Token);
             });
         var job = CreateJobRecord("handoff", ExecutionJobStatus.Running, "aws-batch", BatchComputeTargetKind.AwsBatch)
-            with { ProviderOperationId = "existing-batch-job" };
+            with
+        { ProviderOperationId = "existing-batch-job" };
         var store = new InMemoryExecutionJobStore(job);
         var sut = new ExecutionJobReconciler(store, [backend], new InMemoryProgressStore(),
             NullLogger<ExecutionJobReconciler>.Instance);
