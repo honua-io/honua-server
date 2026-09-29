@@ -119,6 +119,42 @@ public sealed class PostgresFirstPageCountIntegrationTests(PostgresFixture fixtu
         await _provider.Received(1).OpenConnectionAsync(Arg.Any<CancellationToken>());
     }
 
+    [IntegrationTheory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(6)]
+    public async Task QueryAsync_FullFirstPageWithConcurrentWrites_PreservesPageAndReconcilesTotal(int laterCount)
+    {
+        var opens = 0;
+        _provider.OpenConnectionAsync(Arg.Any<CancellationToken>()).Returns(async call =>
+        {
+            if (Interlocked.Increment(ref opens) == 2)
+            {
+                // The page has been materialized. Commit another writer's changes
+                // before the count opens its connection, without timing-dependent sleeps.
+                await fixture.ExecuteAsync($$"""
+                    DELETE FROM {{_schema}}.points;
+                    INSERT INTO {{_schema}}.points
+                    SELECT id, ST_SetSRID(ST_MakePoint(id,id),4326), 'a', 'replacement'
+                    FROM generate_series(1, {{laterCount}}) AS id;
+                    """);
+            }
+
+            return (DbConnection)await fixture.DataSource.OpenConnectionAsync(call.Arg<CancellationToken>());
+        });
+
+        var result = await CreateReader().QueryAsync(1, new FeatureQuery { Limit = 2 });
+
+        result.Items.Select(feature => feature.Id).Should().Equal(1L, 2L);
+        result.Items.Select(feature => feature.Attributes["secret"]).Should().Equal("one", "two");
+        result.TotalCount.Should().Be(Math.Max(2, laterCount));
+        result.HasMoreResults.Should().Be(laterCount > 2);
+        await _provider.Received(2).OpenConnectionAsync(Arg.Any<CancellationToken>());
+    }
+
     [IntegrationTest]
     public async Task QueryAsync_NearestNeighbors_RetainsNearestCountWithoutAnExtraRead()
     {
