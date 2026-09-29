@@ -79,8 +79,19 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
             await queue.EnqueueAsync(job.OperationId);
             await worker.StartAsync(CancellationToken.None);
             await executor.Started.Task.WaitAsync(deadline.Token);
-            await source.ReconcileExecutionJobAsync(job.OperationId);
+            using var shutdown = new CancellationTokenSource();
+            client.DescribeJobAsync(providerId, Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                .Returns(_ =>
+                {
+                    shutdown.Cancel();
+                    return Task.FromCanceled<AwsBatchJobState?>(shutdown.Token);
+                });
+            await source.ReconcileExecutionJobAsync(job.OperationId, shutdown.Token);
+            (await store.GetAsync(job.OperationId))!.Status.Should().Be(ExecutionJobStatus.Running);
+            client.DescribeJobAsync(providerId, Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                .Returns(new AwsBatchJobState { JobId = providerId, Status = "RUNNING" });
             await target.ReconcileExecutionJobAsync(job.OperationId);
+            await client.Received(2).DescribeJobAsync(providerId, Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
             executor.Release.TrySetResult();
             var terminal = await callback.Completed.Task.WaitAsync(deadline.Token);
             // One remote submission and one worker claim are both counted by the canonical store.
