@@ -480,24 +480,30 @@ class SoakDriver:
                     timing["lastQueued"] = now
                     queued_ages.append(now - timing["submitted"])
                     continue
-                if status == "esriJobExecuting":
+                if status in ("esriJobExecuting", "esriJobCancelling"):
                     executing += 1
                 # The job has left the queue. Its queue age is the last instant it was still
                 # observed queued, so the poll interval bounds the error instead of inflating
                 # every job's wait by one whole interval.
-                self.gp.samples.append(
-                    {
-                        "at": iso(utcnow()),
-                        "jobLeftQueue": job_id,
-                        "queueWaitSeconds": round(timing["lastQueued"] - timing["submitted"], 3),
-                        "status": status,
-                    }
-                )
+                if not timing.get("leftQueue"):
+                    self.gp.samples.append(
+                        {
+                            "at": iso(utcnow()),
+                            "jobLeftQueue": job_id,
+                            "queueWaitSeconds": round(timing["lastQueued"] - timing["submitted"], 3),
+                            "status": status,
+                        }
+                    )
+                    timing["leftQueue"] = True
+                if status not in ("esriJobSucceeded", "esriJobFailed", "esriJobCancelled", "esriJobTimedOut"):
+                    # An executing job still occupies its worker on subsequent
+                    # polls. Do not count it as completed or drop its identity.
+                    continue
                 completed += 1
                 pending.pop(job_id, None)
 
             self.gp.add(
-                queueDepth=len(pending),
+                queueDepth=len(queued_ages),
                 executing=executing,
                 oldestQueueAgeSeconds=round(max(queued_ages), 3) if queued_ages else 0.0,
                 observedJobs=completed,

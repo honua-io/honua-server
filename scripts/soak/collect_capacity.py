@@ -44,7 +44,7 @@ def in_band_error(body: bytes, content_type: str) -> bool:
         return True
     return isinstance(document, dict) and (
         bool(document.get("error"))
-        or document.get("jobStatus") in {"esriJobFailed", "esriJobTimedOut"}
+        or document.get("jobStatus") in ("esriJobFailed", "esriJobTimedOut")
         or str(document.get("type", "")).startswith("https://httpstatuses.com/")
     )
 
@@ -294,6 +294,8 @@ class Collector:
         if any(metric[k] is None for k in metric):
             self.failures.append("metric sample contains unobserved components")
         at = now()
+        if self.metrics and (at-datetime.fromisoformat(self.metrics[-1]["at"].replace("Z", "+00:00"))).total_seconds() > 60:
+            self.failures.append("metric/workload sampling gap exceeded 60 seconds")
         self.metrics.append(dict(at=iso(at), **metric))
         self.workloads.append(dict(at=iso(at), dimensions={name: dimensions.get(name) for name in self.lock["supportedEnvelope"]},
                                    executionMode="candidate-topology", proxy=False, proofs=proofs))

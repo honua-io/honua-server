@@ -286,6 +286,40 @@ def test_sampler_retains_served_dimensions_and_actual_dependency_measurements(mo
     asyncio.run(exercise())
 
 
+def test_gp_polling_retains_executing_jobs_until_terminal_state():
+    import argparse
+    from drive_soak import SoakDriver
+
+    async def exercise():
+        driver = SoakDriver(argparse.Namespace(base_url="http://fixture", admin_key="fixture", unexercised=[], gp_interval=1), LOCK)
+        states = iter(("esriJobSubmitted", "esriJobExecuting", "esriJobExecuting", "esriJobSucceeded"))
+        submissions = 0
+        polls = 0
+
+        def serve(request):
+            nonlocal submissions, polls
+            if request.method == "POST":
+                submissions += 1
+                return httpx.Response(200, json={"jobId": "job-1"} if submissions == 1 else {"error": {"code": 503}})
+            polls += 1
+            return httpx.Response(200, json={"jobStatus": next(states)})
+
+        async def next_poll(started, interval):
+            if polls == 4:
+                driver._stop.set()
+
+        driver._sleep_until_next = next_poll
+        async with httpx.AsyncClient(transport=httpx.MockTransport(serve)) as client:
+            await driver.drive_gp_queue(client)
+        rows = [row for row in driver.gp.samples if "queueDepth" in row]
+        assert [row["queueDepth"] for row in rows] == [1, 0, 0, 0]
+        assert [row["executing"] for row in rows] == [0, 1, 1, 0]
+        assert [row["observedJobs"] for row in rows] == [0, 0, 0, 1]
+        assert [row["admissionRejections"] for row in rows] == [0, 1, 2, 3]
+        assert len([row for row in driver.gp.samples if "jobLeftQueue" in row]) == 1
+    asyncio.run(exercise())
+
+
 def verify_release_contract(tools_path: Path, output: Path):
     """Run the real release verifier, including wrong-source ZIP attestation rejection.
 
