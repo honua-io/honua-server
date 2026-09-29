@@ -29,13 +29,15 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Operation(Operations.TestInfrastructure)]
 public sealed class GpDeploymentHandoffTests(RedisFixture redis)
 {
-    [IntegrationTest]
-    public async Task EcsDrain_DeadlineExpires_FailsOnceWithoutReexecutingOrExposingPartialOutput()
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EcsDrain_DeadlineExpires_FailsOnceWithoutReexecutingOrExposingPartialOutput(bool ignoresCancellation)
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         var store = new RedisExecutionJobStore(connection, NullLogger<RedisExecutionJobStore>.Instance);
         var queue = new RedisJobQueue(connection, store, NullLogger<RedisJobQueue>.Instance);
-        var executor = new HeldCentroidExecutor { PublishPartialOutput = true };
+        var executor = new HeldCentroidExecutor { PublishPartialOutput = true, IgnoreCancellation = ignoresCancellation };
         var callback = new TerminalRecorder();
         using var worker = CreateWorker(queue, store, executor, callback);
         var job = CreateJob("rc.3", "rc.4");
@@ -50,6 +52,7 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
             var drain = worker.StopAsync(deadline.Token);
             deadline.Cancel();
             await drain;
+            executor.Release.TrySetResult();
             var terminal = await callback.Completed.Task.WaitAsync(TimeSpan.FromSeconds(10));
             terminal.Status.Should().Be(ExecutionJobStatus.Failed);
             terminal.ErrorMessage.Should().Be("Worker drain deadline expired.");
@@ -275,6 +278,7 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
     private sealed class HeldCentroidExecutor : IJobExecutor
     {
         public bool PublishPartialOutput { get; init; }
+        public bool IgnoreCancellation { get; init; }
         public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -289,6 +293,11 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
                 await context.PublishArtifactAsync("data:application/json;base64,e30=", cancellationToken);
             }
             Started.TrySetResult();
+            if (IgnoreCancellation)
+            {
+                await Release.Task;
+                return JobExecutionResult.Succeeded();
+            }
             await Release.Task.WaitAsync(cancellationToken);
             var options = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
             options.CurrentValue.Returns(new GeoprocessingExecutorOptions());
