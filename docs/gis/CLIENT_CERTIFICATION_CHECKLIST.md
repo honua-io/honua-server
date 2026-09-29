@@ -83,6 +83,23 @@ and [Pro OGC API limits](https://doc.esri.com/en/arcgis-pro/latest/help/data/ser
 The JSON records the review date, affected protocols, limitations and next native
 checks. Esri's `latest` pages still require confirmation against the installed build.
 
+The September 29 vector review adds exact installed QGIS source revisions
+`1a4cda5f262` (3.44.14) and `f1431de8676` (4.2.2). Independent 107-record fixtures
+exposed a GeoJSON timestamp truncation bug and incorrect harness assumptions
+about OAPIF IDs and CRS. The local server fix is
+`6e00acfb86e452106ac572a6522ae95cf1b0c2d1`; the native probe is client-compat
+`c34d384184699faf46adf2f7f09111eb61c521e6`. Both remain unpublished.
+Local evidence is under `artifacts/windows-cert-20260928/`: the
+`pyqgis-native-vectors-final-featureserver` and
+`pyqgis-native-vectors-final-oapif` receipts contain 44 passing diagnostic cases,
+including clean child exits, exact payloads and new-process project reopen.
+The `pyqgis-native-vectors-final-wfs` receipt retains the empty-string/null
+failure. Its expected values were not relaxed and no exclusion was awarded.
+These runs used a Debug/JIT Development server with a development license grant;
+they do not add shipping or native UI acceptance. Bind and publish the evidence,
+complete the provider review and replay the required native cases on the frozen
+shipping candidate before changing readiness.
+
 ## Completion and validation
 
 Certification is complete for a declared version/license/configuration profile
@@ -129,6 +146,7 @@ to executable native cases, not additional test passes or a new denominator.
 | `native-case-crosswalk` | open | Map the 367 Esri operation/parameter cases and 6,767 QGIS review obligations to native child cases, shared witnesses or evidenced dispositions. Inventory counts are not test counts. |
 | `authentication` | open | Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows. |
 | `workflow-variants` | open | Bind schema/paging, edits/relationships/attachments, offline/versioning, imagery/tiles, processing parameters, project reopen and recovery variants to executable cases and independent oracles. |
+| `vector-data-fidelity` | open | Bind fractional timestamps, empty strings versus null, provider-specific IDs/CRS, all page contents, export and cold project reopen to native children on both QGIS versions. Replay the local GeoJSON timestamp fix on the shipping candidate. WFS empty-string loss remains an observed failure pending provider/workaround review; do not change its oracle or award N/A. |
 | `versions-and-licenses` | open | Retain QGIS 4.2.2 as a separate unresolved review target; bind installed client builds, license levels, extensions and portal privileges before accepting a licensed skip. |
 | `maturity-and-profile` | open | Classify source maturity and selected configuration independently of client support; retain lower-priority preview/experimental work and explicit priorities 5238, 5192 and 5036. |
 | `exclusion-review` | open | Review operation-specific N/A and skip evidence. Preserve genuine exclusions; repair harness failures. A missing fixture, disabled flag or failed connection alone proves no server implementation gap. |

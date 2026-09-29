@@ -130,6 +130,7 @@ COVERAGE_GAPS = {
     "native-case-crosswalk": "Map the 367 Esri operation/parameter cases and 6,767 QGIS review obligations to native child cases, shared witnesses or evidenced dispositions. Inventory counts are not test counts.",
     "authentication": "Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows.",
     "workflow-variants": "Bind schema/paging, edits/relationships/attachments, offline/versioning, imagery/tiles, processing parameters, project reopen and recovery variants to executable cases and independent oracles.",
+    "vector-data-fidelity": "Bind fractional timestamps, empty strings versus null, provider-specific IDs/CRS, all page contents, export and cold project reopen to native children on both QGIS versions. Replay the local GeoJSON timestamp fix on the shipping candidate. WFS empty-string loss remains an observed failure pending provider/workaround review; do not change its oracle or award N/A.",
     "versions-and-licenses": "Retain QGIS 4.2.2 as a separate unresolved review target; bind installed client builds, license levels, extensions and portal privileges before accepting a licensed skip.",
     "maturity-and-profile": "Classify source maturity and selected configuration independently of client support; retain lower-priority preview/experimental work and explicit priorities 5238, 5192 and 5036.",
     "exclusion-review": "Review operation-specific N/A and skip evidence. Preserve genuine exclusions; repair harness failures. A missing fixture, disabled flag or failed connection alone proves no server implementation gap.",
@@ -164,9 +165,33 @@ DISPOSITION_RULES = {
 }
 
 # Manual review identifies native paths and limitations, never a Honua pass.
-# Latest Esri documentation was reviewed on this date and still needs binding to
-# the installed 3.7.1.1904 client. QGIS documentation is versioned at 3.44.
+# Latest Esri documentation still needs binding to the installed client.
+# Each QGIS review records its documentation version or installed source revision.
 MANUAL_REVIEWS = [
+    {
+        "id": "qgis-34414-vector-identity", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 3.44.14, installed source revision 1a4cda5f262",
+        "url": "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/oapif/qgsoapifprovider.cpp#L716",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/core/qgsgml.cpp#L1492",
+            "https://docs.ogc.org/is/17-069r4/17-069r4.html",
+        ],
+        "protocols": ["ogc-api-features", "wfs"], "lanes": ["pyqgis"],
+        "finding": "The OAPIF provider maps layer-local FIDs to separate remote IDs; an Esri objectid property is not a universal native identity contract. OGC Core defaults to CRS84 longitude/latitude. Exact installed-revision GML source and observed empty-string/null conversion are retained for review; this is not an approved exclusion.",
+        "next_check": "Use independent fixture keys for payload comparisons and native FID selection; test remote-ID edits separately. Preserve empty-string/null assertions while reviewing valid GML encodings and supported native alternatives. Revalidate every required child against the frozen shipping candidate.",
+    },
+    {
+        "id": "qgis-422-vector-identity", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 4.2.2, installed source revision f1431de8676",
+        "url": "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/oapif/qgsoapifprovider.cpp#L816",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/core/qgsgml.cpp#L1434",
+            "https://docs.ogc.org/is/17-069r4/17-069r4.html",
+        ],
+        "protocols": ["ogc-api-features", "wfs"], "lanes": ["pyqgis"],
+        "finding": "This installed revision independently maintains a native-FID/remote-ID mapping and exposes default OAPIF geometry as CRS84. The same empty-string/null failure was observed through its stock WFS provider; the 3.44 result must not substitute for this version's evidence.",
+        "next_check": "Keep the 4.2.2 execution/profile binding separate. Complete WFS decoder/workaround review, remote-ID editing and native UI coverage, then replay the required cases on the same shipping candidate as the other clients.",
+    },
     {
         "id": "qgis-service-paths", "reviewed_at": "2026-09-28",
         "documentation_version": "QGIS 3.44",
@@ -205,7 +230,7 @@ MANUAL_REVIEWS = [
 
 def scope_contract() -> dict:
     return {
-        "revision": "2026-09-28.1",
+        "revision": "2026-09-29.1",
         "authority": AUTHORITY_URL,
         "objective": CUSTOMER_READINESS_GOAL,
         "audit": AUDIT_URL,
@@ -2005,7 +2030,11 @@ def main() -> int:
         print(f"wrote {DOC_PATH.relative_to(REPO_ROOT)}")
 
     overall = summary["overall"]
-    print(f"OK  {len(rows)} operations x {len(LANES)} lanes = {overall['cells']} cells")
+    print(f"OK historical projection: {len(rows)} operations x {len(LANES)} lanes = {overall['cells']} cells")
+    scope = document["scope_contract"]
+    print(f"    certification={scope['certification_verdict']}  "
+          f"coverage_complete={scope['coverage_complete']}  "
+          f"accepted_shipping_passes={scope['accepted_shipping_passes']}")
     print(f"    closed {overall['closed']}  open {overall['open']}")
     for lane in LANES:
         states = summary["per_lane"][lane]
