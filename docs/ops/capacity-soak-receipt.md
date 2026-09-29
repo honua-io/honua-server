@@ -54,9 +54,12 @@ receipt path; its population is measured directly, never reconstructed from
 percentiles or summary counts. The workflow still checks the canonical profile's
 concurrency before starting.
 
-Before measurement, one existing layer-0 feature is padded to exactly the locked
-maximum canonical UTF-8 feature size. The served geometry and attributes are
-verified after the seed change; no extra row is added. Samples re-read the
+Before measurement, one existing layer-0 feature is updated through the authenticated
+FeatureServer edit API to exactly the locked maximum canonical UTF-8 feature size.
+The fixture advertises Update and gives its description field enough declared
+capacity for that payload. A successful per-feature edit result and unchanged
+geometry and attributes on read-back are required; no SQL write bypasses API
+validation and no extra row is added. Samples re-read the
 feature, catalogue, per-layer counts and tenant scope. The canonical feature
 encoding is compact JSON with Unicode preserved, including geometry and all
 returned attributes.

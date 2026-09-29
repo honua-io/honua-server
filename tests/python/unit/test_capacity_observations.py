@@ -320,6 +320,75 @@ def test_gp_polling_retains_executing_jobs_until_terminal_state():
     asyncio.run(exercise())
 
 
+def test_captured_gp_errors_invalidate_observations_without_task_exception():
+    import argparse
+    collector = collector_module.Collector(argparse.Namespace(base_url="http://fixture", admin_key="fixture"), LOCK)
+    collector.driver.gp.errors.extend(["submitJob: HTTP 500", "jobStatus job-1: timeout"])
+    collector.capture_gp_errors()
+    collector.capture_gp_errors()
+    assert collector.failures == ["GP sampling: submitJob: HTTP 500", "GP sampling: jobStatus job-1: timeout"]
+    source = observations()
+    source["samplingFailures"] = collector.failures
+    assert emit(source)[0]["status"] == "incomplete"
+
+
+@pytest.mark.parametrize("outcome", ["success", "http-rejection", "inband-error", "feature-failure", "lost-ordinate"])
+def test_maximum_payload_requires_an_accepted_http_write_and_exact_roundtrip(outcome):
+    import argparse
+
+    async def exercise():
+        original = dict(attributes=dict(objectid=10000, name="fixture", description="initial", noData=None),
+                        geometry=dict(x=-157.8, y=21.3, z=4, m=7, spatialReference=dict(wkid=4326)))
+        stored = copy.deepcopy(original)
+        submitted = []
+
+        async def serve(request):
+            nonlocal stored
+            if request.method == "POST":
+                assert request.path.endswith("/updateFeatures")
+                assert request.headers["X-API-Key"] == "fixture"
+                form = await request.post()
+                rows = json.loads(form["features"])
+                assert len(rows) == 1
+                submitted.append(rows[0])
+                assert len(feature_bytes(rows[0])) == 1048576
+                assert rows[0]["geometry"] == original["geometry"]
+                assert rows[0]["attributes"]["name"] == "fixture"
+                assert rows[0]["attributes"]["noData"] is None
+                if outcome == "http-rejection":
+                    return web.Response(status=413)
+                if outcome == "inband-error":
+                    return web.json_response(dict(error=dict(code=400)))
+                if outcome == "feature-failure":
+                    return web.json_response(dict(updateResults=[dict(objectId=10000, success=False)]))
+                stored = rows[0]
+                if outcome == "lost-ordinate":
+                    stored["geometry"]["m"] = 8  # Same encoded length; size alone cannot catch this.
+                return web.json_response(dict(updateResults=[dict(objectId=10000, success=True)]))
+            return web.json_response(dict(features=[stored]))
+        app = web.Application(client_max_size=2*1048576)
+        app.router.add_route("*", "/{tail:.*}", serve)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "127.0.0.1", 0)
+        await site.start()
+        port = site._server.sockets[0].getsockname()[1]
+        try:
+            collector = collector_module.Collector(argparse.Namespace(base_url=f"http://127.0.0.1:{port}", admin_key="fixture"), LOCK)
+            async with httpx.AsyncClient() as client:
+                if outcome == "success":
+                    await collector.establish_payload(client)
+                    assert stored["geometry"] == original["geometry"]
+                    assert len(feature_bytes(stored)) == 1048576
+                else:
+                    with pytest.raises(ValueError, match="maximum-payload"):
+                        await collector.establish_payload(client)
+            assert len(submitted) == 1
+        finally:
+            await runner.cleanup()
+    asyncio.run(exercise())
+
+
 def verify_release_contract(tools_path: Path, output: Path):
     """Run the real release verifier, including wrong-source ZIP attestation rejection.
 

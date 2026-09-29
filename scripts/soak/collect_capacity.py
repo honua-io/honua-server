@@ -21,7 +21,6 @@ from urllib.parse import urlencode
 
 import aiohttp
 import httpx
-import psycopg
 
 from capacity_evidence import assert_candidate, digest
 from drive_soak import SoakDriver
@@ -200,33 +199,42 @@ class Collector:
         self.failures, self.metrics, self.workloads, self.recoveries = [], [], [], []
         self.users = []
         self.payload_id = None
+        self._gp_error_cursor = 0
         self.stop = asyncio.Event()
         self.driver = SoakDriver(argparse.Namespace(base_url=args.base_url, admin_key=args.admin_key,
                                                      unexercised=[], gp_interval=1), lock)
 
     async def establish_payload(self, client):
-        """Size one seeded feature before the measured run; preserve rows and geometry."""
+        """Exercise an exact-size HTTP feature update and verify its served result."""
         document = await self.driver._get_json(client, "/rest/services/test/FeatureServer/0/query?f=json&where=1%3D1&outFields=*&returnGeometry=true&orderByFields=objectid%20DESC&resultRecordCount=1")
         feature = document["features"][0]
         self.payload_id = int(feature["attributes"]["objectid"])
         target = self.lock["supportedEnvelope"]["maximumFeaturePayloadBytes"]
         padding = padded_description(feature, target)
-        connection = await psycopg.AsyncConnection.connect(
-            host="localhost", port=os.environ["SOAK_DB_PORT"], dbname=os.environ["SOAK_DB_NAME"],
-            user=os.environ["SOAK_DB_USER"], password=os.environ["SOAK_DB_PASSWORD"])
-        async with connection:
-            async with connection.cursor() as cursor:
-                await cursor.execute("UPDATE public.features SET attributes=jsonb_set(attributes, '{description}', to_jsonb(%s::text)) WHERE layer_id=0 AND objectid=%s", (padding, self.payload_id))
-                if cursor.rowcount != 1:
-                    raise ValueError("maximum-payload fixture must update exactly one seeded row")
-        # A fresh predicate avoids any cached pre-seed query. Serving the result is
-        # the proof; a database-only size calculation is insufficient.
+        feature["attributes"]["description"] = padding
+        response = await client.post(
+            self.args.base_url + "/rest/services/test/FeatureServer/0/updateFeatures",
+            data=dict(f="json", features=json.dumps([feature], separators=(",", ":"), ensure_ascii=False)),
+            headers=self.driver.admin_headers,
+        )
+        if not response.is_success:
+            raise ValueError(f"maximum-payload HTTP update rejected: {response.status_code}")
+        document = response.json()
+        results = document.get("updateResults", [])
+        if document.get("error") or len(results) != 1 or results[0].get("success") is not True or results[0].get("objectId") != self.payload_id:
+            raise ValueError("maximum-payload HTTP update did not succeed for the seeded feature")
+        # A fresh predicate avoids any cached pre-update query. Both the accepted
+        # write and decoded serving response are required; SQL bypasses are forbidden.
         served = await self.driver._get_json(client, f"/rest/services/test/FeatureServer/0/query?f=json&where=objectid%3D{self.payload_id}&outFields=*&returnGeometry=true")
         if len(served.get("features", [])) != 1 or len(feature_bytes(served["features"][0])) != target:
             raise ValueError("candidate did not serve the exact maximum feature payload")
         actual = served["features"][0]
-        if actual.get("geometry") != feature.get("geometry") or actual["attributes"]["description"] != padding:
-            raise ValueError("maximum-payload fixture changed geometry or lost attribute data")
+        if actual != feature:
+            raise ValueError("maximum-payload round trip changed geometry or lost attribute data")
+
+    def capture_gp_errors(self):
+        self.failures.extend(f"GP sampling: {error}" for error in self.driver.gp.errors[self._gp_error_cursor:])
+        self._gp_error_cursor = len(self.driver.gp.errors)
 
     async def user(self, session, scenario, seed):
         rng, iteration = random.Random(seed), 0
@@ -237,6 +245,7 @@ class Collector:
 
     async def sample(self, client):
         """Retain actual dimensions, including mismatches; never echo lock targets as observations."""
+        self.capture_gp_errors()
         dimensions, proofs = {}, {}
         metric = dict(worker=None, database=None, redis=None, queueAgeSeconds=None)
         try:
@@ -347,6 +356,7 @@ class Collector:
             fault = None
             try:
                 await asyncio.sleep(self.args.ramp_up_seconds)
+                self._gp_error_cursor = len(self.driver.gp.errors)
                 self.ledger.started = await self.sample(client)
                 fault = asyncio.create_task(self.faults(client))
                 deadline = time.monotonic()+self.args.steady_seconds
@@ -370,6 +380,7 @@ class Collector:
                             self.failures.append(f"collector task failed: {type(result).__name__}: {result}")
                 except TimeoutError:
                     self.failures.append("collector tasks exceeded the 60-second drain budget")
+                self.capture_gp_errors()
         producer = dict(repository=os.environ["GITHUB_REPOSITORY"], workflowPath=".github/workflows/capacity-soak-candidate.yml",
                         workflowRef=os.environ["GITHUB_WORKFLOW_REF"], sourceRevision=os.environ["GITHUB_SHA"],
                         runId=int(os.environ["GITHUB_RUN_ID"]), runAttempt=int(os.environ["GITHUB_RUN_ATTEMPT"]), predicateType="https://slsa.dev/provenance/v1")
