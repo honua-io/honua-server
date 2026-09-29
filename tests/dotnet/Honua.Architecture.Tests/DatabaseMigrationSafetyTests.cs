@@ -18,8 +18,10 @@ public sealed class DatabaseMigrationSafetyTests
     public void MigrationScripts_AfterReaderBaseline_MustRemainExpandOnly()
     {
         var root = FindProjectRoot(Directory.GetCurrentDirectory());
-        var baseline = JsonSerializer.Deserialize<Dictionary<string, string>>(
-            File.ReadAllText(Path.Combine(root, "certification", "schema-reader-baseline.json")))!;
+        var baselineJson = File.ReadAllText(Path.Combine(root, "certification", "schema-reader-baseline.json"));
+        MigrationHash(baselineJson).Should().Be("4534DC4F439A70DCE9A50F2DA0C82EDBB1F0A551BC9BFE1E4AE44EF6F2B8A33B",
+            "the reader baseline is frozen at 977a1c630; new migrations belong in the ongoing ledger, not this review record");
+        var baseline = JsonSerializer.Deserialize<Dictionary<string, string>>(baselineJson)!;
         var scripts = EnumerateMigrationFiles().ToDictionary(
             path => Path.GetRelativePath(root, path).Replace('\\', '/'), File.ReadAllText);
         var hashes = JsonSerializer.Deserialize<Dictionary<string, string>>(
