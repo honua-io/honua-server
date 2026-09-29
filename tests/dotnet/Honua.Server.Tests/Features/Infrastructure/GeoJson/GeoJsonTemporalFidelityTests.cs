@@ -7,12 +7,13 @@ using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.GeoJson;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.GeoJson;
 
 public sealed class GeoJsonTemporalFidelityTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData("iso")]
     [InlineData("offset-iso")]
     [InlineData("offset")]
@@ -42,7 +43,7 @@ public sealed class GeoJsonTemporalFidelityTests
         AssertBothPaths(value, MetadataV2FieldType.DateTime, "2024-02-29T12:34:56.7890000Z");
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("2024-02-29T12:34:56.0000001Z", "2024-02-29T12:34:56.0000001Z")]
     [InlineData("2024-02-29T02:34:56.1234567-10:00", "2024-02-29T12:34:56.1234567Z")]
     [InlineData("2024-02-29T23:59:59.9999999Z", "2024-02-29T23:59:59.9999999Z")]
@@ -51,11 +52,11 @@ public sealed class GeoJsonTemporalFidelityTests
     public void Create_DateTimePrecisionBoundaries_PreserveInstantAndNull(string? value, string? expected)
         => AssertBothPaths(value, MetadataV2FieldType.DateTime, expected);
 
-    [Fact]
+    [UnitTest]
     public void Create_DateOnly_DoesNotIntroduceTime()
         => AssertBothPaths("2024-02-29T12:34:56.789Z", MetadataV2FieldType.Date, "2024-02-29");
 
-    [Fact]
+    [UnitTest]
     public void Create_StringField_DoesNotReformatDateLikeText()
         => AssertBothPaths("2024-02-29T02:34:56.789-10:00", MetadataV2FieldType.String,
             "2024-02-29T02:34:56.789-10:00");

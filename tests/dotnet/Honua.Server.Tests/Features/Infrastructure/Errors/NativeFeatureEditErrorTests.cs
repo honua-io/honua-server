@@ -4,6 +4,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Infrastructure.Models;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -11,7 +12,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Errors;
 
 public sealed class NativeFeatureEditErrorTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData("/rest/services/example/FeatureServer/4/addFeatures", 401, 499)]
     [InlineData("/rest/services/example/FeatureServer/4/updateFeatures", 403, 403)]
     [InlineData("/rest/services/example/FeatureServer/4/deleteFeatures", 400, 400)]
@@ -47,7 +48,7 @@ public sealed class NativeFeatureEditErrorTests
         }
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("POST", "/rest/services/example/FeatureServer/4/query")]
     [InlineData("GET", "/rest/services/example/FeatureServer/4/addFeatures")]
     [InlineData("POST", "/rest/services/example/MapServer/4/query")]
@@ -62,7 +63,7 @@ public sealed class NativeFeatureEditErrorTests
         context.Response.StatusCode.Should().Be(200);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task WfsXmlTransactionError_UsesParsedBodyVersion()
     {
         using var services = new ServiceCollection().AddLogging().AddOptions().BuildServiceProvider();

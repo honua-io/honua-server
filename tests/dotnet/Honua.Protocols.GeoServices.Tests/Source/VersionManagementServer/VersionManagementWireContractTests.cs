@@ -39,7 +39,7 @@ public sealed class VersionManagementWireContractTests
         }
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(VersionJobStatus.Pending, "Pending")]
     [InlineData(VersionJobStatus.Running, "InProgress")]
     [InlineData(VersionJobStatus.Succeeded, "Completed")]
@@ -83,7 +83,7 @@ public sealed class VersionManagementWireContractTests
         }
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(false, "Completed", true)]
     [InlineData(true, "Failed", false)]
     public void JobStatus_LegacyPostRecord_PreservesActualOutcome(bool blocked, string status, bool didPost)
