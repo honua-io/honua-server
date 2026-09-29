@@ -33,10 +33,9 @@ internal static class ServiceCollectionExtensions
     /// <param name="services">The service collection</param>
     /// <param name="schemaName">Optional database schema name</param>
     /// <param name="preferSerialBoundedSpatialReads">Opt in to serial plans for small first-page source-backed point bbox reads.</param>
-    /// <param name="disableJitForSourceSpatialCounts">Opt in to disabling JIT within source-backed point bbox count queries.</param>
     /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddRefactoredFeatureStore(this IServiceCollection services, string? schemaName = null,
-        bool preferSerialBoundedSpatialReads = false, bool disableJitForSourceSpatialCounts = false)
+        bool preferSerialBoundedSpatialReads = false)
     {
         var poolProvider = new DefaultObjectPoolProvider();
 
@@ -105,8 +104,7 @@ internal static class ServiceCollectionExtensions
                 provider.GetService<Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource>(),
                 schemaName,
                 provider.GetRequiredService<PostgresBoundConnectionProvider>(),
-                preferSerialBoundedSpatialReads,
-                disableJitForSourceSpatialCounts));
+                preferSerialBoundedSpatialReads));
 
         // Register segregated interfaces
         services.AddScoped<IFeatureDataProvider>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
