@@ -1127,8 +1127,6 @@ builder.Services.AddHonuaJsonContexts();
 // RFC 9110 §9.3.2: answer HEAD wherever GET is answered (#3389). Registered as a startup
 // filter so the HEAD -> GET rewrite runs ahead of WebApplication's implicit UseRouting;
 // the matching restoration middleware below puts HEAD back once the endpoint is selected.
-// Normalize the optional ArcGIS application prefix before HEAD's endpoint inspection.
-builder.Services.AddSingleton<IStartupFilter, ArcGisPathBaseStartupFilter>();
 builder.Services.AddHonuaHeadRequestSupport();
 
 // Add comprehensive IOptions configuration validation
