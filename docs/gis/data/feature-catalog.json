@@ -21985,7 +21985,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerAuthorizationTests.Anonymous_IsDeniedOnCreateAndDelete_AndTheOwnersVersionSurvives",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Create_DuplicateVersionName_Returns409Conflict",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Create_IgnoresCallerSuppliedOwner",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Create_NewVersion_ReturnsVersionInfo"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Create_NewVersion_ReturnsVersionInfo",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Create_WithHistoricalMoment_RejectsWithoutCreatingVersion"
       ],
       "proof_ledger_surface": "version-management-server",
       "maturity": "experimental",
@@ -22033,7 +22034,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.MountedGeoServicesUrlTests.VersionJob_ExternalMount_ReturnsReachablePollingUrl",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerAuthorizationTests.LifecycleHandlers_NonOwnerWithServiceWriteAccess_AreDeniedAndMutateNothing",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Post_AfterReconcile_Succeeds"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Post_AfterReconcile_Succeeds",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Post_WithRows_RejectsInsteadOfPostingWholeVersion"
       ],
       "proof_ledger_surface": "version-management-server",
       "maturity": "experimental",
