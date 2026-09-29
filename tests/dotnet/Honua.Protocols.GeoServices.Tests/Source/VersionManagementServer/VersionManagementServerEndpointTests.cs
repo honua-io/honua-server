@@ -94,6 +94,27 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         info.GetProperty("status").GetString().Should().Be("active");
     }
 
+    [IntegrationTheory]
+    [InlineData("")]
+    [InlineData("/arcgis")]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "create")]
+    public async Task Create_WithHistoricalMoment_RejectsWithoutCreatingVersion(string prefix)
+    {
+        var name = $"admin.historical_{Guid.NewGuid():N}";
+        using var response = await PostFormAsync(
+            $"{prefix}/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/create",
+            ("versionName", name), ("moment", "1603109596000"), ("f", "json"));
+        await response.AssertGeoServicesErrorAsync(501);
+
+        using var listing = await _fixture.Client.GetAsync($"{ServiceBase}/versions?f=json");
+        using var document = JsonDocument.Parse(await listing.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("versions").EnumerateArray()
+            .Select(version => version.GetProperty("versionName").GetString())
+            .Should().NotContain(name);
+    }
+
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]
@@ -451,6 +472,33 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("canPost").GetBoolean().Should().BeTrue();
         doc.RootElement.GetProperty("remaining").GetInt32().Should().Be(0);
+    }
+
+    [IntegrationTheory]
+    [InlineData("", false, "[]")]
+    [InlineData("", true, "[]")]
+    [InlineData("/arcgis", false, "[]")]
+    [InlineData("/arcgis", true, "[]")]
+    [InlineData("", false, "[{\"layerId\":0,\"objectIds\":[1]}]")]
+    [InlineData("", true, "[{\"layerId\":0,\"objectIds\":[1]}]")]
+    [InlineData("/arcgis", false, "[{\"layerId\":0,\"objectIds\":[1]}]")]
+    [InlineData("/arcgis", true, "[{\"layerId\":0,\"objectIds\":[1]}]")]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/post")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "post")]
+    public async Task Post_WithRows_RejectsInsteadOfPostingWholeVersion(string prefix, bool asyncRequested, string rows)
+    {
+        var created = await CreateVersionAsync($"admin.subset_{Guid.NewGuid():N}");
+        var guid = created.GetProperty("versionGuid").GetString();
+        using var reconcile = await PostFormAsync($"{ServiceBase}/versions/{guid}/reconcile", ("f", "json"));
+        await AssertSuccessMomentAsync(reconcile);
+
+        using var response = await PostFormAsync(
+            $"{prefix}/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/post",
+            ("rows", rows), ("async", asyncRequested ? "true" : "false"), ("f", "json"));
+        await response.AssertGeoServicesErrorAsync(501);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.TryGetProperty("statusUrl", out _).Should().BeFalse();
     }
 
     [IntegrationTest]

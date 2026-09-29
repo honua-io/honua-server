@@ -322,6 +322,15 @@ public static class VersionManagementServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "versionName parameter is required.");
         }
 
+        // Creating at the current DEFAULT generation must not silently replace a requested
+        // historical ancestor. Keep this aligned with supportsCreateWithMoment=false.
+        if (!string.IsNullOrWhiteSpace(GeoServicesRequestValueHelpers.GetValueString(values!, "moment")))
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context, "Creating a version at a historical moment is not supported.",
+                ["Omit moment to create a version from the current DEFAULT state."]);
+        }
+
         // The owner is security metadata, not a client-controlled version attribute.
         // ArcGIS clients may send an owner field, but accepting it lets any editor create
         // a version attributed to another principal (#4036).
@@ -647,6 +656,15 @@ public static class VersionManagementServerEndpoints
         if (gate is not null)
         {
             return gate;
+        }
+
+        // Ignoring a requested subset would publish unrelated branch edits to DEFAULT.
+        // Reject even an empty explicit selection before starting any asynchronous job.
+        if (!string.IsNullOrWhiteSpace(GeoServicesRequestValueHelpers.GetValueString(values!, "rows")))
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context, "Posting a subset of version edits is not supported.",
+                ["The rows parameter cannot be used because supportsPartialPost is false."]);
         }
 
         // Async fast path: start a durable, pollable post job under the version lock (#1553).
