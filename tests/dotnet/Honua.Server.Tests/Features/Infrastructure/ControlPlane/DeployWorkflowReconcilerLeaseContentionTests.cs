@@ -20,6 +20,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class DeployWorkflowReconcilerLeaseContentionTests
 {
     [Theory]
+    [Trait("Tier", "Fast")]
     [InlineData(WorkflowOperationStatus.Reconciling)]
     [InlineData(WorkflowOperationStatus.RollbackRequested)]
     public async Task ReconcileWorkflowOperationAsync_HostStops_ReplacementResumes(WorkflowOperationStatus status)

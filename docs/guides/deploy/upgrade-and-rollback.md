@@ -51,6 +51,9 @@ reader separately and record `schema_reader_incompatible` as a startup refusal,
 never as successful serving. Local handoff tests use real Redis and the geometry
 executor with substituted AWS transport; they do not replace the two-candidate
 ECS and Lambda + Batch journey receipts.
+Qualify the actual rollback image: it must itself contain the drain and schema-reader
+protections described here. Installing a newer image cannot add those checks to an
+older image.
 
 ### Configuration binding correction
 

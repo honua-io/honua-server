@@ -30,6 +30,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 public sealed class DatabaseMigrationStartupTests
 {
     [Theory]
+    [Trait("Tier", "Integration")]
     [InlineData(false)]
     [InlineData(true)]
     public void Startup_WithNewerUnqualifiedSchema_RefusesWithTypedError(bool skipMigrations)

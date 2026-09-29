@@ -17,6 +17,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class AwsBatchComputeBackendTests
 {
     [Fact]
+    [Trait("Tier", "Fast")]
     public void SubmissionClient_DisablesSdkRetries_ForNonIdempotentSubmitJob()
     {
         using var client = AwsSdkBatchJobClient.CreateClient("us-west-2", "http://localhost:4566", submitting: true);
