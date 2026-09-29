@@ -22,17 +22,22 @@ internal static class FeatureAttributeJsonReader
         // dictionary and an independently owned JsonElement for each scalar.
         // JSONB already guarantees unique property names; read its object once.
         using var document = JsonDocument.Parse(json);
-        if (document.RootElement.ValueKind == JsonValueKind.Null)
+        ReadInto(document.RootElement, destination);
+    }
+
+    internal static void ReadInto(JsonElement attributes, Dictionary<string, object?> destination)
+    {
+        if (attributes.ValueKind == JsonValueKind.Null)
         {
             return;
         }
 
-        if (document.RootElement.ValueKind != JsonValueKind.Object)
+        if (attributes.ValueKind != JsonValueKind.Object)
         {
             throw new JsonException("Feature attributes must be a JSON object.");
         }
 
-        foreach (var property in document.RootElement.EnumerateObject())
+        foreach (var property in attributes.EnumerateObject())
         {
             var value = property.Value;
             destination[property.Name] = value.ValueKind is JsonValueKind.Object or JsonValueKind.Array

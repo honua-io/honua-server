@@ -13,6 +13,46 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 public sealed class FeatureAttributeJsonReaderTests(ITestOutputHelper output)
 {
+    [Theory]
+    [InlineData("null")]
+    [InlineData("{}")]
+    [InlineData("""{"id":9223372036854775807,"value":12.5,"active":true,"missing":null,"date":"2026-09-26T00:00:00Z","Name":"Kāneʻohe 🌋","na\u006de":"quote\" and newline\n","object":{"name":"Honolulu"},"array":[1,null,{"ok":true}]}""")]
+    public void ReadInto_Document_PreservesTextReaderValuesAfterDisposal(string json)
+    {
+        var expected = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        var actual = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        FeatureAttributeJsonReader.ReadInto(json, expected);
+        using (var document = JsonDocument.Parse(json))
+        {
+            FeatureAttributeJsonReader.ReadInto(document.RootElement, actual);
+        }
+
+        actual.Keys.Should().BeEquivalentTo(expected.Keys);
+        foreach (var (name, value) in expected)
+        {
+            if (value is JsonElement element)
+            {
+                actual[name].Should().BeOfType<JsonElement>().Which.GetRawText().Should().Be(element.GetRawText());
+            }
+            else
+            {
+                actual[name].Should().Be(value);
+                actual[name]?.GetType().Should().Be(value?.GetType());
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("42")]
+    [InlineData("true")]
+    public void ReadInto_NonObjectDocument_ThrowsJsonException(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        var read = () => FeatureAttributeJsonReader.ReadInto(document.RootElement, new Dictionary<string, object?>());
+        read.Should().Throw<JsonException>();
+    }
+
     [Fact]
     public void ReadInto_ScalarRow_AllocatesLessThanDictionaryDeserialization()
     {

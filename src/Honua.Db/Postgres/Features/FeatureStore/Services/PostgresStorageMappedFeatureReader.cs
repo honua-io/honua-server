@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -429,7 +430,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var reader = session.Reader!;
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            yield return ReadFeature(reader);
+            yield return ReadFeature(reader, textAttributes: query.Distinct);
         }
     }
 
@@ -474,7 +475,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var reader = session.Reader!;
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            features.Add(ReadFeature(reader));
+            features.Add(ReadFeature(reader, textAttributes: query.Distinct));
         }
 
         return features.ToImmutable();
@@ -493,8 +494,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var geometrySelect = _geometryColumn == null
             ? "NULL"
             : $"{geometryEncoder}({BuildGeometryExpression(query)})";
-        // Feature readers consume JSON text; tile encoders keep the shared expression as JSONB.
-        var attributesSelect = $"{BuildAttributesJsonbExpression(query, sql)}::text";
+        var attributesSelect = BuildAttributesJsonbExpression(query, sql);
+        // DISTINCT compares and orders the text representation. Preserve that
+        // contract; ordinary reads decode JSONB directly without a UTF-16 string.
+        if (query.Distinct)
+        {
+            attributesSelect = $"{attributesSelect}::text";
+        }
         var distanceSelect = BuildDistanceSelectExpression(query, sql);
 
         if (query.Distinct)
@@ -1518,16 +1524,26 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             ?? throw new ArgumentException($"Field '{fieldName}' was not found on resource '{_resource.Metadata.Name}'.");
     }
 
-    private Feature ReadFeature(NpgsqlDataReader reader)
+    private Feature ReadFeature(NpgsqlDataReader reader, bool textAttributes)
     {
         var id = reader.GetInt64(0);
         var geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
-        var attributesJson = reader.IsDBNull(2) ? null : reader.GetString(2);
         var attributesDictionary = _dictionaryPool.Get();
 
         try
         {
-            FeatureAttributeJsonReader.ReadInto(attributesJson, attributesDictionary);
+            if (!reader.IsDBNull(2))
+            {
+                if (textAttributes)
+                {
+                    FeatureAttributeJsonReader.ReadInto(reader.GetString(2), attributesDictionary);
+                }
+                else
+                {
+                    using var document = reader.GetFieldValue<JsonDocument>(2);
+                    FeatureAttributeJsonReader.ReadInto(document.RootElement, attributesDictionary);
+                }
+            }
 
             attributesDictionary[FieldNames.ObjectId] = id;
             if (reader.FieldCount > 3)
