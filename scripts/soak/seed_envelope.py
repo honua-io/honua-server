@@ -64,7 +64,7 @@ def _layer_rows(layer_count: int) -> list[tuple[Any, ...]]:
     return rows
 
 
-def seed(connection, *, layer_count: int, features_per_layer: int) -> None:
+def seed(connection, *, layer_count: int, features_per_layer: int, maximum_feature_payload_bytes: int = 500) -> None:
     minx, miny, maxx, maxy = EXTENT
     with connection.cursor() as cur:
         cur.execute(
@@ -72,7 +72,7 @@ def seed(connection, *, layer_count: int, features_per_layer: int) -> None:
             INSERT INTO honua.services (
                 service_name, description, srid, supported_formats, capabilities,
                 service_extent, metadata)
-            VALUES (%s, %s, 4326, ARRAY['JSON','GeoJSON'], ARRAY['Query','Extract'],
+            VALUES (%s, %s, 4326, ARRAY['JSON','GeoJSON'], ARRAY['Query','Extract','Update'],
                     ST_MakeEnvelope(%s, %s, %s, %s, 4326),
                     '{"accessPolicy":{"allowAnonymous":true}}'::jsonb)
             ON CONFLICT (service_name) DO UPDATE SET
@@ -121,7 +121,7 @@ def seed(connection, *, layer_count: int, features_per_layer: int) -> None:
             for field_name, field_type, order, max_length, nullable, field_description in (
                 ("objectid", "Integer", 0, None, False, "Object ID"),
                 ("name", "String", 1, 255, True, "Name"),
-                ("description", "String", 2, 500, True, "Description"),
+                ("description", "String", 2, maximum_feature_payload_bytes, True, "Description"),
                 ("category", "String", 3, 255, True, "Category"),
                 ("timestamp", "DateTime", 4, None, True, "Timestamp"),
                 ("shape", "Geometry", 5, None, True, "Geometry"),
@@ -210,7 +210,8 @@ def main() -> int:
         parser.error("supply --lock or both --layers and --features-per-layer")
 
     with psycopg.connect(args.dsn) as connection:
-        seed(connection, layer_count=args.layers, features_per_layer=args.features_per_layer)
+        seed(connection, layer_count=args.layers, features_per_layer=args.features_per_layer,
+             maximum_feature_payload_bytes=envelope["maximumFeaturePayloadBytes"] if args.lock else 500)
         observed = observe(connection, layer_count=args.layers)
 
     text = json.dumps(observed, indent=2, sort_keys=True)

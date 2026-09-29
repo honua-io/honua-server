@@ -1,8 +1,8 @@
-name: Load/Soak Nightly
+# Scheduled soak retired by #5314. Qualification uses capacity-soak-candidate.yml
+# at the manifest candidate ref; this manual workflow is diagnostic only.
+name: Load/Soak Diagnostics (manual)
 
 on:
-  schedule:
-    - cron: '0 3 * * *'
   workflow_dispatch:
     inputs:
       profile:

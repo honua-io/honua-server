@@ -439,32 +439,47 @@ class SoakDriver:
         pending: dict[str, dict[str, float]] = {}
         completed = 0
         rejected = 0
+
+        async def submit():
+            submitted = time.monotonic()
+            response = await client.post(
+                f"{self.base_url}/rest/services/{SERVICE}/GPServer/geometry.buffer/submitJob",
+                data={"f": "json", "wkb": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA", "srid": "4326", "distance": "10"},
+                headers=self.admin_headers,
+                timeout=30.0,
+            )
+            return submitted, response.json()
+
         while not self._stop.is_set():
             started = time.monotonic()
-            try:
-                response = await client.post(
-                    f"{self.base_url}/rest/services/{SERVICE}/GPServer/geometry.buffer/submitJob",
-                    data={"f": "json", "wkb": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA", "srid": "4326", "distance": "10"},
-                    headers=self.admin_headers,
-                    timeout=30.0,
-                )
-                document = response.json()
+            # Offer enough jobs to exercise the queue plus the worker slots.
+            # One submission per second cannot test a 100-job queue on a worker
+            # that drains faster than that. Retained executing/queued identities
+            # bound outstanding work; rejected jobs are never counted as queued.
+            target = getattr(self.args, "gp_queue_depth", None)
+            offered = 1 if target is None else max(0, target + self.args.gp_workers - len(pending))
+            submissions = await asyncio.gather(*(submit() for _ in range(offered)), return_exceptions=True)
+            for result in submissions:
+                if isinstance(result, Exception):
+                    self.gp.errors.append(f"submitJob: {result}")
+                    continue
+                submitted, document = result
+                if not isinstance(document, dict):
+                    self.gp.errors.append("submitJob: response is not a JSON object")
+                    continue
                 job_id = document.get("jobId")
                 if job_id:
-                    pending[job_id] = {"submitted": time.monotonic(), "lastQueued": time.monotonic()}
-                elif str(document.get("error", {}).get("code")) == "503":
+                    pending[job_id] = {"submitted": submitted, "lastQueued": submitted}
+                elif str((document.get("error") or {}).get("code")) == "503":
                     # Admission control refuses a submission while the single declared worker is
                     # busy rather than queueing it. That is the candidate's behaviour, not an
                     # error in the measurement: count it as evidence for the queue-depth dimension.
                     rejected += 1
                 else:
                     self.gp.errors.append(f"submitJob: {json.dumps(document)[:200]}")
-            except Exception as exc:  # noqa: BLE001
-                self.gp.errors.append(f"submitJob: {exc}")
 
             queued_ages: list[float] = []
             executing = 0
-            now = time.monotonic()
             for job_id, timing in list(pending.items()):
                 try:
                     document = await self._get_json(
@@ -477,27 +492,34 @@ class SoakDriver:
                     continue
                 status = document.get("jobStatus", "")
                 if status == "esriJobSubmitted":
-                    timing["lastQueued"] = now
-                    queued_ages.append(now - timing["submitted"])
+                    observed_at = time.monotonic()
+                    timing["lastQueued"] = observed_at
+                    queued_ages.append(observed_at - timing["submitted"])
                     continue
-                if status == "esriJobExecuting":
+                if status in ("esriJobExecuting", "esriJobCancelling"):
                     executing += 1
                 # The job has left the queue. Its queue age is the last instant it was still
                 # observed queued, so the poll interval bounds the error instead of inflating
                 # every job's wait by one whole interval.
-                self.gp.samples.append(
-                    {
-                        "at": iso(utcnow()),
-                        "jobLeftQueue": job_id,
-                        "queueWaitSeconds": round(timing["lastQueued"] - timing["submitted"], 3),
-                        "status": status,
-                    }
-                )
+                if not timing.get("leftQueue"):
+                    self.gp.samples.append(
+                        {
+                            "at": iso(utcnow()),
+                            "jobLeftQueue": job_id,
+                            "queueWaitSeconds": round(timing["lastQueued"] - timing["submitted"], 3),
+                            "status": status,
+                        }
+                    )
+                    timing["leftQueue"] = True
+                if status not in ("esriJobSucceeded", "esriJobFailed", "esriJobCancelled", "esriJobTimedOut"):
+                    # An executing job still occupies its worker on subsequent
+                    # polls. Do not count it as completed or drop its identity.
+                    continue
                 completed += 1
                 pending.pop(job_id, None)
 
             self.gp.add(
-                queueDepth=len(pending),
+                queueDepth=len(queued_ages),
                 executing=executing,
                 oldestQueueAgeSeconds=round(max(queued_ages), 3) if queued_ages else 0.0,
                 observedJobs=completed,

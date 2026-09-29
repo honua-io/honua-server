@@ -96,6 +96,8 @@ def main() -> int:
             "message": args.message,
             "tree": tree["sha"],
             "parents": [parent] if parent else [],
+            "author": {"name": "Mike McDougall", "email": "mike@honua.io"},
+            "committer": {"name": "Mike McDougall", "email": "mike@honua.io"},
         },
     )
     if parent:
