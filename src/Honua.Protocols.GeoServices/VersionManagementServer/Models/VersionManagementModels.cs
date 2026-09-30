@@ -280,4 +280,3 @@ public sealed class VersionJobResponse
     /// <summary>Sanitized error message when the job failed; null otherwise.</summary>
     public string? Error { get; init; }
 }
-
