@@ -322,15 +322,6 @@ public static class VersionManagementServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "versionName parameter is required.");
         }
 
-        // Creating at the current DEFAULT generation must not silently replace a requested
-        // historical ancestor. Keep this aligned with supportsCreateWithMoment=false.
-        if (!string.IsNullOrWhiteSpace(GeoServicesRequestValueHelpers.GetValueString(values!, "moment")))
-        {
-            return StandardErrorHelpers.CreateNotImplemented(
-                context, "Creating a version at a historical moment is not supported.",
-                ["Omit moment to create a version from the current DEFAULT state."]);
-        }
-
         // The owner is security metadata, not a client-controlled version attribute.
         // ArcGIS clients may send an owner field, but accepting it lets any editor create
         // a version attributed to another principal (#4036).
@@ -483,16 +474,16 @@ public static class VersionManagementServerEndpoints
             return detectionError;
         }
 
-        var withPost = ParseFlag(values!, "withPost");
-
         // Async fast path: start a durable, pollable job under the version lock and return 202 with a
         // job handle. The synchronous path stays the default for small/fast versions (#1553).
         if (ParseAsyncRequested(values!))
         {
-            var job = await jobRunner.StartReconcileAsync(serviceId, versionId, policy, detection, withPost, cancellationToken)
+            var job = await jobRunner.StartReconcileAsync(serviceId, versionId, policy, detection, cancellationToken)
                 .ConfigureAwait(false);
             return AcceptedJob(context, serviceId, versionGuid, job);
         }
+
+        var withPost = ParseFlag(values!, "withPost");
 
         try
         {
@@ -520,7 +511,6 @@ public static class VersionManagementServerEndpoints
                 CanPost = result.CanPost,
                 AutoResolvedCount = result.AutoResolvedCount,
                 Posted = posted,
-                Moment = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 AppliedChanges = appliedChanges,
                 ServerGeneration = serverGeneration,
                 Conflicts = result.Conflicts.IsDefaultOrEmpty
@@ -658,15 +648,6 @@ public static class VersionManagementServerEndpoints
             return gate;
         }
 
-        // Ignoring a requested subset would publish unrelated branch edits to DEFAULT.
-        // Reject even an empty explicit selection before starting any asynchronous job.
-        if (!string.IsNullOrWhiteSpace(GeoServicesRequestValueHelpers.GetValueString(values!, "rows")))
-        {
-            return StandardErrorHelpers.CreateNotImplemented(
-                context, "Posting a subset of version edits is not supported.",
-                ["The rows parameter cannot be used because supportsPartialPost is false."]);
-        }
-
         // Async fast path: start a durable, pollable post job under the version lock (#1553).
         if (ParseAsyncRequested(values!))
         {
@@ -680,7 +661,6 @@ public static class VersionManagementServerEndpoints
             var response = new PostResponse
             {
                 Success = result.Posted,
-                Moment = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 AppliedChanges = result.AppliedChanges,
                 ServerGeneration = result.ServerGeneration,
                 BlockedByConflicts = result.BlockedByConflicts,
@@ -1230,46 +1210,30 @@ public static class VersionManagementServerEndpoints
             ex.Message,
             ["A reconcile or post for this version is already in progress. Retry once it completes, or poll the in-flight job."]);
 
-    internal static VersionJobResponse ToJobResponse(HttpContext context, string serviceId, string versionGuid, VersionJob job)
+    private static VersionJobResponse ToJobResponse(HttpContext context, string serviceId, string versionGuid, VersionJob job) => new()
     {
-        var status = job.Status switch
-        {
-            VersionJobStatus.Pending => "Pending",
-            VersionJobStatus.Running => "InProgress",
-            VersionJobStatus.Succeeded when !job.BlockedByConflicts => "Completed",
-            _ => "Failed",
-        };
-        return new VersionJobResponse
-        {
-            Success = status is "Pending" or "InProgress" ? null : status == "Completed",
-            JobId = job.JobId.ToString(),
-            Kind = job.Kind == VersionJobKind.Reconcile ? "reconcile" : "post",
-            Status = status,
-            StatusUrl = $"{context.Request.PathBase}/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/jobs/{job.JobId}",
-            SubmissionTime = job.CreatedAt.ToUnixTimeMilliseconds(),
-            LastUpdatedTime = (job.CompletedAt ?? job.StartedAt ?? job.CreatedAt).ToUnixTimeMilliseconds(),
-            Moment = job.CompletedAt?.ToUnixTimeMilliseconds(),
-            HasConflicts = job.ConflictCount > 0 || job.BlockedByConflicts,
-            // Older stored post jobs did not record Posted. Their successful, non-blocked
-            // terminal outcome still establishes that the canonical post committed.
-            DidPost = job.Posted ?? (job.Kind == VersionJobKind.Post && status == "Completed"),
-            ConflictCount = job.ConflictCount,
-            AutoResolvedCount = job.AutoResolvedCount,
-            CanPost = job.CanPost,
-            AppliedChanges = job.AppliedChanges,
-            ServerGeneration = job.ServerGeneration,
-            BlockedByConflicts = job.BlockedByConflicts,
-            Error = status == "Failed" ? new VersionManagementError
-            {
-                ExtendedCode = job.BlockedByConflicts || job.Status == VersionJobStatus.LockContended ? 409 : 500,
-                Message = job.ErrorMessage ?? (job.Status == VersionJobStatus.LockContended
-                    ? "Another reconcile or post for this version is in progress. Retry once it completes."
-                    : job.BlockedByConflicts
-                        ? "The version has unresolved conflicts. Reconcile and resolve conflicts before posting."
-                        : "The reconcile/post job failed. See server logs for details."),
-            } : null,
-        };
-    }
+        JobId = job.JobId.ToString(),
+        Kind = job.Kind == VersionJobKind.Reconcile ? "reconcile" : "post",
+        Status = JobStatusToString(job.Status),
+        StatusUrl = $"{context.Request.PathBase}/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/jobs/{job.JobId}",
+        ConflictCount = job.ConflictCount,
+        AutoResolvedCount = job.AutoResolvedCount,
+        CanPost = job.CanPost,
+        AppliedChanges = job.AppliedChanges,
+        ServerGeneration = job.ServerGeneration,
+        BlockedByConflicts = job.BlockedByConflicts,
+        Error = job.ErrorMessage,
+    };
+
+    private static string JobStatusToString(VersionJobStatus status) => status switch
+    {
+        VersionJobStatus.Pending => "pending",
+        VersionJobStatus.Running => "running",
+        VersionJobStatus.Succeeded => "succeeded",
+        VersionJobStatus.Failed => "failed",
+        VersionJobStatus.LockContended => "lockContended",
+        _ => status.ToString().ToLower(CultureInfo.InvariantCulture),
+    };
 
     private static string ConflictTypeToString(ReplicaConflictType type) => type switch
     {

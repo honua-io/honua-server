@@ -6,7 +6,6 @@ using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
-using Honua.Infrastructure.Helpers;
 
 namespace Honua.Infrastructure.GeoJson;
 
@@ -214,7 +213,7 @@ internal static class GeoJsonFeatureBaseBuilder
         if (dateTimeFields.Contains(fieldName))
         {
             return TryCoerceDate(value, out var utc)
-                ? TemporalExtentHelpers.FormatOgcTemporalValue(utc)
+                ? utc.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)
                 : value;
         }
 

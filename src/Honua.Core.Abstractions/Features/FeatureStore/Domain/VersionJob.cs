@@ -66,8 +66,6 @@ public enum VersionJobStatus
 /// <param name="ServerGeneration">DEFAULT generation produced by a post (or reconciled-to generation).</param>
 /// <param name="BlockedByConflicts">True when a post was refused because unresolved conflicts remain.</param>
 /// <param name="ErrorMessage">Sanitized error message when <see cref="Status"/> is <see cref="VersionJobStatus.Failed"/>.</param>
-/// <param name="WithPost">Whether a clean reconcile should also post its edits to DEFAULT.</param>
-/// <param name="Posted">Whether this job posted edits; null for records written before this outcome was recorded.</param>
 public sealed record VersionJob(
     Guid JobId,
     string Service,
@@ -85,6 +83,4 @@ public sealed record VersionJob(
     int AppliedChanges = 0,
     long ServerGeneration = 0,
     bool BlockedByConflicts = false,
-    string? ErrorMessage = null,
-    bool WithPost = false,
-    bool? Posted = null);
+    string? ErrorMessage = null);
