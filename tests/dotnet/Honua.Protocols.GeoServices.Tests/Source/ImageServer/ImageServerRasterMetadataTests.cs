@@ -32,9 +32,10 @@ public class ImageServerRasterMetadataTests : IClassFixture<ImageServerRasterMet
 
     public ImageServerRasterMetadataTests(RasterMetadataFixture fixture) => _fixture = fixture.App;
 
-    // These endpoints only read the same raster metadata. Keep the real host and its
-    // constructor-injected raster store alive for the class instead of rebuilding
-    // the entire application for every request case.
+    /// <summary>
+    /// Keeps the real host and its constructor-injected raster store alive for read-only
+    /// metadata cases instead of rebuilding the application for every request case.
+    /// </summary>
     public sealed class RasterMetadataFixture : IAsyncLifetime
     {
         public WebAppFixture App { get; } = new WebAppFixture()

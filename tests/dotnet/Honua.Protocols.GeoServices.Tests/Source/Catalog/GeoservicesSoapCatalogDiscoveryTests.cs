@@ -30,8 +30,10 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests : IClassFixture<Geoserv
 
     public GeoservicesSoapCatalogDiscoveryTests(PublicCatalogFixture publicCatalog) => _publicCatalog = publicCatalog;
 
-    // SOAP argument-binding cases read an identical public catalog. Share its host;
-    // authorization and host-configuration cases retain their own factories below.
+    /// <summary>
+    /// Shares a host for SOAP argument-binding cases that read an identical public catalog.
+    /// Authorization and host-configuration cases retain their own factories.
+    /// </summary>
     public sealed class PublicCatalogFixture : IAsyncLifetime
     {
         public WebApplicationFactory<Program> Factory { get; } = CreateFactory(CreatePublicCatalog());
