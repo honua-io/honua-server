@@ -73,8 +73,15 @@ internal static partial class GeoJsonFeatureBaseBuilder
         string objectIdFieldName,
         GeoJsonFeatureBuildOptions options)
     {
-        var properties = new Dictionary<string, object?>(StringComparer.Ordinal);
         var projectedProperties = options.ProjectedProperties;
+        // Reserve only the declared values this feature/projection can supply.
+        // Sparse rows and narrow projections must not allocate for the full schema.
+        var capacity = Math.Min(schema.VisibleFields.Length, attributes.Count);
+        if (projectedProperties is not null)
+        {
+            capacity = Math.Min(capacity, projectedProperties.Count);
+        }
+        var properties = new Dictionary<string, object?>(capacity, StringComparer.Ordinal);
         var shouldProjectAll = projectedProperties is null;
         var shouldIncludeObjectId = options.IncludeObjectIdProperty;
 
