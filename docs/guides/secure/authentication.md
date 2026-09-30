@@ -20,13 +20,6 @@ and equivalent protocol-formatted errors use the same policy, including Esri
 reusing an earlier response after credentials change. Public anonymous responses
 retain their normal endpoint cache policy.
 
-Rejected FeatureServer `POST` writes to `addFeatures`, `updateFeatures`,
-`deleteFeatures` and `applyEdits` return the actual HTTP failure status alongside
-the existing Esri JSON error envelope. For example, an API-key authentication
-failure returns HTTP 401 with Esri body code 499. Native editing clients can then
-detect the failed save and retain their edit buffer for correction and retry.
-Read operations keep their existing protocol error formatting.
-
 An endpoint may retain `private` and a freshness lifetime alongside `no-store`;
 `no-store` takes precedence and prohibits storing the response. `Vary` and ETags
 alone cannot protect revocation: a revoked credential still has the same bytes,

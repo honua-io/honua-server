@@ -19,54 +19,8 @@ public sealed class VersionManagementServiceInfo
     /// <summary>Default version name (always the implicit DEFAULT version).</summary>
     public string DefaultVersionName { get; init; } = "sde.DEFAULT";
 
-    /// <summary>Operation-specific capability flags defined by the version-management wire contract.</summary>
-    public VersionManagementCapabilities Capabilities { get; init; } = new();
-}
-
-/// <summary>
-/// Version-management capabilities. These describe the adapter's supported request options,
-/// not a claim that the service is an ArcGIS Server or that every native client is certified.
-/// </summary>
-public sealed class VersionManagementCapabilities
-{
-    /// <summary>Reconcile supports conflicts detected by attribute.</summary>
-    public bool SupportsConflictDetectionByAttribute { get; init; } = true;
-
-    /// <summary>Post supports a subset of rows.</summary>
-    public bool SupportsPartialPost { get; init; }
-
-    /// <summary>Differences supports comparing historical moments.</summary>
-    public bool SupportsDifferencesFromMoment { get; init; }
-
-    /// <summary>Differences supports filtering by layer.</summary>
-    public bool SupportsDifferencesWithLayers { get; init; }
-
-    /// <summary>Reconcile supports asynchronous jobs.</summary>
-    public bool SupportsAsyncReconcile { get; init; } = true;
-
-    /// <summary>Post supports asynchronous jobs.</summary>
-    public bool SupportsAsyncPost { get; init; } = true;
-
-    /// <summary>Differences supports asynchronous jobs.</summary>
-    public bool SupportsAsyncDifferences { get; init; }
-
-    /// <summary>Differences and conflicts support an output spatial reference.</summary>
-    public bool SupportsOutSR { get; init; }
-
-    /// <summary>The partialPost operation is available.</summary>
-    public bool SupportsPartialPostOperation { get; init; }
-
-    /// <summary>Version infos supports a name filter.</summary>
-    public bool SupportsVersionInfosNameFilter { get; init; }
-
-    /// <summary>Version sessions implement multiple-reader, single-writer locking.</summary>
-    public bool SupportsMultipleReadersSingleWriterLocking { get; init; }
-
-    /// <summary>Lock infos and the locks resource are available.</summary>
-    public bool SupportsLockInfos { get; init; }
-
-    /// <summary>Create supports branching at a historical moment.</summary>
-    public bool SupportsCreateWithMoment { get; init; }
+    /// <summary>Capability list advertised for the version-management surface.</summary>
+    public string Capabilities { get; init; } = "Create,Delete,Alter,Reconcile,Post";
 }
 
 /// <summary>
@@ -218,12 +172,6 @@ public sealed class ReconcileResponse
     /// </summary>
     public bool Posted { get; init; }
 
-    /// <summary>Protocol field indicating whether the requested post committed.</summary>
-    public bool DidPost => Posted;
-
-    /// <summary>Epoch milliseconds when the reconcile operation completed.</summary>
-    public long Moment { get; init; }
-
     /// <summary>Net feature changes replayed onto DEFAULT when <see cref="Posted"/> is true; 0 otherwise.</summary>
     public int AppliedChanges { get; init; }
 
@@ -276,9 +224,6 @@ public sealed class PostResponse
     /// <summary>Whether the post committed.</summary>
     public bool Success { get; init; }
 
-    /// <summary>Epoch milliseconds when the post operation completed.</summary>
-    public long Moment { get; init; }
-
     /// <summary>Number of net feature changes replayed onto DEFAULT.</summary>
     public int AppliedChanges { get; init; }
 
@@ -296,8 +241,8 @@ public sealed class PostResponse
 /// </summary>
 public sealed class VersionJobResponse
 {
-    /// <summary>Terminal operation outcome; absent while the job is pending or running.</summary>
-    public bool? Success { get; init; }
+    /// <summary>Always true: the job was accepted/queried successfully (job outcome is in <see cref="Status"/>).</summary>
+    public bool Success { get; init; } = true;
 
     /// <summary>Stable job identifier; poll the job-status endpoint with this id.</summary>
     public required string JobId { get; init; }
@@ -306,27 +251,13 @@ public sealed class VersionJobResponse
     public required string Kind { get; init; }
 
     /// <summary>
-    /// Protocol lifecycle status: <c>Pending</c>, <c>InProgress</c>, <c>Completed</c>, or <c>Failed</c>.
+    /// Lifecycle status: <c>pending</c>, <c>running</c>, <c>succeeded</c>, <c>failed</c>, or
+    /// <c>lockContended</c> (another reconcile/post for the version is in progress).
     /// </summary>
     public required string Status { get; init; }
 
     /// <summary>Relative URL to poll for this job's status.</summary>
     public required string StatusUrl { get; init; }
-
-    /// <summary>Epoch milliseconds when the job was submitted.</summary>
-    public long SubmissionTime { get; init; }
-
-    /// <summary>Epoch milliseconds of the latest recorded lifecycle transition.</summary>
-    public long LastUpdatedTime { get; init; }
-
-    /// <summary>Epoch milliseconds when the operation completed; absent for active jobs.</summary>
-    public long? Moment { get; init; }
-
-    /// <summary>Whether unresolved conflicts remain.</summary>
-    public bool HasConflicts { get; init; }
-
-    /// <summary>Whether the job posted edits to DEFAULT.</summary>
-    public bool DidPost { get; init; }
 
     /// <summary>Unresolved conflicts after a reconcile (0 until a reconcile job completes).</summary>
     public int ConflictCount { get; init; }
@@ -346,19 +277,7 @@ public sealed class VersionJobResponse
     /// <summary>True when a post was refused because unresolved conflicts remain.</summary>
     public bool BlockedByConflicts { get; init; }
 
-    /// <summary>Sanitized protocol error when the operation failed; absent otherwise.</summary>
-    public VersionManagementError? Error { get; init; }
+    /// <summary>Sanitized error message when the job failed; null otherwise.</summary>
+    public string? Error { get; init; }
 }
 
-/// <summary>Version-management operation error in the documented extended-code envelope.</summary>
-public sealed class VersionManagementError
-{
-    /// <summary>Numeric operation error code.</summary>
-    public int ExtendedCode { get; init; }
-
-    /// <summary>Sanitized message suitable for a client.</summary>
-    public required string Message { get; init; }
-
-    /// <summary>Additional client-safe diagnostic details.</summary>
-    public string[] Details { get; init; } = [];
-}
