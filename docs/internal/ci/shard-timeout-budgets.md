@@ -1148,3 +1148,31 @@ supports a whole-class split of about 360s / 407s into `OGC API Maps Basic and
 Conformance` and `OGC API Maps Rendering and Records`. Both keep the **22m test /
 32m job caps**, with an exact-partition contract preserving the original suite.
 See [the rebalance evidence and registration details](shard-rebalance-5006.md).
+
+
+## October 1 Catalog/ImageServer support capacity follow-up
+
+[Trunk run 36890294472](https://github.com/honua-io/honua-server/actions/runs/36890294472/job/110464254373)
+terminated `GeoServices Catalog and ImageServer Support` after 1,081 seconds
+against its 18-minute inner cap. The uploaded timing receipt reports
+`capacity_exhausted`, output four seconds before termination and no kill
+escalation. It has no completed TRX: 18 minutes is a lower bound, not a measured
+completion time or p90. This is separate from the XML assertion repair in #5345.
+
+Increase this shard to a 30-minute test cap and a 40-minute job cap, preserving
+the policy's ten-minute artifact/upload allowance. Keep its filter, project,
+paths, concurrency and test coverage unchanged. This restores provisional
+headroom without claiming the 70% utilization target is proven; use the next
+completed timing/TRX receipt to assess that target and any later whole-class
+split. No application or Native AOT build inputs change.
+
+
+The first trailing run after #5345,
+[36912211773](https://github.com/honua-io/honua-server/actions/runs/36912211773/job/110537624367),
+passed the server image scan but failed its filesystem scan on the OWSLib
+client-tooling pin `urllib3==2.7.0` (CVE-2026-97687 and CVE-2026-97689; scanner
+fixed version2.8.0). Update both the canonical OWSLib client and OGC API
+conformance pins to [2.8.0](https://pypi.org/project/urllib3/2.8.0/), preserving
+every other pinned dependency. No scan suppression or server runtime package
+change is involved. Historical certification receipts retain their original
+client identities; new receipts must record the updated client tooling.
