@@ -19,6 +19,14 @@ internal sealed record SharingInfoResponse
     // (guarded by NoArcGisServerVersionTests).
 
     /// <summary>
+    /// Actual public portal root, including its application mount point. Native
+    /// clients use it to resolve Sharing resources without treating the token
+    /// service's <c>/sharing</c> segment as the portal root.
+    /// </summary>
+    [JsonPropertyName("owningSystemUrl")]
+    public required string OwningSystemUrl { get; init; }
+
+    /// <summary>
     /// Authentication metadata advertising token-based security and the
     /// token-issuance endpoint.
     /// </summary>

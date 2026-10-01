@@ -112,6 +112,27 @@ public sealed class SharingRestReadTests : IAsyncLifetime
     [InlineData("https", "")]
     [InlineData("https", "/arcgis")]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /sharing/rest/info")]
+    public async Task Info_Anonymous_UsesActualPortalRoot(string scheme, string prefix)
+    {
+        using var client = _fixture.CreateClient();
+        client.BaseAddress = new Uri($"{scheme}://localhost");
+        using var response = await client.GetAsync(prefix + "/sharing/rest/info?f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var expectedRoot = $"{scheme}://localhost{prefix}";
+        document.RootElement.GetProperty("owningSystemUrl").GetString().Should().Be(expectedRoot);
+        document.RootElement.GetProperty("authInfo").GetProperty("tokenServicesUrl")
+            .GetString().Should().Be(expectedRoot + "/sharing/rest/generateToken");
+        document.RootElement.TryGetProperty("currentVersion", out _).Should().BeFalse();
+        document.RootElement.TryGetProperty("fullVersion", out _).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("http", "")]
+    [InlineData("https", "")]
+    [InlineData("https", "/arcgis")]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("GET /arcgisuris.xml")]
     public async Task PortalUriList_Anonymous_UsesActualOriginAndPathBase(string scheme, string prefix)
     {
