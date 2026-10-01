@@ -27,8 +27,9 @@ internal sealed partial class OgcFeaturesGeometryServices
     private readonly ILogger<OgcFeaturesGeometryServices> _logger;
 
     // Registered scoped (per-request) and invoked sequentially within a request, so a single
-    // reused GeoJsonWriter is safe and avoids allocating one per feature conversion (PA-101).
+    // reused GeoJsonWriter and WKBReader are safe and avoids allocating one per feature conversion (PA-101).
     private readonly GeoJsonWriter _geoJsonWriter = new();
+    private readonly WKBReader _wkbReader = new();
 
     public OgcFeaturesGeometryServices(
         IGeometryService geometryService,
@@ -67,8 +68,7 @@ internal sealed partial class OgcFeaturesGeometryServices
             return null;
         }
 
-        var reader = new WKBReader();
-        var geometry = reader.Read(wkb);
+        var geometry = _wkbReader.Read(wkb);
         if (geometry == null)
         {
             return null;

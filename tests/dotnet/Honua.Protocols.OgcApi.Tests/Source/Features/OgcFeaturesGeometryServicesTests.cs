@@ -13,6 +13,7 @@ using Honua.Protocols.Ogc.Api.Features.Services;
 using Honua.Protocols.Ogc.Common;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
@@ -136,6 +137,57 @@ public sealed class OgcFeaturesGeometryServicesTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Be("Invalid geometry.");
+    }
+
+    [Theory]
+    [InlineData(AxisOrder.EastNorth)]
+    [InlineData(AxisOrder.NorthEast)]
+    public void ConvertWkbToSimpleGeometry_ReusedReaderMatchesFreshReadersAcrossFormats(AxisOrder axisOrder)
+    {
+        var sut = CreateSut();
+        var textReader = new WKTReader();
+        var formats = new[]
+        {
+            "POINT (-122.123456789 37.987654321)",
+            "POINT Z (10 20 30)",
+            "POINT M (40 50 60)",
+            "POINT ZM (1 2 3 4)",
+            "POINT EMPTY",
+            "LINESTRING (1 2, 3 4)",
+            "POLYGON ((0 0, 4 0, 4 4, 0 0))",
+            "GEOMETRYCOLLECTION (POINT (5 6), LINESTRING (7 8, 9 10))",
+            "GEOMETRYCOLLECTION EMPTY"
+        };
+        foreach (var byteOrder in new[] { ByteOrder.BigEndian, ByteOrder.LittleEndian })
+        {
+            foreach (var includeSrid in new[] { true, false })
+            {
+                foreach (var wkt in formats)
+                {
+                    var geometry = textReader.Read(wkt);
+                    geometry.SRID = includeSrid ? 3857 : 4326;
+                    var wkb = new WKBWriter(byteOrder, includeSrid, true, true).Write(geometry);
+                    var expected = CreateSut().ConvertWkbToSimpleGeometry(wkb, axisOrder);
+                    sut.ConvertWkbToSimpleGeometry(wkb, axisOrder).Should().BeEquivalentTo(expected,
+                        "parser state must not leak between endian, SRID, dimension or geometry variants");
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void ConvertWkbToSimpleGeometry_MalformedThenValid_DoesNotRetainParserState()
+    {
+        var sut = CreateSut();
+        var wkb = new WKBWriter(ByteOrder.BigEndian, true, true, true)
+            .Write(new WKTReader().Read("POINT ZM (1 2 3 4)"));
+        Action malformed = () => sut.ConvertWkbToSimpleGeometry(wkb[..^1], AxisOrder.EastNorth);
+        malformed.Should().Throw<Exception>();
+        sut.ConvertWkbToSimpleGeometry(null, AxisOrder.EastNorth).Should().BeNull();
+        sut.ConvertWkbToSimpleGeometry([], AxisOrder.EastNorth).Should().BeNull();
+        var valid = new WKBWriter(ByteOrder.LittleEndian).Write(new WKTReader().Read("POINT (5 6)"));
+        sut.ConvertWkbToSimpleGeometry(valid, AxisOrder.NorthEast).Should().BeEquivalentTo(
+            CreateSut().ConvertWkbToSimpleGeometry(valid, AxisOrder.NorthEast));
     }
 
     private static OgcFeaturesGeometryServices CreateSut()
