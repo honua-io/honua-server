@@ -23,6 +23,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.GeoJson;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
@@ -316,6 +317,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             PagedQueryResult<RawGeoJsonFeature>? pagedRawResult = null;
             PagedQueryResult<RawGeoServicesFeature>? pagedRawPointResult = null;
             GeoJsonFeature[] features = [];
+            GeoJsonFeatureBaseBuilder.PreparedSchema? featureSchema = null;
             var canUseRawGeoJsonFastPath = omitExactNumberMatched &&
                                            useNativeGeoJson &&
                                            outputAxisOrder == AxisOrder.EastNorth &&
@@ -360,7 +362,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             outputAxisOrder,
                             _geometryServices,
                             projectedProperties,
-                            links);
+                            links,
+                            featureSchema ??= new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false));
                     })
                     .ToArray();
             }
@@ -383,7 +386,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             outputAxisOrder,
                             _geometryServices,
                             projectedProperties,
-                            links);
+                            links,
+                            featureSchema ??= new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false));
                     })
                     .ToArray();
             }
@@ -406,7 +410,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             outputAxisOrder,
                             _geometryServices,
                             projectedProperties,
-                            links);
+                            links,
+                            featureSchema ??= new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false));
                     })
                     .ToArray();
             }
@@ -429,7 +434,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             outputAxisOrder,
                             _geometryServices,
                             projectedProperties,
-                            links);
+                            links,
+                            featureSchema ??= new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false));
                     })
                     .ToArray();
             }
@@ -818,14 +824,16 @@ internal sealed partial class OgcFeaturesQueryHandler(
         AxisOrder axisOrder,
         OgcFeaturesGeometryServices geometryServices,
         ImmutableHashSet<string>? projectedProperties = null,
-        ImmutableArray<Link>? links = null)
+        ImmutableArray<Link>? links = null,
+        GeoJsonFeatureBaseBuilder.PreparedSchema? schema = null)
         => OgcGeoJsonFeatureBuilder.Create(
             feature,
             resource,
             axisOrder,
             geometryServices,
             projectedProperties,
-            links: links);
+            links: links,
+            schema: schema);
 
     private static GeoJsonFeature ToOgcFeature(
         EncodedGeoJsonFeature feature,
@@ -833,14 +841,16 @@ internal sealed partial class OgcFeaturesQueryHandler(
         AxisOrder axisOrder,
         OgcFeaturesGeometryServices geometryServices,
         ImmutableHashSet<string>? projectedProperties = null,
-        ImmutableArray<Link>? links = null)
+        ImmutableArray<Link>? links = null,
+        GeoJsonFeatureBaseBuilder.PreparedSchema? schema = null)
         => OgcGeoJsonFeatureBuilder.Create(
             feature,
             resource,
             axisOrder,
             geometryServices,
             projectedProperties,
-            links: links);
+            links: links,
+            schema: schema);
 
     private static string[] ResolveCsvFieldNames(
         MetadataV2Resource resource,
@@ -1399,6 +1409,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         var numberReturned = 0;
         var hasMoreResults = false;
         var featuresSinceFlush = 0;
+        GeoJsonFeatureBaseBuilder.PreparedSchema? featureSchema = null;
         while (hasFeature)
         {
             var feature = enumerator.Current;
@@ -1416,7 +1427,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                     OgcFeatureIdentifierResolver.FormatPublicId(feature, resource),
                     outputFormat)
                 : null;
-            var ogcFeature = ToOgcFeature(feature, resource, axisOrder, geometryServices, projectedProperties, featureLinks);
+            var ogcFeature = ToOgcFeature(feature, resource, axisOrder, geometryServices, projectedProperties, featureLinks,
+                featureSchema ??= new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false));
             JsonSerializer.Serialize(writer, ogcFeature, OgcJsonContext.Default.GeoJsonFeature);
 
             numberReturned++;

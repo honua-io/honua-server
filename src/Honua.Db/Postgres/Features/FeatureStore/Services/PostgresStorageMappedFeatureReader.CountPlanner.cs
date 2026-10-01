@@ -11,8 +11,12 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class PostgresStorageMappedFeatureReader
 {
-    private bool ShouldUseSerialSourceSpatialCount(FeatureQuery query) =>
-        _preferSerialSourceSpatialCounts && CanUseScopedSourceSpatialCount(query);
+    private bool ShouldUseSerialSourceSpatialCount(FeatureQuery query, bool isAssociatedFeatureRead) =>
+        _preferSerialSourceSpatialCounts is { } preferSerial
+            ? preferSerial && CanUseScopedSourceSpatialCount(query)
+            // An omitted option only scopes counts required by an eligible bounded
+            // read. Standalone counts keep PostgreSQL planning, even with a limit.
+            : isAssociatedFeatureRead && CanUseBoundedSpatialPlan(query);
 
     private bool CanUseScopedSourceSpatialCount(FeatureQuery query) =>
         _mapping.IsSourceBacked &&

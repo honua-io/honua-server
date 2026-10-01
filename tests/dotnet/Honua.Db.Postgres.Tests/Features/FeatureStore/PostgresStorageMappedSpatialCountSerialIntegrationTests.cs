@@ -27,7 +27,7 @@ using NSubstitute;
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 [Collection("Database")]
-public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(PostgresFixture fixture) : IAsyncLifetime
+public sealed partial class PostgresStorageMappedSpatialCountSerialIntegrationTests(PostgresFixture fixture) : IAsyncLifetime
 {
     private string _schema = null!;
     private NpgsqlDataSource _source = null!;
@@ -552,6 +552,7 @@ public sealed class PostgresStorageMappedSpatialCountSerialIntegrationTests(Post
         new DefaultObjectPoolProvider().Create(new DefaultPooledObjectPolicy<Dictionary<string, object?>>()),
         CreateResource(knownGeometry, geometryType), CreateMapping(sourceBacked) with { TableName = observe ? "read_points" : "points" },
         connection: null, connectionEncryptionService: null,
+        preferSerialBoundedSpatialReads: false,
         disableJitForSourceSpatialCounts: disableJit, preferSerialSourceSpatialCounts: enabled);
 
     private static MetadataV2Resource CreateResource(bool knownGeometry, MetadataV2GeometryType geometryType = MetadataV2GeometryType.Point) => new()
