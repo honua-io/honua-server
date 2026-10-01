@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Validation;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -38,6 +39,8 @@ public sealed class LayerValidationHelpersV2Tests
         result.Resource.Should().NotBeNull();
         result.Service.Should().NotBeNull();
         result.ErrorResult.Should().BeNull();
+        result.Snapshot.Should().NotBeNull();
+        ValidatedMetadataSnapshot.Find(context, result.Resource!).Should().BeSameAs(result.Snapshot);
     }
 
     [UnitTest]
@@ -67,6 +70,7 @@ public sealed class LayerValidationHelpersV2Tests
 
         result.IsValid.Should().BeFalse();
         result.ErrorResult.Should().NotBeNull();
+        context.Features.Get<ValidatedMetadataSnapshot>().Should().BeNull();
     }
 
     [UnitTest]
@@ -98,6 +102,8 @@ public sealed class LayerValidationHelpersV2Tests
         result.IsValid.Should().BeTrue();
         result.Publication.Should().NotBeNull();
         result.Resource.Should().NotBeNull();
+        result.Snapshot.Should().NotBeNull();
+        ValidatedMetadataSnapshot.Find(context, result.Resource!).Should().BeSameAs(result.Snapshot);
     }
 
     [UnitTest]
