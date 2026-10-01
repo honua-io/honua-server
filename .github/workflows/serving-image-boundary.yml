@@ -1,52 +1,6 @@
-name: Serving Image Boundary
+name: Qualification Native AOT Image Export
 
-# Native-AOT container builds are intentionally isolated from the required,
-# lean PR Gate. Release, deploy, and nightly workflows also enforce this same
-# final-rootfs boundary; this path-filtered PR workflow supplies earlier image
-# feedback without lengthening the required merge-train floor.
-#
-# ROUTING CONTRACT (#3204). The `pull_request` trigger below is deliberately
-# limited to inputs that DEFINE the image: the three production AOT Dockerfiles,
-# the Azure Functions host assets they copy, the build context filter, the
-# in-image restore helper, the boundary verifier, its fixture harness, and this
-# workflow. Managed-source inputs (`src/**`, `eng/**`, the solution, the build
-# props, the embedded catalogs/fixtures) are NOT triggers, because they change on
-# nearly every pull request and invalidate all three variants at once - three
-# serial native builds, a ~140-minute median critical path, on every review-fix
-# push. Their evidence is placed elsewhere, and every class still has a named
-# owner before the image is published:
-#
-#   * AOT compile risk (`src/**`, `eng/**`, props, solution) -> the merge train's
-#     batch CI `aot-build` job, pre-merge, on the exact batch that lands. That
-#     job was gated on `full_ci`, which an ordinary selective batch reports as
-#     false, so it never ran on the landing path; #3204 rescoped it to the
-#     change classes it depends on. Compile risk is now paid once per batch
-#     instead of three container builds per review-fix push.
-#   * Boundary DETECTOR correctness -> `pr-gate.yml`, per PR, per push, on every
-#     clean and injected-rootfs fixture (no container build required).
-#   * Final-rootfs boundary for all three production variants -> post-merge
-#     `nightly-container-build.yml` (daily), and again in `deploy.yml`,
-#     `deploy-platform-images.yml`, and `release-bundle.yml` before any
-#     publication - each verifying the exact digest it is about to promote.
-#
-# #3204 warns that simply deleting the PR triggers would trade cost for delayed
-# defects, so nothing is deleted here: source-driven final-rootfs verification
-# moves from "every push" to "at most one night", and the pre-merge lanes above
-# keep compile and detector risk on the PR itself.
 on:
-  pull_request:
-    branches: [trunk]
-    paths:
-      - '.dockerignore'
-      - 'docker/Dockerfile.aot'
-      - 'docker/Dockerfile.lambda.aot'
-      - 'docker/Dockerfile.functions.aot'
-      - 'docker/cloud/azure-functions/**'
-      - 'scripts/docker/restore-dotnet-with-github-packages.sh'
-      - 'scripts/ci/verify-serving-image-boundary.py'
-      - 'scripts/ci/serving-image-reuse.py'
-      - 'scripts/ci/fixtures/validate-serving-image-boundary.py'
-      - '.github/workflows/serving-image-boundary.yml'
   workflow_dispatch:
 
 permissions:
@@ -54,276 +8,90 @@ permissions:
   packages: write
 
 concurrency:
-  group: serving-image-boundary-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: qualification-aot-export-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  # Impact detection is its own job so the three variant builds can fan out in
-  # parallel below. It is the only leg that needs full history for the
-  # base..head diff; the build legs take a shallow checkout of the context.
-  detect:
-    name: Detect serving-image boundary impact
+  candidate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    outputs:
-      selected: ${{ steps.impact.outputs.selected }}
-      input_digests: ${{ steps.digests.outputs.value }}
-      freshness_epoch: ${{ steps.freshness.outputs.value }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Detect serving-image boundary impact
-        id: impact
-        shell: bash
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-
-          # `selected` is the JSON array the build matrix filters on. Emitting a
-          # list rather than three booleans keeps the matrix leg's condition to a
-          # single membership test.
-          emit() {
-            local selected="" variant
-            for variant in "$@"; do
-              selected="${selected:+$selected,}\"$variant\""
-            done
-            echo "selected=[$selected]" >> "$GITHUB_OUTPUT"
-            echo "Selected serving variants: [$selected]"
-          }
-
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            # A manual run has no base ref to diff against, so it proves all three.
-            emit generic lambda functions
-            exit 0
-          fi
-
-          changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
-          printf '%s\n' "$changed"
-          generic=false
-          lambda=false
-          functions=false
-
-          # Each production AOT image publishes the same Honua.Server graph, so
-          # shared image inputs invalidate all variants. Dockerfile-only changes
-          # retain variant-level selectivity. These arms must stay identical to
-          # the trigger paths above: `scripts/ci/native-image-impact.py` parses
-          # both and fails closed when they diverge.
-          while IFS= read -r path; do
-            case "$path" in
-              .dockerignore|scripts/docker/restore-dotnet-with-github-packages.sh|scripts/ci/verify-serving-image-boundary.py|scripts/ci/serving-image-reuse.py|scripts/ci/fixtures/validate-serving-image-boundary.py|.github/workflows/serving-image-boundary.yml)
-                generic=true
-                lambda=true
-                functions=true
-                ;;
-              docker/Dockerfile.aot)
-                generic=true
-                ;;
-              docker/Dockerfile.lambda.aot)
-                lambda=true
-                ;;
-              docker/Dockerfile.functions.aot|docker/cloud/azure-functions/*)
-                functions=true
-                ;;
-            esac
-          done <<< "$changed"
-
-          chosen=()
-          if [[ "$generic" == "true" ]]; then chosen+=(generic); fi
-          if [[ "$lambda" == "true" ]]; then chosen+=(lambda); fi
-          if [[ "$functions" == "true" ]]; then chosen+=(functions); fi
-          emit ${chosen[@]+"${chosen[@]}"}
-
-      # This is the v3 content address introduced by #3331: exact selected Git
-      # tree modes and blob ids, not a branch name or commit approximation.
-      - name: Address serving-image inputs
-        id: digests
-        shell: bash
-        run: |
-          set -euo pipefail
-          value="$(python3 scripts/ci/native-image-impact.py image-input-digests --tree-ref HEAD)"
-          echo "value=${value}" >> "${GITHUB_OUTPUT}"
-          echo "Serving-image input digests: ${value}"
-
-      # Docker builds resolve mutable apt/apk repositories and, for Functions,
-      # the current .NET 10 channel. Bound successful evidence to one UTC day
-      # so a later run cannot reuse it indefinitely after upstream inputs move.
-      - name: Bound mutable-input freshness
-        id: freshness
-        shell: bash
-        run: echo "value=$(date -u +%Y-%m-%d)" >> "${GITHUB_OUTPUT}"
-
-  build-and-verify:
-    name: Build and verify ${{ matrix.description }}
-    needs: detect
-    if: needs.detect.outputs.selected != '[]'
-    runs-on: ubuntu-latest
-    # Still 180, even though a leg now builds ONE variant instead of three in
-    # series. A cold native-AOT build of a single variant has been observed not
-    # to fit in 90 minutes (nightly-container-build's build-lambda-aot carries
-    # the same ceiling for the same reason), and a timeout is self-perpetuating:
-    # buildx exports `cache-to` only after a successful build, so a killed leg
-    # leaves the next run just as cold. The ceiling is a bound, not a budget.
-    timeout-minutes: 180
-    strategy:
-      # Each leg is independent evidence for a different production image, so
-      # one variant's failure must not cancel and hide the others.
-      fail-fast: false
-      matrix:
-        include:
-          - variant: generic
-            digest_key: serving_generic
-            description: canonical native-AOT serving image
-            dockerfile: docker/Dockerfile.aot
-            tag: honua-server:aot-boundary
-            # Share the nightly/release cache for this Dockerfile and architecture.
-            cache_scope: honua-aot-amd64
-          - variant: lambda
-            digest_key: serving_lambda
-            description: Lambda native-AOT serving image
-            dockerfile: docker/Dockerfile.lambda.aot
-            tag: honua-server:lambda-aot-boundary
-            cache_scope: honua-lambda-aot-amd64
-          - variant: functions
-            digest_key: serving_functions
-            description: Azure Functions native-AOT serving image
-            dockerfile: docker/Dockerfile.functions.aot
-            tag: honua-server:functions-aot-boundary
-            cache_scope: honua-functions-aot-amd64
+    timeout-minutes: 90
     env:
-      # `matrix` is not available in a job-level `if`, so selection is applied
-      # per step. An unselected leg costs one shallow checkout instead of the
-      # 45+ minutes its build would take - cheaper than rebuilding this include
-      # table as JSON inside `detect` and hiding the variant set from review.
-      IMPACTED: ${{ contains(fromJSON(needs.detect.outputs.selected), matrix.variant) }}
-      INPUT_DIGEST: ${{ fromJSON(needs.detect.outputs.input_digests)[matrix.digest_key] }}
-      FRESHNESS_EPOCH: ${{ needs.detect.outputs.freshness_epoch }}
-      SKIP_ENABLED: ${{ vars.HONUA_SERVING_IMAGE_SKIP == 'true' }}
-      MARKER_PATH: .serving-image-verification/${{ matrix.variant }}/marker.json
+      QUALIFICATION_SOURCE: da06c51de0bc8579601fc86bc5ddcafabaed7a70
     steps:
-      # No `fetch-depth: 0` here: only `detect` diffs base..head. A build leg
-      # needs the build context, not the history.
       - uses: actions/checkout@v7
-        if: env.IMPACTED == 'true'
-
-      - name: Restore exact verification marker
-        id: verification-marker
-        if: env.IMPACTED == 'true'
-        # Evidence reuse is optional. Cache outages or corrupt archives must
-        # fall through to the authoritative build-and-verify path below.
-        continue-on-error: true
-        uses: actions/cache/restore@v6
         with:
-          path: ${{ env.MARKER_PATH }}
-          key: honua-serving-image-verification-v2-${{ env.FRESHNESS_EPOCH }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ env.INPUT_DIGEST }}
-          lookup-only: false
-
-      - name: Decide content-addressed verification reuse
-        id: reuse
-        if: env.IMPACTED == 'true'
+          ref: da06c51de0bc8579601fc86bc5ddcafabaed7a70
+      - name: Verify exact source and isolated destination
+        shell: bash
         run: |
-          python3 scripts/ci/serving-image-reuse.py decide \
-            --enabled "${SKIP_ENABLED}" \
-            --variant '${{ matrix.variant }}' \
-            --digest "${INPUT_DIGEST}" \
-            --marker "${MARKER_PATH}"
-
-      - name: Record unselected variant decision
-        if: env.IMPACTED != 'true'
-        run: |
-          cat >> "${GITHUB_STEP_SUMMARY}" <<'EOF'
-          ## Serving-image verification: `${{ matrix.variant }}`
-
-          - Input digest: `${{ env.INPUT_DIGEST }}`
-          - Decision: `not-selected`
-          - Reason: the unchanged variant was not selected by the existing impact detector
-          EOF
-
-      - name: Set up Docker Buildx
-        if: env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true'
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
-
-      - name: Log in to GHCR for build cache
-        if: env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${QUALIFICATION_SOURCE}"
+          test "${GITHUB_REF}" = refs/heads/qualification/aot-export-20261001
+          echo "CANDIDATE_IMAGE=ghcr.io/honua-io/honua-server:qualification-aot-${QUALIFICATION_SOURCE}-${GITHUB_RUN_ID}" >> "${GITHUB_ENV}"
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build ${{ matrix.description }}
-        if: env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true'
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+      - name: Build production full-profile Native AOT candidate
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: docker/Dockerfile.aot
           platforms: linux/amd64
           load: true
-          tags: ${{ matrix.tag }}
+          tags: honua-server:qualification-aot
+          build-args: |
+            HONUA_GIT_SHA=da06c51de0bc8579601fc86bc5ddcafabaed7a70
+            HONUA_BUILD_PROFILE=full
+            RUNTIME_PACKAGE_REVISION=20261001
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}
-          cache-to: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && format('type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:{0},mode=max', matrix.cache_scope) || '' }}
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-aot-amd64
           provenance: false
           sbom: false
-
-      - name: Verify ${{ matrix.description }} contents
-        if: env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true'
-        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image ${{ matrix.tag }}
-
-      - name: Smoke-test canonical serving image
-        # Only the canonical image serves HTTP; the Lambda and Azure Functions
-        # variants are invoked through their host runtimes and have no liveness
-        # endpoint to probe.
-        if: env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true' && matrix.variant == 'generic'
+      - name: Verify Native AOT serving-image boundary
+        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image honua-server:qualification-aot
+      - name: Smoke native executable
         shell: bash
         run: |
           set -euo pipefail
-          docker run -d \
-            --name honua-aot-boundary \
-            --network host \
+          docker run -d --name qualification-aot-smoke --network host \
             -e ASPNETCORE_ENVIRONMENT=Development \
             -e HONUA_SKIP_MIGRATIONS=true \
-            -e HONUA_ADMIN_PASSWORD=ci-aot-boundary-password \
+            -e HONUA_ADMIN_PASSWORD=qualification-smoke-password \
             -e Security__ConnectionEncryption__MasterKey=0123456789abcdef0123456789abcdef \
             -e ConnectionStrings__DefaultConnection='Host=127.0.0.1;Database=honua_boundary;Username=honua;Password=honua' \
-            honua-server:aot-boundary
-
+            honua-server:qualification-aot
           for attempt in {1..30}; do
             if curl --fail --silent http://localhost:8080/healthz/live >/dev/null; then
-              echo "Native-AOT serving container passed its liveness probe."
               exit 0
             fi
             sleep 2
           done
-
-          docker logs honua-aot-boundary
+          docker logs qualification-aot-smoke
           exit 1
-
-      # The marker is prepared only after every check for this variant has
-      # succeeded. For generic, that includes the HTTP smoke test above.
-      - name: Prepare successful verification marker
-        if: env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true'
+      - name: Export verified candidate without shipping aliases
+        shell: bash
         run: |
-          python3 scripts/ci/serving-image-reuse.py prepare-marker \
-            --variant '${{ matrix.variant }}' \
-            --digest "${INPUT_DIGEST}" \
-            --output "${MARKER_PATH}"
-
-      - name: Save exact verification marker
-        if: env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true'
-        # A cache-service failure after successful verification must not turn
-        # optional future reuse into a failure of the current verification.
-        continue-on-error: true
-        uses: actions/cache/save@v6
+          set -euo pipefail
+          docker tag honua-server:qualification-aot "${CANDIDATE_IMAGE}"
+          docker push "${CANDIDATE_IMAGE}"
+          mkdir -p qualification-receipt
+          docker image inspect "${CANDIDATE_IMAGE}" > qualification-receipt/image.json
+          git rev-parse HEAD > qualification-receipt/source.txt
+          git rev-parse HEAD:docker/Dockerfile.aot > qualification-receipt/production-dockerfile-blob.txt
+          docker run --rm --entrypoint dpkg-query "${CANDIDATE_IMAGE}" -W > qualification-receipt/runtime-packages.txt
+          printf '%s\n' "${CANDIDATE_IMAGE}" > qualification-receipt/image-reference.txt
+          printf '%s\n' 'HONUA_BUILD_PROFILE=full' 'RUNTIME_PACKAGE_REVISION=20261001' > qualification-receipt/build-arguments.txt
+          printf '%s\n' "Image: ${CANDIDATE_IMAGE}" 'Qualification only; HTTP oracle, merges and final measurement remain pending.' >> "${GITHUB_STEP_SUMMARY}"
+      - uses: actions/upload-artifact@v7
         with:
-          path: ${{ env.MARKER_PATH }}
-          key: honua-serving-image-verification-v2-${{ env.FRESHNESS_EPOCH }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ env.INPUT_DIGEST }}
-
-      - name: Clean up serving-image smoke container
-        if: always() && env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true' && matrix.variant == 'generic'
-        run: docker rm -f honua-aot-boundary || true
+          name: qualification-aot-receipt-${{ github.run_id }}
+          path: qualification-receipt/
+          if-no-files-found: error
+      - name: Clean exact smoke container
+        if: always()
+        run: docker rm -f qualification-aot-smoke || true
