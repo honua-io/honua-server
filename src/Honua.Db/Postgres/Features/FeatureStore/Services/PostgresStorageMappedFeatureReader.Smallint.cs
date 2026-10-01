@@ -100,6 +100,14 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         try
         {
             var connection = session.Connection;
+            if (sql.NativeAttributeNames.Length > 0 &&
+                (connection.Transaction is not null || System.Transactions.Transaction.Current is not null))
+            {
+                // A caller-owned transaction cannot be rolled back/retried here.
+                // Keep its original stable JSON descriptor so external source DDL
+                // does not introduce a new prepared-result failure in that scope.
+                sql = BuildFeatureSelectCore(query, probeLimit, comparison: null, useNativeAttributes: false);
+            }
             var useSerialPlan = allowSerialPlan && connection.Transaction is null && ShouldUseSerialSpatialPlan(query);
             for (var attempt = 0; ; attempt++)
             {
