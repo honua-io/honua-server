@@ -509,7 +509,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 return Results.Bytes(payload, contentType);
             }
 
-            var response = OgcGeoJsonFeatureBuilder.CreateCollection(features, queryTotalCount, links);
+            var response = OgcGeoJsonFeatureBuilder.CreateCollectionWithOwnedFeatures(features, queryTotalCount, links);
 
             if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
             {
