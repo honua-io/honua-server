@@ -1176,3 +1176,14 @@ conformance pins to [2.8.0](https://pypi.org/project/urllib3/2.8.0/), preserving
 every other pinned dependency. No scan suppression or server runtime package
 change is involved. Historical certification receipts retain their original
 client identities; new receipts must record the updated client tooling.
+
+The independent review of this repair at `c89c4db32f59942a47e742a7a9f019078ba01327`
+posted a clean exact-head attestation and returned `verdict=clean`. Its evidence
+checker confirmed exactly one clean attestation, then failed in
+[review run36915468887](https://github.com/honua-io/honua-server/actions/runs/36915468887/job/110548345559)
+because GitHub CLI rejects combining `--slurp` and `--jq`. Pipe the complete
+paginated JSON to external jq instead, preserving the trusted application ID,
+latest-check selection and fail-closed handling. The regression fixture executes
+the workflow's real expression against separate pages, newer failures, foreign
+applications, unrelated checks, missing checks and malformed JSON. No review or
+merge admission requirement is relaxed.

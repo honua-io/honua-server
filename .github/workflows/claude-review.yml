@@ -747,7 +747,7 @@ jobs:
           echo "eligible=true" >> "${GITHUB_OUTPUT}"
 
           pr_gate_green="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD}/check-runs" --paginate --slurp \
-            --jq '[.[].check_runs[] | select(.name == "PR Gate" and .app.id == 15368)]
+            | jq '[.[].check_runs[] | select(.name == "PR Gate" and .app.id == 15368)]
                   | sort_by(.started_at) | last | .conclusion == "success"')"
           if [ "${pr_gate_green}" != "true" ]; then
             echo "::notice::PR Gate is not green for ${HEAD}; train nudge skipped."
