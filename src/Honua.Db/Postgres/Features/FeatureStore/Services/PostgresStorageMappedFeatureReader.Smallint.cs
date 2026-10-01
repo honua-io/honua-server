@@ -115,6 +115,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
                 if (guardedReader.GetBoolean(0))
                 {
                     await AdvanceToSmallintFeaturesAsync(guardedReader, useSerialPlan, cancellationToken).ConfigureAwait(false);
+                    session.NativeAttributes = BindNativeAttributeDecoder(sql, guardedReader);
                     return session;
                 }
 
@@ -160,6 +161,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
                 session.Reader = await session.Command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             }
 
+            session.NativeAttributes = BindNativeAttributeDecoder(sql, session.Reader!);
             return session;
         }
         catch
@@ -177,6 +179,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         public NpgsqlCommand? Command { get; set; }
         public NpgsqlBatch? Batch { get; set; }
         public NpgsqlDataReader? Reader { get; set; }
+        public NativeAttributeDecoder? NativeAttributes { get; set; }
 
         public async ValueTask DisposeQueryAsync()
         {
@@ -184,6 +187,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
             var batch = Batch;
             var command = Command;
             Reader = null;
+            NativeAttributes = null;
             Batch = null;
             Command = null;
             try
