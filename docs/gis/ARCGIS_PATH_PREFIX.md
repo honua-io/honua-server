@@ -22,6 +22,14 @@ branch-version recognition, or desktop certification. Those behaviors require
 separate native client receipts. Root and prefixed requests use the same existing
 error envelopes and HTTP status contracts.
 
+Native portal discovery also exposes `/arcgisuris.xml` at either mount point.
+The XML uses the legacy `ArcGISOnlineURIList` element name, identifies the service
+as Honua, and advertises its actual base URL and Sharing info ping endpoint.
+It advertises `Secure` only when the resolved public base URL is HTTPS. Account,
+password-recovery, update and Esri basemap links are not advertised. The route
+uses the same configuration and entitlement gate as the Sharing read surface.
+This bootstrap document alone does not establish native sign-in compatibility.
+
 The alias does not implement missing routing tools.
 `arcpy.nax.Route` and `ServiceArea` still require the ready-to-use GP tool contracts
 tracked in [#5192](https://github.com/honua-io/honua-server/issues/5192).

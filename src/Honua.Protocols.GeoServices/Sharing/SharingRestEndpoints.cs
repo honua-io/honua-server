@@ -4,6 +4,8 @@
 using System.Globalization;
 using System.Net;
 using System.Security.Claims;
+using System.Text;
+using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -125,6 +127,16 @@ public static class SharingRestEndpoints
     /// <returns>The original builder, to support fluent chaining.</returns>
     private static IEndpointRouteBuilder MapSharingRestReadEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet("/arcgisuris.xml", HandlePortalUriList)
+            .WithDisplayName("ArcGIS Portal URI Discovery")
+            .WithName("SharingPortalUriList")
+            .WithSummary("Portal base URI discovery for native ArcGIS clients")
+            .WithTags("GeoServices Sharing")
+            .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
+            .Produces(StatusCodes.Status200OK, contentType: "application/xml")
+            .Produces(StatusCodes.Status404NotFound);
+
         endpoints.MapGet("/sharing/rest/info", HandleInfoAsync)
             .WithDisplayName("ArcGIS Portal Sharing Info")
             .WithName("SharingRestInfo")
@@ -194,6 +206,26 @@ public static class SharingRestEndpoints
             .Produces(StatusCodes.Status404NotFound);
 
         return endpoints;
+    }
+
+    private static IResult HandlePortalUriList(HttpContext context, ILogger<SharingRestLog> logger)
+    {
+        var gate = GateReadSurface(context, null, logger);
+        if (gate is not null)
+        {
+            return gate;
+        }
+
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/') + "/";
+        var document = new XElement("ArcGISOnlineURIList",
+            new XElement("Name", "Honua"), new XElement("Base", baseUrl),
+            new XElement("PingTest", baseUrl + "sharing/rest/info?f=json"));
+        if (Uri.TryCreate(baseUrl, UriKind.Absolute, out var address) && address.Scheme == Uri.UriSchemeHttps)
+        {
+            document.Add(new XElement("Secure", baseUrl));
+        }
+
+        return Results.Content(document.ToString(SaveOptions.DisableFormatting), "application/xml", Encoding.UTF8);
     }
 
     private static async Task<IResult> HandleGenerateTokenAsync(
