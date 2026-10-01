@@ -57,11 +57,14 @@ public sealed class AwsBatchRequestCancellationTests
         var job = new ExecutionJobRecord
         {
             OperationId = "handoff-cancelled-request",
-            Status = ExecutionJobStatus.Running,
+            Status = operation == "submit" ? ExecutionJobStatus.Provisioning : ExecutionJobStatus.Running,
             PercentComplete = 37,
-            ProviderOperationId = operation is "discover" or "cancel-discovery"
-                ? AwsBatchComputeBackend.PendingSubmissionMarkerPrefix + "original-job-name"
-                : "original-provider-job",
+            ProviderOperationId = operation switch
+            {
+                "submit" => null,
+                "discover" or "cancel-discovery" => AwsBatchComputeBackend.PendingSubmissionMarkerPrefix + "original-job-name",
+                _ => "original-provider-job"
+            },
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
             Spec = new ExecutionJobSpec
