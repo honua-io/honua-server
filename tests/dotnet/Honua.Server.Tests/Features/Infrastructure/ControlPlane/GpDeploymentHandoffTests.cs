@@ -85,6 +85,109 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
     }
 
     [IntegrationTheory]
+    [InlineData("rc.3", "rc.4", false)]
+    [InlineData("rc.4", "rc.3", false)]
+    [InlineData("rc.3", "rc.4", true)]
+    [InlineData("rc.4", "rc.3", true)]
+    public async Task BatchHandoff_AcceptedSubmissionLosesResponse_RecoversOnce(
+        string sourceRevision, string targetRevision, bool hostStops)
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisExecutionJobStore(connection, NullLogger<RedisExecutionJobStore>.Instance);
+        var queue = new RedisJobQueue(connection, store, NullLogger<RedisJobQueue>.Instance);
+        var client = Substitute.For<IAwsBatchJobClient>();
+        using var shutdown = new CancellationTokenSource();
+        const string providerId = "accepted-before-switch";
+        AwsBatchJobSubmission? accepted = null;
+        client.SubmitJobAsync(Arg.Any<AwsBatchJobSubmission>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                accepted = call.Arg<AwsBatchJobSubmission>();
+                if (hostStops)
+                {
+                    shutdown.Cancel();
+                }
+                // The provider accepted the request; its response was lost to a transport
+                // deadline or host shutdown. Neither outcome proves provider rejection.
+                return Task.FromException<AwsBatchSubmitResult>(new TaskCanceledException("Submission response lost."));
+            });
+        client.ListJobsByNameAsync("queue", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                call.ArgAt<string>(1).Should().Be(accepted!.JobName);
+                return Task.FromResult<IReadOnlyList<AwsBatchJobState>>(
+                    [new AwsBatchJobState { JobId = providerId, Status = "RUNNABLE" }]);
+            });
+        var sourceBackend = new AwsBatchComputeBackend(client, NullLogger<AwsBatchComputeBackend>.Instance);
+        var targetBackend = new AwsBatchComputeBackend(client, Options.Create(new AwsBatchExecutionOptions
+        {
+            JobDefinitions = [new AwsBatchJobDefinitionContractOptions { JobDefinition = targetRevision, MaxSupportedContractVersion = 1 }]
+        }), NullLogger<AwsBatchComputeBackend>.Instance);
+        var progress = Substitute.For<IUniversalProgressStore>();
+        var source = new ExecutionJobReconciler(store, [sourceBackend], progress, NullLogger<ExecutionJobReconciler>.Instance);
+        var target = new ExecutionJobReconciler(store, [targetBackend], progress, NullLogger<ExecutionJobReconciler>.Instance);
+        var local = CreateJob(sourceRevision, targetRevision);
+        var job = local with
+        {
+            Spec = local.Spec with
+            {
+                Backend = sourceBackend.BackendName,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Parameters = new Dictionary<string, string>(local.Spec.Parameters)
+                {
+                    [AwsBatchParameterKeys.JobDefinitionArn] = sourceRevision,
+                    [AwsBatchParameterKeys.JobQueueArn] = "queue"
+                }
+            }
+        };
+        (await store.TryCreateAsync(job)).Should().BeTrue();
+        await source.ReconcileExecutionJobAsync(job.OperationId, shutdown.Token);
+        var interrupted = (await store.GetAsync(job.OperationId))!;
+        interrupted.Status.Should().Be(hostStops ? ExecutionJobStatus.Provisioning : ExecutionJobStatus.Queued);
+        interrupted.CompletedAt.Should().BeNull();
+        accepted!.JobDefinition.Should().Be(sourceRevision);
+        await target.ReconcileExecutionJobAsync(job.OperationId);
+        var recovered = (await store.GetAsync(job.OperationId))!;
+        recovered.ProviderOperationId.Should().Be(providerId);
+        recovered.Status.Should().Be(ExecutionJobStatus.Queued);
+
+        var executor = new HeldCentroidExecutor();
+        var callback = new TerminalRecorder();
+        using var worker = CreateWorker(queue, store, executor, callback);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            await queue.EnqueueAsync(job.OperationId);
+            await worker.StartAsync(CancellationToken.None);
+            await executor.Started.Task.WaitAsync(deadline.Token);
+            executor.Release.TrySetResult();
+            var terminal = await callback.Completed.Task.WaitAsync(deadline.Token);
+            AssertCentroid(terminal, expectedAttempts: hostStops ? 1 : 2);
+            terminal.ProviderOperationId.Should().Be(providerId);
+            terminal.Spec.Parameters[AwsBatchParameterKeys.JobDefinitionArn].Should().Be(sourceRevision);
+            var version = (await store.GetAsync(job.OperationId))!.Version;
+            await target.ReconcileExecutionJobAsync(job.OperationId);
+            await source.ReconcileExecutionJobAsync(job.OperationId);
+            (await store.GetAsync(job.OperationId))!.Version.Should().Be(version);
+            await queue.EnqueueAsync(job.OperationId);
+            (await queue.TryClaimAsync("duplicate-delivery")).Should().BeNull();
+            (await queue.GetQueueDepthAsync()).Should().Be(0);
+            executor.Executions.Should().Be(1);
+            callback.Count.Should().Be(1);
+            await client.Received(1).SubmitJobAsync(Arg.Any<AwsBatchJobSubmission>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            await client.Received(1).ListJobsByNameAsync("queue", accepted.JobName, Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            await client.DidNotReceiveWithAnyArgs().CancelJobAsync(default!, default!, default);
+            await client.DidNotReceiveWithAnyArgs().TerminateJobAsync(default!, default!, default);
+        }
+        finally
+        {
+            executor.Release.TrySetResult();
+            await worker.StopAsync(deadline.Token);
+            await queue.RemoveAsync(job.OperationId);
+        }
+    }
+
+    [IntegrationTheory]
     [InlineData("rc.3", "rc.4")]
     [InlineData("rc.4", "rc.3")]
     public async Task BatchHandoff_ReplacementControllerRetainsOriginalWorkerAndOutput(string sourceRevision, string targetRevision)
