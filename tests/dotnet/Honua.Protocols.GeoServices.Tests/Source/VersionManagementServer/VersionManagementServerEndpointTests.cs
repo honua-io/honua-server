@@ -52,7 +52,23 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("defaultVersionName").GetString().Should().Be("sde.DEFAULT");
-        doc.RootElement.GetProperty("capabilities").GetString().Should().Contain("Create");
+        var capabilities = doc.RootElement.GetProperty("capabilities");
+        capabilities.ValueKind.Should().Be(JsonValueKind.Object,
+            "VersionManagementServer capabilities use named boolean flags, not a FeatureServer operation list");
+        capabilities.GetProperty("supportsConflictDetectionByAttribute").GetBoolean().Should().BeTrue();
+        capabilities.GetProperty("supportsAsyncReconcile").GetBoolean().Should().BeTrue();
+        capabilities.GetProperty("supportsAsyncPost").GetBoolean().Should().BeTrue();
+        foreach (var unsupported in new[]
+                 {
+                     "supportsPartialPost", "supportsDifferencesFromMoment", "supportsDifferencesWithLayers",
+                     "supportsAsyncDifferences", "supportsOutSR", "supportsPartialPostOperation",
+                     "supportsVersionInfosNameFilter", "supportsMultipleReadersSingleWriterLocking",
+                     "supportsLockInfos", "supportsCreateWithMoment"
+                 })
+        {
+            capabilities.GetProperty(unsupported).GetBoolean().Should().BeFalse(
+                "the discovery response must not advertise an unimplemented operation");
+        }
     }
 
     [IntegrationTest]
@@ -67,6 +83,8 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         using var post = await PostFormAsync(
             $"/rest/services/{BranchVersioningPublicationFixture.ServiceName}/VersionManagementServer", ("f", "json"));
         await BranchVersioningPublicationFixture.AssertVersionManagementSuccessAsync(get, post);
+        using var doc = JsonDocument.Parse(await post.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("capabilities").ValueKind.Should().Be(JsonValueKind.Object);
     }
 
     [IntegrationTest]
