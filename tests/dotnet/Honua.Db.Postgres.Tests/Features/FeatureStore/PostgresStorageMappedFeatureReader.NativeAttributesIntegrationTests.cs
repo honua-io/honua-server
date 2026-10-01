@@ -247,7 +247,7 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task ReadFeatures_AutoPreparedNativeDrift_InCallerTransaction_IsNotRetried(bool ambient)
+    public async Task ReadFeatures_AutoPreparedNativeDrift_InCallerTransaction_UsesStableDescriptor(bool ambient)
     {
         var settings = NativeAutoPrepareSettings();
         var connectionProvider = new FixtureConnectionProvider(settings.ConnectionString);
@@ -258,20 +258,27 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
         }
         await AssertNativeAutoPreparedAsync(settings.ConnectionString);
         await _fixture.ExecuteAsync($"ALTER TABLE {_schema}.cities ALTER COLUMN population TYPE bigint;");
+        var expected = await NativeAttributeOracleAsync([]);
         if (ambient)
         {
             using var scope = new System.Transactions.TransactionScope(System.Transactions.TransactionScopeAsyncFlowOption.Enabled);
-            var read = () => provider.QueryPageAsync(1, new FeatureQuery { Limit = 10 });
-            (await read.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.FeatureNotSupported);
+            AssertNativeAttributeOracle(await ReadNativeFeaturesAsync(provider, streaming: false), expected);
+            await using var lease = await connectionProvider.OpenNpgsqlConnectionAsync();
+            await using var command = new NpgsqlCommand("SELECT 1", lease);
+            (await command.ExecuteScalarAsync()).Should().Be(1);
+            scope.Complete();
         }
         else
         {
-            var read = async () => await PostgresMutationTransaction.ExecuteAsync(connectionProvider, async () =>
+            await PostgresMutationTransaction.ExecuteAsync(connectionProvider, async () =>
             {
-                await provider.QueryPageAsync(1, new FeatureQuery { Limit = 10 });
+                AssertNativeAttributeOracle(await ReadNativeFeaturesAsync(provider, streaming: false), expected);
+                await using var lease = await connectionProvider.OpenNpgsqlConnectionAsync();
+                lease.Transaction.Should().NotBeNull();
+                await using var command = new NpgsqlCommand("SELECT 1", lease);
+                (await command.ExecuteScalarAsync()).Should().Be(1);
                 return true;
             }, _ => true, CancellationToken.None);
-            (await read.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.FeatureNotSupported);
         }
     }
 
