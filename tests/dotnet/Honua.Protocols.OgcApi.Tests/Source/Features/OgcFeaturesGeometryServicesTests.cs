@@ -11,6 +11,7 @@ using Honua.Infrastructure.Services;
 using Honua.Protocols.Ogc.Api.Features.Models;
 using Honua.Protocols.Ogc.Api.Features.Services;
 using Honua.Protocols.Ogc.Common;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.IO;
@@ -139,7 +140,7 @@ public sealed class OgcFeaturesGeometryServicesTests
         result.ErrorMessage.Should().Be("Invalid geometry.");
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(AxisOrder.EastNorth)]
     [InlineData(AxisOrder.NorthEast)]
     public void ConvertWkbToSimpleGeometry_ReusedReaderMatchesFreshReadersAcrossFormats(AxisOrder axisOrder)
@@ -175,7 +176,7 @@ public sealed class OgcFeaturesGeometryServicesTests
         }
     }
 
-    [Fact]
+    [UnitTest]
     public void ConvertWkbToSimpleGeometry_MalformedThenValid_DoesNotRetainParserState()
     {
         var sut = CreateSut();
