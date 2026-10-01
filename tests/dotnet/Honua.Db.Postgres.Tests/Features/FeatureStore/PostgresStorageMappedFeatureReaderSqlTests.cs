@@ -370,9 +370,15 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(CreateReader(CreateResource()), [query, false])!.ToString()!;
 
-        sql.Should().Contain(distinct
-            ? "(jsonb_build_object($1::text, \"name\"))::text AS attributes"
-            : "(jsonb_build_object($1::text, \"name\")) AS attributes");
+        if (distinct)
+        {
+            sql.Should().Contain("(jsonb_build_object($1::text, \"name\"))::text AS attributes")
+                .And.NotContain("__honua_native_attribute_");
+        }
+        else
+        {
+            sql.Should().Contain(" AS attributes").And.NotContain(")::text AS attributes");
+        }
     }
 
     [UnitTest]
