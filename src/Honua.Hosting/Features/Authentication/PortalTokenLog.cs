@@ -25,8 +25,15 @@ internal static partial class PortalTokenLog
     public static partial void TokenIssuanceRejected(ILogger logger, string reason);
 
     [LoggerMessage(EventId = 7003, Level = LogLevel.Warning,
-        Message = "Portal token validation rejected: token {TokenHash} binding {ClientType} did not match request binding.")]
-    public static partial void BindingMismatch(ILogger logger, string clientType, string tokenHash);
+        Message = "Portal token validation rejected: token {TokenHash} binding {ClientType} did not match request binding " +
+                  "(present {RequestBindingPresent}, issued {IssuedBindingHash}, request {RequestBindingHash}).")]
+    public static partial void BindingMismatch(
+        ILogger logger,
+        string clientType,
+        string tokenHash,
+        bool requestBindingPresent,
+        string issuedBindingHash,
+        string requestBindingHash);
 
     [LoggerMessage(EventId = 7004, Level = LogLevel.Warning,
         Message = "Portal token store could not persist distributed cache entry {KeyHash}.")]
