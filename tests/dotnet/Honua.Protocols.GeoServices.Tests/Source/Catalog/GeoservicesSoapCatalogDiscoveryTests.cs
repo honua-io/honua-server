@@ -24,8 +24,25 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 
 [Protocol(TestProtocols.GeoservicesCatalog)]
-public sealed class GeoservicesSoapCatalogDiscoveryTests
+public sealed class GeoservicesSoapCatalogDiscoveryTests : IClassFixture<GeoservicesSoapCatalogDiscoveryTests.PublicCatalogFixture>
 {
+    private readonly PublicCatalogFixture _publicCatalog;
+
+    public GeoservicesSoapCatalogDiscoveryTests(PublicCatalogFixture publicCatalog) => _publicCatalog = publicCatalog;
+
+    /// <summary>
+    /// Shares a host for SOAP argument-binding cases that read an identical public catalog.
+    /// Authorization and host-configuration cases retain their own factories.
+    /// </summary>
+    public sealed class PublicCatalogFixture : IAsyncLifetime
+    {
+        public WebApplicationFactory<Program> Factory { get; } = CreateFactory(CreatePublicCatalog());
+
+        public Task InitializeAsync() => Task.CompletedTask;
+
+        public Task DisposeAsync() => Factory.DisposeAsync().AsTask();
+    }
+
     private static readonly string[] _publishedTypes = ["FeatureServer", "MapServer", "GPServer", "VectorTileServer"];
 
     private const string ArcGisSoapNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
@@ -321,8 +338,7 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
     [Endpoint("POST /services")]
     public async Task PostSoapCatalog_ArcGisPro371CapturedGetServiceDescriptionsEx_ReturnsServiceDescriptions()
     {
-        using var factory = CreateFactory(CreatePublicCatalog());
-        using var client = factory.CreateClient();
+        using var client = _publicCatalog.Factory.CreateClient();
         using var baseline = await PostSoapAsync(client);
         var expected = ReadSoapEntries(XDocument.Parse(await baseline.Content.ReadAsStringAsync()));
         expected.Should().NotBeEmpty();
@@ -358,8 +374,7 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
         string operation,
         string? expectedFault)
     {
-        using var factory = CreateFactory(CreatePublicCatalog());
-        using var client = factory.CreateClient();
+        using var client = _publicCatalog.Factory.CreateClient();
         var request = $"""
             <?xml version="1.0" encoding="utf-8" ?>
             <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="{ArcGisSoapNamespace}">
