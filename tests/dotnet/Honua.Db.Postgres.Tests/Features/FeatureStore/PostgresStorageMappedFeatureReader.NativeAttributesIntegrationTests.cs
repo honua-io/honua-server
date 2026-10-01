@@ -6,7 +6,9 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Shared.Models;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
@@ -142,6 +144,257 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
         var features = await ReadNativeFeaturesAsync(provider, streaming);
         AssertNativeAttributeOracle(features, await NativeAttributeOracleAsync([]));
         features.Select(feature => feature.Attributes["name"]).Should().Equal([1L, 2L]);
+    }
+
+    [Theory]
+    [InlineData(false, "name", "numeric", "objectid")]
+    [InlineData(true, "name", "numeric", "objectid")]
+    [InlineData(false, "population", "bigint", "population::bigint + 2147483648")]
+    [InlineData(true, "population", "bigint", "population::bigint + 2147483648")]
+    [InlineData(false, "name", "native_label_domain", "name")]
+    [InlineData(true, "name", "native_label_domain", "name")]
+    [InlineData(false, "name", "native_label_enum", "CASE WHEN objectid = 1 THEN 'open' ELSE 'closed' END")]
+    [InlineData(true, "name", "native_label_enum", "CASE WHEN objectid = 1 THEN 'open' ELSE 'closed' END")]
+    public async Task ReadFeatures_AutoPreparedNativeProjection_RecoversPhysicalTypeChanges(
+        bool streaming, string column, string physicalType, string conversion)
+    {
+        await _fixture.ExecuteAsync($"""
+            CREATE DOMAIN {_schema}.native_label_domain AS text;
+            CREATE TYPE {_schema}.native_label_enum AS ENUM ('open', 'closed');
+            """);
+        var settings = NativeAutoPrepareSettings();
+        var provider = CreateReader(connectionString: settings.ConnectionString);
+        for (var i = 0; i < 6; i++)
+        {
+            AssertNativeAttributeOracle(await ReadNativeFeaturesAsync(provider, streaming),
+                await NativeAttributeOracleAsync([]));
+        }
+        await AssertNativeAutoPreparedAsync(settings.ConnectionString);
+
+        var type = physicalType.StartsWith("native_label_", StringComparison.Ordinal)
+            ? _schema + "." + physicalType : physicalType;
+        await _fixture.ExecuteAsync($"ALTER TABLE {_schema}.cities ALTER COLUMN {column} TYPE {type} USING ({conversion})::{type};");
+        var expected = await NativeAttributeOracleAsync([]);
+        // Verify the first recovery and later executions after Npgsql replaces
+        // the invalidated auto-prepared statement, on the same physical pool.
+        for (var i = 0; i < 4; i++)
+        {
+            var features = await ReadNativeFeaturesAsync(provider, streaming);
+            features.Select(feature => feature.Id).Should().Equal(1, 2);
+            AssertNativeAttributeOracle(features, expected);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ReadFeatures_AutoPreparedNativeRecovery_DoesNotRepeatVolatileRowPolicy(
+        bool streaming, bool smallintHint)
+    {
+        await _fixture.ExecuteAsync($"""
+            ALTER TABLE {_schema}.cities ALTER COLUMN population TYPE smallint USING objectid::smallint;
+            """);
+        var role = "native_reader_" + Guid.NewGuid().ToString("N");
+        await _fixture.ExecuteAsync($"""
+            CREATE ROLE {role};
+            GRANT USAGE ON SCHEMA {_schema} TO {role};
+            GRANT SELECT ON {_schema}.cities TO {role};
+            CREATE SEQUENCE {_schema}.read_effects;
+            GRANT USAGE, SELECT ON {_schema}.read_effects TO {role};
+            ALTER TABLE {_schema}.cities ENABLE ROW LEVEL SECURITY;
+            CREATE POLICY counted ON {_schema}.cities USING (nextval('{_schema}.read_effects') > 0);
+            """);
+        try
+        {
+            var settings = NativeAutoPrepareSettings();
+            settings.Options = "-c role=" + role;
+            var provider = CreateReader(smallintHint: smallintHint, connectionString: settings.ConnectionString);
+            var query = smallintHint ? SmallintQuery("=", 1L) : new FeatureQuery { Limit = 10 };
+            for (var i = 0; i < 6; i++)
+            {
+                (await ReadNativeFeaturesAsync(provider, streaming, query)).Should().NotBeEmpty();
+            }
+            await AssertNativeAutoPreparedAsync(settings.ConnectionString);
+            await _fixture.ExecuteAsync($"ALTER TABLE {_schema}.cities ALTER COLUMN population TYPE bigint;");
+            var canonicalSettings = new NpgsqlConnectionStringBuilder(settings.ConnectionString)
+            {
+                MaxAutoPrepare = 0,
+                ApplicationName = _schema + "_native_canonical"
+            };
+            await _fixture.ExecuteAsync($"ALTER SEQUENCE {_schema}.read_effects RESTART WITH 1;");
+            var canonical = await ReadNativeFeaturesAsync(CreateReader(connectionString: canonicalSettings.ConnectionString), streaming, query);
+            var expectedEffects = await ReadEffectCountAsync();
+            expectedEffects.Should().BeGreaterThan(0);
+            for (var i = 0; i < 4; i++)
+            {
+                await _fixture.ExecuteAsync($"ALTER SEQUENCE {_schema}.read_effects RESTART WITH 1;");
+                var features = await ReadNativeFeaturesAsync(provider, streaming, query);
+                features.Select(feature => feature.Id).Should().Equal(canonical.Select(feature => feature.Id));
+                AssertNativeAttributeOracle(features, canonical.Select(feature =>
+                    feature.Attributes.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase)).ToList());
+                (await ReadEffectCountAsync()).Should().Be(expectedEffects,
+                    "cached-result recovery must not replay source rows or their volatile policy");
+            }
+        }
+        finally
+        {
+            await _fixture.ExecuteAsync($"DROP OWNED BY {role}; DROP ROLE {role};");
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReadFeatures_AutoPreparedNativeDrift_InCallerTransaction_IsNotRetried(bool ambient)
+    {
+        var settings = NativeAutoPrepareSettings();
+        var connectionProvider = new FixtureConnectionProvider(settings.ConnectionString);
+        var provider = CreateReader(connectionProvider: connectionProvider);
+        for (var i = 0; i < 6; i++)
+        {
+            (await ReadNativeFeaturesAsync(provider, streaming: false)).Should().NotBeEmpty();
+        }
+        await AssertNativeAutoPreparedAsync(settings.ConnectionString);
+        await _fixture.ExecuteAsync($"ALTER TABLE {_schema}.cities ALTER COLUMN population TYPE bigint;");
+        if (ambient)
+        {
+            using var scope = new System.Transactions.TransactionScope(System.Transactions.TransactionScopeAsyncFlowOption.Enabled);
+            var read = () => provider.QueryPageAsync(1, new FeatureQuery { Limit = 10 });
+            (await read.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.FeatureNotSupported);
+        }
+        else
+        {
+            var read = async () => await PostgresMutationTransaction.ExecuteAsync(connectionProvider, async () =>
+            {
+                await provider.QueryPageAsync(1, new FeatureQuery { Limit = 10 });
+                return true;
+            }, _ => true, CancellationToken.None);
+            (await read.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.FeatureNotSupported);
+        }
+    }
+
+    [Fact]
+    public async Task ReadFeatures_AutoPreparedNativeDrift_CancellationDoesNotExecuteRecovery()
+    {
+        var settings = NativeAutoPrepareSettings();
+        var provider = CreateReader(connectionString: settings.ConnectionString);
+        for (var i = 0; i < 6; i++)
+        {
+            (await ReadNativeFeaturesAsync(provider, streaming: false)).Should().NotBeEmpty();
+        }
+        await AssertNativeAutoPreparedAsync(settings.ConnectionString);
+        await _fixture.ExecuteAsync($"ALTER TABLE {_schema}.cities ALTER COLUMN population TYPE bigint;");
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var cancelled = () => provider.QueryPageAsync(1, new FeatureQuery { Limit = 10 }, cancellation.Token);
+        await cancelled.Should().ThrowAsync<OperationCanceledException>();
+        // The pool remains usable and the later uncancelled request still handles drift.
+        AssertNativeAttributeOracle(await ReadNativeFeaturesAsync(provider, streaming: false),
+            await NativeAttributeOracleAsync([]));
+    }
+
+    [Fact]
+    public async Task ReadFeatures_AutoPreparedNativeDrift_SerialPlanner_RestoresSessionSettings()
+    {
+        var settings = NativeAutoPrepareSettings();
+        settings.NoResetOnClose = true;
+        await using (var setup = new NpgsqlConnection(settings.ConnectionString))
+        {
+            await setup.OpenAsync();
+            await using var command = new NpgsqlCommand("SET max_parallel_workers_per_gather = 2", setup);
+            await command.ExecuteNonQueryAsync();
+        }
+        var provider = CreateReader(connectionString: settings.ConnectionString, preferSerialPlan: true);
+        var query = new FeatureQuery
+        {
+            Limit = 10,
+            SpatialFilter = new SpatialFilter
+            {
+                Geometry = [],
+                Srid = 4326,
+                SpatialRelationship = SpatialRelationship.Intersects,
+                IsSimpleEnvelope = true,
+                EnvelopeMinX = -180,
+                EnvelopeMinY = -90,
+                EnvelopeMaxX = 180,
+                EnvelopeMaxY = 90
+            }
+        };
+        for (var i = 0; i < 6; i++)
+        {
+            (await provider.QueryPageAsync(1, query)).Items.Select(feature => feature.Id).Should().Equal(1, 2);
+        }
+        await AssertNativeAutoPreparedAsync(settings.ConnectionString);
+        await _fixture.ExecuteAsync($"ALTER TABLE {_schema}.cities ALTER COLUMN population TYPE bigint;");
+        var expected = await NativeAttributeOracleAsync([]);
+        for (var i = 0; i < 4; i++)
+        {
+            AssertNativeAttributeOracle((await provider.QueryPageAsync(1, query)).Items.ToList(), expected);
+            await using var check = new NpgsqlConnection(settings.ConnectionString);
+            await check.OpenAsync();
+            await using var command = new NpgsqlCommand("SHOW max_parallel_workers_per_gather", check);
+            (await command.ExecuteScalarAsync()).Should().Be("2");
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReadFeatures_ResultTypeMessageFromRowPolicy_IsNotRetried(bool streaming)
+    {
+        var role = "native_failure_" + Guid.NewGuid().ToString("N");
+        await _fixture.ExecuteAsync($"""
+            CREATE ROLE {role};
+            GRANT USAGE ON SCHEMA {_schema} TO {role};
+            GRANT SELECT ON {_schema}.cities TO {role};
+            CREATE SEQUENCE {_schema}.read_effects;
+            GRANT USAGE, SELECT ON {_schema}.read_effects TO {role};
+            CREATE FUNCTION {_schema}.fail_policy() RETURNS boolean LANGUAGE plpgsql VOLATILE AS $$
+            BEGIN
+                PERFORM nextval('{_schema}.read_effects');
+                RAISE EXCEPTION USING ERRCODE = '0A000', MESSAGE = 'cached plan must not change result type';
+            END $$;
+            ALTER TABLE {_schema}.cities ENABLE ROW LEVEL SECURITY;
+            CREATE POLICY failure ON {_schema}.cities USING ({_schema}.fail_policy());
+            """);
+        try
+        {
+            var settings = NativeAutoPrepareSettings();
+            settings.Options = "-c role=" + role;
+            var provider = CreateReader(connectionString: settings.ConnectionString);
+            var read = () => ReadNativeFeaturesAsync(provider, streaming);
+            (await read.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.FeatureNotSupported);
+            (await ReadEffectCountAsync()).Should().Be(1,
+                "a matching message raised during row execution is not a safe revalidation retry");
+        }
+        finally
+        {
+            await _fixture.ExecuteAsync($"DROP OWNED BY {role}; DROP ROLE {role};");
+        }
+    }
+
+    private NpgsqlConnectionStringBuilder NativeAutoPrepareSettings() => new(_fixture.ConnectionString)
+    {
+        MaxAutoPrepare = 10,
+        AutoPrepareMinUsages = 2,
+        MaxPoolSize = 1,
+        ApplicationName = _schema + "_native_prepare"
+    };
+
+    private async Task AssertNativeAutoPreparedAsync(string connectionString)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("""
+            SELECT count(*) FROM pg_prepared_statements
+            WHERE position('__honua_native_attribute_' in statement) > 0
+              AND position(@schema in statement) > 0
+            """, connection);
+        command.Parameters.AddWithValue("schema", _schema);
+        ((long)(await command.ExecuteScalarAsync())!).Should().BeGreaterThan(0,
+            "this regression requires a real auto-prepared native projection");
     }
 
     [Fact]
