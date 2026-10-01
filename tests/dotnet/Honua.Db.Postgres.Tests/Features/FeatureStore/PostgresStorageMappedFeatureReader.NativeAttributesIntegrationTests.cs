@@ -49,7 +49,9 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
 
         var projected = await ReadNativeFeaturesAsync(provider, streaming, new FeatureQuery
         {
-            Limit = 10, OutFields = ["name", "population", "active"], EnforcedMaskedFields = ["POPULATION"]
+            Limit = 10,
+            OutFields = ["name", "population", "active"],
+            EnforcedMaskedFields = ["POPULATION"]
         });
         projected.Should().OnlyContain(feature => feature.Attributes.Count == 3);
         projected[0].Attributes.Keys.Should().BeEquivalentTo(["objectid", "name", "active"]);
@@ -89,7 +91,8 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
         // Actual physical types, including a boolean, override stale publication hints.
         var provider = CreateReader(additionalFields: names.Select(name => new MetadataV2Field
         {
-            Name = name, Type = MetadataV2FieldType.String
+            Name = name,
+            Type = MetadataV2FieldType.String
         }).ToArray());
         var expected = await NativeAttributeOracleAsync(names);
         var features = await ReadNativeFeaturesAsync(provider, streaming);
@@ -132,7 +135,8 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
             """);
         var settings = new NpgsqlConnectionStringBuilder(_fixture.ConnectionString)
         {
-            SearchPath = _schema + ",pg_catalog,public", Pooling = false
+            SearchPath = _schema + ",pg_catalog,public",
+            Pooling = false
         };
         var provider = CreateReader(connectionString: settings.ConnectionString);
         var features = await ReadNativeFeaturesAsync(provider, streaming);
@@ -145,7 +149,8 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
     {
         var fields = Enumerable.Range(0, 16).Select(i => new MetadataV2Field
         {
-            Name = "native_text_" + i, Type = MetadataV2FieldType.String
+            Name = "native_text_" + i,
+            Type = MetadataV2FieldType.String
         }).ToArray();
         var columns = string.Join(", ", fields.Select(field => "ADD COLUMN " + field.Name + " text"));
         var updates = string.Join(", ", fields.Select(field => field.Name + " = repeat('🌋unicode', 8)"));
@@ -219,14 +224,14 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
     private async Task<List<Feature>> ReadNativeFeaturesAsync(PostgresStorageMappedFeatureReader provider, bool streaming,
         FeatureQuery? query = null)
     {
-        query ??= new FeatureQuery { Limit = 10 };
+        var effectiveQuery = query ?? new FeatureQuery { Limit = 10 };
         if (!streaming)
         {
-            return (await provider.QueryPageAsync(1, query)).Items.ToList();
+            return (await provider.QueryPageAsync(1, effectiveQuery)).Items.ToList();
         }
 
         var features = new List<Feature>();
-        await foreach (var feature in provider.StreamFeaturesAsync(1, query))
+        await foreach (var feature in provider.StreamFeaturesAsync(1, effectiveQuery))
         {
             features.Add(feature);
         }
