@@ -121,6 +121,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         return new NativeAttributeDecoder(columns, hasJsonFallback);
     }
 
+    private static bool IsNativeCachedResultTypeChange(PostgresException exception)
+        => exception.SqlState == PostgresErrorCodes.FeatureNotSupported &&
+           string.Equals(exception.Routine, "RevalidateCachedQuery", StringComparison.Ordinal) &&
+           string.Equals(exception.File, "plancache.c", StringComparison.Ordinal) &&
+           string.Equals(exception.MessageText, "cached plan must not change result type", StringComparison.Ordinal) &&
+           string.IsNullOrEmpty(exception.Where) && string.IsNullOrEmpty(exception.InternalQuery);
+
     private enum NativeAttributeKind
     {
         JsonFallback,

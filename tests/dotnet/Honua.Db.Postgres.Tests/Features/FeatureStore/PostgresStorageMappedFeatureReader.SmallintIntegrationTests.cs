@@ -80,7 +80,11 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
         var query = new FeatureQuery { SqlFilter = new SqlFragment(filter, [value]) };
         var reader = CreateReader(smallintHint: true);
         var sql = BuildFeatureSql(reader, query);
-        sql.Should().NotContain("pg_typeof").And.Contain("::integer");
+        // Native attribute projection independently checks its physical types.
+        // The non-atomic WHERE must retain canonical integer semantics and must
+        // not acquire the smallint comparison's one-time type guard.
+        var where = sql[sql.IndexOf(" WHERE ", StringComparison.Ordinal)..];
+        where.Should().NotContain("pg_typeof").And.Contain("::integer");
         var canonical = await CreateReader().QueryPageAsync(1, query);
         var optimized = await reader.QueryPageAsync(1, query);
         optimized.Items.Select(feature => feature.Id).Should().Equal(canonical.Items.Select(feature => feature.Id));

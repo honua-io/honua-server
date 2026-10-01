@@ -101,68 +101,89 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         {
             var connection = session.Connection;
             var useSerialPlan = allowSerialPlan && connection.Transaction is null && ShouldUseSerialSpatialPlan(query);
-            if (sql.SmallintComparison is not null && connection.Transaction is null &&
-                System.Transactions.Transaction.Current is null)
+            for (var attempt = 0; ; attempt++)
             {
-                session.Batch = CreateSmallintReadBatch(connection, sql, useSerialPlan);
-                var guardedReader = await session.Batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-                session.Reader = guardedReader;
-                if (!await guardedReader.ReadAsync(cancellationToken).ConfigureAwait(false))
-                {
-                    throw new InvalidOperationException("The smallint type-verification batch returned no verdict.");
-                }
-
-                if (guardedReader.GetBoolean(0))
-                {
-                    await AdvanceToSmallintFeaturesAsync(guardedReader, useSerialPlan, cancellationToken).ConfigureAwait(false);
-                    session.NativeAttributes = BindNativeAttributeDecoder(sql, guardedReader);
-                    return session;
-                }
-
-                // The second statement's one-time guard suppresses row/RLS/volatile
-                // expression execution on stale hints. A boolean/text column can still
-                // fail operator resolution at parse time, after the first false verdict.
-                // Drain that batch before the single canonical retry. Never retry after
-                // a true verdict or a cancellation, or inside an existing transaction.
                 try
                 {
-                    await AdvanceToSmallintFeaturesAsync(guardedReader, useSerialPlan, cancellationToken).ConfigureAwait(false);
-                    if (await guardedReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                    if (sql.SmallintComparison is not null && connection.Transaction is null &&
+                        System.Transactions.Transaction.Current is null)
                     {
-                        throw new InvalidOperationException("A rejected smallint query unexpectedly returned features.");
+                        session.Batch = CreateSmallintReadBatch(connection, sql, useSerialPlan);
+                        var guardedReader = await session.Batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                        session.Reader = guardedReader;
+                        if (!await guardedReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                        {
+                            throw new InvalidOperationException("The smallint type-verification batch returned no verdict.");
+                        }
+
+                        if (guardedReader.GetBoolean(0))
+                        {
+                            await AdvanceToSmallintFeaturesAsync(guardedReader, useSerialPlan, cancellationToken).ConfigureAwait(false);
+                            session.NativeAttributes = BindNativeAttributeDecoder(sql, guardedReader);
+                            return session;
+                        }
+
+                        // The second statement's one-time guard suppresses row/RLS/volatile
+                        // expression execution on stale hints. A boolean/text column can still
+                        // fail operator resolution at parse time, after the first false verdict.
+                        // Drain that batch before the single canonical retry. Never replay
+                        // feature execution, cancellation or an existing transaction. Cached
+                        // result metadata revalidation is handled separately below.
+                        try
+                        {
+                            await AdvanceToSmallintFeaturesAsync(guardedReader, useSerialPlan, cancellationToken).ConfigureAwait(false);
+                            if (await guardedReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                            {
+                                throw new InvalidOperationException("A rejected smallint query unexpectedly returned features.");
+                            }
+                        }
+                        catch (PostgresException exception) when (
+                            exception.SqlState == PostgresErrorCodes.UndefinedFunction && !cancellationToken.IsCancellationRequested)
+                        {
+                            // PostgreSQL has rolled back the implicit batch transaction.
+                        }
+
+                        await session.DisposeQueryAsync().ConfigureAwait(false);
                     }
+
+                    if (sql.SmallintComparison is not null)
+                    {
+                        sql = BuildFeatureSelectCore(query, probeLimit, comparison: null);
+                    }
+
+                    if (useSerialPlan)
+                    {
+                        session.Batch = CreateSerialSpatialReadBatch(connection, sql);
+                        session.Reader = await session.Batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                        if (!await session.Reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
+                        {
+                            throw new InvalidOperationException("The scoped planner batch did not return feature query results.");
+                        }
+                    }
+                    else
+                    {
+                        session.Command = CreateReadCommand(connection, sql);
+                        session.Reader = await session.Command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                    }
+
+                    session.NativeAttributes = BindNativeAttributeDecoder(sql, session.Reader!);
+                    return session;
                 }
                 catch (PostgresException exception) when (
-                    exception.SqlState == PostgresErrorCodes.UndefinedFunction && !cancellationToken.IsCancellationRequested)
+                    attempt == 0 && sql.NativeAttributeNames.Length > 0 &&
+                    connection.Transaction is null && System.Transactions.Transaction.Current is null &&
+                    !cancellationToken.IsCancellationRequested && IsNativeCachedResultTypeChange(exception))
                 {
-                    // PostgreSQL has rolled back the implicit batch transaction.
-                }
-
-                await session.DisposeQueryAsync().ConfigureAwait(false);
-            }
-
-            if (sql.SmallintComparison is not null)
-            {
-                sql = BuildFeatureSelectCore(query, probeLimit, comparison: null);
-            }
-
-            if (useSerialPlan)
-            {
-                session.Batch = CreateSerialSpatialReadBatch(connection, sql);
-                session.Reader = await session.Batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-                if (!await session.Reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
-                {
-                    throw new InvalidOperationException("The scoped planner batch did not return feature query results.");
+                    // This exact top-level revalidation error occurs before the feature
+                    // executor starts. Npgsql invalidates the rejected prepared statement.
+                    // Finish the implicit rollback before one stable-JSON retry on the same
+                    // lease and already secured query; never replay a nested function error,
+                    // a caller's transaction, cancellation or an exposed feature row.
+                    await session.DisposeQueryAsync().ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    sql = BuildFeatureSelectCore(query, probeLimit, comparison: null, useNativeAttributes: false);
                 }
             }
-            else
-            {
-                session.Command = CreateReadCommand(connection, sql);
-                session.Reader = await session.Command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            session.NativeAttributes = BindNativeAttributeDecoder(sql, session.Reader!);
-            return session;
         }
         catch
         {

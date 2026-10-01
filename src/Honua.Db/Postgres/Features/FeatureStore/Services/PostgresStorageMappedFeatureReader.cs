@@ -484,7 +484,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private SqlBuilder BuildFeatureSelect(FeatureQuery query, bool probeLimit)
         => BuildFeatureSelectCore(query, probeLimit, TryGetSmallintComparison(query));
 
-    private SqlBuilder BuildFeatureSelectCore(FeatureQuery query, bool probeLimit, SmallintComparison? comparison)
+    private SqlBuilder BuildFeatureSelectCore(FeatureQuery query, bool probeLimit, SmallintComparison? comparison,
+        bool useNativeAttributes = true)
     {
         var sql = new SqlBuilder { SmallintComparison = comparison };
         // Preserve Z/M ordinates through extended WKB when the canonical query requests it (returnZ/
@@ -494,7 +495,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var geometrySelect = _geometryColumn == null
             ? "NULL"
             : $"{geometryEncoder}({BuildGeometryExpression(query)})";
-        var attributesSelect = BuildNativeAttributesProjection(query, sql) ?? BuildAttributesJsonbExpression(query, sql);
+        var nativeAttributes = useNativeAttributes ? BuildNativeAttributesProjection(query, sql) : null;
+        var attributesSelect = nativeAttributes ?? BuildAttributesJsonbExpression(query, sql);
         // DISTINCT compares and orders the text representation. Preserve that
         // contract; ordinary reads decode JSONB directly without a UTF-16 string.
         if (query.Distinct)
