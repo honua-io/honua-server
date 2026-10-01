@@ -20,13 +20,20 @@ internal sealed class PostgresFieldMaskPolicyStore : IFieldMaskPolicyStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _table;
+    private readonly string _rlsTable;
 
     public PostgresFieldMaskPolicyStore(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);
         _connectionProvider = connectionProvider;
         _table = SchemaSearchPath.QualifyTable("rbac_field_mask_policies", schemaName);
+        _rlsTable = SchemaSearchPath.QualifyTable("rbac_rls_policies", schemaName);
     }
+
+    internal string Table => _table;
+
+    internal bool HasSameCatalog(IAdoNetDatabaseConnectionProvider provider, string rlsTable)
+        => ReferenceEquals(_connectionProvider, provider) && _rlsTable == rlsTable;
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<FieldMaskPolicy>> ListPoliciesAsync(CancellationToken cancellationToken = default)

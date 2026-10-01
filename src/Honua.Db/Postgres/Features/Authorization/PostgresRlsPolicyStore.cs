@@ -16,7 +16,7 @@ namespace Honua.Db.Postgres.Features.Authorization;
 /// migration 065 so per-layer row-visibility rules survive process restart and are
 /// shared across scaled nodes.
 /// </summary>
-internal sealed class PostgresRlsPolicyStore : IRlsPolicyStore
+internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombinedReadPolicyStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _table;
