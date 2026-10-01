@@ -197,8 +197,9 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
             ALTER TABLE {_schema}.cities ALTER COLUMN population TYPE smallint USING objectid::smallint;
             """);
         var role = "native_reader_" + Guid.NewGuid().ToString("N");
+        var rolePassword = Guid.NewGuid().ToString("N");
         await _fixture.ExecuteAsync($"""
-            CREATE ROLE {role};
+            CREATE ROLE {role} LOGIN PASSWORD '{rolePassword}';
             GRANT USAGE ON SCHEMA {_schema} TO {role};
             GRANT SELECT ON {_schema}.cities TO {role};
             CREATE SEQUENCE {_schema}.read_effects;
@@ -209,14 +210,17 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
         try
         {
             var settings = NativeAutoPrepareSettings();
-            settings.Options = "-c role=" + role;
+            // Connect as the constrained role itself so pool reset cannot restore
+            // the fixture superuser and bypass the row-security regression.
+            settings.Username = role;
+            settings.Password = rolePassword;
             var provider = CreateReader(smallintHint: smallintHint, connectionString: settings.ConnectionString);
             var query = smallintHint ? SmallintQuery("=", 1L) : new FeatureQuery { Limit = 10 };
             for (var i = 0; i < 6; i++)
             {
                 (await ReadNativeFeaturesAsync(provider, streaming, query)).Should().NotBeEmpty();
             }
-            await AssertNativeAutoPreparedAsync(settings.ConnectionString);
+            await AssertNativeAutoPreparedAsync(settings.ConnectionString, role);
             await _fixture.ExecuteAsync($"ALTER TABLE {_schema}.cities ALTER COLUMN population TYPE bigint;");
             var canonicalSettings = new NpgsqlConnectionStringBuilder(settings.ConnectionString)
             {
@@ -352,8 +356,9 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
     public async Task ReadFeatures_ResultTypeMessageFromRowPolicy_IsNotRetried(bool streaming)
     {
         var role = "native_failure_" + Guid.NewGuid().ToString("N");
+        var rolePassword = Guid.NewGuid().ToString("N");
         await _fixture.ExecuteAsync($"""
-            CREATE ROLE {role};
+            CREATE ROLE {role} LOGIN PASSWORD '{rolePassword}';
             GRANT USAGE ON SCHEMA {_schema} TO {role};
             GRANT SELECT ON {_schema}.cities TO {role};
             CREATE SEQUENCE {_schema}.read_effects;
@@ -369,7 +374,10 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
         try
         {
             var settings = NativeAutoPrepareSettings();
-            settings.Options = "-c role=" + role;
+            // Connect as the constrained role itself so pool reset cannot restore
+            // the fixture superuser and bypass the row-security regression.
+            settings.Username = role;
+            settings.Password = rolePassword;
             var provider = CreateReader(connectionString: settings.ConnectionString);
             var read = () => ReadNativeFeaturesAsync(provider, streaming);
             (await read.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.FeatureNotSupported);
@@ -390,10 +398,16 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
         ApplicationName = _schema + "_native_prepare"
     };
 
-    private async Task AssertNativeAutoPreparedAsync(string connectionString)
+    private async Task AssertNativeAutoPreparedAsync(string connectionString, string? expectedRole = null)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
+        if (expectedRole is not null)
+        {
+            await using var identity = new NpgsqlCommand("SELECT current_user", connection);
+            (await identity.ExecuteScalarAsync()).Should().Be(expectedRole,
+                "pooled executions must retain the constrained RLS identity");
+        }
         await using var command = new NpgsqlCommand("""
             SELECT count(*) FROM pg_prepared_statements
             WHERE position('__honua_native_attribute_' in statement) > 0
