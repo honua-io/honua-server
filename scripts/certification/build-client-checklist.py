@@ -127,12 +127,12 @@ CUSTOMER_READINESS_GOAL = (
 # them into versioned native cases in the owning harness before freezing a claim.
 COVERAGE_GAPS = {
     "source-inventory": "Reconcile both directions: 118 capability keys and 1,306 server surfaces; the QGIS base has 117 and 1,270, with an overlay at 1,271.",
-    "native-case-crosswalk": "Map the 367 Esri operation/parameter cases and 6,767 QGIS review obligations to native child cases, shared witnesses or evidenced dispositions. Inventory counts are not test counts.",
+    "native-case-crosswalk": "Map the 367 Esri operation/parameter cases and active LTR reviews from the retained 6,767-row QGIS inventory to native child cases, shared witnesses or evidenced dispositions. QGIS 4.2.2 rows are historical only and require no certification replay. Inventory counts are not test counts.",
     "authentication": "Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows. Preserve default WFS failures, cache-disabled provider reads, Browser catalog transitions and protected-first GetFeature denial as distinct PyQGIS diagnostics. Disabling both URL-only memory caches before the first request restores catalog recovery on both installed versions; catalog visibility does not prove a denied data request. Complete retained-layer reload, other auth methods, least-privilege roles, dependent resources and authenticated project reopen on the shipping candidate; no N/A or shipping promotion.",
     "workflow-variants": "Bind schema/paging, edits/relationships/attachments, offline/versioning, imagery/tiles, processing parameters, project reopen and recovery variants to executable cases and independent oracles.",
     "native-editing": "Map single-feature, bulk and multi-layer edits to independent inputs, SQL persistence, native readback, denied commits, retained buffers and recovery. Final Debug/JIT PyQGIS diagnostics at server 64066504d2e5578ec781ef1c2722a6696a7e1084 pass 9/9 FeatureServer and 9/9 OAPIF per installed version; WFS passes 8/9 per version and retains empty-string-to-null readback failures. Separate default WFS batch diagnostics pass 5/5 per version: two-feature insert/delete, storage-rejected insert/update, atomic SQL rollback and correction/retry in the same retained buffer. These are individual single-layer requests, not a mixed editing session or a multi-layer transaction. Complete best-effort/unknown-commit, mixed-stage and concurrent-edit recovery, other geometry/CRS, scoped roles, relationships/attachments and project-reopen variants, plus the other native lanes and the frozen shipping replay. Do not count unit or historical receipt validation as fresh native acceptance.",
-    "vector-data-fidelity": "Bind fractional timestamps, empty strings versus null, provider-specific IDs/CRS, all page contents, export and cold project reopen to native children on both QGIS versions. Replay the GeoJSON timestamp fix merged in server PR5335 on the shipping candidate. Both installed GML decoders turn seven independent empty-string encodings into null while five controls match; this is decoder evidence, not a live workflow pass. Preserve the WFS data-loss failure and original oracle, review other installed native entrypoints and customer workarounds, and do not award whole-client/protocol N/A.",
-    "versions-and-licenses": "Retain QGIS 4.2.2 as a separate unresolved review target. The updated installation reports ArcPy 3.7.2/build1901 and ArcGISPro.exe 3.7.2.1904, Named User/ArcView. Treat that as a new target: keep 3.7.1 receipts historical, and bind operation-specific licenses, extensions and portal privileges before accepting a licensed skip.",
+    "vector-data-fidelity": "Bind fractional timestamps, empty strings versus null, provider-specific IDs/CRS, all page contents, export and cold project reopen to native children on QGIS/PyQGIS 3.44.14 LTR only. Replay the GeoJSON timestamp fix merged in server PR5335 on the shipping candidate. Both installed GML decoders turn seven independent empty-string encodings into null while five controls match; this is decoder evidence, not a live workflow pass. Preserve the WFS data-loss failure and original oracle, review other installed native entrypoints and customer workarounds, and do not award whole-client/protocol N/A.",
+    "versions-and-licenses": "Require only QGIS/PyQGIS 3.44.14 LTR certification. Retain 4.2.2 inventory and diagnostics as historical records without requiring certification reruns or blocking LTR acceptance. The updated installation reports ArcPy 3.7.2/build1901 and ArcGISPro.exe 3.7.2.1904, Named User/ArcView. Treat that as a new target: keep 3.7.1 receipts historical, and bind operation-specific licenses, extensions and portal privileges before accepting a licensed skip.",
     "native-versioning": "Keep the preview branch profile separate. The 367-case Esri inventory already includes an 11-case VersionManagementServer manifest: seven implemented/partial groups and four recorded gaps. Its geoservices rules wire only service metadata and list/version-info REST probes; five supported lifecycle groups remain pending. Map those grouped operations to independent native cases and repair stale descriptions, including the capability-string claim corrected by server PR5335. On server fa2c29dc4 with the experimental branch flag and Enterprise development entitlements, ArcPy 3.7.2 recognizes the remote workspace through root and /arcgis URLs, but supplied-token portal sign-in, branch-layer recognition, ListVersions and CreateVersion fail. An independent username/password replay on ba7f4ba96 fails during portal discovery before requesting token issuance, with the same later native failures. Preserve both authentication failures and ERROR 000301 as repair work; six passing REST/SQL checks on fa2c29dc4 and 57 regression tests on ba7f4ba96 do not certify native workflows or prove a license exclusion.",
     "maturity-and-profile": "Classify source maturity and selected configuration independently of client support; retain lower-priority preview/experimental work and explicit priorities 5238, 5192 and 5036.",
     "exclusion-review": "Review operation-specific N/A and skip evidence. Preserve genuine exclusions; repair harness failures. A missing fixture, disabled flag or failed connection alone proves no server implementation gap.",
@@ -229,7 +229,8 @@ MANUAL_REVIEWS = [
         ],
         "protocols": ["featureserver", "wfs", "ogc-api-features"], "lanes": ["pyqgis"],
         "finding": "Unlike the installed 3.44 provider, this WFS provider sends 1.1.0 transactions for a 2.0.0 read connection and uses geographic CRS axis order. Its transactionSuccess checks positive summary totals; it does not interpret Honua partial-failure extensions. Separate native execution verifies corrected 2D point coordinates, persistent edits, explicit rejection and retained-buffer recovery: 9/9 AFS, 9/9 OAPIF, 8/9 WFS. The remaining WFS empty-string/null failure has exact expected/observed values and unchanged SQL evidence.",
-        "next_check": "Keep best-effort/partial-result behavior outside the demonstrated single-feature profile until independently tested. Retain the empty-string failure, broaden geometry/CRS and authentication coverage, and replay native UI and Python workflows against the frozen shipping candidate. Source adaptation and unit tests cannot replace native passes.",
+        "certification_scope": "historical-only",
+        "next_check": "Retain the original 4.2.2 single-feature profile and empty-string failure as historical diagnostics. Broaden required geometry/CRS, authentication and best-effort coverage on LTR, then replay its UI and Python workflows on the frozen shipping candidate. No 4.2.2 certification replay is required.",
     },
     {
         "id": "qgis-34414-wfs-cache-and-gml", "reviewed_at": "2026-09-29",
@@ -257,7 +258,8 @@ MANUAL_REVIEWS = [
         ],
         "protocols": ["wfs"], "lanes": ["pyqgis"],
         "finding": "This installed version independently reproduces both URL-only cache paths and all seven empty-string-to-null decoder failures. Cache-disabled Browser discovery passes six public-first and seven protected-first transitions with fresh native GetCapabilities exchanges. Cache-disabled provider loading recovers valid reads, but hidden discovery prevents those invalid loads from proving an actual data-request denial; the separate protected-first default-cache control supplies that narrower proof.",
-        "next_check": "Retain version-specific source hashes, settings, native traces and terminal exits. Review the remaining reload/fidelity/UI paths, and repeat the declared configuration against the same shipping candidate used by the other lanes. No whole-client/protocol exclusion follows from these failures.",
+        "certification_scope": "historical-only",
+        "next_check": "Retain original 4.2.2 source hashes, settings, traces, failures and exits as historical diagnostics. Required reload/fidelity/UI paths and shipping replay apply to LTR only. No 4.2.2 certification replay or whole-client/protocol exclusion is required.",
     },
     {
         "id": "qgis-34414-auth-recovery", "reviewed_at": "2026-09-29",
@@ -280,7 +282,8 @@ MANUAL_REVIEWS = [
         ],
         "protocols": ["featureserver", "ogc-api-features", "wfs"], "lanes": ["pyqgis"],
         "finding": "The installed 4.2.2 source has the same URL-only WFS capabilities cache. Its separate native runs reproduce the public-first recovery failure, a successful cold authorized load, and explicit denied GetFeature responses despite a valid schema. Layer validity is not a data-authorization assertion.",
-        "next_check": "Preserve this installed version's own profiles, traces and process exits. Keep the recovery failure open, review native configuration and UI behavior, and replay all required authentication variants on the same shipping candidate used by the other lanes.",
+        "certification_scope": "historical-only",
+        "next_check": "Retain the original 4.2.2 profiles, traces, failures and process exits as historical diagnostics. No 4.2.2 certification replay is required; required authentication variants are replayed on LTR.",
     },
     {
         "id": "qgis-34414-vector-identity", "reviewed_at": "2026-09-29",
@@ -304,7 +307,8 @@ MANUAL_REVIEWS = [
         ],
         "protocols": ["ogc-api-features", "wfs"], "lanes": ["pyqgis"],
         "finding": "This installed revision independently maintains a native-FID/remote-ID mapping and exposes default OAPIF geometry as CRS84. The same empty-string/null failure was observed through its stock WFS provider; the 3.44 result must not substitute for this version's evidence.",
-        "next_check": "Keep the 4.2.2 execution/profile binding separate. Complete WFS decoder/workaround review, remote-ID editing and native UI coverage, then replay the required cases on the same shipping candidate as the other clients.",
+        "certification_scope": "historical-only",
+        "next_check": "Retain the original 4.2.2 execution/profile binding and failures as historical diagnostics. Complete required WFS decoder/workaround, remote-ID editing and UI replay on LTR; no 4.2.2 certification replay is required.",
     },
     {
         "id": "qgis-service-paths", "reviewed_at": "2026-09-28",
@@ -344,7 +348,7 @@ MANUAL_REVIEWS = [
 
 def scope_contract() -> dict:
     return {
-        "revision": "2026-09-29.7",
+        "revision": "2026-09-30.1",
         "authority": AUTHORITY_URL,
         "objective": CUSTOMER_READINESS_GOAL,
         "audit": AUDIT_URL,
@@ -366,7 +370,14 @@ def scope_contract() -> dict:
             "Published support table names tested versions, licenses, enabled features, results, evidenced exclusions, licensed skips and known limitations; preview readiness is separately reported.",
         ],
         "explicit_priority_issues": [5238, 5192, 5036],
-        "additional_version_reviews": ["QGIS 4.2.2 UI", "PyQGIS 4.2.2", "ArcGIS Pro 3.7.2.1904 UI", "ArcPy 3.7.2/build1901 (Pro executable 3.7.2.1904)"],
+        "qgis_version_policy": {
+            "declared_at": "2026-09-30", "authority": "User instruction: certify only QGIS LTR",
+            "required": ["QGIS 3.44.14 LTR UI", "PyQGIS 3.44.14 LTR"],
+            "historical_only": ["QGIS 4.2.2 UI", "PyQGIS 4.2.2"],
+            "historical_results_transfer": False,
+            "meaning": "Current-version inventory and diagnostics are retained; no 4.2.2 certification rerun is required and those records cannot block LTR acceptance.",
+        },
+        "additional_version_reviews": ["ArcGIS Pro 3.7.2.1904 UI", "ArcPy 3.7.2/build1901 (Pro executable 3.7.2.1904)"],
         "reviewed_maturity": {
             "source": "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs",
             "candidate_revision": "ab2e3ed3d58196658fbd98567de65eec4db7dc64",
