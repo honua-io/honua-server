@@ -8,6 +8,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const WORKFLOW = path.join(__dirname, '..', '..', '.github', 'workflows', 'claude-review.yml');
 const source = fs.readFileSync(WORKFLOW, 'utf8');
@@ -190,4 +191,43 @@ test('clean, green, eligible exact-head evidence does not dispatch the merge tra
   assert.match(source, /\. == "hold" or \. == "train:hold" or \. == "train:escalated"/);
   assert.doesNotMatch(source, /gh workflow run merge-train\.yml/);
   assert.doesNotMatch(source, /train_apply=true/);
+});
+
+test('review verification accepts paginated CLI output and grades the latest trusted PR Gate', () => {
+  const expression = /pr_gate_green="\$\(([\s\S]*?)\)"\n/.exec(source)?.[1];
+  assert.ok(expression, 'the workflow must grade its PR Gate evidence');
+  const run = (pages) => spawnSync('bash', ['-c', `
+    set -euo pipefail
+    gh() {
+      for argument; do
+        if [ "$argument" = '--jq' ]; then return 64; fi
+      done
+      printf '%s\\n' "$CHECK_RUN_PAGES"
+    }
+    ${expression}
+  `], {
+    encoding: 'utf8',
+    env: {
+      PATH: process.env.PATH,
+      GITHUB_REPOSITORY: 'fixture/repo', HEAD: 'a'.repeat(40),
+      CHECK_RUN_PAGES: typeof pages === 'string' ? pages : JSON.stringify(pages),
+    },
+    timeout: 10000,
+  });
+  const check = (conclusion, minute, appId = 15368, name = 'PR Gate') => ({
+    name, app: { id: appId }, conclusion,
+    started_at: `2026-10-01T19:${minute}:00Z`,
+  });
+  for (const [pages, expected] of [
+    [[{ check_runs: [check('failure', '00')] }, { check_runs: [check('success', '01')] }], 'true'],
+    [[{ check_runs: [check('success', '00')] }, { check_runs: [check('failure', '01')] }], 'false'],
+    [[{ check_runs: [check('failure', '00')] }, { check_runs: [check('success', '01', 777)] }], 'false'],
+    [[{ check_runs: [check('failure', '00'), check('success', '01', 15368, 'Other check')] }], 'false'],
+    [[{ check_runs: [] }], 'false'],
+  ]) {
+    const result = run(pages);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), expected);
+  }
+  assert.notEqual(run('invalid JSON').status, 0, 'malformed API output must fail closed');
 });
