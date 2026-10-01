@@ -54,6 +54,22 @@ public static class OgcExtensions
     public static GeoJsonFeature ToOgcGeoJsonFeature(this GeoJsonFeatureBase featureBase,
         SimpleGeoJsonGeometry? geometry = null,
         ImmutableArray<Link>? links = null)
+        => CreateOgcGeoJsonFeature(featureBase, featureBase.Properties.ToDictionary(kvp => kvp.Key, kvp => kvp.Value), geometry, links);
+
+    // Only the internal response builder may transfer its newly created dictionary.
+    // Public conversion retains its detached-copy contract for arbitrary callers.
+    internal static GeoJsonFeature ToOgcGeoJsonFeatureWithOwnedProperties(
+        this GeoJsonFeatureBase featureBase,
+        Dictionary<string, object?> properties,
+        SimpleGeoJsonGeometry? geometry,
+        ImmutableArray<Link>? links)
+        => CreateOgcGeoJsonFeature(featureBase, properties, geometry, links);
+
+    private static GeoJsonFeature CreateOgcGeoJsonFeature(
+        GeoJsonFeatureBase featureBase,
+        Dictionary<string, object?> properties,
+        SimpleGeoJsonGeometry? geometry,
+        ImmutableArray<Link>? links)
     {
         // Per RFC 7946, feature id can be a number or string.
         // Preserve the original type for round-trip fidelity.
@@ -69,7 +85,7 @@ public static class OgcExtensions
         {
             Type = "Feature",
             Id = id,
-            Properties = featureBase.Properties.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+            Properties = properties,
             Geometry = geometry,
             Links = links
         };
