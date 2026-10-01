@@ -119,25 +119,12 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
     {
         try
         {
-            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var index = snapshot.Index;
-            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var publication in index.PublicationsById.Values)
-            {
-                if (!string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                if (index.ServicesById.TryGetValue(publication.ServiceId, out var service) &&
-                    !string.IsNullOrWhiteSpace(service.Metadata.Name))
-                {
-                    names.Add(service.Metadata.Name);
-                }
-            }
-
-            return names;
+            cancellationToken.ThrowIfCancellationRequested();
+            var snapshot = ValidatedMetadataSnapshot.Find(_httpContextAccessor.HttpContext, resource)
+                ?? await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            return snapshot.Index.ServiceNamesByResource.TryGetValue(resource.Metadata.Id, out var names)
+                ? names
+                : Array.Empty<string>();
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
