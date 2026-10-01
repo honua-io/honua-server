@@ -4,6 +4,7 @@
 using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Protocols.Ogc.Classic.Wfs20.Services;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Errors;
 
@@ -14,7 +15,7 @@ public sealed class LegacyWfsTransactionAdapterTests
     private static readonly XNamespace Wfs = "http://www.opengis.net/wfs";
     private static readonly XNamespace Ogc = "http://www.opengis.net/ogc";
 
-    [Fact]
+    [UnitTest]
     public void NativeWfs10Update_PreservesFeatureIdPropertiesAndCoordinateOrder()
     {
         var source = XElement.Parse("""
@@ -39,7 +40,7 @@ public sealed class LegacyWfsTransactionAdapterTests
         source.ToString().Should().Be(before);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("-157.8,21.3,8")]
     [InlineData("-157.8,21.3,8,9")]
     public void AdditionalOrdinates_AreRejectedInsteadOfSilentlyTruncated(string coordinates)
@@ -53,7 +54,7 @@ public sealed class LegacyWfsTransactionAdapterTests
         action.Should().Throw<NotSupportedException>();
     }
 
-    [Fact]
+    [UnitTest]
     public void Wfs10Response_ReportsAssignedIdsAndSuccess()
     {
         var canonical = """
@@ -70,7 +71,7 @@ public sealed class LegacyWfsTransactionAdapterTests
         response.Descendants(Wfs + "SUCCESS").Should().ContainSingle();
     }
 
-    [Fact]
+    [UnitTest]
     public void Wfs11Geometry_KeepsGeographicAxisOrder()
     {
         var root = XElement.Parse("""
@@ -86,7 +87,7 @@ public sealed class LegacyWfsTransactionAdapterTests
         geometry.Coordinate.Y.Should().Be(21.3);
     }
 
-    [Fact]
+    [UnitTest]
     public void Wfs11Response_UsesLegacyNamespacesAndCompleteOrderedSummary()
     {
         var canonical = """
@@ -105,7 +106,7 @@ public sealed class LegacyWfsTransactionAdapterTests
         response.Descendants(Ogc + "FeatureId").Single().Attribute("fid")!.Value.Should().Be("places.43");
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("false")]
     [InlineData("unknown")]
     public void PartialOrUnknownCommit_CannotBecomeSuccess(string committed)
