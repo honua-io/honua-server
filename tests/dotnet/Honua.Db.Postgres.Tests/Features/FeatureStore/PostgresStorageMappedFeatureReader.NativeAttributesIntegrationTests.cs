@@ -257,8 +257,8 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
         return result;
     }
 
-    private static void AssertNativeAttributeOracle(IReadOnlyList<Feature> features,
-        IReadOnlyList<Dictionary<string, object?>> expected)
+    private static void AssertNativeAttributeOracle(List<Feature> features,
+        List<Dictionary<string, object?>> expected)
     {
         features.Count.Should().Be(expected.Count);
         for (var i = 0; i < features.Count; i++)
