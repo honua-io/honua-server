@@ -15,6 +15,20 @@ spec.loader.exec_module(checklist)
 
 
 class ExclusionReviewTests(unittest.TestCase):
+    def test_current_qgis_history_does_not_require_certification_replay(self):
+        scope = checklist.scope_contract()
+        policy = scope["qgis_version_policy"]
+        self.assertEqual(["QGIS 3.44.14 LTR UI", "PyQGIS 3.44.14 LTR"], policy["required"])
+        self.assertEqual(["QGIS 4.2.2 UI", "PyQGIS 4.2.2"], policy["historical_only"])
+        self.assertFalse(policy["historical_results_transfer"])
+        self.assertFalse(any("QGIS" in target for target in scope["additional_version_reviews"]))
+        archived = [r for r in scope["manual_reviews"] if r["id"].startswith("qgis-422-")]
+        self.assertEqual(4, len(archived))
+        self.assertTrue(all(r["certification_scope"] == "historical-only" for r in archived))
+        self.assertTrue(all(r["finding"] and r["url"] for r in archived))
+        self.assertEqual("QGIS 3.44.14 LTR", checklist.CLIENT_BUILDS["qgis-ui"])
+        self.assertEqual("QGIS 3.44.14 LTR", checklist.CLIENT_BUILDS["pyqgis"])
+
     def test_missing_operation_cannot_shrink_the_checklist(self):
         rows = checklist.build_rows()
         removed = rows.pop()
