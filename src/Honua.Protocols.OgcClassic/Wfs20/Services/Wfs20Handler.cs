@@ -1051,6 +1051,11 @@ internal sealed partial class Wfs20Handler
             // OutputAxisOrder applies only to GML serialization.
             const AxisOrder axisOrder = AxisOrder.EastNorth;
             var projectedProperties = GetProjectedProperties(plan.Query);
+            var buildOptions = GeoJsonFeatureBaseBuilder.PrepareOptions(plan.Descriptor.Resource,
+                new GeoJsonFeatureBuildOptions(
+                    ProjectedProperties: projectedProperties,
+                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(plan.Descriptor.Resource),
+                    IdFactory: featureId => BuildFeatureId(plan.Descriptor, featureId)));
 
             if (geoJsonFeatureStore is not null)
             {
@@ -1061,8 +1066,7 @@ internal sealed partial class Wfs20Handler
                         feature,
                         plan.Descriptor.Resource,
                         axisOrder,
-                        projectedProperties,
-                        featureId => BuildFeatureId(plan.Descriptor, featureId)));
+                        buildOptions));
                 }
 
                 continue;
@@ -1075,8 +1079,7 @@ internal sealed partial class Wfs20Handler
                     feature,
                     plan.Descriptor.Resource,
                     axisOrder,
-                    projectedProperties,
-                    featureId => BuildFeatureId(plan.Descriptor, featureId)));
+                    buildOptions));
             }
         }
 
@@ -1157,35 +1160,36 @@ internal sealed partial class Wfs20Handler
 
         var features = new List<GeoJsonFeature>();
         long? totalCount = null;
+        var buildOptions = GeoJsonFeatureBaseBuilder.PrepareOptions(descriptor.Resource,
+            new GeoJsonFeatureBuildOptions(
+                ProjectedProperties: GetProjectedProperties(query),
+                IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(descriptor.Resource),
+                IdFactory: featureId => BuildFeatureId(descriptor, featureId)));
 
         if (_featureReader is IPagedGeoJsonFeatureStore pagedGeoJsonFeatureStore)
         {
             var result = await pagedGeoJsonFeatureStore.QueryGeoJsonPageAsync(descriptor.StorageLayerId, query, cancellationToken);
             totalCount = result.TotalCount;
-            var projectedProperties = GetProjectedProperties(query);
             foreach (var feature in result.Items)
             {
                 features.Add(CreateGeoJsonFeature(
                     feature,
                     descriptor.Resource,
                     AxisOrder.EastNorth,
-                    projectedProperties,
-                    featureId => BuildFeatureId(descriptor, featureId)));
+                    buildOptions));
             }
         }
         else if (_featureReader is IPagedFeatureReader pagedFeatureReader)
         {
             var result = await pagedFeatureReader.QueryPageAsync(descriptor.StorageLayerId, query, cancellationToken);
             totalCount = result.TotalCount;
-            var projectedProperties = GetProjectedProperties(query);
             foreach (var feature in result.Items)
             {
                 features.Add(CreateGeoJsonFeature(
                     feature,
                     descriptor.Resource,
                     AxisOrder.EastNorth,
-                    projectedProperties,
-                    featureId => BuildFeatureId(descriptor, featureId)));
+                    buildOptions));
             }
         }
         else
@@ -1485,17 +1489,13 @@ internal sealed partial class Wfs20Handler
         EncodedGeoJsonFeature feature,
         MetadataV2Resource resource,
         AxisOrder axisOrder,
-        IReadOnlySet<string>? projectedProperties,
-        Func<long, object?> idFactory)
+        GeoJsonFeatureBuildOptions buildOptions)
     {
         var geometry = _geometryServices.ConvertGeoJsonToSimpleGeometry(feature.GeometryGeoJson, axisOrder);
         return GeoJsonFeatureBaseBuilder.Create(
                 feature,
                 resource,
-                new GeoJsonFeatureBuildOptions(
-                    ProjectedProperties: projectedProperties,
-                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(resource),
-                    IdFactory: idFactory))
+                buildOptions)
             .ToOgcGeoJsonFeature(geometry);
     }
 
@@ -1503,17 +1503,13 @@ internal sealed partial class Wfs20Handler
         Feature feature,
         MetadataV2Resource resource,
         AxisOrder axisOrder,
-        IReadOnlySet<string>? projectedProperties,
-        Func<long, object?> idFactory)
+        GeoJsonFeatureBuildOptions buildOptions)
     {
         var geometry = _geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
         return GeoJsonFeatureBaseBuilder.Create(
                 feature,
                 resource,
-                new GeoJsonFeatureBuildOptions(
-                    ProjectedProperties: projectedProperties,
-                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(resource),
-                    IdFactory: idFactory))
+                buildOptions)
             .ToOgcGeoJsonFeature(geometry);
     }
 

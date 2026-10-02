@@ -180,9 +180,11 @@ index.
 
 ## Bounded source-backed spatial reads
 
-`Database__PreferSerialBoundedSpatialReads=true` opts into a narrow serial-planner
-profile for source-backed PostGIS point layers. The default is `false`. Eligible
-reads have a simple intersects/envelope bbox, an effective first-page limit of
+When `Database__PreferSerialBoundedSpatialReads` is unset, Honua automatically
+uses a narrow serial-planner policy for source-backed PostGIS point layers.
+Set it to `false` to retain PostgreSQL planning for these reads, or `true` to
+explicitly enable the same bounded policy. Eligible reads have a simple
+intersects/envelope bbox, an effective first-page limit of
 1–100 features before the extra pagination probe row, default ordering (including
 the normalized ascending primary-ID sort), and no distinct, branch-version or null-geometry request.
 Unknown geometry types, ambient transactions and borrowed mutation transactions
@@ -200,8 +202,9 @@ pagination remain in effect.
 
 This profile targets parallel-worker startup overhead observed in bounded point
 bbox reads. It does not set a PostgreSQL global or session default. Benchmark
-representative selectivities and concurrent workloads on your deployment before
-enabling it; limiting returned rows does not limit the work required to find them.
+representative selectivities and concurrent workloads on your deployment;
+limiting returned rows does not limit the work required to find them. An explicit
+`false` provides a control for measuring this policy and opting out.
 
 ## Source-backed spatial counts
 
@@ -227,11 +230,25 @@ queries may benefit from JIT. Measure representative selectivities and concurren
 workloads before enabling it. Keep this tuned profile separate from shipping
 defaults in benchmark reports.
 
-`Database__PreferSerialSourceSpatialCounts=true` independently opts into serial
-execution plans for the same eligible counts. Its default is `false`. It batches
-transaction-local `max_parallel_workers_per_gather=0` with the count, without
-changing feature SELECT planning or PostgreSQL JIT unless the JIT option is also
-enabled. Explicit `EnvelopeIntersects` requests retain their existing bbox-only
+When `Database__PreferSerialSourceSpatialCounts` is unset, Honua automatically
+uses serial plans only for exact counts associated with the bounded reads
+described above. The count retains the originating query's eligibility limits:
+first page, limit 1–100, ascending primary-ID/default order, simple point bbox,
+and no distinct, branch-version or null-geometry request. Standalone counts
+retain PostgreSQL planning even if their query includes an eligible limit.
+Unbounded, larger-page and later-page reads also retain ordinary count planning.
+
+Set `Database__PreferSerialSourceSpatialCounts=false` to opt out of serial counts.
+Set it to `true` to explicitly enable serial plans for all eligible source-backed
+point bbox counts, including standalone counts and those associated with
+unbounded or later-page reads. The explicit option retains the broader
+eligibility described for count JIT suppression above.
+
+The read and count options are independent: opting out of serial feature reads
+does not opt out of automatically scoped associated counts, and vice versa.
+Serial counts batch transaction-local `max_parallel_workers_per_gather=0` with
+the count, without changing feature SELECT planning or PostgreSQL JIT unless the
+JIT option is also enabled. Explicit `EnvelopeIntersects` requests retain their existing bbox-only
 predicate; exact `Intersects` requests retain exact intersection.
 
 When both count options are enabled, both settings precede the same count in one
@@ -245,8 +262,9 @@ count setting.
 Serial counts target worker-startup overhead observed in a 100K-point SQL
 diagnostic. That experiment is not an application throughput result or evidence
 that serial execution wins for every dataset or selectivity. Validate throughput
-and tail latency under representative concurrent traffic before enabling it. No
-global database setting or migration is required, and Honua remains Native AOT.
+and tail latency under representative concurrent traffic, using an explicit
+`false` as the control. No global database setting or migration is required;
+these SQL planner policies are independent of Honua's JIT or Native AOT build.
 
 See PostgreSQL's [JIT decision documentation](https://www.postgresql.org/docs/17/jit-decision.html)
 and Npgsql's [batch transaction behavior](https://www.npgsql.org/doc/basic-usage.html#batching)

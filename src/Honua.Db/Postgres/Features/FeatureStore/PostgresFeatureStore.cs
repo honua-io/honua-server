@@ -55,9 +55,9 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     private readonly IFieldMaskSource? _fieldMaskSource;
     private readonly ILogger<PostgresStorageMappedFeatureReader>? _storageMappedReaderLogger;
     private readonly string? _managedFeatureSchema;
-    private readonly bool _preferSerialBoundedSpatialReads;
+    private readonly bool? _preferSerialBoundedSpatialReads;
     private readonly bool _disableJitForSourceSpatialCounts;
-    private readonly bool _preferSerialSourceSpatialCounts;
+    private readonly bool? _preferSerialSourceSpatialCounts;
     private readonly LayerReadSecurityResolver _readSecurity;
     private readonly PostgresBoundConnectionProvider? _boundConnectionProvider;
 
@@ -90,9 +90,9 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         IFieldMaskSource? fieldMaskSource = null,
         string? managedFeatureSchema = null,
         PostgresBoundConnectionProvider? boundConnectionProvider = null,
-        bool preferSerialBoundedSpatialReads = false,
+        bool? preferSerialBoundedSpatialReads = null,
         bool disableJitForSourceSpatialCounts = false,
-        bool preferSerialSourceSpatialCounts = false)
+        bool? preferSerialSourceSpatialCounts = null)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
