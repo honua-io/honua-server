@@ -74,10 +74,11 @@ runs. This avoids GitHub's 1,000-result cap on workflow-run searches that use a
 name rather than scanning the repository's unrelated artifacts. It reads one
 paginated repository artifact catalog and joins artifacts to trusted run IDs
 locally; it never makes one artifact-list request per run. The promotion policy
-caps the worst case at 300 run-query pages, three repository-artifact pages, and
-300 receipt downloads: 603 requests under a 650-request policy ceiling, with at
+caps the worst case at 300 run-query pages, 50 repository-artifact pages, and
+300 receipt downloads: 650 requests at the 650-request policy ceiling, with at
 least 350 requests reserved below the `GITHUB_TOKEN` limit of 1,000 per
-repository per hour. Every page must report the same total, IDs must be unique,
+repository per hour. The 50-page catalog bound (5,000 artifacts) keeps at least
+2x headroom over the 1,601-artifact retained catalog observed in #5363. Every page must report the same total, IDs must be unique,
 the complete count must fit the page bound, and the selected receipt count must
 fit the download bound. Any inconsistency or exhausted bound fails closed.
 
