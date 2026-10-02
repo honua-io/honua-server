@@ -7690,7 +7690,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 135,
+      "line": 136,
       "language": "bash"
     },
     {
