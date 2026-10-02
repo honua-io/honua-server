@@ -18,6 +18,82 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  managed-correctness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      QUALIFICATION_SOURCE: ${{ inputs.source_sha }}
+      NuGetPackageSourceCredentials_github-honua: Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }};ValidAuthenticationTypes=Basic
+    services:
+      postgres:
+        image: postgis/postgis@sha256:01a6a70e41e6c4467c8f55f6063555ed72db2d6662cd0d571040d42eadaeb6f6
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: qualification-only
+          POSTGRES_DB: honua_test
+        ports:
+          - 5432:5432
+        options: >-
+          --cpus 4 --memory 4g
+          --health-cmd "pg_isready -h 127.0.0.1 -U test -d honua_test"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+      redis:
+        image: redis@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+        ports:
+          - 6379:6379
+        options: >-
+          --cpus 1 --memory 512m
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+      - name: Verify exact merged runtime inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${QUALIFICATION_SOURCE}" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "${QUALIFICATION_SOURCE}"
+          git fetch --no-tags origin refs/heads/trunk:refs/remotes/origin/trunk
+          git merge-base --is-ancestor "${QUALIFICATION_SOURCE}" refs/remotes/origin/trunk
+          test "$(git rev-parse HEAD:src)" = "82c6005cb6184160170c61be2fb1d42124aaf795"
+          test "$(git rev-parse HEAD:eng)" = "b784c544bcebcdafd19c5990353dc7667b71cf28"
+          test "$(git rev-parse HEAD:certification)" = "e59df170ba774fd6341ba024d237525319247dac"
+          test "$(git rev-parse HEAD:docs/developer/api-specs/admin-api.json)" = "ce412eac851e8b7413db55d87de94b8fd4bff771"
+          test "$(git rev-parse HEAD:docs/gis/data/feature-catalog.json)" = "ac81abde95dc6a067c14fb4364e13d7bc3a1e256"
+          test "$(git rev-parse HEAD:tests/fixtures/ai-builder)" = "0642d1ec34f4565df0c5b5611917a0544752c298"
+          test "$(git rev-parse HEAD:Directory.Build.props)" = "687905075c9ed074c4e7fa1fdaf0de1a8dacef2a"
+          test "$(git rev-parse HEAD:Directory.Build.targets)" = "e2c297ba822937de86d1ad18662a550beddf689d"
+          test "$(git rev-parse HEAD:Directory.Packages.props)" = "205ce93e9ec0aa410fbfaa46de6bec0fd910eaa6"
+          test "$(git rev-parse HEAD:Honua.sln)" = "f99a9133d26817c585801327458f2abf8d14059e"
+          test "$(git rev-parse HEAD:NuGet.config)" = "0b382d9cd73ebbdbcb841f1c4006eaf9beb9bf47"
+          test "$(git rev-parse HEAD:.editorconfig)" = "ccb83149c6c979dd6eebc72182109d3679a4b2b2"
+          test "$(git rev-parse HEAD:.dockerignore)" = "06afa624cad7541ca187d6a17baba3eb3c5161be"
+          test "$(git rev-parse HEAD:docker/Dockerfile.aot)" = "a420627aa1d10b40e14d7978a92a1bdf48d01abc"
+          test "$(git rev-parse HEAD:scripts/docker/restore-dotnet-with-github-packages.sh)" = "4a4a6c68ad35ac05f57fbc6b56a9eafe63cf3574"
+          test -z "$(git ls-tree HEAD -- global.json)"
+          test "${GITHUB_REF}" = refs/heads/qualification/aot-export-final-20261002
+      - name: Checkout isolated qualification driver
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: qualification-runner
+          sparse-checkout: |
+            scripts/ci/qualify-geobench-release.py
+            scripts/ci/qualify-geobench-release.json
+          sparse-checkout-cone-mode: false
+      - name: Run seven source-stamped managed correctness suites
+        run: python3 qualification-runner/scripts/ci/qualify-geobench-release.py
+      - name: Retain every managed qualification attempt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: qualification-managed-${{ github.run_id }}-${{ github.run_attempt }}
+          path: qualification-managed/
+          if-no-files-found: error
+
   candidate:
     runs-on: ubuntu-latest
     timeout-minutes: 90

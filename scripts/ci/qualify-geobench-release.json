@@ -1,0 +1,60 @@
+{
+  "SDK": "mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c",
+  "PROJECTS": [
+    [
+      "core",
+      "tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj",
+      "FullyQualifiedName~MetadataV2GraphSnapshotTests|FullyQualifiedName~LayerReadSecurityResolverTests"
+    ],
+    [
+      "security",
+      "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj",
+      "FullyQualifiedName~ReadPolicyLookupTests|FullyQualifiedName~LayerValidationHelpersV2Tests|FullyQualifiedName~RbacRoleClaimEntitlementTests|FullyQualifiedName~JobSecurityContextCaptureTests"
+    ],
+    [
+      "postgres",
+      "tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj",
+      "FullyQualifiedName~PostgresStorageMappedSpatialCount|FullyQualifiedName~PostgresStorageMappedFeatureReader|FullyQualifiedName~PostgresReadSecuritySnapshotIntegrationTests"
+    ],
+    [
+      "ogc-api",
+      "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",
+      "FullyQualifiedName~GeoJson|FullyQualifiedName~OgcFeaturesQuery|FullyQualifiedName~OgcFeaturesGeometry|FullyQualifiedName~OgcFeatureIdentifier"
+    ],
+    [
+      "geoservices",
+      "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj",
+      "FullyQualifiedName~QueryFormatterTests|FullyQualifiedName~GeoJsonFeatureSetTests"
+    ],
+    [
+      "wfs",
+      "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
+      "FullyQualifiedName~Wfs20NumberMatchedPolicyTests|FullyQualifiedName~Wfs20EndpointsTests.Wfs_GetFeature_GeoJsonOutput_ReturnsFeatureCollection|FullyQualifiedName~Wfs20EndpointsTests.Wfs_GetFeature_LegacyTypeNameAndMaxFeaturesAliases_ReturnFeatureCollection|FullyQualifiedName~Wfs20EndpointsTests.Wfs_GetFeature_BboxWithoutSrsName_UsesLayerAxisOrder|FullyQualifiedName~Wfs20EndpointsTests.Wfs_Post_GetFeature_WithMultipleQueries_ReturnsFeatureCollection|FullyQualifiedName~Wfs20EndpointsTests.Wfs_Post_GetFeature_WithXmlSortBy_AppliesQuerySortOrder|FullyQualifiedName~Wfs20EndpointsTests.Wfs_Post_GetFeature_AfterTimePeriodWithUtcZ_ReturnsLaterFeatures|FullyQualifiedName~Wfs20EndpointsTests.Wfs_Post_GetFeature_BeforeTimePeriodWithUtcZ_ReturnsEarlierFeatures|FullyQualifiedName~Wfs20EndpointsTests.Wfs_GetPropertyValue_WithGeoJsonOutput_ReturnsFeatureCollection|FullyQualifiedName~Wfs20EndpointsTests.Wfs_GetFeature_XmlQueryWithFilter_PagingNextLinkPreservesFilter|FullyQualifiedName~Wfs20EndpointsTests.Wfs_GetFeature_MultiQueryPagingNextLinkCanBeFollowed"
+    ],
+    [
+      "cloud-handoff",
+      "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj",
+      "FullyQualifiedName~AwsBatchRequestCancellationTests|FullyQualifiedName~GpDeploymentHandoffTests"
+    ]
+  ],
+  "REQUIRED_NATIVE": [
+    "ReadFeatures_NativePrimitives_PreservesCanonicalTypesNullsAndProjection",
+    "ReadFeatures_StaleStringHintsAndUnknownTypes_MatchPostgresJsonOracle",
+    "ReadFeatures_PhysicalTypeChanges_RebindsWithoutChangingPublishedHints",
+    "ReadFeatures_CustomTypeEqualityOperator_CannotSuppressJsonFallback",
+    "ReadFeature_NativePrimitivePage_AllocatesLessThanCanonicalJsonbStorage",
+    "ReadFeatures_AutoPreparedNativeProjection_RecoversPhysicalTypeChanges",
+    "ReadFeatures_AutoPreparedNativeRecovery_DoesNotRepeatVolatileRowPolicy",
+    "ReadFeatures_AutoPreparedNativeDrift_InCallerTransaction_UsesStableDescriptor",
+    "ReadFeatures_AutoPreparedNativeDrift_CancellationDoesNotExecuteRecovery",
+    "ReadFeatures_AutoPreparedNativeDrift_SerialPlanner_RestoresSessionSettings",
+    "ReadFeatures_ResultTypeMessageFromRowPolicy_IsNotRetried"
+  ],
+  "REQUIRED_OGC": [
+    "Create_CanonicalFeatures_HaveIndependentResponseProperties",
+    "PublicAndArbitraryPropertiesConversions_RetainDetachedCopies",
+    "Collection_ExplicitOwnershipPreservesCountsAndGenericConversionCopies",
+    "ConvertWkbToSimpleGeometry_ReusedReaderMatchesFreshReadersAcrossFormats",
+    "ConvertWkbToSimpleGeometry_MalformedThenValid_DoesNotRetainParserState"
+  ]
+}
