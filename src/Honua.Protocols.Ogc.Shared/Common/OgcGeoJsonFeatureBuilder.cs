@@ -32,7 +32,7 @@ internal static class OgcGeoJsonFeatureBuilder
                     IdFactory: idFactory ?? (_ => OgcFeatureIdentifierResolver.GetPublicId(feature, resource)),
                     Schema: schema)),
             geometry,
-            links);
+            links, ownsProperties: true);
     }
 
     internal static GeoJsonFeature Create(
@@ -56,7 +56,7 @@ internal static class OgcGeoJsonFeatureBuilder
                     IdFactory: idFactory ?? (_ => OgcFeatureIdentifierResolver.GetPublicId(feature, resource)),
                     Schema: schema)),
             geometry,
-            links);
+            links, ownsProperties: true);
     }
 
     private static bool ShouldIncludePublicIdentifierProperty(
@@ -79,6 +79,20 @@ internal static class OgcGeoJsonFeatureBuilder
             TimeStamp = DateTimeOffset.UtcNow
         };
 
+    // Caller transfers the exact array it has materialized for this response.
+    internal static FeatureCollection CreateCollectionWithOwnedFeatures(
+        GeoJsonFeature[] features,
+        long? numberMatched,
+        ImmutableArray<Link>? links = null)
+        => new()
+        {
+            Features = features,
+            NumberMatched = numberMatched,
+            NumberReturned = features.Length,
+            Links = links,
+            TimeStamp = DateTimeOffset.UtcNow
+        };
+
     internal static GeoJsonFeature Create(
         object? id,
         IReadOnlyDictionary<string, object?> properties,
@@ -92,6 +106,9 @@ internal static class OgcGeoJsonFeatureBuilder
     private static GeoJsonFeature CreateCore(
         GeoJsonFeatureBase featureBase,
         SimpleGeoJsonGeometry? geometry,
-        ImmutableArray<Link>? links)
-        => featureBase.ToOgcGeoJsonFeature(geometry, links);
+        ImmutableArray<Link>? links,
+        bool ownsProperties = false)
+        => ownsProperties && featureBase.Properties is Dictionary<string, object?> properties
+            ? featureBase.ToOgcGeoJsonFeatureWithOwnedProperties(properties, geometry, links)
+            : featureBase.ToOgcGeoJsonFeature(geometry, links);
 }
