@@ -35,8 +35,12 @@ running. A replacement controller uses the persisted provider identity and
 execution specification, including the original worker definition. It observes
 that job rather than submitting it again. Ambiguous submissions use the existing
 deterministic-name discovery path; automatic SDK retries of `SubmitJob` are
-disabled because the provider call has no idempotency token. Keep the durable
-Redis store and worker definitions available across both directions of a switch.
+disabled because the provider call has no idempotency token. A cancelled provider
+request without controller cancellation (for example, a request deadline) also
+has an uncertain outcome: submission enters name-based discovery, while observation
+and cancellation retain the last durable status for the replacement controller.
+It does not prove that the Batch job failed or stopped. Keep the durable Redis
+store and worker definitions available across both directions of a switch.
 
 The frozen reader baseline is `certification/schema-reader-baseline.json`.
 Every migration, including each newly added script, must also be hash-pinned in
