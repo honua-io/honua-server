@@ -17,6 +17,52 @@ public sealed class MetadataV2GraphSnapshotTests
 {
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public void Index_ServiceScopes_PreservesFirstWinsIdsAndCaseRules()
+    {
+        var graph = new MetadataV2Graph
+        {
+            Services =
+            [
+                new() { Metadata = new() { Id = "first", Name = "Alpha" } },
+                new() { Metadata = new() { Id = "first", Name = "wrong_duplicate_service" } },
+                new() { Metadata = new() { Id = "alias", Name = "ALPHA" } },
+                new() { Metadata = new() { Id = "second", Name = "Beta" } },
+                new() { Metadata = new() { Id = "blank", Name = "  " } }
+            ],
+            Publications =
+            [
+                new() { Metadata = new() { Id = "duplicate" }, ResourceId = "resource", ServiceId = "first" },
+                new() { Metadata = new() { Id = "duplicate" }, ResourceId = "ignored_duplicate", ServiceId = "second" },
+                new() { Metadata = new() { Id = "alias" }, ResourceId = "resource", ServiceId = "alias" },
+                new()
+                {
+                    Metadata = new() { Id = "retired" }, ResourceId = "resource", ServiceId = "second",
+                    Status = new() { Lifecycle = MetadataV2LifecycleStatus.Retired }
+                },
+                new() { Metadata = new() { Id = "case" }, ResourceId = "RESOURCE", ServiceId = "second" },
+                new() { Metadata = new() { Id = "missing" }, ResourceId = "no_names", ServiceId = "missing" },
+                new() { Metadata = new() { Id = "blank" }, ResourceId = "no_names", ServiceId = "blank" }
+            ]
+        };
+
+        var index = MetadataV2GraphIndex.Build(graph);
+
+        index.ServiceNamesByResource["resource"].Should().Equal("Alpha", "Beta");
+        index.ServiceNamesByResource["RESOURCE"].Should().Equal("Beta");
+        index.ServiceNamesByResource.Should().NotContainKey("no_names");
+        index.ServiceNamesByResource.Should().NotContainKey("ignored_duplicate");
+        // The snapshot, not a TTL cache, owns the names. Updating the graph builds
+        // fresh names without modifying an already authorized snapshot.
+        var changed = graph with
+        {
+            Services = [new() { Metadata = new() { Id = "first", Name = "Changed" } }]
+        };
+        MetadataV2GraphIndex.Build(changed).ServiceNamesByResource["resource"].Should().Equal("Changed");
+        index.ServiceNamesByResource["resource"].Should().Equal("Alpha", "Beta");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public void Index_Build_PopulatesAllLookups()
     {
         var graph = SampleGraph();

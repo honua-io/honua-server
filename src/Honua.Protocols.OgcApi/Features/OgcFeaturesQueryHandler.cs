@@ -15,7 +15,6 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Internal;
-using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
@@ -106,8 +105,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var publication = layerValidation.Publication!;
             var service = layerValidation.Service;
 
-            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
-            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var snapshot = layerValidation.Snapshot!;
             // Storage handle resolution mirrors the FeatureServer V2 ports: when the V2
             // graph carries no explicit storage binding for the publication, fall back to
             // the service-local layer index. This is what test fixtures and the Postgres
@@ -613,8 +611,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var publication = layerValidation.Publication!;
             var service = layerValidation.Service;
 
-            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
-            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var snapshot = layerValidation.Snapshot!;
             // Storage handle resolution mirrors the FeatureServer V2 ports: when the V2
             // graph carries no explicit storage binding for the publication, fall back to
             // the service-local layer index. This is what test fixtures and the Postgres

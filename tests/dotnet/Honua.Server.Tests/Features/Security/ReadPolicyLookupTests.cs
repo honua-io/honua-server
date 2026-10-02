@@ -21,6 +21,93 @@ namespace Honua.Server.Tests.Features.Security;
 
 public sealed class ReadPolicyLookupTests
 {
+    [UnitTest]
+    public async Task ResolveAsync_ValidatedSnapshot_ReusesScopesButReadsCurrentPoliciesAndPrincipal()
+    {
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "parcels" }
+        };
+        var graph = CreateGraph(resource, 1);
+        var authorized = await graph.GetCurrentAsync();
+        var context = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.Role, "reader"), new Claim("region", "west")], "Test"))
+        };
+        var accessor = new HttpContextAccessor { HttpContext = context };
+        ValidatedMetadataSnapshot.Remember(context, resource, authorized);
+        graph.Snapshot = new MetadataV2GraphSnapshot(authorized.Graph with
+        {
+            Services = [new() { Metadata = new() { Id = "alpha", Name = "beta" } }]
+        }, "changed", DateTimeOffset.UtcNow);
+        var rows = new InMemoryRlsPolicyStore();
+        var fields = new InMemoryFieldMaskPolicyStore();
+        await AddPoliciesAsync("alpha", "*", "initial");
+        await AddPoliciesAsync("beta", "*", "next_graph");
+        var filters = Substitute.For<IFilterExpressionService>();
+        filters.Normalize(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Resource>())
+            .Returns(call => call.ArgAt<FilterExpression>(0));
+        filters.Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Resource>())
+            .Returns(call => FilterTranslationResult.Success(call.ArgAt<FilterExpression>(0), new SqlFragment("TRUE", [])));
+        var options = Options.Create(new RbacOptions());
+        var rls = new RowLevelSecurityFilterSource(accessor, rows, graph, filters, options, NullLogger<RowLevelSecurityFilterSource>.Instance);
+        var masks = new FieldMaskSource(accessor, fields, graph, options, NullLogger<FieldMaskSource>.Instance);
+
+        await AssertFieldsAsync(["initial"]);
+        graph.Calls.Should().Be(1, "both sources reuse the authorized resource snapshot");
+        await AddPoliciesAsync("alpha", "*", "new_policy");
+        await AddPoliciesAsync("alpha", "other", "other_principal");
+        await AssertFieldsAsync(["initial", "new_policy"]);
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Role, "other"), new Claim("region", "east")], "Test"));
+        await AssertFieldsAsync(["initial", "new_policy", "other_principal"]);
+        // Even anonymous requests must still see role-wildcard policies.
+        context.User = new ClaimsPrincipal(new ClaimsIdentity());
+        await AssertFieldsAsync(["initial", "new_policy"]);
+        graph.Calls.Should().Be(1);
+
+        // Equal IDs are insufficient: a different canonical object must resolve
+        // current metadata, as must the next request and background use.
+        ValidatedMetadataSnapshot.Find(context, resource with { }).Should().BeNull();
+        ValidatedMetadataSnapshot.Find(null, resource).Should().BeNull();
+        (await masks.ResolveAsync(resource with { })).Should().Equal("next_graph");
+        (await rls.ResolveExpressionsAsync(resource with { })).Should().ContainSingle();
+        graph.Calls.Should().Be(3);
+        accessor.HttpContext = new DefaultHttpContext();
+        await AssertFieldsAsync(["next_graph"]);
+        graph.Calls.Should().Be(5);
+        ValidatedMetadataSnapshot.Remember(context, resource with { }, graph.Snapshot!);
+        ValidatedMetadataSnapshot.Find(context, resource).Should().BeNull();
+
+        async Task AssertFieldsAsync(string[] expected)
+        {
+            (await masks.ResolveAsync(resource)).Should().BeEquivalentTo(expected);
+            (await rls.ResolveExpressionsAsync(resource))
+                .Select(expression => ((PropertyReference)((BinaryExpression)expression).Left).PropertyName)
+                .Should().BeEquivalentTo(expected);
+        }
+
+        async Task AddPoliciesAsync(string service, string role, string attribute)
+        {
+            await rows.CreatePolicyAsync(new RlsPolicy
+            {
+                Service = service,
+                Role = role,
+                Layer = "parcels",
+                Attribute = attribute,
+                ClaimType = "region"
+            });
+            await fields.CreatePolicyAsync(new FieldMaskPolicy
+            {
+                Service = service,
+                Role = role,
+                Layer = "parcels",
+                Attribute = attribute
+            });
+        }
+    }
+
     [UnitTheory]
     [InlineData(0)]
     [InlineData(1)]
@@ -170,10 +257,16 @@ public sealed class ReadPolicyLookupTests
 
     private sealed class StubGraphProvider(MetadataV2GraphSnapshot? snapshot) : IMetadataV2GraphProvider
     {
+        public MetadataV2GraphSnapshot? Snapshot { get; set; } = snapshot;
+        public int Calls { get; private set; }
+
         public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
-            => snapshot is null
+        {
+            Calls++;
+            return Snapshot is null
                 ? ValueTask.FromException<MetadataV2GraphSnapshot>(new InvalidOperationException("Graph unavailable"))
-                : ValueTask.FromResult(snapshot);
+                : ValueTask.FromResult(Snapshot);
+        }
 
         public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
             => ValueTask.FromResult<MetadataV2GraphSnapshot?>(null);

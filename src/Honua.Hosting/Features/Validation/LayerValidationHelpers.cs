@@ -237,6 +237,7 @@ internal static class LayerValidationHelpers
             return new MetadataV2ValidationResult(false, publication, resource, service, error);
         }
 
+        ValidatedMetadataSnapshot.Remember(context, resource!, snapshot);
         return new MetadataV2ValidationResult(true, publication, resource, service, null, snapshot);
     }
 
@@ -333,6 +334,7 @@ internal static class LayerValidationHelpers
             return new MetadataV2ValidationResult(false, publication, resource, service, error);
         }
 
+        ValidatedMetadataSnapshot.Remember(context, resource!, snapshot);
         return new MetadataV2ValidationResult(true, publication, resource, service, null, snapshot);
     }
 
@@ -500,6 +502,7 @@ internal static class LayerValidationHelpers
             return new MetadataV2ValidationResult(false, publication, resource, service, error);
         }
 
+        ValidatedMetadataSnapshot.Remember(context, resource!, snapshot);
         return new MetadataV2ValidationResult(true, publication, resource, service, null, snapshot);
     }
 
