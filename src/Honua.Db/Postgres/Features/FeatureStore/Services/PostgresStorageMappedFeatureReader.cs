@@ -431,7 +431,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var reader = session.Reader!;
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            yield return ReadFeature(reader, textAttributes: query.Distinct);
+            yield return ReadFeature(reader, textAttributes: query.Distinct, session.NativeAttributes);
         }
     }
 
@@ -476,7 +476,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var reader = session.Reader!;
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            features.Add(ReadFeature(reader, textAttributes: query.Distinct));
+            features.Add(ReadFeature(reader, textAttributes: query.Distinct, session.NativeAttributes));
         }
 
         return features.ToImmutable();
@@ -485,7 +485,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private SqlBuilder BuildFeatureSelect(FeatureQuery query, bool probeLimit)
         => BuildFeatureSelectCore(query, probeLimit, TryGetSmallintComparison(query));
 
-    private SqlBuilder BuildFeatureSelectCore(FeatureQuery query, bool probeLimit, SmallintComparison? comparison)
+    private SqlBuilder BuildFeatureSelectCore(FeatureQuery query, bool probeLimit, SmallintComparison? comparison,
+        bool useNativeAttributes = true)
     {
         var sql = new SqlBuilder { SmallintComparison = comparison };
         // Preserve Z/M ordinates through extended WKB when the canonical query requests it (returnZ/
@@ -495,7 +496,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var geometrySelect = _geometryColumn == null
             ? "NULL"
             : $"{geometryEncoder}({BuildGeometryExpression(query)})";
-        var attributesSelect = BuildAttributesJsonbExpression(query, sql);
+        var nativeAttributes = useNativeAttributes ? BuildNativeAttributesProjection(query, sql) : null;
+        var attributesSelect = nativeAttributes ?? BuildAttributesJsonbExpression(query, sql);
         // DISTINCT compares and orders the text representation. Preserve that
         // contract; ordinary reads decode JSONB directly without a UTF-16 string.
         if (query.Distinct)
@@ -503,6 +505,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             attributesSelect = $"{attributesSelect}::text";
         }
         var distanceSelect = BuildDistanceSelectExpression(query, sql);
+        var nativeSelect = BuildNativeAttributeSelect(sql);
 
         if (query.Distinct)
         {
@@ -518,7 +521,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             sql.Append(CultureInfo.InvariantCulture, $"""
                 SELECT {_primaryKeyColumn}::bigint AS objectid,
                        {geometrySelect} AS geometry,
-                       {attributesSelect} AS attributes{distanceSelect}
+                       {attributesSelect} AS attributes{distanceSelect}{nativeSelect}
                 """);
             if (query.Limit.HasValue || query.Offset.HasValue || IsNearestNeighborQuery(query))
             {
@@ -1525,7 +1528,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             ?? throw new ArgumentException($"Field '{fieldName}' was not found on resource '{_resource.Metadata.Name}'.");
     }
 
-    private Feature ReadFeature(NpgsqlDataReader reader, bool textAttributes)
+    private Feature ReadFeature(NpgsqlDataReader reader, bool textAttributes, NativeAttributeDecoder? nativeAttributes)
     {
         var id = reader.GetInt64(0);
         var geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
@@ -1533,7 +1536,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         try
         {
-            if (!reader.IsDBNull(2))
+            if (!reader.IsDBNull(2) && (nativeAttributes is null || nativeAttributes.HasJsonFallback))
             {
                 if (textAttributes)
                 {
@@ -1546,10 +1549,12 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 }
             }
 
+            nativeAttributes?.ReadInto(reader, attributesDictionary);
             attributesDictionary[FieldNames.ObjectId] = id;
-            if (reader.FieldCount > 3)
+            var metadataEndOrdinal = nativeAttributes?.FirstOrdinal ?? reader.FieldCount;
+            if (metadataEndOrdinal > 3)
             {
-                for (var i = 3; i < reader.FieldCount; i++)
+                for (var i = 3; i < metadataEndOrdinal; i++)
                 {
                     var fieldName = reader.GetName(i);
                     if (fieldName.Equals(FeatureQueryEncoding.InternalDistanceColumn, StringComparison.OrdinalIgnoreCase))
@@ -2091,6 +2096,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         public bool HasOuterFilter { get; set; }
 
         public SmallintComparison? SmallintComparison { get; init; }
+
+        public string[] NativeAttributeNames { get; set; } = [];
+
+        public bool HasJsonAttributeFields { get; set; } = true;
 
         public void Append(string value) => _text.Append(value);
 
