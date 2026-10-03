@@ -22010,6 +22010,20 @@
           },
           "features": {
             "$ref": "#/components/schemas/AdminCompatibilityFeatureFlags"
+          },
+          "contractVersions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Every contract this server serves, name to exact version, keyed like release/component-versions.json (admin, metadata, geoservices, ogc, stac, grpc). The server refuses to start when its embedded declaration differs from the versions it serves, so this map is the whole advertised contract set."
+          },
+          "schemaVersions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Schema name to exact version, as declared in release/component-versions.json. The database schema version is derived by the release resolver from the migrations and is not advertised here."
           }
         }
       },
