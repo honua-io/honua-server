@@ -65,6 +65,25 @@ public sealed class McpReadableCatalogTests
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
+    [InlineData("allowed")]
+    [InlineData("same-tenant")]
+    [InlineData("granted")]
+    public async Task RenderMap_ReadableLayer_Renders(string restriction)
+    {
+        using var services = CreateServices(restriction);
+        var tool = new RenderMapTool(Substitute.For<IGeoprocessingJobService>(), NullLogger<RenderMapTool>.Instance);
+        using var arguments = JsonDocument.Parse("""{"layers":[{"serviceId":"svc","layerId":0}],"bbox":[0,0,1,1],"maxInlineBytes":1024}""");
+
+        var result = await tool.InvokeAsync(CreateContext(services), arguments.RootElement, CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        await services.GetRequiredService<IRasterMapRenderer>().Received(1).RenderDatasetMapAsync(
+            Arg.Is<int[]>(ids => ids.Length == 1 && ids[0] == 42), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
     [InlineData("resource-policy")]
     [InlineData("service-policy")]
     [InlineData("resource-tenant")]
