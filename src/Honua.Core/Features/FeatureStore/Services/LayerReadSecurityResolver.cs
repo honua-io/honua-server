@@ -82,6 +82,15 @@ public sealed class LayerReadSecurityResolver
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
+        if (CanResolveCombined(query))
+        {
+            var resource = await FindResourceAsync(layerId, cancellationToken).ConfigureAwait(false);
+            if (resource is not null)
+            {
+                return await ApplyAsync(resource, query, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
         // Resolve each concern independently. A nested caller may already carry one
         // enforced value, but that must not suppress resolution of the other concern.
         if (query.EnforcedSqlFilter is null)
@@ -120,6 +129,24 @@ public sealed class LayerReadSecurityResolver
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(resource);
+
+        if (CanResolveCombined(query))
+        {
+            var permanentFilter = PermanentFilterResolver.Resolve(resource, _filterExpressionService);
+            var combined = await ((ICombinedReadSecuritySource)_rlsFilterSource!)
+                .ResolveCombinedAsync(resource, _fieldMaskSource!, cancellationToken).ConfigureAwait(false);
+            var filter = SqlFragmentHelpers.CombineSqlFilters(permanentFilter, combined.RowFilter);
+            if (filter is not null)
+            {
+                query = query with { EnforcedSqlFilter = filter };
+            }
+            if (!combined.MaskedFields.IsDefaultOrEmpty)
+            {
+                query = query with { EnforcedMaskedFields = combined.MaskedFields };
+            }
+            FeatureQuerySecurity.Validate(query);
+            return query;
+        }
 
         if (query.EnforcedSqlFilter is null)
         {
@@ -254,6 +281,11 @@ public sealed class LayerReadSecurityResolver
                 "Configure field-mask policies only on Postgres layers, or remove the policy that targets this layer.");
         }
     }
+
+    private bool CanResolveCombined(FeatureQuery query)
+        => query.EnforcedSqlFilter is null && query.EnforcedMaskedFields is null &&
+           _rlsFilterSource is ICombinedReadSecuritySource combined &&
+           _fieldMaskSource is not null && combined.CanResolveWith(_fieldMaskSource);
 
     private async Task<ImmutableArray<string>> ResolveMaskedFieldsAsync(
         MetadataV2Resource resource,

@@ -52,6 +52,13 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
         _logger = logger;
     }
 
+    internal IFieldMaskPolicyStore PolicyStore => _policyStore;
+
+    internal bool HasSameContext(
+        IHttpContextAccessor accessor, IMetadataV2GraphProvider graphProvider, RbacOptions options)
+        => ReferenceEquals(_httpContextAccessor, accessor) &&
+           ReferenceEquals(_graphProvider, graphProvider) && ReferenceEquals(_rbacOptions, options);
+
     /// <inheritdoc />
     public async Task<ImmutableArray<string>> ResolveAsync(MetadataV2Resource resource, CancellationToken cancellationToken = default)
     {
