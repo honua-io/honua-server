@@ -29,7 +29,7 @@ public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
         try
         {
             await EnsureAuditLogTableAsync(schema);
-            var sink = new PostgresAuditLog(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema);
+            var sink = KeyedSink(schema);
 
             for (var i = 0; i < 3; i++)
             {
@@ -46,7 +46,7 @@ public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
             rows[2].PrevHash.Should().Be(rows[1].EntryHash);
             rows.Select(r => r.EntryHash).Should().OnlyHaveUniqueItems();
 
-            var report = await Verifier(schema).VerifyAsync();
+            var report = await KeyedVerifier(schema).VerifyAsync();
             report.Verified.Should().BeTrue();
             report.RowsChecked.Should().Be(3);
             report.UnhashedRows.Should().Be(0);
@@ -65,11 +65,11 @@ public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
         try
         {
             await EnsureAuditLogTableAsync(schema);
-            var sink = new PostgresAuditLog(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema);
+            var sink = KeyedSink(schema);
             await sink.RecordAsync(Event("corr-a", "auth.success"));
             await sink.RecordAsync(Event("corr-b", "auth.success"));
 
-            (await Verifier(schema).VerifyAsync()).Verified.Should().BeTrue();
+            (await KeyedVerifier(schema).VerifyAsync()).Verified.Should().BeTrue();
 
             // Simulate a privileged tamper that bypassed the append-only rules:
             // drop the rule, mutate the action of the first row, restore the rule.
@@ -80,7 +80,7 @@ public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
                 CREATE RULE audit_log_no_update AS ON UPDATE TO "{schema}".audit_log DO INSTEAD NOTHING;
                 """);
 
-            var report = await Verifier(schema).VerifyAsync();
+            var report = await KeyedVerifier(schema).VerifyAsync();
             report.Verified.Should().BeFalse("the entry_hash no longer matches the mutated row");
             report.FirstBrokenAuditId.Should().NotBeNull();
             report.FailureReason.Should().Contain("entry_hash");
@@ -155,7 +155,7 @@ public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
         try
         {
             await EnsureAuditLogTableAsync(schema);
-            var sink = new PostgresAuditLog(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema);
+            var sink = KeyedSink(schema);
             await sink.RecordAsync(Event("corr-a", "auth.success"));
             await sink.RecordAsync(Event("corr-b", "auth.success"));
             await sink.RecordAsync(Event("corr-c", "auth.success"));
@@ -168,7 +168,7 @@ public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
                 CREATE RULE audit_log_no_delete AS ON DELETE TO "{schema}".audit_log DO INSTEAD NOTHING;
                 """);
 
-            var report = await Verifier(schema).VerifyAsync();
+            var report = await KeyedVerifier(schema).VerifyAsync();
             report.Verified.Should().BeFalse("a deleted row breaks the prev_hash chain link");
             report.FailureReason.Should().Contain("prev_hash");
         }
@@ -231,9 +231,17 @@ public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
         Details = "{}",
     };
 
+    private static readonly byte[] ChainKey = Enumerable.Repeat((byte)0x21, 32).ToArray();
+
     private TestConnectionProvider Provider(string schema) => new(fixture.DataSource, schema);
 
+    private PostgresAuditLog KeyedSink(string schema)
+        => new(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema, ChainKey);
+
     private PostgresAuditLogIntegrityVerifier Verifier(string schema) => new(Provider(schema), schema);
+
+    private PostgresAuditLogIntegrityVerifier KeyedVerifier(string schema)
+        => new(Provider(schema), schema, ChainKey);
 
     private static async Task<List<AuditEventRecord>> CollectAsync(IAsyncEnumerable<AuditEventRecord> source)
     {

@@ -90,6 +90,20 @@ Authorization-middleware denials omit operation, audit and proposal lineage head
 these requests stop before lineage attestation can validate those headers. Downstream
 audit events retain lineage after the attestation middleware has processed it.
 
+### Hash chain
+
+Each new audit row stores an `entry_hash`. When `AuditLog:ChainVerification:Key`
+is set to a base64 value of at least 32 decoded bytes, that hash is an
+HMAC-SHA256 under the key. The key is not stored in the database. Rows written
+before the key was set keep their unkeyed SHA-256 digest and remain a prefix
+of the chain. Verification succeeds only when a key is configured and at least
+one row was written with that key. A row with no hash after the chain has
+started does not verify. Leading rows that predate the hash columns still do.
+Until the key is set, scheduled verification reports the chain unverified
+whenever hashed rows exist, and the `audit-chain-integrity` health check is
+Unhealthy. Responses and audit writes continue either way. Set the same key on
+every node.
+
 ### Failures of audited operations
 
 | Operation | Trigger | EventType | Action | Outcome source |

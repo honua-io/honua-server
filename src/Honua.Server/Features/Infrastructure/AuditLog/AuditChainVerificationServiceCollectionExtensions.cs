@@ -29,6 +29,10 @@ internal static class AuditChainVerificationServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
+        // A present key that is not usable fails startup. An absent key leaves
+        // verification unable to succeed for a hashed chain; writes continue.
+        _ = AuditChainKeyMaterial.Decode(configuration[AuditChainVerificationOptions.SectionName + ":Key"]);
+
         services
             .AddOptions<AuditChainVerificationOptions>()
             .Bind(configuration.GetSection(AuditChainVerificationOptions.SectionName));

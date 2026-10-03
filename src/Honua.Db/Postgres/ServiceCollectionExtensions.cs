@@ -221,7 +221,11 @@ internal static class ServiceCollectionExtensions
 
         // SIEM export + tamper-evidence surfaces over the audit trail (#350, #509)
         services.AddScoped<IAuditLogExporter, PostgresAuditLogExporter>();
-        services.AddScoped<IAuditLogIntegrityVerifier, PostgresAuditLogIntegrityVerifier>();
+        services.AddScoped<IAuditLogIntegrityVerifier>(serviceProvider =>
+            new PostgresAuditLogIntegrityVerifier(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                configuration["Database:Schema"],
+                AuditChainKeyMaterial.Decode(configuration["AuditLog:ChainVerification:Key"])));
         services.AddScoped<IInvestigationStore, PostgresInvestigationStore>();
 
         // Persisted ops-health rollup store (#2553). Schema-qualified so it targets the configured

@@ -31,7 +31,7 @@ public sealed class PostgresAuditLogRetentionPrunerTests(PostgresFixture fixture
         try
         {
             await EnsureAuditLogTableAsync(schema);
-            var sink = new PostgresAuditLog(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema);
+            var sink = KeyedSink(schema);
 
             var now = DateTimeOffset.UtcNow;
             // Insert oldest-first so audit_id order matches timestamp order.
@@ -56,7 +56,7 @@ public sealed class PostgresAuditLogRetentionPrunerTests(PostgresFixture fixture
             // Pruning a contiguous head prefix must not break the hash chain: the
             // first surviving row becomes the new genesis (its prev_hash is not
             // checked), so verification still passes.
-            var report = await new PostgresAuditLogIntegrityVerifier(Provider(schema), schema).VerifyAsync();
+            var report = await KeyedVerifier(schema).VerifyAsync();
             report.Verified.Should().BeTrue("a head-prefix prune preserves chain integrity");
             report.RowsChecked.Should().Be(2);
         }
@@ -73,7 +73,7 @@ public sealed class PostgresAuditLogRetentionPrunerTests(PostgresFixture fixture
         try
         {
             await EnsureAuditLogTableAsync(schema);
-            var sink = new PostgresAuditLog(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema);
+            var sink = KeyedSink(schema);
 
             var now = DateTimeOffset.UtcNow;
             // Five expired rows force several passes when the batch size is 2.
@@ -101,7 +101,7 @@ public sealed class PostgresAuditLogRetentionPrunerTests(PostgresFixture fixture
             survivors.Should().HaveCount(2);
 
             // Chunked head-prefix pruning still leaves the surviving chain verifiable.
-            var report = await new PostgresAuditLogIntegrityVerifier(Provider(schema), schema).VerifyAsync();
+            var report = await KeyedVerifier(schema).VerifyAsync();
             report.Verified.Should().BeTrue("a chunked head-prefix prune preserves chain integrity");
             report.RowsChecked.Should().Be(2);
 
@@ -175,6 +175,14 @@ public sealed class PostgresAuditLogRetentionPrunerTests(PostgresFixture fixture
             await fixture.DropSchemaAsync(schema);
         }
     }
+
+    private static readonly byte[] ChainKey = Enumerable.Repeat((byte)0x21, 32).ToArray();
+
+    private PostgresAuditLog KeyedSink(string schema)
+        => new(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema, ChainKey);
+
+    private PostgresAuditLogIntegrityVerifier KeyedVerifier(string schema)
+        => new(Provider(schema), schema, ChainKey);
 
     private static AuditEvent Event(string correlationId) => new()
     {
