@@ -9,6 +9,8 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Infrastructure.Tiles;
+using Honua.Infrastructure.Security;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
@@ -40,7 +42,7 @@ public sealed class TileExportJobServiceTests
 
         job.Status.Should().Be(ExecutionJobStatus.Queued);
         job.Spec.Kind.Should().Be(ExecutionJobKind.TileExport);
-        job.Audit.RequestedBy.Should().Be(Owner);
+        job.Audit.RequestedBy.Should().Be(CanonicalSecurityActor.Resolve(Principal(Owner))!.ActorId);
         job.Audit.CorrelationId.Should().Be("corr-1");
         job.Audit.RequestFingerprint.Should().NotBeNullOrEmpty();
         job.Concurrency.PartitionKey.Should().StartWith("tile-export:map:");
@@ -90,17 +92,13 @@ public sealed class TileExportJobServiceTests
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public async Task Submit_SameKeyDifferentPrincipal_ThrowsIdempotencyConflictWithoutExposingJob()
+    public async Task Submit_SameKeyDifferentPrincipal_CreatesSeparateJobs()
     {
-        var store = new InMemoryExecutionJobStore();
-        var service = CreateService(store, new InMemoryJobQueue());
+        var service = CreateService(new InMemoryExecutionJobStore(), new InMemoryJobQueue());
+        var first = await service.SubmitAsync(CreatePlan(), "key-1", null, Principal(Owner), default);
+        var second = await service.SubmitAsync(CreatePlan(), "key-1", null, Principal(Other), default);
 
-        await service.SubmitAsync(CreatePlan(), "key-1", null, Principal(Owner), default);
-
-        var act = await FluentActions.Awaiting(() => service.SubmitAsync(CreatePlan(), "key-1", null, Principal(Other), default))
-            .Should().ThrowAsync<TileExportIdempotencyConflictException>();
-        // The winning job id is withheld from a cross-principal replay.
-        act.Which.ConflictingJobId.Should().BeNull();
+        second.OperationId.Should().NotBe(first.OperationId);
     }
 
     [UnitTest]
@@ -398,6 +396,48 @@ public sealed class TileExportJobServiceTests
         var second = await service.SubmitAsync(CreatePlan(), "tenant-key", null, TenantPrincipal(Owner, "tenant-b"), default);
 
         second.OperationId.Should().NotBe(first.OperationId);
+    }
+
+    [UnitTheory]
+    [InlineData("tenant-effective")]
+    [InlineData(null)]
+    [Operation(Operations.Export)]
+    public async Task JobAccess_EffectiveTenantContext_ControlsSubmissionAndEveryLifecycleOperation(string? tenantId)
+    {
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns(tenantId);
+        var service = new TileExportJobService(TimeProvider.System, StorageOptions(),
+            NullLogger<TileExportJobService>.Instance, new InMemoryExecutionJobStore(),
+            new InMemoryJobQueue(), tenantContext: tenant);
+        var principal = TenantPrincipal(Owner, "tenant-token");
+        var job = await service.SubmitAsync(CreatePlan(), "effective-key", null, principal, default);
+        job.Audit.SubmitterSecurityContext!.TenantId.Should().Be(tenantId);
+        (await service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), principal, default)).OperationId.Should().Be(job.OperationId);
+        tenant.TenantId.Returns("tenant-other");
+        var otherJob = await service.SubmitAsync(CreatePlan(), "effective-key", null, principal, default);
+        otherJob.OperationId.Should().NotBe(job.OperationId);
+        Func<Task>[] operations =
+        [
+            () => service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), principal, default),
+            () => service.CancelAsync(job.OperationId, ScopeFor(CreatePlan()), principal, default),
+            () => service.GetResultAsync(job.OperationId, ScopeFor(CreatePlan()), principal, default)
+        ];
+        foreach (var operation in operations)
+        {
+            await operation.Should().ThrowAsync<TileExportNotFoundException>();
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task JobAccess_UnauthenticatedAdminRole_ReturnsNotFound()
+    {
+        var service = CreateService(new InMemoryExecutionJobStore(), new InMemoryJobQueue());
+        var job = await service.SubmitAsync(CreatePlan(), null, null, Principal(Owner), default);
+        var caller = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "admin")]));
+
+        await FluentActions.Awaiting(() => service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), caller, default))
+            .Should().ThrowAsync<TileExportNotFoundException>();
     }
 
     private static ClaimsPrincipal ApiKeyPrincipal(string id)

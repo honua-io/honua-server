@@ -5167,7 +5167,7 @@ public sealed class GeoprocessingJobServiceTests
     {
         var plan = CreateValidPlan();
         var idempotencyKey = "retry-submission-rollback";
-        var jobId = GeoprocessingJobService.CreateJobId(idempotencyKey);
+        var jobId = GeoprocessingJobService.CreateJobId(idempotencyKey, CanonicalSecurityActor.Resolve(CreatePrincipal())!.ActorId);
         var requestFingerprint = GeoprocessingJobService.CreateRequestFingerprint(plan);
 
         var failedSubmission = CreateJobRecord(jobId, ExecutionJobStatus.Failed) with
@@ -5177,6 +5177,8 @@ public sealed class GeoprocessingJobServiceTests
             Audit = new OperationAuditInfo
             {
                 IdempotencyKey = idempotencyKey,
+                RequestedBy = CanonicalSecurityActor.Resolve(CreatePrincipal())!.ActorId,
+                SubmitterSecurityContext = CreateOwnerAudit("test-user").SubmitterSecurityContext,
                 RequestFingerprint = requestFingerprint
             }
         };
@@ -5577,7 +5579,7 @@ public sealed class GeoprocessingJobServiceTests
             Status = status,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
-            Audit = new OperationAuditInfo { RequestedBy = owner },
+            Audit = CreateOwnerAudit(owner),
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.Geoprocessing,
@@ -5593,17 +5595,26 @@ public sealed class GeoprocessingJobServiceTests
         string owner)
         => CreateJobRecord(jobId, status) with
         {
-            Audit = new OperationAuditInfo { RequestedBy = owner }
+            Audit = CreateOwnerAudit(owner)
+        };
+
+    private static OperationAuditInfo CreateOwnerAudit(string? owner)
+        => new()
+        {
+            RequestedBy = owner is null ? null : CanonicalSecurityActor.Resolve(new ClaimsPrincipal(
+                new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, owner)], "Test")))!.ActorId,
+            SubmitterSecurityContext = new Honua.Core.Features.Authorization.Domain.JobSecurityContext(owner, null, [], ClaimTypes.Role)
         };
 
     private static ClaimsPrincipal CreatePrincipal()
         => new(new ClaimsIdentity(
-            [new Claim(ClaimTypes.Name, "test-user")], "Test"));
+            [new Claim(ClaimTypes.Name, "test-user"), new Claim(ClaimTypes.NameIdentifier, "test-user")], "Test"));
 
     private static ClaimsPrincipal CreateTenantPrincipal(string tenantId)
         => new(new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.Name, "test-user"),
+                new Claim(ClaimTypes.NameIdentifier, "test-user"),
                 new Claim("tenant_id", tenantId)
             ], "Test"));
 
