@@ -227,7 +227,7 @@ public static class Fes20Parser
             "ResourceId" => ParseResourceId(element),
 
             // Property and literal elements
-            "ValueReference" => new PropertyReference(element.Value.Trim()),
+            "ValueReference" => ParseValueReference(element),
             "Literal" => ParseLiteral(element),
 
             _ => throw Fes20ParseException.Reportable($"Unsupported filter operator '{DescribeElementName(element.Name)}'.")
@@ -424,7 +424,7 @@ public static class Fes20Parser
                 throw Fes20ParseException.Reportable("First child of BBOX must be ValueReference when specified.");
             }
 
-            property = new PropertyReference(propertyRef.Value.Trim());
+            property = ParseValueReference(propertyRef);
         }
 
         var geometry = ParseGeometry(envelope, defaultSrid);
@@ -451,7 +451,7 @@ public static class Fes20Parser
             throw Fes20ParseException.Reportable($"First child of {DescribeElementName(element.Name)} must be ValueReference");
         }
 
-        var property = new PropertyReference(propertyRef.Value.Trim());
+        var property = ParseValueReference(propertyRef);
         var geometry = ParseGeometry(geometryElement, defaultSrid);
 
         return new SpatialPredicate(op, property, geometry);
@@ -482,7 +482,7 @@ public static class Fes20Parser
             throw Fes20ParseException.Reportable("Third child of DWithin must be Distance");
         }
 
-        var property = new PropertyReference(propertyRef.Value.Trim());
+        var property = ParseValueReference(propertyRef);
         var geometry = ParseGeometry(geometryElement, defaultSrid);
 
         return new SpatialDistancePredicate(
@@ -517,7 +517,7 @@ public static class Fes20Parser
             throw Fes20ParseException.Reportable("Third child of Beyond must be Distance");
         }
 
-        var property = new PropertyReference(propertyRef.Value.Trim());
+        var property = ParseValueReference(propertyRef);
         var geometry = ParseGeometry(geometryElement, defaultSrid);
 
         return new SpatialDistancePredicate(
@@ -543,7 +543,7 @@ public static class Fes20Parser
             throw Fes20ParseException.Reportable($"First child of {DescribeElementName(element.Name)} must be ValueReference");
         }
 
-        var property = new PropertyReference(children[0].Value.Trim());
+        var property = ParseValueReference(children[0]);
         var temporalOperand = ParseTemporalOperand(children[1]);
 
         var op = MapTemporalOperator(element.Name.LocalName);
@@ -591,11 +591,21 @@ public static class Fes20Parser
             throw Fes20ParseException.Reportable("ResourceId element must have a 'rid' attribute");
         }
 
+        EnsureWithinGuard(() => FilterParserGuard.EnsureStringLiteralLength(rid.Length, "ResourceId rid"));
+
         // Convert to property equality: id = 'rid'
         return new BinaryExpression(
             new PropertyReference("id"),
             BinaryOperator.Equal,
             new Literal(rid, LiteralType.Text));
+    }
+
+    // Every property reference passes the shared identifier limit, whichever operator carries it.
+    private static PropertyReference ParseValueReference(XElement element)
+    {
+        var name = element.Value.Trim();
+        EnsureWithinGuard(() => FilterParserGuard.EnsureIdentifierLength(name.Length, "ValueReference"));
+        return new PropertyReference(name);
     }
 
     /// <summary>
@@ -604,6 +614,7 @@ public static class Fes20Parser
     private static Literal ParseLiteral(XElement element)
     {
         var value = element.Value;
+        EnsureWithinGuard(() => FilterParserGuard.EnsureStringLiteralLength(value.Length, "Literal"));
         var type = element.Attribute("type")?.Value;
 
         return InferLiteralType(value, type);

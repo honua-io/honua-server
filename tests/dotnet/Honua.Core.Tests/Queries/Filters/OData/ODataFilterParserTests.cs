@@ -208,6 +208,40 @@ public class ODataFilterParserTests
     }
 
     [Fact]
+    public void Parse_GeographyLiteralLongerThanStringLiteralLimit_Parses()
+    {
+        // Typed geometry literals share the quoted token but keep the geometry text limit.
+        var points = string.Join(",", Enumerable.Range(0, 10_000).Select(i => $"{i}.123456 0.123456"));
+        points.Length.Should().BeGreaterThan(FilterParserGuard.MaxStringLiteralLength);
+
+        var result = _parser.Parse($"geo.intersects(geom, geography'LINESTRING({points})')");
+
+        result.Should().BeOfType<SpatialPredicate>();
+    }
+
+    [Fact]
+    public void Parse_TextLiteralBeyondStringLiteralLimit_ThrowsODataFilterParseException()
+    {
+        var filter = $"Name eq '{new string('a', FilterParserGuard.MaxStringLiteralLength + 1)}'";
+
+        var act = () => _parser.Parse(filter);
+
+        act.Should().Throw<ODataFilterParseException>()
+            .WithMessage($"*maximum string literal length of {FilterParserGuard.MaxStringLiteralLength}*");
+    }
+
+    [Fact]
+    public void Parse_QuotedLiteralBeyondGeometryTextLimit_ThrowsWhileLexing()
+    {
+        var filter = $"Name eq '{new string('a', FilterParserGuard.MaxGeometryTextBytes + 1)}'";
+
+        var act = () => _parser.Parse(filter);
+
+        act.Should().Throw<ODataFilterParseException>()
+            .WithMessage($"*Quoted literal exceeds the maximum length of {FilterParserGuard.MaxGeometryTextBytes} characters*");
+    }
+
+    [Fact]
     public void Parse_WithNestedParenthesesBeyondLimit_ThrowsODataFilterParseException()
     {
         var filter = string.Concat(Enumerable.Repeat("(", FilterParserGuard.MaxExpressionDepth + 1)) +

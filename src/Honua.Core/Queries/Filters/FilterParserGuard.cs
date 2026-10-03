@@ -96,4 +96,15 @@ internal static class FilterParserGuard
         }
     }
 
+    // Function-call argument lists and array literals are flat operand lists like an
+    // IN-list, so they share its cap; checked while the parser materializes the list.
+    public static void EnsureValueListSize(int count, string description)
+    {
+        if (count > MaxInListSize)
+        {
+            throw new ArgumentException(
+                $"{description} exceeds the maximum of {MaxInListSize} values.");
+        }
+    }
+
 }

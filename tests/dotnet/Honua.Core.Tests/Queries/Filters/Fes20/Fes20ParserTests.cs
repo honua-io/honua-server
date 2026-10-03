@@ -105,6 +105,77 @@ public sealed class Fes20ParserTests
             .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
     }
 
+    public static TheoryData<string> ValueReferencesBeyondLengthLimit
+    {
+        get
+        {
+            var name = new string('a', FilterParserGuard.MaxIdentifierLength + 1);
+            return new TheoryData<string>
+            {
+                $"<fes:PropertyIsEqualTo><fes:ValueReference>{name}</fes:ValueReference><fes:Literal>a</fes:Literal></fes:PropertyIsEqualTo>",
+                $"<fes:BBOX><fes:ValueReference>{name}</fes:ValueReference>{GmlEnvelope}</fes:BBOX>",
+                $"<fes:Intersects><fes:ValueReference>{name}</fes:ValueReference>{GmlEnvelope}</fes:Intersects>",
+                $"<fes:DWithin><fes:ValueReference>{name}</fes:ValueReference>{GmlEnvelope}<fes:Distance uom=\"m\">1</fes:Distance></fes:DWithin>",
+                $"<fes:Beyond><fes:ValueReference>{name}</fes:ValueReference>{GmlEnvelope}<fes:Distance uom=\"m\">1</fes:Distance></fes:Beyond>",
+                $"<fes:After><fes:ValueReference>{name}</fes:ValueReference><gml:TimeInstant xmlns:gml=\"http://www.opengis.net/gml/3.2\"><gml:timePosition>2024-01-01T00:00:00Z</gml:timePosition></gml:TimeInstant></fes:After>"
+            };
+        }
+    }
+
+    [UnitTheory]
+    [MemberData(nameof(ValueReferencesBeyondLengthLimit))]
+    public void ParseFilter_ValueReferenceBeyondLengthLimit_ThrowsParseException(string predicate)
+    {
+        var act = () => Fes20Parser.ParseFilter(WrapFilter(predicate));
+
+        act.Should().Throw<Fes20ParseException>()
+            .WithMessage($"*maximum identifier length of {FilterParserGuard.MaxIdentifierLength}*");
+    }
+
+    public static TheoryData<string> TextValuesBeyondLengthLimit
+    {
+        get
+        {
+            var text = new string('a', FilterParserGuard.MaxStringLiteralLength + 1);
+            return new TheoryData<string>
+            {
+                $"<fes:PropertyIsEqualTo><fes:ValueReference>name</fes:ValueReference><fes:Literal>{text}</fes:Literal></fes:PropertyIsEqualTo>",
+                $"<fes:PropertyIsLike wildCard=\"*\" singleChar=\"?\" escapeChar=\"!\"><fes:ValueReference>name</fes:ValueReference><fes:Literal>{text}</fes:Literal></fes:PropertyIsLike>",
+                $"<fes:ResourceId rid=\"{text}\"/>"
+            };
+        }
+    }
+
+    [UnitTheory]
+    [MemberData(nameof(TextValuesBeyondLengthLimit))]
+    public void ParseFilter_TextValueBeyondLengthLimit_ThrowsParseException(string predicate)
+    {
+        var act = () => Fes20Parser.ParseFilter(WrapFilter(predicate));
+
+        act.Should().Throw<Fes20ParseException>()
+            .WithMessage($"*maximum string literal length of {FilterParserGuard.MaxStringLiteralLength}*");
+    }
+
+    [UnitTest]
+    public void ParseFilter_ValueReferenceAndLiteralAtLengthLimits_Parses()
+    {
+        var name = new string('a', FilterParserGuard.MaxIdentifierLength);
+        var text = new string('b', FilterParserGuard.MaxStringLiteralLength);
+
+        var result = Fes20Parser.ParseFilter(WrapFilter(
+            $"<fes:PropertyIsEqualTo><fes:ValueReference>{name}</fes:ValueReference><fes:Literal>{text}</fes:Literal></fes:PropertyIsEqualTo>"));
+
+        var comparison = result.Should().BeOfType<BinaryExpression>().Subject;
+        comparison.Left.Should().BeOfType<PropertyReference>().Which.PropertyName.Should().Be(name);
+        comparison.Right.Should().BeOfType<Literal>().Which.Value.Should().Be(text);
+    }
+
+    private const string GmlEnvelope =
+        @"<gml:Envelope xmlns:gml=""http://www.opengis.net/gml/3.2"" srsName=""EPSG:4326""><gml:lowerCorner>0 0</gml:lowerCorner><gml:upperCorner>1 1</gml:upperCorner></gml:Envelope>";
+
+    private static string WrapFilter(string predicate)
+        => @"<fes:Filter xmlns:fes=""http://www.opengis.net/fes/2.0"">" + predicate + "</fes:Filter>";
+
     private static string FlatLogicalFilter(string element, int operandCount)
         => @"<fes:Filter xmlns:fes=""http://www.opengis.net/fes/2.0"">" + FlatLogicalBody(element, operandCount) + "</fes:Filter>";
 

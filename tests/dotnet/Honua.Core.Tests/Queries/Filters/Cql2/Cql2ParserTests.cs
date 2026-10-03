@@ -241,6 +241,21 @@ public class Cql2ParserTests
             $"maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}");
     }
 
+    [Theory]
+    [InlineData("name IN ({0})")]
+    [InlineData("A_CONTAINS(tags, ({0}))")]
+    [InlineData("f({0}) = 1")]
+    public void Parse_ValueListBeyondSizeLimit_ThrowsArgumentException(string template)
+    {
+        var values = string.Join(",", Enumerable.Repeat("1", FilterParserGuard.MaxInListSize + 1));
+
+        var act = () => _parser.Parse(string.Format(System.Globalization.CultureInfo.InvariantCulture, template, values));
+
+        var ex = act.Should().Throw<ArgumentException>().Which;
+        ex.InnerException.Should().NotBeNull();
+        ex.InnerException!.Message.Should().Contain($"maximum of {FilterParserGuard.MaxInListSize} values");
+    }
+
     [Fact]
     public void Parse_FlatLogicalSequenceWithinDepthLimit_ReturnsLeftDeepChain()
     {

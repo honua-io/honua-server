@@ -478,6 +478,7 @@ public sealed class Cql2Parser
             do
             {
                 args.Add(ParseFunctionArgument());
+                FilterParserGuard.EnsureValueListSize(args.Count, "CQL2 function argument list");
             }
             while (Match(Cql2TokenType.Comma));
         }
@@ -651,6 +652,7 @@ public sealed class Cql2Parser
         do
         {
             elements.Add(ParseArrayElement());
+            FilterParserGuard.EnsureValueListSize(elements.Count, "CQL2 array");
         }
         while (Match(Cql2TokenType.Comma));
 
