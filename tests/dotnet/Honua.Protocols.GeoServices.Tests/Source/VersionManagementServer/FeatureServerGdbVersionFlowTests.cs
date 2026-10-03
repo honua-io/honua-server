@@ -98,9 +98,9 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
         var responseBody = await addResponse.Content.ReadAsStringAsync();
         using (var document = JsonDocument.Parse(responseBody))
         {
-            document.RootElement.TryGetProperty("editResults", out var editResults).Should().BeTrue(
+            document.RootElement.ValueKind.Should().Be(JsonValueKind.Array,
                 "service-level applyEdits should return per-layer results; body: {0}", responseBody);
-            editResults[0]
+            document.RootElement[0]
                 .GetProperty("addResults")[0]
                 .GetProperty("success").GetBoolean().Should().BeTrue();
         }

@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Text.Json;
+using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -104,6 +105,56 @@ public sealed class SharingRestReadTests : IAsyncLifetime
         var authInfo = root.GetProperty("authInfo");
         authInfo.GetProperty("isTokenBasedSecurity").GetBoolean().Should().BeTrue();
         authInfo.GetProperty("tokenServicesUrl").GetString().Should().EndWith("/sharing/rest/generateToken");
+    }
+
+    [IntegrationTheory]
+    [InlineData("http", "")]
+    [InlineData("https", "")]
+    [InlineData("https", "/arcgis")]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /sharing/rest/info")]
+    public async Task Info_Anonymous_UsesActualPortalRoot(string scheme, string prefix)
+    {
+        using var client = _fixture.CreateClient();
+        client.BaseAddress = new Uri($"{scheme}://localhost");
+        using var response = await client.GetAsync(prefix + "/sharing/rest/info?f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var expectedRoot = $"{scheme}://localhost{prefix}";
+        document.RootElement.GetProperty("owningSystemUrl").GetString().Should().Be(expectedRoot);
+        document.RootElement.GetProperty("authInfo").GetProperty("tokenServicesUrl")
+            .GetString().Should().Be(expectedRoot + "/sharing/rest/generateToken");
+        document.RootElement.TryGetProperty("currentVersion", out _).Should().BeFalse();
+        document.RootElement.TryGetProperty("fullVersion", out _).Should().BeFalse();
+    }
+
+    [IntegrationTheory]
+    [InlineData("http", "")]
+    [InlineData("https", "")]
+    [InlineData("https", "/arcgis")]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /arcgisuris.xml")]
+    public async Task PortalUriList_Anonymous_UsesActualOriginAndPathBase(string scheme, string prefix)
+    {
+        using var client = _fixture.CreateClient();
+        client.BaseAddress = new Uri($"{scheme}://localhost");
+        using var response = await client.GetAsync(prefix + "/arcgisuris.xml");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/xml");
+        var root = XElement.Parse(await response.Content.ReadAsStringAsync());
+        var expectedBase = $"{scheme}://localhost{prefix}/";
+        root.Name.LocalName.Should().Be("ArcGISOnlineURIList");
+        root.Element("Name")!.Value.Should().Be("Honua");
+        root.Element("Base")!.Value.Should().Be(expectedBase);
+        root.Element("PingTest")!.Value.Should().Be(expectedBase + "sharing/rest/info?f=json");
+        (root.Element("Secure")?.Value).Should().Be(scheme == "https" ? expectedBase : null);
+        root.Elements().Select(element => element.Name.LocalName)
+            .Should().NotContain(["NewAccount", "ForgottenPassword", "Update", "BasemapQuery"]);
+
+        using var request = new HttpRequestMessage(HttpMethod.Head, prefix + "/arcgisuris.xml");
+        using var head = await client.SendAsync(request);
+        head.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await head.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
     }
 
     [IntegrationTest]
@@ -287,10 +338,12 @@ public sealed class SharingRestReadTests : IAsyncLifetime
             using var searchResponse = await client.GetAsync("/sharing/rest/search?f=json");
             using var infoResponse = await client.GetAsync("/sharing/rest/info?f=json");
             using var itemResponse = await client.GetAsync($"/sharing/rest/content/items/{PublicServiceId}?f=json");
+            using var uriResponse = await client.GetAsync("/arcgisuris.xml");
 
             await searchResponse.AssertGeoServicesErrorAsync(404);
             await infoResponse.AssertGeoServicesErrorAsync(404);
             await itemResponse.AssertGeoServicesErrorAsync(404);
+            uriResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
         finally
         {

@@ -204,6 +204,26 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
 
     #region GeoServices Error Formatting
 
+    [IntegrationTheory]
+    [InlineData("1.0.0", "ServiceExceptionReport", "1.2.0")]
+    [InlineData("1.1.0", "ExceptionReport", "1.1.0")]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /wfs")]
+    public async Task FormatError_ParsedLegacyTransactionVersion_OverridesReadConnectionVersion(string version, string envelope, string reportVersion)
+    {
+        var context = CreateContext("/wfs");
+        context.Request.Method = "POST";
+        context.Request.QueryString = new QueryString("?VERSION=2.0.0");
+        context.Items[StandardErrorResponseFormatter.WfsRequestVersionItemKey] = version;
+        var result = StandardErrorResponseFormatter.FormatError(context, StandardErrorResponse.Forbidden("Write denied."));
+        await result.ExecuteAsync(context);
+        var body = GetResponseBody(context);
+        body.Should().Contain(envelope);
+        body.Should().Contain($"version=\"{reportVersion}\"");
+        body.Should().Contain("Write denied.");
+        context.Response.StatusCode.Should().Be(403);
+    }
+
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /rest/services/0/FeatureServer/0/query")]

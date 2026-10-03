@@ -2943,7 +2943,15 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         response.Be200Ok();
         var responseContent = await response.Content.ReadAsStringAsync();
-        responseContent.Should().Contain("editResults");
+        // Esri's service-level applyEdits contract is a top-level array with
+        // assigned IDs in the per-layer results.
+        using var document = JsonDocument.Parse(responseContent);
+        document.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+        var layer = document.RootElement.EnumerateArray().Should().ContainSingle().Subject;
+        layer.GetProperty("id").GetInt32().Should().Be(TestLayerId);
+        var added = layer.GetProperty("addResults").EnumerateArray().Should().ContainSingle().Subject;
+        added.GetProperty("success").GetBoolean().Should().BeTrue();
+        added.GetProperty("objectId").GetInt64().Should().BePositive();
     }
 
     [IntegrationTest]
@@ -2982,7 +2990,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var responseContent = await response.Content.ReadAsStringAsync();
 
         using var jsonDoc = JsonDocument.Parse(responseContent);
-        var editResults = jsonDoc.RootElement.GetProperty("editResults");
+        jsonDoc.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+        var editResults = jsonDoc.RootElement;
         editResults.GetArrayLength().Should().BeGreaterThan(0);
         var layerResult = editResults[0];
 
@@ -3291,7 +3300,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var after = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         response.Be200Ok();
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var layer = document.RootElement.GetProperty("editResults").EnumerateArray().Should().ContainSingle().Subject;
+        document.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+        var layer = document.RootElement.EnumerateArray().Should().ContainSingle().Subject;
         layer.GetProperty("addResults")[0].GetProperty("success").GetBoolean().Should().BeTrue();
         layer.GetProperty("editMoment").GetInt64().Should().BeInRange(before, after);
         (await CountFeaturesNamedAsync(name)).Should().Be(1);
@@ -4572,7 +4582,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         response.Be200Ok();
         var responseContent = await response.Content.ReadAsStringAsync();
-        responseContent.Should().Contain("editResults");
+        using var editDocument = JsonDocument.Parse(responseContent);
+        editDocument.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+        editDocument.RootElement.EnumerateArray().Should().ContainSingle().Subject
+            .GetProperty("id").GetInt32().Should().Be(TestLayerId);
 
         // The add must have been rolled back: no feature with the marker name should exist.
         var countResponse = await _fixture.Client.GetAsync(
