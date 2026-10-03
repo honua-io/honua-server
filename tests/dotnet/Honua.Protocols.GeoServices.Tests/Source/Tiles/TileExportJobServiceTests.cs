@@ -440,6 +440,19 @@ public sealed class TileExportJobServiceTests
             .Should().ThrowAsync<TileExportNotFoundException>();
     }
 
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task Submit_SameKeyDifferentApiKey_CreatesSeparateJobs()
+    {
+        var service = CreateService(new InMemoryExecutionJobStore(), new InMemoryJobQueue());
+        var first = await service.SubmitAsync(CreatePlan(), "api-key-retry", null,
+            ApiKeyPrincipal("11111111-1111-1111-1111-111111111111"), default);
+        var second = await service.SubmitAsync(CreatePlan(), "api-key-retry", null,
+            ApiKeyPrincipal("22222222-2222-2222-2222-222222222222"), default);
+
+        second.OperationId.Should().NotBe(first.OperationId);
+    }
+
     private static ClaimsPrincipal ApiKeyPrincipal(string id)
         => new(new ClaimsIdentity([new Claim("api_key_id", id), new Claim(ClaimTypes.Name, "shared-name")], AuthenticationExtensions.ApiKeyScheme));
 

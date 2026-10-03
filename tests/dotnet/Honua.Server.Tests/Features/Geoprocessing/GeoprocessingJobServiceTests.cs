@@ -131,6 +131,30 @@ public sealed class GeoprocessingJobServiceTests
         second.OperationId.Should().NotBe(first.OperationId);
     }
 
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_KeyedTokenRefresh_PreservesOriginalSnapshotAndOwnerScope()
+    {
+        var store = new InMemoryExecutionJobStore();
+        var service = new GeoprocessingJobService(_progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator, new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance, DefaultExecutorOptions,
+            store, _jobQueue, resultPackageStore: _resultPackageStore);
+        var principal = CreateStablePrincipal();
+        ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim("exp", "100"));
+        var first = await service.SubmitJobAsync(CreateValidPlan(), "refresh-key", principal);
+        var refreshed = CreateStablePrincipal();
+        ((ClaimsIdentity)refreshed.Identity!).AddClaim(new Claim("exp", "200"));
+
+        var replay = await service.SubmitJobAsync(CreateValidPlan(), "refresh-key", refreshed);
+        var other = CreatePrincipal();
+        var separate = await service.SubmitJobAsync(CreateValidPlan(), "refresh-key", other);
+
+        replay.OperationId.Should().Be(first.OperationId);
+        replay.Audit.SubmitterSecurityContext!.Claims.Should().Contain(claim => claim.Type == "exp" && claim.Value == "100");
+        separate.OperationId.Should().NotBe(first.OperationId);
+    }
+
     // -----------------------------------------------------------------------
     // ValidatePlan
     // -----------------------------------------------------------------------
@@ -938,7 +962,7 @@ public sealed class GeoprocessingJobServiceTests
 
         var job = await _sut.SubmitJobAsync(CreateValidPlan(), null, CreateStablePrincipal());
 
-        job.Audit.RequestedBy.Should().Be("subject-123");
+        job.Audit.RequestedBy.Should().Be(CanonicalSecurityActor.Resolve(CreateStablePrincipal())!.ActorId);
     }
 
     [UnitTest]
@@ -1205,7 +1229,7 @@ public sealed class GeoprocessingJobServiceTests
         var replay = await _sut.SubmitJobAsync(CreateValidPlan(), "stable-replay", CreateStablePrincipal());
 
         replay.OperationId.Should().Be(first.OperationId);
-        replay.Audit.RequestedBy.Should().Be("subject-123");
+        replay.Audit.RequestedBy.Should().Be(CanonicalSecurityActor.Resolve(CreateStablePrincipal())!.ActorId);
     }
 
     [UnitTest]
