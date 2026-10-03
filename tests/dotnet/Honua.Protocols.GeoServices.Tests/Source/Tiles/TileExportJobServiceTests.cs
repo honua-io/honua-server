@@ -343,11 +343,14 @@ public sealed class TileExportJobServiceTests
         var service = CreateService(store, new InMemoryJobQueue());
         var owner = TenantPrincipal(Owner, submittedTenant);
         var job = await service.SubmitAsync(CreatePlan(), null, null, owner, default);
-        await store.SetAsync(job with { Audit = job.Audit with
+        await store.SetAsync(job with
         {
-            SubmitterSecurityContext = new Honua.Core.Features.Authorization.Domain.JobSecurityContext(
+            Audit = job.Audit with
+            {
+                SubmitterSecurityContext = new Honua.Core.Features.Authorization.Domain.JobSecurityContext(
                 Owner, submittedTenant, [], ClaimTypes.Role)
-        }});
+            }
+        });
         var caller = TenantPrincipal(Owner, requestTenant);
         if (admin) ((ClaimsIdentity)caller.Identity!).AddClaim(new Claim(ClaimTypes.Role, "admin"));
 
@@ -462,11 +465,14 @@ public sealed class TileExportJobServiceTests
         var principal = Principal(Owner);
         var job = await service.SubmitAsync(CreatePlan(), null, null, principal, default);
         var snapshot = job.Audit.SubmitterSecurityContext!;
-        await store.SetAsync(job with { Audit = job.Audit with
+        await store.SetAsync(job with
         {
-            SubmitterSecurityContext = new Honua.Core.Features.Authorization.Domain.JobSecurityContext(
+            Audit = job.Audit with
+            {
+                SubmitterSecurityContext = new Honua.Core.Features.Authorization.Domain.JobSecurityContext(
                 job.Audit.RequestedBy, snapshot.TenantId, snapshot.Claims, snapshot.RoleClaimType)
-        }});
+            }
+        });
 
         await FluentActions.Awaiting(() => service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), principal, default))
             .Should().ThrowAsync<TileExportNotFoundException>();
