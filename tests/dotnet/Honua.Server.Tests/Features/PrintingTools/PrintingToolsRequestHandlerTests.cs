@@ -43,7 +43,7 @@ namespace Honua.Server.Tests.Features.PrintingTools;
 [Trait("Component", "PrintingTools")]
 public class PrintingToolsRequestHandlerTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData(false, true, true, false)]
     [InlineData(true, false, false, false)]
     [InlineData(true, true, false, true)]
@@ -182,7 +182,7 @@ public class PrintingToolsRequestHandlerTests
         response.Should().BeAssignableTo<IStatusCodeHttpResult>().Which.StatusCode.Should().Be(404);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("user-1", "tenant-a", false, false, true)]
     [InlineData("user-2", "tenant-a", false, false, false)]
     [InlineData("user-2", "tenant-a", true, false, true)]

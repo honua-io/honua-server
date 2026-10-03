@@ -47,7 +47,7 @@ public sealed class TileExportJobExecutorTests
         await producer.DidNotReceiveWithAnyArgs().ProduceAsync(default!, default!, default);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("principal")]
     [InlineData("tenant")]
     [InlineData("claim")]
