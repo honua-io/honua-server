@@ -561,7 +561,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             .ConfigureAwait(false);
         var resolvedSecurityContext = membershipResult.Context;
         var ownerId = resumingApproved || inheritsSubmitterSecurityContext
-            ? resolvedSecurityContext.PrincipalId
+            ? resolvedSecurityContext.OwnerActorId
             : JobOwnershipSecurity.ResolveOwner(principal);
         if (!resumingApproved && !inheritsSubmitterSecurityContext && ownerId is not null)
         {

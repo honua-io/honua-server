@@ -453,6 +453,41 @@ public sealed class TileExportJobServiceTests
         second.OperationId.Should().NotBe(first.OperationId);
     }
 
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task JobAccess_RecordWithUnqualifiedOwnerMetadata_ReturnsNotFound()
+    {
+        var store = new InMemoryExecutionJobStore();
+        var service = CreateService(store, new InMemoryJobQueue());
+        var principal = Principal(Owner);
+        var job = await service.SubmitAsync(CreatePlan(), null, null, principal, default);
+        var snapshot = job.Audit.SubmitterSecurityContext!;
+        await store.SetAsync(job with { Audit = job.Audit with
+        {
+            SubmitterSecurityContext = new Honua.Core.Features.Authorization.Domain.JobSecurityContext(
+                job.Audit.RequestedBy, snapshot.TenantId, snapshot.Claims, snapshot.RoleClaimType)
+        }});
+
+        await FluentActions.Awaiting(() => service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), principal, default))
+            .Should().ThrowAsync<TileExportNotFoundException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task JobAccess_SerializedRecord_PreservesDurableOwnerMetadata()
+    {
+        var store = new InMemoryExecutionJobStore();
+        var service = CreateService(store, new InMemoryJobQueue());
+        var principal = Principal(Owner);
+        var job = await service.SubmitAsync(CreatePlan(), null, null, principal, default);
+        var json = System.Text.Json.JsonSerializer.Serialize(job, Honua.ControlPlane.ControlPlaneJsonContext.Default.ExecutionJobRecord);
+        var restored = System.Text.Json.JsonSerializer.Deserialize(json, Honua.ControlPlane.ControlPlaneJsonContext.Default.ExecutionJobRecord)!;
+        restored.Audit.SubmitterSecurityContext!.OwnerActorId.Should().Be(job.Audit.RequestedBy);
+        await store.SetAsync(restored);
+
+        (await service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), principal, default)).OperationId.Should().Be(job.OperationId);
+    }
+
     private static ClaimsPrincipal ApiKeyPrincipal(string id)
         => new(new ClaimsIdentity([new Claim("api_key_id", id), new Claim(ClaimTypes.Name, "shared-name")], AuthenticationExtensions.ApiKeyScheme));
 

@@ -1681,7 +1681,7 @@ public sealed class GeoprocessingJobServiceTests
         var job = await _sut.ResumeApprovedJobAsync(payload);
 
         job.Status.Should().Be(ExecutionJobStatus.Queued);
-        job.Audit.RequestedBy.Should().Be("subject-123");
+        job.Audit.RequestedBy.Should().Be(CanonicalSecurityActor.Resolve(CreateStablePrincipal())!.ActorId);
 
         // The resumed job carries the ORIGINAL submitter's snapshot, not one recaptured from
         // the name-only resume principal.
@@ -1953,7 +1953,10 @@ public sealed class GeoprocessingJobServiceTests
         var inherited = new JobSecurityContext(
             "subject-123",
             TenantId: "tenant-requester",
-            [new JobSecurityClaim(ClaimTypes.Role, "analyst"), new JobSecurityClaim("region", "west")]);
+            [new JobSecurityClaim(ClaimTypes.Role, "analyst"), new JobSecurityClaim("region", "west")])
+        {
+            OwnerActorId = CanonicalSecurityActor.Resolve(CreateStablePrincipal())!.ActorId
+        };
 
         await sut.SubmitJobWithSecurityContextAsync(
             CreateLayerSourcePlan(42), null, orchestratorPrincipal, TrustedWorkflowMetadata(), inherited);
@@ -1968,7 +1971,10 @@ public sealed class GeoprocessingJobServiceTests
         => new(
             "subject-123",
             TenantId: null,
-            [new JobSecurityClaim(ClaimTypes.Role, "analyst"), new JobSecurityClaim("region", "west")]);
+            [new JobSecurityClaim(ClaimTypes.Role, "analyst"), new JobSecurityClaim("region", "west")])
+        {
+            OwnerActorId = CanonicalSecurityActor.Resolve(CreateStablePrincipal())!.ActorId
+        };
 
     [UnitTest]
     [Operation(Operations.Create)]
@@ -2681,7 +2687,7 @@ public sealed class GeoprocessingJobServiceTests
         {
             Audit = record.Audit with
             {
-                SubmitterSecurityContext = CreateSubmitterSecurityContext() with { TenantId = tenant }
+                SubmitterSecurityContext = CreateSubmitterSecurityContext() with { TenantId = tenant, OwnerActorId = record.Audit.RequestedBy }
             }
         };
     }
@@ -5628,6 +5634,10 @@ public sealed class GeoprocessingJobServiceTests
             RequestedBy = owner is null ? null : CanonicalSecurityActor.Resolve(new ClaimsPrincipal(
                 new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, owner)], "Test")))!.ActorId,
             SubmitterSecurityContext = new Honua.Core.Features.Authorization.Domain.JobSecurityContext(owner, null, [], ClaimTypes.Role)
+            {
+                OwnerActorId = owner is null ? null : CanonicalSecurityActor.Resolve(new ClaimsPrincipal(
+                    new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, owner)], "Test")))!.ActorId
+            }
         };
 
     private static ClaimsPrincipal CreatePrincipal()

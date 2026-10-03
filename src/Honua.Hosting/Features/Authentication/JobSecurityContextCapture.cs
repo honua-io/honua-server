@@ -213,7 +213,10 @@ internal static class JobSecurityContextCapture
                 ?? principal.Identity?.Name,
             tenantId,
             captured,
-            options.EffectiveRoleClaimType);
+            options.EffectiveRoleClaimType)
+        {
+            OwnerActorId = JobOwnershipSecurity.ResolveOwner(principal)
+        };
     }
 
     /// <summary>

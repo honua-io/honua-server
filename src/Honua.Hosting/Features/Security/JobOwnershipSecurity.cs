@@ -38,6 +38,7 @@ internal static class JobOwnershipSecurity
         => !string.IsNullOrWhiteSpace(owner)
             && audit.SubmitterSecurityContext is { } submitter
             && string.Equals(submitter.TenantId, tenant, StringComparison.Ordinal)
+            && string.Equals(submitter.OwnerActorId, owner, StringComparison.Ordinal)
             && string.Equals(audit.RequestedBy, owner, StringComparison.Ordinal);
 
     internal static string CreateJobId(string prefix, string? key, string? owner, string? tenant)
