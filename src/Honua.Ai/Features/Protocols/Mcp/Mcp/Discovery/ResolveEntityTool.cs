@@ -93,11 +93,13 @@ internal sealed class ResolveEntityTool : IMcpTool
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         var publications = await ReadableMetadataCatalog.GetPublicationsAsync(httpContext, snapshot, cancellationToken).ConfigureAwait(false);
+        var services = await ReadableMetadataCatalog.GetServicesAsync(httpContext, publications, cancellationToken).ConfigureAwait(false);
+        var readableServiceIds = services.Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
         var matches = new List<McpEntityMatch>();
         foreach (var group in publications.GroupBy(entry => entry.Service.Metadata.Id))
         {
             var service = group.First().Service;
-            if (entityType is EntityTypeAny or EntityTypeService)
+            if (entityType is EntityTypeAny or EntityTypeService && readableServiceIds.Contains(service.Metadata.Id))
             {
                 var serviceScore = Score(text, service.Metadata.Name, service.Metadata.Title, service.Metadata.Id);
                 if (serviceScore > 0)

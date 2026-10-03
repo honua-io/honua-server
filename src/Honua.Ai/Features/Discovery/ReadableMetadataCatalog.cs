@@ -40,6 +40,24 @@ internal static class ReadableMetadataCatalog
         return publications;
     }
 
+    public static async Task<IReadOnlyList<MetadataV2Service>> GetServicesAsync(
+        HttpContext context,
+        IReadOnlyList<ReadableMetadataPublication> publications,
+        CancellationToken cancellationToken)
+    {
+        var services = new List<MetadataV2Service>();
+        foreach (var service in publications.Select(entry => entry.Service).DistinctBy(service => service.Metadata.Id))
+        {
+            if (await AccessPolicyHelpers.RequireServiceAccessAsync(
+                context, service, AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false) is null)
+            {
+                services.Add(service);
+            }
+        }
+
+        return services;
+    }
+
     public static DefaultHttpContext CreateAccessContext(IServiceProvider services, ClaimsPrincipal? principal)
     {
         // Grounding reads metadata in a fresh scope, while tenant resolution belongs

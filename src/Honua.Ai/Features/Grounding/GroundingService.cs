@@ -317,7 +317,10 @@ internal sealed class GroundingService : IGroundingService
         var layerCandidates = MetadataV2GroundingCatalog.BuildLayers(snapshot, publications)
             .Select(l => new LayerCandidate(l.LayerId, l.Name, l.Description))
             .ToArray();
-        var serviceCandidates = publications.Select(entry => entry.Service).DistinctBy(service => service.Metadata.Id)
+        IReadOnlyList<MetadataV2Service> services = context is null
+            ? []
+            : await ReadableMetadataCatalog.GetServicesAsync(context, publications, cancellationToken).ConfigureAwait(false);
+        var serviceCandidates = services
             .Select(s => new ServiceCandidate(s.Metadata.Name, s.Metadata.Description))
             .Where(s => !string.IsNullOrWhiteSpace(s.Name))
             .ToArray();
