@@ -58,7 +58,7 @@ public sealed class McpReadableCatalogTests
         var act = () => tool.InvokeAsync(context, arguments.RootElement, CancellationToken.None);
 
         await act.Should().ThrowAsync<Exception>()
-            .Where(exception => exception is GeoprocessingAuthorizationException or GeoprocessingNotFoundException);
+            .Where(exception => exception.GetType() == typeof(GeoprocessingAuthorizationException) || exception.GetType() == typeof(GeoprocessingNotFoundException));
         await renderer.DidNotReceiveWithAnyArgs().RenderDatasetMapAsync(default!, default!, default);
     }
 
@@ -252,13 +252,14 @@ public sealed class McpReadableCatalogTests
         renderer.RenderDatasetMapAsync(Arg.Any<int[]>(), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
             .Returns(new RasterResult { Data = [1], ContentType = "image/png", Width = 1, Height = 1 });
         services.AddSingleton(renderer);
-        var tenant = Substitute.For<ITenantContext>();
-        tenant.TenantId.Returns(restriction == "missing-tenant" ? null : "tenant-a");
-        services.AddSingleton(tenant);
-        return services.BuildServiceProvider();
+        services.AddScoped(_ => Substitute.For<ITenantContext>());
+        var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<ITenantContext>().TenantId
+            .Returns(restriction == "missing-tenant" ? null : "tenant-a");
+        return provider;
     }
 
-    private static HttpContext CreateContext(IServiceProvider services)
+    private static DefaultHttpContext CreateContext(IServiceProvider services)
     {
         var context = new DefaultHttpContext { User = Principal, RequestServices = services };
         services.GetRequiredService<IHttpContextAccessor>().HttpContext = context;

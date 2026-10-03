@@ -74,9 +74,10 @@ public sealed class McpMapToolTests
         using var services = BuildServices(reader: reader, accessPolicy: servicePolicy ? null : policy, servicePolicy: servicePolicy ? policy : null);
         var context = AuthenticatedContext(services);
         var graph = await services.GetRequiredService<IMetadataV2GraphProvider>().GetCurrentAsync();
-        var layer = MapToolLayerResolver.Resolve(graph, ServiceId, LayerIndex);
+        var resource = graph.Graph.Resources.Single();
+        var service = graph.Graph.Services.Single();
         var restDenial = await AccessPolicyHelpers.RequireResourceAccessAsync(
-            context, layer.Resource, layer.Service);
+            context, resource, service);
         restDenial.Should().NotBeNull("the identical REST layer access check must deny this principal");
 
         var response = await BuildSurface().DispatchAsync(context,

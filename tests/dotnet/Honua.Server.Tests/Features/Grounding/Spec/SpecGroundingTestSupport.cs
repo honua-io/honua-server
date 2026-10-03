@@ -3,6 +3,9 @@
 
 using System.Collections.Immutable;
 using System.Text.Json;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
+using Honua.Infrastructure.Authentication;
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -39,6 +42,8 @@ internal static class SpecGroundingTestSupport
                 Description = description
             },
             Type = MetadataV2ResourceType.FeatureDataset,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+            AccessPolicy = new AccessPolicy { AllowAnonymous = true },
             StorageBindingIds = [bindingId],
             SchemaFields = layerFields,
             Spatial = new MetadataV2ResourceSpatial
@@ -108,6 +113,7 @@ internal static class SpecGroundingTestSupport
                     Id = bindingId,
                     Name = bindingId
                 },
+                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                 ResourceId = layer.Metadata.Id,
                 StorageType = MetadataV2StorageType.RelationalTable,
                 Locator = layer.Metadata.Name,
@@ -122,6 +128,14 @@ internal static class SpecGroundingTestSupport
             GeneratedAt = DateTimeOffset.UtcNow,
             Resources = layers.ToArray(),
             StorageBindings = bindings,
+            Publications = layers.Select(layer => new MetadataV2Publication
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = $"publication-{ParseLayerId(layer)}", Name = layer.Metadata.Name },
+                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+                ServiceId = "grounding-service",
+                ResourceId = layer.Metadata.Id,
+                StorageBindingId = layer.StorageBindingIds[0]
+            }).ToArray(),
             Services =
             [
                 new MetadataV2Service
@@ -132,7 +146,8 @@ internal static class SpecGroundingTestSupport
                         Name = "grounding",
                         Description = "Grounding test service"
                     },
-                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+                    AccessPolicy = new AccessPolicy { AllowAnonymous = true }
                 }
             ]
         };
@@ -160,6 +175,7 @@ internal sealed class SpecGroundingHarness : IDisposable
         var serviceCollection = new ServiceCollection();
         serviceCollection.AddLogging(builder => builder.SetMinimumLevel(LogLevel.Debug));
         serviceCollection.AddSpecGrounding();
+        serviceCollection.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         serviceCollection.AddSingleton<IMetadataV2GraphProvider>(SpecGroundingTestSupport.CreateGraphProvider(layers));
         _services = serviceCollection.BuildServiceProvider();
     }

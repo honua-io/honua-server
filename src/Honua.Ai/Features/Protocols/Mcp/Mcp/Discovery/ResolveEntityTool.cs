@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Ai.Discovery;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -91,9 +92,11 @@ internal sealed class ResolveEntityTool : IMcpTool
         var graphProvider = httpContext.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
+        var publications = await ReadableMetadataCatalog.GetPublicationsAsync(httpContext, snapshot, cancellationToken).ConfigureAwait(false);
         var matches = new List<McpEntityMatch>();
-        foreach (var service in snapshot.Graph.Services)
+        foreach (var group in publications.GroupBy(entry => entry.Service.Metadata.Id))
         {
+            var service = group.First().Service;
             if (entityType is EntityTypeAny or EntityTypeService)
             {
                 var serviceScore = Score(text, service.Metadata.Name, service.Metadata.Title, service.Metadata.Id);
@@ -115,7 +118,7 @@ internal sealed class ResolveEntityTool : IMcpTool
 
             if (entityType is EntityTypeAny or EntityTypeLayer)
             {
-                AddLayerMatches(snapshot, service, text, matches);
+                AddLayerMatches(group, text, matches);
             }
         }
 
@@ -144,19 +147,19 @@ internal sealed class ResolveEntityTool : IMcpTool
     }
 
     private static void AddLayerMatches(
-        MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service,
+        IEnumerable<ReadableMetadataPublication> publications,
         string text,
         List<McpEntityMatch> matches)
     {
-        foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id))
+        foreach (var entry in publications)
         {
-            var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication) || publication.LayerIndex is not { } layerIndex)
+            var publication = entry.Publication;
+            if (publication.LayerIndex is not { } layerIndex)
             {
                 continue;
             }
-            var routableResource = resource!;
+            var service = entry.Service;
+            var routableResource = entry.Resource;
 
             var layerName = !string.IsNullOrWhiteSpace(publication.TitleOverride)
                 ? publication.TitleOverride!

@@ -15,6 +15,12 @@ description: "/v1/grounding/spec/ turns natural-language edit requests into vali
 
 Both endpoints accept JSON request bodies and currently allow anonymous access (the same surface is also intended for admin workspace use). Successful responses return `application/json`; malformed or semantically invalid wire payloads return `application/problem+json`. All request and success-response DTOs flow through a source-generated `SpecGroundingJsonContext` for AOT compatibility. Inactive nullable branch properties (`mutation`, `error`) are omitted from the JSON payload rather than serialized as `null`; `clarifications`, `warnings`, and clarification `candidates` are always emitted as arrays.
 
+Dataset resolution and schema previews use only routable publications visible to
+the request tenant and readable by the supplied principal under the shared resource
+metadata policy. Anonymous callers can resolve publications whose resource and
+service policies explicitly allow anonymous reads. Unpublished or unreadable entries
+are omitted before dataset and column clarification candidates are built.
+
 ### `POST /v1/grounding/spec/mutate`
 
 Grounds one NL turn against an existing canonical spec and returns either a validated mutation plan, a structured clarification envelope, or a structured error.
