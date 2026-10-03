@@ -90,6 +90,44 @@ Authorization-middleware denials omit operation, audit and proposal lineage head
 these requests stop before lineage attestation can validate those headers. Downstream
 audit events retain lineage after the attestation middleware has processed it.
 
+### Hash chain
+
+Each new audit row stores an `entry_hash`. When `AuditLog:ChainVerification:Key`
+is set to a base64 value of at least 32 decoded bytes, that hash is an
+HMAC-SHA256 under the key. The key is not stored in the database. Rows written
+before the key was set keep their unkeyed SHA-256 digest and remain a prefix
+of the chain. Verification succeeds only when a key is configured and at least
+one row was written with that key. A row with no hash after the chain has
+started does not verify. Leading rows that predate the hash columns still do.
+Until the key is set, scheduled verification reports the chain unverified
+whenever hashed rows exist, and the `audit-chain-integrity` health check is
+Unhealthy. Responses and audit writes continue either way. Set the same key on
+every node. The key is a process-lifetime startup snapshot; configuration
+reloads do not change it.
+
+#### Upgrade and activate in separate phases
+
+1. Roll out the keyed-capable release to **every** replica with the key unset.
+   Wait for all older processes, including background workers, to terminate.
+   Legacy writes continue in this phase; integrity remains Unhealthy until
+   activation and the first keyed write.
+2. Pause all traffic and background jobs that can emit audit events, drain
+   in-flight requests, and stop every audit-writing process. Set the same key
+   on every replica, restart all of them, and only then resume writes. For the
+   Docker quickstart, put `AuditLog__ChainVerification__Key` in the env file
+   passed to Compose; the service environment forwards it to the container.
+3. Perform an audited operation and wait for scheduled verification to report
+   a healthy chain before completing the activation.
+
+Do not activate the key during a rolling restart with live writers: a process
+without the key can append a legacy digest after the first HMAC row, which
+permanently breaks verification. Upgrading the binary alone does not prevent
+this; all writers must restart with the key before writes resume. Once a keyed
+row exists, retain that key and use only keyed-capable releases for rollback.
+Removing or changing the key, or rolling back to an older writer, is not a
+supported rollback. If activation fails, keep writes paused and restore the
+same key on a keyed-capable release; do not rewrite existing audit rows.
+
 ### Failures of audited operations
 
 | Operation | Trigger | EventType | Action | Outcome source |
