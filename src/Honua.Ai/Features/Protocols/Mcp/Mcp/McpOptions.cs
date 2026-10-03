@@ -104,4 +104,28 @@ internal sealed class McpOptions
     /// Delay advised when reject-new session capacity backpressure is returned. Default 5 seconds.
     /// </summary>
     public int SessionCapacityRetryAfterSeconds { get; set; } = 5;
+
+    /// <summary>
+    /// Maximum number of concurrently tracked anonymous sessions (SEC-18). Anonymous
+    /// sessions form their own pool inside <see cref="MaxSessions"/>: admitting one
+    /// only ever evicts another anonymous session, never an authenticated one, and an
+    /// authenticated <c>initialize</c> at capacity evicts anonymous sessions first.
+    /// Clamped to <see cref="MaxSessions"/>. Default 1,000.
+    /// </summary>
+    public int MaxAnonymousSessions { get; set; } = 1_000;
+
+    /// <summary>
+    /// Maximum number of elements in one JSON-RPC batch on <c>POST /mcp</c> (SEC-18).
+    /// A longer batch is answered with a single <c>invalid_request</c> error and none
+    /// of its elements is dispatched. Default 50.
+    /// </summary>
+    public int MaxBatchSize { get; set; } = 50;
+
+    /// <summary>
+    /// Maximum <c>POST /mcp</c> request body size in bytes (SEC-18). A larger body is
+    /// refused with HTTP 413 before it is parsed. The default, 10 MiB, leaves room for
+    /// the 4 MiB inline dataset accepted by <c>honua_ingest_dataset</c> after JSON
+    /// string escaping.
+    /// </summary>
+    public long MaxRequestBodyBytes { get; set; } = 10L * 1024 * 1024;
 }

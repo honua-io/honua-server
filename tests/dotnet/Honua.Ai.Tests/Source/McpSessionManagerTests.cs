@@ -181,6 +181,72 @@ public sealed class McpSessionManagerTests
         manager.IsValid(newest).Should().BeTrue();
     }
 
+    [UnitTest]
+    public void TryCreateSession_AnonymousAtAnonymousCap_EvictsOnlyAnonymousSessions()
+    {
+        // SEC-18: anonymous sessions live in their own bounded pool, so admitting
+        // another anonymous session displaces the oldest anonymous one and never an
+        // authenticated session.
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var manager = new McpSessionManager(
+            maxSessions: 10,
+            idleTimeout: TimeSpan.FromHours(1),
+            evictionPolicy: McpSessionEvictionPolicy.EvictLeastRecentlyUsed,
+            timeProvider: time,
+            maxAnonymousSessions: 2);
+
+        manager.TryCreateSession("sub:a", out var authenticated).Should().BeTrue();
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession(McpSessionManager.AnonymousPrincipalKey, out var firstAnonymous).Should().BeTrue();
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession(McpSessionManager.AnonymousPrincipalKey, out var secondAnonymous).Should().BeTrue();
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession(McpSessionManager.AnonymousPrincipalKey, out var thirdAnonymous).Should().BeTrue();
+
+        manager.IsValid(authenticated).Should().BeTrue("the authenticated session is the LRU but is outside the anonymous pool");
+        manager.IsValid(firstAnonymous).Should().BeFalse();
+        manager.IsValid(secondAnonymous).Should().BeTrue();
+        manager.IsValid(thirdAnonymous).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void TryCreateSession_AnonymousWhenTableHoldsOnlyAuthenticatedSessions_IsRefused()
+    {
+        var manager = new McpSessionManager(
+            maxSessions: 2,
+            evictionPolicy: McpSessionEvictionPolicy.EvictLeastRecentlyUsed,
+            maxAnonymousSessions: 2);
+
+        manager.TryCreateSession("sub:a", out var first).Should().BeTrue();
+        manager.TryCreateSession("sub:b", out var second).Should().BeTrue();
+
+        manager.TryCreateSession(McpSessionManager.AnonymousPrincipalKey, out var rejected).Should().BeFalse();
+        rejected.Should().BeEmpty();
+        manager.IsValid(first).Should().BeTrue();
+        manager.IsValid(second).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void TryCreateSession_AuthenticatedAtCapacity_EvictsAnonymousBeforeAuthenticated()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var manager = new McpSessionManager(
+            maxSessions: 2,
+            idleTimeout: TimeSpan.FromHours(1),
+            evictionPolicy: McpSessionEvictionPolicy.EvictLeastRecentlyUsed,
+            timeProvider: time);
+
+        manager.TryCreateSession("sub:a", out var authenticated).Should().BeTrue();
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession(McpSessionManager.AnonymousPrincipalKey, out var anonymous).Should().BeTrue();
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession("sub:b", out var newest).Should().BeTrue();
+
+        manager.IsValid(anonymous).Should().BeFalse("anonymous sessions are evicted before authenticated ones");
+        manager.IsValid(authenticated).Should().BeTrue();
+        manager.IsValid(newest).Should().BeTrue();
+    }
+
     /// <summary>
     /// Test <see cref="TimeProvider"/> whose UTC clock only advances when the test
     /// asks, so idle-TTL and LRU behavior are deterministic without real waits.
