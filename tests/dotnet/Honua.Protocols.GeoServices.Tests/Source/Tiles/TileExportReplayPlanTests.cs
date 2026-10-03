@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -317,6 +318,7 @@ public sealed class TileExportReplayPlanTests
             Status = ExecutionJobStatus.Running,
             CreatedAt = now,
             UpdatedAt = now,
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new JobSecurityContext("user-1", null, []) },
             Spec = TileExportExecutionSpecBuilder.Build(plan)
         };
     }

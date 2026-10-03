@@ -3,6 +3,9 @@
 
 using System.Collections.Immutable;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Authorization.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -21,6 +24,102 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.Tiles;
 [Protocol(TestProtocols.MapServer)]
 public sealed class TileExportJobExecutorTests
 {
+    private static readonly JobSecurityContext DefaultSubmitter = new("user-1", "tenant-a", []);
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExecuteAsync_NoSubmitterSnapshot_FailsBeforeStorageOrGeneration()
+    {
+        var storage = Substitute.For<ICloudFileStorage>();
+        var producer = Substitute.For<ITileExportPackageProducer>();
+        producer.CanProduce(Arg.Any<TileExportJobPlan>()).Returns(true);
+        producer.ProduceAsync(Arg.Any<TileExportJobPlan>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.Arg<Stream>().WriteAsync(new byte[] { 1, 2, 3 }).AsTask());
+        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call => UploadResult.CreateSuccess(StoredFile(
+                call.Arg<FileUploadRequest>().ObjectKeyOverride!, CreatePlan(), DateTimeOffset.UtcNow.AddHours(2))));
+        var executor = CreateExecutor(storage, producer);
+        var context = new RecordingContext("export-no-snapshot");
+
+        var result = await executor.ExecuteAsync(JobFor(CreatePlan(), context.OperationId) with { Audit = new OperationAuditInfo() }, context, default);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        await storage.DidNotReceiveWithAnyArgs().GetMetadataAsync(default!, default);
+        await producer.DidNotReceiveWithAnyArgs().ProduceAsync(default!, default!, default);
+    }
+
+    [UnitTheory]
+    [InlineData("principal")]
+    [InlineData("tenant")]
+    [InlineData("claim")]
+    [Operation(Operations.Export)]
+    public async Task ExecuteAsync_DifferentSubmitterSnapshots_UseDistinctArtifactKeys(string changedIdentity)
+    {
+        var storage = Substitute.For<ICloudFileStorage>();
+        var keys = new List<string>();
+        storage.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => { keys.Add(call.Arg<string>()); return (CloudFile?)null; });
+        var executor = CreateExecutor(storage);
+        var first = JobFor(CreatePlan(), "export-a") with
+        {
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new JobSecurityContext("user-a", "tenant-1", [new JobSecurityClaim("region", "west")]) }
+        };
+        var second = first with
+        {
+            OperationId = "export-b",
+            Audit = new OperationAuditInfo
+            {
+                SubmitterSecurityContext = new JobSecurityContext(
+                    changedIdentity == "principal" ? "user-b" : "user-a",
+                    changedIdentity == "tenant" ? "tenant-2" : "tenant-1",
+                    [new JobSecurityClaim("region", changedIdentity == "claim" ? "east" : "west")])
+            }
+        };
+
+        await executor.ExecuteAsync(first, new RecordingContext(first.OperationId), default);
+        await executor.ExecuteAsync(second, new RecordingContext(second.OperationId), default);
+
+        keys.Should().HaveCount(2);
+        keys[0].Should().NotBe(keys[1]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExecuteAsync_MapWithReadPolicies_RendersForEachJob()
+    {
+        var plan = CreatePlan();
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => StoredFile(call.Arg<string>(), plan, DateTimeOffset.UtcNow.AddHours(2)));
+        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call => UploadResult.CreateSuccess(StoredFile(
+                call.Arg<FileUploadRequest>().ObjectKeyOverride!, plan, DateTimeOffset.UtcNow.AddHours(2))));
+        var producer = Substitute.For<ITileExportPackageProducer>();
+        producer.CanProduce(Arg.Any<TileExportJobPlan>()).Returns(true);
+        producer.ProduceAsync(Arg.Any<TileExportJobPlan>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.Arg<Stream>().WriteAsync(new byte[] { 1 }).AsTask());
+        var fence = Substitute.For<ITileExportSourceFence>();
+        fence.SourceKind.Returns(TileExportSourceKind.Map);
+        fence.IsAvailableAsync(Arg.Any<TileExportJobPlan>(), Arg.Any<CancellationToken>()).Returns(true);
+        var policies = Substitute.For<IRlsPolicyStore>();
+        policies.ListPoliciesAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult<IReadOnlyList<RlsPolicy>>(
+            [new RlsPolicy { Role = "reader", Service = "*", Layer = "*", Attribute = "region", ClaimType = "region" }]));
+        var masks = Substitute.For<IFieldMaskPolicyStore>();
+        masks.ListPoliciesAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult<IReadOnlyList<FieldMaskPolicy>>([]));
+        await using var services = new ServiceCollection().AddLogging().AddSingleton(TimeProvider.System)
+            .AddSingleton(storage).AddSingleton(producer).AddSingleton(fence)
+            .AddSingleton(policies).AddSingleton(masks).AddSingleton<TileExportJobExecutor>()
+            .BuildServiceProvider();
+        var executor = services.GetRequiredService<TileExportJobExecutor>();
+
+        var first = await executor.ExecuteAsync(JobFor(plan, "export-policy-a"), new RecordingContext("export-policy-a"), default);
+        var second = await executor.ExecuteAsync(JobFor(plan, "export-policy-b"), new RecordingContext("export-policy-b"), default);
+
+        first.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        second.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        await producer.Received(2).ProduceAsync(Arg.Any<TileExportJobPlan>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+        await storage.DidNotReceiveWithAnyArgs().GetMetadataAsync(default!, default);
+    }
+
     [UnitTest]
     [Operation(Operations.Export)]
     public void BuildAndTryParse_RoundTripsValidatedPlanWithStableIdentity()
@@ -131,7 +230,7 @@ public sealed class TileExportJobExecutorTests
         var storage = Substitute.For<ICloudFileStorage>();
         var producer = Substitute.For<ITileExportPackageProducer>();
         producer.CanProduce(Arg.Any<TileExportJobPlan>()).Returns(true);
-        var key = TileExportArtifactIdentity.BuildObjectKey(plan);
+        var key = TileExportArtifactIdentity.BuildObjectKey(plan, DefaultSubmitter);
         storage.GetMetadataAsync(key, Arg.Any<CancellationToken>()).Returns(StoredFile(
             key,
             plan,
@@ -157,7 +256,7 @@ public sealed class TileExportJobExecutorTests
     {
         var now = new DateTimeOffset(2026, 7, 10, 12, 0, 0, TimeSpan.Zero);
         var plan = CreatePlan() with { RetentionSeconds = 3600 };
-        var key = TileExportArtifactIdentity.BuildObjectKey(plan);
+        var key = TileExportArtifactIdentity.BuildObjectKey(plan, DefaultSubmitter);
         var storage = Substitute.For<ICloudFileStorage>();
         storage.GetMetadataAsync(key, Arg.Any<CancellationToken>()).Returns(StoredFile(
             key,
@@ -197,7 +296,7 @@ public sealed class TileExportJobExecutorTests
                 var stream = call.ArgAt<Stream>(1);
                 await stream.WriteAsync(new byte[] { 0x01, 0x02, 0x03 });
             });
-        var key = TileExportArtifactIdentity.BuildObjectKey(plan);
+        var key = TileExportArtifactIdentity.BuildObjectKey(plan, DefaultSubmitter);
         storage.GetMetadataAsync(key, Arg.Any<CancellationToken>()).Returns(StoredFile(
             key,
             plan,
@@ -217,7 +316,7 @@ public sealed class TileExportJobExecutorTests
         captured.SizeBytes.Should().Be(3);
         captured.TimeToLive.Should().Be(TimeSpan.FromHours(1));
         captured.Metadata[TileExportArtifactIdentity.IdentityMetadataKey].Should()
-            .Be(TileExportArtifactIdentity.Compute(plan));
+            .Be(TileExportArtifactIdentity.Compute(plan, DefaultSubmitter));
         context.Artifacts.Should().ContainSingle(key);
     }
 
@@ -226,7 +325,7 @@ public sealed class TileExportJobExecutorTests
     public async Task ExecuteAsync_MissingArtifact_GeneratesAndPublishesStableReference()
     {
         var plan = CreatePlan();
-        var key = TileExportArtifactIdentity.BuildObjectKey(plan);
+        var key = TileExportArtifactIdentity.BuildObjectKey(plan, DefaultSubmitter);
         var storage = Substitute.For<ICloudFileStorage>();
         storage.GetMetadataAsync(key, Arg.Any<CancellationToken>()).Returns((CloudFile?)null);
         storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
@@ -353,7 +452,18 @@ public sealed class TileExportJobExecutorTests
         var fence = Substitute.For<ITileExportSourceFence>();
         fence.SourceKind.Returns(TileExportSourceKind.Map);
         fence.IsAvailableAsync(Arg.Any<TileExportJobPlan>(), Arg.Any<CancellationToken>()).Returns(true);
-        return new(storage, producers, [fence], timeProvider, NullLogger<TileExportJobExecutor>.Instance);
+        var rows = Substitute.For<IRlsPolicyStore>();
+        rows.ListPoliciesAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult<IReadOnlyList<RlsPolicy>>([]));
+        var masks = Substitute.For<IFieldMaskPolicyStore>();
+        masks.ListPoliciesAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult<IReadOnlyList<FieldMaskPolicy>>([]));
+        var services = Substitute.For<IServiceProvider>();
+        services.GetService(typeof(IRlsPolicyStore)).Returns(rows);
+        services.GetService(typeof(IFieldMaskPolicyStore)).Returns(masks);
+        var scope = Substitute.For<IServiceScope>();
+        scope.ServiceProvider.Returns(services);
+        var factory = Substitute.For<IServiceScopeFactory>();
+        factory.CreateScope().Returns(scope);
+        return new(storage, producers, [fence], timeProvider, NullLogger<TileExportJobExecutor>.Instance, factory);
     }
 
     private static TileExportJobPlan CreatePlan()
@@ -387,7 +497,8 @@ public sealed class TileExportJobExecutorTests
             Status = ExecutionJobStatus.Running,
             CreatedAt = now,
             UpdatedAt = now,
-            Spec = TileExportExecutionSpecBuilder.Build(plan)
+            Spec = TileExportExecutionSpecBuilder.Build(plan),
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = DefaultSubmitter }
         };
     }
 
@@ -404,7 +515,7 @@ public sealed class TileExportJobExecutorTests
             Provider = CloudStorageProvider.Local,
             Metadata = ImmutableDictionary<string, string>.Empty.Add(
                 TileExportArtifactIdentity.IdentityMetadataKey,
-                TileExportArtifactIdentity.Compute(plan))
+                TileExportArtifactIdentity.Compute(plan, DefaultSubmitter))
         };
 
     private sealed class RecordingContext(string operationId) : IJobExecutionContext

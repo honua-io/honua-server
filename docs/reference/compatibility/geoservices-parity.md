@@ -235,6 +235,18 @@ stable across releases.
 
 ## MapServer + WMS / WMTS
 
+Background tile exports and print jobs retain the submitter's security context for
+feature reads. Tile-package reuse is scoped to the captured identity, tenant, and
+policy claims. When any row-level or field-mask policies are configured, map exports
+render a fresh package for each job so queued work evaluates current read policies.
+Jobs created without a security snapshot must be submitted again after upgrade.
+
+Print layer authorization uses the shared query permission and tenant checks.
+Authenticated print-job status and result polling requires the submitting durable
+identity or an administrator in the same tenant. Anonymous print-job polling remains
+available within the submission tenant. Older print progress records without ownership
+metadata must be submitted again.
+
 The `layers` and `allLayersAndTables` metadata resources accept GET and POST.
 Both verbs return the same layer/table document through the existing metadata
 access checks. These server contract tests do not establish native client certification.

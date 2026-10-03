@@ -11,6 +11,9 @@ namespace Honua.Infrastructure.Progress;
 internal sealed record PrintProgress : IOperationProgress, ICancellableOperationProgress
 {
     public required string JobId { get; init; }
+    public string? RequestedBy { get; init; }
+    public string? TenantId { get; init; }
+    public bool? AnonymousSubmission { get; init; }
     public required string Format { get; init; }
     public required string TemplateName { get; init; }
     public required OperationStatus Status { get; init; }

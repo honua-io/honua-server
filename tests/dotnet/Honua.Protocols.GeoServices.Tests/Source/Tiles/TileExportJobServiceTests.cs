@@ -3,7 +3,11 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Authentication;
+using Microsoft.Extensions.DependencyInjection;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -46,6 +50,69 @@ public sealed class TileExportJobServiceTests
         job.Concurrency.PartitionKey.Should().StartWith("tile-export:map:");
         (await queue.GetQueueDepthAsync()).Should().Be(1);
         (await store.GetAsync(job.OperationId)).Should().NotBeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task Submit_RuntimeRegistration_CapturesEffectiveTenantAndConfiguredRoles()
+    {
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("tenant-effective");
+        await using var provider = new ServiceCollection().AddLogging()
+            .AddSingleton(StorageOptions())
+            .AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions { RoleClaimType = "custom-role" }))
+            .AddSingleton(tenant)
+            .AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IExecutionJobStore>(new InMemoryExecutionJobStore())
+            .AddSingleton<IJobQueue>(new InMemoryJobQueue())
+            .AddTileExportRuntime().BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+        var principal = Principal(Owner);
+        ((ClaimsIdentity)principal.Identity!).AddClaims(
+            [new Claim("tenant_id", "tenant-token"), new Claim("custom-role", "reader")]);
+
+        var job = await scope.ServiceProvider.GetRequiredService<ITileExportJobService>()
+            .SubmitAsync(CreatePlan(), null, null, principal, default);
+
+        job.Audit.SubmitterSecurityContext.Should().NotBeNull();
+        job.Audit.SubmitterSecurityContext!.TenantId.Should().Be("tenant-effective");
+        job.Audit.SubmitterSecurityContext.RoleClaimType.Should().Be("custom-role");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task Submit_CapturesSubmitterClaimsAndTenant()
+    {
+        var service = CreateService(new InMemoryExecutionJobStore(), new InMemoryJobQueue());
+        var principal = Principal(Owner, "reader");
+        ((ClaimsIdentity)principal.Identity!).AddClaims(
+            [new Claim("tenant_id", "tenant-1"), new Claim("department", "planning")]);
+
+        var job = await service.SubmitAsync(CreatePlan(), null, null, principal, default);
+
+        job.Audit.SubmitterSecurityContext.Should().NotBeNull();
+        job.Audit.SubmitterSecurityContext!.TenantId.Should().Be("tenant-1");
+        job.Audit.SubmitterSecurityContext.Claims.Should().Contain(
+            claim => claim.Type == "department" && claim.Value == "planning");
+        job.Audit.SubmitterSecurityContext.Claims.Should().Contain(
+            claim => claim.Type == ClaimTypes.Role && claim.Value == "reader");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task Submit_KeyedRetryWithUpdatedToken_PreservesOriginalSnapshot()
+    {
+        var service = CreateService(new InMemoryExecutionJobStore(), new InMemoryJobQueue());
+        var principal = Principal(Owner, "reader");
+        ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim("exp", "100"));
+        var first = await service.SubmitAsync(CreatePlan(), "retry-key", null, principal, default);
+        var refreshed = Principal(Owner, "reader");
+        ((ClaimsIdentity)refreshed.Identity!).AddClaim(new Claim("exp", "200"));
+
+        var replay = await service.SubmitAsync(CreatePlan(), "retry-key", null, refreshed, default);
+
+        replay.OperationId.Should().Be(first.OperationId);
+        replay.Audit.SubmitterSecurityContext!.Claims.Should().Contain(
+            claim => claim.Type == "exp" && claim.Value == "100");
     }
 
     [UnitTest]
@@ -152,6 +219,19 @@ public sealed class TileExportJobServiceTests
         var fetched = await service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), Principal(Owner), default);
 
         fetched.OperationId.Should().Be(job.OperationId);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task GetStatus_RecordWithoutSubmitterContext_ReturnsNotFound()
+    {
+        var store = new InMemoryExecutionJobStore();
+        var service = CreateService(store, new InMemoryJobQueue());
+        var job = await service.SubmitAsync(CreatePlan(), null, null, Principal(Owner), default);
+        await store.SetAsync(job with { Audit = job.Audit with { SubmitterSecurityContext = null } });
+
+        await FluentActions.Awaiting(() => service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), Principal(Owner), default))
+            .Should().ThrowAsync<TileExportNotFoundException>();
     }
 
     [UnitTest]

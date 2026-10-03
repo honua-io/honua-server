@@ -12,6 +12,8 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Geoprocessing;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -34,6 +36,8 @@ internal sealed partial class TileExportJobService : ITileExportJobService
     // are admissible while enormous ones are still gated per partition.
     private const long AdmissionTilesPerCostUnit = 1000;
 
+    private readonly RbacOptions _rbacOptions;
+    private readonly ITenantContext? _tenantContext;
     private readonly TimeProvider _timeProvider;
     private readonly IOptions<CloudStorageOptions> _storageOptions;
     private readonly ILogger<TileExportJobService> _logger;
@@ -51,8 +55,12 @@ internal sealed partial class TileExportJobService : ITileExportJobService
         IJobQueue? jobQueue = null,
         ICloudFileStorage? storage = null,
         IExecutionAdmissionEvaluator? admissionEvaluator = null,
-        ExecutionAdmissionCoordinator? admissionCoordinator = null)
+        ExecutionAdmissionCoordinator? admissionCoordinator = null,
+        IOptions<RbacOptions>? rbacOptions = null,
+        ITenantContext? tenantContext = null)
     {
+        _rbacOptions = rbacOptions?.Value ?? new RbacOptions();
+        _tenantContext = tenantContext;
         _timeProvider = timeProvider;
         _storageOptions = storageOptions;
         _logger = logger;
@@ -87,6 +95,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
 
         var jobStore = RequireJobStore();
         var principalId = ResolvePrincipalId(principal);
+        var submitter = JobSecurityContextCapture.Capture(principal, _rbacOptions, _tenantContext);
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey.Trim();
         var jobId = CreateJobId(resolvedKey);
 
@@ -148,6 +157,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
                         RequestedBy = principalId,
                         IdempotencyKey = resolvedKey,
                         CorrelationId = string.IsNullOrWhiteSpace(correlationId) ? null : correlationId.Trim(),
+                        SubmitterSecurityContext = submitter,
                         RequestFingerprint = requestFingerprint
                     },
                     // The recognized admission envelope is persisted on first-class record fields rather than
@@ -424,7 +434,8 @@ internal sealed partial class TileExportJobService : ITileExportJobService
         // Ownership, source/resource binding, and existence all collapse to the same sanitized
         // not-found so a caller cannot distinguish "does not exist" from "not yours" or
         // "different service" — closing the cross-principal/cross-resource probing channel.
-        if (job is null || !MatchesBinding(job, scope) || !IsOwnedBy(job, principal))
+        if (job is null || job.Audit.SubmitterSecurityContext is null
+            || !MatchesBinding(job, scope) || !IsOwnedBy(job, principal))
         {
             Log.NotFound(_logger, jobId);
             throw new TileExportNotFoundException($"Tile-export job '{jobId}' not found.");

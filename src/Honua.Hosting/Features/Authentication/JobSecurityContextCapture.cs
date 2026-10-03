@@ -53,6 +53,7 @@ internal static class JobSecurityContextCapture
     /// can never be confused with a live request identity.
     /// </summary>
     private const string RestoredAuthenticationType = "HonuaJobSecurityContext";
+    private const string CapturedAuthenticationClaimType = "honua:job-authenticated";
 
     /// <summary>
     /// Upper bound on captured NON-ROLE, non-framework-identity claims, so a pathological token
@@ -114,6 +115,7 @@ internal static class JobSecurityContextCapture
         "refresh_token",
         "client_secret",
         "password",
+        CapturedAuthenticationClaimType,
         JobSecurityContextClaimTypes.MembershipPrincipalId,
     };
 
@@ -154,6 +156,12 @@ internal static class JobSecurityContextCapture
             options.EffectiveRoleClaimType,
         };
 
+        if (roleClaimTypes.Contains(CapturedAuthenticationClaimType))
+        {
+            throw new InvalidOperationException(
+                "The job authentication-state claim type cannot be configured as a role claim type.");
+        }
+
         var captured = new List<JobSecurityClaim>();
         var seen = new HashSet<(string Type, string Value)>();
 
@@ -168,6 +176,11 @@ internal static class JobSecurityContextCapture
         AppendClaims(
             principal, captured, seen, exemptClaimTypes, includeMatching: false,
             limit: captured.Count + MaxCapturedNonRoleClaims);
+
+        // Authentication state is stamped from the submitting identity, outside the claim
+        // budget. The input claim type is excluded so only capture can set this marker.
+        captured.Add(new JobSecurityClaim(CapturedAuthenticationClaimType,
+            principal.Identity?.IsAuthenticated == true ? bool.TrueString : bool.FalseString));
 
         // Stamp the managed-membership marker when the source owns this principal's roles. It is
         // budget-exempt (see BudgetExemptClaimTypes) so it is captured here in full and can never
@@ -228,7 +241,8 @@ internal static class JobSecurityContextCapture
         ArgumentNullException.ThrowIfNull(context);
 
         var claims = context.Claims
-            .Where(static claim => !string.IsNullOrWhiteSpace(claim.Type))
+            .Where(static claim => !string.IsNullOrWhiteSpace(claim.Type)
+                && !string.Equals(claim.Type, CapturedAuthenticationClaimType, StringComparison.OrdinalIgnoreCase))
             .Select(static claim => new Claim(claim.Type, claim.Value ?? string.Empty))
             .ToList();
 
@@ -262,9 +276,14 @@ internal static class JobSecurityContextCapture
             ? ClaimTypes.Role
             : context.RoleClaimType;
 
+        // Older snapshots predate anonymous print submissions and retain their authentication
+        // behavior. New snapshots preserve the actual submission authentication state.
+        var authenticated = context.Claims
+            .Where(static claim => string.Equals(claim.Type, CapturedAuthenticationClaimType, StringComparison.OrdinalIgnoreCase))
+            .All(static claim => string.Equals(claim.Value, bool.TrueString, StringComparison.Ordinal));
         return new ClaimsPrincipal(new ClaimsIdentity(
             claims,
-            RestoredAuthenticationType,
+            authenticated ? RestoredAuthenticationType : null,
             ClaimTypes.Name,
             roleClaimType));
     }
