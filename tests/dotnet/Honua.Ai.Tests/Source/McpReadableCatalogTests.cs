@@ -68,6 +68,7 @@ public sealed class McpReadableCatalogTests
     [InlineData("allowed")]
     [InlineData("same-tenant")]
     [InlineData("granted")]
+    [InlineData("layer-grant")]
     public async Task RenderMap_ReadableLayer_Renders(string restriction)
     {
         using var services = CreateServices(restriction);
@@ -95,6 +96,7 @@ public sealed class McpReadableCatalogTests
     [InlineData("allowed")]
     [InlineData("same-tenant")]
     [InlineData("granted")]
+    [InlineData("layer-grant")]
     public async Task ResolveEntity_CatalogAccess_FiltersBeforeRanking(string restriction)
     {
         using var services = CreateServices(restriction);
@@ -105,7 +107,7 @@ public sealed class McpReadableCatalogTests
 
         result.IsError.Should().BeFalse();
         result.StructuredContent!.Value.GetProperty("matchCount").GetInt32()
-            .Should().Be(IsReadable(restriction) ? 2 : 0);
+            .Should().Be(restriction == "layer-grant" ? 1 : IsReadable(restriction) ? 2 : 0);
     }
 
     [Theory]
@@ -122,6 +124,7 @@ public sealed class McpReadableCatalogTests
     [InlineData("allowed")]
     [InlineData("same-tenant")]
     [InlineData("granted")]
+    [InlineData("layer-grant")]
     public async Task Ground_CatalogAccess_FiltersBeforeScoring(string restriction)
     {
         using var services = CreateServices(restriction);
@@ -140,7 +143,7 @@ public sealed class McpReadableCatalogTests
         engine.Received().ScoreLayers(Arg.Any<GroundingRequest>(),
             Arg.Is<IReadOnlyList<LayerCandidate>>(layers => layers.Count == (IsReadable(restriction) ? 1 : 0)));
         engine.Received().ScoreServices(Arg.Any<GroundingRequest>(),
-            Arg.Is<IReadOnlyList<ServiceCandidate>>(layers => layers.Count == (IsReadable(restriction) ? 1 : 0)));
+            Arg.Is<IReadOnlyList<ServiceCandidate>>(layers => layers.Count == (IsReadable(restriction) && restriction != "layer-grant" ? 1 : 0)));
     }
 
     [Theory]
@@ -157,6 +160,7 @@ public sealed class McpReadableCatalogTests
     [InlineData("allowed")]
     [InlineData("same-tenant")]
     [InlineData("granted")]
+    [InlineData("layer-grant")]
     public async Task SpecGround_CatalogAccess_OnlyResolvesReadableSources(string restriction)
     {
         using var services = CreateServices(restriction);
@@ -195,7 +199,7 @@ public sealed class McpReadableCatalogTests
         result.ErrorKind.Should().Be(SpecGroundingErrorKind.Unresolvable);
     }
 
-    private static bool IsReadable(string restriction) => restriction is "allowed" or "same-tenant" or "granted";
+    private static bool IsReadable(string restriction) => restriction is "allowed" or "same-tenant" or "granted" or "layer-grant";
 
     private static readonly ClaimsPrincipal Principal = new(new ClaimsIdentity(
         [new Claim(ClaimTypes.NameIdentifier, "reader"), new Claim(ClaimTypes.Role, "scoped-reader")], "Test"));
@@ -207,7 +211,7 @@ public sealed class McpReadableCatalogTests
             .AddResource("res", "Parcels", fields: [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }],
                 accessPolicy: restriction is "resource-policy" or "granted" ? policy : null)
             .AddStorageBinding("binding", "res", "parcels", storageLayerId: 42)
-            .AddService("svc", "Parcels", accessPolicy: restriction == "service-policy" ? policy : null)
+            .AddService("svc", "Parcels", accessPolicy: restriction is "service-policy" or "layer-grant" ? policy : null)
             .AddPublication("pub", "svc", "res", layerIndex: 0, storageBindingId: "binding")
             .Build();
         if (restriction is "resource-tenant" or "missing-tenant" or "same-tenant")
@@ -239,7 +243,7 @@ public sealed class McpReadableCatalogTests
         services.AddSpecGrounding();
         services.AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph));
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
-        if (restriction.Contains("tenant", StringComparison.Ordinal) || restriction == "granted")
+        if (restriction.Contains("tenant", StringComparison.Ordinal) || restriction is "granted" or "layer-grant")
         {
             var resolver = Substitute.For<IPermissionResolver>();
             resolver.AuthorizeAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), "Parcels", "Parcels",
