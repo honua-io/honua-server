@@ -31,7 +31,7 @@ namespace Honua.Protocols.GeoServices.GPServer;
 /// alias resolves to exactly one process.
 /// </para>
 /// <para>
-/// <b>Name-level convenience only — NOT wire-contract parity.</b> An alias renames the
+/// <b>Name-level convenience by default.</b> An alias renames the
 /// task for discovery and addressing; it does <em>not</em> adapt the task's parameter
 /// contract to the same-named Esri tool's contract. The aliased task keeps its canonical
 /// Honua inputs and outputs, and task-info always publishes those real parameters. For
@@ -42,6 +42,9 @@ namespace Honua.Protocols.GeoServices.GPServer;
 /// before invoking) must drive invocation from the published parameter metadata, not from
 /// the parameter signature the Esri tool of the same name would have. Building a full
 /// Esri wire-contract adapter is an explicit non-goal of this overlay (#2788).
+/// The routing aliases are the bounded exception: <see cref="RoutingGPTasks"/>
+/// projects their published inputs and outputs over canonical routing jobs.
+/// That projection does not claim the full Esri ready-to-use tool contract.
 /// </para>
 /// <para>
 /// <b>Collision policy (deterministic):</b> a real catalog process ID always wins over an
@@ -71,6 +74,9 @@ internal static class GPServerEsriTaskAliases
     /// </summary>
     private static readonly FrozenDictionary<string, string> AliasByProcessId = new Dictionary<string, string>(StringComparer.Ordinal)
     {
+        // Ready-to-use routing has a dedicated parameter/result projection over durable jobs.
+        ["routing.route"] = "FindRoutes",
+        ["routing.service-area"] = "GenerateServiceAreas",
         // Geometry
         ["geometry.buffer"] = "Buffer",
         ["geometry.snap"] = "Snap",

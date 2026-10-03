@@ -95,7 +95,7 @@ internal static class FindRoutesWebTool
         }
     }
 
-    private static Dictionary<string, string> TranslateParameters(IReadOnlyDictionary<string, string> parameters)
+    internal static Dictionary<string, string> TranslateParameters(IReadOnlyDictionary<string, string> parameters)
     {
         var translated = new Dictionary<string, string>(parameters, StringComparer.OrdinalIgnoreCase);
         foreach (var key in translated.Keys)

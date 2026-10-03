@@ -1,13 +1,24 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
+using Honua.ControlPlane;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Geoprocessing;
+using Honua.Geoprocessing.Execution;
+using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
 using Honua.Routing.Features.Routing.Providers;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 using Npgsql;
+using NSubstitute;
 using Xunit;
 
 namespace Honua.Server.Tests.Routing;
@@ -78,6 +89,92 @@ public sealed class PgRoutingProviderIntegrationTests : IClassFixture<PgRoutingF
     }
 
     [RoutingTest(RoutingTestEnv)]
+    public async Task RouteJob_RealLattice_PublishesFourMinuteConnectedPath()
+    {
+        // The production executor and provider must preserve the independently
+        // known four-edge path. Only the artifact transport is captured in memory.
+        using var services = new ServiceCollection().AddOptions()
+            .AddSingleton<IRoutingProvider>(_provider).BuildServiceProvider();
+        var executor = new RoutingJobExecutor(services.GetRequiredService<IServiceScopeFactory>(),
+            services.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
+            NullLogger<RoutingJobExecutor>.Instance);
+        var artifacts = new List<string>();
+        var context = Substitute.For<IJobExecutionContext>();
+        context.When(value => value.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(call => artifacts.Add(call.ArgAt<string>(0)));
+        var request = new RouteSolveRequest([new(0, 0), new(0.02, 0.02)]);
+
+        var result = await executor.ExecuteAsync(RoutingJob(RoutingProcessDefinitions.Route,
+            JsonSerializer.Serialize(request, RoutingJobJsonContext.Default.RouteSolveRequest)), context, CancellationToken.None);
+
+        Assert.Equal(ExecutionJobStatus.Succeeded, result.Status);
+        Assert.Equal(2, artifacts.Count);
+        using var output = JsonDocument.Parse(Convert.FromBase64String(artifacts[0].Split(',')[1]));
+        Assert.Equal("FeatureCollection", output.RootElement.GetProperty("type").GetString());
+        var feature = Assert.Single(output.RootElement.GetProperty("features").EnumerateArray());
+        var properties = feature.GetProperty("properties");
+        Assert.Equal(4, properties.GetProperty("totalTimeMinutes").GetDouble(), precision: 8);
+        Assert.InRange(properties.GetProperty("totalLengthMeters").GetDouble(), 4000, 5000);
+        var route = Assert.IsType<LineString>(new GeoJsonReader().Read<Geometry>(feature.GetProperty("geometry").GetRawText()));
+        Assert.Equal(5, route.NumPoints);
+        Assert.Equal(new Coordinate(0, 0), route.StartPoint.Coordinate);
+        Assert.Equal(new Coordinate(0.02, 0.02), route.EndPoint.Coordinate);
+        for (var index = 1; index < route.NumPoints; index++)
+        {
+            var previous = route.GetCoordinateN(index - 1);
+            var current = route.GetCoordinateN(index);
+            Assert.Equal(0.01, Math.Abs(current.X - previous.X) + Math.Abs(current.Y - previous.Y), precision: 8);
+            Assert.True(current.X == previous.X || current.Y == previous.Y, "Every step must follow a lattice edge.");
+        }
+        using var solved = JsonDocument.Parse(Convert.FromBase64String(artifacts[1].Split(',')[1]));
+        Assert.True(solved.RootElement.GetBoolean());
+    }
+
+    [RoutingTest(RoutingTestEnv)]
+    public async Task ServiceAreaJob_RealLattice_PreservesOneMinuteReachability()
+    {
+        using var services = new ServiceCollection().AddOptions()
+            .AddSingleton<IRoutingProvider>(_provider).BuildServiceProvider();
+        var executor = new RoutingJobExecutor(services.GetRequiredService<IServiceScopeFactory>(),
+            services.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
+            NullLogger<RoutingJobExecutor>.Instance);
+        var artifacts = new List<string>();
+        var context = Substitute.For<IJobExecutionContext>();
+        context.When(value => value.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(call => artifacts.Add(call.ArgAt<string>(0)));
+        var request = new ServiceAreaSolveRequest([new(0, 0)], [1.0], ServiceAreaTravelDirection.FromFacility);
+
+        var result = await executor.ExecuteAsync(RoutingJob(RoutingProcessDefinitions.ServiceArea,
+            JsonSerializer.Serialize(request, RoutingJobJsonContext.Default.ServiceAreaSolveRequest)), context, CancellationToken.None);
+
+        Assert.Equal(ExecutionJobStatus.Succeeded, result.Status);
+        Assert.Equal(2, artifacts.Count);
+        using var output = JsonDocument.Parse(Convert.FromBase64String(artifacts[0].Split(',')[1]));
+        Assert.Equal("FeatureCollection", output.RootElement.GetProperty("type").GetString());
+        var feature = Assert.Single(output.RootElement.GetProperty("features").EnumerateArray());
+        var properties = feature.GetProperty("properties");
+        Assert.Equal(0, properties.GetProperty("facilityId").GetInt32());
+        Assert.Equal(0, properties.GetProperty("fromBreak").GetDouble());
+        Assert.Equal(1, properties.GetProperty("toBreak").GetDouble());
+        var polygon = Assert.IsType<Polygon>(new GeoJsonReader().Read<Geometry>(feature.GetProperty("geometry").GetRawText()));
+        // One minute reaches only vertices 1, 2 and 4. The hull algorithm
+        // differs between older GEOS and GEOS 3.11+, so assert the independently
+        // known reachability and bounds rather than snapshotting one algorithm.
+        Assert.True(polygon.IsValid);
+        Assert.InRange(polygon.Area, double.Epsilon, 0.00005);
+        for (var x = 0; x < 3; x++)
+        {
+            for (var y = 0; y < 3; y++)
+            {
+                Assert.Equal(x + y <= 1, polygon.Covers(new Point(x * 0.01, y * 0.01)));
+            }
+        }
+        Assert.Equal(new Envelope(0, 0.01, 0, 0.01), polygon.EnvelopeInternal);
+        using var solved = JsonDocument.Parse(Convert.FromBase64String(artifacts[1].Split(',')[1]));
+        Assert.True(solved.RootElement.GetBoolean());
+    }
+
+    [RoutingTest(RoutingTestEnv)]
     public async Task SolveRoute_ProfileBackedCosts_ReturnDistinctImpedance()
     {
         var stops = new[]
@@ -125,6 +222,47 @@ public sealed class PgRoutingProviderIntegrationTests : IClassFixture<PgRoutingF
         Assert.Equal(1.0, second.FromBreak);
         Assert.Equal(2.0, second.ToBreak);
         Assert.Contains("Polygon", second.GeometryGeoJson, StringComparison.Ordinal);
+    }
+
+    [RoutingTest(RoutingTestEnv)]
+    public async Task SolveServiceArea_MultipleBreaks_ProducesDisjointMinuteRings()
+    {
+        var result = await _provider.SolveServiceAreaAsync(
+            new ServiceAreaSolveRequest([new(0, 0)], [1.0, 2.0, 5.0, 6.0]), CancellationToken.None);
+
+        // The 3x3 graph is exhausted before minute five. Minute six adds no
+        // reachable area and must not repeat the polygon with a new label.
+        Assert.Equal(3, result.Polygons.Count);
+        var reader = new GeoJsonReader();
+        var first = reader.Read<Geometry>(result.Polygons[0].GeometryGeoJson);
+        var second = reader.Read<Geometry>(result.Polygons[1].GeometryGeoJson);
+        var third = reader.Read<Geometry>(result.Polygons[2].GeometryGeoJson);
+        Assert.All(new[] { first, second, third }, ring =>
+        {
+            Assert.True(ring.IsValid);
+            Assert.False(ring.IsEmpty);
+            Assert.True(ring.Area > 0);
+        });
+        Assert.Equal(0, first.Intersection(second).Area, precision: 10);
+        Assert.Equal(0, first.Intersection(third).Area, precision: 10);
+        Assert.Equal(0, second.Intersection(third).Area, precision: 10);
+        var coverage = first.Union(second).Union(third);
+        Assert.Equal(first.Area + second.Area + third.Area, coverage.Area, precision: 10);
+        Assert.Equal(new Envelope(0, 0.02, 0, 0.02), coverage.EnvelopeInternal);
+        for (var x = 0; x < 3; x++)
+        {
+            for (var y = 0; y < 3; y++)
+            {
+                Assert.True(coverage.Covers(new Point(x * 0.01, y * 0.01)));
+            }
+        }
+        Assert.True(first.Covers(new Point(0.01, 0)));
+        Assert.False(first.Covers(new Point(0.02, 0)));
+        Assert.True(second.Covers(new Point(0.02, 0)));
+        Assert.False(second.Covers(new Point(0.02, 0.02)));
+        Assert.True(third.Covers(new Point(0.02, 0.02)));
+        Assert.Equal(new[] { 0.0, 1.0, 2.0 }, result.Polygons.Select(polygon => polygon.FromBreak));
+        Assert.Equal(new[] { 1.0, 2.0, 5.0 }, result.Polygons.Select(polygon => polygon.ToBreak));
     }
 
     [RoutingTest(RoutingTestEnv)]
@@ -232,6 +370,26 @@ public sealed class PgRoutingProviderIntegrationTests : IClassFixture<PgRoutingF
         Assert.Single(toResult.Polygons);
         Assert.Contains("Polygon", toResult.Polygons[0].GeometryGeoJson, StringComparison.Ordinal);
     }
+
+    private static ExecutionJobRecord RoutingJob(string processId, string request) => new()
+    {
+        OperationId = "routing-lattice-execution-proof",
+        Status = ExecutionJobStatus.Running,
+        CreatedAt = DateTimeOffset.UtcNow,
+        UpdatedAt = DateTimeOffset.UtcNow,
+        Spec = new ExecutionJobSpec
+        {
+            Kind = ExecutionJobKind.Geoprocessing,
+            TargetKind = BatchComputeTargetKind.KubernetesJob,
+            Backend = "local",
+            WorkloadName = "geoprocessing:routing",
+            Parameters = new Dictionary<string, string>
+            {
+                [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = processId,
+                [$"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.request"] = request,
+            },
+        },
+    };
 
     private static (double X, double Y) Wgs84ToWebMercator(double lon, double lat)
     {

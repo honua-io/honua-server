@@ -23,6 +23,8 @@ internal static class ProcessExecutionCapabilityCatalog
         "geometry.intersect",
         "geometry.clip",
         "geometry.difference",
+        "routing.route",
+        "routing.service-area",
         "geometry.area",
         "geometry.length",
         "geometry.centroid",
@@ -195,7 +197,9 @@ internal static class ProcessExecutionCapabilityCatalog
             _ => ProcessExecutionModes.None
         };
 
-        var configurationDependency = processId == "imagery.classify"
+        var configurationDependency = RoutingProcessDefinitions.IsRouting(processId)
+            ? "Routing:Provider"
+            : processId == "imagery.classify"
             ? "Geoprocessing:ImageryInference"
             : definition.RuntimeProfile == RuntimeProfiles.Native
                 ? "runtime-profile:native"
@@ -203,6 +207,8 @@ internal static class ProcessExecutionCapabilityCatalog
 
         var reason = kind switch
         {
+            ProcessExecutionKind.Job when RoutingProcessDefinitions.IsRouting(processId) =>
+                "Requires a configured routing provider and network dataset on the worker.",
             ProcessExecutionKind.ProtocolOnly =>
                 "Callable only through its owning synchronous protocol endpoint; no process-job executor is registered.",
             ProcessExecutionKind.WorkflowOnly =>

@@ -365,6 +365,9 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             var edgesSql = ApplyBlockedEdgeFilter(baseEdgesSql, blockedEdges);
 
             var polygons = new List<ServiceAreaPolygon>();
+            var breakCosts = orderedBreaks
+                .Select(value => RoutingCostUnitConverter.MinutesToCost(value, _costUnit))
+                .ToArray();
 
             for (var facilityId = 0; facilityId < request.Facilities.Count; facilityId++)
             {
@@ -377,32 +380,14 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                     continue;
                 }
 
-                var fromBreak = 0.0;
-                foreach (var toBreak in orderedBreaks)
+                var rings = await SolveServiceAreaRingsAsync(
+                    session, dataset, vertexId.Value, breakCosts, edgesSql, request.OutSrid, cancellationToken)
+                    .ConfigureAwait(false);
+                foreach (var ring in rings)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-
-                    // Breaks arrive in minutes (Esri defaultBreaks); convert to the
-                    // raw cost unit before passing as the pgr_drivingDistance cutoff.
-                    // The emitted polygon keeps the request-minute break values.
-                    var breakCost = RoutingCostUnitConverter.MinutesToCost(toBreak, _costUnit);
-                    var geometry = await SolveServiceAreaRingAsync(
-                        session, dataset, vertexId.Value, breakCost, edgesSql, request.OutSrid, cancellationToken)
-                        .ConfigureAwait(false);
-
-                    // Skip degenerate rings: pgRouting may reach fewer than three
-                    // non-collinear vertices for a tiny break, which cannot form a
-                    // polygon. Emitting an empty-rings feature would signal a polygon
-                    // that does not exist, so the facility/break pair is omitted and
-                    // the absence is surfaced via the adapter's no-solve message.
-                    if (string.IsNullOrEmpty(geometry))
-                    {
-                        fromBreak = toBreak;
-                        continue;
-                    }
-
-                    polygons.Add(new ServiceAreaPolygon(facilityId, fromBreak, toBreak, geometry));
-                    fromBreak = toBreak;
+                    var fromBreak = ring.BreakIndex == 0 ? 0 : orderedBreaks[ring.BreakIndex - 1];
+                    polygons.Add(new ServiceAreaPolygon(facilityId, fromBreak, orderedBreaks[ring.BreakIndex], ring.Geometry));
                 }
             }
 
@@ -1039,62 +1024,83 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         return result;
     }
 
-    private static async Task<string> SolveServiceAreaRingAsync(
+    private static async Task<IReadOnlyList<(int BreakIndex, string Geometry)>> SolveServiceAreaRingsAsync(
         IDatabaseSession session,
         NetworkDataset dataset,
         long facilityVertex,
-        double breakCost,
+        double[] breakCosts,
         string edgesSql,
         int outSrid,
         CancellationToken cancellationToken)
     {
-        // pgr_drivingDistance returns the reachable vertices within breakCost. We
-        // build a coverage polygon with ST_ConcaveHull over the reachable vertex
-        // points. ST_ConcaveHull (target_percent 0.9) is used as a pragmatic MVP in
-        // place of pgr_alphaShape, which is fiddly about collinear/degenerate inputs;
-        // the concave hull is robust and good enough for a coverage estimate. The
-        // edges-SQL is selected by travel direction (outbound vs. reversed graph) and
-        // bound as a parameter; the vertex table name is a validated identifier.
-        // ST_ConcaveHull yields a non-polygon (point or line) when fewer than three
-        // non-collinear vertices are reachable; the type guard returns NULL (mapped to
-        // empty) so the caller can skip it.
+        // Expand the graph once to the largest cutoff, then estimate coverage at
+        // each cutoff with the existing concave-hull model. Rings exclude ALL
+        // earlier coverage: concave hulls need not remain nested as points are
+        // added, so subtracting only the immediately preceding hull is insufficient.
+        // Degenerate hulls and rings with no newly covered area produce no feature.
+        // Keep the break index so skipped rings do not change the minute labels.
         var sql = $"""
             WITH reachable AS (
-                SELECT dd.node
+                SELECT dd.node, dd.agg_cost
                 FROM pgr_drivingDistance(
                     @edges_sql,
                     @facility, @break_cost, directed => true) AS dd
             ),
             reachable_pts AS (
-                SELECT v.the_geom
+                SELECT v.the_geom, r.agg_cost
                 FROM reachable r
                 JOIN {dataset.VertexTable} v ON v.id = r.node
             ),
-            hull AS (
-                SELECT ST_ConcaveHull(ST_Collect(the_geom), 0.9) AS geom
-                FROM reachable_pts
+            hulls AS (
+                SELECT b.ordinality::integer - 1 AS break_index,
+                    ST_ConcaveHull(ST_Collect(p.the_geom) FILTER (WHERE p.agg_cost <= b.cost), 0.9) AS geom
+                FROM unnest(@break_costs) WITH ORDINALITY AS b(cost, ordinality)
+                CROSS JOIN reachable_pts p
+                GROUP BY b.ordinality
+            ),
+            polygon_hulls AS (
+                SELECT break_index, CASE
+                    WHEN GeometryType(geom) IN ('POLYGON', 'MULTIPOLYGON') THEN geom
+                    ELSE NULL END AS geom
+                FROM hulls
+            ),
+            prior_coverage AS (
+                SELECT break_index, geom,
+                    ST_Union(geom) OVER (ORDER BY break_index
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS previous_geom
+                FROM polygon_hulls
+            ),
+            rings AS (
+                SELECT break_index, CASE
+                    WHEN previous_geom IS NULL THEN geom
+                    ELSE ST_CollectionExtract(ST_Difference(geom, previous_geom), 3)
+                    END AS geom
+                FROM prior_coverage
             )
-            SELECT CASE
-                WHEN geom IS NULL THEN NULL
-                WHEN GeometryType(geom) IN ('POLYGON', 'MULTIPOLYGON')
-                    THEN ST_AsGeoJSON(ST_Transform(geom, @out_srid))
-                ELSE NULL
-            END AS geojson
-            FROM hull;
+            SELECT break_index, ST_AsGeoJSON(ST_Transform(geom, @out_srid)) AS geojson
+            FROM rings
+            WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
+            ORDER BY break_index;
             """;
 
-        return await session.QuerySingleOrDefaultAsync(
+        var rings = new List<(int BreakIndex, string Geometry)>();
+        await foreach (var ring in session.QueryAsync(
                 sql,
-                static row => row.IsNull(0) ? string.Empty : row.GetFieldValue<string>(0),
+                static row => (BreakIndex: row.GetFieldValue<int>(0), Geometry: row.GetFieldValue<string>(1)),
                 new Dictionary<string, object?>
                 {
                     ["edges_sql"] = edgesSql,
                     ["facility"] = facilityVertex,
-                    ["break_cost"] = breakCost,
+                    ["break_cost"] = breakCosts[^1],
+                    ["break_costs"] = breakCosts,
                     ["out_srid"] = outSrid,
                 },
                 cancellationToken)
-            .ConfigureAwait(false) ?? string.Empty;
+            .ConfigureAwait(false))
+        {
+            rings.Add(ring);
+        }
+        return rings;
     }
 
     /// <summary>

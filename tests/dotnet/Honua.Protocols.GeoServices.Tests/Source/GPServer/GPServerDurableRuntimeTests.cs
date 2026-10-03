@@ -35,7 +35,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 /// </summary>
 [Collection("Redis")]
 [Protocol(TestProtocols.GPServer)]
-public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
+public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis)
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
     private const string ServiceId = WebAppFixture.TestServiceId;

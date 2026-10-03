@@ -8,19 +8,19 @@ resource: "honua://capability/process.geoprocessing"
 
 Catalog of the built-in geoprocessing processes (process catalog `honua.process_catalog.builtin.v1`). Protocol adapters consume the catalog's execution-capability metadata instead of maintaining their own callable-process lists: OGC API Processes (`/ogc/processes/processes`) projects job processes and honors their advertised synchronous/asynchronous modes, the ArcGIS-compatible GPServer adapter (`/rest/services/{serviceId}/GPServer`) derives synchronous execution from the declared modes, and MCP exposes the complete classification. For a submit/poll/fetch walkthrough see [run geoprocessing](../guides/query-analyze/run-geoprocessing.md); to write your own process, see [author a geoprocessing process](../guides/query-analyze/gp-devkit-authoring.md).
 
-The catalog currently registers **98 processes** across 15 families. A build gate keeps this page in step with the catalog: a registered process id missing here, or a count that drifts, fails the build.
+The catalog currently registers **100 processes** across 17 families. A build gate keeps this page in step with the catalog: a registered process id missing here, or a count that drifts, fails the build.
 
 Execution notes that apply across families:
 
 - **Entry points.** GA is defined per entry point: the whole catalog is GA, and every entry declares which entry points it is callable through. The **Entry points** column on every table below is that declaration, and it is the same value the runtime projects (`ProcessDefinition.SupportedEntryPoints`, surfaced as `entryPoints` on the MCP process catalog resource).
-  - `job` — the shared geoprocessing job runtime: OGC API Processes (`/ogc/processes/processes`), WPS 2.0, the GPServer adapter (`/rest/services/{serviceId}/GPServer`), and the MCP process tools. **82 entries.**
+  - `job` — the shared geoprocessing job runtime: OGC API Processes (`/ogc/processes/processes`), WPS 2.0, the GPServer adapter (`/rest/services/{serviceId}/GPServer`), and the MCP process tools. **84 entries.**
   - `protocol` — the operation's owning synchronous protocol endpoint (FeatureServer edit/maintenance routes, the spatial-analytics routes). **4 entries**, and they are deliberately absent from the job surfaces above.
-  - `workflow` — composition inside a workflow DAG (`process:<processId>` nodes). Every job entry is also workflow-composable, because a workflow node compiles into the same analysis-plan step the job runtime executes. **94 entries.**
+  - `workflow` — composition inside a workflow DAG (`process:<processId>` nodes). Every job entry is also workflow-composable, because a workflow node compiles into the same analysis-plan step the job runtime executes. **96 entries.**
 
   An advertisement surface offers an operation only on the entry points it declares. Nothing is advertised that cannot be called there: there is no advertised-but-unexecutable state.
-- **Execution classification.** Every entry is classified exactly once: **82 Job**, **4 ProtocolOnly**, and **12 WorkflowOnly**. Job entries declare asynchronous execution and may additionally declare synchronous execution. ProtocolOnly entries remain callable only through their owning protocol endpoint; WorkflowOnly sources and sinks compose inside DAGs but cannot be submitted directly.
+- **Execution classification.** Every entry is classified exactly once: **84 Job**, **4 ProtocolOnly**, and **12 WorkflowOnly**. Job entries declare asynchronous execution and may additionally declare synchronous execution. ProtocolOnly entries remain callable only through their owning protocol endpoint; WorkflowOnly sources and sinks compose inside DAGs but cannot be submitted directly.
 - **OGC execution negotiation.** OGC requests run synchronously by default when the selected process advertises `sync-execute`. Send `Prefer: respond-async` to request durable asynchronous admission (`201`, `Location`, and `Preference-Applied: respond-async`). `respond-sync` is not a defined preference. WKB parameters accept the existing base64 WKB string or a GeoJSON Geometry, Feature, or FeatureCollection; GeoJSON is normalized through the shared geometry codec. Catalog requests may use `"response": "raw"` with synchronous or asynchronous execution: one selected output returns its native representation, and multiple outputs return `multipart/related`. Document mode is the default and returns inline qualified values. Qualified inputs and bounded public HTTPS or data-URI `href` references are normalized to the catalog parameter format. The canonical `honua-geoprocessing` plan process requires document mode and retains its artifact document.
-- **Runtime profile.** Processes marked *native* below declare `RuntimeProfile = native` and execute out-of-process in the heavyweight GDAL/PDAL worker image; the lean GDAL-free serving image validates their plans (parameter shape + per-process semantic rules) but never executes them. **A deployment without the GDAL worker cannot run any native process** — all `surface.*`, all `raster.*`, the native `conversion.*` (raster/OGR/point-cloud) idioms, `proximity.euclidean-*`, `source.ogr`, `gdal.*`, and `pcloud.translate`. 30 of the 98 processes are native.
+- **Runtime profile.** Processes marked *native* below declare `RuntimeProfile = native` and execute out-of-process in the heavyweight GDAL/PDAL worker image; the lean GDAL-free serving image validates their plans (parameter shape + per-process semantic rules) but never executes them. **A deployment without the GDAL worker cannot run any native process** — all `surface.*`, all `raster.*`, the native `conversion.*` (raster/OGR/point-cloud) idioms, `proximity.euclidean-*`, `source.ogr`, `gdal.*`, and `pcloud.translate`. 30 of the 100 processes are native.
 - **GP workspace controls.** Managed-profile tasks use the configured PostgreSQL workspace store for `env:workspace` and `env:overwriteOutput`. Named creation enforces the configured per-owner active workspace-count limit atomically across labels and optional scopes. The native GDAL worker has no workspace lifecycle provider: GPServer rejects these two controls for native-profile tasks before submission, and the worker also rejects them on older queued or directly authored jobs. This is an explicit limitation; native-worker workspace output is not supported. `Geoprocessing:Workspace:EnableAutomaticCleanup=false` disables both polling and scheduled automatic sweeps.
 - **Delegated cloud inference.** `imagery.classify` delegates ML inference to a configured cloud endpoint (`Geoprocessing:ImageryInference`) — Honua bundles no model runtime. When no backend is configured the process stays advertised but every execution fails with a clear "no cloud inference backend is configured" message (no silent stub, no fake result).
 - **Raster sourcing.** Native raster/surface processes read the raster as base64-encoded GeoTIFF bytes on the `source` parameter; `layerId`/`rasterId` selectors are declared but layer-resolved sourcing is a follow-on and `source` remains required today.
@@ -40,6 +40,27 @@ for another tenant's job return not found, and listings omit those jobs.
 Jobs without a recorded tenant remain accessible only from an unscoped request,
 subject to the existing owner and operator permissions. Tenant-scoped callers must
 resubmit legacy jobs whose submission did not record a tenant.
+
+## Routing (2)
+
+Durable routing jobs use the configured routing provider and its capability limits.
+The canonical input is a typed routing request encoded as JSON. GPServer projects
+`FindRoutes` and `GenerateServiceAreas` onto these jobs with the supported
+parameters declared in task metadata; the full Esri ready-to-use contract is not
+claimed. Ordered routes and service-area breaks use travel time in minutes.
+The pgRouting provider estimates service-area coverage from reachable network
+vertices; it does not reproduce Esri's detailed polygon generation. Consecutive
+breaks return rings that exclude earlier coverage, and a cutoff with no new area
+produces no polygon.
+Native ArcPy route and service-area construction has been exercised, but native
+solves still fail before submission with this bounded task contract. Full native
+execution, authentication and export remain open under
+[honua-server#5192](https://github.com/honua-io/honua-server/issues/5192).
+
+| Process ID | Description | Key parameters | Entry points |
+|---|---|---|---|
+| `routing.route` | Solve a route through ordered stops | `request`: stops, spatial references, travel mode and optional barriers | job, workflow |
+| `routing.service-area` | Solve travel-time service areas | `request`: facilities, positive ascending breaks, travel direction, spatial references, travel mode and optional barriers | job, workflow |
 
 ## Geometry (14)
 

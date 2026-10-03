@@ -366,7 +366,8 @@ internal static class NAServerMetadata
         string? serviceName,
         string? toolName,
         RoutingProviderCapabilities capabilities,
-        RoutingConfiguration configuration)
+        RoutingConfiguration configuration,
+        NetworkDataset dataset)
     {
         // ArcGIS Pro's native reader expects a toolInfo document back from every
         // GetToolInfo call and dereferences an error envelope. In portal mode (captured
@@ -381,7 +382,9 @@ internal static class NAServerMetadata
         // Esri publishes toolInfo as an embedded JSON object, exactly the shape an
         // ArcGIS Enterprise 11.5 NetworkAnalysisUtilities service answers with:
         // isPortal, networkDataset {attributeParameterValues, defaultCostAttribute,
-        // defaultRestrictions, networkAttributes, trafficSupport} and serviceLimits.
+        // defaultRestrictions, networkAttributes, spatialReference, trafficSupport}
+        // and serviceLimits. arcpy.nax uses this CRS to construct the network;
+        // task parameter schemas alone do not supply its network projection.
         // That reference omits networkSources even with includeNetworkSourceInfo=true,
         // and ArcGIS Pro's native reader is exact about the shape, so that flag is
         // accepted and deliberately changes nothing.
@@ -394,6 +397,7 @@ internal static class NAServerMetadata
                 ["defaultCostAttribute"] = TimeAttributeName,
                 ["defaultRestrictions"] = new JsonArray(),
                 ["networkAttributes"] = BuildNetworkAttributes(),
+                ["spatialReference"] = new JsonObject { ["wkid"] = dataset.Srid },
                 ["trafficSupport"] = "NONE",
             },
             ["serviceLimits"] = BuildServiceLimits(configuration, limitsFor),

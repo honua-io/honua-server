@@ -259,7 +259,7 @@ internal static partial class GPServerEndpoints
         // The utility tasks answer for every service id, like the NAServer solves they
         // describe: a stand-alone routing binding names a utilityUrl whose service id
         // need not publish any catalog task of its own.
-        if (NAServerMetadata.IsUtilityTask(taskName))
+        if (NAServerMetadata.IsUtilityTask(taskName) && !RoutingGPTasks.IsReadyToUseTask(taskName))
         {
             return HandleNetworkAnalysisUtilityTaskInfo(context, taskName);
         }
@@ -304,7 +304,7 @@ internal static partial class GPServerEndpoints
 
         try
         {
-            if (readSoapParameters is null && NAServerMetadata.IsUtilityTask(taskName))
+            if (readSoapParameters is null && NAServerMetadata.IsUtilityTask(taskName) && !RoutingGPTasks.IsReadyToUseTask(taskName))
             {
                 // The utility tasks are synchronous by contract (Esri publishes them as
                 // esriExecutionTypeSynchronous); there is no job to enqueue.
@@ -376,7 +376,7 @@ internal static partial class GPServerEndpoints
                     "Native workspace controls unavailable");
             }
 
-            var planResult = BuildSubmissionPlan(definition, serviceId, parameters);
+            var planResult = BuildSubmissionPlan(context, definition, serviceId, parameters);
             if (planResult.CapabilityError is not null)
             {
                 return SetSpanErrorAndReturn(
@@ -528,7 +528,7 @@ internal static partial class GPServerEndpoints
                     "Native workspace controls unavailable");
             }
 
-            var planResult = BuildSubmissionPlan(definition, serviceId, parameters);
+            var planResult = BuildSubmissionPlan(context, definition, serviceId, parameters);
             if (planResult.CapabilityError is not null)
             {
                 return SetSpanErrorAndReturn(
@@ -743,7 +743,7 @@ internal static partial class GPServerEndpoints
             {
                 var artifact = resultPackage.Artifacts[index];
                 var paramName = ResolvePublishedOutputParameterName(job, artifact, index, allKinds);
-                var dataType = GPServerParameterTranslation.ToEsriDataType(artifact.Kind);
+                var dataType = RoutingGPTasks.DataType(job, artifact.Kind);
                 var value = ResolveArtifactValue(artifact, job.OperationId, index, baseUrl, outputStore);
                 var resultSrid = workingSrid;
 
@@ -788,7 +788,7 @@ internal static partial class GPServerEndpoints
                 {
                     ParamName = paramName,
                     DataType = dataType,
-                    Value = GPServerEsriOutputTranslation.Translate(artifact.Kind, value, resultSrid,
+                    Value = RoutingGPTasks.TranslateResult(job, artifact.Kind, value, resultSrid,
                         job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerFeatureSchema))
                 });
             }
@@ -1161,8 +1161,8 @@ internal static partial class GPServerEndpoints
             var response = new GPResultResponse
             {
                 ParamName = publishedName,
-                DataType = GPServerParameterTranslation.ToEsriDataType(artifact.Kind),
-                Value = GPServerEsriOutputTranslation.Translate(artifact.Kind, value, ResolveResultSrid(job, artifact.Kind),
+                DataType = RoutingGPTasks.DataType(job, artifact.Kind),
+                Value = RoutingGPTasks.TranslateResult(job, artifact.Kind, value, ResolveResultSrid(job, artifact.Kind),
                     job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerFeatureSchema))
             };
 
@@ -1828,6 +1828,10 @@ internal static partial class GPServerEndpoints
 
     internal static GPTaskInfoResponse BuildTaskInfo(string taskName, ProcessDefinition definition)
     {
+        if (RoutingProcessDefinitions.IsRouting(definition.ProcessId))
+        {
+            return RoutingGPTasks.BuildTaskInfo(taskName, definition);
+        }
         var parameters = new List<GPParameterInfo>(definition.Parameters.Count + definition.OutputArtifactKinds.Count);
         var parameterPrefix = GPServerParameterNames.GetEncodingPrefix(definition);
         foreach (var parameter in definition.Parameters)
@@ -1907,10 +1911,15 @@ internal static partial class GPServerEndpoints
         string? FeatureSchema = null);
 
     private static SubmissionPlanResult BuildSubmissionPlan(
+        HttpContext context,
         ProcessDefinition definition,
         string serviceId,
         IReadOnlyDictionary<string, string> rawParameters)
     {
+        if (RoutingProcessDefinitions.IsRouting(definition.ProcessId))
+        {
+            return BuildRoutingSubmissionPlan(context, definition, serviceId, rawParameters);
+        }
         var inputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var parameterPrefix = GPServerParameterNames.GetEncodingPrefix(definition);
         foreach (var (key, value) in rawParameters)
@@ -2128,7 +2137,7 @@ internal static partial class GPServerEndpoints
 
         for (var index = 0; index < definition.OutputArtifactKinds.Count; index++)
         {
-            var outputName = BuildOutputParameterName(
+            var outputName = RoutingGPTasks.OutputName(definition.ProcessId, index) ?? BuildOutputParameterName(
                 definition.OutputArtifactKinds[index],
                 index,
                 definition.OutputArtifactKinds);
