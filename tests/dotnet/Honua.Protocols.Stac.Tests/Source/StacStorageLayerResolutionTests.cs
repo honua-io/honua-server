@@ -41,9 +41,7 @@ public sealed class StacStorageLayerResolutionTests
             CancellationToken.None);
 
         publication.LayerIndex.Should().Be(CollectionLayerIndex);
-        resolution.Should().NotBeNull();
-        resolution!.Value.StorageLayerId.Should().Be(ParcelsStorageLayerId);
-        resolution.Value.Reader.Should().BeSameAs(reader);
+        resolution.Should().Be(new StacFeatureReaderResolver.Resolution(reader, ParcelsStorageLayerId));
     }
 
     [UnitTest]
