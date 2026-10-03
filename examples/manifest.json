@@ -12136,7 +12136,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 122,
+      "line": 85,
       "language": "json"
     },
     {
@@ -13787,7 +13787,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 54,
+      "line": 68,
       "language": "ts"
     },
     {
@@ -13800,7 +13800,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 85,
+      "line": 99,
       "language": "csharp"
     },
     {
@@ -13813,7 +13813,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 43,
+      "line": 57,
       "language": "bash"
     },
     {
@@ -13826,7 +13826,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 69,
+      "line": 83,
       "language": "python"
     },
     {
