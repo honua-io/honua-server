@@ -730,4 +730,4 @@ This machine runs many agents concurrently (**Codex + Claude**, often via agentf
 
 ## Release component versions
 
-`release/component-versions.json` declares this repository's contract versions (and schema versions; the `database` schema version is derived by the resolver from the migrations). The honua-release nightly resolver reads it at the exact selected commit and refuses `honua-server` when it is missing or invalid, so any contract or schema version bump must update this file in the same PR.
+`release/component-versions.json` declares this repository's contract versions (and schema versions; the `database` schema version is derived by the resolver from the migrations). The honua-release nightly resolver reads it at the exact selected commit and refuses `honua-server` when it is missing or invalid, so any contract version bump, or any bump of a schema version declared here (not the derived `database` version — adding a migration needs no edit), must update this file in the same PR.
