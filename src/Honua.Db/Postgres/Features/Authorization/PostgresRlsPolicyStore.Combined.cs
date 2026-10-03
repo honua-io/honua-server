@@ -97,10 +97,16 @@ internal sealed partial class PostgresRlsPolicyStore
         {
             rows.Add(new RlsPolicy
             {
-                PolicyId = reader.GetGuid(0), Role = reader.GetString(1), Service = reader.GetString(2),
-                Layer = reader.GetString(3), Attribute = reader.GetString(4), ClaimType = reader.GetString(5),
-                Comparison = (RlsComparison)reader.GetInt16(6), Description = reader.IsDBNull(7) ? null : reader.GetString(7),
-                CreatedAt = reader.GetFieldValue<DateTimeOffset>(8), UpdatedAt = reader.GetFieldValue<DateTimeOffset>(9)
+                PolicyId = reader.GetGuid(0),
+                Role = reader.GetString(1),
+                Service = reader.GetString(2),
+                Layer = reader.GetString(3),
+                Attribute = reader.GetString(4),
+                ClaimType = reader.GetString(5),
+                Comparison = (RlsComparison)reader.GetInt16(6),
+                Description = reader.IsDBNull(7) ? null : reader.GetString(7),
+                CreatedAt = reader.GetFieldValue<DateTimeOffset>(8),
+                UpdatedAt = reader.GetFieldValue<DateTimeOffset>(9)
             });
         }
         if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
@@ -112,9 +118,14 @@ internal sealed partial class PostgresRlsPolicyStore
         {
             fields.Add(new FieldMaskPolicy
             {
-                PolicyId = reader.GetGuid(0), Role = reader.GetString(1), Service = reader.GetString(2),
-                Layer = reader.GetString(3), Attribute = reader.GetString(4), Description = reader.IsDBNull(5) ? null : reader.GetString(5),
-                CreatedAt = reader.GetFieldValue<DateTimeOffset>(6), UpdatedAt = reader.GetFieldValue<DateTimeOffset>(7)
+                PolicyId = reader.GetGuid(0),
+                Role = reader.GetString(1),
+                Service = reader.GetString(2),
+                Layer = reader.GetString(3),
+                Attribute = reader.GetString(4),
+                Description = reader.IsDBNull(5) ? null : reader.GetString(5),
+                CreatedAt = reader.GetFieldValue<DateTimeOffset>(6),
+                UpdatedAt = reader.GetFieldValue<DateTimeOffset>(7)
             });
         }
         return new(rows, fields);
