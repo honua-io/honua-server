@@ -6,7 +6,6 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Infrastructure.Middleware;
 using Honua.Db.Postgres.Features.AuditLog;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -56,11 +55,10 @@ internal static class AuditLogServiceCollectionExtensions
             }
 
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
-            var configuration = sp.GetService<IConfiguration>();
             return new PostgresAuditLog(
                 connectionProvider,
                 loggerFactory.CreateLogger<PostgresAuditLog>(),
-                chainKey: AuditChainKeyMaterial.Decode(configuration?["AuditLog:ChainVerification:Key"]));
+                chainKey: sp.GetService<AuditChainKeySnapshot>()?.Key ?? ReadOnlyMemory<byte>.Empty);
         });
 
         return services;

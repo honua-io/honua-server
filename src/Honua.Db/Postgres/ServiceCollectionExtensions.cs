@@ -219,13 +219,16 @@ internal static class ServiceCollectionExtensions
         // Console Operate read APIs (#1168)
         services.AddScoped<IAuditLogReader, PostgresAuditLogReader>();
 
+        services.TryAddSingleton(new Honua.Core.Features.AuditLog.AuditChainKeySnapshot(
+            configuration["AuditLog:ChainVerification:Key"]));
+
         // SIEM export + tamper-evidence surfaces over the audit trail (#350, #509)
         services.AddScoped<IAuditLogExporter, PostgresAuditLogExporter>();
         services.AddScoped<IAuditLogIntegrityVerifier>(serviceProvider =>
             new PostgresAuditLogIntegrityVerifier(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"],
-                AuditChainKeyMaterial.Decode(configuration["AuditLog:ChainVerification:Key"])));
+                serviceProvider.GetRequiredService<Honua.Core.Features.AuditLog.AuditChainKeySnapshot>().Key));
         services.AddScoped<IInvestigationStore, PostgresInvestigationStore>();
 
         // Persisted ops-health rollup store (#2553). Schema-qualified so it targets the configured

@@ -5,6 +5,12 @@ using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using FluentAssertions;
 using Xunit;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Infrastructure.AuditLog;
+using Honua.Server.Features.Infrastructure.AuditLog;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.HealthCheck;
 
@@ -96,6 +102,20 @@ public sealed class AuditChainLinkTests
     }
 
     [Fact]
+    public void LegacyWrite_AfterKeyActivation_DoesNotVerify()
+    {
+        var legacy = Link(1, "auth.failure", previous: null, keyed: false);
+        var keyed = Link(2, "auth.token.issue", previous: legacy.EntryHash, keyed: true);
+        var oldReplica = Link(3, "auth.failure", previous: keyed.EntryHash, keyed: false);
+
+        var report = Walk(Key, legacy, keyed, oldReplica);
+
+        report.Verified.Should().BeFalse();
+        report.FirstBrokenAuditId.Should().Be(3);
+        report.FailureReason.Should().Contain("entry_hash mismatch");
+    }
+
+    [Fact]
     public void WrongKey_DoesNotVerify()
     {
         var row = Link(1, "auth.failure", previous: null, keyed: true);
@@ -114,12 +134,42 @@ public sealed class AuditChainLinkTests
         act.Should().Throw<InvalidOperationException>();
     }
 
+    [Theory]
+    [InlineData("invalid-base64")]
+    [InlineData(null)]
+    [InlineData("IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=")]
+    public void ConfigurationReload_KeepsStartupKeyAcrossScopes(string? reloadedKey)
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                ["AuditLog:ChainVerification:Key"] = Convert.ToBase64String(Key),
+            }).Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddSingleton(Substitute.For<IAdoNetDatabaseConnectionProvider>());
+        services.AddHonuaAuditLog();
+        services.AddAuditChainVerification(configuration);
+        using var provider = services.BuildServiceProvider();
+        using var first = provider.CreateScope();
+        var snapshot = first.ServiceProvider.GetRequiredService<AuditChainKeySnapshot>();
+        first.ServiceProvider.GetRequiredService<IAuditLog>();
+
+        configuration["AuditLog:ChainVerification:Key"] = reloadedKey;
+        configuration.Reload();
+
+        using var second = provider.CreateScope();
+        second.ServiceProvider.GetRequiredService<IAuditLog>();
+        second.ServiceProvider.GetRequiredService<AuditChainKeySnapshot>().Should().BeSameAs(snapshot);
+        snapshot.Key.ToArray().Should().Equal(Key);
+    }
+
     private static AuditIntegrityReport Walk(ReadOnlyMemory<byte> chainKey, params AuditChainLink[] rows)
     {
         var cursor = new AuditChainVerificationCursor();
-        foreach (var row in rows)
+        foreach (var failed in rows.Select(row => cursor.Observe(row, chainKey)))
         {
-            var failed = cursor.Observe(row, chainKey);
             if (failed is not null)
             {
                 return failed;

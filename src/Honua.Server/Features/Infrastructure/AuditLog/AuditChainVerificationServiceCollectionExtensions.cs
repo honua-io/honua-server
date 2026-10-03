@@ -5,6 +5,7 @@ using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Infrastructure.AuditLog;
 
@@ -31,7 +32,8 @@ internal static class AuditChainVerificationServiceCollectionExtensions
 
         // A present key that is not usable fails startup. An absent key leaves
         // verification unable to succeed for a hashed chain; writes continue.
-        _ = AuditChainKeyMaterial.Decode(configuration[AuditChainVerificationOptions.SectionName + ":Key"]);
+        services.TryAddSingleton(new AuditChainKeySnapshot(
+            configuration[AuditChainVerificationOptions.SectionName + ":Key"]));
 
         services
             .AddOptions<AuditChainVerificationOptions>()

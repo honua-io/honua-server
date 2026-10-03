@@ -11,6 +11,10 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
+using Honua.Core.Features.AuditLog;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.AuditLog;
 
@@ -22,6 +26,31 @@ namespace Honua.Db.Postgres.Tests.Features.AuditLog;
 [Collection("Database")]
 public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
 {
+    [Fact]
+    public void VerifierResolution_AfterInvalidReload_KeepsStartupKey()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=honua_test;Username=honua",
+                ["AuditLog:ChainVerification:Key"] = Convert.ToBase64String(ChainKey),
+            }).Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddPostgreSqlServices(configuration, TestCoreSchemaMigrations.Manifest);
+        services.AddSingleton(Substitute.For<IAdoNetDatabaseConnectionProvider>());
+        using var provider = services.BuildServiceProvider();
+        using var first = provider.CreateScope();
+        first.ServiceProvider.GetRequiredService<IAuditLogIntegrityVerifier>();
+
+        configuration["AuditLog:ChainVerification:Key"] = "invalid-base64";
+        configuration.Reload();
+
+        using var second = provider.CreateScope();
+        second.ServiceProvider.GetRequiredService<IAuditLogIntegrityVerifier>();
+        second.ServiceProvider.GetRequiredService<AuditChainKeySnapshot>().Key.ToArray().Should().Equal(ChainKey);
+    }
+
     [IntegrationTest]
     public async Task RecordAsync_BuildsLinkedHashChain_AndVerifies()
     {
