@@ -83,9 +83,13 @@ public class PrintingToolsRequestHandlerTests
             OperationalLayers = [new WebMapOperationalLayer { Url = "/rest/services/service/MapServer/1" }]
         };
 
+        await using var authorizationServices = new ServiceCollection()
+            .AddSingleton<IAccessPolicyEvaluator>(new AccessPolicyEvaluator()).BuildServiceProvider();
+
         await PrintingToolsRequestHandlers.ExecuteAsync(map, "PNG32", "MAP_ONLY", 96,
             validator, graph, reader, styles, NullLogger.Instance, default,
-            callerPrincipal: principal, accessPolicyEvaluator: new AccessPolicyEvaluator());
+            callerPrincipal: principal,
+            authorizationServices: authorizationServices, tenantId: "tenant-a");
 
         await styles.DidNotReceiveWithAnyArgs().GetLayerStyleAsync(default, default);
     }
@@ -112,7 +116,7 @@ public class PrintingToolsRequestHandlerTests
             .BuildServiceProvider();
         var principal = new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim(ClaimTypes.NameIdentifier, "user-1"), new Claim("tenant_id", "tenant-a")], "test"));
-        var job = new PrintJob("print-1", new WebMapDefinition(), "PNG32", "MAP_ONLY", 96, 1, principal);
+        var job = new PrintJob("print-1", new WebMapDefinition(), "PNG32", "MAP_ONLY", 96, 1, JobSecurityContextCapture.Capture(principal, new RbacOptions()));
         using var worker = new PrintingToolsBackgroundService(Channel.CreateUnbounded<PrintJob>(),
             services.GetRequiredService<IServiceScopeFactory>(), new PrintJobCancellationTokens(),
             NullLogger<PrintingToolsBackgroundService>.Instance);
@@ -155,6 +159,54 @@ public class PrintingToolsRequestHandlerTests
         var response = await (Task<IResult>)status.Invoke(null, [statusContext, CancellationToken.None])!;
 
         response.Should().BeAssignableTo<IStatusCodeHttpResult>().Which.StatusCode.Should().Be(404);
+    }
+
+    [Theory]
+    [InlineData("user-1", "tenant-a", false, false, true)]
+    [InlineData("user-2", "tenant-a", false, false, false)]
+    [InlineData("user-2", "tenant-a", true, false, true)]
+    [InlineData("user-1", "tenant-b", false, false, false)]
+    [InlineData("user-2", "tenant-b", true, false, false)]
+    [InlineData(null, "tenant-a", false, true, true)]
+    [InlineData(null, "tenant-b", false, true, false)]
+    [Protocol(TestProtocols.PrintingTools)]
+    public async Task JobPolling_RespectsTenantAndSubmitter(
+        string? callerId, string callerTenant, bool admin, bool anonymousSubmission, bool allowed)
+    {
+        var store = Substitute.For<IUniversalProgressStore>();
+        IOperationProgress? persisted = null;
+        store.SetProgressAsync(Arg.Any<string>(), Arg.Any<IOperationProgress>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { persisted = call.Arg<IOperationProgress>(); return Task.CompletedTask; });
+        store.GetProgressAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => persisted);
+        await using var services = new ServiceCollection()
+            .AddSingleton(store).AddSingleton(Channel.CreateUnbounded<PrintJob>()).AddLogging().BuildServiceProvider();
+        var submitClaims = new List<Claim> { new("tenant_id", "tenant-a") };
+        if (!anonymousSubmission) submitClaims.Add(new Claim(ClaimTypes.NameIdentifier, "user-1"));
+        var submitContext = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = new ClaimsPrincipal(new ClaimsIdentity(submitClaims, anonymousSubmission ? null : "test"))
+        };
+        var submit = typeof(PrintingToolsEndpoints).GetMethod("SubmitJobInternalAsync", BindingFlags.Static | BindingFlags.NonPublic)!;
+        await (Task<IResult>)submit.Invoke(null,
+            [submitContext, new WebMapDefinition(), "PNG32", "MAP_ONLY", 96, NullLogger.Instance, CancellationToken.None])!;
+        var callerClaims = new List<Claim> { new("tenant_id", callerTenant) };
+        if (callerId is not null) callerClaims.Add(new Claim(ClaimTypes.NameIdentifier, callerId));
+        if (admin) callerClaims.Add(new Claim(ClaimTypes.Role, "admin"));
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = new ClaimsPrincipal(new ClaimsIdentity(callerClaims, callerId is null ? null : "test"))
+        };
+        context.Request.RouteValues["jobId"] = ((PrintProgress)persisted!).JobId;
+        foreach (var method in new[] { "HandleJobStatus", "HandleJobResult" })
+        {
+            var handler = typeof(PrintingToolsEndpoints).GetMethod(method, BindingFlags.Static | BindingFlags.NonPublic)!;
+            var response = await (Task<IResult>)handler.Invoke(null, [context, CancellationToken.None])!;
+            var statusCode = response.Should().BeAssignableTo<IStatusCodeHttpResult>().Which.StatusCode ?? 200;
+            // A queued result is not available yet, while authorized status polling succeeds.
+            statusCode.Should().Be(allowed ? method == "HandleJobStatus" ? 200 : 400 : 404);
+        }
     }
 
     // --- ResolveFormat ---

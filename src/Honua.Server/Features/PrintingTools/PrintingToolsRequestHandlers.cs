@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Infrastructure.Authentication;
 using System.Runtime.CompilerServices;
 using System.Security.Claims;
 using System.Text.Json;
@@ -12,7 +14,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Helpers;
@@ -61,8 +62,9 @@ internal static class PrintingToolsRequestHandlers
         ILogger logger,
         CancellationToken cancellationToken,
         ClaimsPrincipal? callerPrincipal = null,
-        IAccessPolicyEvaluator? accessPolicyEvaluator = null,
-        ICrsRegistry? crsRegistry = null)
+        ICrsRegistry? crsRegistry = null,
+        IServiceProvider? authorizationServices = null,
+        string? tenantId = null)
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("print.execute", ActivityKind.Internal);
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, "PrintingTools");
@@ -91,8 +93,9 @@ internal static class PrintingToolsRequestHandlers
                 metadataGraphProvider,
                 styleCatalog,
                 callerPrincipal,
-                accessPolicyEvaluator,
-                cancellationToken);
+                cancellationToken,
+                authorizationServices,
+                tenantId);
 
             // Render map frame
             var mapFrameBytes = await RenderMapFrameAsync(
@@ -191,7 +194,9 @@ internal static class PrintingToolsRequestHandlers
         IFeatureReader featureReader,
         ILogger logger,
         CancellationToken cancellationToken,
-        ICrsRegistry? crsRegistry = null)
+        ICrsRegistry? crsRegistry = null,
+        IServiceProvider? authorizationServices = null,
+        string? tenantId = null)
     {
         var extent = webMap.MapOptions?.Extent;
         if (extent is null)
@@ -325,8 +330,9 @@ internal static class PrintingToolsRequestHandlers
         IMetadataV2GraphProvider metadataGraphProvider,
         ILayerStyleCatalog styleCatalog,
         ClaimsPrincipal? callerPrincipal,
-        IAccessPolicyEvaluator? accessPolicyEvaluator,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IServiceProvider? authorizationServices,
+        string? tenantId)
     {
         var layers = new List<ResolvedLayer>();
         var snapshot = await metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -335,8 +341,9 @@ internal static class PrintingToolsRequestHandlers
             resourceValidator,
             snapshot,
             callerPrincipal,
-            accessPolicyEvaluator,
-            cancellationToken))
+            cancellationToken,
+            authorizationServices,
+            tenantId))
         {
             // Pre-fetch and parse style so both render and legend paths share the result
             var style = await styleCatalog.GetLayerStyleAsync(resolved.StorageLayerId, cancellationToken);
@@ -355,8 +362,9 @@ internal static class PrintingToolsRequestHandlers
         IResourceValidator resourceValidator,
         MetadataV2GraphSnapshot snapshot,
         ClaimsPrincipal? callerPrincipal,
-        IAccessPolicyEvaluator? accessPolicyEvaluator,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        IServiceProvider? authorizationServices,
+        string? tenantId)
     {
         var operationalLayers = webMap.OperationalLayers ?? [];
 
@@ -384,11 +392,14 @@ internal static class PrintingToolsRequestHandlers
                     ?? snapshot.ResolveStorageLayerId(resource!);
                 if (!storageLayerId.HasValue) continue;
 
-                if (callerPrincipal is not null && accessPolicyEvaluator is not null &&
-                    !accessPolicyEvaluator.Evaluate(
-                        callerPrincipal,
-                        resource!.AccessPolicy,
-                        service.AccessPolicy).IsAllowed)
+                if (callerPrincipal is null || authorizationServices is null)
+                    throw new UnauthorizedAccessException("Print rendering requires a submitter and authorization services.");
+                if (!MetadataV2TenantVisibility.IsVisibleToTenant(publication, resource, service, tenantId))
+                    continue;
+                var access = await AccessPolicyHelpers.EvaluateResourceAccessCoreAsync(
+                    authorizationServices, callerPrincipal, tenantId, applyTenantScope: true,
+                    resource!, service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
+                if (!access.IsAllowed)
                     continue;
 
                 yield return new ResolvedLayer(

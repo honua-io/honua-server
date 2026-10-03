@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.Authorization;
+using Honua.Infrastructure.Authentication;
 using Honua.Core.Features.Licensing.Abstractions;
 using System.Threading.Channels;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -107,6 +109,7 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
 
     private async Task ProcessJobCoreAsync(PrintJob job, CancellationToken cancellationToken)
     {
+        using var securityScope = JobSecurityScope.Begin(job.SubmitterSecurityContext);
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("print.job", ActivityKind.Internal);
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, "PrintingTools");
         activity?.SetTag(HonuaTelemetry.Tags.Operation, "job");
@@ -121,7 +124,6 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
         var metadataGraphProvider = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphProvider>();
         var featureReader = scope.ServiceProvider.GetRequiredService<IFeatureReader>();
         var styleCatalog = scope.ServiceProvider.GetRequiredService<ILayerStyleCatalog>();
-        var accessPolicyEvaluator = scope.ServiceProvider.GetRequiredService<IAccessPolicyEvaluator>();
         var temporaryFileService = scope.ServiceProvider.GetRequiredService<ITemporaryFileService>();
 
         // Check if the job was cancelled before we start processing
@@ -143,6 +145,9 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
 
         try
         {
+            if (job.SubmitterSecurityContext is null)
+                throw new UnauthorizedAccessException("Print job has no submitter security context.");
+            var principal = JobSecurityContextCapture.Restore(job.SubmitterSecurityContext);
             var result = await PrintingToolsRequestHandlers.ExecuteAsync(
                 job.WebMap,
                 job.Format,
@@ -154,9 +159,10 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
                 styleCatalog,
                 _logger,
                 cancellationToken,
-                callerPrincipal: job.CallerPrincipal,
-                accessPolicyEvaluator: accessPolicyEvaluator,
-                crsRegistry: scope.ServiceProvider.GetService<ICrsRegistry>());
+                callerPrincipal: principal,
+                crsRegistry: scope.ServiceProvider.GetService<ICrsRegistry>(),
+                authorizationServices: scope.ServiceProvider,
+                tenantId: job.SubmitterSecurityContext.TenantId);
 
             if (result is null)
             {
@@ -204,7 +210,7 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
                     outputBytes,
                     contentType,
                     PrintingToolsRequestHandlers.ResultTtl,
-                    principal: job.CallerPrincipal,
+                    principal: principal,
                     cancellationToken: CancellationToken.None);
             }
             catch (TemporaryStorageLimitExceededException)

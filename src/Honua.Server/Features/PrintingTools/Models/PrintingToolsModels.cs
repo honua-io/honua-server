@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -255,7 +255,7 @@ internal sealed record PrintJob(
     string TemplateName,
     int Dpi,
     int TotalElements,
-    ClaimsPrincipal? CallerPrincipal = null);
+    JobSecurityContext? SubmitterSecurityContext = null);
 
 /// <summary>
 /// Available output formats for print service.

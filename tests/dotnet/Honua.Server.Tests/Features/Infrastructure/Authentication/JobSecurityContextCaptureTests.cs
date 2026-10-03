@@ -723,14 +723,13 @@ public sealed class JobSecurityContextCaptureTests
     }
 
     [UnitTest]
-    public void Capture_PrincipalWithNoClaims_ProducesEmptySnapshotRatherThanNull()
+    public void Capture_PrincipalWithNoClaims_ProducesAnonymousSnapshotRatherThanNull()
     {
-        // An empty snapshot is strictly more restrictive than a missing one: it resolves no
-        // policies for the caller, whereas a missing snapshot is what the read seam refuses on.
         var captured = JobSecurityContextCapture.Capture(new ClaimsPrincipal(new ClaimsIdentity()), new RbacOptions());
 
         captured.Should().NotBeNull();
-        captured.Claims.Should().BeEmpty();
+        JobSecurityContextCapture.Restore(captured).Identity!.IsAuthenticated.Should().BeFalse();
+        captured.Claims.Should().ContainSingle(claim => claim.Type == "honua:job-authenticated" && claim.Value == bool.FalseString);
     }
 
     private static ClaimsPrincipal BuildPrincipal(params (string Type, string Value)[] claims)

@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -501,6 +502,7 @@ internal sealed partial class JobExecutionService(
         using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(jobCts.Token);
         var heartbeatTask = context.RunHeartbeatPumpAsync(heartbeatCts.Token);
         using var qualificationScope = ExecutionQualificationBarrier.Begin(operationId, workerId);
+        using var securityScope = JobSecurityScope.Begin(running.Audit.SubmitterSecurityContext);
 
         // Stops the heartbeat pump and waits for it to finish so that no
         // in-flight heartbeat write can clobber the terminal-state update.
