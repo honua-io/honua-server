@@ -122,7 +122,6 @@ print("Serving-image boundary fixtures passed.")
 
 # Registry fixtures exercise cryptographic identity and in-toto subject binding,
 # including multi-architecture indexes and annotation/payload disagreement.
-import copy
 import hashlib
 import json
 
