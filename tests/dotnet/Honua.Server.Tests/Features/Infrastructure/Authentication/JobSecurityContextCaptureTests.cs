@@ -21,6 +21,16 @@ namespace Honua.Server.Tests.Features.Infrastructure.Authentication;
 /// </summary>
 public sealed class JobSecurityContextCaptureTests
 {
+    [UnitTest]
+    public void Capture_ReservedAuthenticationRoleClaimType_RefusesSubmission()
+    {
+        var options = new RbacOptions { RoleClaimType = "honua:job-authenticated" };
+        Action capture = () => JobSecurityContextCapture.Capture(
+            new ClaimsPrincipal(new ClaimsIdentity()), options);
+
+        capture.Should().Throw<InvalidOperationException>();
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
