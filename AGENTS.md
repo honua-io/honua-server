@@ -727,3 +727,7 @@ This machine runs many agents concurrently (**Codex + Claude**, often via agentf
 3. **Commit and push when you finish a task** so your worktree can be reclaimed. An hourly job (`honua-clean`) removes a worktree ONLY when it is clean AND fully pushed (merged, remote-gone, or idle >=2d). Dirty or unpushed worktrees are NEVER touched — but uncommitted/unpushed work blocks reclamation and is at risk if the instance is reset. Build artifacts (bin/obj and untracked node_modules) are reclaimed automatically and safely.
 
 4. **Commit hygiene — no agent attribution.** Author every commit as the repo owner only (git identity: Mike McDougall <mike@honua.io>). Do **NOT** add any agent/tool attribution to commits: no `Co-Authored-By: Claude ...`, no `Co-Authored-By: Codex ...` (or other bot co-authors), and no "Generated with Claude Code" / "Generated with Codex" / "🤖" lines in the message or PR body. Write a plain, descriptive commit message and stop.
+
+## Release component versions
+
+`release/component-versions.json` declares this repository's contract versions (and schema versions; the `database` schema version is derived by the resolver from the migrations). The honua-release nightly resolver reads it at the exact selected commit and refuses `honua-server` when it is missing or invalid, so any contract version bump, or any bump of a schema version declared here (not the derived `database` version — adding a migration needs no edit), must update this file in the same PR.
