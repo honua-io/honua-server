@@ -61,12 +61,15 @@ public class PrintingToolsRequestHandlerTests
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "resource" },
             AccessPolicy = new AccessPolicy { AllowedRoles = [coarseAllowed ? "reader" : "editor"] },
-            StorageBindingIds = ["binding"], PrimaryStorageBindingId = "binding",
+            StorageBindingIds = ["binding"],
+            PrimaryStorageBindingId = "binding",
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
         };
         var snapshot = new MetadataV2GraphSnapshot(new MetadataV2Graph
         {
-            Revision = 1, Services = [service], Resources = [resource],
+            Revision = 1,
+            Services = [service],
+            Resources = [resource],
             StorageBindings = [new MetadataV2StorageBinding
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = "binding", Name = "binding" },
@@ -98,7 +101,7 @@ public class PrintingToolsRequestHandlerTests
         permissions.AuthorizeAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), "service", "resource",
             AuthorizationOperation.Query, true, Arg.Any<CancellationToken>())
             .Returns(queryGrant ? PermissionDecision.Allow(new PermissionGrant
-                { Service = "service", Layer = "resource", Operation = "query" }) : PermissionDecision.NoMatch());
+            { Service = "service", Layer = "resource", Operation = "query" }) : PermissionDecision.NoMatch());
         await using var authorizationServices = new ServiceCollection()
             .AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()))
             .AddSingleton(permissions)
