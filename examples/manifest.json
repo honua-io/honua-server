@@ -13501,7 +13501,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 425,
+      "line": 437,
       "language": "sql"
     },
     {
