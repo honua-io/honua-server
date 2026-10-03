@@ -83,8 +83,8 @@ jobs:
             arch: arm64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
-            provenance: false
-            sbom: false
+            provenance: mode=max
+            sbom: true
           - image_key: functions-jit
             image_name: Functions Development JIT Image
             dockerfile: docker/Dockerfile.functions
@@ -107,7 +107,7 @@ jobs:
             arch: amd64
             platform: linux/amd64
             runner: ubuntu-24.04
-            provenance: true
+            provenance: mode=max
             sbom: true
     permissions:
       contents: read
@@ -295,7 +295,14 @@ jobs:
         run: |
           set -euo pipefail
           docker pull "$CANDIDATE"
-          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
+          if [[ "${{ matrix.image_key }}" == "lambda-aot" || "${{ matrix.image_key }}" == "functions-aot" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends skopeo
+            docker buildx imagetools inspect "$CANDIDATE"
+            python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE" --require-attestations
+          else
+            python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
+          fi
 
       - name: Publish verified native-AOT platform architecture tags
         if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') }}
@@ -377,11 +384,9 @@ jobs:
         run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image "${{ steps.scan_prep.outputs.scan_local }}"
 
       # Always generate an SPDX SBOM artifact for every platform image, even
-      # when matrix.sbom is false (Lambda images skip the OCI SBOM
-      # attestation because AWS Lambda's image format rejects unknown
-      # manifest entries). This ensures audit gate A -> A+ coverage of
-      # *every* container build, not just the ones that publish an
-      # attestation alongside the image.
+      # when matrix.sbom is false (the development Lambda JIT image).
+      # Production Lambda AOT uses the per-architecture serving child digest
+      # for deployment; its OCI index also retains SBOM and provenance.
       - name: Generate SBOM (SPDX JSON) for ${{ matrix.image_key }} (${{ matrix.arch }})
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:

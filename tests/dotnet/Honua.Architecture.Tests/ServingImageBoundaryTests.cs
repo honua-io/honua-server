@@ -55,19 +55,24 @@ public sealed class ServingImageBoundaryTests
         nightly.Should().Contain(VerifierCommand, Exactly.Thrice(),
             "the generic and Lambda AOT digests must be inspected before their manifests are "
             + "published, and the Azure Functions AOT rootfs is boundary-verified nightly too "
-            + "(#3204) even though this workflow does not publish that variant");
+            + "with registry attestations retained for every published variant");
         nightly.Should().Contain("id: build", Exactly.Twice(),
-            "exactly the two PUBLISHED AOT builds expose the immutable digest consumed by their "
-            + "verifier; the Azure Functions job verifies a locally loaded image and promotes nothing");
+            "the generic and Lambda builds expose their digest under this identifier; "
+            + "Functions exposes functions_candidate.outputs.digest to its verifier");
+        nightly.Should().Contain("steps.functions_candidate.outputs.digest");
+        nightly.Should().Contain("--require-attestations", Exactly.Twice(),
+            "Lambda and Functions must fail before publication if registry attestations are absent or mismatched");
+        nightly.Should().Contain("provenance: mode=max", Exactly.Twice());
+        nightly.Should().NotContain("load: true", "local image stores can discard attestation manifests");
         nightly.Should().Contain("nightly-aot-${tag_name#nightly-}",
             "dated and SHA AOT compatibility tags must retain their established infix naming");
-        nightly.Should().Contain("actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2", Exactly.Twice(),
-            "the canonical and Lambda multi-architecture manifests must both receive GitHub provenance");
-        nightly.Should().Contain("attestations: write", Exactly.Twice());
-        nightly.Should().Contain("id-token: write", Exactly.Twice());
+        nightly.Should().Contain("actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2", Exactly.Thrice(),
+            "canonical, Lambda and Functions indexes must receive GitHub provenance");
+        nightly.Should().Contain("attestations: write", Exactly.Thrice());
+        nightly.Should().Contain("id-token: write", Exactly.Thrice());
         nightly.Should().Contain("subject-digest: ${{ steps.manifest.outputs.subject_digest }}", Exactly.Twice(),
             "attestations must bind the final pushed manifest digest rather than a mutable tag");
-        nightly.Should().Contain("push-to-registry: true", Exactly.Twice(),
+        nightly.Should().Contain("push-to-registry: true", Exactly.Thrice(),
             "gh attestation verify oci://... requires the provenance to be available with the image");
     }
 

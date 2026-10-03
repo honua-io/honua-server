@@ -111,6 +111,7 @@ jobs:
           done <<<"${mirror_map}"
 
   build-aot:
+    if: github.ref == 'refs/heads/trunk'
     name: Build & Push AOT (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     # 180, not 90: a COLD native-AOT build of this image does not fit in 90 minutes, and a timeout
@@ -280,6 +281,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to Docker Hub
+        if: github.ref == 'refs/heads/trunk'
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -323,8 +325,8 @@ jobs:
           # not fail an otherwise-successful build. The cache is an accelerator,
           # not a release artifact.
           cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-lambda-aot-${{ matrix.arch }},mode=max,ignore-error=true
-          provenance: false
-          sbom: false
+          provenance: mode=max
+          sbom: true
 
       - name: Verify nightly Lambda AOT candidate before registry publication
         shell: bash
@@ -332,10 +334,15 @@ jobs:
           CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
+          docker buildx imagetools inspect "$CANDIDATE"
           docker pull "$CANDIDATE"
-          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
+          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE" \
+            --require-attestations --attestation-report "${RUNNER_TEMP}/lambda-attestations-${{ matrix.arch }}.json"
 
       - name: Publish verified nightly Lambda AOT architecture tags
+        if: github.ref == 'refs/heads/trunk'
         shell: bash
         env:
           CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
@@ -349,12 +356,19 @@ jobs:
             --staging-tag "boundary-candidate-nightly-lambda-aot-${{ matrix.arch }}-${{ github.sha }}" \
             --authfile "$HOME/.docker/config.json"
 
+      - name: Upload Lambda immutable attestation references
+        uses: actions/upload-artifact@v7
+        with:
+          name: lambda-attestations-${{ matrix.arch }}
+          path: ${{ runner.temp }}/lambda-attestations-${{ matrix.arch }}.json
+          if-no-files-found: error
+
   manifest-lambda-aot:
     name: Publish Lambda AOT Manifests
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build-lambda-aot, mirror-base-images]
-    if: ${{ needs.build-lambda-aot.result == 'success' }}
+    if: ${{ github.ref == 'refs/heads/trunk' && needs.build-lambda-aot.result == 'success' }}
     permissions:
       attestations: write
       contents: read
@@ -415,26 +429,17 @@ jobs:
 
   verify-functions-aot:
     name: Build & Boundary-Verify Azure Functions AOT
-    # The Azure Functions AOT image is a production serving variant, but the only
-    # lane that BUILDS it is `deploy-platform-images.yml` — release tags plus one
-    # weekly scan-only schedule. Between releases its final-rootfs evidence came
-    # from `serving-image-boundary.yml` firing on `src/**`, which #3204 narrowed
-    # to image-defining inputs. This job carries the daily source-driven rootfs
-    # proof for the variant so the narrowing defers that evidence by at most one
-    # night instead of up to a week.
-    #
-    # It deliberately publishes NOTHING. `deploy-platform-images.yml` stays the
-    # sole publisher of this variant and re-verifies the exact digest it promotes;
-    # adding a second published tag surface here would add release semantics this
-    # job does not need. Its base image comes straight from MCR
-    # (`AZURE_FUNCTIONS_BASE_IMAGE`, not a `DOTNET_*_IMAGE` arg), so it is not a
-    # consumer of the `mirror-base-images` GHCR mirror and does not depend on it.
+    # Export a single-platform OCI candidate so BuildKit SBOM/provenance survive.
+    # Verify its immutable digest before assigning nightly tags. Branch dispatch
+    # produces candidate evidence only; channel tags remain trunk-owned.
     runs-on: ubuntu-24.04
     # 180, matching the other native-AOT ceilings: a cold build does not fit in
     # 90 minutes and a timeout is self-perpetuating (see build-lambda-aot).
     timeout-minutes: 180
     permissions:
+      attestations: write
       contents: read
+      id-token: write
       packages: write
     steps:
       - name: Checkout
@@ -450,7 +455,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
+          tags: |
+            type=raw,value=nightly-functions-aot
+            type=sha,prefix=nightly-functions-aot-
+
       - name: Build nightly Azure Functions AOT serving image
+        id: functions_candidate
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: .
@@ -458,8 +473,8 @@ jobs:
           build-args: |
             HONUA_GIT_SHA=${{ github.sha }}
           platforms: linux/amd64
-          load: true
-          tags: honua-server:nightly-functions-aot
+          outputs: type=image,name=${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }},push-by-digest=true,name-canonical=true,push=true
+          labels: ${{ steps.meta.outputs.labels }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
@@ -467,13 +482,51 @@ jobs:
           # ignore-error: a failed cache export must not fail an otherwise
           # successful build; the cache is an accelerator, not evidence.
           cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-functions-aot-amd64,mode=max,ignore-error=true
-          provenance: false
-          sbom: false
+          provenance: mode=max
+          sbom: true
 
       - name: Verify nightly Azure Functions AOT serving-image contents
-        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image honua-server:nightly-functions-aot
+        shell: bash
+        env:
+          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.functions_candidate.outputs.digest }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
+          docker buildx imagetools inspect "$CANDIDATE"
+          docker pull "$CANDIDATE"
+          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE" \
+            --require-attestations --attestation-report "${RUNNER_TEMP}/functions-attestations-amd64.json"
+
+      - name: Attest nightly Functions AOT candidate
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
+          subject-digest: ${{ steps.functions_candidate.outputs.digest }}
+          push-to-registry: true
+
+      - name: Publish verified nightly Functions AOT tags
+        if: github.ref == 'refs/heads/trunk'
+        shell: bash
+        env:
+          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.functions_candidate.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$TAGS" | python3 scripts/ci/promote-verified-image.py \
+            --candidate "$CANDIDATE" \
+            --staging-tag "boundary-candidate-nightly-functions-aot-${{ github.sha }}" \
+            --authfile "$HOME/.docker/config.json"
+
+      - name: Upload Functions immutable attestation references
+        uses: actions/upload-artifact@v7
+        with:
+          name: functions-attestations-amd64
+          path: ${{ runner.temp }}/functions-attestations-amd64.json
+          if-no-files-found: error
 
   build-jit:
+    if: github.ref == 'refs/heads/trunk'
     name: Build & Push JIT (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
@@ -558,7 +611,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build-aot, mirror-base-images]
-    if: ${{ needs.build-aot.result == 'success' }}
+    if: ${{ github.ref == 'refs/heads/trunk' && needs.build-aot.result == 'success' }}
     permissions:
       attestations: write
       contents: read
@@ -636,7 +689,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build-jit, mirror-base-images]
-    if: ${{ needs.build-jit.result == 'success' }}
+    if: ${{ github.ref == 'refs/heads/trunk' && needs.build-jit.result == 'success' }}
     permissions:
       contents: read
       packages: write

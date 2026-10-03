@@ -119,3 +119,106 @@ if worker_runs[0][-1] != "worker:fixture":
     raise AssertionError(f"worker smoke did not launch the requested image: {worker_runs[0]}")
 
 print("Serving-image boundary fixtures passed.")
+
+# Registry fixtures exercise cryptographic identity and in-toto subject binding,
+# including multi-architecture indexes and annotation/payload disagreement.
+import copy
+import hashlib
+import json
+
+
+def packed(value: dict) -> tuple[str, bytes]:
+    content = json.dumps(value, separators=(",", ":")).encode()
+    return "sha256:" + hashlib.sha256(content).hexdigest(), content
+
+
+def attested_fixture(arches=("amd64",), fault=None):
+    objects = {}
+    blobs = {}
+    descriptors = []
+    for arch in arches:
+        subject, content = packed({"schemaVersion": 2, "layers": [], "fixture": arch})
+        objects[subject] = content
+        descriptors.append({"digest": subject, "platform": {"os": "linux", "architecture": arch}})
+        layers = []
+        for kind, predicate_type in MODULE.PREDICATES.items():
+            if fault == "missing-" + kind:
+                continue
+            statement = {
+                "_type": "https://in-toto.io/Statement/v0.1",
+                "subject": [{"name": "_", "digest": {"sha256": subject[7:]}}],
+                "predicateType": predicate_type,
+                "predicate": {"fixture": kind},
+            }
+            if fault == "wrong-subject":
+                statement["subject"][0]["digest"]["sha256"] = "0" * 64
+            if fault == "wrong-predicate":
+                statement["predicateType"] = "https://example.invalid"
+            if fault == "empty-predicate":
+                statement["predicate"] = {}
+            digest, payload = packed(statement)
+            blobs[digest] = payload if fault != "corrupt-blob" else b"{}"
+            layers.append({"digest": digest, "mediaType": "application/vnd.in-toto+json",
+                           "annotations": {"in-toto.io/predicate-type": predicate_type}})
+        attestation = {"schemaVersion": 2, "layers": layers}
+        if fault == "oci-subject-mismatch":
+            attestation["subject"] = {"digest": "sha256:" + "0" * 64}
+        attestation_digest, payload = packed(attestation)
+        objects[attestation_digest] = payload
+        descriptors.append({
+            "digest": attestation_digest,
+            "platform": {"os": "unknown", "architecture": "unknown"},
+            "annotations": {"vnd.docker.reference.type": "attestation-manifest",
+                            "vnd.docker.reference.digest": subject if fault != "orphan" else "sha256:" + "0" * 64},
+        })
+    digest, payload = packed({"schemaVersion": 2, "manifests": descriptors})
+    objects[digest] = payload if fault != "corrupt-index" else b"{}"
+    image = "ghcr.io/honua-io/honua-server@" + digest
+
+    def registry(*arguments):
+        if arguments[0] == "inspect":
+            return objects[arguments[-1].split("@")[-1]]
+        if arguments[0] == "copy":
+            destination = Path(arguments[-1].removeprefix("dir:"))
+            for key, value in blobs.items():
+                (destination / key[7:]).write_bytes(value)
+            return b""
+        raise AssertionError(arguments)
+
+    with patch.object(MODULE, "_registry", side_effect=registry):
+        return MODULE.verify_image_attestations(image)
+
+
+for arches in (("amd64",), ("arm64",), ("amd64", "arm64")):
+    records = attested_fixture(arches)
+    assert len(records) == len(arches)
+    for record in records:
+        assert record["image"].startswith("oci://ghcr.io/honua-io/honua-server@sha256:")
+        assert record["subject"] != record["image"]
+        assert "sbom" in record and "provenance" in record
+
+for fault in ("missing-sbom", "missing-provenance", "wrong-subject", "wrong-predicate",
+              "empty-predicate", "corrupt-blob", "oci-subject-mismatch", "orphan", "corrupt-index"):
+    try:
+        attested_fixture(fault=fault)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(f"accepted invalid attestation: {fault}")
+
+try:
+    MODULE.verify_image_attestations("ghcr.io/honua-io/honua-server:mutable")
+except ValueError:
+    pass
+else:
+    raise AssertionError("accepted a mutable image reference")
+
+# Retry only known transport errors; authorization failures fail closed.
+with patch.object(MODULE.subprocess, "run", side_effect=[
+    CompletedProcess([], 1, stdout=b"", stderr=b"Connection reset by peer"),
+    CompletedProcess([], 0, stdout=b"verified", stderr=b""),
+]), patch.object(MODULE.time, "sleep") as sleep:
+    assert MODULE._registry("inspect", "--raw", "docker://fixture") == b"verified"
+    sleep.assert_called_once_with(10)
+
+print("Digest-bound SBOM/provenance fixtures passed.")
