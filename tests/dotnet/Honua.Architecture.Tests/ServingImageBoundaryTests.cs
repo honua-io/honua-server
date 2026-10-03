@@ -77,6 +77,26 @@ public sealed class ServingImageBoundaryTests
     }
 
     [ArchitectureTest]
+    public void PlatformLambdaPublisher_ShouldRetainEvidenceAndPublishTheServingChild()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var platform = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/deploy-platform-images.yml"));
+
+        platform.Should().Contain("SERVING_CANDIDATE: ${{ steps.aot_verified.outputs.serving_candidate }}");
+        platform.Should().Contain("--attestation-report", "child selection must use verified registry evidence");
+        platform.Should().Contain("attested-lambda-aot-${{ matrix.arch }}-${{ github.sha }}",
+            "the parent evidence index must remain discoverable in each registry");
+        platform.Should().Contain("CANDIDATE=\"$SERVING_CANDIDATE\"",
+            "Lambda deployment tags must select the verified serving child, not the evidence index");
+        platform.Should().Contain("docker buildx imagetools create --prefer-index=false",
+            "final Lambda aliases must preserve the runnable child manifest");
+
+        var nightly = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/nightly-container-build.yml"));
+        nightly.Should().Contain("format('/proof-{0}', github.run_id)",
+            "branch proof mirrors must not overwrite shared trunk base-image tags");
+    }
+
+    [ArchitectureTest]
     public void Publishers_ShouldPromoteTheExactVerifiedAotDigest()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
