@@ -55,7 +55,8 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
             serviceApplyPayload);
         serviceApplyResponse.Be200Ok();
         using var serviceDocument = JsonDocument.Parse(await serviceApplyResponse.Content.ReadAsStringAsync());
-        var serviceAdd = serviceDocument.RootElement.GetProperty("editResults")[0].GetProperty("addResults")[0];
+        serviceDocument.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+        var serviceAdd = serviceDocument.RootElement[0].GetProperty("addResults")[0];
         serviceAdd.GetProperty("success").GetBoolean().Should().BeTrue();
         var serviceObjectId = serviceAdd.GetProperty("objectId").GetInt64();
         await AssertFeatureNameAsync(serviceObjectId, "mutation-service-apply");

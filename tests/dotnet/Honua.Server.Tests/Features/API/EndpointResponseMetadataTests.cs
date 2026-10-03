@@ -78,7 +78,7 @@ public sealed class EndpointResponseMetadataTests : IDisposable
 
         foreach (var (method, path, expectedType) in new[]
                  {
-                     ("POST", "/rest/services/{serviceId}/FeatureServer/applyEdits", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.ServiceApplyEditsResponse)),
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/applyEdits", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.ServiceLayerEditResult[])),
                      ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.ApplyEditsResponse)),
                      ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.ApplyEditsResponse)),
                      ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.ApplyEditsResponse)),

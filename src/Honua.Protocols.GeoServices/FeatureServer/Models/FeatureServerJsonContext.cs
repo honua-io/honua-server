@@ -95,7 +95,6 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 [JsonSerializable(typeof(FeatureTemplate[]))]
 [JsonSerializable(typeof(ServiceLayerEdits))]
 [JsonSerializable(typeof(ServiceLayerEdits[]))]
-[JsonSerializable(typeof(ServiceApplyEditsResponse))]
 [JsonSerializable(typeof(ServiceLayerEditResult))]
 [JsonSerializable(typeof(ServiceLayerEditResult[]))]
 [JsonSerializable(typeof(IReadOnlyList<object>))]

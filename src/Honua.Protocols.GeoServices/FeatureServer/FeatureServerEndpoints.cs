@@ -170,7 +170,7 @@ internal static partial class FeatureServerEndpoints
             .WithDescription("Apply feature edits to multiple layers in a single request including add, update, and delete operations")
             .WithTags("FeatureServer")
             .AllowAnonymous()
-            .Produces<ServiceApplyEditsResponse>(200, "application/json")
+            .Produces<ServiceLayerEditResult[]>(200, "application/json")
             .Produces(400)
             .Produces(404);
 
