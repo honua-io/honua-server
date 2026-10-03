@@ -93,9 +93,9 @@ internal static class PrintingToolsRequestHandlers
                 metadataGraphProvider,
                 styleCatalog,
                 callerPrincipal,
-                cancellationToken,
                 authorizationServices,
-                tenantId);
+                tenantId,
+                cancellationToken);
 
             // Render map frame
             var mapFrameBytes = await RenderMapFrameAsync(
@@ -330,9 +330,9 @@ internal static class PrintingToolsRequestHandlers
         IMetadataV2GraphProvider metadataGraphProvider,
         ILayerStyleCatalog styleCatalog,
         ClaimsPrincipal? callerPrincipal,
-        CancellationToken cancellationToken,
         IServiceProvider? authorizationServices,
-        string? tenantId)
+        string? tenantId,
+        CancellationToken cancellationToken)
     {
         var layers = new List<ResolvedLayer>();
         var snapshot = await metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -341,9 +341,9 @@ internal static class PrintingToolsRequestHandlers
             resourceValidator,
             snapshot,
             callerPrincipal,
-            cancellationToken,
             authorizationServices,
-            tenantId))
+            tenantId,
+            cancellationToken))
         {
             // Pre-fetch and parse style so both render and legend paths share the result
             var style = await styleCatalog.GetLayerStyleAsync(resolved.StorageLayerId, cancellationToken);
@@ -362,9 +362,9 @@ internal static class PrintingToolsRequestHandlers
         IResourceValidator resourceValidator,
         MetadataV2GraphSnapshot snapshot,
         ClaimsPrincipal? callerPrincipal,
-        [EnumeratorCancellation] CancellationToken cancellationToken,
         IServiceProvider? authorizationServices,
-        string? tenantId)
+        string? tenantId,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var operationalLayers = webMap.OperationalLayers ?? [];
 
