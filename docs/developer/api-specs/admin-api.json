@@ -21967,6 +21967,20 @@
           },
           "compatibility": {
             "$ref": "#/components/schemas/AdminCompatibilityMetadata"
+          },
+          "contractVersions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Same map as compatibility.contractVersions: every contract this server serves, name to exact version, as declared in release/component-versions.json."
+          },
+          "schemaVersions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Same map as compatibility.schemaVersions: schema name to exact version, as declared in release/component-versions.json."
           }
         }
       },
