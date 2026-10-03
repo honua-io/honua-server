@@ -22,6 +22,32 @@ namespace Honua.Server.Tests.Features.Infrastructure.Authentication;
 public sealed class JobSecurityContextCaptureTests
 {
     [UnitTest]
+    public void Capture_ReservedAuthenticationRoleClaimType_RefusesSubmission()
+    {
+        var options = new RbacOptions { RoleClaimType = "honua:job-authenticated" };
+        Action capture = () => JobSecurityContextCapture.Capture(
+            new ClaimsPrincipal(new ClaimsIdentity()), options);
+
+        capture.Should().Throw<InvalidOperationException>();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Trait("Tier", "Fast")]
+    public void Capture_ThenRestore_PreservesAuthenticationState(bool authenticated)
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("region", "west"), new Claim("honua:job-authenticated", authenticated ? bool.FalseString : bool.TrueString)],
+            authenticated ? "test" : null));
+
+        var restored = JobSecurityContextCapture.Restore(
+            JobSecurityContextCapture.Capture(principal, new RbacOptions()));
+
+        restored.Identity!.IsAuthenticated.Should().Be(authenticated);
+    }
+
+    [UnitTest]
     public async Task RevalidateRoleMembership_RoleRevoked_ReplacesOnlyRoleClaims()
     {
         var context = new JobSecurityContext(
@@ -707,14 +733,13 @@ public sealed class JobSecurityContextCaptureTests
     }
 
     [UnitTest]
-    public void Capture_PrincipalWithNoClaims_ProducesEmptySnapshotRatherThanNull()
+    public void Capture_PrincipalWithNoClaims_ProducesAnonymousSnapshotRatherThanNull()
     {
-        // An empty snapshot is strictly more restrictive than a missing one: it resolves no
-        // policies for the caller, whereas a missing snapshot is what the read seam refuses on.
         var captured = JobSecurityContextCapture.Capture(new ClaimsPrincipal(new ClaimsIdentity()), new RbacOptions());
 
         captured.Should().NotBeNull();
-        captured.Claims.Should().BeEmpty();
+        JobSecurityContextCapture.Restore(captured).Identity!.IsAuthenticated.Should().BeFalse();
+        captured.Claims.Should().ContainSingle(claim => claim.Type == "honua:job-authenticated" && claim.Value == bool.FalseString);
     }
 
     private static ClaimsPrincipal BuildPrincipal(params (string Type, string Value)[] claims)

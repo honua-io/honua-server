@@ -2,6 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
+using Microsoft.Extensions.Options;
 using System.Text.Json;
 using System.Threading.Channels;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -338,7 +342,6 @@ internal static class PrintingToolsEndpoints
         var metadataGraphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var styleCatalog = context.RequestServices.GetRequiredService<ILayerStyleCatalog>();
-        var accessPolicyEvaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
 
         (byte[] OutputBytes, string ContentType, string FileName)? result;
         try
@@ -347,8 +350,9 @@ internal static class PrintingToolsEndpoints
                 req.WebMap, req.Format, req.TemplateName, req.Dpi,
                 resourceValidator, metadataGraphProvider, featureReader, styleCatalog, req.Logger, cancellationToken,
                 callerPrincipal: context.User,
-                accessPolicyEvaluator: accessPolicyEvaluator,
-                crsRegistry: context.RequestServices.GetService<ICrsRegistry>());
+                crsRegistry: context.RequestServices.GetService<ICrsRegistry>(),
+                authorizationServices: context.RequestServices,
+                tenantId: CaptureSubmitter(context).TenantId);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -442,7 +446,8 @@ internal static class PrintingToolsEndpoints
 
         var jobId = Guid.NewGuid().ToString("N");
         var totalElements = 1 + (webMap.OperationalLayers?.Length ?? 0); // map frame + layers
-        var job = new PrintJob(jobId, webMap, format, templateName, dpi, totalElements, CallerPrincipal: context.User);
+        var submitter = CaptureSubmitter(context);
+        var job = new PrintJob(jobId, webMap, format, templateName, dpi, totalElements, submitter);
 
         // Persist progress BEFORE publishing to the channel so a fast worker
         // cannot finish and have its Completed state overwritten by a late Queued write.
@@ -456,6 +461,9 @@ internal static class PrintingToolsEndpoints
         var progressStore = context.RequestServices.GetRequiredService<IUniversalProgressStore>();
         var progress = PrintProgress.CreateInitial(jobId, format, templateName, totalElements) with
         {
+            RequestedBy = ResolveOwner(context.User),
+            TenantId = submitter.TenantId,
+            AnonymousSubmission = context.User.Identity?.IsAuthenticated != true,
             Warnings = warningDescriptions
         };
         await progressStore.SetProgressAsync(jobId, progress, PrintingToolsRequestHandlers.ResultTtl, cancellationToken);
@@ -497,7 +505,7 @@ internal static class PrintingToolsEndpoints
         var progressStore = context.RequestServices.GetRequiredService<IUniversalProgressStore>();
         var progress = await progressStore.GetProgressAsync(jobId, cancellationToken);
 
-        if (progress is not PrintProgress printProgress)
+        if (progress is not PrintProgress printProgress || !CanReadJob(printProgress, context))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Print job '{jobId}' not found.");
         }
@@ -561,7 +569,7 @@ internal static class PrintingToolsEndpoints
         var progressStore = context.RequestServices.GetRequiredService<IUniversalProgressStore>();
         var progress = await progressStore.GetProgressAsync(jobId, cancellationToken);
 
-        if (progress is not PrintProgress printProgress)
+        if (progress is not PrintProgress printProgress || !CanReadJob(printProgress, context))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Print job '{jobId}' not found.");
         }
@@ -607,6 +615,28 @@ internal static class PrintingToolsEndpoints
         }
 
         return (webMapJson, format, templateName);
+    }
+
+    private static Honua.Core.Features.Authorization.Domain.JobSecurityContext CaptureSubmitter(HttpContext context)
+        => JobSecurityContextCapture.Capture(context.User,
+            context.RequestServices.GetService<IOptions<RbacOptions>>()?.Value ?? new RbacOptions(),
+            context.RequestServices.GetService<ITenantContext>());
+
+    private static string? ResolveOwner(System.Security.Claims.ClaimsPrincipal principal)
+        => CanonicalSecurityActor.Resolve(principal) is { IsDurablyRevalidatable: true } actor
+            ? CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.CanonicalActorClaim) ?? actor.ActorId
+            : null;
+
+    private static bool CanReadJob(PrintProgress progress, HttpContext context)
+    {
+        if (progress.AnonymousSubmission is null ||
+            !string.Equals(progress.TenantId, CaptureSubmitter(context).TenantId, StringComparison.Ordinal))
+            return false;
+        if (progress.AnonymousSubmission == true ||
+            (context.User.Identity?.IsAuthenticated == true && context.User.IsInRole("admin")))
+            return true;
+        var owner = ResolveOwner(context.User);
+        return owner is not null && string.Equals(progress.RequestedBy, owner, StringComparison.Ordinal);
     }
 
     private static string MapOperationStatusToEsriJobStatus(OperationStatus status) => status switch

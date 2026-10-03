@@ -3659,7 +3659,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 24,
+      "line": 30,
       "language": "json"
     },
     {
@@ -3672,7 +3672,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 79,
+      "line": 85,
       "language": "json"
     },
     {
@@ -3685,7 +3685,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 85,
+      "line": 91,
       "language": "json"
     },
     {
@@ -3698,7 +3698,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 52,
+      "line": 58,
       "language": "json"
     },
     {
@@ -4461,7 +4461,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 24,
+      "line": 26,
       "language": "json"
     },
     {
@@ -4474,7 +4474,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 235,
+      "line": 237,
       "language": "jsonc"
     },
     {
@@ -4487,7 +4487,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 40,
+      "line": 42,
       "language": "json"
     },
     {
@@ -11863,7 +11863,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 153,
+      "line": 159,
       "language": "jsonc"
     },
     {
@@ -11876,7 +11876,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 21,
+      "line": 27,
       "language": "plain"
     },
     {
@@ -11889,7 +11889,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 210,
+      "line": 216,
       "language": "csharp"
     },
     {

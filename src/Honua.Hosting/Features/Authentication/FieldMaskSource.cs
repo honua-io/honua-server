@@ -29,6 +29,7 @@ namespace Honua.Infrastructure.Authentication;
 /// </remarks>
 internal sealed partial class FieldMaskSource : IFieldMaskSource
 {
+    private readonly IServiceProvider? _backgroundServices;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IFieldMaskPolicyStore _policyStore;
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -40,8 +41,10 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
         IFieldMaskPolicyStore policyStore,
         IMetadataV2GraphProvider graphProvider,
         IOptions<RbacOptions> rbacOptions,
-        ILogger<FieldMaskSource> logger)
+        ILogger<FieldMaskSource> logger,
+        IServiceProvider? backgroundServices = null)
     {
+        _backgroundServices = backgroundServices;
         _httpContextAccessor = httpContextAccessor;
         _policyStore = policyStore;
         _graphProvider = graphProvider;
@@ -67,7 +70,7 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
         var roles = RbacRoleClaims.Enumerate(
             principal,
             _rbacOptions,
-            _httpContextAccessor.HttpContext?.RequestServices);
+            _httpContextAccessor.HttpContext?.RequestServices ?? _backgroundServices);
 
         var layerName = resource.Metadata.Name;
         if (string.IsNullOrWhiteSpace(layerName))

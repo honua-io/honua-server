@@ -31,6 +31,7 @@ namespace Honua.Infrastructure.Authentication;
 /// </remarks>
 internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFilterSource
 {
+    private readonly IServiceProvider? _backgroundServices;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IRlsPolicyStore _policyStore;
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -44,8 +45,10 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         IMetadataV2GraphProvider graphProvider,
         IFilterExpressionService filterExpressionService,
         IOptions<RbacOptions> rbacOptions,
-        ILogger<RowLevelSecurityFilterSource> logger)
+        ILogger<RowLevelSecurityFilterSource> logger,
+        IServiceProvider? backgroundServices = null)
     {
+        _backgroundServices = backgroundServices;
         _httpContextAccessor = httpContextAccessor;
         _policyStore = policyStore;
         _graphProvider = graphProvider;
@@ -92,7 +95,7 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         var roles = RbacRoleClaims.Enumerate(
             principal,
             _rbacOptions,
-            _httpContextAccessor.HttpContext?.RequestServices);
+            _httpContextAccessor.HttpContext?.RequestServices ?? _backgroundServices);
 
         var layerName = resource.Metadata.Name;
         if (string.IsNullOrWhiteSpace(layerName))
