@@ -471,6 +471,129 @@ public sealed class MetadataV2GraphSnapshotTests
             .Should().Be(77);
     }
 
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ResolveStorageLayerId_UnboundPublicationWhoseLayerIndexIsAnotherResourcesStorageId_ResolvesNoHandle()
+    {
+        var snapshot = new MetadataV2GraphSnapshot(UnboundCollidingGraph(), "\"unbound\"", DateTimeOffset.UtcNow);
+        var publication = snapshot.Index.PublicationsById["pub.unbound"];
+
+        publication.LayerIndex.Should().Be(AliasedCollidingStorageLayerId);
+        snapshot.ResolveStorageLayerId(publication, snapshot.ResolveResource(publication))
+            .Should().BeNull("the layer index is resource.permits' storage handle, not this publication's");
+        snapshot.ResolveStorageLayerId(publication, resource: null).Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void Validate_AliasedPublicationWithItsOwnStorageBinding_IsValid()
+    {
+        MetadataV2GraphValidator.Validate(AliasedGraph()).Errors.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void Validate_UnboundPublicationWhoseLayerIndexIsAnotherResourcesStorageId_ReturnsError()
+    {
+        var result = MetadataV2GraphValidator.Validate(UnboundCollidingGraph());
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle().Which.Should().Be(
+            "publication 'pub.unbound' has no storage binding and its layer index 3 is the storage layer id of resource 'resource.permits'.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ResolveStorageLayerId_UnboundPublicationCollidingWithAnotherConnection_RejectsUnsafeFallback()
+    {
+        var graph = WithPermitsOnAnotherConnection(UnboundCollidingGraph());
+        var snapshot = new MetadataV2GraphSnapshot(graph, "\"cross-connection\"", DateTimeOffset.UtcNow);
+        var publication = snapshot.Index.PublicationsById["pub.unbound"];
+        var binding = snapshot.Index.StorageBindingsById["storage.permits"];
+
+        binding.ConnectionId.Should().Be("conn.sqlserver");
+        snapshot.ResolveStorageBinding(publication).Should().BeNull();
+        publication.LayerIndex.Should().Be(AliasedCollidingStorageLayerId);
+        // Default-reader metadata and read policy use this integer-only index. Moving
+        // the claimant to another connection does not make the legacy fallback safe.
+        snapshot.Index.ResourcesByStorageLayerId[AliasedCollidingStorageLayerId]
+            .Metadata.Id.Should().Be("resource.permits");
+        snapshot.ResolveStorageLayerId(publication, resource: null).Should().BeNull();
+        snapshot.ResolveStorageLayerId(publication, snapshot.ResolveResource(publication)).Should().BeNull();
+        MetadataV2GraphValidator.Validate(graph).Errors.Should().ContainSingle().Which.Should().Be(
+            "publication 'pub.unbound' has no storage binding and its layer index 3 is the storage layer id of resource 'resource.permits'.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ResolveStorageLayerId_BoundPublicationsSharingAnIdAcrossConnections_PreserveTheirBindings()
+    {
+        var graph = WithPermitsOnAnotherConnection(AliasedGraph());
+        graph = graph with
+        {
+            StorageBindings = graph.StorageBindings.Select(binding => binding with
+            {
+                StorageLayerId = AliasedCollidingStorageLayerId,
+            }).ToArray(),
+        };
+        var snapshot = new MetadataV2GraphSnapshot(graph, "\"cross-connection\"", DateTimeOffset.UtcNow);
+        var parcels = snapshot.Index.PublicationsById["pub.parcels.aliased"];
+        var permits = snapshot.Index.PublicationsById["pub.permits"];
+
+        MetadataV2GraphValidator.Validate(graph).Errors.Should().BeEmpty();
+        (snapshot.ResolveStorageBinding(parcels)?.ConnectionId).Should().Be("conn.postgres");
+        (snapshot.ResolveStorageBinding(permits)?.ConnectionId).Should().Be("conn.sqlserver");
+        snapshot.ResolveStorageLayerId(parcels, resource: null).Should().Be(AliasedCollidingStorageLayerId);
+        snapshot.ResolveStorageLayerId(permits, resource: null).Should().Be(AliasedCollidingStorageLayerId);
+    }
+
+    private static MetadataV2Graph WithPermitsOnAnotherConnection(MetadataV2Graph graph)
+        => graph with
+        {
+            Connections =
+            [
+                .. graph.Connections,
+                new MetadataV2Connection
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "conn.sqlserver", Name = "sqlserver" },
+                    Type = MetadataV2ConnectionType.Managed,
+                    Provider = "sqlserver",
+                },
+            ],
+            StorageBindings = graph.StorageBindings.Select(binding => binding.Metadata.Id == "storage.permits"
+                ? binding with { ConnectionId = "conn.sqlserver" }
+                : binding).ToArray(),
+        };
+
+    /// <summary>
+    /// <see cref="AliasedGraph"/> plus a feature resource with no storage binding whose
+    /// publication's service-local index equals <c>resource.permits</c>' storage handle.
+    /// </summary>
+    private static MetadataV2Graph UnboundCollidingGraph()
+    {
+        var graph = AliasedGraph();
+        return graph with
+        {
+            Resources =
+            [
+                .. graph.Resources,
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource.unbound", Name = "unbound" },
+                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+                    StorageBindingIds = [],
+                    SchemaFields = [],
+                },
+            ],
+            Publications =
+            [
+                .. graph.Publications,
+                Publication("pub.unbound", "resource.unbound", storageBindingId: null, AliasedCollidingStorageLayerId),
+            ],
+        };
+    }
+
     private const int AliasedParcelsStorageLayerId = 7;
     private const int AliasedCollidingStorageLayerId = 3;
 

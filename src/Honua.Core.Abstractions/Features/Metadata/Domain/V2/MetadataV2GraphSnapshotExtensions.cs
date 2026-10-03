@@ -209,7 +209,24 @@ public static class MetadataV2GraphSnapshotExtensions
 
         var canonical = resource ?? snapshot.ResolveResource(publication);
         var fromResource = canonical is null ? null : snapshot.ResolveStorageLayerId(canonical);
-        return fromResource ?? publication.LayerIndex;
+        if (fromResource.HasValue)
+        {
+            return fromResource;
+        }
+
+        // Last resort for graphs that carry no binding handle. The service-local index is
+        // only usable as a storage handle when no other resource's binding claims that
+        // number; otherwise it names a different resource's storage and the publication
+        // resolves to no handle (SEC-4).
+        var layerIndex = publication.LayerIndex;
+        if (layerIndex is int index
+            && snapshot.Index.StorageBindingsByStorageLayerId.TryGetValue(index, out var claimant)
+            && !string.Equals(claimant.ResourceId, canonical?.Metadata.Id, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return layerIndex;
     }
 
     /// <summary>
