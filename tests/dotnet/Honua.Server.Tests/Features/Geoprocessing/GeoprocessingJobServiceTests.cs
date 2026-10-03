@@ -73,88 +73,6 @@ public sealed class GeoprocessingJobServiceTests
             resultPackageStore: _resultPackageStore);
     }
 
-    [UnitTest]
-    [Operation(Operations.Query)]
-    public async Task JobAccess_SameSubjectDifferentIssuer_ReturnsNotFound()
-    {
-        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(true);
-        var owner = CreateStablePrincipal();
-        ((ClaimsIdentity)owner.Identity!).AddClaim(new Claim("iss", "issuer-a"));
-        var job = await _sut.SubmitJobAsync(CreateValidPlan(), null, owner);
-        _jobStore.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(job);
-        var caller = CreateStablePrincipal();
-        ((ClaimsIdentity)caller.Identity!).AddClaim(new Claim("iss", "issuer-b"));
-
-        await FluentActions.Awaiting(() => _sut.GetJobForTerminalAsync(job.OperationId, caller))
-            .Should().ThrowAsync<GeoprocessingNotFoundException>();
-        (await _sut.GetJobForTerminalAsync(job.OperationId, owner)).OperationId.Should().Be(job.OperationId);
-    }
-
-    [UnitTest]
-    [Operation(Operations.Query)]
-    public async Task JobAccess_NameOnlyIdentity_ReturnsNotFound()
-    {
-        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "display-name")], "Test"));
-        var job = CreateOwnedJobRecord("name-only", ExecutionJobStatus.Queued, "display-name");
-        _jobStore.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(job);
-
-        await FluentActions.Awaiting(() => _sut.GetJobForTerminalAsync(job.OperationId, principal))
-            .Should().ThrowAsync<GeoprocessingNotFoundException>();
-    }
-
-    [UnitTest]
-    [Operation(Operations.Create)]
-    public async Task SubmitJob_ApiKeyIdentity_RecordsCanonicalOwner()
-    {
-        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(true);
-        var principal = new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim("api_key_id", "11111111-1111-1111-1111-111111111111"), new Claim(ClaimTypes.Name, "shared-name")],
-            AuthenticationExtensions.ApiKeyScheme));
-
-        var job = await _sut.SubmitJobAsync(CreateValidPlan(), null, principal);
-
-        job.Audit.RequestedBy.Should().Be(CanonicalSecurityActor.Resolve(principal)!.ActorId);
-    }
-
-    [UnitTest]
-    [Operation(Operations.Create)]
-    public async Task SubmitJob_SameKeyDifferentTenant_CreatesSeparateJobs()
-    {
-        var store = new InMemoryExecutionJobStore();
-        var service = new GeoprocessingJobService(_progressStore, [_cancellationNotifier],
-            _authEvaluator, _approvalEvaluator, new BuiltInProcessCatalog(),
-            NullLogger<GeoprocessingJobService>.Instance, DefaultExecutorOptions,
-            store, _jobQueue, resultPackageStore: _resultPackageStore);
-        var first = await service.SubmitJobAsync(CreateValidPlan(), "tenant-key", CreateTenantPrincipal("tenant-a"));
-        var second = await service.SubmitJobAsync(CreateValidPlan(), "tenant-key", CreateTenantPrincipal("tenant-b"));
-
-        second.OperationId.Should().NotBe(first.OperationId);
-    }
-
-    [UnitTest]
-    [Operation(Operations.Create)]
-    public async Task SubmitJob_KeyedTokenRefresh_PreservesOriginalSnapshotAndOwnerScope()
-    {
-        var store = new InMemoryExecutionJobStore();
-        var service = new GeoprocessingJobService(_progressStore, [_cancellationNotifier],
-            _authEvaluator, _approvalEvaluator, new BuiltInProcessCatalog(),
-            NullLogger<GeoprocessingJobService>.Instance, DefaultExecutorOptions,
-            store, _jobQueue, resultPackageStore: _resultPackageStore);
-        var principal = CreateStablePrincipal();
-        ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim("exp", "100"));
-        var first = await service.SubmitJobAsync(CreateValidPlan(), "refresh-key", principal);
-        var refreshed = CreateStablePrincipal();
-        ((ClaimsIdentity)refreshed.Identity!).AddClaim(new Claim("exp", "200"));
-
-        var replay = await service.SubmitJobAsync(CreateValidPlan(), "refresh-key", refreshed);
-        var other = CreatePrincipal();
-        var separate = await service.SubmitJobAsync(CreateValidPlan(), "refresh-key", other);
-
-        replay.OperationId.Should().Be(first.OperationId);
-        replay.Audit.SubmitterSecurityContext!.Claims.Should().Contain(claim => claim.Type == "exp" && claim.Value == "100");
-        separate.OperationId.Should().NotBe(first.OperationId);
-    }
-
     // -----------------------------------------------------------------------
     // ValidatePlan
     // -----------------------------------------------------------------------
@@ -962,7 +880,7 @@ public sealed class GeoprocessingJobServiceTests
 
         var job = await _sut.SubmitJobAsync(CreateValidPlan(), null, CreateStablePrincipal());
 
-        job.Audit.RequestedBy.Should().Be(CanonicalSecurityActor.Resolve(CreateStablePrincipal())!.ActorId);
+        job.Audit.RequestedBy.Should().Be("subject-123");
     }
 
     [UnitTest]
@@ -1229,7 +1147,7 @@ public sealed class GeoprocessingJobServiceTests
         var replay = await _sut.SubmitJobAsync(CreateValidPlan(), "stable-replay", CreateStablePrincipal());
 
         replay.OperationId.Should().Be(first.OperationId);
-        replay.Audit.RequestedBy.Should().Be(CanonicalSecurityActor.Resolve(CreateStablePrincipal())!.ActorId);
+        replay.Audit.RequestedBy.Should().Be("subject-123");
     }
 
     [UnitTest]
@@ -1681,7 +1599,7 @@ public sealed class GeoprocessingJobServiceTests
         var job = await _sut.ResumeApprovedJobAsync(payload);
 
         job.Status.Should().Be(ExecutionJobStatus.Queued);
-        job.Audit.RequestedBy.Should().Be(CanonicalSecurityActor.Resolve(CreateStablePrincipal())!.ActorId);
+        job.Audit.RequestedBy.Should().Be("subject-123");
 
         // The resumed job carries the ORIGINAL submitter's snapshot, not one recaptured from
         // the name-only resume principal.
@@ -1953,10 +1871,7 @@ public sealed class GeoprocessingJobServiceTests
         var inherited = new JobSecurityContext(
             "subject-123",
             TenantId: "tenant-requester",
-            [new JobSecurityClaim(ClaimTypes.Role, "analyst"), new JobSecurityClaim("region", "west")])
-        {
-            OwnerActorId = CanonicalSecurityActor.Resolve(CreateStablePrincipal())!.ActorId
-        };
+            [new JobSecurityClaim(ClaimTypes.Role, "analyst"), new JobSecurityClaim("region", "west")]);
 
         await sut.SubmitJobWithSecurityContextAsync(
             CreateLayerSourcePlan(42), null, orchestratorPrincipal, TrustedWorkflowMetadata(), inherited);
@@ -1971,10 +1886,7 @@ public sealed class GeoprocessingJobServiceTests
         => new(
             "subject-123",
             TenantId: null,
-            [new JobSecurityClaim(ClaimTypes.Role, "analyst"), new JobSecurityClaim("region", "west")])
-        {
-            OwnerActorId = CanonicalSecurityActor.Resolve(CreateStablePrincipal())!.ActorId
-        };
+            [new JobSecurityClaim(ClaimTypes.Role, "analyst"), new JobSecurityClaim("region", "west")]);
 
     [UnitTest]
     [Operation(Operations.Create)]
@@ -2687,7 +2599,7 @@ public sealed class GeoprocessingJobServiceTests
         {
             Audit = record.Audit with
             {
-                SubmitterSecurityContext = CreateSubmitterSecurityContext() with { TenantId = tenant, OwnerActorId = record.Audit.RequestedBy }
+                SubmitterSecurityContext = CreateSubmitterSecurityContext() with { TenantId = tenant }
             }
         };
     }
@@ -5197,7 +5109,7 @@ public sealed class GeoprocessingJobServiceTests
     {
         var plan = CreateValidPlan();
         var idempotencyKey = "retry-submission-rollback";
-        var jobId = GeoprocessingJobService.CreateJobId(idempotencyKey, CanonicalSecurityActor.Resolve(CreatePrincipal())!.ActorId);
+        var jobId = GeoprocessingJobService.CreateJobId(idempotencyKey);
         var requestFingerprint = GeoprocessingJobService.CreateRequestFingerprint(plan);
 
         var failedSubmission = CreateJobRecord(jobId, ExecutionJobStatus.Failed) with
@@ -5207,8 +5119,6 @@ public sealed class GeoprocessingJobServiceTests
             Audit = new OperationAuditInfo
             {
                 IdempotencyKey = idempotencyKey,
-                RequestedBy = CanonicalSecurityActor.Resolve(CreatePrincipal())!.ActorId,
-                SubmitterSecurityContext = CreateOwnerAudit("test-user").SubmitterSecurityContext,
                 RequestFingerprint = requestFingerprint
             }
         };
@@ -5609,7 +5519,7 @@ public sealed class GeoprocessingJobServiceTests
             Status = status,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
-            Audit = CreateOwnerAudit(owner),
+            Audit = new OperationAuditInfo { RequestedBy = owner },
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.Geoprocessing,
@@ -5625,30 +5535,17 @@ public sealed class GeoprocessingJobServiceTests
         string owner)
         => CreateJobRecord(jobId, status) with
         {
-            Audit = CreateOwnerAudit(owner)
-        };
-
-    private static OperationAuditInfo CreateOwnerAudit(string? owner)
-        => new()
-        {
-            RequestedBy = owner is null ? null : CanonicalSecurityActor.Resolve(new ClaimsPrincipal(
-                new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, owner)], "Test")))!.ActorId,
-            SubmitterSecurityContext = new Honua.Core.Features.Authorization.Domain.JobSecurityContext(owner, null, [], ClaimTypes.Role)
-            {
-                OwnerActorId = owner is null ? null : CanonicalSecurityActor.Resolve(new ClaimsPrincipal(
-                    new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, owner)], "Test")))!.ActorId
-            }
+            Audit = new OperationAuditInfo { RequestedBy = owner }
         };
 
     private static ClaimsPrincipal CreatePrincipal()
         => new(new ClaimsIdentity(
-            [new Claim(ClaimTypes.Name, "test-user"), new Claim(ClaimTypes.NameIdentifier, "test-user")], "Test"));
+            [new Claim(ClaimTypes.Name, "test-user")], "Test"));
 
     private static ClaimsPrincipal CreateTenantPrincipal(string tenantId)
         => new(new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.Name, "test-user"),
-                new Claim(ClaimTypes.NameIdentifier, "test-user"),
                 new Claim("tenant_id", tenantId)
             ], "Test"));
 

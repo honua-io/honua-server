@@ -3,6 +3,8 @@
 
 using System.Globalization;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -12,7 +14,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Geoprocessing;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
-using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -93,11 +94,10 @@ internal sealed partial class TileExportJobService : ITileExportJobService
         }
 
         var jobStore = RequireJobStore();
-        var principalId = JobOwnershipSecurity.ResolveOwner(principal)
-            ?? throw new TileExportValidationException("A durable authenticated submitter identity is required for tile-export jobs.");
-        var submitter = JobSecurityContextCapture.Capture(principal, _rbacOptions, _tenantContext) with { PrincipalId = principalId };
+        var principalId = ResolvePrincipalId(principal);
+        var submitter = JobSecurityContextCapture.Capture(principal, _rbacOptions, _tenantContext);
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey.Trim();
-        var jobId = JobOwnershipSecurity.CreateJobId("te", resolvedKey, principalId, submitter.TenantId);
+        var jobId = CreateJobId(resolvedKey);
 
         // Artifact identity covers byte-affecting inputs and permits safe package reuse across
         // same-layer aliases. Request identity additionally retains a publication-specific
@@ -115,7 +115,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
             var replay = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
             if (replay is not null)
             {
-                EnsureMatchingIdempotentRequest(replay, requestFingerprint, principalId, submitter.TenantId);
+                EnsureMatchingIdempotentRequest(replay, requestFingerprint, principalId);
                 EnsureSubmissionDidNotRollback(replay);
                 Log.SubmittedIdempotent(_logger, jobId);
                 return replay;
@@ -134,7 +134,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
                     var replayInWindow = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
                     if (replayInWindow is not null)
                     {
-                        EnsureMatchingIdempotentRequest(replayInWindow, requestFingerprint, principalId, submitter.TenantId);
+                        EnsureMatchingIdempotentRequest(replayInWindow, requestFingerprint, principalId);
                         EnsureSubmissionDidNotRollback(replayInWindow);
                         Log.SubmittedIdempotent(_logger, jobId);
                         return replayInWindow;
@@ -183,7 +183,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
                     var existing = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false)
                         ?? throw new TileExportStoreUnavailableException(
                             "Tile-export job could not be created or located during idempotent submission.");
-                    EnsureMatchingIdempotentRequest(existing, requestFingerprint, principalId, submitter.TenantId);
+                    EnsureMatchingIdempotentRequest(existing, requestFingerprint, principalId);
                     EnsureSubmissionDidNotRollback(existing);
                     Log.SubmittedIdempotent(_logger, jobId);
                     return existing;
@@ -457,9 +457,19 @@ internal sealed partial class TileExportJobService : ITileExportJobService
             && string.Equals(resourceId, scope.ResourceId, StringComparison.Ordinal);
     }
 
-    private bool IsOwnedBy(ExecutionJobRecord job, ClaimsPrincipal principal)
-        => JobOwnershipSecurity.CanAccess(job.Audit,
-            JobSecurityContextCapture.Capture(principal, _rbacOptions, _tenantContext).TenantId, principal);
+    private static bool IsOwnedBy(ExecutionJobRecord job, ClaimsPrincipal principal)
+    {
+        if (principal.IsInRole("admin"))
+        {
+            return true;
+        }
+
+        var owner = job.Audit.RequestedBy;
+        // An ownerless job (no recorded submitter) is reachable only by admin, matching the
+        // geoprocessing lifecycle so a coarse grant cannot enumerate unattributed jobs.
+        return !string.IsNullOrWhiteSpace(owner)
+            && string.Equals(owner, ResolvePrincipalId(principal), StringComparison.Ordinal);
+    }
 
     private static TileExportPackageFormat ResolvePackageFormat(ExecutionJobRecord job)
         => job.Spec.Parameters.TryGetValue(TileExportJobParameterKeys.PackageFormat, out var raw)
@@ -530,12 +540,12 @@ internal sealed partial class TileExportJobService : ITileExportJobService
     private static void EnsureMatchingIdempotentRequest(
         ExecutionJobRecord existing,
         string requestFingerprint,
-        string? principalId,
-        string? tenantId)
+        string? principalId)
     {
         // A different principal must never silently receive another caller's job through an
         // idempotency-key collision.
-        if (!JobOwnershipSecurity.MatchesSubmitter(existing.Audit, principalId, tenantId))
+        var owner = existing.Audit.RequestedBy;
+        if (!string.IsNullOrWhiteSpace(owner) && !string.Equals(owner, principalId, StringComparison.Ordinal))
         {
             throw new TileExportIdempotencyConflictException();
         }
@@ -563,6 +573,22 @@ internal sealed partial class TileExportJobService : ITileExportJobService
 
     private IExecutionJobStore RequireJobStore()
         => _jobStore ?? throw new TileExportStoreUnavailableException();
+
+    private static string CreateJobId(string? idempotencyKey)
+    {
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            return $"te-{Guid.NewGuid():N}";
+        }
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(idempotencyKey.Trim()));
+        return $"te-{Convert.ToHexStringLower(hash.AsSpan(0, 12))}";
+    }
+
+    private static string? ResolvePrincipalId(ClaimsPrincipal principal)
+        => principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? principal.FindFirst("sub")?.Value
+            ?? principal.Identity?.Name;
 
     private static bool IsTerminal(ExecutionJobStatus status)
         => status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled;

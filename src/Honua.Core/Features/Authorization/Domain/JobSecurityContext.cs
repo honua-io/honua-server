@@ -53,20 +53,7 @@ public sealed record JobSecurityContext(
     string? PrincipalId,
     string? TenantId,
     IReadOnlyList<JobSecurityClaim> Claims,
-    string? RoleClaimType = null)
-{
-    /// <summary>
-    /// Scheme-qualified durable actor captured from the authenticated submitter.
-    /// Absent on legacy snapshots and identities without a durable subject or API-key identifier.
-    /// </summary>
-    public string? OwnerActorId { get; init; }
-
-    /// <summary>
-    /// Owner key retained for named workspace routing, independent of job lifecycle ownership.
-    /// Absent on snapshots captured before separate workspace routing metadata was introduced.
-    /// </summary>
-    public string? WorkspaceOwnerId { get; init; }
-}
+    string? RoleClaimType = null);
 
 /// <summary>
 /// Well-known claim types carried inside a <see cref="JobSecurityContext"/> snapshot to drive
