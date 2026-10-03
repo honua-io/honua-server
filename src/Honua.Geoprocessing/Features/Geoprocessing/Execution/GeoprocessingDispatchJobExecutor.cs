@@ -214,7 +214,8 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
                 $"env:workspace='{requestedLabel}' was requested but no workspace storage provider is configured for this deployment.", false);
         }
 
-        var ownerId = string.IsNullOrWhiteSpace(job.Audit.RequestedBy) ? "anonymous" : job.Audit.RequestedBy;
+        var workspaceOwner = job.Audit.SubmitterSecurityContext?.WorkspaceOwnerId ?? job.Audit.RequestedBy;
+        var ownerId = string.IsNullOrWhiteSpace(workspaceOwner) ? "anonymous" : workspaceOwner;
 
         Workspace resolvedWorkspace;
         try
