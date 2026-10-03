@@ -62,10 +62,10 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
     public async Task EnsureTargetAsync(OgcApiFeaturesSinkTarget target, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(target);
-        AssertTargetSchema(target.Schema);
+        var schemaName = CanonicalTargetSchema(target.Schema);
         AssertSafeIdentifier(target.Table, nameof(target.Table));
 
-        var schema = QuoteIdentifier(target.Schema);
+        var schema = QuoteIdentifier(schemaName);
         var table = QuoteIdentifier(target.Table);
         var sridLiteral = target.Srid.ToString(CultureInfo.InvariantCulture);
 
@@ -87,13 +87,13 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
             BEGIN
                 IF NOT EXISTS (
                     SELECT 1 FROM pg_indexes
-                    WHERE schemaname = lower('{{target.Schema}}')
+                    WHERE schemaname = '{{schemaName}}'
                       AND indexname = lower('{{target.Table}}') || '_geometry_gix'
                 ) THEN
                     EXECUTE format(
                         'CREATE INDEX %I ON %I.%I USING GIST (geometry)',
                         lower('{{target.Table}}') || '_geometry_gix',
-                        lower('{{target.Schema}}'),
+                        '{{schemaName}}',
                         lower('{{target.Table}}')
                     );
                 END IF;
@@ -105,7 +105,7 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
         await using var command = new NpgsqlCommand(sql, connection);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
-        var targetLabel = string.Concat(target.Schema, ".", target.Table);
+        var targetLabel = string.Concat(schemaName, ".", target.Table);
         Log.TargetEnsured(_logger, target.CollectionId, targetLabel, sridLiteral);
     }
 
@@ -117,7 +117,7 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(features);
-        AssertTargetSchema(target.Schema);
+        var schemaName = CanonicalTargetSchema(target.Schema);
         AssertSafeIdentifier(target.Table, nameof(target.Table));
 
         if (features.Count == 0)
@@ -125,7 +125,7 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
             return 0;
         }
 
-        var schema = QuoteIdentifier(target.Schema);
+        var schema = QuoteIdentifier(schemaName);
         var table = QuoteIdentifier(target.Table);
         var sridLiteral = target.Srid.ToString(CultureInfo.InvariantCulture);
 
@@ -180,7 +180,7 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
             throw;
         }
 
-        var targetLabel = string.Concat(target.Schema, ".", target.Table);
+        var targetLabel = string.Concat(schemaName, ".", target.Table);
         Log.FeaturesWritten(_logger, target.CollectionId, targetLabel, written);
         return written;
     }
@@ -191,10 +191,10 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(target);
-        AssertTargetSchema(target.Schema);
+        var schemaName = CanonicalTargetSchema(target.Schema);
         AssertSafeIdentifier(target.Table, nameof(target.Table));
 
-        var schema = QuoteIdentifier(target.Schema);
+        var schema = QuoteIdentifier(schemaName);
 
         var sql = $"""
             SELECT scope_signature
@@ -227,10 +227,10 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(scopeSignature);
-        AssertTargetSchema(target.Schema);
+        var schemaName = CanonicalTargetSchema(target.Schema);
         AssertSafeIdentifier(target.Table, nameof(target.Table));
 
-        var schema = QuoteIdentifier(target.Schema);
+        var schema = QuoteIdentifier(schemaName);
 
         var sql = $"""
             INSERT INTO {schema}.ogc_api_features_import_scopes (table_name, collection_id, scope_signature, recorded_at)
@@ -256,7 +256,7 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(target);
-        AssertTargetSchema(target.Schema);
+        var schemaName = CanonicalTargetSchema(target.Schema);
         AssertSafeIdentifier(target.Table, nameof(target.Table));
 
         const string sql = """
@@ -265,14 +265,14 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
                    character_maximum_length,
                    is_nullable
               FROM information_schema.columns
-             WHERE lower(table_schema) = lower(@schema)
+             WHERE table_schema = @schema
                AND lower(table_name) = lower(@table)
              ORDER BY ordinal_position;
             """;
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.Add(new NpgsqlParameter("@schema", NpgsqlDbType.Text) { Value = target.Schema });
+        command.Parameters.Add(new NpgsqlParameter("@schema", NpgsqlDbType.Text) { Value = schemaName });
         command.Parameters.Add(new NpgsqlParameter("@table", NpgsqlDbType.Text) { Value = target.Table });
 
         var columns = new List<OgcApiFeaturesSinkColumn>();
@@ -324,10 +324,15 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
         };
     }
 
-    private void AssertTargetSchema(string schema)
+    /// <summary>
+    /// Configured spelling of <paramref name="schema"/>. Quoted PostgreSQL identifiers keep case,
+    /// so a case variant of an operational schema must not be interpolated into SQL or it creates
+    /// a different schema from the one the allowlist accepted.
+    /// </summary>
+    private string CanonicalTargetSchema(string schema)
     {
         AssertSafeIdentifier(schema, nameof(schema));
-        _schemaConfiguration.EnsureImportTargetSchemaAllowed(schema, nameof(schema));
+        return _schemaConfiguration.EnsureImportTargetSchemaAllowed(schema, nameof(schema));
     }
 
     private static void AssertSafeIdentifier(string candidate, string parameterName)
