@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;

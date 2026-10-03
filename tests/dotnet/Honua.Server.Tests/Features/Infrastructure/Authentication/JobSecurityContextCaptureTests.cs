@@ -28,7 +28,8 @@ public sealed class JobSecurityContextCaptureTests
     public void Capture_ThenRestore_PreservesAuthenticationState(bool authenticated)
     {
         var principal = new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim("region", "west")], authenticated ? "test" : null));
+            [new Claim("region", "west"), new Claim("honua:job-authenticated", authenticated ? bool.FalseString : bool.TrueString)],
+            authenticated ? "test" : null));
 
         var restored = JobSecurityContextCapture.Restore(
             JobSecurityContextCapture.Capture(principal, new RbacOptions()));
