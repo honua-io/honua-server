@@ -307,7 +307,8 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFix
             new GeoservicesLayerPublicationService(
                 NullLogger<GeoservicesLayerPublicationService>.Instance,
                 layerPublishingService: publishingService),
-            attachmentStore: attachmentStore);
+            attachmentStore: attachmentStore,
+            schemaConfiguration: schemaConfiguration);
     }
 
     private async Task EnsureCatalogSchemaAsync()

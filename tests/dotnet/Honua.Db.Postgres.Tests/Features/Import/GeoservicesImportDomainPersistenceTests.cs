@@ -154,7 +154,8 @@ public sealed class GeoservicesImportDomainPersistenceTests(PostgresFixture fixt
             NullLogger<GeoservicesImportService>.Instance,
             new GeoservicesLayerPublicationService(
                 NullLogger<GeoservicesLayerPublicationService>.Instance,
-                layerPublishingService: publishingService));
+                layerPublishingService: publishingService),
+            schemaConfiguration: schemaConfiguration);
     }
 
     private async Task EnsureCatalogSchemaAsync()

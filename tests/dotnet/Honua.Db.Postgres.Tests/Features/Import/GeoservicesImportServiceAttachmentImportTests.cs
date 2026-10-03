@@ -31,7 +31,7 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
         var handler = new AttachmentFeatureServerHandler();
         var attachmentStore = new RecordingAttachmentStore();
         var publishingService = new StubLayerPublishingService(publishedLayerId: 42);
-        var service = CreateService(handler, attachmentStore, publishingService);
+        var service = CreateService(handler, attachmentStore, publishingService, targetSchema: schemaName);
 
         try
         {
@@ -95,7 +95,7 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
         var handler = new AttachmentFeatureServerHandler(failAttachmentId: 1001);
         var attachmentStore = new RecordingAttachmentStore();
         var publishingService = new StubLayerPublishingService(publishedLayerId: 7);
-        var service = CreateService(handler, attachmentStore, publishingService);
+        var service = CreateService(handler, attachmentStore, publishingService, targetSchema: schemaName);
 
         try
         {
@@ -148,7 +148,7 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
         var handler = new AttachmentFeatureServerHandler();
         var attachmentStore = new RecordingAttachmentStore();
         var publishingService = new StubLayerPublishingService(publishedLayerId: 9);
-        var service = CreateService(handler, attachmentStore, publishingService);
+        var service = CreateService(handler, attachmentStore, publishingService, targetSchema: schemaName);
 
         try
         {
@@ -182,7 +182,8 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
     private GeoservicesImportService CreateService(
         HttpMessageHandler handler,
         IAttachmentStore attachmentStore,
-        ILayerPublishingService publishingService)
+        ILayerPublishingService publishingService,
+        string? targetSchema = null)
     {
         var restClient = new ArcGisRestClient(
             new HttpClient(handler),
@@ -206,7 +207,8 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
             new GeoservicesLayerPublicationService(
                 NullLogger<GeoservicesLayerPublicationService>.Instance,
                 layerPublishingService: publishingService),
-            attachmentStore: attachmentStore);
+            attachmentStore: attachmentStore,
+            schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(targetSchema));
     }
 
     private sealed class RecordingAttachmentStore : IAttachmentStore

@@ -40,7 +40,7 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
                 ("Honolulu", 100, -157.85, 21.30),
                 ("Hilo", 200, -155.08, 19.71)));
             using var httpClient = new HttpClient(handler);
-            var service = CreateService(httpClient, BuildPointInventory());
+            var service = CreateService(httpClient, BuildPointInventory(), targetSchema: schemaName);
 
             var result = await service.ImportFeaturesAsync(new OgcWfsImportRequest
             {
@@ -91,7 +91,7 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
         {
             var handler = new FakeWfsHandler("{ \"unused\": true }");
             using var httpClient = new HttpClient(handler);
-            var service = CreateService(httpClient, BuildPointInventory());
+            var service = CreateService(httpClient, BuildPointInventory(), targetSchema: schemaName);
 
             var result = await service.ImportFeaturesAsync(new OgcWfsImportRequest
             {
@@ -125,7 +125,7 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
             var inventory = BuildPointInventory();
             var first = new FakeWfsHandler(BuildPointFeatureCollection(("Maui", 7, -156.33, 20.80)));
             using var firstClient = new HttpClient(first);
-            var firstService = CreateService(firstClient, inventory);
+            var firstService = CreateService(firstClient, inventory, targetSchema: schemaName);
             var firstResult = await firstService.ImportFeaturesAsync(new OgcWfsImportRequest
             {
                 ServiceUrl = DefaultServiceUrl,
@@ -140,7 +140,7 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
 
             var second = new FakeWfsHandler(BuildPointFeatureCollection(("Lanai", 9, -156.92, 20.83)));
             using var secondClient = new HttpClient(second);
-            var secondService = CreateService(secondClient, inventory);
+            var secondService = CreateService(secondClient, inventory, targetSchema: schemaName);
             var secondResult = await secondService.ImportFeaturesAsync(new OgcWfsImportRequest
             {
                 ServiceUrl = DefaultServiceUrl,
@@ -231,7 +231,7 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
         {
             var handler = new PagedWfsHandler(pageSize: 2, totalFeatures: 5);
             using var httpClient = new HttpClient(handler);
-            var service = CreateService(httpClient, BuildPointInventory());
+            var service = CreateService(httpClient, BuildPointInventory(), targetSchema: schemaName);
 
             var result = await service.ImportFeaturesAsync(new OgcWfsImportRequest
             {
@@ -262,7 +262,7 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
         {
             using var seedClient = new HttpClient(new FakeWfsHandler(
                 BuildPointFeatureCollection(("Sentinel", 73, -157.85, 21.30))));
-            await CreateService(seedClient, BuildPointInventory()).ImportFeaturesAsync(new OgcWfsImportRequest
+            await CreateService(seedClient, BuildPointInventory(), targetSchema: schemaName).ImportFeaturesAsync(new OgcWfsImportRequest
             {
                 ServiceUrl = DefaultServiceUrl,
                 TargetSchema = schemaName,
@@ -275,7 +275,7 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
                 BuildPointFeatureCollection(("Replacement page one", 1, -155, 19))
                     .Replace("\"numberMatched\":1", "\"numberMatched\":2", StringComparison.Ordinal),
                 "not-json"));
-            var result = await CreateService(failingClient, BuildPointInventory()).ImportFeaturesAsync(new OgcWfsImportRequest
+            var result = await CreateService(failingClient, BuildPointInventory(), targetSchema: schemaName).ImportFeaturesAsync(new OgcWfsImportRequest
             {
                 ServiceUrl = DefaultServiceUrl,
                 TargetSchema = schemaName,
@@ -305,7 +305,7 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
         {
             using var seedClient = new HttpClient(new FakeWfsHandler(
                 BuildPointFeatureCollection(("Sentinel", 73, -157.85, 21.30))));
-            await CreateService(seedClient, BuildPointInventory()).ImportFeaturesAsync(new OgcWfsImportRequest
+            await CreateService(seedClient, BuildPointInventory(), targetSchema: schemaName).ImportFeaturesAsync(new OgcWfsImportRequest
             {
                 ServiceUrl = DefaultServiceUrl,
                 TargetSchema = schemaName,
@@ -315,7 +315,7 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
 
             using var replacementClient = new HttpClient(new FakeWfsHandler(
                 BuildPointFeatureCollection(("Replacement", 99, -155.08, 19.71))));
-            var result = await CreateService(replacementClient, BuildPointInventory()).ImportFeaturesAsync(new OgcWfsImportRequest
+            var result = await CreateService(replacementClient, BuildPointInventory(), targetSchema: schemaName).ImportFeaturesAsync(new OgcWfsImportRequest
             {
                 ServiceUrl = DefaultServiceUrl,
                 TargetSchema = schemaName,
@@ -347,7 +347,7 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
         {
             using var firstClient = new HttpClient(new FakeWfsHandler(
                 BuildPointFeatureCollection(("Sentinel", 73, -157.85, 21.30))));
-            var first = await CreateService(firstClient, BuildPointInventory(featureTypeName: featureTypeName))
+            var first = await CreateService(firstClient, BuildPointInventory(featureTypeName: featureTypeName), targetSchema: schemaName)
                 .ImportFeaturesAsync(new OgcWfsImportRequest
                 {
                     ServiceUrl = DefaultServiceUrl,
@@ -363,7 +363,7 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
 
             using var replacementClient = new HttpClient(new FakeWfsHandler(
                 BuildPointFeatureCollection(("Replacement", 99, -155.08, 19.71))));
-            var replacement = await CreateService(replacementClient, BuildPointInventory(featureTypeName: featureTypeName))
+            var replacement = await CreateService(replacementClient, BuildPointInventory(featureTypeName: featureTypeName), targetSchema: schemaName)
                 .ImportFeaturesAsync(new OgcWfsImportRequest
                 {
                     ServiceUrl = DefaultServiceUrl,
@@ -398,7 +398,7 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
             {
                 using var client = new HttpClient(new FakeWfsHandler(
                     BuildPointFeatureCollection(("Sentinel", 73, -157.85, 21.30))));
-                var result = await CreateService(client, BuildPointInventory(featureTypeName: featureTypeName))
+                var result = await CreateService(client, BuildPointInventory(featureTypeName: featureTypeName), targetSchema: schemaName)
                     .ImportFeaturesAsync(new OgcWfsImportRequest
                     {
                         ServiceUrl = DefaultServiceUrl,
@@ -430,7 +430,7 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
         {
             using var client = new HttpClient(new FakeWfsHandler(
                 BuildPointFeatureCollection(("Kihei", 42, -156.46, 20.76))));
-            await CreateService(client, BuildPointInventory()).ImportFeaturesAsync(new OgcWfsImportRequest
+            await CreateService(client, BuildPointInventory(), targetSchema: schemaName).ImportFeaturesAsync(new OgcWfsImportRequest
             {
                 ServiceUrl = DefaultServiceUrl,
                 TargetSchema = schemaName,
@@ -461,7 +461,7 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
 
             using var client = new HttpClient(new FakeWfsHandler(
                 BuildPointFeatureCollection(("Replacement", 99, -155.08, 19.71))));
-            var result = await CreateService(client, BuildPointInventory()).ImportFeaturesAsync(new OgcWfsImportRequest
+            var result = await CreateService(client, BuildPointInventory(), targetSchema: schemaName).ImportFeaturesAsync(new OgcWfsImportRequest
             {
                 ServiceUrl = DefaultServiceUrl,
                 TargetSchema = schemaName,
@@ -489,7 +489,7 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
         {
             var handler = new FakeWfsHandler(BuildPointFeatureCollection(("Kihei", 42, -156.46, 20.76)));
             using var httpClient = new HttpClient(handler);
-            var service = CreateService(httpClient, BuildPointInventory());
+            var service = CreateService(httpClient, BuildPointInventory(), targetSchema: schemaName);
 
             var result = await service.ImportFeaturesAsync(new OgcWfsImportRequest
             {
@@ -513,17 +513,17 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
         }
     }
 
-    private OgcWfsImportService CreateService(HttpClient httpClient, MigrationSourceInventoryArtifact inventory)
+    private OgcWfsImportService CreateService(
+        HttpClient httpClient,
+        MigrationSourceInventoryArtifact inventory,
+        string? targetSchema = null)
     {
         return new OgcWfsImportService(
             new InMemoryScanner(inventory),
             new FixtureConnectionProvider(fixture),
             httpClient,
             NullLogger<OgcWfsImportService>.Instance,
-            new PostgresSchemaConfiguration(
-                PostgresSchemaConfiguration.DefaultMetadataSchema,
-                PostgresSchemaConfiguration.DefaultDataSchema,
-                [PostgresSchemaConfiguration.DefaultDataSchema, "public"]));
+            ImportTestSchemaConfiguration.WithOperational(targetSchema));
     }
 
     private static MigrationSourceInventoryArtifact BuildPointInventory(

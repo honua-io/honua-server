@@ -101,6 +101,15 @@ internal static partial class OgcWfsImportEndpoints
             return;
         }
 
+        if (!ImportValidationHelpers.IsPermittedTargetSchema(request.TargetSchema, context.RequestServices))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                ImportTargetSchemaPolicy.NotOperationalSchemaMessage,
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
         var allowUnsafeLocalUrls = GeoServerImportExecutionSettings.ShouldAllowUnsafeLocalUrls(context.RequestServices);
         var allowedHostSuffixes = context.RequestServices.GetAllowedMigrationServiceHostSuffixes();
         var validation = await OgcServiceUrlValidation.ValidateAsync(

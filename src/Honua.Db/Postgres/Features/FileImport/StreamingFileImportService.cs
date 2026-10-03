@@ -231,6 +231,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         // Validate request has exactly one source: FileStream, CloudFileId, or LocalFilePath
         request.Validate();
 
+        // Refuse a reserved target schema before any source is read or connection opened (SEC-23).
+        _ = ResolveTargetSchema(request.TargetSchema);
+
         var stopwatch = Stopwatch.StartNew();
         var format = DetectFormat(request.FileName);
         var formatName = format?.ToString() ?? "unknown";

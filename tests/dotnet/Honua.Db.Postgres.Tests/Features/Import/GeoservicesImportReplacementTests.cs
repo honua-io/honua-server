@@ -42,7 +42,7 @@ public sealed class GeoservicesImportReplacementTests(PostgresFixture fixture)
         try
         {
             await SeedPriorTargetAsync(schemaName);
-            var service = CreateService(new ReplacementFeatureServerHandler(["CCC", "TOOLONG"]));
+            var service = CreateService(new ReplacementFeatureServerHandler(["CCC", "TOOLONG"]), targetSchema: schemaName);
 
             var result = await service.ImportLayerAsync(BuildRequest(schemaName, overwrite: true));
 
@@ -84,7 +84,7 @@ public sealed class GeoservicesImportReplacementTests(PostgresFixture fixture)
         try
         {
             await SeedPriorTargetAsync(schemaName);
-            var service = CreateService(new ReplacementFeatureServerHandler(["CCC", "DDD"]));
+            var service = CreateService(new ReplacementFeatureServerHandler(["CCC", "DDD"]), targetSchema: schemaName);
 
             var result = await service.ImportLayerAsync(BuildRequest(schemaName, overwrite: true));
 
@@ -110,7 +110,7 @@ public sealed class GeoservicesImportReplacementTests(PostgresFixture fixture)
         var schemaName = await fixture.CreateIsolatedSchemaAsync("ImportReplacementFirst");
         try
         {
-            var service = CreateService(new ReplacementFeatureServerHandler(["CCC", "TOOLONG"]));
+            var service = CreateService(new ReplacementFeatureServerHandler(["CCC", "TOOLONG"]), targetSchema: schemaName);
 
             var result = await service.ImportLayerAsync(BuildRequest(schemaName, overwrite: true));
 
@@ -152,7 +152,7 @@ public sealed class GeoservicesImportReplacementTests(PostgresFixture fixture)
                     }
                 }
             };
-            var service = CreateService(handler);
+            var service = CreateService(handler, targetSchema: schemaName);
 
             var act = () => service.ImportLayerAsync(
                 BuildRequest(schemaName, overwrite: true) with { BatchSize = 1 },
@@ -184,7 +184,7 @@ public sealed class GeoservicesImportReplacementTests(PostgresFixture fixture)
         ImportAttachments = false
     };
 
-    private GeoservicesImportService CreateService(HttpMessageHandler handler)
+    private GeoservicesImportService CreateService(HttpMessageHandler handler, string? targetSchema = null)
     {
         var restClient = new ArcGisRestClient(
             new HttpClient(handler),
@@ -197,7 +197,8 @@ public sealed class GeoservicesImportReplacementTests(PostgresFixture fixture)
             new Mock<ICrsRegistry>(MockBehavior.Loose).Object,
             new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
-            new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance));
+            new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance),
+            schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(targetSchema));
     }
 
     private async Task SeedPriorTargetAsync(string schemaName)

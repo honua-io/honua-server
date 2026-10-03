@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Globalization;
+using System.Data.Common;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,14 +35,17 @@ internal sealed partial class SnowflakeConnectionDriver : IConnectionDriver
 
         // Snowflake addresses an account identifier rather than a host:port; the console surfaces the
         // "host" field as "Account" for this provider, and the "database" field as the default database.
-        var account = EscapeValue(target.Host);
-        var user = EscapeValue(target.Username);
-        var password = EscapeValue(target.Password);
-        var database = EscapeValue(target.Database);
+        // Snowflake.Data parses the string with DbConnectionStringBuilder, so build it with the same type:
+        // values containing ';', '=' or quotes are quoted and cannot add keys of their own (SEC-23).
+        var builder = new DbConnectionStringBuilder
+        {
+            ["account"] = target.Host ?? string.Empty,
+            ["user"] = target.Username ?? string.Empty,
+            ["password"] = target.Password ?? string.Empty,
+            ["db"] = target.Database ?? string.Empty
+        };
 
-        return string.Create(
-            CultureInfo.InvariantCulture,
-            $"account={account};user={user};password={password};db={database}");
+        return builder.ConnectionString;
     }
 
     public async Task<ConnectionHealthStatus> TestConnectionAsync(
@@ -73,20 +76,6 @@ internal sealed partial class SnowflakeConnectionDriver : IConnectionDriver
             LogProbeFailed(ex);
             return ConnectionHealthStatus.Unhealthy;
         }
-    }
-
-    // Snowflake.Data accepts a semicolon-delimited key=value connection string; values containing
-    // ';' or '=' must be wrapped in braces. Mirror the driver's documented escaping.
-    private static string EscapeValue(string value)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return value;
-        }
-
-        return value.Contains(';', StringComparison.Ordinal) || value.Contains('=', StringComparison.Ordinal)
-            ? "{" + value + "}"
-            : value;
     }
 
     [LoggerMessage(EventId = 7204, Level = LogLevel.Warning, Message = "Snowflake connection probe failed")]

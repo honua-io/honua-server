@@ -511,6 +511,15 @@ internal static partial class ImportEndpoints
             return;
         }
 
+        if (!ImportValidationHelpers.IsPermittedTargetSchema(request.TargetSchema, context.RequestServices))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                ImportTargetSchemaPolicy.NotOperationalSchemaMessage,
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
         var securityOptions = context.RequestServices.GetRequiredService<IOptions<FileUploadSecurityOptions>>();
         var maxFileSizeBytes = Math.Max(importService.Limits.BackgroundJobThresholdBytes, importService.Limits.MaxMemoryBytes);
@@ -1025,6 +1034,14 @@ internal static partial class ImportEndpoints
                 MultipartParsingHelpers.TryDeleteFile(stagedFile.LocalFilePath);
                 return MultipartImportParseResult.Failure(
                     "Invalid target schema. Use only letters, numbers, and underscores.",
+                    StatusCodes.Status400BadRequest);
+            }
+
+            if (!ImportValidationHelpers.IsPermittedTargetSchema(targetSchema, context.RequestServices))
+            {
+                MultipartParsingHelpers.TryDeleteFile(stagedFile.LocalFilePath);
+                return MultipartImportParseResult.Failure(
+                    ImportTargetSchemaPolicy.NotOperationalSchemaMessage,
                     StatusCodes.Status400BadRequest);
             }
 

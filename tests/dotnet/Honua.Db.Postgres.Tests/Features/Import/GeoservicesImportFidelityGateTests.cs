@@ -294,7 +294,8 @@ public sealed class GeoservicesImportFidelityGateTests(PostgresFixture fixture)
                 // A pass-through data-movement service keeps that probe green, so the assertions
                 // isolate what the catalog pass contributes to the verdict.
                 reconciliationService: new PassThroughReconciliationService(),
-                metadataGraphStore: catalogReadBack ? graphStore : null));
+                metadataGraphStore: catalogReadBack ? graphStore : null),
+            schemaConfiguration: schemaConfiguration);
     }
 
     private sealed class PassThroughReconciliationService : ILayerReconciliationService

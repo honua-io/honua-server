@@ -32,7 +32,7 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
         const string tableName = "private_geoservices_import";
         var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(GeoservicesImportServiceAuthenticatedImportTests));
         var handler = new PrivateFeatureServerHandler(accessToken);
-        var service = CreateService(handler);
+        var service = CreateService(handler, targetSchema: schemaName);
 
         try
         {
@@ -89,7 +89,7 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
         var schemaName = await fixture.CreateIsolatedSchemaAsync(
             nameof(GeoservicesImportServiceAuthenticatedImportTests) + "_Expired");
         var handler = new ExpiredTokenFeatureServerHandler(accessToken);
-        var service = CreateService(handler);
+        var service = CreateService(handler, targetSchema: schemaName);
 
         try
         {
@@ -127,7 +127,7 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
         }
     }
 
-    private GeoservicesImportService CreateService(HttpMessageHandler handler)
+    private GeoservicesImportService CreateService(HttpMessageHandler handler, string? targetSchema = null)
     {
         var restClient = new ArcGisRestClient(
             new HttpClient(handler),
@@ -148,7 +148,8 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
             crsRegistry.Object,
             new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
-            new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance));
+            new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance),
+            schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(targetSchema));
     }
 
     private async Task<ImportedRow[]> ReadImportedRowsAsync(string schemaName, string tableName)

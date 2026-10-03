@@ -782,7 +782,8 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IOgcApiFeaturesCollectionSink>(serviceProvider =>
             new PostgresOgcApiFeaturesCollectionSink(
                 serviceProvider.GetRequiredService<NpgsqlDataSource>(),
-                serviceProvider.GetRequiredService<ILogger<PostgresOgcApiFeaturesCollectionSink>>()));
+                serviceProvider.GetRequiredService<ILogger<PostgresOgcApiFeaturesCollectionSink>>(),
+                serviceProvider.GetService<PostgresSchemaConfiguration>()));
         services.AddResilientHttpClient<OgcApiFeaturesImportService>(
             "ogc-api-features-import",
             HttpResiliencePolicies.SlowServiceDefaults,

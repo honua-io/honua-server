@@ -230,7 +230,10 @@ public sealed class PostgresOgcApiFeaturesCollectionSinkTests : IAsyncLifetime
     }
 
     private PostgresOgcApiFeaturesCollectionSink CreateSink()
-        => new(_fixture.DataSource, NullLogger<PostgresOgcApiFeaturesCollectionSink>.Instance);
+        => new(
+            _fixture.DataSource,
+            NullLogger<PostgresOgcApiFeaturesCollectionSink>.Instance,
+            ImportTestSchemaConfiguration.WithOperational(_schema));
 
     private async Task<int> CountRowsAsync(OgcApiFeaturesSinkTarget target)
     {

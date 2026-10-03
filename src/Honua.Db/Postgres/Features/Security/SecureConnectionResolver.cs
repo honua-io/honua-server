@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Microsoft.Extensions.Logging;
@@ -78,19 +79,24 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
     // (MySQL, SQL Server, Oracle) are tested with the right ADO.NET provider instead of always via Npgsql.
     // Null when no driver registry is registered (e.g. minimal/unit-test composition) — falls back to Npgsql.
     private readonly Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry? _connectionDriverRegistry;
+    // Optional: the operator's connection host policy, applied to every host the resolved connection
+    // string names. Null in minimal compositions that register no policy.
+    private readonly IConnectionHostAllowlist? _hostAllowlist;
 
     public SecureConnectionResolver(
         ISecureConnectionRegistry registry,
         IConnectionEncryptionService encryptionService,
         IRequestSecretReferenceResolver secretResolver,
         ILogger<SecureConnectionResolver> logger,
-        Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry? connectionDriverRegistry = null)
+        Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry? connectionDriverRegistry = null,
+        IConnectionHostAllowlist? hostAllowlist = null)
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _encryptionService = encryptionService ?? throw new ArgumentNullException(nameof(encryptionService));
         _secretResolver = secretResolver ?? throw new ArgumentNullException(nameof(secretResolver));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _connectionDriverRegistry = connectionDriverRegistry;
+        _hostAllowlist = hostAllowlist;
     }
 
     public async Task<string> ResolveConnectionStringAsync(string connectionName, CancellationToken cancellationToken = default)
@@ -240,6 +246,16 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
                 {
                     var builder = new NpgsqlConnectionStringBuilder(connectionString);
 
+                    // Only the endpoint, credential, TLS-mode and tuning keywords are honoured; a
+                    // keyword that loads files, relaxes certificate checks or passes startup options
+                    // is refused whichever storage path supplied the string (SEC-23).
+                    var disallowedKeyword = PostgresConnectionKeywordPolicy.FindDisallowedKeyword(builder);
+                    if (disallowedKeyword is not null)
+                    {
+                        throw new InvalidOperationException(
+                            $"Connection '{connection.Name}' uses connection string keyword '{disallowedKeyword}', which is not permitted.");
+                    }
+
                     // Verify SSL requirements are met
                     if (!DataConnection.IsSslModeCompatibleWithRequirement(MapSslMode(builder.SslMode), connection.SslRequired))
                     {
@@ -280,6 +296,8 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
                         throw new InvalidOperationException(
                             $"Connection '{connection.Name}' resolved port does not match configured port.");
                     }
+
+                    await EnsureResolvedHostsPermittedAsync(builder.Host, connection.Name, cancellationToken);
                 }
                 catch (ArgumentException ex)
                 {
@@ -306,6 +324,35 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
             throw new InvalidOperationException(
                 $"Failed to resolve connection string for '{connection.Name}'.",
                 ex);
+        }
+    }
+
+    /// <summary>
+    /// Applies the connection host policy to every host the resolved string names, so a stored
+    /// string cannot reach a destination the policy would refuse at registration (SEC-23).
+    /// </summary>
+    private async Task EnsureResolvedHostsPermittedAsync(string? hostList, string connectionName, CancellationToken cancellationToken)
+    {
+        if (_hostAllowlist is null || !_hostAllowlist.IsEnforced)
+        {
+            return;
+        }
+
+        var hosts = PostgresConnectionKeywordPolicy.SplitHosts(hostList);
+        if (hosts.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Connection '{connectionName}' resolved host is not permitted by the connection host policy.");
+        }
+
+        foreach (var host in hosts)
+        {
+            var decision = await _hostAllowlist.EvaluateAsync(host, cancellationToken).ConfigureAwait(false);
+            if (!decision.IsAllowed)
+            {
+                throw new InvalidOperationException(
+                    $"Connection '{connectionName}' resolved host is not permitted by the connection host policy.");
+            }
         }
     }
 

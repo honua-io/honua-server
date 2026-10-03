@@ -21,6 +21,16 @@ Host=db.example.com;Port=5432;Database=honua;Username=honua_app;Password=...;SSL
 - There is no replica connection setting — read replicas are not load-balanced at the application layer. Point Honua at the writer endpoint and rely on DNS-level failover.
 - For TLS configuration, see the [TLS guide](../../../guides/secure/tls-and-mtls.md).
 
+### Schemas
+
+| Variable | Purpose |
+| --- | --- |
+| `Database__Schema` | Metadata schema (default `honua`). Never an import target. |
+| `Database__DefaultOperationalSchema` | Schema imports write to when no target schema is given (default `honua_data`). |
+| `Database__OperationalSchemas__0`, `__1`, ... | Additional schemas that imports may target and table discovery searches. `public` and the default operational schema are always included. |
+
+An import that names any other target schema is refused with `400 Bad Request`.
+
 ## Supported versions
 
 PostgreSQL 16–18 with PostGIS 3.4–3.6 are tested in CI; see the [tested configurations matrix](README.md#tested-postgresql-configurations).

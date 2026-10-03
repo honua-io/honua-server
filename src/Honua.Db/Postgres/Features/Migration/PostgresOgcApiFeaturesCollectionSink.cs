@@ -37,25 +37,32 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly ILogger<PostgresOgcApiFeaturesCollectionSink> _logger;
+    private readonly PostgresSchemaConfiguration _schemaConfiguration;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PostgresOgcApiFeaturesCollectionSink"/> class.
     /// </summary>
     /// <param name="dataSource">Configured Npgsql data source.</param>
     /// <param name="logger">Logger instance.</param>
+    /// <param name="schemaConfiguration">Schema layout; only its operational schemas are import targets.</param>
     public PostgresOgcApiFeaturesCollectionSink(
         NpgsqlDataSource dataSource,
-        ILogger<PostgresOgcApiFeaturesCollectionSink> logger)
+        ILogger<PostgresOgcApiFeaturesCollectionSink> logger,
+        PostgresSchemaConfiguration? schemaConfiguration = null)
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _schemaConfiguration = schemaConfiguration ?? new PostgresSchemaConfiguration(
+            PostgresSchemaConfiguration.DefaultMetadataSchema,
+            PostgresSchemaConfiguration.DefaultDataSchema,
+            [PostgresSchemaConfiguration.DefaultDataSchema, "public"]);
     }
 
     /// <inheritdoc />
     public async Task EnsureTargetAsync(OgcApiFeaturesSinkTarget target, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(target);
-        AssertSafeIdentifier(target.Schema, nameof(target.Schema));
+        AssertTargetSchema(target.Schema);
         AssertSafeIdentifier(target.Table, nameof(target.Table));
 
         var schema = QuoteIdentifier(target.Schema);
@@ -110,7 +117,7 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(features);
-        AssertSafeIdentifier(target.Schema, nameof(target.Schema));
+        AssertTargetSchema(target.Schema);
         AssertSafeIdentifier(target.Table, nameof(target.Table));
 
         if (features.Count == 0)
@@ -184,7 +191,7 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(target);
-        AssertSafeIdentifier(target.Schema, nameof(target.Schema));
+        AssertTargetSchema(target.Schema);
         AssertSafeIdentifier(target.Table, nameof(target.Table));
 
         var schema = QuoteIdentifier(target.Schema);
@@ -220,7 +227,7 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(scopeSignature);
-        AssertSafeIdentifier(target.Schema, nameof(target.Schema));
+        AssertTargetSchema(target.Schema);
         AssertSafeIdentifier(target.Table, nameof(target.Table));
 
         var schema = QuoteIdentifier(target.Schema);
@@ -249,7 +256,7 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(target);
-        AssertSafeIdentifier(target.Schema, nameof(target.Schema));
+        AssertTargetSchema(target.Schema);
         AssertSafeIdentifier(target.Table, nameof(target.Table));
 
         const string sql = """
@@ -315,6 +322,12 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
             "bool" => "boolean",
             _ => lower
         };
+    }
+
+    private void AssertTargetSchema(string schema)
+    {
+        AssertSafeIdentifier(schema, nameof(schema));
+        _schemaConfiguration.EnsureImportTargetSchemaAllowed(schema, nameof(schema));
     }
 
     private static void AssertSafeIdentifier(string candidate, string parameterName)
