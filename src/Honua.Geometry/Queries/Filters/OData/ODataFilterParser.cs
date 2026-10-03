@@ -291,8 +291,8 @@ public sealed class ODataFilterParser
 
         if (Match(ODataFilterTokenType.StringLiteral))
         {
-            // Checked here rather than in the lexer: typed literals such as geography'...'
-            // share the string token and are bounded by the geometry text limit instead.
+            // The lexer bounds every quoted token by the geometry text limit, because typed
+            // literals such as geography'...' share it; text literals get the tighter limit here.
             var text = Previous();
             EnsureWithinGuard(
                 () => FilterParserGuard.EnsureStringLiteralLength(text.Value.Length, "OData string literal"),
