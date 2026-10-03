@@ -5,6 +5,10 @@ using System.Security.Claims;
 using System.Reflection;
 using System.Threading.Channels;
 using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Security.Domain;
+using Microsoft.Extensions.Options;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Infrastructure.Progress;
@@ -39,9 +43,14 @@ namespace Honua.Server.Tests.Features.PrintingTools;
 [Trait("Component", "PrintingTools")]
 public class PrintingToolsRequestHandlerTests
 {
-    [UnitTest]
+    [Theory]
+    [InlineData(false, true, true, false)]
+    [InlineData(true, false, false, false)]
+    [InlineData(true, true, false, true)]
+    [InlineData(true, false, true, true)]
     [Protocol(TestProtocols.PrintingTools)]
-    public async Task Execute_PublicationOutsideSubmitterTenant_SkipsStyleAndFeatureReads()
+    public async Task Execute_PublicationVisibilityAndQueryGrants_ControlLayerReads(
+        bool tenantVisible, bool queryGrant, bool coarseAllowed, bool allowed)
     {
         var service = new MetadataV2Service
         {
@@ -51,6 +60,7 @@ public class PrintingToolsRequestHandlerTests
         var resource = new MetadataV2Resource
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "resource" },
+            AccessPolicy = new AccessPolicy { AllowedRoles = [coarseAllowed ? "reader" : "editor"] },
             StorageBindingIds = ["binding"], PrimaryStorageBindingId = "binding",
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
         };
@@ -65,7 +75,7 @@ public class PrintingToolsRequestHandlerTests
             }],
             Publications = [new MetadataV2Publication
             {
-                Metadata = new MetadataV2ObjectMetadata { Id = "publication", Name = "publication", Tenant = "tenant-b" },
+                Metadata = new MetadataV2ObjectMetadata { Id = "publication", Name = "publication", Tenant = tenantVisible ? "tenant-a" : "tenant-b" },
                 ServiceId = "service", ResourceId = "resource", StorageBindingId = "binding", LayerIndex = 1,
                 Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
             }]
@@ -77,13 +87,21 @@ public class PrintingToolsRequestHandlerTests
         graph.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(snapshot);
         var styles = Substitute.For<ILayerStyleCatalog>();
         var reader = Substitute.For<IFeatureReader>();
-        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim("tenant_id", "tenant-a")], "test"));
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("tenant_id", "tenant-a"), new Claim(ClaimTypes.NameIdentifier, "user-1"), new Claim(ClaimTypes.Role, "reader")], "test"));
         var map = new WebMapDefinition
         {
             OperationalLayers = [new WebMapOperationalLayer { Url = "/rest/services/service/MapServer/1" }]
         };
 
+        var permissions = Substitute.For<IPermissionResolver>();
+        permissions.AuthorizeAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), "service", "resource",
+            AuthorizationOperation.Query, true, Arg.Any<CancellationToken>())
+            .Returns(queryGrant ? PermissionDecision.Allow(new PermissionGrant
+                { Service = "service", Layer = "resource", Operation = "query" }) : PermissionDecision.NoMatch());
         await using var authorizationServices = new ServiceCollection()
+            .AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()))
+            .AddSingleton(permissions)
             .AddSingleton<IAccessPolicyEvaluator>(new AccessPolicyEvaluator()).BuildServiceProvider();
 
         await PrintingToolsRequestHandlers.ExecuteAsync(map, "PNG32", "MAP_ONLY", 96,
@@ -91,7 +109,7 @@ public class PrintingToolsRequestHandlerTests
             callerPrincipal: principal,
             authorizationServices: authorizationServices, tenantId: "tenant-a");
 
-        await styles.DidNotReceiveWithAnyArgs().GetLayerStyleAsync(default, default);
+        await styles.Received(allowed ? 1 : 0).GetLayerStyleAsync(7, Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -167,6 +185,7 @@ public class PrintingToolsRequestHandlerTests
     [InlineData("user-2", "tenant-a", true, false, true)]
     [InlineData("user-1", "tenant-b", false, false, false)]
     [InlineData("user-2", "tenant-b", true, false, false)]
+    [InlineData(null, "tenant-a", true, false, false)]
     [InlineData(null, "tenant-a", false, true, true)]
     [InlineData(null, "tenant-b", false, true, false)]
     [Protocol(TestProtocols.PrintingTools)]

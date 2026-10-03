@@ -632,7 +632,8 @@ internal static class PrintingToolsEndpoints
         if (progress.AnonymousSubmission is null ||
             !string.Equals(progress.TenantId, CaptureSubmitter(context).TenantId, StringComparison.Ordinal))
             return false;
-        if (progress.AnonymousSubmission == true || context.User.IsInRole("admin"))
+        if (progress.AnonymousSubmission == true ||
+            (context.User.Identity?.IsAuthenticated == true && context.User.IsInRole("admin")))
             return true;
         var owner = ResolveOwner(context.User);
         return owner is not null && string.Equals(progress.RequestedBy, owner, StringComparison.Ordinal);

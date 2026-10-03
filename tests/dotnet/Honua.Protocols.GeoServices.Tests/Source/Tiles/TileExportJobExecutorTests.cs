@@ -47,9 +47,12 @@ public sealed class TileExportJobExecutorTests
         await producer.DidNotReceiveWithAnyArgs().ProduceAsync(default!, default!, default);
     }
 
-    [UnitTest]
+    [Theory]
+    [InlineData("principal")]
+    [InlineData("tenant")]
+    [InlineData("claim")]
     [Operation(Operations.Export)]
-    public async Task ExecuteAsync_DifferentSubmitterSnapshots_UseDistinctArtifactKeys()
+    public async Task ExecuteAsync_DifferentSubmitterSnapshots_UseDistinctArtifactKeys(string changedIdentity)
     {
         var storage = Substitute.For<ICloudFileStorage>();
         var keys = new List<string>();
@@ -58,12 +61,18 @@ public sealed class TileExportJobExecutorTests
         var executor = CreateExecutor(storage);
         var first = JobFor(CreatePlan(), "export-a") with
         {
-            Audit = new OperationAuditInfo { SubmitterSecurityContext = new JobSecurityContext("user-a", "tenant-1", []) }
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new JobSecurityContext("user-a", "tenant-1", [new JobSecurityClaim("region", "west")]) }
         };
         var second = first with
         {
             OperationId = "export-b",
-            Audit = new OperationAuditInfo { SubmitterSecurityContext = new JobSecurityContext("user-b", "tenant-1", []) }
+            Audit = new OperationAuditInfo
+            {
+                SubmitterSecurityContext = new JobSecurityContext(
+                    changedIdentity == "principal" ? "user-b" : "user-a",
+                    changedIdentity == "tenant" ? "tenant-2" : "tenant-1",
+                    [new JobSecurityClaim("region", changedIdentity == "claim" ? "east" : "west")])
+            }
         };
 
         await executor.ExecuteAsync(first, new RecordingContext(first.OperationId), default);

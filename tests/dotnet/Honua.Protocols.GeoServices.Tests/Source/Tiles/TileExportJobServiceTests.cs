@@ -99,6 +99,24 @@ public sealed class TileExportJobServiceTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task Submit_KeyedRetryWithUpdatedToken_PreservesOriginalSnapshot()
+    {
+        var service = CreateService(new InMemoryExecutionJobStore(), new InMemoryJobQueue());
+        var principal = Principal(Owner, "reader");
+        ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim("exp", "100"));
+        var first = await service.SubmitAsync(CreatePlan(), "retry-key", null, principal, default);
+        var refreshed = Principal(Owner, "reader");
+        ((ClaimsIdentity)refreshed.Identity!).AddClaim(new Claim("exp", "200"));
+
+        var replay = await service.SubmitAsync(CreatePlan(), "retry-key", null, refreshed, default);
+
+        replay.OperationId.Should().Be(first.OperationId);
+        replay.Audit.SubmitterSecurityContext!.Claims.Should().Contain(
+            claim => claim.Type == "exp" && claim.Value == "100");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task Submit_PublicationScopedRaster_UsesStorageLayerAdmissionPartition()
     {
         var store = new InMemoryExecutionJobStore();

@@ -102,8 +102,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
         // Artifact identity covers byte-affecting inputs and permits safe package reuse across
         // same-layer aliases. Request identity additionally retains a publication-specific
         // lifecycle binding, so a keyed replay through another alias is rejected.
-        var requestFingerprint = TileExportArtifactIdentity.BindSecurityIdentity(
-            TileExportRequestIdentity.Compute(plan), submitter);
+        var requestFingerprint = TileExportRequestIdentity.Compute(plan);
         var partitionKey = BuildPartitionKey(plan);
         var costWeight = ComputeAdmissionCostWeight(plan);
 
