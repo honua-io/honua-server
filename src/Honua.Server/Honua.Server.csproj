@@ -152,10 +152,6 @@
     <EmbeddedResource Include="..\..\docs\gis\data\feature-catalog.json"
                       Link="DeploymentProfiles\feature-catalog.json"
                       LogicalName="Honua.Server.DeploymentProfiles.feature-catalog.json" />
-    <!-- honua-server#5378: the release resolver's declaration, advertised at /api/v1/admin/capabilities. -->
-    <EmbeddedResource Include="..\..\release\component-versions.json"
-                      Link="Release\component-versions.json"
-                      LogicalName="Honua.Server.release.component-versions.json" />
   </ItemGroup>
 
   <ItemGroup>
