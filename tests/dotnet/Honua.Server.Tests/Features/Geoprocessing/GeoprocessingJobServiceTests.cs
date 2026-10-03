@@ -77,6 +77,7 @@ public sealed class GeoprocessingJobServiceTests
     [Operation(Operations.Query)]
     public async Task JobAccess_SameSubjectDifferentIssuer_ReturnsNotFound()
     {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(true);
         var owner = CreateStablePrincipal();
         ((ClaimsIdentity)owner.Identity!).AddClaim(new Claim("iss", "issuer-a"));
         var job = await _sut.SubmitJobAsync(CreateValidPlan(), null, owner);
@@ -105,6 +106,7 @@ public sealed class GeoprocessingJobServiceTests
     [Operation(Operations.Create)]
     public async Task SubmitJob_ApiKeyIdentity_RecordsCanonicalOwner()
     {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(true);
         var principal = new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim("api_key_id", "11111111-1111-1111-1111-111111111111"), new Claim(ClaimTypes.Name, "shared-name")],
             AuthenticationExtensions.ApiKeyScheme));
