@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
+using Honua.Infrastructure.Geometries;
 using Honua.Infrastructure.Services;
 using Honua.Protocols.Ogc.Api.Features.Models;
 using Honua.Protocols.Ogc.Api.Features.Services;
@@ -14,6 +15,7 @@ using Honua.Protocols.Ogc.Common;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
@@ -191,11 +193,108 @@ public sealed class OgcFeaturesGeometryServicesTests
             CreateSut().ConvertWkbToSimpleGeometry(valid, AxisOrder.NorthEast));
     }
 
-    private static OgcFeaturesGeometryServices CreateSut()
+    [UnitTheory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(8)]
+    [InlineData(15)]
+    public void ConvertWkbToSimpleGeometry_MatchesLegacyOutputAcrossPrecisionAndGeometryTypes(int precision)
+    {
+        var limits = new LimitsOptions();
+        limits.Geometry.MaxCoordinatePrecision = precision;
+        // Exercise the normal limits path even when simplification is configured.
+        limits.Geometry.SimplifyTolerance = 1;
+        var formats = new[]
+        {
+            "POINT (-122.123456789 37.987654321)",
+            "POINT (1.25 -2.25)",
+            "POINT (-0.0 0.0)",
+            "POINT (1E-12 -1E20)",
+            "POINT Z (10 20 30.123456789)",
+            "POINT M (40 50 60)",
+            "POINT ZM (1 2 3 4)",
+            "POINT EMPTY",
+            "LINESTRING (1 2, 3 4)",
+            "POLYGON ((0 0, 0 4, 4 4, 0 0))",
+            "GEOMETRYCOLLECTION (POINT (5 6), LINESTRING (7 8, 9 10))"
+        };
+        foreach (var axisOrder in new[] { AxisOrder.EastNorth, AxisOrder.NorthEast })
+        {
+            var sut = CreateSut(limits);
+            foreach (var wkt in formats)
+            {
+                var geometry = new WKTReader().Read(wkt);
+                geometry.SRID = 4326;
+                var wkb = new WKBWriter(ByteOrder.LittleEndian, true, true, true).Write(geometry);
+                AssertMatchesLegacy(sut, wkb, axisOrder, limits);
+            }
+        }
+    }
+
+    [UnitTheory]
+    [InlineData(double.PositiveInfinity, 1)]
+    [InlineData(1, double.NegativeInfinity)]
+    [InlineData(double.NaN, 1)]
+    [InlineData(1, double.NaN)]
+    [InlineData(double.MaxValue, double.MinValue)]
+    public void ConvertWkbToSimpleGeometry_UnusualOrdinatesPreserveLegacyBehavior(double x, double y)
+    {
+        var limits = new LimitsOptions();
+        limits.Geometry.MaxCoordinatePrecision = -1;
+        var geometry = new GeometryFactory().CreatePoint(new Coordinate(x, y));
+        var wkb = new WKBWriter().Write(geometry);
+        foreach (var axisOrder in new[] { AxisOrder.EastNorth, AxisOrder.NorthEast })
+        {
+            AssertMatchesLegacy(CreateSut(limits), wkb, axisOrder, limits);
+        }
+    }
+
+    [UnitTest]
+    public void ConvertWkbToSimpleGeometry_PointRoundingRetainsMidpointAndAxisSemantics()
+    {
+        var limits = new LimitsOptions();
+        limits.Geometry.MaxCoordinatePrecision = 1;
+        var wkb = new WKBWriter().Write(new WKTReader().Read("POINT (1.25 -2.25)"));
+        var result = CreateSut(limits).ConvertWkbToSimpleGeometry(wkb, AxisOrder.NorthEast);
+        result!.CoordinatesJson.Should().Be("[-2.3,1.3]");
+    }
+
+    private static void AssertMatchesLegacy(
+        OgcFeaturesGeometryServices sut, byte[] wkb, AxisOrder axisOrder, LimitsOptions limits)
+    {
+        // The pre-optimization path is an independent compatibility oracle; using a
+        // second optimized service would conceal serialization regressions.
+        var geometry = new WKBReader().Read(wkb);
+        if (axisOrder == AxisOrder.NorthEast)
+        {
+            geometry = geometry.Copy();
+            geometry.Apply(new AxisSwapCoordinateFilter());
+            geometry.GeometryChanged();
+        }
+        geometry = GeometryOutputProcessor.ApplyLimits(geometry, limits.Geometry) ?? geometry;
+        using var expected = JsonDocument.Parse(RingWindingNormalizer.WriteGeoJson(new GeoJsonWriter(), geometry));
+        var actual = sut.ConvertWkbToSimpleGeometry(wkb, axisOrder);
+        actual.Should().NotBeNull();
+        actual!.Type.Should().Be(expected.RootElement.GetProperty("type").GetString());
+        if (expected.RootElement.TryGetProperty("coordinates", out var coordinates))
+        {
+            using var actualCoordinates = JsonDocument.Parse(actual.CoordinatesJson!);
+            JsonElement.DeepEquals(coordinates, actualCoordinates.RootElement).Should().BeTrue();
+        }
+        else
+        {
+            actual.CoordinatesJson.Should().BeNull();
+        }
+        actual.GeometriesJson.Should().Be(expected.RootElement.TryGetProperty("geometries", out var geometries)
+            ? geometries.GetRawText() : null);
+    }
+
+    private static OgcFeaturesGeometryServices CreateSut(LimitsOptions? limits = null)
         => new(
-            new Honua.Infrastructure.Services.GeometryService(Options.Create(new LimitsOptions())),
+            new Honua.Infrastructure.Services.GeometryService(Options.Create(limits ?? new LimitsOptions())),
             new IdentityCoordinateTransformService(),
-            Options.Create(new LimitsOptions()),
+            Options.Create(limits ?? new LimitsOptions()),
             NullLogger<OgcFeaturesGeometryServices>.Instance);
 
     private sealed class IdentityCoordinateTransformService : ICoordinateTransformService

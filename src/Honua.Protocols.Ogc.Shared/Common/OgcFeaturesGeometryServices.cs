@@ -312,6 +312,27 @@ internal sealed partial class OgcFeaturesGeometryServices
 
         geometry = GeometryOutputProcessor.ApplyLimits(geometry, _geometryLimits) ?? geometry;
 
+        // Finite XY points need only a coordinate array. Keep dimensional, empty and
+        // nonfinite positions on the general writer to preserve its existing behavior.
+        if (geometry is Point point && !point.IsEmpty &&
+            !point.CoordinateSequence.HasM && double.IsNaN(point.Z) &&
+            double.IsFinite(point.X) && double.IsFinite(point.Y))
+        {
+            var buffer = new ArrayBufferWriter<byte>(64);
+            using var writer = new Utf8JsonWriter(buffer);
+            writer.WriteStartArray();
+            writer.WriteNumberValue(point.X);
+            writer.WriteNumberValue(point.Y);
+            writer.WriteEndArray();
+            writer.Flush();
+
+            return new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = System.Text.Encoding.UTF8.GetString(buffer.WrittenSpan)
+            };
+        }
+
         var geoJson = RingWindingNormalizer.WriteGeoJson(_geoJsonWriter, geometry);
 
         using var document = JsonDocument.Parse(geoJson);
