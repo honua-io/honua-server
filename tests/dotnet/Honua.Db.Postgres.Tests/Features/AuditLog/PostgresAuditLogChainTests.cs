@@ -103,14 +103,14 @@ public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
 
             // A later row with no hash. Leading unhashed rows (written before the
             // chain existed) stay acceptable; a gap after the chain has started does not.
-            await ExecuteAsync(schema, $"""
-                INSERT INTO "{schema}".audit_log (
+            await ExecuteAsync(schema, $$"""
+                INSERT INTO "{{schema}}".audit_log (
                     timestamp, event_type, actor, actor_type, resource_type, resource_id,
                     action, outcome, correlation_id, remote_ip, user_agent, details,
                     prev_hash, entry_hash)
                 VALUES (
                     NOW(), 'Authentication', 'user-1', 'UserId', 'session', '/sharing/rest/generateToken',
-                    'auth.token.issue', 'Failure', 'corr-suffix', '10.0.0.1', 'agent/1.0', '{{}}',
+                    'auth.token.issue', 'Failure', 'corr-suffix', '10.0.0.1', 'agent/1.0', '{}',
                     NULL, NULL);
                 """);
 
