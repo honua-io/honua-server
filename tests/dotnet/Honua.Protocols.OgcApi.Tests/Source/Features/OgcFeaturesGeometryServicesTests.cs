@@ -226,7 +226,12 @@ public sealed class OgcFeaturesGeometryServicesTests
             {
                 var geometry = new WKTReader().Read(wkt);
                 geometry.SRID = 4326;
-                var wkb = new WKBWriter(ByteOrder.LittleEndian, true, true, true).Write(geometry);
+                var coordinate = geometry.Coordinate;
+                // Emitting absent M ordinates would force XY fixtures onto the
+                // dimensional fallback and leave the new fast path untested.
+                var wkb = new WKBWriter(ByteOrder.LittleEndian, true,
+                    emitZ: coordinate != null && !double.IsNaN(coordinate.Z),
+                    emitM: coordinate != null && !double.IsNaN(coordinate.M)).Write(geometry);
                 AssertMatchesLegacy(sut, wkb, axisOrder, limits);
             }
         }
