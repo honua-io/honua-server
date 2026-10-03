@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
 using FluentAssertions;
+using Honua.Infrastructure.Authentication;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -202,6 +204,41 @@ public sealed class GeoprocessingDispatchJobExecutorTests
             Arg.Any<Func<CancellationToken, Task<bool>>>(), Arg.Any<CancellationToken>());
         // The workspace ledger write does not replace the durable job-record publish.
         await context.Received(1).TryPublishArtifactAsync("data:fake-artifact", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTheory]
+    [InlineData(null)]
+    [InlineData("tenant-a")]
+    public async Task ExecuteAsync_DurableJobOwner_RetainsNamedWorkspaceOwner(string? tenantId)
+    {
+        var lifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        ConfigurePublication(lifecycle);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "admin")], "Test"));
+        var snapshot = JobSecurityContextCapture.Capture(principal) with { TenantId = tenantId };
+        var workspace = new Workspace
+        {
+            WorkspaceId = "retained-workspace", Kind = WorkspaceKind.Scratch,
+            OwnerId = "admin", Label = "ws-1", ScopeId = tenantId,
+            State = WorkspaceLifecycleState.Active, CreatedAt = DateTimeOffset.UtcNow
+        };
+        lifecycle.GetOrCreateNamedWorkspaceAsync("admin", "ws-1", Arg.Any<CancellationToken>()).Returns(workspace);
+        lifecycle.GetOrCreateScopedWorkspaceAsync("admin", "ws-1", tenantId, Arg.Any<CancellationToken>()).Returns(workspace);
+        var dispatcher = CreateFakeExecutorDispatcher(BuildScopeFactory(lifecycle));
+        var context = Substitute.For<IJobExecutionContext>();
+        context.TryPublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        var record = CreateFakeExecutorJobRecord("ws-1", true);
+        record = record with
+        {
+            Audit = record.Audit with { RequestedBy = snapshot.OwnerActorId, SubmitterSecurityContext = snapshot }
+        };
+
+        var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        await lifecycle.Received(1).PublishArtifactAsync(
+            Arg.Is<WorkspaceArtifactPublication>(publication => publication.WorkspaceId == "retained-workspace" && publication.Overwrite),
+            Arg.Any<Func<CancellationToken, Task<bool>>>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
