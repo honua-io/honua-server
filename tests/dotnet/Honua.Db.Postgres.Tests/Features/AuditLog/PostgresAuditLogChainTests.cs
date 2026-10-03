@@ -92,6 +92,63 @@ public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task Verify_RejectsMissingHash_AfterAHashedRow()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAuditLogChainTests));
+        try
+        {
+            await EnsureAuditLogTableAsync(schema);
+            var sink = new PostgresAuditLog(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema);
+            await sink.RecordAsync(Event("corr-a", "auth.failure"));
+
+            // A later row with no hash. Leading unhashed rows (written before the
+            // chain existed) stay acceptable; a gap after the chain has started does not.
+            await ExecuteAsync(schema, $"""
+                INSERT INTO "{schema}".audit_log (
+                    timestamp, event_type, actor, actor_type, resource_type, resource_id,
+                    action, outcome, correlation_id, remote_ip, user_agent, details,
+                    prev_hash, entry_hash)
+                VALUES (
+                    NOW(), 'Authentication', 'user-1', 'UserId', 'session', '/sharing/rest/generateToken',
+                    'auth.token.issue', 'Failure', 'corr-suffix', '10.0.0.1', 'agent/1.0', '{{}}',
+                    NULL, NULL);
+                """);
+
+            var report = await Verifier(schema).VerifyAsync();
+            report.Verified.Should().BeFalse("a missing hash after a hashed row is not a legacy prefix");
+            report.FailureReason.Should().Contain("unhashed");
+            report.RowsChecked.Should().Be(2);
+            report.UnhashedRows.Should().Be(0);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task Verify_HashedRows_WithoutChainKey_DoesNotVerify()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAuditLogChainTests));
+        try
+        {
+            await EnsureAuditLogTableAsync(schema);
+            var sink = new PostgresAuditLog(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema);
+            await sink.RecordAsync(Event("corr-auth", "auth.failure"));
+            await sink.RecordAsync(Event("corr-token", "auth.token.issue"));
+
+            var report = await Verifier(schema).VerifyAsync();
+            report.Verified.Should().BeFalse("a hashed chain with no key configured does not verify");
+            report.FailureReason.Should().Contain("key");
+            report.RowsChecked.Should().Be(2);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task Verify_DetectsTampering_WhenRowDeletedBypassingRules()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAuditLogChainTests));
