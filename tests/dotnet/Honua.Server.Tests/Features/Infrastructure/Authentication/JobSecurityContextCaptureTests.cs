@@ -21,6 +21,21 @@ namespace Honua.Server.Tests.Features.Infrastructure.Authentication;
 /// </summary>
 public sealed class JobSecurityContextCaptureTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Trait("Tier", "Fast")]
+    public void Capture_ThenRestore_PreservesAuthenticationState(bool authenticated)
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("region", "west")], authenticated ? "test" : null));
+
+        var restored = JobSecurityContextCapture.Restore(
+            JobSecurityContextCapture.Capture(principal, new RbacOptions()));
+
+        restored.Identity!.IsAuthenticated.Should().Be(authenticated);
+    }
+
     [UnitTest]
     public async Task RevalidateRoleMembership_RoleRevoked_ReplacesOnlyRoleClaims()
     {

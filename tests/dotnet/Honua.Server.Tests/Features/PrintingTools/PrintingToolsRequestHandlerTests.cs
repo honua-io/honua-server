@@ -2,6 +2,16 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Reflection;
+using System.Threading.Channels;
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Infrastructure.Progress;
+using Honua.Infrastructure.Services;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -78,6 +88,73 @@ public class PrintingToolsRequestHandlerTests
             callerPrincipal: principal, accessPolicyEvaluator: new AccessPolicyEvaluator());
 
         await styles.DidNotReceiveWithAnyArgs().GetLayerStyleAsync(default, default);
+    }
+
+    [UnitTest]
+    [Protocol(TestProtocols.PrintingTools)]
+    public async Task ProcessPrintJob_SubmitterPrincipal_ReachesFeatureSecurityScope()
+    {
+        var progress = Substitute.For<IUniversalProgressStore>();
+        var graph = Substitute.For<IMetadataV2GraphProvider>();
+        JobSecurityScopeState? observed = null;
+        graph.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            observed = JobSecurityScope.Current;
+            return new MetadataV2GraphSnapshot(new MetadataV2Graph(), "print-test", DateTimeOffset.UnixEpoch);
+        });
+        await using var services = new ServiceCollection()
+            .AddSingleton(progress).AddSingleton(graph)
+            .AddSingleton(Substitute.For<IResourceValidator>())
+            .AddSingleton(Substitute.For<IFeatureReader>())
+            .AddSingleton(Substitute.For<ILayerStyleCatalog>())
+            .AddSingleton<IAccessPolicyEvaluator>(new AccessPolicyEvaluator())
+            .AddSingleton(Substitute.For<ITemporaryFileService>())
+            .BuildServiceProvider();
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "user-1"), new Claim("tenant_id", "tenant-a")], "test"));
+        var job = new PrintJob("print-1", new WebMapDefinition(), "PNG32", "MAP_ONLY", 96, 1, principal);
+        using var worker = new PrintingToolsBackgroundService(Channel.CreateUnbounded<PrintJob>(),
+            services.GetRequiredService<IServiceScopeFactory>(), new PrintJobCancellationTokens(),
+            NullLogger<PrintingToolsBackgroundService>.Instance);
+        var process = typeof(PrintingToolsBackgroundService).GetMethod("ProcessJobCoreAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        await (Task)process.Invoke(worker, [job, CancellationToken.None])!;
+
+        observed.Should().NotBeNull();
+        observed!.Submitter.Should().NotBeNull();
+        observed.Submitter!.TenantId.Should().Be("tenant-a");
+        JobSecurityScope.Current.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Protocol(TestProtocols.PrintingTools)]
+    public async Task JobStatus_DifferentSubmitter_ReturnsNotFound()
+    {
+        var store = Substitute.For<IUniversalProgressStore>();
+        IOperationProgress? persisted = null;
+        store.SetProgressAsync(Arg.Any<string>(), Arg.Any<IOperationProgress>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { persisted = call.Arg<IOperationProgress>(); return Task.CompletedTask; });
+        store.GetProgressAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => persisted);
+        await using var services = new ServiceCollection()
+            .AddSingleton(store).AddSingleton(Channel.CreateUnbounded<PrintJob>())
+            .AddLogging().BuildServiceProvider();
+        var submitter = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "user-1")], "test"));
+        var submitContext = new DefaultHttpContext { RequestServices = services, User = submitter };
+        var submit = typeof(PrintingToolsEndpoints).GetMethod("SubmitJobInternalAsync", BindingFlags.Static | BindingFlags.NonPublic)!;
+        await (Task<IResult>)submit.Invoke(null,
+            [submitContext, new WebMapDefinition(), "PNG32", "MAP_ONLY", 96, NullLogger.Instance, CancellationToken.None])!;
+        persisted.Should().BeOfType<PrintProgress>();
+        var statusContext = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "user-2")], "test"))
+        };
+        statusContext.Request.RouteValues["jobId"] = ((PrintProgress)persisted!).JobId;
+        var status = typeof(PrintingToolsEndpoints).GetMethod("HandleJobStatus", BindingFlags.Static | BindingFlags.NonPublic)!;
+
+        var response = await (Task<IResult>)status.Invoke(null, [statusContext, CancellationToken.None])!;
+
+        response.Should().BeAssignableTo<IStatusCodeHttpResult>().Which.StatusCode.Should().Be(404);
     }
 
     // --- ResolveFormat ---
