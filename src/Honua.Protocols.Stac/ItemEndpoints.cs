@@ -95,9 +95,6 @@ internal static class ItemEndpoints
             var publication = validation.Publication!;
             var snapshot = validation.Snapshot
                 ?? throw new InvalidOperationException("Validated STAC metadata snapshot is unavailable.");
-            var layerId = snapshot.ResolveStorageLayerId(publication, resource)
-                ?? throw new InvalidOperationException(
-                    $"Publication {publication.Metadata.Id} is not bound to feature storage; the STAC items handler requires a storage layer.");
             var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
             var readerResolution = await StacFeatureReaderResolver.ResolveAsync(
                 context,
@@ -106,8 +103,13 @@ internal static class ItemEndpoints
                 validation.Service,
                 resource,
                 publication,
-                layerId,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException(
+                    $"Publication {publication.Metadata.Id} is not bound to feature storage; the STAC items handler requires a storage layer.");
+
+            // Item collection ids, links and COG artifacts are keyed on the collection's
+            // protocol-facing layer index; reads go to readerResolution.StorageLayerId.
+            var layerId = publication.LayerIndex ?? readerResolution.StorageLayerId;
 
             // Reject limit < 1 with 400 to match the canonical POST /search surface
             // (SearchEndpoints), which 400s on limit < 1. Previously this path silently
@@ -274,9 +276,6 @@ internal static class ItemEndpoints
             var publication = validation.Publication!;
             var snapshot = validation.Snapshot
                 ?? throw new InvalidOperationException("Validated STAC metadata snapshot is unavailable.");
-            var layerId = snapshot.ResolveStorageLayerId(publication, resource)
-                ?? throw new InvalidOperationException(
-                    $"Publication {publication.Metadata.Id} is not bound to feature storage; the STAC item handler requires a storage layer.");
             var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
             var readerResolution = await StacFeatureReaderResolver.ResolveAsync(
                 context,
@@ -285,8 +284,13 @@ internal static class ItemEndpoints
                 validation.Service,
                 resource,
                 publication,
-                layerId,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException(
+                    $"Publication {publication.Metadata.Id} is not bound to feature storage; the STAC item handler requires a storage layer.");
+
+            // Item collection ids, links and COG artifacts are keyed on the collection's
+            // protocol-facing layer index; reads go to readerResolution.StorageLayerId.
+            var layerId = publication.LayerIndex ?? readerResolution.StorageLayerId;
 
             var isStorageBound = !string.IsNullOrEmpty(publication.StorageBindingId);
             var hasNumericItemId = long.TryParse(

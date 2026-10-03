@@ -16,19 +16,28 @@ internal static class StacFeatureReaderResolver
 {
     internal readonly record struct Resolution(IFeatureReader Reader, int StorageLayerId);
 
-    public static async Task<Resolution> ResolveAsync(
+    /// <summary>
+    /// Resolves the reader and storage-layer handle for an authorized STAC publication.
+    /// The handle always comes from the publication's own graph entries through the shared
+    /// storage resolver, never from the collection's protocol-facing layer index, which can
+    /// name a different resource's storage (SEC-4).
+    /// </summary>
+    /// <returns>The resolution, or <see langword="null"/> when the publication resolves to
+    /// no storage-layer handle.</returns>
+    public static async Task<Resolution?> ResolveAsync(
         HttpContext context,
         IFeatureReader fallbackReader,
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service? service,
         MetadataV2Resource resource,
         MetadataV2Publication publication,
-        int publicLayerId,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(publication.StorageBindingId))
         {
-            return new Resolution(fallbackReader, publicLayerId);
+            return snapshot.ResolveStorageLayerId(publication, resource) is int unboundStorageLayerId
+                ? new Resolution(fallbackReader, unboundStorageLayerId)
+                : null;
         }
 
         var providerQueryRouter = context.RequestServices.GetService<FeatureProviderQueryRouter>()

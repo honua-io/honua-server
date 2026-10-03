@@ -174,20 +174,15 @@ internal static partial class FeatureServerEndpoints
 
         foreach (var (publication, resource) in accessibleLayers)
         {
-            // Mirror the V2 metadata builders' resolution order
-            // (FeatureServerUtilities.V2.MapLayerInfoV2): the integer storage
-            // handle for IFeatureReader is publication.LayerIndex when the graph
-            // doesn't carry an explicit storage binding for this publication.
-            var resolvedLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
-            if (resolvedLayerId is null)
+            if (ResolveServiceEstimateLayerIds(snapshot, publication, resource) is not { } layerIds)
             {
                 continue;
             }
 
-            var estimates = await featureReader.GetEstimatesAsync(resolvedLayerId.Value, cancellationToken);
+            var estimates = await featureReader.GetEstimatesAsync(layerIds.StorageLayerId, cancellationToken);
             layerEstimates.Add(new ServiceLayerEstimateInfo
             {
-                Id = resolvedLayerId.Value,
+                Id = layerIds.PublicLayerId,
                 Count = estimates.EstimatedCount,
                 Extent = estimates.Extent.HasValue ? estimates.Extent.Value.ToExtentInfo() : null
             });
@@ -203,5 +198,24 @@ internal static partial class FeatureServerEndpoints
             response,
             FeatureServerJsonContext.Default.ServiceGetEstimatesResponse,
             contentType: "application/json");
+    }
+
+    /// <summary>
+    /// Resolves the layer id a service-level estimate is reported under (the publication's
+    /// service-local index) and the storage-layer handle it is read from. The handle comes
+    /// from the shared resolver, so a publication whose index differs from its storage id
+    /// is estimated from its own storage; <see langword="null"/> when it has none.
+    /// </summary>
+    internal static (int PublicLayerId, int StorageLayerId)? ResolveServiceEstimateLayerIds(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication,
+        MetadataV2Resource resource)
+    {
+        if (snapshot.ResolveStorageLayerId(publication, resource) is not int storageLayerId)
+        {
+            return null;
+        }
+
+        return (publication.LayerIndex ?? storageLayerId, storageLayerId);
     }
 }

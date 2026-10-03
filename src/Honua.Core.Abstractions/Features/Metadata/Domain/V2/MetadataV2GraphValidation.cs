@@ -47,6 +47,7 @@ public static class MetadataV2GraphValidator
         ValidateResources(errors, graph.Resources, storageBindingsById);
         ValidateCompositeRelationships(errors, resourcesById);
         ValidatePublications(errors, graph.Publications, resourcesById, storageBindingsById, serviceIds);
+        ValidateUnboundPublicationLayerIndexes(errors, graph, resourcesById);
         ValidateServices(errors, graph.Services, publicationsById);
         ValidatePublicationPrimary(errors, graph.Publications);
         ValidateObjectMetadataUniversals(errors, graph);
@@ -575,6 +576,51 @@ public static class MetadataV2GraphValidator
                 errors.Add(
                     $"publication '{publication.Metadata.Id}' uses storage binding '{publication.StorageBindingId}' owned by resource '{storageBinding.ResourceId}'.");
             }
+        }
+    }
+
+    /// <summary>
+    /// A storage-backed publication that carries no storage binding of its own, on a
+    /// resource that resolves no storage-layer id, is addressed by its service-local
+    /// layer index alone. That index must not equal a storage-layer id another resource
+    /// binds: the two would then name the same storage, and the publication would read
+    /// and write the other resource's data under its own access policy (SEC-4).
+    /// </summary>
+    private static void ValidateUnboundPublicationLayerIndexes(
+        List<string> errors,
+        MetadataV2Graph graph,
+        Dictionary<string, MetadataV2Resource> resourcesById)
+    {
+        var storageOwners = new Dictionary<int, string>();
+        var boundResourceIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var binding in graph.StorageBindings)
+        {
+            if (binding.StorageLayerId is not int storageLayerId)
+            {
+                continue;
+            }
+
+            storageOwners.TryAdd(storageLayerId, binding.ResourceId);
+            boundResourceIds.Add(binding.ResourceId);
+        }
+
+        foreach (var publication in graph.Publications)
+        {
+            if (publication.StorageBindingId is not null
+                || publication.LayerIndex is not int layerIndex
+                || !resourcesById.TryGetValue(publication.ResourceId, out var resource)
+                || resource.Type is not (MetadataV2ResourceType.FeatureDataset
+                    or MetadataV2ResourceType.RasterDataset
+                    or MetadataV2ResourceType.TileDataset)
+                || boundResourceIds.Contains(resource.Metadata.Id)
+                || !storageOwners.TryGetValue(layerIndex, out var ownerResourceId)
+                || string.Equals(ownerResourceId, resource.Metadata.Id, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            errors.Add(
+                $"publication '{publication.Metadata.Id}' has no storage binding and its layer index {layerIndex} is the storage layer id of resource '{ownerResourceId}'.");
         }
     }
 

@@ -471,6 +471,66 @@ public sealed class MetadataV2GraphSnapshotTests
             .Should().Be(77);
     }
 
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ResolveStorageLayerId_UnboundPublicationWhoseLayerIndexIsAnotherResourcesStorageId_ResolvesNoHandle()
+    {
+        var snapshot = new MetadataV2GraphSnapshot(UnboundCollidingGraph(), "\"unbound\"", DateTimeOffset.UtcNow);
+        var publication = snapshot.Index.PublicationsById["pub.unbound"];
+
+        publication.LayerIndex.Should().Be(AliasedCollidingStorageLayerId);
+        snapshot.ResolveStorageLayerId(publication, snapshot.ResolveResource(publication))
+            .Should().BeNull("the layer index is resource.permits' storage handle, not this publication's");
+        snapshot.ResolveStorageLayerId(publication, resource: null).Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void Validate_AliasedPublicationWithItsOwnStorageBinding_IsValid()
+    {
+        MetadataV2GraphValidator.Validate(AliasedGraph()).Errors.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void Validate_UnboundPublicationWhoseLayerIndexIsAnotherResourcesStorageId_ReturnsError()
+    {
+        var result = MetadataV2GraphValidator.Validate(UnboundCollidingGraph());
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle().Which.Should().Be(
+            "publication 'pub.unbound' has no storage binding and its layer index 3 is the storage layer id of resource 'resource.permits'.");
+    }
+
+    /// <summary>
+    /// <see cref="AliasedGraph"/> plus a feature resource with no storage binding whose
+    /// publication's service-local index equals <c>resource.permits</c>' storage handle.
+    /// </summary>
+    private static MetadataV2Graph UnboundCollidingGraph()
+    {
+        var graph = AliasedGraph();
+        return graph with
+        {
+            Resources =
+            [
+                .. graph.Resources,
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource.unbound", Name = "unbound" },
+                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+                    StorageBindingIds = [],
+                    SchemaFields = [],
+                },
+            ],
+            Publications =
+            [
+                .. graph.Publications,
+                Publication("pub.unbound", "resource.unbound", storageBindingId: null, AliasedCollidingStorageLayerId),
+            ],
+        };
+    }
+
     private const int AliasedParcelsStorageLayerId = 7;
     private const int AliasedCollidingStorageLayerId = 3;
 
