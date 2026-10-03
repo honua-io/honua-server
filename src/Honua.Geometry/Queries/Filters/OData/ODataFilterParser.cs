@@ -291,7 +291,13 @@ public sealed class ODataFilterParser
 
         if (Match(ODataFilterTokenType.StringLiteral))
         {
-            return new Literal(Previous().Value, LiteralType.Text);
+            // Checked here rather than in the lexer: typed literals such as geography'...'
+            // share the string token and are bounded by the geometry text limit instead.
+            var text = Previous();
+            EnsureWithinGuard(
+                () => FilterParserGuard.EnsureStringLiteralLength(text.Value.Length, "OData string literal"),
+                text.Position);
+            return new Literal(text.Value, LiteralType.Text);
         }
 
         if (Match(ODataFilterTokenType.Identifier))
@@ -343,6 +349,7 @@ public sealed class ODataFilterParser
             do
             {
                 args.Add(ParseExpression());
+                FilterParserGuard.EnsureValueListSize(args.Count, "OData function argument list");
             } while (Match(ODataFilterTokenType.Comma));
         }
 
