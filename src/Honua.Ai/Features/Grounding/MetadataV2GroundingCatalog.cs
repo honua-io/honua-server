@@ -2,24 +2,28 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Ai.Discovery;
 
 namespace Honua.Ai.Grounding;
 
 internal static class MetadataV2GroundingCatalog
 {
-    public static IReadOnlyList<GroundingCatalogLayer> BuildLayers(MetadataV2GraphSnapshot snapshot)
+    public static IReadOnlyList<GroundingCatalogLayer> BuildLayers(
+        MetadataV2GraphSnapshot snapshot,
+        IReadOnlyList<ReadableMetadataPublication> publications)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
         var layers = new List<GroundingCatalogLayer>();
-        foreach (var resource in snapshot.Graph.Resources)
+        foreach (var entry in publications.DistinctBy(entry => entry.Resource.Metadata.Id))
         {
+            var resource = entry.Resource;
             if (!IsDatasetResource(resource.Type))
             {
                 continue;
             }
 
-            var layerId = snapshot.ResolveStorageLayerId(resource);
+            var layerId = snapshot.ResolveStorageLayerId(entry.Publication) ?? snapshot.ResolveStorageLayerId(resource);
             if (layerId is null)
             {
                 continue;

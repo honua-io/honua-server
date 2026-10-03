@@ -7,13 +7,19 @@ description: "/v1/grounding/spec/ turns natural-language edit requests into vali
 
 `/v1/grounding/spec/*` turns natural-language edit requests into validated canonical-spec mutations and deterministic per-section summaries for the [Honua spec grammar v1.0](../spec-grammar/spec-grammar-v1.0.md). The surface is the spec-workspace counterpart to the workflow-focused [`GROUNDING.md`](../../internal/developer/GROUNDING.md) pipeline — it operates on the structured `SpecDocument` model rather than on ranked catalog candidates, and it never returns a spec that would fail `ISpecValidator`.
 
-- **Implementation**: `src/Honua.Server/Features/Grounding/Spec/*`
+- **Implementation**: `src/Honua.Ai/Features/Grounding/Spec/*`
 - **Endpoint registration**: `EndpointRegistry` (`/v1/grounding/spec/mutate`, `/v1/grounding/spec/summarize`)
 - **Related ADRs**: [ADR-0027 deterministic intent / clarification workflow](../../internal/contributor/adr/0027-deterministic-intent-clarification-workflow.md), [ADR-0028 no AI data editing](../../internal/contributor/adr/0028-ai-data-editing-not-allowed.md)
 
 ## Endpoints
 
-Both endpoints accept JSON request bodies and currently allow anonymous access (the same surface is also intended for admin workspace use). Successful responses return `application/json`; malformed or semantically invalid wire payloads return `application/problem+json`. All request and success-response DTOs flow through a source-generated `SpecGroundingJsonContext` for AOT compatibility. Inactive nullable branch properties (`mutation`, `error`) are omitted from the JSON payload rather than serialized as `null`; `clarifications`, `warnings`, and clarification `candidates` are always emitted as arrays.
+Both endpoints accept JSON request bodies and require administrative authentication. Successful responses return `application/json`; malformed or semantically invalid wire payloads return `application/problem+json`. All request and success-response DTOs flow through a source-generated `SpecGroundingJsonContext` for AOT compatibility. Inactive nullable branch properties (`mutation`, `error`) are omitted from the JSON payload rather than serialized as `null`; `clarifications`, `warnings`, and clarification `candidates` are always emitted as arrays.
+
+Dataset resolution and schema previews use only routable publications visible to
+the request tenant and readable by the supplied principal under the shared resource
+metadata policy in addition to the endpoint authentication requirement. Unpublished
+or unreadable entries are omitted before dataset and column clarification
+candidates are built.
 
 ### `POST /v1/grounding/spec/mutate`
 

@@ -17,6 +17,8 @@ Which tool calls an agent may make is an edition boundary: reading is Community,
 
 The handshake methods (`initialize`, `tools/list`, `resources/list`, `resources/templates/list`) are open; `tools/call` and `resources/read` require an authenticated principal plus the matching operator grant. Authentication accepts `X-API-Key` and OAuth bearer tokens (`Authorization: Bearer`); when both are present, the bearer token is evaluated first.
 
+Layer references also require tenant-visible publications and shared resource access for the requested operation. Entity resolution and grounding rank only readable publications and omit services without readable publications or service metadata access. A layer-specific grant preserves the layer candidate while service candidates require service metadata access. `honua_render_map` checks every requested layer before invoking the renderer; layer-specific style operations use the same checked resolver. Rendering checks query access, catalog and layer discovery check metadata access, and applying a style preset checks administrative resource access in addition to its operation authorization.
+
 ## Connect a client
 
 **Claude Code.** Add the server to the project's `.mcp.json`:

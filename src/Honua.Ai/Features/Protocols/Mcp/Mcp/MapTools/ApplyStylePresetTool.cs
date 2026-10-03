@@ -117,7 +117,9 @@ internal sealed class ApplyStylePresetTool : IMcpTool
             ?? throw new GeoprocessingStoreUnavailableException("The metadata catalog is not available on this server.");
 
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var layer = MapToolLayerResolver.Resolve(snapshot, argument.ServiceId, argument.LayerId);
+        var layer = await MapToolLayerResolver.ResolveForReadAsync(
+            httpContext, snapshot, argument.ServiceId, argument.LayerId, AuthorizationOperation.Admin, cancellationToken)
+            .ConfigureAwait(false);
 
         var styleId = argument.StyleId!.Trim();
         var preset = await styleCatalog.GetStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
