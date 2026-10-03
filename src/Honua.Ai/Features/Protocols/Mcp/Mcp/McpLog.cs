@@ -105,4 +105,18 @@ internal static partial class McpLog
     /// </summary>
     [LoggerMessage(8174, LogLevel.Debug, "MCP unknown session served statelessly: SessionIdPrefix={SessionIdPrefix}")]
     public static partial void SessionServedStateless(ILogger logger, string sessionIdPrefix);
+
+    /// <summary>
+    /// A <c>POST /mcp</c> body exceeded <see cref="McpOptions.MaxRequestBodyBytes"/>
+    /// and was refused with HTTP 413 before parsing (SEC-18).
+    /// </summary>
+    [LoggerMessage(8190, LogLevel.Information, "MCP request body refused: MaxBytes={MaxBytes}")]
+    public static partial void RequestBodyTooLarge(ILogger logger, long maxBytes);
+
+    /// <summary>
+    /// A JSON-RPC batch exceeded <see cref="McpOptions.MaxBatchSize"/> and was
+    /// refused whole before any element was dispatched (SEC-18).
+    /// </summary>
+    [LoggerMessage(8191, LogLevel.Information, "MCP batch refused: Length={Length}, MaxBatchSize={MaxBatchSize}")]
+    public static partial void BatchTooLarge(ILogger logger, int length, int maxBatchSize);
 }

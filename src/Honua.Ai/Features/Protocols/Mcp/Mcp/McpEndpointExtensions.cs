@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -31,6 +32,8 @@ namespace Honua.Ai.Protocols.Mcp;
 /// Note that <c>initialize</c> is single-request-only per MCP 2025-03-26
 /// lifecycle — any batch containing an <c>initialize</c> element is rejected
 /// wholesale because the server cannot negotiate a protocol version mid-batch.
+/// The body size and batch length are bounded (<see cref="McpOptions.MaxRequestBodyBytes"/>,
+/// <see cref="McpOptions.MaxBatchSize"/>; SEC-18) before any element is dispatched.
 /// </summary>
 internal static class McpEndpointExtensions
 {
@@ -136,18 +139,35 @@ internal static class McpEndpointExtensions
     private static Task<bool> BindTokenReplayContinuationAsync(HttpContext context, string sessionId) =>
         OidcAuthenticationExtensions.TryBindTokenReplayContinuationAsync(context, TokenReplayContinuationId(sessionId));
 
-    private static async Task HandlePostAsync(HttpContext context, CancellationToken cancellationToken)
+    internal static async Task HandlePostAsync(HttpContext context, CancellationToken cancellationToken)
     {
         var surface = context.RequestServices.GetRequiredService<McpDataAccessSurface>();
         var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
         var logger = context.RequestServices.GetRequiredService<ILogger<McpDataAccessSurface>>();
+        var options = context.RequestServices.GetRequiredService<IOptions<McpOptions>>().Value;
+
+        // SEC-18: bound the body before parsing so an oversized request is refused
+        // without buffering it whole.
+        var maxBodyBytes = ResolveMaxRequestBodyBytes(options);
+        var body = await ReadBoundedBodyAsync(context.Request, maxBodyBytes, cancellationToken).ConfigureAwait(false);
+        if (body is null)
+        {
+            McpLog.RequestBodyTooLarge(logger, maxBodyBytes);
+            await WriteSingleAsync(
+                context,
+                ErrorResponse(
+                    JsonNullId,
+                    McpErrorMapper.InvalidRequest(
+                        $"Request body exceeds the {maxBodyBytes.ToString(CultureInfo.InvariantCulture)}-byte limit for this endpoint.")),
+                cancellationToken,
+                StatusCodes.Status413PayloadTooLarge).ConfigureAwait(false);
+            return;
+        }
 
         JsonDocument? document;
         try
         {
-            document = await JsonDocument
-                .ParseAsync(context.Request.Body, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+            document = JsonDocument.Parse(body.Value);
         }
         catch (JsonException ex)
         {
@@ -202,8 +222,6 @@ internal static class McpEndpointExtensions
                             // the header so downstream session consumers (elicitation
                             // capability lookup, SSE progress routing) observe the
                             // request as session-less, and do not echo a session id.
-                            var options = context.RequestServices
-                                .GetRequiredService<IOptions<McpOptions>>().Value;
                             if (options.StatelessSessionFallback
                                 && IsWellFormedSessionId(presented.ToString()))
                             {
@@ -241,7 +259,7 @@ internal static class McpEndpointExtensions
 
             if (root.ValueKind == JsonValueKind.Array)
             {
-                await HandleBatchAsync(context, surface, root, cancellationToken).ConfigureAwait(false);
+                await HandleBatchAsync(context, surface, root, options, logger, cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -299,7 +317,6 @@ internal static class McpEndpointExtensions
                 else
                 {
                     McpLog.SessionRejected(logger, "capacity-reached");
-                    var options = context.RequestServices.GetRequiredService<IOptions<McpOptions>>().Value;
                     context.Response.Headers["Retry-After"] =
                         options.SessionCapacityRetryAfterSeconds.ToString(CultureInfo.InvariantCulture);
                     context.Response.Headers["Honua-Retryable"] = "true";
@@ -479,10 +496,66 @@ internal static class McpEndpointExtensions
         context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
     }
 
+    /// <summary>
+    /// Reads the request body into memory, refusing it once it exceeds
+    /// <paramref name="maxBytes"/>. Returns <see langword="null"/> when a declared
+    /// <c>Content-Length</c> or the bytes actually read exceed the limit, so chunked
+    /// bodies are bounded as well; reading stops at the first byte past the limit. A
+    /// leading UTF-8 byte-order mark is skipped, as the stream parser did.
+    /// </summary>
+    internal static async Task<ReadOnlyMemory<byte>?> ReadBoundedBodyAsync(
+        HttpRequest request,
+        long maxBytes,
+        CancellationToken cancellationToken)
+    {
+        if (request.ContentLength is { } declared && declared > maxBytes)
+        {
+            return null;
+        }
+
+        var initialCapacity = (int)Math.Min(request.ContentLength ?? 4096, maxBytes);
+        byte[] bytes;
+        int length;
+        using (var buffer = new MemoryStream(initialCapacity))
+        {
+            var chunk = ArrayPool<byte>.Shared.Rent(16 * 1024);
+            try
+            {
+                int read;
+                while ((read = await request.Body.ReadAsync(chunk.AsMemory(), cancellationToken).ConfigureAwait(false)) > 0)
+                {
+                    if (buffer.Length + read > maxBytes)
+                    {
+                        return null;
+                    }
+
+                    buffer.Write(chunk, 0, read);
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(chunk);
+            }
+
+            bytes = buffer.GetBuffer();
+            length = (int)buffer.Length;
+        }
+
+        var body = new ReadOnlyMemory<byte>(bytes, 0, length);
+        return body.Span.StartsWith(Utf8ByteOrderMark) ? body[Utf8ByteOrderMark.Length..] : body;
+    }
+
+    private static ReadOnlySpan<byte> Utf8ByteOrderMark => [0xEF, 0xBB, 0xBF];
+
+    private static long ResolveMaxRequestBodyBytes(McpOptions options) =>
+        Math.Clamp(options.MaxRequestBodyBytes, 1, Array.MaxLength);
+
     private static async Task HandleBatchAsync(
         HttpContext context,
         McpDataAccessSurface surface,
         JsonElement batch,
+        McpOptions options,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
         // JSON-RPC 2.0 §6 specifies that an empty array is itself an invalid
@@ -492,6 +565,24 @@ internal static class McpEndpointExtensions
             await WriteSingleAsync(
                 context,
                 ErrorResponse(JsonNullId, McpErrorMapper.InvalidRequest("Batch must contain at least one request.")),
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        // SEC-18: bound the batch before dispatching any element, so one request
+        // cannot fan out into an unbounded run of serial dispatches. The batch as a
+        // whole is refused, so no element's id is echoed.
+        var maxBatchSize = Math.Max(1, options.MaxBatchSize);
+        var batchLength = batch.GetArrayLength();
+        if (batchLength > maxBatchSize)
+        {
+            McpLog.BatchTooLarge(logger, batchLength, maxBatchSize);
+            await WriteSingleAsync(
+                context,
+                ErrorResponse(
+                    JsonNullId,
+                    McpErrorMapper.InvalidRequest(
+                        $"Batch must contain at most {maxBatchSize.ToString(CultureInfo.InvariantCulture)} requests.")),
                 cancellationToken).ConfigureAwait(false);
             return;
         }
@@ -601,9 +692,10 @@ internal static class McpEndpointExtensions
     private static async Task WriteSingleAsync(
         HttpContext context,
         McpJsonRpcResponse response,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int statusCode = StatusCodes.Status200OK)
     {
-        context.Response.StatusCode = StatusCodes.Status200OK;
+        context.Response.StatusCode = statusCode;
 
         if (AcceptsEventStream(context))
         {
