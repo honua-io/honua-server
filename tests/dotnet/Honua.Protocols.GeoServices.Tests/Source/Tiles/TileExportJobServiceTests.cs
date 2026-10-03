@@ -14,7 +14,6 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Infrastructure.Tiles;
 using Honua.Infrastructure.Security;
-using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
