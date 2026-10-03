@@ -18,8 +18,8 @@ the authorization graph, or the tool surface.
 
 Catalog layers and services are selected from routable publications visible to the
 request tenant and allowed by the shared resource metadata access evaluation.
-Filtering happens before scoring and shortlist limits. Services with no readable
-publications are omitted. The supplied principal is used for each grounding call;
+Filtering happens before scoring and shortlist limits. Services without readable
+publications or service metadata access are omitted. The supplied principal is used for each grounding call;
 request tenant resolution is retained while metadata loads in a fresh scope.
 
 ## Pipeline
