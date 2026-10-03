@@ -4,6 +4,8 @@
 using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Authorization.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -65,6 +67,44 @@ public sealed class TileExportJobExecutorTests
 
         keys.Should().HaveCount(2);
         keys[0].Should().NotBe(keys[1]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExecuteAsync_MapWithReadPolicies_RendersForEachJob()
+    {
+        var plan = CreatePlan();
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => StoredFile(call.Arg<string>(), plan, DateTimeOffset.UtcNow.AddHours(2)));
+        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call => UploadResult.CreateSuccess(StoredFile(
+                call.Arg<FileUploadRequest>().ObjectKeyOverride!, plan, DateTimeOffset.UtcNow.AddHours(2))));
+        var producer = Substitute.For<ITileExportPackageProducer>();
+        producer.CanProduce(Arg.Any<TileExportJobPlan>()).Returns(true);
+        producer.ProduceAsync(Arg.Any<TileExportJobPlan>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.Arg<Stream>().WriteAsync(new byte[] { 1 }).AsTask());
+        var fence = Substitute.For<ITileExportSourceFence>();
+        fence.SourceKind.Returns(TileExportSourceKind.Map);
+        fence.IsAvailableAsync(Arg.Any<TileExportJobPlan>(), Arg.Any<CancellationToken>()).Returns(true);
+        var policies = Substitute.For<IRlsPolicyStore>();
+        policies.ListPoliciesAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult<IReadOnlyList<RlsPolicy>>(
+            [new RlsPolicy { Role = "reader", Service = "*", Layer = "*", Attribute = "region", ClaimType = "region" }]));
+        var masks = Substitute.For<IFieldMaskPolicyStore>();
+        masks.ListPoliciesAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult<IReadOnlyList<FieldMaskPolicy>>([]));
+        await using var services = new ServiceCollection().AddLogging().AddSingleton(TimeProvider.System)
+            .AddSingleton(storage).AddSingleton(producer).AddSingleton(fence)
+            .AddSingleton(policies).AddSingleton(masks).AddSingleton<TileExportJobExecutor>()
+            .BuildServiceProvider();
+        var executor = services.GetRequiredService<TileExportJobExecutor>();
+
+        var first = await executor.ExecuteAsync(JobFor(plan, "export-policy-a"), new RecordingContext("export-policy-a"), default);
+        var second = await executor.ExecuteAsync(JobFor(plan, "export-policy-b"), new RecordingContext("export-policy-b"), default);
+
+        first.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        second.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        await producer.Received(2).ProduceAsync(Arg.Any<TileExportJobPlan>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+        await storage.DidNotReceiveWithAnyArgs().GetMetadataAsync(default!, default);
     }
 
     [UnitTest]

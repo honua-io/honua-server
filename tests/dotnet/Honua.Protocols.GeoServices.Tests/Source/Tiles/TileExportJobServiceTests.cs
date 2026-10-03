@@ -205,6 +205,19 @@ public sealed class TileExportJobServiceTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task GetStatus_RecordWithoutSubmitterContext_ReturnsNotFound()
+    {
+        var store = new InMemoryExecutionJobStore();
+        var service = CreateService(store, new InMemoryJobQueue());
+        var job = await service.SubmitAsync(CreatePlan(), null, null, Principal(Owner), default);
+        await store.SetAsync(job with { Audit = job.Audit with { SubmitterSecurityContext = null } });
+
+        await FluentActions.Awaiting(() => service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), Principal(Owner), default))
+            .Should().ThrowAsync<TileExportNotFoundException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task GetStatus_DifferentPrincipal_ReturnsNotFound()
     {
         var store = new InMemoryExecutionJobStore();
