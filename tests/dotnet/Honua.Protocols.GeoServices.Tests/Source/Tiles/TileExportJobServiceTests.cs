@@ -308,6 +308,108 @@ public sealed class TileExportJobServiceTests
         (await store.GetAsync(job.OperationId))!.Status.Should().Be(ExecutionJobStatus.Cancelled);
     }
 
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("status")]
+    [InlineData("cancel")]
+    [InlineData("result")]
+    public async Task JobAccess_DifferentApiKeyWithSameDisplayName_ReturnsNotFound(string operation)
+    {
+        var service = CreateService(new InMemoryExecutionJobStore(), new InMemoryJobQueue());
+        var owner = ApiKeyPrincipal("11111111-1111-1111-1111-111111111111");
+        var other = ApiKeyPrincipal("22222222-2222-2222-2222-222222222222");
+        var job = await service.SubmitAsync(CreatePlan(), null, null, owner, default);
+
+        Func<Task> act = operation switch
+        {
+            "cancel" => () => service.CancelAsync(job.OperationId, ScopeFor(CreatePlan()), other, default),
+            "result" => () => service.GetResultAsync(job.OperationId, ScopeFor(CreatePlan()), other, default),
+            _ => () => service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), other, default)
+        };
+        await act.Should().ThrowAsync<TileExportNotFoundException>();
+        (await service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), owner, default))
+            .OperationId.Should().Be(job.OperationId);
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(false, "tenant-a", "tenant-b")]
+    [InlineData(true, "tenant-a", "tenant-b")]
+    [InlineData(true, "tenant-a", null)]
+    [InlineData(false, null, "tenant-b")]
+    public async Task JobAccess_DifferentTenant_ReturnsNotFound(bool admin, string? submittedTenant, string? requestTenant)
+    {
+        var store = new InMemoryExecutionJobStore();
+        var service = CreateService(store, new InMemoryJobQueue());
+        var owner = TenantPrincipal(Owner, submittedTenant);
+        var job = await service.SubmitAsync(CreatePlan(), null, null, owner, default);
+        await store.SetAsync(job with { Audit = job.Audit with
+        {
+            SubmitterSecurityContext = new Honua.Core.Features.Authorization.Domain.JobSecurityContext(
+                Owner, submittedTenant, [], ClaimTypes.Role)
+        }});
+        var caller = TenantPrincipal(Owner, requestTenant);
+        if (admin) ((ClaimsIdentity)caller.Identity!).AddClaim(new Claim(ClaimTypes.Role, "admin"));
+
+        Func<Task>[] operations =
+        [
+            () => service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), caller, default),
+            () => service.CancelAsync(job.OperationId, ScopeFor(CreatePlan()), caller, default),
+            () => service.GetResultAsync(job.OperationId, ScopeFor(CreatePlan()), caller, default)
+        ];
+        foreach (var operation in operations)
+            await operation.Should().ThrowAsync<TileExportNotFoundException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task JobAccess_SameSubjectDifferentIssuer_ReturnsNotFound()
+    {
+        var service = CreateService(new InMemoryExecutionJobStore(), new InMemoryJobQueue());
+        var owner = Principal(Owner);
+        ((ClaimsIdentity)owner.Identity!).AddClaim(new Claim("iss", "issuer-a"));
+        var job = await service.SubmitAsync(CreatePlan(), null, null, owner, default);
+        var caller = Principal(Owner);
+        ((ClaimsIdentity)caller.Identity!).AddClaim(new Claim("iss", "issuer-b"));
+
+        await FluentActions.Awaiting(() => service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), caller, default))
+            .Should().ThrowAsync<TileExportNotFoundException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task Submit_NameOnlyIdentity_RefusesSubmission()
+    {
+        var service = CreateService(new InMemoryExecutionJobStore(), new InMemoryJobQueue());
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "display-name")], "test"));
+
+        await FluentActions.Awaiting(() => service.SubmitAsync(CreatePlan(), null, null, principal, default))
+            .Should().ThrowAsync<TileExportValidationException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task Submit_SameKeyDifferentTenant_CreatesSeparateJobs()
+    {
+        var service = CreateService(new InMemoryExecutionJobStore(), new InMemoryJobQueue());
+        var first = await service.SubmitAsync(CreatePlan(), "tenant-key", null, TenantPrincipal(Owner, "tenant-a"), default);
+        var second = await service.SubmitAsync(CreatePlan(), "tenant-key", null, TenantPrincipal(Owner, "tenant-b"), default);
+
+        second.OperationId.Should().NotBe(first.OperationId);
+    }
+
+    private static ClaimsPrincipal ApiKeyPrincipal(string id)
+        => new(new ClaimsIdentity([new Claim("api_key_id", id), new Claim(ClaimTypes.Name, "shared-name")], AuthenticationExtensions.ApiKeyScheme));
+
+    private static ClaimsPrincipal TenantPrincipal(string id, string? tenant)
+    {
+        var principal = Principal(id);
+        if (tenant is not null) ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim("tenant_id", tenant));
+        return principal;
+    }
+
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------

@@ -73,6 +73,62 @@ public sealed class GeoprocessingJobServiceTests
             resultPackageStore: _resultPackageStore);
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task JobAccess_SameSubjectDifferentIssuer_ReturnsNotFound()
+    {
+        var owner = CreateStablePrincipal();
+        ((ClaimsIdentity)owner.Identity!).AddClaim(new Claim("iss", "issuer-a"));
+        var job = await _sut.SubmitJobAsync(CreateValidPlan(), null, owner);
+        _jobStore.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(job);
+        var caller = CreateStablePrincipal();
+        ((ClaimsIdentity)caller.Identity!).AddClaim(new Claim("iss", "issuer-b"));
+
+        await FluentActions.Awaiting(() => _sut.GetJobForTerminalAsync(job.OperationId, caller))
+            .Should().ThrowAsync<GeoprocessingNotFoundException>();
+        (await _sut.GetJobForTerminalAsync(job.OperationId, owner)).OperationId.Should().Be(job.OperationId);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task JobAccess_NameOnlyIdentity_ReturnsNotFound()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "display-name")], "Test"));
+        var job = CreateOwnedJobRecord("name-only", ExecutionJobStatus.Queued, "display-name");
+        _jobStore.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(job);
+
+        await FluentActions.Awaiting(() => _sut.GetJobForTerminalAsync(job.OperationId, principal))
+            .Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_ApiKeyIdentity_RecordsCanonicalOwner()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("api_key_id", "11111111-1111-1111-1111-111111111111"), new Claim(ClaimTypes.Name, "shared-name")],
+            AuthenticationExtensions.ApiKeyScheme));
+
+        var job = await _sut.SubmitJobAsync(CreateValidPlan(), null, principal);
+
+        job.Audit.RequestedBy.Should().Be(CanonicalSecurityActor.Resolve(principal)!.ActorId);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_SameKeyDifferentTenant_CreatesSeparateJobs()
+    {
+        var store = new InMemoryExecutionJobStore();
+        var service = new GeoprocessingJobService(_progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator, new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance, DefaultExecutorOptions,
+            store, _jobQueue, resultPackageStore: _resultPackageStore);
+        var first = await service.SubmitJobAsync(CreateValidPlan(), "tenant-key", CreateTenantPrincipal("tenant-a"));
+        var second = await service.SubmitJobAsync(CreateValidPlan(), "tenant-key", CreateTenantPrincipal("tenant-b"));
+
+        second.OperationId.Should().NotBe(first.OperationId);
+    }
+
     // -----------------------------------------------------------------------
     // ValidatePlan
     // -----------------------------------------------------------------------
