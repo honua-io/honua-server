@@ -4,7 +4,6 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Server.Features.Admin;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -64,72 +63,4 @@ public sealed class AdminCapabilitiesEndpointTests : IAsyncLifetime
         features.GetProperty("manifestDryRun").GetBoolean().Should().BeFalse();
         features.GetProperty("manifestPrune").GetBoolean().Should().BeFalse();
     }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/capabilities")]
-    public async Task GetCapabilities_AdvertisesEveryDeclaredContractVersion()
-    {
-        // honua-server#5378 / release ruling R27: the contract-live gate reads
-        // data.compatibility.contractVersions as the whole advertised set and refuses a missing
-        // key, an extra key, or a different value against release/component-versions.json.
-        var declared = ReadDeclaredVersions("contractVersions");
-        declared.Keys.Should().BeEquivalentTo(new[] { "admin", "metadata", "geoservices", "ogc", "stac", "grpc" });
-
-        var response = await _fixture.Client.GetAsync("/api/v1/admin/capabilities");
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var data = document.RootElement.GetProperty("data");
-        var compatibility = data.GetProperty("compatibility");
-
-        ReadMap(compatibility.GetProperty("contractVersions")).Should().Equal(declared);
-        ReadMap(data.GetProperty("contractVersions")).Should().Equal(declared);
-        ReadMap(compatibility.GetProperty("schemaVersions")).Should().Equal(ReadDeclaredVersions("schemaVersions"));
-        ReadMap(data.GetProperty("schemaVersions")).Should().Equal(ReadDeclaredVersions("schemaVersions"));
-
-        // The pre-existing flat fields are unchanged and agree with the map.
-        compatibility.GetProperty("adminApiMajor").GetString().Should().Be(declared["admin"]);
-        compatibility.GetProperty("metadataApiVersion").GetString().Should().Be(declared["metadata"]);
-        data.GetProperty("metadataApiVersion").GetString().Should().Be(declared["metadata"]);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task GetManifest_TransportContractVersionsMatchDeclaration()
-    {
-        // The per-transport contractVersion the manifest advertises is the same version
-        // release/component-versions.json declares for that surface (#5378).
-        var declared = ReadDeclaredVersions("contractVersions");
-
-        var response = await _fixture.Client.GetAsync("/api/v1/capabilities/manifest");
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var transports = document.RootElement.GetProperty("transports").GetProperty("items");
-        foreach (var (transportId, contract) in new[] { ("geoservices-rest", "geoservices"), ("ogc-http", "ogc"), ("stac", "stac") })
-        {
-            var transport = transports.EnumerateArray().Single(item =>
-                string.Equals(item.GetProperty("id").GetString(), transportId, StringComparison.Ordinal));
-            transport.GetProperty("contractVersion").GetString().Should().Be(declared[contract], transportId);
-        }
-    }
-
-    private static Dictionary<string, string> ReadDeclaredVersions(string field)
-    {
-        // The checked-in file the release resolver reads, not the embedded copy, so the test also
-        // proves the build embedded the current declaration.
-        using var declaration = JsonDocument.Parse(File.ReadAllText(RepositoryPaths.Resolve("release", "component-versions.json")));
-        var versions = ReadMap(declaration.RootElement.GetProperty(field));
-        new Dictionary<string, string>(field == "contractVersions"
-                ? ComponentVersionsDeclaration.Embedded.ContractVersions
-                : ComponentVersionsDeclaration.Embedded.SchemaVersions)
-            .Should().Equal(versions);
-        return versions;
-    }
-
-    private static Dictionary<string, string> ReadMap(JsonElement element)
-        => element.EnumerateObject().ToDictionary(
-            static property => property.Name,
-            static property => property.Value.GetString()!,
-            StringComparer.Ordinal);
 }

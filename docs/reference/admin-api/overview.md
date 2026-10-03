@@ -57,7 +57,7 @@ existing feature-status log event; this opt-in does not constitute a GA
 availability or support commitment.
 
 
-Control-plane SDKs should instead call `GET /api/v1/admin/capabilities` once per session and branch on its `data.compatibility` object (server version, control-plane major, feature flags). `data.compatibility.contractVersions` lists every contract the server serves (`admin`, `metadata`, `geoservices`, `ogc`, `stac`, `grpc`) with its exact version, as declared in the repository's `release/component-versions.json`; the server refuses to start when that declaration differs from what it serves. The capabilities handshake is readable anonymously so `checkCompatibility()` can run before credentials exist; every other admin endpoint requires authentication.
+Control-plane SDKs should instead call `GET /api/v1/admin/capabilities` once per session and branch on its `data.compatibility` object (server version, control-plane major, feature flags). The capabilities handshake is readable anonymously so `checkCompatibility()` can run before credentials exist; every other admin endpoint requires authentication.
 
 ## OpenAPI specs
 
