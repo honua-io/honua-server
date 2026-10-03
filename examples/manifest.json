@@ -4474,7 +4474,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 237,
+      "line": 240,
       "language": "jsonc"
     },
     {
@@ -13423,7 +13423,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 31,
+      "line": 33,
       "language": "json"
     },
     {
@@ -13436,7 +13436,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 110,
+      "line": 112,
       "language": "json"
     },
     {
@@ -13449,7 +13449,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 146,
+      "line": 148,
       "language": "json"
     },
     {
@@ -13683,7 +13683,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 37,
+      "line": 47,
       "language": "sql"
     },
     {
@@ -13696,7 +13696,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 160,
+      "line": 170,
       "language": "sql"
     },
     {
