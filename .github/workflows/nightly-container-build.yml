@@ -21,7 +21,8 @@ env:
   # docker/Dockerfile.aot, and docker/Dockerfile.lambda.aot, so refreshing a pin
   # in a Dockerfile is automatically what gets mirrored (and therefore what the
   # build jobs pull back out of GHCR).
-  BASE_REPO: ghcr.io/${{ github.repository }}-base
+  # Branch proofs use a run-scoped repository so they cannot overwrite trunk bases.
+  BASE_REPO: ghcr.io/${{ github.repository }}-base${{ github.ref != 'refs/heads/trunk' && format('/proof-{0}', github.run_id) || '' }}
 
 concurrency:
   group: nightly-container-build-${{ github.ref }}

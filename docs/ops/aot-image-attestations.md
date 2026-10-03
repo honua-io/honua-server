@@ -25,7 +25,11 @@ publishes verified `nightly-functions-aot` and `nightly-functions-aot-<short-sha
 tags. Tags are discovery pointers; the release pins
 `oci://ghcr.io/honua-io/honua-server@sha256:<index-digest>`.
 `deploy-platform-images.yml` also enables and verifies these attestations for
-its published Lambda and Functions AOT candidates. Scan-only local images do
+its published Lambda and Functions AOT candidates. It retains the Lambda parent
+in each registry under `attested-lambda-aot-arm64-<full-source-sha>` and publishes
+the verified arm64 serving child under its existing Lambda deployment tags.
+Final Lambda aliases use `--prefer-index=false` to preserve the child digest.
+Scan-only local images do
 not supply immutable registry evidence.
 
 An index digest and a serving image digest identify different bytes. Select a
@@ -108,7 +112,9 @@ passing local check alone does not certify a release lock.
 Dispatch `nightly-container-build.yml` on the implementation branch. Branch runs
 build and verify Lambda and Functions immutable candidates and upload the
 receipts. They skip canonical/JIT builds and all public nightly tag promotion;
-trunk runs retain those publication gates. Read `imagetools inspect` output in
+trunk runs retain those publication gates. Branch base-image mirrors use a
+run-scoped `honua-server-base/proof-<run-id>` repository, preventing interference
+with trunk base tags. Read `imagetools inspect` output in
 the verification steps: each single-platform candidate must list its serving
 manifest and an `unknown/unknown` attestation manifest with the exact child
 reference annotation. This proves registry storage without moving the nightly

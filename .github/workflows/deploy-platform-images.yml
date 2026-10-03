@@ -288,6 +288,7 @@ jobs:
           sbom: ${{ matrix.sbom }}
 
       - name: Verify native-AOT platform candidate before registry publication
+        id: aot_verified
         if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') }}
         shell: bash
         env:
@@ -295,13 +296,19 @@ jobs:
         run: |
           set -euo pipefail
           docker pull "$CANDIDATE"
+          attestation_args=()
           if [[ "${{ matrix.image_key }}" == "lambda-aot" || "${{ matrix.image_key }}" == "functions-aot" ]]; then
             sudo apt-get update
             sudo apt-get install -y --no-install-recommends skopeo
             docker buildx imagetools inspect "$CANDIDATE"
-            python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE" --require-attestations
-          else
-            python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
+            attestation_args=(--require-attestations --attestation-report "${RUNNER_TEMP}/platform-attestations.json")
+          fi
+          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE" "${attestation_args[@]}"
+          if [[ "${{ matrix.image_key }}" == "lambda-aot" ]]; then
+            serving_candidate="$(jq -er --arg platform "${{ matrix.platform }}" \
+              '.[] | select(.platform == $platform) | .subject | ltrimstr("oci://")' \
+              "${RUNNER_TEMP}/platform-attestations.json")"
+            echo "serving_candidate=$serving_candidate" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Publish verified native-AOT platform architecture tags
@@ -310,10 +317,24 @@ jobs:
         env:
           CANDIDATE: ${{ steps.targets.outputs.scan_image }}@${{ steps.aot_candidate.outputs.digest }}
           TAGS: ${{ steps.arch_tags.outputs.tags }}
+          SERVING_CANDIDATE: ${{ steps.aot_verified.outputs.serving_candidate }}
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends skopeo
+          if [[ "${{ matrix.image_key }}" == "lambda-aot" ]]; then
+            # Retain the attested parent in every target registry, but keep Lambda
+            # deployment tags as runnable, digest-preserved arm64 child manifests.
+            evidence_tags="$(while IFS= read -r tag; do
+              [ -n "$tag" ] || continue
+              printf '%s:attested-lambda-aot-${{ matrix.arch }}-${{ github.sha }}\n' "${tag%:*}"
+            done <<< "$TAGS")"
+            printf '%s\n' "$evidence_tags" | python3 scripts/ci/promote-verified-image.py \
+              --candidate "$CANDIDATE" \
+              --staging-tag "boundary-attested-lambda-aot-${{ matrix.arch }}-${{ github.sha }}" \
+              --authfile "$HOME/.docker/config.json"
+            CANDIDATE="$SERVING_CANDIDATE"
+          fi
           printf '%s\n' "$TAGS" | python3 scripts/ci/promote-verified-image.py \
             --candidate "$CANDIDATE" \
             --staging-tag "boundary-candidate-${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}" \
@@ -645,6 +666,7 @@ jobs:
           TAGS: ${{ steps.meta.outputs.tags }}
           SOURCE_ARCHES: ${{ matrix.source_arches }}
           PUBLISH_AOT_ALIAS: ${{ matrix.publish_aot_alias }}
+          TAG_SUFFIX: ${{ matrix.tag_suffix }}
         run: |
           set -euo pipefail
           read -r -a source_arches <<< "$SOURCE_ARCHES"
@@ -664,5 +686,9 @@ jobs:
             if [[ "$PUBLISH_AOT_ALIAS" == "true" ]]; then
               targets+=(-t "${tag%-aot}")
             fi
-            docker buildx imagetools create "${targets[@]}" "${refs[@]}"
+            if [[ "$TAG_SUFFIX" == "-lambda-aot" ]]; then
+              docker buildx imagetools create --prefer-index=false "${targets[@]}" "${refs[@]}"
+            else
+              docker buildx imagetools create "${targets[@]}" "${refs[@]}"
+            fi
           done
