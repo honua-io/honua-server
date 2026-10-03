@@ -4,6 +4,9 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Authentication;
+using Microsoft.Extensions.DependencyInjection;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -46,6 +49,32 @@ public sealed class TileExportJobServiceTests
         job.Concurrency.PartitionKey.Should().StartWith("tile-export:map:");
         (await queue.GetQueueDepthAsync()).Should().Be(1);
         (await store.GetAsync(job.OperationId)).Should().NotBeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task Submit_RuntimeRegistration_CapturesEffectiveTenantAndConfiguredRoles()
+    {
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("tenant-effective");
+        await using var provider = new ServiceCollection().AddLogging()
+            .AddSingleton(StorageOptions())
+            .AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions { RoleClaimType = "custom-role" }))
+            .AddSingleton(tenant)
+            .AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IExecutionJobStore>(new InMemoryExecutionJobStore())
+            .AddSingleton<IJobQueue>(new InMemoryJobQueue())
+            .AddTileExportRuntime().BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+        var principal = Principal(Owner);
+        ((ClaimsIdentity)principal.Identity!).AddClaims(
+            [new Claim("tenant_id", "tenant-token"), new Claim("custom-role", "reader")]);
+
+        var job = await scope.ServiceProvider.GetRequiredService<ITileExportJobService>()
+            .SubmitAsync(CreatePlan(), null, null, principal, default);
+
+        job.Audit.SubmitterSecurityContext.Should().NotBeNull();
+        job.Audit.SubmitterSecurityContext!.TenantId.Should().Be("tenant-effective");
+        job.Audit.SubmitterSecurityContext.RoleClaimType.Should().Be("custom-role");
     }
 
     [UnitTest]

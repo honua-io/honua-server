@@ -107,13 +107,15 @@ public sealed class JobExecutionServiceTests
     }
 
     [Theory]
-    [InlineData(ExecutionJobKind.TileExport, true)]
-    [InlineData(ExecutionJobKind.TileExport, false)]
-    [InlineData(ExecutionJobKind.Geoprocessing, true)]
-    [InlineData(ExecutionJobKind.Geoprocessing, false)]
+    [InlineData(ExecutionJobKind.TileExport, true, false)]
+    [InlineData(ExecutionJobKind.TileExport, true, true)]
+    [InlineData(ExecutionJobKind.TileExport, false, false)]
+    [InlineData(ExecutionJobKind.Geoprocessing, true, false)]
+    [InlineData(ExecutionJobKind.Geoprocessing, true, true)]
+    [InlineData(ExecutionJobKind.Geoprocessing, false, false)]
     [Trait("Tier", "Fast")]
     public async Task ProcessJob_ExecutorReceivesSubmitterScope_AndRestoresAmbientScope(
-        ExecutionJobKind kind, bool captured)
+        ExecutionJobKind kind, bool captured, bool throwDuringExecution)
     {
         var submitter = captured
             ? new JobSecurityContext("user-1", "tenant-1", [new JobSecurityClaim("role", "reader")])
@@ -133,6 +135,8 @@ public sealed class JobExecutionServiceTests
             {
                 await Task.Yield();
                 observed = JobSecurityScope.Current;
+                if (throwDuringExecution)
+                    throw new InvalidOperationException("Test execution failed.");
                 return JobExecutionResult.Succeeded();
             });
         var outer = new JobSecurityContext("outer", null, []);
