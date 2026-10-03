@@ -12136,7 +12136,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 85,
+      "line": 122,
       "language": "json"
     },
     {
