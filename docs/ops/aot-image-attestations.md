@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Lambda and Functions AOT image attestations"
+description: "Immutable OCI serving identities and digest-bound SBOM and provenance for release locks."
+---
 # Lambda and Functions AOT image attestations
 
 The 2026.1 platform lock promise is that a signed platform lock binds immutable
