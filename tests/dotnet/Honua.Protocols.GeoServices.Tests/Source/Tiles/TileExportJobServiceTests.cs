@@ -489,6 +489,7 @@ public sealed class TileExportJobServiceTests
         var json = System.Text.Json.JsonSerializer.Serialize(job, Honua.ControlPlane.ControlPlaneJsonContext.Default.ExecutionJobRecord);
         var restored = System.Text.Json.JsonSerializer.Deserialize(json, Honua.ControlPlane.ControlPlaneJsonContext.Default.ExecutionJobRecord)!;
         restored.Audit.SubmitterSecurityContext!.OwnerActorId.Should().Be(job.Audit.RequestedBy);
+        restored.Audit.SubmitterSecurityContext.WorkspaceOwnerId.Should().Be(Owner);
         await store.SetAsync(restored);
 
         (await service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), principal, default)).OperationId.Should().Be(job.OperationId);

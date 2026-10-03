@@ -60,6 +60,12 @@ public sealed record JobSecurityContext(
     /// Absent on legacy snapshots and identities without a durable subject or API-key identifier.
     /// </summary>
     public string? OwnerActorId { get; init; }
+
+    /// <summary>
+    /// Owner key retained for named workspace routing, independent of job lifecycle ownership.
+    /// Absent on snapshots captured before separate workspace routing metadata was introduced.
+    /// </summary>
+    public string? WorkspaceOwnerId { get; init; }
 }
 
 /// <summary>

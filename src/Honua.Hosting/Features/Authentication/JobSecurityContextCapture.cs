@@ -215,7 +215,12 @@ internal static class JobSecurityContextCapture
             captured,
             options.EffectiveRoleClaimType)
         {
-            OwnerActorId = JobOwnershipSecurity.ResolveOwner(principal)
+            OwnerActorId = JobOwnershipSecurity.ResolveOwner(principal),
+            WorkspaceOwnerId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                ?? principal.FindFirstValue("sub")
+                ?? principal.FindFirstValue("api_key_id")
+                ?? principal.Identity?.Name
+                ?? "anonymous"
         };
     }
 

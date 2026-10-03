@@ -17,6 +17,8 @@ using Honua.Core.Features.Infrastructure.Backpressure;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Geoprocessing;
 using Honua.ControlPlane;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
@@ -750,7 +752,7 @@ public sealed class GrpcProcessServiceTests
         var existingRecord = CreateTestJobRecord("placeholder", ExecutionJobStatus.Queued);
         existingRecord = existingRecord with
         {
-            Audit = new Honua.Core.Features.ControlPlane.Domain.OperationAuditInfo
+            Audit = existingRecord.Audit with
             {
                 IdempotencyKey = "idem-key-dup",
                 RequestFingerprint = ComputeExpectedFingerprint(plan)
@@ -778,7 +780,7 @@ public sealed class GrpcProcessServiceTests
         var existingRecord = CreateTestJobRecord("placeholder", ExecutionJobStatus.Queued);
         existingRecord = existingRecord with
         {
-            Audit = new Honua.Core.Features.ControlPlane.Domain.OperationAuditInfo
+            Audit = existingRecord.Audit with
             {
                 IdempotencyKey = "idem-key-dup",
                 RequestFingerprint = "different-fingerprint"
@@ -1213,7 +1215,7 @@ public sealed class GrpcProcessServiceTests
             Status = status,
             CreatedAt = now,
             UpdatedAt = now,
-            Audit = new OperationAuditInfo { RequestedBy = TestPrincipalId },
+            Audit = CreateOwnerAudit(),
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.Geoprocessing,
@@ -1221,6 +1223,16 @@ public sealed class GrpcProcessServiceTests
                 Backend = "local",
                 WorkloadName = "test-workload"
             }
+        };
+    }
+
+    private static OperationAuditInfo CreateOwnerAudit()
+    {
+        var principal = CreateCallContext().GetHttpContext().User;
+        return new OperationAuditInfo
+        {
+            RequestedBy = CanonicalSecurityActor.Resolve(principal)!.ActorId,
+            SubmitterSecurityContext = JobSecurityContextCapture.Capture(principal, new RbacOptions())
         };
     }
 

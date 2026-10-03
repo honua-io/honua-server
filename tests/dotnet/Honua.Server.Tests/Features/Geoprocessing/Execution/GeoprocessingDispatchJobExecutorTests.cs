@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -207,21 +208,34 @@ public sealed class GeoprocessingDispatchJobExecutorTests
     }
 
     [UnitTheory]
-    [InlineData(null)]
-    [InlineData("tenant-a")]
-    public async Task ExecuteAsync_DurableJobOwner_RetainsNamedWorkspaceOwner(string? tenantId)
+    [InlineData(null, false)]
+    [InlineData("tenant-a", false)]
+    [InlineData(null, true)]
+    [InlineData("tenant-a", true)]
+    public async Task ExecuteAsync_DurableJobOwner_RetainsNamedWorkspaceOwner(string? tenantId, bool requestBound)
     {
         var lifecycle = Substitute.For<IWorkspaceLifecycleService>();
         ConfigurePublication(lifecycle);
         var principal = new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim(ClaimTypes.NameIdentifier, "admin")], "Test"));
-        var snapshot = JobSecurityContextCapture.Capture(principal) with { TenantId = tenantId };
+        if (requestBound)
+        {
+            CanonicalSecurityActor.StampRequestBinding(principal, tenantId);
+        }
+        var snapshot = JobSecurityContextCapture.Capture(principal, new RbacOptions()) with { TenantId = tenantId };
         var workspace = new Workspace
         {
-            WorkspaceId = "retained-workspace", Kind = WorkspaceKind.Scratch,
-            OwnerId = "admin", Label = "ws-1", ScopeId = tenantId,
-            State = WorkspaceLifecycleState.Active, CreatedAt = DateTimeOffset.UtcNow
+            WorkspaceId = "retained-workspace",
+            Kind = WorkspaceKind.Scratch,
+            OwnerId = "admin",
+            Label = "ws-1",
+            ScopeId = tenantId,
+            State = WorkspaceLifecycleState.Active,
+            CreatedAt = DateTimeOffset.UtcNow
         };
+        var newlyCreated = workspace with { WorkspaceId = "new-workspace" };
+        lifecycle.GetOrCreateNamedWorkspaceAsync(Arg.Any<string>(), "ws-1", Arg.Any<CancellationToken>()).Returns(newlyCreated);
+        lifecycle.GetOrCreateScopedWorkspaceAsync(Arg.Any<string>(), "ws-1", Arg.Is<string?>(value => value == tenantId), Arg.Any<CancellationToken>()).Returns(newlyCreated);
         lifecycle.GetOrCreateNamedWorkspaceAsync("admin", "ws-1", Arg.Any<CancellationToken>()).Returns(workspace);
         lifecycle.GetOrCreateScopedWorkspaceAsync("admin", "ws-1", tenantId, Arg.Any<CancellationToken>()).Returns(workspace);
         var dispatcher = CreateFakeExecutorDispatcher(BuildScopeFactory(lifecycle));
