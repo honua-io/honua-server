@@ -29,7 +29,7 @@ namespace Honua.Infrastructure.Authentication;
 /// value for the referenced claim, the translated predicate is <c>FALSE</c> — RLS is
 /// fail-secure, so a missing claim hides every row rather than revealing them.
 /// </remarks>
-internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFilterSource
+internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFilterSource, ICombinedReadSecuritySource
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IRlsPolicyStore _policyStore;

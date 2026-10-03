@@ -20,6 +20,7 @@ namespace Honua.Db.Postgres.Security.Tests;
 public sealed class PostgresCombinedReadPolicyStoreTests(PostgresFixture fixture)
     : IClassFixture<PostgresFixture>, IAsyncLifetime
 {
+    private static readonly string[] ExpectedAttributes = ["*", "ALPHA", "anonymous", "beta"];
     private string _schema = null!;
     private RecordingProvider _provider = null!;
     private PostgresRlsPolicyStore _rows = null!;
@@ -80,7 +81,7 @@ public sealed class PostgresCombinedReadPolicyStoreTests(PostgresFixture fixture
         Assert.Single(commands);
         Assert.Contains("rbac_rls_policies", commands[0]);
         Assert.Contains("rbac_field_mask_policies", commands[0]);
-        Assert.Equal(new[] { "*", "ALPHA", "anonymous", "beta" }, policies.RowPolicies.Select(p => p.Attribute).Order().ToArray());
+        Assert.Equal(ExpectedAttributes, policies.RowPolicies.Select(p => p.Attribute).Order().ToArray());
         Assert.Equal(4, policies.FieldPolicies.Count);
         Assert.Equal(4, policies.RowPolicies.Select(p => p.PolicyId).Distinct().Count());
 
@@ -213,6 +214,10 @@ public sealed class PostgresCombinedReadPolicyStoreTests(PostgresFixture fixture
         public int Opens { get; set; }
         public int Releases { get; set; }
         public string GetConnectionString() => dataSource.ConnectionString;
+        public Task<T> ExecuteWithDeadlockRetryAsync<T>(Func<Task<T>> operation, CancellationToken cancellationToken = default)
+            => operation();
+        public Task ExecuteWithDeadlockRetryAsync(Func<Task> operation, CancellationToken cancellationToken = default)
+            => operation();
         public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
