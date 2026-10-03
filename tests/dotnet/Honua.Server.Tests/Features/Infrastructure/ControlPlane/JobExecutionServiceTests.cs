@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics.Metrics;
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -102,6 +104,48 @@ public sealed class JobExecutionServiceTests
             Environment.SetEnvironmentVariable(ExecutionQualificationBarrier.ExecutorModeEnvironmentVariable, previousMode);
             root.Delete(recursive: true);
         }
+    }
+
+    [Theory]
+    [InlineData(ExecutionJobKind.TileExport, true)]
+    [InlineData(ExecutionJobKind.TileExport, false)]
+    [InlineData(ExecutionJobKind.Geoprocessing, true)]
+    [InlineData(ExecutionJobKind.Geoprocessing, false)]
+    [Trait("Tier", "Fast")]
+    public async Task ProcessJob_ExecutorReceivesSubmitterScope_AndRestoresAmbientScope(
+        ExecutionJobKind kind, bool captured)
+    {
+        var submitter = captured
+            ? new JobSecurityContext("user-1", "tenant-1", [new JobSecurityClaim("role", "reader")])
+            : null;
+        var job = CreateProvisioningJob() with
+        {
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = submitter }
+        };
+        job = job with { Spec = job.Spec with { Kind = kind } };
+        var store = Substitute.For<IExecutionJobStore>().WithTrySet();
+        store.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(_ => job);
+        JobSecurityScopeState? observed = null;
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(kind);
+        executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                await Task.Yield();
+                observed = JobSecurityScope.Current;
+                return JobExecutionResult.Succeeded();
+            });
+        var outer = new JobSecurityContext("outer", null, []);
+        using var outerScope = JobSecurityScope.Begin(outer);
+        using var service = new JobExecutionService(
+            Substitute.For<IJobQueue>(), store, [executor], new ExecutionJobCancellationTokens(),
+            [], null, NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, job.OperationId, job.ClaimedBy!);
+
+        Assert.NotNull(observed);
+        Assert.Same(submitter, observed.Submitter);
+        Assert.Same(outer, JobSecurityScope.Current!.Submitter);
     }
 
     private static ExecutionJobRecord CreateProvisioningJob(

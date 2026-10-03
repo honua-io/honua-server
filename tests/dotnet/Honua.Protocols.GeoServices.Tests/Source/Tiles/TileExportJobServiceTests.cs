@@ -50,6 +50,25 @@ public sealed class TileExportJobServiceTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task Submit_CapturesSubmitterClaimsAndTenant()
+    {
+        var service = CreateService(new InMemoryExecutionJobStore(), new InMemoryJobQueue());
+        var principal = Principal(Owner, "reader");
+        ((ClaimsIdentity)principal.Identity!).AddClaims(
+            [new Claim("tenant_id", "tenant-1"), new Claim("department", "planning")]);
+
+        var job = await service.SubmitAsync(CreatePlan(), null, null, principal, default);
+
+        job.Audit.SubmitterSecurityContext.Should().NotBeNull();
+        job.Audit.SubmitterSecurityContext!.TenantId.Should().Be("tenant-1");
+        job.Audit.SubmitterSecurityContext.Claims.Should().Contain(
+            claim => claim.Type == "department" && claim.Value == "planning");
+        job.Audit.SubmitterSecurityContext.Claims.Should().Contain(
+            claim => claim.Type == ClaimTypes.Role && claim.Value == "reader");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task Submit_PublicationScopedRaster_UsesStorageLayerAdmissionPartition()
     {
         var store = new InMemoryExecutionJobStore();

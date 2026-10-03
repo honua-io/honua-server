@@ -1,7 +1,16 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Validation.Abstractions;
+using Honua.Infrastructure.Authentication;
+using NSubstitute;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.PrintingTools.Layout;
@@ -20,6 +29,57 @@ namespace Honua.Server.Tests.Features.PrintingTools;
 [Trait("Component", "PrintingTools")]
 public class PrintingToolsRequestHandlerTests
 {
+    [UnitTest]
+    [Protocol(TestProtocols.PrintingTools)]
+    public async Task Execute_PublicationOutsideSubmitterTenant_SkipsStyleAndFeatureReads()
+    {
+        var service = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "service" },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
+        };
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "resource" },
+            StorageBindingIds = ["binding"], PrimaryStorageBindingId = "binding",
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
+        };
+        var snapshot = new MetadataV2GraphSnapshot(new MetadataV2Graph
+        {
+            Revision = 1, Services = [service], Resources = [resource],
+            StorageBindings = [new MetadataV2StorageBinding
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "binding", Name = "binding" },
+                ResourceId = "resource", StorageLayerId = 7,
+                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
+            }],
+            Publications = [new MetadataV2Publication
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "publication", Name = "publication", Tenant = "tenant-b" },
+                ServiceId = "service", ResourceId = "resource", StorageBindingId = "binding", LayerIndex = 1,
+                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
+            }]
+        }, "print-test", DateTimeOffset.UnixEpoch);
+        var validator = Substitute.For<IResourceValidator>();
+        validator.ValidateServiceV2Async("service", Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(service));
+        var graph = Substitute.For<IMetadataV2GraphProvider>();
+        graph.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(snapshot);
+        var styles = Substitute.For<ILayerStyleCatalog>();
+        var reader = Substitute.For<IFeatureReader>();
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim("tenant_id", "tenant-a")], "test"));
+        var map = new WebMapDefinition
+        {
+            OperationalLayers = [new WebMapOperationalLayer { Url = "/rest/services/service/MapServer/1" }]
+        };
+
+        await PrintingToolsRequestHandlers.ExecuteAsync(map, "PNG32", "MAP_ONLY", 96,
+            validator, graph, reader, styles, NullLogger.Instance, default,
+            callerPrincipal: principal, accessPolicyEvaluator: new AccessPolicyEvaluator());
+
+        await styles.DidNotReceiveWithAnyArgs().GetLayerStyleAsync(default, default);
+    }
+
     // --- ResolveFormat ---
 
     [UnitTest]

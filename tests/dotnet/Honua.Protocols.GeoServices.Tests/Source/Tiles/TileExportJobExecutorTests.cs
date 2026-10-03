@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -21,6 +22,51 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.Tiles;
 [Protocol(TestProtocols.MapServer)]
 public sealed class TileExportJobExecutorTests
 {
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExecuteAsync_NoSubmitterSnapshot_FailsBeforeStorageOrGeneration()
+    {
+        var storage = Substitute.For<ICloudFileStorage>();
+        var producer = Substitute.For<ITileExportPackageProducer>();
+        producer.CanProduce(Arg.Any<TileExportJobPlan>()).Returns(true);
+        producer.ProduceAsync(Arg.Any<TileExportJobPlan>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.Arg<Stream>().WriteAsync(new byte[] { 1, 2, 3 }).AsTask());
+        var executor = CreateExecutor(storage, producer);
+        var context = new RecordingContext("export-no-snapshot");
+
+        var result = await executor.ExecuteAsync(JobFor(CreatePlan(), context.OperationId), context, default);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        await storage.DidNotReceiveWithAnyArgs().GetMetadataAsync(default!, default);
+        await producer.DidNotReceiveWithAnyArgs().ProduceAsync(default!, default!, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExecuteAsync_DifferentSubmitterSnapshots_UseDistinctArtifactKeys()
+    {
+        var storage = Substitute.For<ICloudFileStorage>();
+        var keys = new List<string>();
+        storage.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => { keys.Add(call.Arg<string>()); return (CloudFile?)null; });
+        var executor = CreateExecutor(storage);
+        var first = JobFor(CreatePlan(), "export-a") with
+        {
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new JobSecurityContext("user-a", "tenant-1", []) }
+        };
+        var second = first with
+        {
+            OperationId = "export-b",
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new JobSecurityContext("user-b", "tenant-1", []) }
+        };
+
+        await executor.ExecuteAsync(first, new RecordingContext(first.OperationId), default);
+        await executor.ExecuteAsync(second, new RecordingContext(second.OperationId), default);
+
+        keys.Should().HaveCount(2);
+        keys[0].Should().NotBe(keys[1]);
+    }
+
     [UnitTest]
     [Operation(Operations.Export)]
     public void BuildAndTryParse_RoundTripsValidatedPlanWithStableIdentity()
