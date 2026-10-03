@@ -156,6 +156,12 @@ internal static class JobSecurityContextCapture
             options.EffectiveRoleClaimType,
         };
 
+        if (roleClaimTypes.Contains(CapturedAuthenticationClaimType))
+        {
+            throw new InvalidOperationException(
+                "The job authentication-state claim type cannot be configured as a role claim type.");
+        }
+
         var captured = new List<JobSecurityClaim>();
         var seen = new HashSet<(string Type, string Value)>();
 

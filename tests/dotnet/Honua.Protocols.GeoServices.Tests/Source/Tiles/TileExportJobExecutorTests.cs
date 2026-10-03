@@ -343,7 +343,7 @@ public sealed class TileExportJobExecutorTests
         context.Artifacts.Should().ContainSingle(key);
         await producer.Received(1).ProduceAsync(
             Arg.Is<TileExportJobPlan>(candidate =>
-                TileExportArtifactIdentity.Compute(candidate) == TileExportArtifactIdentity.Compute(plan, DefaultSubmitter)),
+                TileExportArtifactIdentity.Compute(candidate) == TileExportArtifactIdentity.Compute(plan)),
             Arg.Any<Stream>(),
             Arg.Any<CancellationToken>());
     }
