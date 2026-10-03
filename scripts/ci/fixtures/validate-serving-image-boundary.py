@@ -131,7 +131,7 @@ def packed(value: dict) -> tuple[str, bytes]:
     return "sha256:" + hashlib.sha256(content).hexdigest(), content
 
 
-def attested_fixture(arches=("amd64",), fault=None):
+def attested_fixture(arches=("amd64",), fault=None, provenance_version="v1"):
     objects = {}
     blobs = {}
     descriptors = []
@@ -140,7 +140,9 @@ def attested_fixture(arches=("amd64",), fault=None):
         objects[subject] = content
         descriptors.append({"digest": subject, "platform": {"os": "linux", "architecture": arch}})
         layers = []
-        for kind, predicate_type in MODULE.PREDICATES.items():
+        for kind, predicate_types in MODULE.PREDICATES.items():
+            predicate_type = ("https://slsa.dev/provenance/" + provenance_version
+                              if kind == "provenance" else predicate_types[0])
             if fault == "missing-" + kind:
                 continue
             statement = {
@@ -195,6 +197,8 @@ for arches in (("amd64",), ("arm64",), ("amd64", "arm64")):
         assert record["image"].startswith("oci://ghcr.io/honua-io/honua-server@sha256:")
         assert record["subject"] != record["image"]
         assert "sbom" in record and "provenance" in record
+
+assert attested_fixture(provenance_version="v0.2")[0]["provenance"]["predicateType"].endswith("v0.2")
 
 for fault in ("missing-sbom", "missing-provenance", "wrong-subject", "wrong-predicate",
               "empty-predicate", "corrupt-blob", "oci-subject-mismatch", "orphan", "corrupt-index"):

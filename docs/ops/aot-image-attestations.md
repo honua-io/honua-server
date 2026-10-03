@@ -56,7 +56,8 @@ sha256 digests. For **every** serving child in that index, it finds attestation
 manifest descriptors whose `vnd.docker.reference.digest` equals the child digest.
 It checks the manifest digest, copies only its small evidence blobs, checks their
 digests, and requires both SPDX (`https://spdx.dev/Document`) and SLSA provenance
-(`https://slsa.dev/provenance/v0.2`) in-toto statements. Each statement must name
+(`https://slsa.dev/provenance/v0.2` or `https://slsa.dev/provenance/v1`)
+in-toto statements. Each statement must name
 the exact serving child digest in `subject[].digest.sha256`; its predicate must
 match the layer annotation and contain data. Missing evidence, wrong subjects,
 mutable references, corrupted bytes and registry read failures fail the job

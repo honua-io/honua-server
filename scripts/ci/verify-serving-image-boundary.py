@@ -195,8 +195,8 @@ def _docker(*arguments: str, capture: bool = False) -> subprocess.CompletedProce
 
 DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}$")
 PREDICATES = {
-    "sbom": "https://spdx.dev/Document",
-    "provenance": "https://slsa.dev/provenance/v0.2",
+    "sbom": ("https://spdx.dev/Document",),
+    "provenance": ("https://slsa.dev/provenance/v0.2", "https://slsa.dev/provenance/v1"),
 }
 
 
@@ -271,7 +271,7 @@ def verify_image_attestations(image: str) -> list[dict]:
                 _registry("copy", "--preserve-digests", f"docker://{attestation_ref}", f"dir:{directory}")
                 for layer in attestation.get("layers", []):
                     predicate_type = layer.get("annotations", {}).get("in-toto.io/predicate-type")
-                    if predicate_type not in PREDICATES.values():
+                    if not any(predicate_type in types for types in PREDICATES.values()):
                         continue
                     if layer.get("mediaType") != "application/vnd.in-toto+json":
                         raise ValueError(f"unexpected attestation media type at {layer['digest']}")
@@ -290,7 +290,7 @@ def verify_image_attestations(image: str) -> list[dict]:
                     if not any(subject.get("digest", {}).get("sha256") == target_digest.removeprefix("sha256:")
                                for subject in statement.get("subject", [])):
                         raise ValueError(f"attestation subject does not bind pushed platform digest {target_digest}")
-                    kind = next(name for name, value in PREDICATES.items() if value == predicate_type)
+                    kind = next(name for name, types in PREDICATES.items() if predicate_type in types)
                     found[kind] = {
                         "attestation": f"oci://{attestation_ref}",
                         "digest": layer_digest,
