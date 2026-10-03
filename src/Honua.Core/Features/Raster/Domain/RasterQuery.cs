@@ -213,7 +213,8 @@ public enum RasterFormat
     TIFF = 2,
 
     /// <summary>
-    /// Raw pixel data as byte array.
+    /// Little-endian, band-sequential raw pixel samples with per-band validity masks
+    /// in <see cref="RasterResult.BandValidityMasks"/>. Providers encode this directly.
     /// </summary>
     Raw = 3,
 
@@ -231,6 +232,7 @@ public static class RasterFormatExtensions
 {
     /// <summary>
     /// Gets the GDAL driver name for the format (e.g., "PNG", "JPEG", "GTiff", "COG").
+    /// Raw returns the provider sentinel "Raw" and must be encoded without a GDAL driver.
     /// </summary>
     public static string ToGdalDriverName(this RasterFormat format) => format switch
     {
@@ -238,6 +240,7 @@ public static class RasterFormatExtensions
         RasterFormat.JPEG => "JPEG",
         RasterFormat.TIFF => "GTiff",
         RasterFormat.COG => "COG",
+        RasterFormat.Raw => "Raw",
         _ => "PNG"
     };
 

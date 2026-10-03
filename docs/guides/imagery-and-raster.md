@@ -35,6 +35,19 @@ or select them in the [API explorer](../reference/openapi-and-explorer.md):
 - `GET /ogc/coverages/collections`
 - `GET /rest/services/1/ImageServer/WCS?service=WCS&request=GetCapabilities`
 
+PostGIS-backed ImageServer exports also accept `format=bsq`, or `esriImageBSQ`
+through SOAP `ExportImage`. BSQ preserves little-endian, band-sequential samples
+without display quantization and appends a packed mask with the first pixel in
+the highest bit. A mask bit is valid when any band at that pixel has data; each
+band's stored NoData sample remains intact. Band selection, ordering, clipping,
+mosaicking, reprojection, and the requested grid use the shared raster export
+pipeline. URL downloads retain the exporting principal's access restriction.
+
+BSQ supports byte, 16/32-bit integer, and 32/64-bit float rasters with one common
+sample type across bands. Compression must be omitted or `None`. NoData
+overrides and BSQ exports of multidimensional slices are explicitly unsupported.
+See Esri's [export image format specification](https://developers.arcgis.com/rest/services-reference/enterprise/export-image/).
+
 Admin import/registration calls require the configured admin authentication;
 use the authorized [API explorer](../reference/openapi-and-explorer.md) for
 `POST /api/v1/admin/import/raster`, `POST /api/v1/admin/cloud-rasters`,

@@ -1184,7 +1184,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             result.Elements().Single(element => element.Name.LocalName == "DefaultMosaicMethod")
                 .Value.Should().Be("esriMosaicByAttribute");
             result.Elements().Single(element => element.Name.LocalName == "SupportBSQ")
-                .Value.Should().Be("false");
+                .Value.Should().Be("true");
             result.Descendants().Single(element => element.Name.LocalName == "WKID")
                 .Value.Should().Be("4326");
 
@@ -1395,6 +1395,8 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
                 payload.Descendants().Single(element => element.Name.LocalName == "PixelType")
                     .Value.Should().Be(esriPixelType);
+                payload.Descendants().Single(element => element.Name.LocalName == "SupportBSQ")
+                    .Value.Should().Be("false");
             }
             finally
             {
@@ -1602,6 +1604,83 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    [IntegrationTheory]
+    [InlineData("esriImageReturnURL")]
+    [InlineData("esriImageReturnMimeData")]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_ExportImage_BsqPreservesFloatSamples(string returnType)
+    {
+        var samples = new[] { -17.25f, 0f, 33.5f, 200f, 210f, 220f };
+        var pixels = samples.SelectMany(BitConverter.GetBytes).ToArray();
+        var rasterStore = CreateSoapRasterStore(bandCount: 2, pixelType: "32BF");
+        rasterStore.ExportImageAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = pixels,
+                ContentType = "application/octet-stream",
+                Width = 3,
+                Height = 1,
+                BandCount = 2,
+                PixelType = "32BF",
+                Srid = 4326
+            });
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+        await fixture.InitializeAsync();
+        try
+        {
+            var operation = $$"""
+                <ExportImage xmlns="http://www.esri.com/schemas/ArcGIS/10.8">
+                  <ImageDescription>
+                    <Extent><XMin>-122.44</XMin><YMin>37.76</YMin><XMax>-122.40</XMax><YMax>37.79</YMax>
+                      <SpatialReference><WKID>4326</WKID></SpatialReference></Extent>
+                    <Width>3</Width><Height>1</Height><PixelType>F32</PixelType>
+                    <Interpolation>RSP_NearestNeighbor</Interpolation><Compression>None</Compression>
+                    <MosaicRule><MosaicMethod>esriMosaicNone</MosaicMethod><MosaicOperation>MT_FIRST</MosaicOperation></MosaicRule>
+                    <BSQ>false</BSQ><NoDataInterpretation>esriNoDataMatchAny</NoDataInterpretation>
+                  </ImageDescription>
+                  <ImageType><ImageFormat>esriImageBSQ</ImageFormat><ImageReturnType>{{returnType}}</ImageReturnType></ImageType>
+                </ExportImage>
+                """;
+            using var metadata = await PostSoapAsync(fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer", "GetServiceInfo");
+            metadata.Be200Ok();
+            XDocument.Parse(await metadata.Content.ReadAsStringAsync()).Descendants()
+                .Single(element => element.Name.LocalName == "SupportBSQ").Value.Should().Be("true");
+            using var response = await PostSoapOperationAsync(fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer", operation);
+            response.Be200Ok();
+            var result = XDocument.Parse(await response.Content.ReadAsStringAsync()).Descendants()
+                .Single(element => element.Name.LocalName == "Result");
+            result.Elements().Single(element => element.Name.LocalName == "ImageType").Value.Should().Be("esriImageBSQ");
+            byte[] data;
+            if (returnType == "esriImageReturnMimeData")
+            {
+                data = Convert.FromBase64String(result.Elements().Single(element => element.Name.LocalName == "ImageData").Value);
+            }
+            else
+            {
+                using var image = await fixture.Client.GetAsync(result.Elements().Single(element => element.Name.LocalName == "ImageURL").Value);
+                image.Be200Ok();
+                data = await image.Content.ReadAsByteArrayAsync();
+            }
+            data.Should().Equal(pixels.Concat(new byte[] { 0xe0 }));
+            using var compressed = await PostSoapOperationAsync(fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                operation.Replace("<Compression>None</Compression>", "<Compression>JPEG</Compression>", StringComparison.Ordinal));
+            compressed.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+            using var overrideResponse = await PostSoapOperationAsync(fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                operation.Replace("<PixelType>F32</PixelType>", "<PixelType>F32</PixelType><NoData>0</NoData>", StringComparison.Ordinal));
+            overrideResponse.StatusCode.Should().Be(System.Net.HttpStatusCode.NotImplemented);
+            await rasterStore.Received(1).ExportImageAsync(Arg.Any<int>(), Arg.Any<long>(),
+                Arg.Is<RasterQuery>(query => query.OutputFormat == RasterFormat.Raw && query.ResamplingAlgorithm == ResamplingAlgorithm.NearestNeighbor),
+                Arg.Any<CancellationToken>());
+        }
+        finally { await fixture.DisposeAsync(); }
     }
 
     // #4063: SOAP GetServiceInfo advertises the same AllowedMosaicMethods as REST, so every advertised
