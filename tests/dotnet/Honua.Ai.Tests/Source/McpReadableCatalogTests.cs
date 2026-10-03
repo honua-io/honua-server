@@ -232,10 +232,13 @@ public sealed class McpReadableCatalogTests
         }
         if (restriction == "inactive")
         {
-            graph = graph with { Services = graph.Services.Select(service => service with
+            graph = graph with
             {
-                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Draft }
-            }).ToArray() };
+                Services = graph.Services.Select(service => service with
+                {
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Draft }
+                }).ToArray()
+            };
         }
         var services = new ServiceCollection();
         services.AddLogging();
