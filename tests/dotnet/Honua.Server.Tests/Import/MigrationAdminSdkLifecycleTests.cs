@@ -73,10 +73,11 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
     {
         using var http = _host.Web.CreateAdminClient();
         var sdk = new HonuaAdminClient(http);
-        var schema = _host.Schema;
+        var schema = SdkMigrationHost.ImportSchema;
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var hydrantsTable = $"hydrants_{suffix}";
         var inspectionsTable = $"hydrant_inspections_{suffix}";
+        _host.TrackImportedTables(hydrantsTable, inspectionsTable);
 
         var inventory = await sdk.ScanMigrationSourceAsync(new SdkModels.MigrationInventoryScanRequest
         {
@@ -177,9 +178,10 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
     {
         using var http = _host.Web.CreateAdminClient();
         var sdk = new HonuaAdminClient(http);
-        var schema = _host.Schema;
+        var schema = SdkMigrationHost.ImportSchema;
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var hydrantsTable = $"hydrants_{suffix}";
+        _host.TrackImportedTables(hydrantsTable);
 
         var started = await sdk.StartMigrationBatchAsync(new SdkModels.MigrationBatchStartRequest
         {
@@ -218,8 +220,9 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
     {
         using var http = _host.Web.CreateAdminClient();
         var sdk = new HonuaAdminClient(http);
-        var schema = _host.Schema;
+        var schema = SdkMigrationHost.ImportSchema;
         var hydrantsTable = $"hydrants_single_{Guid.NewGuid().ToString("N")[..8]}";
+        _host.TrackImportedTables(hydrantsTable);
 
         var job = await sdk.StartGeoservicesImportAsync(new SdkModels.GeoservicesStartImportRequest
         {
@@ -488,7 +491,21 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
 
         public WebAppFixture Web { get; }
 
-        public string Schema => Web.CurrentSchema ?? throw new InvalidOperationException("The fixture has no schema.");
+        /// <summary>
+        /// Imports land in the default operational schema. The fixture's isolated schema holds its catalog,
+        /// which is not an import target.
+        /// </summary>
+        public const string ImportSchema = "honua_data";
+
+        private readonly System.Collections.Concurrent.ConcurrentBag<string> _importedTables = new();
+
+        public void TrackImportedTables(params string[] tables)
+        {
+            foreach (var table in tables)
+            {
+                _importedTables.Add(table);
+            }
+        }
 
         public async Task InitializeAsync()
         {
@@ -507,7 +524,23 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
             }
         }
 
-        public Task DisposeAsync() => Web.DisposeAsync();
+        public async Task DisposeAsync()
+        {
+            try
+            {
+                await using var connection = await Web.Postgres.GetConnectionAsync(ImportSchema);
+                foreach (var table in _importedTables)
+                {
+                    await using var drop = connection.CreateCommand();
+                    drop.CommandText = $"DROP TABLE IF EXISTS \"{ImportSchema}\".\"{table}\"";
+                    await drop.ExecuteNonQueryAsync();
+                }
+            }
+            finally
+            {
+                await Web.DisposeAsync();
+            }
+        }
     }
 
     /// <summary>A hydrant record served by the fake FeatureServer.</summary>

@@ -89,6 +89,15 @@ internal static partial class OgcApiFeaturesImportEndpoints
             return;
         }
 
+        if (!ImportValidationHelpers.IsPermittedTargetSchema(request.TargetSchema, context.RequestServices))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                ImportTargetSchemaPolicy.NotOperationalSchemaMessage,
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
         if (request.TimeoutSeconds is <= 0)
         {
             await AdminResponseWriter.WriteErrorAsync(context, "TimeoutSeconds must be greater than 0.", StatusCodes.Status400BadRequest);

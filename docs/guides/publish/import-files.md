@@ -39,7 +39,7 @@ Run `POST /api/v1/admin/import/upload` with these form values:
 | `targetSrid` | `4326` |
 | `overwriteExisting` | `true` |
 
-Optional form fields: `sourceSrid` (when CRS auto-detection fails), `targetSchema`, `forceBackground`. Files above the background-job threshold (see `GET /api/v1/admin/import/limits`) return `202 Accepted` with a `jobId` instead of a synchronous result.
+Optional form fields: `sourceSrid` (when CRS auto-detection fails), `targetSchema`, `forceBackground`. `targetSchema` must be a configured operational schema: the default (`honua_data`, set by `Database__DefaultOperationalSchema`), `public`, or a schema listed in `Database__OperationalSchemas__0`, `Database__OperationalSchemas__1`, and so on. Any other schema, and always the server metadata schema (`honua`) and PostgreSQL system schemas, returns `400 Bad Request`. Files above the background-job threshold (see `GET /api/v1/admin/import/limits`) return `202 Accepted` with a `jobId` instead of a synchronous result.
 
 ### 4. Poll the job (background imports only)
 

@@ -209,7 +209,8 @@ public sealed class GeoservicesImportCatalogReconciliationTests(PostgresFixture 
                 // A pass-through data-reconciliation service so the gate reaches the catalog pass; the
                 // catalog reconciler reads the published entry back through the real graph store.
                 reconciliationService: reconciliation ?? new PassThroughReconciliationService(),
-                metadataGraphStore: graphStore));
+                metadataGraphStore: graphStore),
+            schemaConfiguration: schemaConfiguration);
     }
 
     private sealed class PassThroughReconciliationService : ILayerReconciliationService

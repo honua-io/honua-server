@@ -88,7 +88,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
                 }
             };
 
-            var result = await CreateService(handler).ImportLayerAsync(BuildRequest(schemaName) with { BatchSize = 1 });
+            var result = await CreateService(handler, targetSchema: schemaName).ImportLayerAsync(BuildRequest(schemaName) with { BatchSize = 1 });
 
             midTransferReadError.Should().BeNull("readers of the live target must not block while the replacement transfers");
             codesReadMidTransfer.Should().Equal(["AAA", "BBB"], "readers see the complete prior target until the swap");
@@ -116,7 +116,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         {
             await SeedPriorTargetAsync(schemaName);
 
-            var result = await CreateService(new TransferFeatureServerHandler(["CCC", "DDD"]))
+            var result = await CreateService(new TransferFeatureServerHandler(["CCC", "DDD"]), targetSchema: schemaName)
                 .ImportLayerAsync(BuildRequest(schemaName));
 
             result.Success.Should().BeTrue(result.ErrorMessage);
@@ -151,7 +151,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
             await SeedPriorTargetAsync(schemaName);
             var seededRelations = await ReadRelationsAsync(schemaName);
 
-            var refused = await CreateService(new TransferFeatureServerHandler(["CCC", "TOOLONG"]))
+            var refused = await CreateService(new TransferFeatureServerHandler(["CCC", "TOOLONG"]), targetSchema: schemaName)
                 .ImportLayerAsync(BuildRequest(schemaName));
 
             refused.Success.Should().BeFalse();
@@ -171,7 +171,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
                 }
             };
 
-            var act = () => CreateService(cancelling).ImportLayerAsync(
+            var act = () => CreateService(cancelling, targetSchema: schemaName).ImportLayerAsync(
                 BuildRequest(schemaName) with { BatchSize = 1 },
                 progress: null,
                 cancellation.Token);
@@ -198,7 +198,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         try
         {
             await SeedPriorTargetAsync(schemaName);
-            var competingService = CreateService(new TransferFeatureServerHandler(["XXX"]));
+            var competingService = CreateService(new TransferFeatureServerHandler(["XXX"]), targetSchema: schemaName);
             GeoservicesImportResult? competing = null;
             string? competingError = null;
             var handler = new TransferFeatureServerHandler(["CCC", "DDD"])
@@ -228,7 +228,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
                 }
             };
 
-            var result = await CreateService(handler).ImportLayerAsync(
+            var result = await CreateService(handler, targetSchema: schemaName).ImportLayerAsync(
                 BuildRequest(schemaName) with { BatchSize = 1, JobId = "original" });
 
             competingError.Should().BeNull();
@@ -261,7 +261,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         {
             await SeedPriorTargetAsync(schemaName);
 
-            var result = await CreateService(new TransferFeatureServerHandler(["CCC"]))
+            var result = await CreateService(new TransferFeatureServerHandler(["CCC"]), targetSchema: schemaName)
                 .ImportLayerAsync(BuildRequest(schemaName) with { OverwriteExisting = false });
 
             result.Success.Should().BeFalse();
@@ -288,7 +288,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         {
             var handler = new TransferFeatureServerHandler(["CCC", "DDD"]) { CountAfterDiscovery = 3 };
 
-            var result = await CreateService(handler).ImportLayerAsync(BuildRequest(schemaName));
+            var result = await CreateService(handler, targetSchema: schemaName).ImportLayerAsync(BuildRequest(schemaName));
 
             result.Success.Should().BeFalse();
             result.NeedsReview.Should().BeTrue();
@@ -322,7 +322,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
                 ObjectIdsAfterFirstEnumeration = [1, 3]
             };
 
-            var result = await CreateService(handler).ImportLayerAsync(BuildRequest(schemaName) with { BatchSize = 1 });
+            var result = await CreateService(handler, targetSchema: schemaName).ImportLayerAsync(BuildRequest(schemaName) with { BatchSize = 1 });
 
             result.NeedsReview.Should().BeTrue();
             var difference = result.FidelityDifferences.Should().ContainSingle().Subject;
@@ -348,7 +348,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         {
             var handler = new TransferFeatureServerHandler(["CCC", "DDD"]) { FailCountAfterDiscovery = true };
 
-            var result = await CreateService(handler).ImportLayerAsync(BuildRequest(schemaName));
+            var result = await CreateService(handler, targetSchema: schemaName).ImportLayerAsync(BuildRequest(schemaName));
 
             result.Success.Should().BeTrue(result.ErrorMessage);
             result.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Unverified);
@@ -377,7 +377,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         try
         {
             var request = BuildRequest(schemaName) with { TableName = longTable, JobId = "long-name-job" };
-            var first = await CreateService(new TransferFeatureServerHandler(["AAA", "BBB"]))
+            var first = await CreateService(new TransferFeatureServerHandler(["AAA", "BBB"]), targetSchema: schemaName)
                 .ImportLayerAsync(request with { JobId = "first-import" });
             first.Success.Should().BeTrue(first.ErrorMessage);
             var firstImportRelations = await ReadRelationsAsync(schemaName);
@@ -385,7 +385,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
 
             for (var attempt = 1; attempt <= 2; attempt++)
             {
-                var replacement = await CreateService(new TransferFeatureServerHandler(["CCC", "DDD"]))
+                var replacement = await CreateService(new TransferFeatureServerHandler(["CCC", "DDD"]), targetSchema: schemaName)
                     .ImportLayerAsync(request);
 
                 replacement.Success.Should().BeTrue($"replacement {attempt} by the same job must succeed: {replacement.ErrorMessage}");
@@ -412,7 +412,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         try
         {
             await SeedPriorTargetAsync(schemaName);
-            var competingService = CreateService(new TransferFeatureServerHandler(["XXX"]));
+            var competingService = CreateService(new TransferFeatureServerHandler(["XXX"]), targetSchema: schemaName);
             GeoservicesImportResult? competing = null;
             var progress = new SynchronousProgress(update =>
             {
@@ -429,7 +429,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
                     .GetResult();
             });
 
-            var result = await CreateService(new TransferFeatureServerHandler(["CCC", "DDD"]))
+            var result = await CreateService(new TransferFeatureServerHandler(["CCC", "DDD"]), targetSchema: schemaName)
                 .ImportLayerAsync(BuildRequest(schemaName) with { JobId = "original" }, progress);
 
             result.Success.Should().BeTrue(result.ErrorMessage);
@@ -456,7 +456,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         {
             var handler = new TransferFeatureServerHandler(["CCC", "DDD"]) { DelayCountAfterDiscovery = TimeSpan.FromSeconds(5) };
 
-            var result = await CreateService(handler).ImportLayerAsync(BuildRequest(schemaName) with { RequestTimeoutSeconds = 1 });
+            var result = await CreateService(handler, targetSchema: schemaName).ImportLayerAsync(BuildRequest(schemaName) with { RequestTimeoutSeconds = 1 });
 
             result.Success.Should().BeTrue(result.ErrorMessage);
             result.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Unverified);
@@ -496,7 +496,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
                 }
             };
 
-            var service = CreateService(handler, applicationName);
+            var service = CreateService(handler, applicationName, targetSchema: schemaName);
             var result = await service.ImportLayerAsync(BuildRequest(schemaName) with { BatchSize = 1 });
 
             terminated.Should().Be(1, "the test ends exactly the import's own session");
@@ -550,7 +550,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         ImportAttachments = false
     };
 
-    private GeoservicesImportService CreateService(HttpMessageHandler handler, string? applicationName = null)
+    private GeoservicesImportService CreateService(HttpMessageHandler handler, string? applicationName = null, string? targetSchema = null)
     {
         var restClient = new ArcGisRestClient(
             new HttpClient(handler),
@@ -563,7 +563,8 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
             new Mock<ICrsRegistry>(MockBehavior.Loose).Object,
             new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
-            new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance));
+            new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance),
+            schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(targetSchema));
     }
 
     private async Task SeedPriorTargetAsync(string schemaName)

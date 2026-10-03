@@ -41,7 +41,7 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
         var schemaName = await fixture.CreateIsolatedSchemaAsync("UnappliedRelationships");
         var reconciliation = new StubReconciliationService(MigrationReconciliationClassifications.Pass, failCount: 0);
         var progress = new RecordingProgress();
-        var service = CreateService(new SimpleFeatureServerHandler(relationshipsJson), publishedLayerId: 103, reconciliation);
+        var service = CreateService(new SimpleFeatureServerHandler(relationshipsJson), publishedLayerId: 103, reconciliation, targetSchema: schemaName);
 
         try
         {
@@ -78,7 +78,7 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
         var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(GeoservicesImportReconciliationGateTests) + "_fail");
         var reconciliation = new StubReconciliationService(MigrationReconciliationClassifications.Fail, failCount: 1);
         var progress = new RecordingProgress();
-        var service = CreateService(new SimpleFeatureServerHandler(), publishedLayerId: 100, reconciliation);
+        var service = CreateService(new SimpleFeatureServerHandler(), publishedLayerId: 100, reconciliation, targetSchema: schemaName);
 
         try
         {
@@ -105,7 +105,7 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
         var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(GeoservicesImportReconciliationGateTests) + "_pass");
         var reconciliation = new StubReconciliationService(MigrationReconciliationClassifications.Pass, failCount: 0);
         var progress = new RecordingProgress();
-        var service = CreateService(new SimpleFeatureServerHandler(), publishedLayerId: 101, reconciliation);
+        var service = CreateService(new SimpleFeatureServerHandler(), publishedLayerId: 101, reconciliation, targetSchema: schemaName);
 
         try
         {
@@ -136,7 +136,7 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
     {
         var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(GeoservicesImportReconciliationGateTests) + "_filtered");
         var reconciliation = new CapturingReconciliationService();
-        var service = CreateService(new FilteredFeatureServerHandler(), publishedLayerId: 102, reconciliation);
+        var service = CreateService(new FilteredFeatureServerHandler(), publishedLayerId: 102, reconciliation, targetSchema: schemaName);
 
         try
         {
@@ -167,7 +167,7 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
         var schemaName = await fixture.CreateIsolatedSchemaAsync("GeometryCensus");
         var reconciliation = new CapturingReconciliationService();
         var source = new GeometryCensusFeatureServerHandler();
-        var service = CreateService(source, publishedLayerId: 104, reconciliation);
+        var service = CreateService(source, publishedLayerId: 104, reconciliation, targetSchema: schemaName);
         try
         {
             var result = await service.ImportLayerAsync(
@@ -361,7 +361,8 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
     private GeoservicesImportService CreateService(
         HttpMessageHandler handler,
         int publishedLayerId,
-        ILayerReconciliationService reconciliationService)
+        ILayerReconciliationService reconciliationService,
+        string? targetSchema = null)
     {
         var restClient = new ArcGisRestClient(
             new HttpClient(handler),
@@ -379,7 +380,8 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
             new GeoservicesLayerPublicationService(
                 NullLogger<GeoservicesLayerPublicationService>.Instance,
                 layerPublishingService: new StubLayerPublishingService(publishedLayerId),
-                reconciliationService: reconciliationService));
+                reconciliationService: reconciliationService),
+            schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(targetSchema));
     }
 
     private sealed class StubReconciliationService(string classification, int failCount) : ILayerReconciliationService

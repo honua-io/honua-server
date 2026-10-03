@@ -4,6 +4,7 @@
 using System.Text.Json.Serialization;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
+using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
@@ -133,6 +134,15 @@ internal static partial class MigrationBatchEndpoints
                 await AdminResponseWriter.WriteErrorAsync(
                     context,
                     "Invalid target schema. Use only letters, numbers, and underscores.",
+                    StatusCodes.Status400BadRequest);
+                return;
+            }
+
+            if (!ImportValidationHelpers.IsPermittedTargetSchema(layer.TargetSchema, context.RequestServices))
+            {
+                await AdminResponseWriter.WriteErrorAsync(
+                    context,
+                    ImportTargetSchemaPolicy.NotOperationalSchemaMessage,
                     StatusCodes.Status400BadRequest);
                 return;
             }
