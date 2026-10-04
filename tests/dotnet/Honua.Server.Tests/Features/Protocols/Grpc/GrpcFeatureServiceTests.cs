@@ -1115,6 +1115,112 @@ public sealed class GrpcFeatureServiceTests
 
     [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_WithOutStatistics_IsRefusedWithoutReadingFeatures()
+    {
+        // #5465: the geospatial.v1 response carries layer fields and feature rows only, so
+        // an aggregate request must be refused rather than answered with ordinary features.
+        var request = new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = 0, Where = "1=1" };
+        request.OutStatistics.Add(new Proto.StatisticDefinition
+        {
+            OnStatisticField = "population",
+            StatisticType = Proto.StatisticType.Sum,
+            OutStatisticFieldName = "total_pop"
+        });
+        request.GroupBy.Add("state");
+
+        var act = async () => await _sut.QueryFeatures(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("out_statistics").And.Contain("group_by");
+        _featureReader.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeaturesStream")]
+    public async Task QueryFeaturesStream_WithGroupBy_IsRefusedWithoutStreamingFeatures()
+    {
+        var request = new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = 0, Where = "1=1" };
+        request.GroupBy.Add("name");
+
+        var writer = new TestServerStreamWriter<Proto.FeaturePage>();
+        var act = async () => await _sut.QueryFeaturesStream(request, writer, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        writer.Pages.Should().BeEmpty();
+        _streamingStore.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_OrderBy_CarriesSchemaFieldTypes()
+    {
+        // #5466: managed JSONB attributes only sort numerically when the clause carries the
+        // declared field type; untyped, population 20 sorts before 3.
+        UseOrderingLayer();
+        FeatureQuery? captured = null;
+        _featureReader.QueryAsync(Arg.Any<int>(), Arg.Do<FeatureQuery>(q => captured = q), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(0, ImmutableArray<Feature>.Empty));
+
+        await _sut.QueryFeatures(
+            new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = OrderingLayerId, OrderBy = "POPULATION DESC, name, unknown_field" },
+            CreateCallContext());
+
+        AssertTypedOrdering(captured);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeaturesStream")]
+    public async Task QueryFeaturesStream_OrderBy_CarriesSchemaFieldTypes()
+    {
+        UseOrderingLayer();
+        FeatureQuery? captured = null;
+        _streamingStore.StreamFeaturesAsync(Arg.Any<int>(), Arg.Do<FeatureQuery>(q => captured = q), Arg.Any<CancellationToken>())
+            .Returns(AsyncEnumerable.Empty<Feature>());
+
+        await _sut.QueryFeaturesStream(
+            new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = OrderingLayerId, OrderBy = "POPULATION DESC, name, unknown_field" },
+            new TestServerStreamWriter<Proto.FeaturePage>(),
+            CreateCallContext());
+
+        AssertTypedOrdering(captured);
+    }
+
+    private const int OrderingLayerId = 7;
+
+    private void UseOrderingLayer()
+    {
+        var resource = _testResource with
+        {
+            SchemaFields =
+            [
+                .. _testResource.SchemaFields,
+                new MetadataV2Field { Name = "population", Type = MetadataV2FieldType.Integer, Nullable = true }
+            ]
+        };
+        _resourceValidator
+            .ValidateServiceLayerV2Async("test", OrderingLayerId, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateTriple(_testService, resource)));
+    }
+
+    private static void AssertTypedOrdering(FeatureQuery? query)
+    {
+        query.Should().NotBeNull();
+        var orderBy = query!.OrderBy!.Value;
+        orderBy.Should().HaveCount(3);
+        orderBy[0].Field.Should().Be("population", "the clause resolves to the declared field name");
+        orderBy[0].FieldType.Should().Be(MetadataV2FieldType.Integer);
+        orderBy[0].Ascending.Should().BeFalse();
+        orderBy[1].Field.Should().Be("name");
+        orderBy[1].FieldType.Should().Be(MetadataV2FieldType.String);
+        orderBy[1].Ascending.Should().BeTrue();
+        orderBy[2].Field.Should().Be("unknown_field");
+        orderBy[2].FieldType.Should().BeNull("a field the schema does not declare keeps the untyped path");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_LimitAboveConfiguredMaximum_ThrowsInvalidArgument()
     {
         var request = new Proto.QueryFeaturesRequest
