@@ -12984,6 +12984,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Sharing.SharingRestReadTests.Info_Anonymous_ReturnsAuthInfoShape",
+        "Honua.Server.Tests.Features.Sharing.SharingRestReadTests.Info_Anonymous_UsesActualPortalRoot",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
@@ -22761,6 +22762,7 @@
       "protocol": "operation-surface",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Infrastructure.Errors.StandardErrorResponseFormatterTests.FormatError_ParsedLegacyTransactionVersion_OverridesReadConnectionVersion",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_CreateStoredQuery_WithDuplicateId_ReturnsDuplicateIdLocator",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_CreateStoredQuery_WithSupportedQueryLanguage_ReturnsOk",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetCapabilities_ReturnsXmlWithTransactionOperation",
