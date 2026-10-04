@@ -25,8 +25,8 @@ The commands pin the anonymously published **pre-cut rehearsal** image
 (Docker Desktop Linux containers; this journey selects `linux/amd64`, source `87966c3f7b6c840ffc4d4da0b451714ab717b18a`). Its
 [registry manifest](https://ghcr.io/v2/honua-io/honua-server/manifests/sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a)
 is fetched by `docker pull` below. The control-plane package is
-[honua-admin 0.1.9](https://pypi.org/project/honua-admin/0.1.9/); the data-plane
-package is [honua-sdk 0.1.12](https://pypi.org/project/honua-sdk/0.1.12/).
+[honua-admin 0.1.10](https://pypi.org/project/honua-admin/0.1.10/); the data-plane
+package is [honua-sdk 0.1.13](https://pypi.org/project/honua-sdk/0.1.13/).
 The import step invokes Honua's `honua_ingest_dataset` MCP tool using the
 published [MCP transport client 2.1.1](https://pypi.org/project/mcp/2.1.1/).
 
@@ -192,7 +192,7 @@ needed. Do not substitute `git+https` installs or local source packages.
 python -m venv .venv
 if ($LASTEXITCODE -ne 0) { throw 'Python virtual environment creation failed' }
 $Python = Join-Path $Install '.venv\Scripts\python.exe'
-& $Python -m pip install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.9' 'honua-sdk==0.1.12' 'mcp==2.1.1'
+& $Python -m pip install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.10' 'honua-sdk==0.1.13' 'mcp==2.1.1'
 if ($LASTEXITCODE -ne 0) { throw 'Registry package installation failed' }
 & $Python -m pip freeze | Set-Content -LiteralPath installed-packages.txt -Encoding Ascii
 $values = @{}

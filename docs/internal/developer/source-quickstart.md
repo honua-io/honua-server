@@ -83,8 +83,8 @@ SQL
 ```bash
 python3 -m venv --without-pip .quickstart-venv
 python3 -m pip --python .quickstart-venv/bin/python install \
-  "honua-sdk @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-sdk" \
-  "honua-admin @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-admin"
+  "honua-sdk @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.13#subdirectory=packages/honua-sdk" \
+  "honua-admin @ git+https://github.com/honua-io/honua-sdk-python.git@python-admin-v0.1.10#subdirectory=packages/honua-admin"
 . .quickstart-venv/bin/activate
 ```
 

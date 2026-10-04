@@ -7,7 +7,7 @@ description: "You'll turn a published layer into a live MapLibre map using vecto
 
 You'll turn a published layer into a live MapLibre map using vector tiles, TileJSON, and the server's auto-generated style in about 10 minutes.
 
-**Prerequisites:** a published layer and its `layerId` (see [Publish your first dataset](first-dataset.md)), `$HONUA_BASE_URL`, `$HONUA_API_KEY`, `$HONUA_SERVICE`, and `$HONUA_LAYER_ID` set as that page describes, and Python 3 to serve one HTML file. Step 1 installs the pinned clients (`honua-admin` 0.1.9, `honua-sdk` 0.1.12) and the MCP Python client `mcp` 2.1.1, so this page can be run on its own.
+**Prerequisites:** a published layer and its `layerId` (see [Publish your first dataset](first-dataset.md)), `$HONUA_BASE_URL`, `$HONUA_API_KEY`, `$HONUA_SERVICE`, and `$HONUA_LAYER_ID` set as that page describes, and Python 3 to serve one HTML file. Step 1 installs the pinned clients (`honua-admin` 0.1.10, `honua-sdk` 0.1.13) and the MCP Python client `mcp` 2.1.1, so this page can be run on its own.
 
 > **This page cannot be completed on the current release.** The browser fetches tiles without
 > credentials, so the service has to allow anonymous reads (step 1). A default install has no
@@ -33,7 +33,7 @@ A default install does not advertise that tool yet, so the call below is refused
 <!-- doc-run: blocked https://github.com/honua-io/honua-server/issues/5444 -->
 
 ```bash
-python3 -m pip install 'honua-admin==0.1.9' 'honua-sdk==0.1.12' 'mcp==2.1.1'
+python3 -m pip install 'honua-admin==0.1.10' 'honua-sdk==0.1.13' 'mcp==2.1.1'
 python3 - <<'PY'
 import asyncio
 import os
