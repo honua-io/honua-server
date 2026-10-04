@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
@@ -33,7 +34,16 @@ public sealed class ODataV4ConformanceEndpointTests : IAsyncLifetime
     private const int SeededFeatureCount = 15;
     private const int SeededLayerCount = 2;
 
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    // Server page smaller than the seeded feature count, so the #1989 feature paging tests
+    // exercise server-driven paging. A client $top is a total ceiling (#5464) and cannot
+    // produce a continuation on its own.
+    private const int MaxPageSize = 5;
+
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .WithTestLicense(HonuaEdition.Pro)
+        .ConfigureWebHost(builder => builder.UseSetting(
+            "OData:MaxPageSize",
+            MaxPageSize.ToString(CultureInfo.InvariantCulture)));
 
     public async Task InitializeAsync()
     {
@@ -153,13 +163,13 @@ public sealed class ODataV4ConformanceEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
-    [Endpoint("GET /odata/Features({layerId})?$top=5")]
+    [Endpoint("GET /odata/Features({layerId})")]
     public async Task Features_FullPage_EmitsNextLinkWithoutCount()
     {
         // No $count=true: the provider does not run COUNT(*) OVER(), so nextLink must be
         // derived from the continuation probe (a full page came back), not from TotalCount.
         var response = await _fixture.Client.GetAsync(
-            $"/odata/Features({TestLayerId})?$top=5&$select=ObjectId");
+            $"/odata/Features({TestLayerId})?$select=ObjectId");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -167,18 +177,18 @@ public sealed class ODataV4ConformanceEndpointTests : IAsyncLifetime
         using var document = JsonDocument.Parse(content);
         var root = document.RootElement;
 
-        root.GetProperty("value").EnumerateArray().Should().HaveCount(5);
+        root.GetProperty("value").EnumerateArray().Should().HaveCount(MaxPageSize);
         root.TryGetProperty("@odata.nextLink", out _).Should().BeTrue(
             "a full page over a 15-row layer must carry a continuation even without $count=true (#1989)");
     }
 
     [IntegrationTest]
     [Operation(Operations.Query)]
-    [Endpoint("GET /odata/Features({layerId})?$top=5")]
+    [Endpoint("GET /odata/Features({layerId})")]
     public async Task Features_PagesThroughAllRowsWithoutTruncation()
     {
         var seen = new HashSet<int>();
-        var relativePath = $"/odata/Features({TestLayerId})?$top=5&$select=ObjectId";
+        var relativePath = $"/odata/Features({TestLayerId})?$select=ObjectId";
         var pages = 0;
 
         while (relativePath != null && pages < 20)

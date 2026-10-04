@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
@@ -19,7 +20,14 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataSkipTokenTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    // Server page smaller than the seeded feature count so skip-token continuations are
+    // exercised by server-driven paging; a client $top is a total ceiling (#5464).
+    private const int MaxPageSize = 5;
+
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .ConfigureWebHost(builder => builder.UseSetting(
+            "OData:MaxPageSize",
+            MaxPageSize.ToString(CultureInfo.InvariantCulture)));
     private const int TestLayerId = 0;
 
     public async Task InitializeAsync()
@@ -38,14 +46,14 @@ public sealed class ODataSkipTokenTests : IAsyncLifetime
     public async Task Query_WithSkipToken_ReturnsCursorBasedPagination()
     {
         // First request with $skiptoken=0 to trigger opaque token generation in nextLink
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=3&$skiptoken=0");
+        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$skiptoken=0");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
         var features = document.RootElement.GetProperty("value").EnumerateArray().ToList();
-        features.Should().HaveCount(3);
+        features.Should().HaveCount(MaxPageSize);
 
         // nextLink should contain an opaque $skiptoken (not a raw integer)
         document.RootElement.TryGetProperty("@odata.nextLink", out var nextLinkElement).Should().BeTrue();
@@ -61,7 +69,7 @@ public sealed class ODataSkipTokenTests : IAsyncLifetime
     public async Task Query_FollowSkipTokenNextLink_ReturnsNextPage()
     {
         // Get first page with skiptoken
-        var firstResponse = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=5&$skiptoken=0");
+        var firstResponse = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$skiptoken=0");
         firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var firstContent = await firstResponse.Content.ReadAsStringAsync();
@@ -148,7 +156,7 @@ public sealed class ODataSkipTokenTests : IAsyncLifetime
     public async Task Query_SkipTokenIterateAllPages_ReturnsAllFeatures()
     {
         var allFeatures = new List<JsonElement>();
-        string? requestUrl = $"/odata/Features({TestLayerId})?$top=5&$skiptoken=0";
+        string? requestUrl = $"/odata/Features({TestLayerId})?$skiptoken=0";
         var pageCount = 0;
         const int maxPages = 10;
 
