@@ -9,6 +9,13 @@ You'll turn a published layer into a live MapLibre map using vector tiles, TileJ
 
 **Prerequisites:** a published layer and its `layerId` (see [Publish your first dataset](first-dataset.md)), `$HONUA_BASE_URL`, `$HONUA_API_KEY`, `$HONUA_SERVICE`, and `$HONUA_LAYER_ID` set as that page describes, and Python 3 to serve one HTML file. Step 1 installs the pinned clients (`honua-admin` 0.1.9, `honua-sdk` 0.1.12) and the MCP Python client `mcp` 2.1.1, so this page can be run on its own.
 
+> **This page cannot be completed on the current release.** The browser fetches tiles without
+> credentials, so the service has to allow anonymous reads (step 1). A default install has no
+> supported client operation that sets that policy yet: the MCP tool is not advertised, and no SDK
+> method or CLI command covers it
+> ([honua-server#5444](https://github.com/honua-io/honua-server/issues/5444)). Until that is
+> fixed, steps 2–6 return `401` for a service that has not been opened.
+
 Every published layer is automatically served as Mapbox Vector Tiles at `/tiles/{layerId}/{z}/{x}/{y}.mvt`, described by TileJSON at `/tiles/{layerId}/tile.json`, with a ready-made MapLibre style at `/api/styles/{layerId}.json` — no tile cache to build, no style to author.
 
 ## Steps
