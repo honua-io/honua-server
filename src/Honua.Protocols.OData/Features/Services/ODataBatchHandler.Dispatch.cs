@@ -399,6 +399,28 @@ internal sealed partial class ODataBatchHandler
                     "Forbidden",
                     "Access to one or more requested layers is forbidden."));
             }
+
+            // The change set must honor the same publication contract as single-entity writes
+            // (SEC-5): canonical-service write access and the declared edit capabilities.
+            if (validation.Service is not null && validation.Publication is not null)
+            {
+                var contractResult = await LayerValidationHelpers.EnforcePublicationWriteContractAsync(
+                    context,
+                    validation.Service,
+                    validation.Publication,
+                    validation.Resource,
+                    MapMethodToOperation(method),
+                    cancellationToken).ConfigureAwait(false);
+                if (contractResult != null)
+                {
+                    return (null, CreateErrorResponseFromResult(
+                        requestId,
+                        contractResult,
+                        StatusCodes.Status403Forbidden,
+                        "Forbidden",
+                        "Access to one or more requested layers is forbidden."));
+                }
+            }
         }
 
         var storageLayerId = ODataV2Lookups.ResolveStorageLayerId(
@@ -473,6 +495,7 @@ internal sealed partial class ODataBatchHandler
                 StatusCodes.Status401Unauthorized => "Unauthorized",
                 StatusCodes.Status403Forbidden => "Forbidden",
                 StatusCodes.Status404NotFound => "ResourceNotFound",
+                StatusCodes.Status405MethodNotAllowed => "MethodNotAllowed",
                 StatusCodes.Status412PreconditionFailed => "PreconditionFailed",
                 _ => fallbackCode
             },
@@ -480,6 +503,7 @@ internal sealed partial class ODataBatchHandler
             {
                 StatusCodes.Status401Unauthorized => "Authentication is required to access one or more requested layers.",
                 StatusCodes.Status403Forbidden => "Access to one or more requested layers is forbidden.",
+                StatusCodes.Status405MethodNotAllowed => "The requested edit is not enabled for this layer.",
                 _ => fallbackMessage
             });
     }

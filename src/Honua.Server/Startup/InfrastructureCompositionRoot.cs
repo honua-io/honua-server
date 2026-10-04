@@ -78,6 +78,13 @@ internal static class InfrastructureCompositionRoot
         // a blocked edit never reaches the auditor as an applied write.
         services.AddFeatureLockEnforcingFeatureWriter();
 
+        // Owner-based edit policies at the same shared boundary (SEC-5). GeoServices applyEdits
+        // and the attachment endpoints evaluate the policy themselves for their own error shape;
+        // this decorator applies the same decision to every other write path. Outermost, so a
+        // refused edit reaches neither the lease check nor the auditor.
+        Honua.Infrastructure.Authentication.OwnerEditPolicyEnforcementServiceCollectionExtensions
+            .AddOwnerEditPolicyEnforcingFeatureWriter(services);
+
         // Registry-backed geographic-SRID classification seam (#2794). Composes the provider's
         // ICrsRegistry (registered above for providers that ship one, e.g. Postgres) with the
         // static GeographicSridClassifier fallback so DI-reachable call sites (ImageServer

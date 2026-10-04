@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Temporal.Abstractions;
@@ -33,19 +35,26 @@ public sealed partial class InProcessTemporalCorrectiveJobSink : ITemporalCorrec
     private readonly ILogger<InProcessTemporalCorrectiveJobSink> _logger;
     private readonly IUniversalProgressStore? _progressStore;
     private readonly IHostApplicationLifetime? _lifetime;
+    private readonly IJobSubmitterCapture? _submitterCapture;
 
     /// <summary>Creates the sink.</summary>
     /// <param name="logger">Logger for corrective-job lifecycle events.</param>
     /// <param name="progressStore">Optional progress store backing job-status polling for the returned job id.</param>
     /// <param name="lifetime">Optional host lifetime; when present, corrective work observes application shutdown.</param>
+    /// <param name="submitterCapture">
+    /// Optional submitter capture; when present, corrective work runs as the submitting caller after the
+    /// request has ended.
+    /// </param>
     public InProcessTemporalCorrectiveJobSink(
         ILogger<InProcessTemporalCorrectiveJobSink> logger,
         IUniversalProgressStore? progressStore = null,
-        IHostApplicationLifetime? lifetime = null)
+        IHostApplicationLifetime? lifetime = null,
+        IJobSubmitterCapture? submitterCapture = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _progressStore = progressStore;
         _lifetime = lifetime;
+        _submitterCapture = submitterCapture;
     }
 
     /// <inheritdoc />
@@ -77,11 +86,20 @@ public sealed partial class InProcessTemporalCorrectiveJobSink : ITemporalCorrec
 
         var shutdownToken = _lifetime?.ApplicationStopping ?? CancellationToken.None;
 
+        // The detached run outlives the submitting request, so it runs as the captured submitter:
+        // writes through the shared edit pipeline are then authorized for that caller (SEC-5).
+        var submitter = _submitterCapture?.CaptureCurrent();
+
         // Detach the corrective run from the request scope so submission returns a queued handle the
         // client polls via the persisted job status. Exceptions are logged and recorded as a Failed
         // terminal status rather than crashing the host.
         _ = Task.Run(
-            () => RunCorrectiveJobAsync(jobId, operationName, serviceId, layerId, queued, work, shutdownToken),
+            async () =>
+            {
+                using var securityScope = submitter is null ? null : JobSecurityScope.Begin(submitter);
+                await RunCorrectiveJobAsync(jobId, operationName, serviceId, layerId, queued, work, shutdownToken)
+                    .ConfigureAwait(false);
+            },
             CancellationToken.None);
 
         return (jobId, "Queued");
