@@ -3711,7 +3711,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 86,
+      "line": 85,
       "language": "json"
     },
     {
@@ -3724,7 +3724,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 52,
+      "line": 50,
       "language": "bash"
     },
     {
@@ -3763,7 +3763,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 115,
+      "line": 119,
       "language": "bash"
     },
     {
@@ -3776,7 +3776,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 186,
+      "line": 190,
       "language": "bash"
     },
     {
@@ -3789,7 +3789,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 146,
+      "line": 150,
       "language": "bash"
     },
     {
@@ -3802,7 +3802,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 204,
+      "line": 208,
       "language": "bash"
     },
     {
@@ -3815,7 +3815,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 97,
+      "line": 121,
       "language": "bash"
     },
     {
@@ -3828,7 +3828,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 93,
+      "line": 117,
       "language": "yaml"
     },
     {
@@ -3841,7 +3841,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 108,
+      "line": 132,
       "language": "bash"
     },
     {
@@ -3854,7 +3854,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 66,
+      "line": 90,
       "language": "bash"
     },
     {
@@ -3867,7 +3867,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 53,
+      "line": 77,
       "language": "text"
     },
     {
@@ -3880,7 +3880,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 24,
+      "line": 35,
       "language": "bash"
     },
     {
