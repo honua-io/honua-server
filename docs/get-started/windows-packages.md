@@ -22,7 +22,7 @@ this journey uses a small synchronous import and does not require durable jobs.
 
 The commands pin the anonymously published **pre-cut rehearsal** image
 `ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a`
-(Docker Desktop Linux containers; this journey selects `linux/amd64`, source `5a657b9eaed7cdeac915d584ad58c028a52ca61e`). Its
+(Docker Desktop Linux containers; this journey selects `linux/amd64`, source `87966c3f7b6c840ffc4d4da0b451714ab717b18a`). Its
 [registry manifest](https://ghcr.io/v2/honua-io/honua-server/manifests/sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a)
 is fetched by `docker pull` below. The control-plane package is
 [honua-admin 0.1.9](https://pypi.org/project/honua-admin/0.1.9/); the data-plane
@@ -46,6 +46,13 @@ session open through verification. Each new installation gets its own Compose
 project, network, three volumes, and directory. Do not regenerate credentials
 for an existing database.
 
+Production stores operation secrets in Redis and will not start until an RSA PKCS#12
+encrypts that key ring. The block writes `secrets\keyring.pfx` and mounts it read-only.
+The container runs as a different user, so the file grants read to Everyone; the password
+still encrypts it.
+[honua-server#5439](https://github.com/honua-io/honua-server/issues/5439) tracks whether a
+root-owned `0640` mount can replace that mode.
+
 ```powershell
 $ErrorActionPreference = 'Stop'
 $Project = 'honua-' + [Guid]::NewGuid().ToString('N').Substring(0, 12)
@@ -66,6 +73,7 @@ function New-InstallSecret {
 }
 $Image = 'ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a'
 $Port = 18080
+$KeyringPassword = New-InstallSecret
 @"
 COMPOSE_PROJECT_NAME=$Project
 HONUA_IMAGE=$Image
@@ -73,6 +81,7 @@ HONUA_HTTP_PORT=$Port
 POSTGRES_PASSWORD=$(New-InstallSecret)
 HONUA_ADMIN_PASSWORD=Aa1!$(New-InstallSecret)
 HONUA_MASTER_KEY=$(New-InstallSecret)
+HONUA_KEYRING_PASSWORD=$KeyringPassword
 "@ | Set-Content -LiteralPath .env -Encoding Ascii
 function dc {
     & docker compose --env-file .env -f compose.yaml @args
@@ -102,6 +111,8 @@ services:
       ConnectionStrings__Redis: redis:6379
       HONUA_ADMIN_PASSWORD: ${HONUA_ADMIN_PASSWORD:?Required}
       Security__ConnectionEncryption__MasterKey: ${HONUA_MASTER_KEY:?Required}
+      Operations__SecretChannel__KeyRingCertificatePath: /var/lib/honua/keyring.pfx
+      Operations__SecretChannel__KeyRingCertificatePassword: ${HONUA_KEYRING_PASSWORD:?Required}
       Cors__AllowedOrigins__0: "http://localhost:${HONUA_HTTP_PORT}"
       Database__MigrationSafety__ContractApplyPolicy: Gate
       FileStorage__Provider: Local
@@ -119,6 +130,7 @@ services:
       - /tmp:noexec,nosuid,size=100m
     volumes:
       - storage:/var/lib/honua/storage
+      - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro
   postgres:
     image: pgrouting/pgrouting:17-3.5-3.7.3
     environment:
@@ -159,6 +171,13 @@ configs:
       CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;
       CREATE EXTENSION IF NOT EXISTS postgis_tiger_geocoder;
 '@ | Set-Content -LiteralPath compose.yaml -Encoding Ascii
+New-Item -ItemType Directory -Path (Join-Path $Install 'secrets') | Out-Null
+$cert = New-SelfSignedCertificate -Subject 'CN=honua-windows' -KeyAlgorithm RSA -KeyLength 2048 -KeyExportPolicy Exportable -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter (Get-Date).AddYears(10)
+$secure = ConvertTo-SecureString -String $KeyringPassword -AsPlainText -Force
+Export-PfxCertificate -Cert $cert -FilePath (Join-Path $Install 'secrets\keyring.pfx') -Password $secure | Out-Null
+Remove-Item -LiteralPath ('Cert:\CurrentUser\My\' + $cert.Thumbprint) -DeleteKey
+Remove-Variable KeyringPassword
+icacls (Join-Path $Install 'secrets\keyring.pfx') /grant '*S-1-1-0:R' | Out-Null
 dc config --quiet
 dc pull
 dc up -d --wait --wait-timeout 180
@@ -340,9 +359,11 @@ the retained volumes and original credentials. Only then run step 2's
 variable-loading and readiness blocks. Run
 `journey.py --verify-only` afterward. A restart or container recreation is not a
 backup restore; follow [backup and recovery](../guides/deploy/backup-and-restore.md)
-before storing irreplaceable data. Retain the private `.env`, database, Redis,
-file-storage backup, and exact image identity together. Never delete volumes or
-regenerate `.env` to bypass a migration or credential failure.
+before storing irreplaceable data. Retain the private `.env`, `secrets\keyring.pfx`,
+database, Redis, file-storage backup, and exact image identity together. The
+certificate password is `HONUA_KEYRING_PASSWORD` in `.env`. A new certificate cannot
+decrypt operation secrets already stored in Redis. Never delete volumes, the
+certificate, or regenerate `.env` to bypass a migration or credential failure.
 
 ## Diagnostics and scoped teardown
 

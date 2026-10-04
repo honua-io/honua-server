@@ -1,13 +1,13 @@
 ---
 type: guide
 title: "Linux: install published packages"
-description: "Use Docker Engine with Compose 2.23.1 or later, Python 3.11 or later with venv and pip 22.3+, and a Bash terminal."
+description: "Use Docker Engine with Compose 2.23.1 or later, Python 3.11 or later with venv and pip 22.3+, OpenSSL 3, and a Bash terminal."
 resource: "https://github.com/honua-io/honua-server/releases"
 ---
 # Linux: install published packages
 
 Use Docker Engine with Compose 2.23.1 or later, Python 3.11 or later with venv and pip 22.3+,
-and a Bash terminal. The configuration runs the same Production image, registry
+OpenSSL 3, and a Bash terminal. The configuration runs the same Production image, registry
 clients and two-feature journey as the [Windows install](windows-packages.md).
 No source checkout, build or GitHub login is needed. This pre-cut profile
 selects `linux/amd64`; use an amd64 host for this rehearsal.
@@ -16,8 +16,17 @@ selects `linux/amd64`; use an amd64 host for this rehearsal.
 
 Choose unused loopback ports if 18080 (HTTP) or 18081 (native gRPC) is occupied.
 Set `HONUA_GRPC_PORT` in `.env` to override the gRPC default. A new directory, Compose
-project, network and three volumes isolate this installation. Keep `.env` private
-and retain it with the volumes; recreating it does not rotate database passwords.
+project, network and three volumes isolate this installation. Keep `.env` and
+`secrets/keyring.pfx` private and retain both with the volumes. Recreating `.env`
+does not rotate database passwords, and a new certificate cannot decrypt operation
+secrets already stored in Redis.
+
+Production stores operation secrets in Redis and will not start until an RSA PKCS#12
+encrypts that key ring. The block writes `secrets/keyring.pfx` and mounts it read-only.
+The container runs as a different user, so the file is world-readable; the password
+still encrypts it.
+[honua-server#5439](https://github.com/honua-io/honua-server/issues/5439) tracks whether a
+root-owned `0640` mount can replace that mode.
 
 ```bash
 set -euo pipefail
@@ -35,7 +44,8 @@ Path('.env').write_text(
     'HONUA_HTTP_PORT=18080\n'
     'POSTGRES_PASSWORD=' + secrets.token_hex(32) + '\n'
     'HONUA_ADMIN_PASSWORD=Aa1!' + secrets.token_hex(32) + '\n'
-    'HONUA_MASTER_KEY=' + secrets.token_hex(32) + '\n')
+    'HONUA_MASTER_KEY=' + secrets.token_hex(32) + '\n'
+    'HONUA_KEYRING_PASSWORD=' + secrets.token_hex(16) + '\n')
 PYTHON
 function dc { docker compose --env-file .env -f compose.yaml "$@"; }
 cat > compose.yaml <<'COMPOSE'
@@ -54,6 +64,8 @@ services:
       ConnectionStrings__Redis: redis:6379
       HONUA_ADMIN_PASSWORD: ${HONUA_ADMIN_PASSWORD:?Required}
       Security__ConnectionEncryption__MasterKey: ${HONUA_MASTER_KEY:?Required}
+      Operations__SecretChannel__KeyRingCertificatePath: /var/lib/honua/keyring.pfx
+      Operations__SecretChannel__KeyRingCertificatePassword: ${HONUA_KEYRING_PASSWORD:?Required}
       Cors__AllowedOrigins__0: "http://localhost:${HONUA_HTTP_PORT}"
       Database__MigrationSafety__ContractApplyPolicy: Gate
       FileStorage__Provider: Local
@@ -71,6 +83,7 @@ services:
       - /tmp:noexec,nosuid,size=100m
     volumes:
       - storage:/var/lib/honua/storage
+      - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro
   postgres:
     image: pgrouting/pgrouting:17-3.5-3.7.3
     environment:
@@ -111,6 +124,16 @@ configs:
       CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;
       CREATE EXTENSION IF NOT EXISTS postgis_tiger_geocoder;
 COMPOSE
+mkdir -p secrets
+HONUA_KEYRING_PASSWORD="$(grep '^HONUA_KEYRING_PASSWORD=' .env | cut -d= -f2)"
+openssl req -x509 -newkey rsa:2048 \
+  -keyout secrets/keyring.pem -out secrets/keyring.crt \
+  -days 3650 -nodes -subj "/CN=honua-linux"
+openssl pkcs12 -export \
+  -inkey secrets/keyring.pem -in secrets/keyring.crt \
+  -out secrets/keyring.pfx -passout "pass:${HONUA_KEYRING_PASSWORD}"
+rm -f secrets/keyring.pem secrets/keyring.crt
+chmod a+r secrets/keyring.pfx
 dc config --quiet
 dc pull
 dc up -d --wait --wait-timeout 180
@@ -285,7 +308,10 @@ dc up -d --wait --wait-timeout 180
 ```
 
 Define `wait_honua_ready` again from the startup block, call it, then run the
-readback above. Preserve the original `.env` and volumes. See the
+readback above. Preserve the original `.env`, `secrets/keyring.pfx`, and volumes.
+The certificate password is `HONUA_KEYRING_PASSWORD` in that `.env`. A new
+certificate, even with the same password, cannot decrypt operation secrets already
+stored in Redis. See the
 [production guide](../guides/deploy/docker-compose.md) for backup and restore;
 container recreation alone is not a backup.
 
@@ -320,7 +346,7 @@ file-storage volumes, run this from its saved directory:
 
 ```bash
 dc down --volumes
-unset HONUA_ADMIN_PASSWORD POSTGRES_PASSWORD HONUA_MASTER_KEY
+unset HONUA_ADMIN_PASSWORD POSTGRES_PASSWORD HONUA_MASTER_KEY HONUA_KEYRING_PASSWORD
 ```
 
 The private installation directory remains for deliberate retention or deletion.
