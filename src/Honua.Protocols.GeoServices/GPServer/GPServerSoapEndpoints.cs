@@ -159,6 +159,19 @@ internal static class GPServerSoapEndpoints
 
     private static XElement BuildParameterValue(GPParameterInfo parameter)
     {
+        if (parameter.DataType is "GPFeatureRecordSetLayer" or "GPRecordSet"
+            && parameter.DefaultValue is { ValueKind: JsonValueKind.Object } featureSet)
+        {
+            var recordSet = GPServerSoapExecution.BuildRecordSetValue(new GPResultResponse
+            {
+                ParamName = parameter.Name,
+                DataType = parameter.DataType,
+                Value = featureSet,
+            });
+            recordSet.Name = "Value";
+            return recordSet;
+        }
+
         // ArcPy instantiates the parameter from this concrete GPValue object.
         // Omitting it for an unset default leaves the native parameter untyped.
         // Empty typed objects describe unset values; they do not add defaults

@@ -30,10 +30,10 @@ public sealed class CatalogExecutableConformanceTests
     {
         var definitions = _catalog.ListProcesses();
 
-        definitions.Should().HaveCount(98);
+        definitions.Should().HaveCount(100);
         definitions.Should().OnlyHaveUniqueItems(process => process.ProcessId);
         definitions.Should().NotContain(process => process.ExecutionKind == ProcessExecutionKind.Unclassified);
-        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.Job).Should().Be(82);
+        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.Job).Should().Be(84);
         definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.ProtocolOnly).Should().Be(4);
         definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.WorkflowOnly).Should().Be(12);
         definitions.Should().NotContain(
@@ -229,6 +229,7 @@ public sealed class CatalogExecutableConformanceTests
             new LayerSimplifyExecutor(scopeFactory, monitor, NullLogger<LayerSimplifyExecutor>.Instance),
             new LayerSpatialJoinExecutor(scopeFactory, monitor, NullLogger<LayerSpatialJoinExecutor>.Instance),
             new EnrichmentJobExecutor(scopeFactory, monitor, NullLogger<EnrichmentJobExecutor>.Instance),
+            new RoutingJobExecutor(scopeFactory, monitor, NullLogger<RoutingJobExecutor>.Instance),
             new OverlayClipExecutor(monitor),
             new OverlayIntersectExecutor(monitor),
             new OverlayUnionExecutor(monitor),

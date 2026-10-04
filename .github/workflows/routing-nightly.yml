@@ -65,6 +65,39 @@ jobs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 
+      - name: Verify routing execution receipts
+        if: ${{ !cancelled() }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          manifest = json.loads(Path("certification/gp-operation-matrix.v1.json").read_text())
+          required = {
+              receipt["test"]
+              for row in manifest["operations"]
+              if row["processId"].startswith("routing.") and row["status"] == "proven"
+              for receipt in row["evidence"]
+          }
+          if not required:
+              raise SystemExit("The routing execution evidence selection is empty.")
+          namespace = {"t": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
+          root = ET.parse("tests/TestResults/routing-tests.trx").getroot()
+          names = {
+              test.attrib["id"]: test.find("t:TestMethod", namespace).attrib["name"]
+              for test in root.findall(".//t:UnitTest", namespace)
+          }
+          results = root.findall(".//t:UnitTestResult", namespace)
+          if not results or any(result.attrib["outcome"] != "Passed" for result in results):
+              raise SystemExit("Routing requires actual passing results with no failed or skipped cases.")
+          passed = {names[result.attrib["testId"]] for result in results}
+          missing = required - passed
+          if missing:
+              raise SystemExit(f"Missing routing execution proofs: {sorted(missing)}")
+          print(f"Verified {len(results)} routing passes, including {len(required)} catalog execution proofs.")
+          PY
+
       - name: Upload routing test results
         if: always()
         uses: actions/upload-artifact@v7

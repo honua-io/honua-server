@@ -50,12 +50,25 @@ public sealed class NAServerMetadataTests
         };
         var document = NAServerMetadata.BuildGetToolInfoResult(
             "asyncLocationAllocation", "SolveLocationAllocation",
-            new RoutingProviderCapabilities(SupportsLocationAllocation: true), configuration);
+            new RoutingProviderCapabilities(SupportsLocationAllocation: true), configuration, NetworkDataset.Default);
         var limits = document["results"]![0]!["value"]!["serviceLimits"]!;
 
         limits["maximumFacilities"]!.GetValue<int>().Should().Be(7);
         limits["maximumFacilitiesToFind"]!.GetValue<int>().Should().Be(7);
         limits["maximumDemandPoints"]!.GetValue<int>().Should().Be(11);
+    }
+
+    [UnitTheory]
+    [InlineData(4326)]
+    [InlineData(3857)]
+    public void GetToolInfo_UsesTheConfiguredNetworkProjection(int srid)
+    {
+        var dataset = NetworkDataset.Default with { Srid = srid };
+        var document = NAServerMetadata.BuildGetToolInfoResult("asyncRoute", "FindRoutes",
+            new RoutingProviderCapabilities(SupportsRoute: true), new RoutingConfiguration(), dataset);
+
+        document["results"]![0]!["value"]!["networkDataset"]!["spatialReference"]!["wkid"]!
+            .GetValue<int>().Should().Be(srid);
     }
 
     [UnitTest]

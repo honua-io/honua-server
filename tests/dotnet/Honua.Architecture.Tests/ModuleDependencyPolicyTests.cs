@@ -251,11 +251,14 @@ public sealed class ModuleDependencyPolicyTests
         // Server so the OGC API Processes / GeoServices GPServer protocol
         // adapters (and Ai's analysis orchestration) can reference it without
         // pulling Server transitively. Depends on Abstractions + Core +
-        // Geometry (NTS) + Hosting + Jobs + ServiceDefaults; it must NEVER
+        // Geometry (NTS) + Routing + Hosting + Jobs + ServiceDefaults; it must NEVER
         // back-reference Server (enforced by GeoprocessingIsolationTests).
         (ModuleRole.Geoprocessing, ModuleRole.Abstractions),
         (ModuleRole.Geoprocessing, ModuleRole.Core),
         (ModuleRole.Geoprocessing, ModuleRole.Geometry),
+        // Durable routing jobs adapt IRoutingProvider without a protocol-local
+        // executor or storage-provider dependency. Routing has no reverse edge.
+        (ModuleRole.Geoprocessing, ModuleRole.Routing),
         (ModuleRole.Geoprocessing, ModuleRole.Hosting),
         (ModuleRole.Geoprocessing, ModuleRole.Jobs),
         (ModuleRole.Geoprocessing, ModuleRole.ServiceDefaults),

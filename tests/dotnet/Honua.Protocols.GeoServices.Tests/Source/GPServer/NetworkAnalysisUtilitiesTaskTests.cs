@@ -118,6 +118,7 @@ public sealed class NetworkAnalysisUtilitiesTaskTests : IClassFixture<NAServerEn
         // The shape an ArcGIS Enterprise 11.5 NetworkAnalysisUtilities service answers with.
         root.GetProperty("isPortal").GetBoolean().Should().BeTrue();
         var network = root.GetProperty("networkDataset");
+        network.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
         network.GetProperty("defaultCostAttribute").GetString().Should().Be("TravelTime");
         network.GetProperty("defaultRestrictions").GetArrayLength().Should().Be(0);
         network.GetProperty("networkAttributes").EnumerateArray()

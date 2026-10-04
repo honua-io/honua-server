@@ -7,10 +7,12 @@
     "catalogSourceRevision": "14d101ec17f4b7ccdc6106ee2cb5bd4d621d779f",
     "candidateBinding": "https://github.com/honua-io/honua-server/issues/3848",
     "layerReceiptEnforcement": "PR Gate step 'Prove the layer execution cases ran, not skipped' reads back layer-execution-proof.trx and fails unless every evidence test these rows still call proven in the Category=LayerExecutionProof files reports its own Passed receipt: source.honua-layer, source.esri-featureserver and sink.honua-layer. dotnet test exits 0 on a filter that matches nothing and on a cleanly-skipping fixture, so the step count alone could not tell a real PostGIS run from no run at all.",
-    "catalogSourceContentDigest": "sha256:159a6771d152101f9ee134e04febf5b11197007378921e2ff0dedcb7fbb41dfa",
+    "catalogSourceContentDigest": "sha256:643e1ded539ef84e8d2a8138de420cf5e6ea5b9fabc3b20abc39f0b19d82c276",
     "workspaceRetryAudit": "certification/gp-workspace-retry-audit-20260914.md",
     "workspaceStoreAudit": "certification/gp-workspace-store-audit-20260914.md",
-    "workspaceOwnerAudit": "certification/gp-workspace-owner-audit-20261003.md"
+    "workspaceOwnerAudit": "certification/gp-workspace-owner-audit-20261003.md",
+    "routingExecutionAuditRecordedAt": "2026-10-04T13:30:26Z",
+    "routingReceiptEnforcement": "Routing Nightly verifies passing TRX results without skips for every routing evidence method cited here. These rows prove shared-executor content on real pgRouting. Client certification evidence is maintained separately in the private honua-esri-compat repository."
   },
   "scope": "Every process returned by BuiltInProcessCatalog.ListProcesses(). A proven row requires concrete input, the production operation/executor path, and a semantic output-content assertion.",
   "statusDefinitions": {
@@ -41,14 +43,14 @@
     "https://github.com/honua-io/honua-server/issues/3857"
   ],
   "summary": {
-    "total": 98,
+    "total": 100,
     "byStatus": {
-      "proven": 98,
+      "proven": 100,
       "partially-proven": 0,
       "unproven": 0
     },
     "byEntryPoint": {
-      "job": 82,
+      "job": 84,
       "protocol": 4,
       "workflow": 12
     }
@@ -1604,6 +1606,34 @@
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/PointCloudProof",
           "assertion": "Required production-pinned PDAL and real LAS: independent binary decode asserts uncompressed LAS, count, all XYZ/attributes, scale, bounds, writer header metadata, CRS pass-through and analytical reprojection to EPSG:4979; oracle rejects changed intensity in valid LAS.",
           "bodyDigest": "sha256:1976a0b54c2e93ed461222c180ee3017da3f6481512fea1405f14c1cb3905db6"
+        }
+      ]
+    },
+    {
+      "processId": "routing.route",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Routing/PgRoutingProviderIntegrationTests.cs",
+          "test": "RouteJob_RealLattice_PublishesFourMinuteConnectedPath",
+          "fixturePath": "tests/dotnet/Honua.TestKit/PgRoutingFixture.cs",
+          "assertion": "Production RoutingJobExecutor and PgRoutingProvider execute on the real 3x3 pgRouting fixture. Decoded artifacts contain a connected four-edge path with exact endpoints, four minutes and independently bounded geodesic length. The artifact transport alone is captured in memory; routing is not mocked.",
+          "bodyDigest": "sha256:0c619f453edbd3953fc5ec684bcecd98d0d1f118fd5937d301189051bea1db8c"
+        }
+      ]
+    },
+    {
+      "processId": "routing.service-area",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Routing/PgRoutingProviderIntegrationTests.cs",
+          "test": "ServiceAreaJob_RealLattice_PreservesOneMinuteReachability",
+          "fixturePath": "tests/dotnet/Honua.TestKit/PgRoutingFixture.cs",
+          "assertion": "Production RoutingJobExecutor and PgRoutingProvider execute on the real 3x3 pgRouting fixture. The decoded valid one-minute polygon covers exactly the three reachable lattice vertices, excludes the other six, respects independent area and coordinate bounds, and preserves facility and break attributes. This is server execution evidence, not native-client acceptance.",
+          "bodyDigest": "sha256:34de4ffec026d35ebd824c03c569272efd51cb16e6cd57b0513ad45d02704497"
         }
       ]
     }
