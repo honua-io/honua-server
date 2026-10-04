@@ -888,6 +888,18 @@ internal static partial class AttachmentEndpoints
                 await rbacError.ExecuteAsync(context);
                 return null;
             }
+
+            // An attachment write edits the feature it belongs to (SEC-5): a publication whose
+            // declared capabilities include no edit kind accepts no attachment writes either.
+            if (DeclaresNoEditCapability(service, publication))
+            {
+                await StandardErrorHelpers.CreateMethodNotAllowed(
+                    context,
+                    "Attachment edits are not enabled for this layer.",
+                    ["Declare an edit capability (Create, Update, Delete or Editing) on the publication before editing attachments."])
+                    .ExecuteAsync(context);
+                return null;
+            }
         }
 
         var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
@@ -909,6 +921,15 @@ internal static partial class AttachmentEndpoints
 
         return new AttachmentAccessContext(service, resource, storageLayerId.Value, reader);
     }
+
+    /// <summary>
+    /// Whether the publication declares a capability set that contains no edit kind. Metadata that
+    /// declares no capabilities at all makes no statement and is not treated as a refusal.
+    /// </summary>
+    private static bool DeclaresNoEditCapability(MetadataV2Service service, MetadataV2Publication publication)
+        => MetadataV2EditCapabilities.SupportsDeclared(service, publication, MetadataV2EditCapabilities.Create) == false &&
+           MetadataV2EditCapabilities.SupportsDeclared(service, publication, MetadataV2EditCapabilities.Update) == false &&
+           MetadataV2EditCapabilities.SupportsDeclared(service, publication, MetadataV2EditCapabilities.Delete) == false;
 
     private static bool TryParseObjectIds(
         Dictionary<string, StringValues> values,

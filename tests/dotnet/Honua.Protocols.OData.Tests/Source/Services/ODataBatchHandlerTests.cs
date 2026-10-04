@@ -156,6 +156,148 @@ public sealed class ODataBatchHandlerTests
         await featureReader.Received(2).GetAsync(1, existingFeature.Id, Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task ProcessBatchAsync_ChangeSetCreateOnPublicationDeclaringNoEditCapability_IsRefusedWithoutWriting()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        var featureWriter = Substitute.For<IFeatureWriter>();
+        var sut = CreateSut(featureReader, featureWriter);
+        var context = CreateContext(
+            featureReader,
+            featureWriter,
+            CreateMetadataProvider(serviceCapabilities: ["Query"]),
+            CreateUser("editor", "admin"));
+
+        var response = await sut.ProcessBatchAsync(
+            context,
+            new ODataBatchRequest
+            {
+                Requests =
+                [
+                    new ODataBatchRequestItem
+                    {
+                        Id = "create-city",
+                        Method = "POST",
+                        Url = $"Layers({1})/Features",
+                        AtomicityGroup = "g1",
+                        Body = new Dictionary<string, object?>
+                        {
+                            ["LayerId"] = 1,
+                            ["Attributes"] = new Dictionary<string, object?> { ["name"] = "Created in batch" }
+                        }
+                    }
+                ]
+            },
+            "https://example.test",
+            CancellationToken.None);
+
+        response.Responses.Should().ContainSingle().Which.Status.Should().Be(StatusCodes.Status405MethodNotAllowed);
+        await featureWriter.DidNotReceiveWithAnyArgs().ApplyEditsAsync(default, default!, default);
+        await featureWriter.DidNotReceiveWithAnyArgs().BeginTransactionAsync(default, default);
+    }
+
+    [Theory]
+    [InlineData("bob", false)]
+    [InlineData("alice", true)]
+    public async Task ProcessBatchAsync_ChangeSetUpdateOnOwnerPolicyLayer_IsWrittenOnlyForTheOwner(string principal, bool written)
+    {
+        const string ownerField = "created_by";
+        var featureReader = Substitute.For<IFeatureReader>();
+        var providerWriter = Substitute.For<IFeatureWriter>();
+        var existing = Feature.Create(
+            25,
+            geometry: null,
+            ImmutableDictionary<string, object?>.Empty.Add("name", "Before").Add(ownerField, "alice"));
+        featureReader.GetAsync(1, 25, Arg.Any<CancellationToken>()).Returns(Task.FromResult<Feature?>(existing));
+        providerWriter.ApplyEditsAsync(default, default!, default)
+            .ReturnsForAnyArgs(FeatureEditResult.Success(
+                createdCount: 0,
+                updatedCount: 1,
+                deletedCount: 0,
+                updateResults: ImmutableArray.Create(EditOperationResult.Success(25))));
+
+        var metadata = CreateMetadataProvider(ownerField: ownerField);
+        var user = CreateUser(principal, "data-editor");
+        var accessor = new HttpContextAccessor();
+        var sharedWriter = new Honua.Infrastructure.Editing.OwnerEditPolicyEnforcingFeatureWriter(
+            providerWriter,
+            metadata,
+            accessor,
+            new ServiceCollection()
+                .AddSingleton(featureReader)
+                .AddSingleton(Options.Create(new RbacOptions { DataEditorRoles = ["data-editor"] }))
+                .BuildServiceProvider());
+        var context = CreateContext(featureReader, sharedWriter, metadata, user, dataEditorRoles: ["data-editor"]);
+        accessor.HttpContext = context;
+        var sut = CreateSut(featureReader, sharedWriter);
+
+        var response = await sut.ProcessBatchAsync(
+            context,
+            new ODataBatchRequest
+            {
+                Requests =
+                [
+                    new ODataBatchRequestItem
+                    {
+                        Id = "update-city",
+                        Method = "PATCH",
+                        Url = $"Features({1},{25})",
+                        AtomicityGroup = "g1",
+                        Body = new Dictionary<string, object?>
+                        {
+                            ["Attributes"] = new Dictionary<string, object?> { ["name"] = "After" }
+                        }
+                    }
+                ]
+            },
+            "https://example.test",
+            CancellationToken.None);
+
+        response.Responses.Should().ContainSingle();
+        if (written)
+        {
+            await providerWriter.ReceivedWithAnyArgs(1).ApplyEditsAsync(default, default!, default);
+        }
+        else
+        {
+            response.Responses[0].Status.Should().BeGreaterThanOrEqualTo(400);
+            await providerWriter.DidNotReceiveWithAnyArgs().ApplyEditsAsync(default, default!, default);
+        }
+    }
+
+    private static ClaimsPrincipal CreateUser(string name, params string[] roles)
+    {
+        var claims = new List<Claim> { new(ClaimTypes.Name, name) };
+        claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
+        return new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"));
+    }
+
+    private static DefaultHttpContext CreateContext(
+        IFeatureReader featureReader,
+        IFeatureWriter featureWriter,
+        IMetadataV2GraphProvider metadata,
+        ClaimsPrincipal user,
+        string[]? dataEditorRoles = null)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
+        services.AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions
+        {
+            DataEditorRoles = dataEditorRoles ?? []
+        }));
+        services.AddSingleton(metadata);
+        services.AddSingleton(new ODataFeatureProviderResolver(
+            featureReader,
+            featureWriter,
+            providerQueryRouter: null));
+
+        return new DefaultHttpContext
+        {
+            RequestServices = services.BuildServiceProvider(),
+            User = user
+        };
+    }
+
     private static ODataBatchHandler CreateSut(
         IFeatureReader featureReader,
         IFeatureWriter featureWriter)
@@ -216,8 +358,11 @@ public sealed class ODataBatchHandlerTests
             => Task.CompletedTask;
     }
 
-    private static TestMetadataV2GraphProvider CreateMetadataProvider()
-        => new TestMetadataV2GraphBuilder()
+    private static TestMetadataV2GraphProvider CreateMetadataProvider(
+        IReadOnlyList<string>? serviceCapabilities = null,
+        string? ownerField = null)
+    {
+        var graph = new TestMetadataV2GraphBuilder()
             .AddResource(
                 "res-layer-1",
                 "cities",
@@ -228,7 +373,16 @@ public sealed class ODataBatchHandlerTests
                     new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 }
                 ])
             .AddStorageBinding("binding-layer-1", "res-layer-1", "test.layers.1", storageLayerId: 1)
-            .AddService("svc-cities", "cities", protocols: ["OData"])
+            .AddService(
+                "svc-cities",
+                "cities",
+                protocols: ["OData"],
+                options: serviceCapabilities is null
+                    ? null
+                    : new Dictionary<string, System.Text.Json.JsonElement>
+                    {
+                        ["capabilities"] = System.Text.Json.JsonSerializer.SerializeToElement(serviceCapabilities)
+                    })
             .AddPublication(
                 "svc-cities-layer-1",
                 "svc-cities",
@@ -236,7 +390,28 @@ public sealed class ODataBatchHandlerTests
                 layerIndex: 1,
                 storageBindingId: "binding-layer-1",
                 publicationType: MetadataV2PublicationType.ODataEntitySet)
-            .BuildProvider();
+            .Build();
+
+        if (ownerField is not null)
+        {
+            graph = graph with
+            {
+                Resources = graph.Resources
+                    .Select(resource => resource with
+                    {
+                        SchemaFields =
+                        [
+                            .. resource.SchemaFields,
+                            new MetadataV2Field { Name = ownerField, Type = MetadataV2FieldType.String }
+                        ],
+                        OwnerEditPolicy = new MetadataV2OwnerEditPolicy { Enabled = true, OwnerField = ownerField }
+                    })
+                    .ToArray()
+            };
+        }
+
+        return new TestMetadataV2GraphProvider(graph);
+    }
 
     private static Feature CreateFeature(long id, string name)
         => Feature.Create(

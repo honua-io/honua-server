@@ -16,6 +16,7 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Collaboration;
 using Honua.Infrastructure.Configuration;
+using Honua.Infrastructure.Editing;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Services;
@@ -77,6 +78,12 @@ internal static class InfrastructureCompositionRoot
         // overwrite a feature another editor holds. Registered after the audit decorator so
         // a blocked edit never reaches the auditor as an applied write.
         services.AddFeatureLockEnforcingFeatureWriter();
+
+        // Owner-based edit policies at the same shared boundary (SEC-5). GeoServices applyEdits
+        // and the attachment endpoints evaluate the policy themselves for their own error shape;
+        // this decorator applies the same decision to every other write path. Outermost, so a
+        // refused edit reaches neither the lease check nor the auditor.
+        services.AddOwnerEditPolicyEnforcingFeatureWriter();
 
         // Registry-backed geographic-SRID classification seam (#2794). Composes the provider's
         // ICrsRegistry (registered above for providers that ship one, e.g. Postgres) with the
