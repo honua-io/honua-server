@@ -29,6 +29,11 @@ internal readonly record struct StretchBounds(double Lo, double Hi);
 /// </summary>
 internal sealed class PostgresRasterStore : IRasterStore
 {
+    private static string BuildExportDataExpression(RasterFormat format, string driver, string options)
+        => format == RasterFormat.Raw
+            ? "ST_AsBinary(rast, TRUE)"
+            : $"ST_AsGDALRaster(rast, '{driver}'{options})";
+
     private static readonly FrozenSet<string> _allowedOutputFormats = new[] { "GTiff", "PNG", "JPEG", "COG" }.ToFrozenSet(StringComparer.Ordinal);
     private static readonly FrozenSet<string> _allowedResamplingAlgorithms = new[] { "NearestNeighbor", "Bilinear", "Cubic", "Lanczos" }.ToFrozenSet(StringComparer.Ordinal);
     private static readonly FrozenSet<string> _allowedZonalStatistics = new[] { "count", "sum", "mean", "min", "max", "stddev", "variance" }.ToFrozenSet(StringComparer.Ordinal);
@@ -528,7 +533,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
 
         var formatName = query.OutputFormat.ToGdalDriverName();
-        if (!_allowedOutputFormats.Contains(formatName))
+        if (query.OutputFormat != RasterFormat.Raw && !_allowedOutputFormats.Contains(formatName))
         {
             throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
         }
@@ -645,7 +650,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                            ORDER BY n)) AS rast
                 FROM frame_grid g, source s
             )
-            SELECT ST_AsGDALRaster(rast, '{effectiveFormat}'{creationOptionsClause}) AS data,
+            SELECT {BuildExportDataExpression(query.OutputFormat, effectiveFormat, creationOptionsClause)} AS data,
                    ST_Width(rast) AS width,
                    ST_Height(rast) AS height,
                    ST_SRID(rast) AS srid,
@@ -701,6 +706,11 @@ internal sealed class PostgresRasterStore : IRasterStore
         var ymaxOrd = reader.GetOrdinal("ymax");
 
         var data = reader.IsDBNull(dataOrd) ? Array.Empty<byte>() : (byte[])reader[dataOrd];
+        if (query.OutputFormat == RasterFormat.Raw)
+        {
+            return PostgresRasterRawDecoder.Decode(data);
+        }
+
         var width = reader.GetInt32(widthOrd);
         var height = reader.GetInt32(heightOrd);
         var srid = reader.GetInt32(sridOrd);
@@ -735,7 +745,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         var formatName = query.OutputFormat.ToGdalDriverName();
-        if (!_allowedOutputFormats.Contains(formatName))
+        if (query.OutputFormat != RasterFormat.Raw && !_allowedOutputFormats.Contains(formatName))
         {
             throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
         }
@@ -877,7 +887,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM {_rasterDataTable}
                 WHERE layer_id = @layerId AND id = @rasterId
             ){frameCtes}
-            SELECT ST_AsGDALRaster(rast, '{effectiveFormat}'{creationOptionsClause}) AS data,
+            SELECT {BuildExportDataExpression(query.OutputFormat, effectiveFormat, creationOptionsClause)} AS data,
                    ST_Width(rast) AS width,
                    ST_Height(rast) AS height,
                    ST_SRID(rast) AS srid,
@@ -919,6 +929,11 @@ internal sealed class PostgresRasterStore : IRasterStore
         var ymaxOrd = reader.GetOrdinal("ymax");
 
         var data = reader.IsDBNull(dataOrd) ? Array.Empty<byte>() : (byte[])reader[dataOrd];
+        if (query.OutputFormat == RasterFormat.Raw)
+        {
+            return PostgresRasterRawDecoder.Decode(data);
+        }
+
         var width = reader.GetInt32(widthOrd);
         var height = reader.GetInt32(heightOrd);
         var srid = reader.GetInt32(sridOrd);
@@ -2037,7 +2052,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         var formatName = query.OutputFormat.ToGdalDriverName();
-        if (!_allowedOutputFormats.Contains(formatName))
+        if (query.OutputFormat != RasterFormat.Raw && !_allowedOutputFormats.Contains(formatName))
         {
             throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
         }
@@ -2049,6 +2064,19 @@ internal sealed class PostgresRasterStore : IRasterStore
             ("@layerId", layerId),
             ("@rasterIds", rasterIds)
         };
+
+        // Select/order source bands before union, matching the single-raster export path.
+        // Keeping selection in the canonical expression also preserves NoData per band.
+        if (query.Bands is { Length: > 0 } bands)
+        {
+            if (bands.Any(static band => band <= 0))
+            {
+                throw new ArgumentException("Raster band numbers must be positive.", nameof(query));
+            }
+
+            sourceRasterExpr = "ST_Band(raster, @bands)";
+            extraParams.Add(("@bands", bands));
+        }
 
         // Covering the clip envelope (Esri exportImage bbox, #4060) replaces the in-place
         // reprojection and resize with the frame CTEs, exactly as on the single-raster path.
@@ -2177,7 +2205,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM merged
                 WHERE rast IS NOT NULL
             ){mosaicFrameCtes}
-            SELECT ST_AsGDALRaster(rast, '{effectiveFormat}'{creationOptionsClause}) AS data,
+            SELECT {BuildExportDataExpression(query.OutputFormat, effectiveFormat, creationOptionsClause)} AS data,
                    ST_Width(rast) AS width,
                    ST_Height(rast) AS height,
                    ST_SRID(rast) AS srid,
@@ -2219,6 +2247,11 @@ internal sealed class PostgresRasterStore : IRasterStore
         var ymaxOrd = reader.GetOrdinal("ymax");
 
         var data = reader.IsDBNull(dataOrd) ? Array.Empty<byte>() : (byte[])reader[dataOrd];
+        if (query.OutputFormat == RasterFormat.Raw)
+        {
+            return PostgresRasterRawDecoder.Decode(data);
+        }
+
         var width = reader.IsDBNull(widthOrd) ? query.OutputWidth ?? 0 : reader.GetInt32(widthOrd);
         var height = reader.IsDBNull(heightOrd) ? query.OutputHeight ?? 0 : reader.GetInt32(heightOrd);
         var srid = reader.IsDBNull(sridOrd) ? query.OutputSrid : reader.GetInt32(sridOrd);

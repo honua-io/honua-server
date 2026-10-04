@@ -53,6 +53,13 @@ public readonly record struct RasterResult
     /// Pixel type of the result data.
     /// </summary>
     public string? PixelType { get; init; }
+
+    /// <summary>
+    /// Optional per-band validity masks for raw samples: one bit per pixel, most-significant
+    /// bit first, with one meaning valid. Raw data is little-endian and band sequential;
+    /// the stored NoData sample values remain in <see cref="Data"/>.
+    /// </summary>
+    public byte[][]? BandValidityMasks { get; init; }
 }
 
 /// <summary>
