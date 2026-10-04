@@ -441,7 +441,7 @@ internal sealed class OwnerEditPolicyEnforcer
 
     private static IEnumerable<(long ObjectId, AttributeRuleEditEvent EditEvent)> CollectTargets(FeatureEditBatch batch)
     {
-        var seen = new HashSet<(long, AttributeRuleEditEvent)>();
+        var targets = new List<(long ObjectId, AttributeRuleEditEvent EditEvent)>();
         if (!batch.Operations.IsDefaultOrEmpty)
         {
             foreach (var operation in batch.Operations)
@@ -449,18 +449,10 @@ internal sealed class OwnerEditPolicyEnforcer
                 switch (operation.Kind)
                 {
                     case FeatureEditOperationKind.Update when operation.Feature is { } feature:
-                        if (seen.Add((feature.Id, AttributeRuleEditEvent.Update)))
-                        {
-                            yield return (feature.Id, AttributeRuleEditEvent.Update);
-                        }
-
+                        targets.Add((feature.Id, AttributeRuleEditEvent.Update));
                         break;
                     case FeatureEditOperationKind.Delete when operation.ObjectId is { } objectId:
-                        if (seen.Add((objectId, AttributeRuleEditEvent.Delete)))
-                        {
-                            yield return (objectId, AttributeRuleEditEvent.Delete);
-                        }
-
+                        targets.Add((objectId, AttributeRuleEditEvent.Delete));
                         break;
                     default:
                         break;
@@ -470,25 +462,15 @@ internal sealed class OwnerEditPolicyEnforcer
 
         if (!batch.Updates.IsDefaultOrEmpty)
         {
-            foreach (var update in batch.Updates)
-            {
-                if (seen.Add((update.Id, AttributeRuleEditEvent.Update)))
-                {
-                    yield return (update.Id, AttributeRuleEditEvent.Update);
-                }
-            }
+            targets.AddRange(batch.Updates.Select(static update => (update.Id, AttributeRuleEditEvent.Update)));
         }
 
         if (!batch.Deletes.IsDefaultOrEmpty)
         {
-            foreach (var objectId in batch.Deletes)
-            {
-                if (seen.Add((objectId, AttributeRuleEditEvent.Delete)))
-                {
-                    yield return (objectId, AttributeRuleEditEvent.Delete);
-                }
-            }
+            targets.AddRange(batch.Deletes.Select(static objectId => (objectId, AttributeRuleEditEvent.Delete)));
         }
+
+        return targets.Distinct();
     }
 
     /// <summary>
