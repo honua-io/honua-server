@@ -42,6 +42,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  operator-preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      provisioned: ${{ steps.operator-secret.outputs.provisioned }}
+    steps:
+      - name: Check cloud validation operator precondition
+        id: operator-secret
+        shell: bash
+        env:
+          CLOUD_VALIDATION_ADMIN_API_KEY: ${{ secrets.CLOUD_VALIDATION_ADMIN_API_KEY }}
+        run: |
+          if [[ -z "$CLOUD_VALIDATION_ADMIN_API_KEY" ]]; then
+            reason="SKIPPED: cloud post-apply validation requires CLOUD_VALIDATION_ADMIN_API_KEY; the operator must configure this repository secret for a provisioned backend."
+            echo "::notice::$reason"
+            echo "$reason" >> "$GITHUB_STEP_SUMMARY"
+            echo "provisioned=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "provisioned=true" >> "$GITHUB_OUTPUT"
+          fi
+
   local-target:
     name: Post-apply contract (local target)
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.base_url == '' }}
@@ -65,7 +85,8 @@ jobs:
 
   deployed-environment:
     name: Post-apply contract (deployed environment)
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.base_url != '' }}
+    needs: operator-preflight
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.base_url != '' && needs.operator-preflight.outputs.provisioned == 'true' }}
     uses: ./.github/workflows/cloud-post-apply-validation.yml
     with:
       base_url: ${{ inputs.base_url }}
