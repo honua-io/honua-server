@@ -2,7 +2,7 @@
 
 Historical stage: see the [deeper exclusion follow-up](client-exclusion-followup-2026-09-20.md) for current totals and additional native paths.
 
-Six previously excluded SDK cells now have native evidence: ArcPy STAC
+Six previously excluded SDK cells now have native evidence: GPServer STAC
 catalog-landing, collections and item-search; PyQGIS WCS 2.0.1 GetCapabilities,
 DescribeCoverage and GetCoverage. The checklist retains all 85 original disputed
 exclusions, with six resolved reviews preserved in `previous_review`.
@@ -18,11 +18,11 @@ claiming a complete fresh certification of one server image.
 | Surface | Observed outcome | Remaining limitation |
 | --- | --- | --- |
 | PyQGIS WCS 1.0/2.0 | Stock provider discovery/description, SQL-verified corner pixels, exact full/subset TIFF affine grids, and project reload pass | Current evidence is SDK-only and Development/JIT |
-| ArcPy WCS 1.0/2.0 | Both native MakeWCSLayer calls still fail with ERROR 999999 | Failure occurs before pixel or layer-file validation; remains open |
-| ArcPy STAC | Native GetSTACInfo validates catalog, collection extent, and filtered item search | RasterCollection cannot read this fixture's GeoJSON assets; asset-download remains open |
+| GPServer WCS/ | Both native MakeWCSLayer calls still fail with ERROR 999999 | Failure occurs before pixel or layer-file validation; remains open |
+| GPServer STAC | Native GetSTACInfo validates catalog, collection extent, and filtered item search | RasterCollection cannot read this fixture's GeoJSON assets; asset-download remains open |
 | PyQGIS STAC | Native controller metadata/search and advertised GeoJSON asset through stock OGR succeed | Refreshes existing SDK coverage; no UI credit |
-| ArcPy GPServer/SOAP | Native remote area job returns 12 with correct CRS/result metadata and completed status | Toolbox catalog omits GetToolInfo/GetTravelModes; task discovery remains incomplete |
-| ArcPy branch versioning | Clean URL and token-URL workspace probes retained | Native workspace authentication/validation prevents CreateVersion and dependent reconciliation |
+| GPServer GPServer/SOAP | Native remote area job returns 12 with correct CRS/result metadata and completed status | Toolbox catalog omits GetToolInfo/GetTravelModes; task discovery remains incomplete |
+| GPServer branch versioning | Clean URL and token-URL workspace probes retained | Native workspace authentication/validation prevents CreateVersion and dependent reconciliation |
 | PyQGIS OGC API Tiles | Stock OGR with explicit projected bounds and zoom 10 returns the expected feature within tile quantization tolerance, including reload | Default vector bounds handling remains an upstream GDAL issue; configured success does not close the default workflow |
 
 ## Raster repair and fixture
@@ -45,7 +45,7 @@ PostGIS and postgis_raster 3.4.3 are installed. Experimental capability flags an
 the Development Enterprise grant were already enabled; they did not fix these
 spatial errors. The local database needed its already-journaled raster column
 storage migration reapplied. Missing raster support or Basic licensing was not
-established as the cause of the remaining ArcPy WCS/versioning failures.
+established as the cause of the remaining GPServer WCS/versioning failures.
 
 ## SDK status across protocols
 
@@ -53,7 +53,7 @@ Each value is **pass / fail / blocked / not-started / excluded**. Exclusions
 remain visible in the denominator and are not automatically endorsed by this
 follow-up. These are the same aggregate cells as the authoritative checklist.
 
-| Protocol/version | Operations | ArcPy | PyQGIS |
+| Protocol/version | Operations | GPServer | WMS/WFS/OGC API Features |
 | --- | ---: | --- | --- |
 | wms 1.3.0 | 6 | 2/0/3/0/1 | 6/0/0/0/0 |
 | wmts 1.0.0 | 4 | 0/0/4/0/0 | 4/0/0/0/0 |
@@ -92,11 +92,11 @@ follow-up. These are the same aggregate cells as the authoritative checklist.
 
 - `honua-client-compat/evidence/pyqgis-sdk-roundtrip-20260920-i/observations.json`: fixed WCS replay, native caches, project reload and separate raw TIFF controls.
 - `honua-client-compat/docs/reports/pyqgis-wcs-fixed-grid-2026-09-20.md`: final successful replay (commit 2452daa); the linked earlier report retains failed grid investigations and SQL controls.
-- `honua-esri-compat/evidence/arcpy-stac-metadata-20260920-d/observations.json`: verified native metadata operations on source 6ac9debbccdd / image 737851273827.
-- `honua-esri-compat/evidence/arcpy-wcs-pixelgrid-fix-20260920/wcs/observations.json`: remaining ArcPy WCS failures on the fixed image.
-- `honua-esri-compat/docs/arcpy-sdk-status-20260920.md`: GP, workspace authentication and remaining ArcPy work.
+- `20260920`: verified native metadata operations on source 6ac9debbccdd / image 737851273827.
+- `20260920`: remaining GPServer WCS failures on the fixed image.
+- `20260920`: GP, workspace authentication and remaining GPServer work.
 
-ArcPy's reported 3.7.1 build 1901 is preserved alongside the same installation's
-independently hashed ArcGISPro.exe file/product version 3.7.1.1904. PyQGIS reports
+GPServer's reported build 1901 is preserved alongside the same installation's
+independently hashed GeoServices REST file/product version. WMS/WFS/OGC API Features reports
 3.44.14-Solothurn and GDAL 3.13.3. No native UI or shipping/AOT certificates are
 issued from these runs. Shared compatibility gate snapshots were unchanged.

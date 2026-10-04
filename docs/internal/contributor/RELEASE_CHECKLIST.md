@@ -51,10 +51,10 @@ Use this checklist for every MVP release.
 
 - [ ] Verify the nightly `client-compat-smoke-nightly.yml` workflow passes with zero `fail` results in automated `.cert.json` envelopes (FeatureServer, OGC API Features, MapServer, OData)
 - [ ] Review automated certification evidence artifacts: `certification/{timestamp}-ci-desktop-*.cert.json` and `certification/{timestamp}-ci-bi-odata.cert.json`
-- [ ] Verify the nightly `client-interop-nightly.yml` workflow passes with zero baseline `pass` regressions (including silent `pass`→`skip`/`not-applicable` drops), zero missing current envelopes, zero `expected-pairs.json` gaps, zero expected pairs without committed baselines, and zero new `fail` results in unbaselined cases across the docker/client-compat lanes (`gdal`, `pyqgis`, `openlayers`, `cesium`, `arcgis-stub`); review the committed [`docs/gis/gap-report.md`](../../gis/gap-report.md), attach the workflow gap-report evidence artifact, and confirm `skip`/`not-applicable` rationales still match the envelope notes (Cesium vector-feature exclusions, ArcGIS Pro pending licensed runner)
+- [ ] Verify the nightly `client-interop-nightly.yml` workflow passes with zero baseline `pass` regressions (including silent `pass`→`skip`/`not-applicable` drops), zero missing current envelopes, zero `expected-pairs.json` gaps, zero expected pairs without committed baselines, and zero new `fail` results in unbaselined cases across the docker/client-compat lanes (`gdal`, `WMS/WFS/OGC API Features`, `openlayers`, `cesium`, `arcgis-stub`); review the committed [`docs/gis/gap-report.md`](../../gis/gap-report.md), attach the workflow gap-report evidence artifact, and confirm `skip`/`not-applicable` rationales still match the envelope notes (Cesium vector-feature exclusions, GeoServices REST pending licensed runner)
 - [ ] Verify the [visual / style certification slice](../evidence/visual-style-certification-slice.md) evidence is present on the JS OpenLayers, JS Esri Leaflet, and PyQGIS lanes. The JS collectors seed the full 24-case core and emit every `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` ID as `pass`, `skip` (with a `pending-fixture` note), or `not-applicable` (with a documented reason). The PyQGIS envelope (`tests/python/pyqgis/conftest.py:CertificationEvidenceCollector`) does not seed unexercised IDs, so confirm only the three recorded slice IDs (`CERT-RNDR-SYM-01`, `CERT-RNDR-LIN-01`, `CERT-RNDR-FIL-01`) are present; `CERT-RNDR-LBL-01`, `CERT-RNDR-SPR-01`, and `CERT-RNDR-URL-01` are tracked in the slice spec's pending-fixture table instead of being seeded into the PyQGIS envelope
 - [ ] Confirm all `skip` and `not-applicable` entries have documented reasons (CERT-CONN-02 TLS, CERT-AUTH-01/02 auth, CERT-RNDR-01/02 visual, visual / style slice `pending-fixture` skips)
-- [ ] Produce manual client certification evidence per the [Evidence Specification](../../gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) for desktop (ArcGIS Pro, QGIS) and BI (Power BI, Excel) lanes
+- [ ] Produce manual client certification evidence per the [Evidence Specification](../../gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) for desktop (GeoServices REST, WMS/WFS/OGC API Features) and BI (Power BI, Excel) lanes
 - [ ] Verify all 24 common-core CERT-\* test cases (18 base + 6 visual / style slice) have results for each active client lane (automated + manual)
 
 ### Tested Client Versions (Required)
@@ -65,8 +65,8 @@ Update from certification workflow outputs and manual validation logs:
 
 | Client | Version tested | Protocol(s) | Result | Notes |
 |---|---|---|---|---|
-| ArcGIS Pro | _update_ | FeatureServer | _update_ | _update_ |
-| ArcGIS Pro | _update_ | MapServer | _update_ | _update_ |
+| GeoServices REST | _update_ | FeatureServer | _update_ | _update_ |
+| GeoServices REST | _update_ | MapServer | _update_ | _update_ |
 | QGIS | _update_ | OGC API Features | _update_ | _update_ |
 | Power BI Desktop | _update_ | OData v4 | _update_ | _update_ |
 | Excel | _update_ | OData v4 | _update_ | _update_ |

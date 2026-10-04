@@ -3,7 +3,7 @@
 Last reviewed: 2026-05-18
 
 This page defines the first server-side evidence slice for migrated
-geoprocessing workloads. It is intentionally narrower than full ArcPy,
+geoprocessing workloads. It is intentionally narrower than full GPServer,
 ModelBuilder, GeoServer WPS, or arbitrary OGC API Processes portability.
 
 ## Claim Scope
@@ -18,7 +18,7 @@ expose result artifact references through:
   `GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}`
 
 The current scaffold does not claim full source-script translation or full
-runtime parity for every built-in process. Python SDK ArcPy scanning and parity
+runtime parity for every built-in process. Python SDK GPServer scanning and parity
 execution remains tracked in
 [honua-sdk-python#59](https://github.com/honua-io/honua-sdk-python/issues/59).
 
@@ -74,12 +74,12 @@ dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
 
 ## Toolbox Translation Lane (#2145)
 
-The arcpy/toolbox (`.pyt`/`.tbx`/`.atbx`) translation lane is split across
+The GPServer/toolbox (`.pyt`/`.tbx`/`GPServer`) translation lane is split across
 repos by design:
 
 - **honua-sdk-python** (`honua-migrate`, sdk issues #59/#123/#124) owns
-  parsing toolbox sources, scanning arcpy constructs, and proposing per-tool
-  mappings onto native Honua processes. Binary `.tbx`/`.atbx` parsing remains
+  parsing toolbox sources, scanning GPServer constructs, and proposing per-tool
+  mappings onto native Honua processes. Binary `.tbx`/`GPServer` parsing remains
   an explicit `UnsupportedToolboxError` stub SDK-side.
 - **honua-server** owns the round-trip proof and the canonical runtime. The
   process catalog is the single source of truth for executable signatures, so
@@ -150,7 +150,7 @@ format-only rule such as `connectionId`'s GUID check accepts one. Declaring
 `allowedValues` for a discriminator moves it out of this bucket and into exact
 branch enumeration, which is the follow-up path for tightening the report.
 
-The server never parses toolbox sources and never emulates arcpy execution;
+The server never parses toolbox sources and never emulates GPServer execution;
 translated tools execute only as existing native processes through the
 canonical process/job runtime (OGC API Processes / GPServer).
 

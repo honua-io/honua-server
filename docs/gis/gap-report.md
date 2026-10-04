@@ -49,14 +49,14 @@ against the committed baselines under `tests/baselines/client-compat/`.
 | arcgis-stub | featureserver | CERT-PAGE-02 | pass | — |  |
 | arcgis-stub | featureserver | CERT-QFLT-01 | pass | — |  |
 | arcgis-stub | featureserver | CERT-QFLT-02 | pass | — | HTTP 200 |
-| arcgis-stub | featureserver | CERT-RNDR-01 | skip | — | pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run. |
-| arcgis-stub | featureserver | CERT-RNDR-02 | skip | — | pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run. |
-| arcgis-stub | featureserver | CERT-RNDR-FIL-01 | skip | — | pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run. |
-| arcgis-stub | featureserver | CERT-RNDR-LBL-01 | skip | — | pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run. |
-| arcgis-stub | featureserver | CERT-RNDR-LIN-01 | skip | — | pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run. |
+| arcgis-stub | featureserver | CERT-RNDR-01 | skip | — | pending: licensed-arcgis-runner; substantiate via GeoServices REST run. |
+| arcgis-stub | featureserver | CERT-RNDR-02 | skip | — | pending: licensed-arcgis-runner; substantiate via GeoServices REST run. |
+| arcgis-stub | featureserver | CERT-RNDR-FIL-01 | skip | — | pending: licensed-arcgis-runner; substantiate via GeoServices REST run. |
+| arcgis-stub | featureserver | CERT-RNDR-LBL-01 | skip | — | pending: licensed-arcgis-runner; substantiate via GeoServices REST run. |
+| arcgis-stub | featureserver | CERT-RNDR-LIN-01 | skip | — | pending: licensed-arcgis-runner; substantiate via GeoServices REST run. |
 | arcgis-stub | featureserver | CERT-RNDR-SPR-01 | not-applicable | — |  |
-| arcgis-stub | featureserver | CERT-RNDR-SYM-01 | skip | — | pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run. |
-| arcgis-stub | featureserver | CERT-RNDR-URL-01 | skip | — | pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run. |
+| arcgis-stub | featureserver | CERT-RNDR-SYM-01 | skip | — | pending: licensed-arcgis-runner; substantiate via GeoServices REST run. |
+| arcgis-stub | featureserver | CERT-RNDR-URL-01 | skip | — | pending: licensed-arcgis-runner; substantiate via GeoServices REST run. |
 | arcgis-stub | featureserver | CERT-SCHM-01 | pass | — |  |
 | arcgis-stub | featureserver | CERT-SCHM-02 | pass | — |  |
 | arcgis-stub | mapserver | CERT-AUTH-01 | pass | — | HTTP 200 |
@@ -73,14 +73,14 @@ against the committed baselines under `tests/baselines/client-compat/`.
 | arcgis-stub | mapserver | CERT-PAGE-02 | pass | — |  |
 | arcgis-stub | mapserver | CERT-QFLT-01 | pass | — |  |
 | arcgis-stub | mapserver | CERT-QFLT-02 | pass | — | HTTP 200 |
-| arcgis-stub | mapserver | CERT-RNDR-01 | skip | — | pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run. |
-| arcgis-stub | mapserver | CERT-RNDR-02 | skip | — | pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run. |
-| arcgis-stub | mapserver | CERT-RNDR-FIL-01 | skip | — | pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run. |
-| arcgis-stub | mapserver | CERT-RNDR-LBL-01 | skip | — | pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run. |
-| arcgis-stub | mapserver | CERT-RNDR-LIN-01 | skip | — | pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run. |
+| arcgis-stub | mapserver | CERT-RNDR-01 | skip | — | pending: licensed-arcgis-runner; substantiate via GeoServices REST run. |
+| arcgis-stub | mapserver | CERT-RNDR-02 | skip | — | pending: licensed-arcgis-runner; substantiate via GeoServices REST run. |
+| arcgis-stub | mapserver | CERT-RNDR-FIL-01 | skip | — | pending: licensed-arcgis-runner; substantiate via GeoServices REST run. |
+| arcgis-stub | mapserver | CERT-RNDR-LBL-01 | skip | — | pending: licensed-arcgis-runner; substantiate via GeoServices REST run. |
+| arcgis-stub | mapserver | CERT-RNDR-LIN-01 | skip | — | pending: licensed-arcgis-runner; substantiate via GeoServices REST run. |
 | arcgis-stub | mapserver | CERT-RNDR-SPR-01 | not-applicable | — |  |
-| arcgis-stub | mapserver | CERT-RNDR-SYM-01 | skip | — | pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run. |
-| arcgis-stub | mapserver | CERT-RNDR-URL-01 | skip | — | pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run. |
+| arcgis-stub | mapserver | CERT-RNDR-SYM-01 | skip | — | pending: licensed-arcgis-runner; substantiate via GeoServices REST run. |
+| arcgis-stub | mapserver | CERT-RNDR-URL-01 | skip | — | pending: licensed-arcgis-runner; substantiate via GeoServices REST run. |
 | arcgis-stub | mapserver | CERT-SCHM-01 | pass | — |  |
 | arcgis-stub | mapserver | CERT-SCHM-02 | pass | — |  |
 | cli | ogc-features | CERT-AUTH-01 | not-applicable | — |  |

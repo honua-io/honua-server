@@ -1,6 +1,6 @@
 # GPServer desktop fixture on candidate pin 8862065 (honua-server#4614, ruling B)
 
-Operator ruling B (2026-09-05) keeps #4614 open until the operator runs a **native ArcGIS Pro UI
+Operator ruling B (2026-09-05) keeps #4614 open until the operator runs a **native GeoServices REST UI
 session** against the owned GP fixture. This directory records the lane half of that hand-off:
 the owned fixture was recreated on the re-pinned 2026.1 candidate, the installed-client receipts
 were re-minted on it, and the origin and trust anchor the operator needs are stated below.
@@ -71,8 +71,8 @@ All three are committed under
 
 | Receipt | Run | What it establishes |
 |---|---|---|
-| `candidate-8862065-arcpy-and-sdk-scalar-verified.json` | [35061750279](https://github.com/honua-io/honua-esri-compat/actions/runs/35061750279) | Installed ArcGIS SDK 2.4.3 and licensed ArcPy 3.7.1 both import all 119 advertised tasks and remotely compute `geometry.area` = 12 for the literal 3 by 4 rectangle (MeasureResult, `input-crs-units-squared`, SRID 3857, Polygon; ArcPy async job status 4 `Completed`). |
-| `candidate-8862065-arcpy-complex-values-verified.json` | [35061927963](https://github.com/honua-io/honua-esri-compat/actions/runs/35061927963) | ArcPy 3.7.1 passes the six complex-value oracles on this pin: Buffer feature output, multivalue Union, Clip of two FeatureSet inputs, attribute filter, GenerateNearTable RecordSet output, and truthful `Cancelled` cancellation. |
+| `8862065` | [35061750279](https://github.com/honua-io/honua-esri-compat/actions/runs/35061750279) | Installed ArcGIS SDK and licensed GPServer both import all 119 advertised tasks and remotely compute `geometry.area` = 12 for the literal 3 by 4 rectangle (MeasureResult, `input-crs-units-squared`, SRID 3857, Polygon; GPServer async job status 4 `Completed`). |
+| `8862065` | [35061927963](https://github.com/honua-io/honua-esri-compat/actions/runs/35061927963) | GPServer passes the six complex-value oracles on this pin: Buffer feature output, multivalue Union, Clip of two FeatureSet inputs, attribute filter, GenerateNearTable RecordSet output, and truthful `Cancelled` cancellation. |
 | `candidate-8862065-soap-auth-controls-verified.json` | local, `probe-soap-auth-controls.py` | 24/24 controls: the authorized literal job reaches `esriJobSucceeded` with area 12; anonymous, unknown `X-API-Key` and unknown bearer callers each get a 401 SOAP fault from all seven SOAP operations (21 denials) leaking no job id, status, task name or result; the owner's job is still `esriJobSucceeded` after the refused cancels; an authorized malformed submission returns 400. |
 
 ### Dispatch note for the next re-pin
@@ -85,6 +85,6 @@ failure on an already-correct fixture. Pass `sha256:…` alone.
 
 ## What is still open on #4614
 
-The native ArcGIS Pro UI receipt. It is operator-owned under ruling B and cannot be produced by
-this lane — the licensed runner executes ArcPy and the .NET SDK, not an interactive Pro session.
+The native GeoServices REST UI receipt. It is operator-owned under ruling B and cannot be produced by
+this lane — the licensed runner executes GPServer and the .NET SDK, not an interactive Pro session.
 The fixture is up, on the pinned candidate, and ready for it.

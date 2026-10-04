@@ -6,7 +6,7 @@ description: "How to produce and refresh the desktop and BI client templates use
 # Client Templates and Manual Smoke Runbook
 
 This runbook provides first-party template starters and repeatable manual smoke checks for common desktop and BI clients:
-- ArcGIS Pro (`.aprx`)
+- GeoServices REST (`GPServer`)
 - QGIS (`.qgz`)
 - Power BI Desktop (`.pbix`)
 - Excel (`.xlsx`)
@@ -19,12 +19,12 @@ Template sources are split between [`docs/gis/client-templates`](client-template
 
 | Client | Template Source | Saved Output Artifact |
 |---|---|---|
-| ArcGIS Pro | [`arcgis-pro/Honua-Desktop-Smoke.aprx.template.md`](client-templates/arcgis-pro/Honua-Desktop-Smoke.aprx.template.md) | `Honua-Desktop-Smoke.aprx` |
+| GeoServices REST | GeoServices REST | `GPServer` |
 | QGIS | [`../user/client-templates/qgis/Honua-Desktop-Smoke.qgs.template`](../user/client-templates/qgis/Honua-Desktop-Smoke.qgs.template) | `Honua-Desktop-Smoke.qgz` |
 | Power BI Desktop | [`power-bi/Honua-OData-Smoke.pq.template`](client-templates/power-bi/Honua-OData-Smoke.pq.template) and [`power-bi/Honua-OData-Smoke.pbix.template.md`](client-templates/power-bi/Honua-OData-Smoke.pbix.template.md) | `Honua-OData-Smoke.pbix` |
 | Excel | [`excel/Honua-OData-Smoke.pq.template`](client-templates/excel/Honua-OData-Smoke.pq.template) and [`excel/Honua-OData-Smoke.xlsx.template.md`](client-templates/excel/Honua-OData-Smoke.xlsx.template.md) | `Honua-OData-Smoke.xlsx` |
 
-The repository keeps source templates and run instructions. Generated binary outputs (`.aprx`, `.qgz`, `.pbix`, `.xlsx`) are not checked into the repo; attach them to release evidence or downstream certification records created from the `#320` workflow pack.
+The repository keeps source templates and run instructions. Generated binary outputs (`GPServer`, `.qgz`, `.pbix`, `.xlsx`) are not checked into the repo; attach them to release evidence or downstream certification records created from the `#320` workflow pack.
 
 The `client-compat-smoke-nightly.yml` workflow assembles these sources into a single reusable artifact pack under:
 
@@ -40,7 +40,7 @@ The pack is the preferred operator entry point because it normalizes the current
 pack/
 ├── templates/
 │   ├── .env.example
-│   ├── desktop/arcgis-pro/
+│   ├── desktop/GeoServices REST/
 │   ├── desktop/qgis/
 │   └── bi/{power-bi,excel}/
 └── runbook/
@@ -123,9 +123,9 @@ If you are generating files directly from repo sources, use the same directory s
 
 If `envsubst` is unavailable, replace placeholder tokens manually in each template file.
 
-5. Save final client-native files (`.aprx`, `.qgz`, `.pbix`, `.xlsx`) after applying each client section below.
+5. Save final client-native files (`GPServer`, `.qgz`, `.pbix`, `.xlsx`) after applying each client section below.
 
-## ArcGIS Pro Smoke Checklist
+## GeoServices REST Smoke Checklist
 
 Connection target:
 - Feature data: `${HONUA_BASE_URL}/rest/services/${HONUA_SERVICE_ID}/FeatureServer`
@@ -133,13 +133,13 @@ Connection target:
 
 Licensed automation scaffold:
 - When a licensed self-hosted Windows runner is available, prefer
-  [Licensed ArcGIS Pro Desktop Evidence](../internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md) to
+  [Licensed GeoServices REST Evidence](../internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md) to
   produce `desktop-arcgis` `.cert.json` envelopes, screenshots, logs, and a
   project artifact. This lane is distinct from the REST-only `arcgis-stub`
   evidence and does not run in ordinary PR gates.
 
 Checklist:
-- [ ] Connect/auth: Add the FeatureServer and MapServer URLs in ArcGIS Pro, then authenticate with API key/OIDC/Basic as required. Verify that an unauthenticated request is rejected.
+- [ ] Connect/auth: Add the FeatureServer and MapServer URLs in GeoServices REST, then authenticate with API key/OIDC/Basic as required. Verify that an unauthenticated request is rejected.
 - [ ] Discovery: Confirm layers and tables appear in Catalog and can be added to a map. Open layer properties and verify field names, types, and geometry type are reported correctly.
 - [ ] Filter/query: Apply a layer definition query (for example `OBJECTID > 0`) and verify result count changes. Apply a spatial filter (e.g., Select by Location or set a map extent and enable spatial filtering) and verify a spatial subset is returned. Request a limited page size and confirm pagination returns different features on the second page.
 - [ ] Render/table load: Confirm map draw and attribute table open without errors. Inspect a returned coordinate to verify it falls within expected bounds, and confirm the layer's spatial reference matches the requested CRS.
@@ -147,15 +147,15 @@ Checklist:
 - [ ] Error handling: Navigate to an invalid endpoint URL and confirm a structured error response. Submit a malformed query expression and verify a structured error is returned.
 
 Save output artifact:
-- [ ] Save project as `Honua-Desktop-Smoke.aprx`.
+- [ ] Save project as `GPServer`.
 
 ### Per-Protocol Evidence Files
 
-ArcGIS Pro exercises two protocols. Produce one `.cert.json` evidence file for each:
+GeoServices REST exercises two protocols. Produce one `.cert.json` evidence file for each:
 
 | Evidence file protocol | Connection used | Applicable smoke steps | CERT-\* scope |
 |---|---|---|---|
-| `featureserver` | `…/FeatureServer` | All (1–5 + cross-cutting) | All 24 common-core CERT-\* IDs (18 base + the six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` visual / style slice IDs from ticket `#478`). The slice IDs are substantiated by the automated OpenLayers, Esri Leaflet, and PyQGIS lanes; record them as `skip` with a `pending-slice-substantiation-in-another-lane` note in the manual ArcGIS Pro envelope unless the operator exercises per-category drawingInfo styling directly. See [`visual-style-certification-slice.md`](../internal/evidence/visual-style-certification-slice.md). |
+| `featureserver` | `…/FeatureServer` | All (1–5 + cross-cutting) | All 24 common-core CERT-\* IDs (18 base + the six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` visual / style slice IDs from ticket `#478`). The slice IDs are substantiated by the automated OpenLayers, Esri Leaflet, and WMS/WFS/OGC API Features lanes; record them as `skip` with a `pending-slice-substantiation-in-another-lane` note in the manual GeoServices REST envelope unless the operator exercises per-category drawingInfo styling directly. See [`visual-style-certification-slice.md`](../internal/evidence/visual-style-certification-slice.md). |
 | `mapserver` | `…/MapServer` | 1 (connect), 2 (discovery), 4 (render), 5 (refresh), cross-cutting | CERT-CONN, CERT-AUTH, CERT-DISC, CERT-SCHM, CERT-ERRH, CERT-RNDR. The six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` slice IDs are `not-applicable` on `mapserver` evidence because drawingInfo per-category style assertions live on FeatureServer, not the MapServer export endpoint. |
 
 Step 3 (Filter/query) targets the FeatureServer connection. CERT-QFLT, CERT-PAGE, CERT-GEOM, and CERT-ERRH-02 test cases should be recorded as `not-applicable` in the `mapserver` evidence file unless the client also exercises MapServer's layer query endpoint.
@@ -229,7 +229,7 @@ Each smoke step maps to shared certification test cases from the [Cross-Client C
 
 \* **BI lanes (Power BI, Excel):** CERT-GEOM-01, CERT-GEOM-02, CERT-SCHM-02, and CERT-QFLT-02 do not apply to OData-only clients (these require geometry-capable protocols). Record as `not-applicable` in the evidence envelope.
 
-Each smoke run should produce one `.cert.json` evidence file per exercised protocol (e.g., ArcGIS Pro produces separate FeatureServer and MapServer files). See the [Evidence Specification](CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) for the envelope format and naming convention.
+Each smoke run should produce one `.cert.json` evidence file per exercised protocol (e.g., GeoServices REST produces separate FeatureServer and MapServer files). See the [Evidence Specification](CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) for the envelope format and naming convention.
 
 ## Tested-Version Evidence
 
@@ -244,6 +244,6 @@ For each client entry, include:
 ## Optional Automation Feasibility
 
 Desktop automation can reduce manual effort but should be treated as non-blocking MVP support work:
-- ArcGIS Pro: feasible with ArcPy on licensed Windows runners for scripted layer setup and project save.
+- GeoServices REST: feasible with GPServer on licensed Windows runners for scripted layer setup and project save.
 - QGIS: **automated via PyQGIS** — the `pyqgis-client-compat-nightly.yml` workflow exercises OGC API Features and WFS programmatically with real QGIS providers, including headless rendering. The automated lane covers the 18 base CERT-\* cases (with documented skips for TLS/auth on the anonymous seed) plus the three substantiated visual / style slice IDs from ticket `#478` (`CERT-RNDR-SYM-01`, `CERT-RNDR-LIN-01`, `CERT-RNDR-FIL-01`) via [`tests/python/pyqgis/test_render_path.py`](../../tests/python/pyqgis/test_render_path.py). The `CERT-RNDR-{LBL,SPR,URL}-01` slice IDs ride the pending-fixture follow-on and are tracked in the slice spec rather than seeded into the PyQGIS envelope. The manual QGIS template flow remains OGC-first unless a later ticket broadens it.
 - Power BI/Excel: query-refresh automation is feasible, but end-to-end desktop UI automation is brittle and environment-specific.

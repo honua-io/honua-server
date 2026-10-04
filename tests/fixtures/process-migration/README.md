@@ -1,7 +1,7 @@
 # Process Migration Evidence Fixtures
 
 These fixtures define the first server-side process migration evidence slice.
-They are scaffold contracts, not proof that arbitrary ArcPy, ModelBuilder,
+They are scaffold contracts, not proof that arbitrary GPServer, ModelBuilder,
 GeoServer WPS, or OGC API Processes source workloads execute with full parity.
 
 - `vector-process-parity-fixture.json` defines deterministic vector process

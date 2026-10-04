@@ -2,7 +2,7 @@
 
 This matrix defines the shared certification vocabulary for cross-client interoperability testing. It establishes a common core of test cases that all client lanes must address, plus lane-specific extensions.
 
-For QGIS UI, PyQGIS, ArcGIS Pro UI and ArcPy scope and completion, use the
+For WMS/WFS/OGC API Features UI, WMS/WFS/OGC API Features, GeoServices REST UI and GPServer scope and completion, use the
 [four-client certification checklist](CLIENT_CERTIFICATION_CHECKLIST.md).
 This document supplies shared evidence IDs across clients; it is not a second
 desktop completion denominator. Server parity inventories and platform release
@@ -61,7 +61,7 @@ These test cases form the shared certification baseline. Every client lane must 
 
 The six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs above are the visual / style certification slice that ticket [`#478`](https://github.com/honua-io/honua-server/issues/478) introduces. They are append-only additions to the matrix — `CERT-RNDR-01` and `CERT-RNDR-02` are unchanged. The slice spec at [`visual-style-certification-slice.md`](../internal/evidence/visual-style-certification-slice.md) defines per-scenario fixtures, expected colors, pass criteria, and lane substantiation.
 
-§ **MapServer rendering lane:** The "FS" abbreviation covers both `featureserver` and `mapserver` evidence files. When MapServer is exercised as a rendering-only connection (e.g., ArcGIS Pro smoke test), the query-focused categories — CERT-QFLT, CERT-PAGE, CERT-GEOM, and CERT-ERRH-02 — are recorded as `not-applicable` in the `mapserver` evidence file. If the client also exercises MapServer's layer query endpoint (`/{layer-id}/query`), record those results normally. See the [runbook per-protocol evidence section](CLIENT_TEMPLATE_RUNBOOK.md#per-protocol-evidence-files) for the exact split.
+§ **MapServer rendering lane:** The "FS" abbreviation covers both `featureserver` and `mapserver` evidence files. When MapServer is exercised as a rendering-only connection (e.g., GeoServices REST smoke test), the query-focused categories — CERT-QFLT, CERT-PAGE, CERT-GEOM, and CERT-ERRH-02 — are recorded as `not-applicable` in the `mapserver` evidence file. If the client also exercises MapServer's layer query endpoint (`/{layer-id}/query`), record those results normally. See the [runbook per-protocol evidence section](CLIENT_TEMPLATE_RUNBOOK.md#per-protocol-evidence-files) for the exact split.
 
 ### Geometry Tolerance (CERT-GEOM-01)
 
@@ -124,7 +124,7 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 
 | Lane | Canonical client | Protocols | Required tier | Owner |
 |---|---|---|---|---|
-| `desktop-arcgis` | ArcGIS Pro and arcpy | Esri REST plus applicable OGC services | Release, licensed | [honua-esri-compat#75](https://github.com/honua-io/honua-esri-compat/issues/75) |
+| `desktop-arcgis` | GeoServices REST and GPServer | Esri REST plus applicable OGC services | Release, licensed | [honua-esri-compat#75](https://github.com/honua-io/honua-esri-compat/issues/75) |
 | `bi-excel` | Microsoft Excel Power Query | OData | Release, licensed | [#3390](https://github.com/honua-io/honua-server/issues/3390) |
 | `bi-powerbi` | Power BI Desktop | OData | Release, licensed | [#3390](https://github.com/honua-io/honua-server/issues/3390) |
 | `bi-tableau` | Tableau Desktop | OData, OGC API Features | Release, licensed | [#3390](https://github.com/honua-io/honua-server/issues/3390) |
@@ -145,7 +145,7 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 | **JS — MapLibre** (Playwright) | Automated | CERT-CONN-01, CERT-RNDR-01 (browser render) | JS-EXT-01, JS-EXT-02 |
 | **JS — Esri Leaflet** (Playwright) | Automated §§ | FeatureServer + MapServer browser subset | EL-EXT-01 … EL-EXT-04 |
 | **JS — Cesium** (Playwright) | Automated ¶¶ | WMS, WMTS, OGC API Tiles, OGC API Maps imagery subset | JS-CES-IMG-01, JS-CES-TILE-01 |
-| **Desktop — ArcGIS Pro** | Stub (REST) + manual/scheduled licensed runner scaffold | REST common-core via `arcgis-stub`; Portal/Sharing facade discovery via the `arcgis-stub` `portal` protocol (CERT-PRTL-\*); licensed `desktop-arcgis` workflow emits FeatureServer + MapServer envelopes when an explicitly enabled self-hosted Windows ArcGIS Pro runner is available | DSK-EXT-01, DSK-EXT-02, CERT-PRTL-\* |
+| **Desktop — GeoServices REST** | Stub (REST) + manual/scheduled licensed runner scaffold | REST common-core via `arcgis-stub`; Portal/Sharing facade discovery via the `arcgis-stub` `portal` protocol (CERT-PRTL-\*); licensed `desktop-arcgis` workflow emits FeatureServer + MapServer envelopes when an explicitly enabled self-hosted Windows GeoServices REST runner is available | DSK-EXT-01, DSK-EXT-02, CERT-PRTL-\* |
 | **Desktop — QGIS** | Automated (PyQGIS) + manual per runbook | Core CERT-\* through RNDR-01/02/SYM/LIN/FIL; RNDR-LBL/SPR/URL remain manual | DSK-EXT-01, DSK-EXT-02 (manual) |
 | **CLI / SDK** (admin SDK, pytest, Microsoft.OData.Client) | Automated | All CERT-\* except CERT-RNDR (OData via Microsoft.OData.Client xUnit suite) | CLI-EXT-01, CLI-EXT-02 |
 | **BI — Power BI** | Manual per runbook | CERT-CONN, AUTH, DISC, SCHM, QFLT, PAGE, ERRH, RNDR † | BI-EXT-01, BI-EXT-02 |
@@ -224,7 +224,7 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 
 #### ArcGIS Portal Facade Lane (`arcgis-stub` `portal` protocol)
 
-The Portal/Sharing facade (epic #1240) lets packaged Esri clients (ArcGIS Pro "Add Portal", Field Maps) bind through Portal items + ArcGIS tokens instead of raw `/rest/services` URLs. The `arcgis-stub` lane emits a third `portal`-protocol envelope exercising the request sequence those clients issue, keyed on the following append-only IDs. The seeded fixture is `tests/seed/portal-compat.yaml` (public/org/private tiers); the licensed ArcGIS Pro / Field Maps runs substantiate the same IDs against the real clients.
+The Portal/Sharing facade (epic #1240) lets packaged Esri clients (GeoServices REST "Add Portal", Field Maps) bind through Portal items + ArcGIS tokens instead of raw `/rest/services` URLs. The `arcgis-stub` lane emits a third `portal`-protocol envelope exercising the request sequence those clients issue, keyed on the following append-only IDs. The seeded fixture is `tests/seed/portal-compat.yaml` (public/org/private tiers); the licensed GeoServices REST / Field Maps runs substantiate the same IDs against the real clients.
 
 | Extension ID | Description | Protocol(s) | Evidence |
 |---|---|---|---|
@@ -537,7 +537,7 @@ All certification results must follow the standardized evidence specification in
 | 1.1.1 | 2026-04-07 | Update the `§§` Esri Leaflet sub-lane footnote to the post-#478 24-case common-core shape; document slice-ID `not-applicable` rationale on the mapserver envelope |
 | 1.1.2 | 2026-04-08 | Add JS — MapLibre (Playwright) lane for automated MapLibre GL JS browser render certification (#464) |
 | 1.1.3 | 2026-04-25 | Add OGC API Maps JS/OpenLayers evidence protocol and MapLibre image-source smoke coverage |
-| 1.2.0 | 2026-04-26 | Add JS — Cesium (Playwright) lane and JS-CES-IMG-01 / JS-CES-TILE-01 extensions; add `ogc-tiles` protocol abbreviation; document ArcGIS Pro stub lane via `docker/client-compat/arcgis-stub` (#806) |
-| 1.2.1 | 2026-05-18 | Add the licensed `desktop-arcgis` runner scaffold and clarify that ordinary PR gates validate the fixture/envelope contract without requiring ArcGIS Pro (#1019) |
+| | 2026-04-26 | Add JS — Cesium (Playwright) lane and JS-CES-IMG-01 / JS-CES-TILE-01 extensions; add `ogc-tiles` protocol abbreviation; document GeoServices REST stub lane via `docker/client-compat/arcgis-stub` (#806) |
+| | 2026-05-18 | Add the licensed `desktop-arcgis` runner scaffold and clarify that ordinary PR gates validate the fixture/envelope contract without requiring GeoServices REST (#1019) |
 | 1.3.0 | 2026-07-09 | Register the ArcGIS Portal/Sharing facade lane: add the `portal` protocol abbreviation and the CERT-PRTL-\* extension slice exercised by the `arcgis-stub` `portal` envelope against the `portal-compat` fixture (epic #1240 / #1372) |
 | 1.4.0 | 2026-07-27 | Extend the Portal facade slice with the identity + auth-failure shapes packaged Esri clients depend on (CERT-PRTL-SELF-02, -COMM-01/-02, -TOKN-02, -OAUTH-02: `community/self`, authenticated `portals/self` user block, generateToken bad-credential envelope, `refresh_token` `invalid_grant`); promote the token/OAuth2 baselines to `pass` from the first containerized-lane capture (#1372) |

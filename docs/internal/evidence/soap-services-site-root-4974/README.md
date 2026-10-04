@@ -1,6 +1,6 @@
 # SOAP services site-root replay (server#4974)
 
-In ArcGIS Pro, adding an ArcGIS Server connection with the site-root URL failed
+In GeoServices REST, adding an ArcGIS Server connection with the site-root URL failed
 with "We were unable to connect". `GET /services` returned 404; only
 `GET /services?wsdl` returned 200.
 
@@ -18,7 +18,7 @@ requests three forms:
 
 It compares the three bodies by SHA-256, confirms the root is `wsdl:definitions`,
 and checks that the SOAP catalog at the same address still negotiates
-`GetMessageVersion` in the 9.0 namespace ArcGIS Pro 3.7 uses.
+`GetMessageVersion` in the namespace GeoServices REST uses.
 
 ```
 python3 replay-soap-services-site-root.py <base-url> <receipt.json> --label <text>
@@ -42,5 +42,5 @@ That body is byte-identical (SHA-256 `f5f58dafe4cb…`) to the WSDL the candidat
 serves for `?wsdl`, so the WSDL itself is unchanged.
 
 The pinned candidate cannot contain this fix. The post-fix run on a release image
-happens when the candidate is re-pinned past the merge. Whether ArcGIS Pro's
+happens when the candidate is re-pinned past the merge. Whether GeoServices REST's
 site-root form now connects still has to be confirmed in a native Pro session.

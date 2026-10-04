@@ -35,5 +35,5 @@ SceneServer endpoints, and runs the validator over the responses.
 ## Manual ArcGIS smoke runbook
 
 See [`docs/contributor/i3s-sceneserver-smoke.md`](../../../../docs/contributor/i3s-sceneserver-smoke.md)
-for the manual ArcGIS Pro / `@arcgis/core` `SceneLayer` load probe used to
+for the manual GeoServices REST / `@arcgis/core` `SceneLayer` load probe used to
 validate render fidelity that no headless harness can assert.

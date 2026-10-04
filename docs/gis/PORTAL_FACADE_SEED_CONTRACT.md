@@ -5,7 +5,7 @@ _Epic #1240 (ArcGIS Portal/Sharing facade) · child #1372 (conformance) · child
 This document is the **server-owned contract** that downstream consumers — the
 `honua-sdk-js` `@honua/sdk-esri-compat` repoint path, the `honua-sdk-dotnet` /
 `honua-sdk-python` clients, the `arcgis-stub` `portal` conformance lane, and the
-licensed ArcGIS Pro / Field Maps evidence runs — target when validating that a
+licensed GeoServices REST / Field Maps evidence runs — target when validating that a
 packaged Esri client can discover and open Honua content as Portal items.
 
 Per the repo ownership split (`CLAUDE.md`): **honua-server owns the seed +
@@ -49,7 +49,7 @@ spanning the access ladder:
 ## Bootstrap / discovery sequence (the contract SDK CI targets)
 
 A client repoints by pointing at `<base>/sharing/rest` and following the same
-sequence ArcGIS Pro "Add Portal" and Field Maps issue:
+sequence GeoServices REST "Add Portal" and Field Maps issue:
 
 1. `GET /sharing/rest/info?f=json`
    → `{ "authInfo": { "isTokenBasedSecurity": true, "tokenServicesUrl": "<base>/sharing/rest/generateToken" } }`
@@ -86,11 +86,11 @@ Errors follow the Esri envelope `{ "error": { "code", "message", "details" } }`.
 - **Contract/integration (server):**
   `tests/dotnet/Honua.Server.Tests/Features/Sharing/PortalFacadeDiscoveryContractTests.cs`
   asserts the tiered projection and Esri wire shapes in-process.
-- **Licensed (real client):** the ArcGIS Pro / Field Maps evidence runs point at a
+- **Licensed (real client):** the GeoServices REST / Field Maps evidence runs point at a
   Portal-enabled deployment seeded with this fixture and emit a
   `client_lane: "desktop-arcgis"` envelope — see
   [`ARCGIS_PRO_LICENSED_EVIDENCE.md`](../internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md).
-  This is an operator-provisioned run (self-hosted Windows + licensed ArcGIS Pro),
+  This is an operator-provisioned run (self-hosted Windows + licensed GeoServices REST),
   tracked in #1372/#1096.
 
 ## Consuming repos

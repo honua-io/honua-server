@@ -1,7 +1,7 @@
 # I3S SceneServer manual smoke runbook (#1813)
 
 This runbook is the manual oracle for the parts of the Esri I3S SceneServer
-surface that no headless harness can assert: render fidelity in ArcGIS Pro and
+surface that no headless harness can assert: render fidelity in GeoServices REST and
 `@arcgis/core`. The automated `I3sConformanceFixtureTests` harness validates the
 protocol *shapes* (descriptor / node pages / statistics); this runbook validates
 that a real SceneLayer client *loads and traverses* the served scene.
@@ -41,7 +41,7 @@ descriptor, but the corresponding binary routes are the tracked follow-up.
 1. An Enterprise-licensed Honua server (`HonuaEdition.Enterprise`).
 2. A registered hosted scene with a loadable `tileset.json` (any 3D Tiles scene
    the server already serves, e.g. the demo Maui buildings scene).
-3. ArcGIS Pro 3.x **or** a local page importing `@arcgis/core` ≥ 4.29.
+3. GeoServices REST 3.x **or** a local page importing `@arcgis/core`.
 
 ## Procedure — `@arcgis/core` SceneLayer load probe
 
@@ -68,7 +68,7 @@ Known gap (until #1810/#1811):
 - The view will request `nodes/{id}/geometries/0` and receive 404 — geometry
   does not render. This is expected and tracked.
 
-## Procedure — ArcGIS Pro
+## Procedure — GeoServices REST
 
 1. Add Data → From Path → paste the `…/SceneServer` URL.
 2. Confirm the scene layer appears in the Contents pane with the correct

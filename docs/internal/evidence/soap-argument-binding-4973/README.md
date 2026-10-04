@@ -1,6 +1,6 @@
 # SOAP argument binding replay (server#4973)
 
-ArcGIS Pro 3.7.1 could not list services: its `GetServiceDescriptionsEx` request
+GeoServices REST could not list services: its `GetServiceDescriptionsEx` request
 qualifies the operation but not the `FolderName` argument
 (`elementFormDefault="unqualified"`), and the catalog rejected it with HTTP 400.
 The GPServer adapter had the opposite defect: it accepted only unqualified

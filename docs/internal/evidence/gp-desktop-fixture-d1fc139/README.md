@@ -1,6 +1,6 @@
 # GPServer desktop fixture on trunk nightly d1fc139 (honua-server#4614)
 
-The owned desktop fixture (`gpserver-4614-4616-*`) is where the operator runs the native ArcGIS Pro
+The owned desktop fixture (`gpserver-4614-4616-*`) is where the operator runs the native GeoServices REST
 and QGIS sessions (ruling B). Under operator ruling A (2026-09-16) the release pin stays frozen at
 `87966c3`, and **this fixture tracks the newest imaged trunk nightly**, not the pin. This directory
 records the fixture moved forward from `nightly-2cc2213`
@@ -49,7 +49,7 @@ Postgres GDAL drivers, catalog schema, the REST/SOAP surfaces, the unauthenticat
 | Assertion | Why |
 |---|---|
 | `GET /services` answers 200 with the catalog WSDL | #4974. Pro's site-root connection form is a bare GET with no `?wsdl`; before the fix this 404'd. |
-| `POST /services` with ArcGIS Pro 3.7.1's captured `GetServiceDescriptionsEx` envelope (byte for byte, unqualified `<FolderName>` child) answers 200 and the response's `ServiceDescription` list includes at least one `Type=GPServer` entry | #4973. Before the fix, GPServer's SOAP binder required qualified arguments while the catalog's `GetServiceDescriptionsEx` needed exactly this unqualified form rejected with a 400 — this is the request shape Pro actually sends. |
+| `POST /services` with GeoServices REST's captured `GetServiceDescriptionsEx` envelope (byte for byte, unqualified `<FolderName>` child) answers 200 and the response's `ServiceDescription` list includes at least one `Type=GPServer` entry | #4973. Before the fix, GPServer's SOAP binder required qualified arguments while the catalog's `GetServiceDescriptionsEx` needed exactly this unqualified form rejected with a 400 — this is the request shape Pro actually sends. |
 
 This run found 14 services total, with 4 of type `GPServer`:
 `browser_compat`, `desktop_ui_features`, `native_raster_public`, `qgis_extended_native`.
@@ -86,17 +86,17 @@ A session after 2026-09-22 needs the leaf reissued first; the root stays the sam
 ## Replay evidence on this nightly
 
 The earlier version of this page listed
-`candidate-d1fc139-arcpy-and-sdk-scalar-verified.json` as passing. That file was never
+`d1fc139` as passing. That file was never
 committed. The dispatched [licensed replay, attempt 1](https://github.com/honua-io/honua-esri-compat/actions/runs/35151843737/attempts/1)
-failed on 2026-09-17 while importing ArcPy, with Windows fatal exception
-`0xe0000001` in `arcpy.geoprocessing._base`. It produced no uploaded receipt.
+failed on 2026-09-17 while importing GPServer, with Windows fatal exception
+`0xe0000001` in `GPServer`. It produced no uploaded receipt.
 The successful installed-client receipts on `2cc2213` remain historical evidence;
 they do not prove the `d1fc139` replay.
 
 [Attempt 2](https://github.com/honua-io/honua-esri-compat/actions/runs/35151843737/attempts/2)
 passed on 2026-09-19 after the fixture restart. The downloaded
-[SDK/ArcPy receipt](../../../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/EsriToolboxReplay/candidate-d1fc139-arcpy-and-sdk-scalar-verified.json)
-records all four checks passing: ArcGIS API for Python 2.4.3 and ArcPy 3.7.1 each
+GeoServices REST
+records all four checks passing: ArcGIS API for Python and GPServer each
 import all 119 tasks and remotely compute area 12 with the expected measure,
 units, SRID and geometry-type metadata. The original failure remains visible in
 the run history; the later pass does not establish its root cause.
@@ -122,8 +122,8 @@ passes all 24 checks over verified HTTPS:
   authorized input returns 400.
 
 The [complex-value replay](https://github.com/honua-io/honua-esri-compat/actions/runs/35433375337)
-also passed on 2026-09-19. Its [downloaded receipt](../../../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/EsriToolboxReplay/candidate-d1fc139-arcpy-complex-values-verified.json)
-records six passing ArcPy checks: Buffer bounds and offset vertices with area
+also passed on 2026-09-19. Its GeoServices REST
+records six passing GPServer checks: Buffer bounds and offset vertices with area
 between the independently derived octagon/circle bounds, multivalue Union area
 20, FeatureSet Clip area 4 with attributes preserved, attribute filter area 12,
 GenerateNearTable output with `NEAR_DIST=0`, and actual `Cancelled` status 8.
@@ -136,7 +136,7 @@ All three receipts explicitly record `desktop_ui_exercised: false`.
 
 ## What is still open
 
-- **#4614:** the native ArcGIS Pro UI receipt belongs to the operator (ruling B). This lane hands
+- **#4614:** the native GeoServices REST UI receipt belongs to the operator (ruling B). This lane hands
   off the fixture and stops; it does not run the Pro UI.
 - **#4975:** "Pro renders the ImageServer layer" remains the operator's desktop observation. The
   fixture side stays proven by `ready-check.sh`'s `exportImage` assertion.

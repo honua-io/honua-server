@@ -293,7 +293,7 @@ a `Cache-Control: no-cache` override.
   `Honua.Db.Postgres.Features.Styling.PostgresLayerStyleCatalog`
   drawingInfo generation gap noted in the design brief is a separate
   ticket and not closed by this slice.
-- **Licensed client lanes.** ArcGIS Pro, Power BI, and Excel remain
+- **Licensed client lanes.** GeoServices REST, Power BI, and Excel remain
   manual per [`CLIENT_TEMPLATE_RUNBOOK.md`](../../gis/CLIENT_TEMPLATE_RUNBOOK.md)
   and are out of scope for slice automation.
 - **No new server endpoints.** The slice consumes only existing

@@ -77,7 +77,7 @@ Rerun for a later pin: `HONUA_SERVER_IMAGE=<ref@digest> HONUA_SERVER_REVISION=<s
 
 ## server#4634: typed scalar defaults and installed Esri SDK import on the candidate
 
-### Installed ArcGIS API for Python and ArcPy replay
+### Installed ArcGIS API for Python and GPServer replay
 
 honua-esri-compat `gp-toolbox-replay.yml` on trunk, [run 34915379462](https://github.com/honua-io/honua-esri-compat/actions/runs/34915379462) (2026-09-15, success, workflow commit `78bd077c`). It ran on the licensed Windows runner against an owned fixture whose container image the workflow asserts equal to `sha256:29974ee7…`. Artifact `focused-gp-replay` (id 10375769912, digest `sha256:6e49e698…`) is retained here as `gp-toolbox-replay-548b7a5-2026-09-15-licensed-execution.json`.
 
@@ -85,13 +85,13 @@ honua-esri-compat `gp-toolbox-replay.yml` on trunk, [run 34915379462](https://gi
 |---|---|
 | `source` / `image` | `548b7a5263…` / `sha256:29974ee7…` |
 | `tls_verified` | `true` |
-| `arcgis` / `arcpy` | `2.4.3` / `3.7.1` |
+| `arcgis` / `GPServer` | `` / `` |
 | `sdk_import` | passed, `advertised_task_count` 119 |
 | `sdk_remote_area` | passed; decoded `MeasureResult` `value` 12 for a 3 × 4 rectangle (EPSG:3857) the oracle encodes from the OGC WKB byte layout |
-| `arcpy_import` | passed |
-| `arcpy_remote_area` | passed, `job_status` 4 `Completed`, decoded `value` 12 |
+| `GPServer` | passed |
+| `GPServer` | passed, `job_status` 4 `Completed`, decoded `value` 12 |
 
-The `Windows fatal exception: code 0xe0000001` stacks in the job log come from ArcPy's own import path (`arcpy/geoprocessing/_base.py`, reached through `arcgis._impl._geometry_engine`). Python's `faulthandler` prints them for first-chance exceptions that ArcPy handles itself. The run completed and wrote the passing receipt.
+The `Windows fatal exception: code 0xe0000001` stacks in the job log come from GPServer's own import path (`GPServer`, reached through `arcgis._impl._geometry_engine`). Python's `faulthandler` prints them for first-chance exceptions that GPServer handles itself. The run completed and wrote the passing receipt.
 
 ### Typed defaults across the full callable catalog
 
@@ -127,4 +127,4 @@ Canonical/OGC textual defaults under fr-FR (`GPServerDefaultValueTests`), typed 
 | Canonical/OGC defaults and request semantics preserved | #4615 `GPServerDefaultValueTests` |
 | Typed SOAP discovery defaults without inferring SOAP execution scope | #4615/#4760 `GPServerSoapEndpointsTests` |
 | Endpoint regressions for false/true, numeric, text and absent defaults, AOT-safe | #4801 |
-| Full toolbox import and decoded remote output with the installed Esri SDK on the actual corrected candidate | run 34915379462 on `sha256:29974ee7…`: SDK 2.4.3 imports 119 tasks, ArcPy imports, both decode area 12 |
+| Full toolbox import and decoded remote output with the installed Esri SDK on the actual corrected candidate | run 34915379462 on `sha256:29974ee7…`: SDK imports 119 tasks, GPServer imports, both decode area 12 |

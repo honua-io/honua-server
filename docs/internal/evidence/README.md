@@ -32,14 +32,14 @@ What we run, what passes, what the formal certification posture is.
   - OGC API Maps coverage doesn't ship as a spec doc; see the Maps section in [`contributor/cite-runbook.md`](../contributor/cite-runbook.md#ogc-api-maps) (integration-test-driven, not TeamEngine-driven).
 - **Visual style certification** — [`gis/visual-style-certification-slice.md`](visual-style-certification-slice.md). Render-regression evidence for style fidelity across protocols.
 
-## Esri / ArcGIS protocol parity
+## Esri / GeoServices RESTtocol parity
 
 How Honua's GeoServices REST surface compares to Esri's.
 
 - **GeoServices REST parity overview** — [`gis/geoservices-rest-parity.md`](../../reference/compatibility/geoservices-parity.md). Canonical landing page.
 - **Per-service matrices** — [FeatureServer](../../reference/compatibility/geoservices-parity.md), [MapServer / WMS / WMTS](../../reference/compatibility/geoservices-parity.md), [ImageServer](../../reference/compatibility/geoservices-parity.md), [Geometry Service](../../reference/compatibility/geoservices-parity.md).
 - **I3S scene compatibility** — [`gis/i3s-compatibility-matrix.md`](../spikes/i3s-compatibility-matrix.md).
-- **ArcGIS Pro licensed evidence** — [`gis/ARCGIS_PRO_LICENSED_EVIDENCE.md`](ARCGIS_PRO_LICENSED_EVIDENCE.md).
+- **GeoServices REST licensed evidence** — [`gis/ARCGIS_PRO_LICENSED_EVIDENCE.md`](ARCGIS_PRO_LICENSED_EVIDENCE.md).
 
 ## Client interop (real-world clients against Honua)
 

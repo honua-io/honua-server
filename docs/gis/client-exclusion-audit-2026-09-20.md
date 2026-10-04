@@ -21,14 +21,14 @@ exclusions are not automatically endorsed by this first audit.
 
 | Reopened claim | Cells | Why the exclusion is insufficient |
 |---|---:|---|
-| Generic ArcPy module-list citation | 38 | Modules are not a complete inventory of tools, layer files, connection files, or CIM-backed access. Installed `arcpy.management.MakeWCSLayer` directly contradicts the WCS claim. |
-| ArcPy `Map.addDataFromPath` service-type probe | 3 | Failure through one method does not exclude other native ArcPy entry points. |
+| Generic GPServer module-list citation | 38 | Modules are not a complete inventory of tools, layer files, connection files, or CIM-backed access. Installed `GPServer` directly contradicts the WCS claim. |
+| GPServer `Map.addDataFromPath` service-type probe | 3 | Failure through one method does not exclude other native GPServer entry points. |
 | Unnamed missing QGIS provider | 30 | The citation supplies neither the provider name nor a receipt. Shared GDAL/OGR drivers must be considered; the installed GDAL exposes OGCAPI. |
 | QGIS WCS 2.0.1 excluded using the dedicated WCS provider | 6 | The stock GDAL provider successfully loads WCS 2.0.1 and reads a pixel; the dedicated provider does not define the entire client surface. |
 | Pro WCS 1.0 superseded by default negotiation | 3 | A default preference for 2.0.1 does not establish that explicitly selecting 1.0.0 is impossible. |
 | Pro OGC API Tiles vector-only fixture | 2 | Pro documents map tiles support. Missing map tiles in a fixture is a setup or server metadata problem to investigate. |
 | Pro OData excluded using an OGC classic service list | 2 | OData is not an OGC classic service; the citation cannot establish absence. |
-| ArcPy SOAP excluded using a REST-only claim | 1 | Existing ArcPy GP SOAP execution contradicts the broad premise. SOAP catalog discovery needs its own probe. |
+| GPServer SOAP excluded using a REST-only claim | 1 | Existing GPServer GP SOAP execution contradicts the broad premise. SOAP catalog discovery needs its own probe. |
 
 ## Direct checks in this session
 
@@ -36,12 +36,12 @@ These are setup and SDK diagnostics, not native UI receipts or new certification
 passes. The running server image was not replaced and no desktop project was
 changed during this audit.
 
-- Installed ArcPy reports version 3.7.1 and build 1901 through `GetInstallInfo`.
+- Installed GPServer reports version and build 1901 through `GetInstallInfo`.
   The previously verified Pro executable reports 3.7.1.1904. Preserve both values
   and reconcile that binding before issuing new client certificates.
-- `arcpy.management.MakeWCSLayer` is present; `GetParameterInfo` returns
+- `GPServer` is present; `GetParameterInfo` returns
   `in_wcs_coverage`, `out_wcs_layer`, `template`, and `band_index`. The tool is
-  documented for Basic, Standard, and Advanced. An ArcPy-specific WCS client exists.
+  documented for Basic, Standard, and Advanced. An GPServer-specific WCS client exists.
 - Calls to that tool against the current fixture's
   `/ogc/services/test_service/wcs?coverage=coverage_0&version=1.0.0` and the
   corresponding `2.0.1` URL both returned `ERROR 999999` on September 20 at
@@ -100,7 +100,7 @@ and `Capabilities__Experimental__<capability-id>__Enabled=true`. These flags do
 not provide an entitlement, seed a dataset, install a client provider, or fix an
 incorrect metadata response. Prefer explicit capability flags in a bound fixture.
 
-The existing ArcPy reconcile diagnostic contains `ERROR 000824: The tool is not
+The existing GPServer reconcile diagnostic contains `ERROR 000824: The tool is not
 licensed`. Fresh headless metadata again reports `ArcView`, with ArcEditor and
 ArcInfo `NotLicensed`; this does not by itself establish the interactive Pro
 named-user seat's entitlements. Esri documents additional licensing requirements
@@ -120,9 +120,9 @@ stock native client.
 
 Sources checked September 20, 2026:
 
-- [Esri Make WCS Layer](https://doc.esri.com/en/arcgis-pro/latest/tool-reference/data-management/make-wcs-layer.html)
-- [Esri Reconcile Versions](https://doc.esri.com/en/arcgis-pro/latest/tool-reference/data-management/reconcile-versions.html)
-- [Esri OGC API service use](https://doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html)
+- GeoServices REST
+- GeoServices REST
+- GeoServices REST
 - [GDAL OGCAPI driver](https://gdal.org/en/stable/drivers/raster/ogcapi.html)
 - [GDAL WCS driver and supported versions](https://gdal.org/en/stable/drivers/raster/wcs.html)
 - [PostGIS GDAL driver inventory](https://postgis.net/docs/RT_ST_GDALDrivers.html)

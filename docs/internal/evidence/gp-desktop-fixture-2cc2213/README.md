@@ -1,6 +1,6 @@
 # GPServer desktop fixture on trunk nightly 2cc2213 (honua-server#4614, #4975)
 
-The owned desktop fixture (`gpserver-4614-4616-*`) is where the operator runs the native ArcGIS Pro
+The owned desktop fixture (`gpserver-4614-4616-*`) is where the operator runs the native GeoServices REST
 and QGIS sessions (ruling B). Under operator ruling A (2026-09-16) the release pin stays frozen at
 `87966c3`, and **this fixture tracks the newest imaged trunk nightly**, not the pin. This
 directory records the fixture on `nightly-2cc2213`, the #4975 Postgres fix, and the installed-client
@@ -124,14 +124,14 @@ from `at`, `source` and `image`, each is identical to its `candidate-8862065-*` 
 
 | Receipt | Run | What it establishes |
 |---|---|---|
-| `candidate-2cc2213-arcpy-and-sdk-scalar-verified.json` | [35131473081](https://github.com/honua-io/honua-esri-compat/actions/runs/35131473081) (`trunk`, `client_set=both`) | Over verified TLS, installed ArcGIS SDK 2.4.3 and licensed ArcPy 3.7.1 both import all 119 advertised tasks. Both remotely compute `geometry.area` = 12 for the literal 3 by 4 rectangle. |
-| `candidate-2cc2213-arcpy-complex-values-verified.json` | [35131750779](https://github.com/honua-io/honua-esri-compat/actions/runs/35131750779) (`probe/gp-soap-complex-4614`, `client_set=arcpy`) | ArcPy 3.7.1 passes all six complex-value oracles: Buffer feature output, multivalue Union, Clip of two FeatureSet inputs, attribute filter, GenerateNearTable RecordSet output, and truthful `Cancelled` cancellation. |
+| `2cc2213` | [35131473081](https://github.com/honua-io/honua-esri-compat/actions/runs/35131473081) (`trunk`, `client_set=both`) | Over verified TLS, installed ArcGIS SDK and licensed GPServer both import all 119 advertised tasks. Both remotely compute `geometry.area` = 12 for the literal 3 by 4 rectangle. |
+| `2cc2213` | [35131750779](https://github.com/honua-io/honua-esri-compat/actions/runs/35131750779) (`probe/gp-soap-complex-4614`, `GPServer`) | GPServer passes all six complex-value oracles: Buffer feature output, multivalue Union, Clip of two FeatureSet inputs, attribute filter, GenerateNearTable RecordSet output, and truthful `Cancelled` cancellation. |
 | `candidate-2cc2213-soap-auth-controls-verified.json` | local, `probe-soap-auth-controls.py` | 24/24 controls pass. The authorized literal job succeeds with area 12. Anonymous callers, an unknown `X-API-Key` and an unknown bearer each get a 401 SOAP fault from all seven operations, with nothing leaked. The owner's job survives the refused cancels. A malformed authorized submission returns 400. |
 
 ## What is still open
 
-- **#4614:** the native ArcGIS Pro UI receipt belongs to the operator (ruling B). The licensed runner
-  runs ArcPy and the .NET SDK, not an interactive Pro session. The Pro-reported SOAP defects filed
+- **#4614:** the native GeoServices REST UI receipt belongs to the operator (ruling B). The licensed runner
+  runs GPServer and the .NET SDK, not an interactive Pro session. The Pro-reported SOAP defects filed
   from the 8862065 session (#4973 and siblings) are separate issues. This lane neither fixes nor
   re-tests them.
 - **#4975:** "Pro renders the ImageServer layer" is the operator's desktop observation. The fixture
