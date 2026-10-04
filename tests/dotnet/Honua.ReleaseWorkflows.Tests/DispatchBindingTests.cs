@@ -9,7 +9,7 @@ namespace Honua.ReleaseWorkflows.Tests;
 
 public sealed class DispatchBindingTests
 {
-    private static readonly string[] DispatchArguments = ["--id", "sdk-test", "--repo", "honua-io/client", "--workflow", "compat.yml", "--ref", "trunk", "--timeout", "2"];
+    private static readonly string[] DispatchArguments = ["--id", "sdk-test", "--repo", "honua-io/client", "--workflow", "conformance.yml", "--ref", "trunk", "--timeout", "2"];
     private const string Image = "ghcr.io/honua-io/server@sha256:" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     private static string RepositoryRoot
@@ -104,6 +104,19 @@ public sealed class DispatchBindingTests
         Assert.Empty(result.Calls);
     }
 
+    [Theory]
+    [InlineData("merge-train.yml")]
+    [InlineData("123456")]
+    [InlineData("unknown.yml")]
+    public async Task Dispatch_NonReleaseWorkflow_RefusesBeforeGitHub(string workflow)
+    {
+        var result = await DispatchAsync("valid", "--workflow", workflow);
+        using var receipt = JsonDocument.Parse(result.Output);
+        Assert.Equal("missing", receipt.RootElement.GetProperty("conclusion").GetString());
+        Assert.Equal("Unsupported release workflow: " + workflow, receipt.RootElement.GetProperty("verificationError").GetString());
+        Assert.Empty(result.Calls);
+    }
+
     [Fact]
     public async Task Dispatch_DryRun_EmitsSkippedWithoutGitHub()
     {
@@ -131,6 +144,38 @@ public sealed class DispatchBindingTests
             .Split("  release-context:", StringSplitOptions.None)[0];
         Assert.Contains("GH_TOKEN: ''", testJob, StringComparison.Ordinal);
         Assert.Contains("    needs: workflow-contract-tests\n    if: ${{ github.event_name == 'workflow_dispatch' }}", workflow, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReleaseRegistry_DispatchableWorkflows_HaveLiteralDispatchDestinations()
+    {
+        using var registry = JsonDocument.Parse(File.ReadAllText(Path.Join(RepositoryRoot, "release/bundle-suites.json")));
+        var helper = File.ReadAllText(Path.Join(RepositoryRoot, "scripts/release/dispatch-and-wait.sh"));
+        var workflows = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var suite in registry.RootElement.GetProperty("integration").EnumerateArray())
+        {
+            if (suite.GetProperty("mode").GetString()!.StartsWith("dispatch", StringComparison.Ordinal) &&
+                !suite.GetProperty("refactorPending").GetBoolean())
+            {
+                workflows.Add(Path.GetFileName(suite.GetProperty("workflow").GetString()!));
+            }
+        }
+
+        foreach (var suite in registry.RootElement.GetProperty("sdk").EnumerateArray())
+        {
+            workflows.Add(suite.GetProperty("publishWorkflow").GetString()!);
+            if (!suite.GetProperty("refactorPending").GetBoolean() &&
+                suite.GetProperty("compatWorkflow").ValueKind == JsonValueKind.String)
+            {
+                workflows.Add(suite.GetProperty("compatWorkflow").GetString()!);
+            }
+        }
+
+        Assert.NotEmpty(workflows);
+        foreach (var workflow in workflows)
+        {
+            Assert.Contains("/actions/workflows/" + workflow + "/dispatches", helper, StringComparison.Ordinal);
+        }
     }
 
     private static async Task<(int ExitCode, string Output, string Error, string Calls)> DispatchAsync(string scenario, params string[] arguments)

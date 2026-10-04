@@ -14,7 +14,7 @@ with (root / 'calls').open('a') as calls:
     calls.write(' '.join(args) + '\n')
 
 run = {'id': 202, 'run_attempt': 1, 'event': 'workflow_dispatch',
-       'path': '.github/workflows/compat.yml', 'head_sha': 'b' * 40,
+       'path': '.github/workflows/conformance.yml', 'head_sha': 'b' * 40,
        'repository': {'full_name': 'honua-io/client'},
        'status': 'completed', 'conclusion': 'failure' if scenario == 'overlap' else 'success',
        'html_url': 'https://github.com/honua-io/client/actions/runs/202'}
@@ -69,7 +69,7 @@ elif args[0] == 'api':
     elif endpoint.endswith('/404/zip'):
         (root / 'artifact-read').touch()
         image = (json.loads((root / 'payload').read_text())['inputs'].get('server_image', ''))
-        receipt = {'id': 'sdk-test', 'owningRepo': 'honua-io/client', 'workflow': 'compat.yml',
+        receipt = {'id': 'sdk-test', 'owningRepo': 'honua-io/client', 'workflow': 'conformance.yml',
                    'runId': 202, 'runAttempt': 1, 'headSha': 'b' * 40,
                    'image': image, 'imageDigest': image.rsplit('@', 1)[-1]}
         for name, (field, value) in {

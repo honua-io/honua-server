@@ -86,6 +86,14 @@ if [[ "$DRY_RUN" == "true" ]]; then
   exit 0
 fi
 
+# The merge-authority guard requires literal workflow destinations: a generic
+# selector could also dispatch merge-train.yml. Keep this release-only list in
+# sync with dispatchable bundle-suites.json entries and reject everything else.
+case "$WORKFLOW" in
+  esri-sdk-certification.yml|cite-conformance.yml|console-nightly.yml|conformance.yml|integration.yml|live-server-integration.yml|publish-dotnet-sdk.yml|publish-js-sdk.yml|publish-python-sdk.yml|publish-dotnet-mobile.yml|publish-dotnet-protocol.yml) ;;
+  *) refuse "Unsupported release workflow: $WORKFLOW" ;;
+esac
+
 command -v gh >/dev/null 2>&1 || { echo "[ERROR] gh required (or use --dry-run)" >&2; exit 1; }
 inputs='{}'
 for kv in "${INPUTS[@]}"; do
@@ -112,9 +120,44 @@ payload="$(jq -nc --arg ref "$REF" --argjson inputs "$inputs" \
   '{ref:$ref, inputs:$inputs, return_run_details:true}')"
 # Opt into run details on the stable API. The response is the dispatch identity:
 # https://docs.github.com/en/rest/actions/workflows?apiVersion=2022-11-28#create-a-workflow-dispatch-event
-response="$(gh api --method POST "repos/$REPO/actions/workflows/$WORKFLOW/dispatches" \
-  -H 'X-GitHub-Api-Version: 2022-11-28' --input - <<<"$payload")" \
-  || refuse "Workflow dispatch failed"
+dispatch() {
+  case "$WORKFLOW" in
+    esri-sdk-certification.yml)
+      gh api --method POST "repos/$REPO/actions/workflows/esri-sdk-certification.yml/dispatches" \
+        -H 'X-GitHub-Api-Version: 2022-11-28' --input - ;;
+    cite-conformance.yml)
+      gh api --method POST "repos/$REPO/actions/workflows/cite-conformance.yml/dispatches" \
+        -H 'X-GitHub-Api-Version: 2022-11-28' --input - ;;
+    console-nightly.yml)
+      gh api --method POST "repos/$REPO/actions/workflows/console-nightly.yml/dispatches" \
+        -H 'X-GitHub-Api-Version: 2022-11-28' --input - ;;
+    conformance.yml)
+      gh api --method POST "repos/$REPO/actions/workflows/conformance.yml/dispatches" \
+        -H 'X-GitHub-Api-Version: 2022-11-28' --input - ;;
+    integration.yml)
+      gh api --method POST "repos/$REPO/actions/workflows/integration.yml/dispatches" \
+        -H 'X-GitHub-Api-Version: 2022-11-28' --input - ;;
+    live-server-integration.yml)
+      gh api --method POST "repos/$REPO/actions/workflows/live-server-integration.yml/dispatches" \
+        -H 'X-GitHub-Api-Version: 2022-11-28' --input - ;;
+    publish-dotnet-sdk.yml)
+      gh api --method POST "repos/$REPO/actions/workflows/publish-dotnet-sdk.yml/dispatches" \
+        -H 'X-GitHub-Api-Version: 2022-11-28' --input - ;;
+    publish-js-sdk.yml)
+      gh api --method POST "repos/$REPO/actions/workflows/publish-js-sdk.yml/dispatches" \
+        -H 'X-GitHub-Api-Version: 2022-11-28' --input - ;;
+    publish-python-sdk.yml)
+      gh api --method POST "repos/$REPO/actions/workflows/publish-python-sdk.yml/dispatches" \
+        -H 'X-GitHub-Api-Version: 2022-11-28' --input - ;;
+    publish-dotnet-mobile.yml)
+      gh api --method POST "repos/$REPO/actions/workflows/publish-dotnet-mobile.yml/dispatches" \
+        -H 'X-GitHub-Api-Version: 2022-11-28' --input - ;;
+    publish-dotnet-protocol.yml)
+      gh api --method POST "repos/$REPO/actions/workflows/publish-dotnet-protocol.yml/dispatches" \
+        -H 'X-GitHub-Api-Version: 2022-11-28' --input - ;;
+  esac
+}
+response="$(dispatch <<<"$payload")" || refuse "Workflow dispatch failed"
 run_id="$(jq -er 'select(type == "object") | .workflow_run_id | select(type == "number" and . > 0 and . == floor)' <<<"$response")" \
   || refuse "Dispatch did not return one exact run id"
 [[ "$run_id" =~ ^[1-9][0-9]*$ ]] || { run_id=""; refuse "Dispatch run identity is not unique"; }

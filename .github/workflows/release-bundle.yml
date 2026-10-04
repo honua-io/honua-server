@@ -18,6 +18,7 @@ on:
     paths:
       - '.github/workflows/release-bundle.yml'
       - 'scripts/release/dispatch-and-wait.sh'
+      - 'release/bundle-suites.json'
       - 'tests/dotnet/Honua.ReleaseWorkflows.Tests/**'
   workflow_dispatch:
     inputs:
