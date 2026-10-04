@@ -45,6 +45,8 @@ services:
       ConnectionStrings__Redis: redis:6379
       HONUA_ADMIN_PASSWORD: ${HONUA_ADMIN_PASSWORD:?Required}
       Security__ConnectionEncryption__MasterKey: ${HONUA_MASTER_KEY:?Required}
+      Operations__SecretChannel__KeyRingCertificatePath: /var/lib/honua/keyring.pfx
+      Operations__SecretChannel__KeyRingCertificatePassword: ${HONUA_KEYRING_PASSWORD:?Required}
       Cors__AllowedOrigins__0: "http://localhost:${HONUA_HTTP_PORT}"
       Database__MigrationSafety__ContractApplyPolicy: Gate
       FileStorage__Provider: Local
@@ -62,6 +64,7 @@ services:
       - /tmp:noexec,nosuid,size=100m
     volumes:
       - storage:/var/lib/honua/storage
+      - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro
   postgres:
     image: pgrouting/pgrouting:17-3.5-3.7.3
     environment:
@@ -116,6 +119,7 @@ HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(openssl rand -hex 32)
 HONUA_ADMIN_PASSWORD=Aa1!$(openssl rand -hex 32)
 HONUA_MASTER_KEY=$(openssl rand -hex 32)
+HONUA_KEYRING_PASSWORD=$(openssl rand -hex 16)
 EOF
 ```
 
@@ -131,6 +135,7 @@ HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(New-Secret)
 HONUA_ADMIN_PASSWORD=Aa1!$(New-Secret)
 HONUA_MASTER_KEY=$(New-Secret)
+HONUA_KEYRING_PASSWORD=$(New-Secret)
 "@ | Set-Content .env -Encoding Ascii
 ```
 
@@ -141,6 +146,28 @@ project's own network. Change `HONUA_HTTP_PORT` if `18080` is taken, and set
 `HONUA_GRPC_PORT` if `18081` is.
 
 Keep `.env`. Losing it means losing the database.
+
+Production stores operation secrets in Redis. The server will not start until a certificate
+encrypts that key ring, so a copy of Redis does not hold both the secrets and the keys. This
+file is not a license. Generate a local RSA PKCS#12. The container runs as a different user
+than you, so the file is world-readable; the password still encrypts it.
+
+```bash
+mkdir -p secrets
+HONUA_KEYRING_PASSWORD="$(grep '^HONUA_KEYRING_PASSWORD=' .env | cut -d= -f2)"
+openssl req -x509 -newkey rsa:2048 \
+  -keyout secrets/keyring.pem -out secrets/keyring.crt \
+  -days 3650 -nodes -subj "/CN=honua-quickstart"
+openssl pkcs12 -export \
+  -inkey secrets/keyring.pem -in secrets/keyring.crt \
+  -out secrets/keyring.pfx -passout "pass:${HONUA_KEYRING_PASSWORD}"
+rm -f secrets/keyring.pem secrets/keyring.crt
+chmod a+r secrets/keyring.pfx
+```
+
+On Windows, run that block in WSL or Git Bash. `New-SelfSignedCertificate` plus
+`Export-PfxCertificate` produces the same PKCS#12 if you would rather stay in PowerShell;
+put the export password in `HONUA_KEYRING_PASSWORD`.
 
 ## 3. Start it
 
@@ -256,6 +283,9 @@ a backup.
 - **Readiness times out** — `docker compose logs honua postgres redis`. Do not
   switch to the Development environment or disable preflight to get past a
   startup failure; it is telling you something.
+- **`KeyRingCertificatePath` is required** — the key-ring PKCS#12 from step 2 is
+  missing. Re-run that `openssl` block so `secrets/keyring.pfx` exists before
+  `docker compose up`.
 - **A pull fails** — these pins need no credentials, so it is network or proxy
   policy. The optional .NET client uses a different registry; see
   [registry clients](registry-clients.md) only if you need it.
