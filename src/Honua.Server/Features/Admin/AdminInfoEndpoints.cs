@@ -19,6 +19,13 @@ internal static class AdminInfoEndpoints
 {
     public static void MapAdminInfoEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        // honua-server#5378: the capabilities handshake advertises the embedded
+        // release/component-versions.json, so refuse to start when that declaration differs from
+        // the contract versions this server actually serves.
+        ContractVersionsStartupCheck.Validate(
+            ComponentVersionsDeclaration.Embedded.ContractVersions,
+            ServedContractVersions.Current);
+
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
@@ -64,11 +71,14 @@ internal static class AdminInfoEndpoints
     private static IResult HandleGetCapabilities()
     {
         var serverVersion = GetServerVersion();
+        var declaration = ComponentVersionsDeclaration.Embedded;
         var response = new AdminCapabilitiesResponse
         {
             MetadataApiVersion = MetadataV2Constants.ApiVersion,
             MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
             ServerVersion = serverVersion,
+            ContractVersions = declaration.ContractVersions,
+            SchemaVersions = declaration.SchemaVersions,
             // The generated JS/Python/.NET admin SDKs parse this `compatibility` contract from the
             // capabilities response per docs/developer/SDK_COMPATIBILITY_METADATA.md. The documented
             // envelope (controlPlaneApi/releaseChannel/metadataSchemas/features) is the canonical
@@ -101,7 +111,11 @@ internal static class AdminInfoEndpoints
                 },
                 AdminApiMajor = AdminApiMajor,
                 MetadataApiVersion = MetadataV2Constants.ApiVersion,
-                MetadataSchemaVersion = MetadataV2Constants.SchemaVersion
+                MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
+                // The release-train contract-live gate (ruling R27) reads this map as the whole
+                // advertised contract set, keyed like release/component-versions.json (#5378).
+                ContractVersions = declaration.ContractVersions,
+                SchemaVersions = declaration.SchemaVersions
             }
         };
         return Results.Json(
@@ -109,7 +123,7 @@ internal static class AdminInfoEndpoints
             AdminInfoJsonContext.Default.ApiResponseAdminCapabilitiesResponse);
     }
 
-    private const string AdminApiMajor = "v1";
+    internal const string AdminApiMajor = "v1";
     private const int AdminApiMajorNumber = 1;
     private const string AdminApiBasePath = "/api/v1/admin";
 
@@ -199,6 +213,14 @@ public sealed record AdminCapabilitiesResponse
     [JsonPropertyName("serverVersion")]
     public string ServerVersion { get; init; } = string.Empty;
 
+    /// <summary>Contract name to version, as declared in release/component-versions.json.</summary>
+    [JsonPropertyName("contractVersions")]
+    public IReadOnlyDictionary<string, string> ContractVersions { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>Schema name to version, as declared in release/component-versions.json.</summary>
+    [JsonPropertyName("schemaVersions")]
+    public IReadOnlyDictionary<string, string> SchemaVersions { get; init; } = new Dictionary<string, string>();
+
     [JsonPropertyName("compatibility")]
     public AdminCompatibility Compatibility { get; init; } = new();
 }
@@ -237,6 +259,18 @@ public sealed record AdminCompatibility
 
     [JsonPropertyName("metadataSchemaVersion")]
     public string MetadataSchemaVersion { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Every contract this server serves, name to version, keyed like release/component-versions.json
+    /// (admin, metadata, geoservices, ogc, stac, grpc). Startup refuses a declaration that differs
+    /// from the served versions, so this map is the whole advertised contract set.
+    /// </summary>
+    [JsonPropertyName("contractVersions")]
+    public IReadOnlyDictionary<string, string> ContractVersions { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>Schema name to version, as declared in release/component-versions.json.</summary>
+    [JsonPropertyName("schemaVersions")]
+    public IReadOnlyDictionary<string, string> SchemaVersions { get; init; } = new Dictionary<string, string>();
 }
 
 /// <summary>Control-plane (admin) API identity the SDK gates on before constructing admin paths.</summary>

@@ -49,11 +49,48 @@ Example response fragment:
         "manifestApply": false,
         "manifestDryRun": false,
         "manifestPrune": false
-      }
+      },
+      "contractVersions": {
+        "admin": "v1",
+        "geoservices": "1.0.0",
+        "grpc": "v1",
+        "metadata": "metadata.honua.io/v2alpha1",
+        "ogc": "1.0.0",
+        "stac": "1.0.0"
+      },
+      "schemaVersions": {}
     }
   }
 }
 ```
+
+### Contract versions
+
+`contractVersions` maps each contract the server serves to its exact version. It uses the
+same keys as `release/component-versions.json`:
+
+| key | contract | served from |
+|---|---|---|
+| `admin` | `/api/v1/admin` control-plane API major | `AdminInfoEndpoints.AdminApiMajor` |
+| `metadata` | metadata API version | `MetadataV2Constants.ApiVersion` |
+| `geoservices` | rolled-up GeoServices REST wire contract | `GeoServicesContract.Version` (also the manifest's `geoservices-rest` transport `contractVersion`) |
+| `ogc` | rolled-up OGC API wire contract | `OgcContract.Version` (also the manifest's `ogc-http` transport `contractVersion`) |
+| `stac` | rolled-up STAC wire contract | `StacContract.Version` (also the manifest's `stac` transport `contractVersion`) |
+| `grpc` | gRPC proto package major | the `geospatial.vN` package of every mapped gRPC service |
+
+The map is `release/component-versions.json`, embedded in the server assembly at build. The
+honua-release resolver reads that same file to fill the release lock, and the release-train
+contract-live gate (ruling R27) boots the candidate image and compares this map with the lock.
+The gate treats the map as the whole advertised set: a missing key, an extra key or a different
+value refuses. At startup the server compares the embedded declaration with the versions it serves
+and refuses to start on any difference, so a stale declaration fails the build's tests and the
+boot, not only the release gate.
+
+`schemaVersions` is the declaration's schema map. The `database` schema version is derived by the
+release resolver from the migrations, so it is never declared or advertised here.
+
+`data.contractVersions` and `data.schemaVersions` carry the same maps outside `compatibility`,
+like the flat `metadataApiVersion` fields.
 
 ## SDK Use
 
