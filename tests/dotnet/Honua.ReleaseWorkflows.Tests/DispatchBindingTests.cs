@@ -123,6 +123,16 @@ public sealed class DispatchBindingTests
         Assert.Contains("image=\"${ref}@${digest}\"", workflow, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ReleaseBundle_PullRequestContracts_IsolateDispatchCredentialsAndJobs()
+    {
+        var workflow = File.ReadAllText(Path.Join(RepositoryRoot, ".github/workflows/release-bundle.yml"));
+        var testJob = workflow.Split("  workflow-contract-tests:", StringSplitOptions.None)[1]
+            .Split("  release-context:", StringSplitOptions.None)[0];
+        Assert.Contains("GH_TOKEN: ''", testJob, StringComparison.Ordinal);
+        Assert.Contains("    needs: workflow-contract-tests\n    if: ${{ github.event_name == 'workflow_dispatch' }}", workflow, StringComparison.Ordinal);
+    }
+
     private static async Task<(int ExitCode, string Output, string Error, string Calls)> DispatchAsync(string scenario, params string[] arguments)
     {
         var temporary = Path.Join(Path.GetTempPath(), "release-dispatch-" + Guid.NewGuid().ToString("N"));
