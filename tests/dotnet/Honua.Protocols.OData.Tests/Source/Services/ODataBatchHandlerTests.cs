@@ -23,6 +23,7 @@ using Honua.Infrastructure.Validation;
 using Honua.Protocols.OData;
 using Honua.Protocols.OData.Models;
 using Honua.Protocols.OData.Services;
+using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -156,7 +157,7 @@ public sealed class ODataBatchHandlerTests
         await featureReader.Received(2).GetAsync(1, existingFeature.Id, Arg.Any<CancellationToken>());
     }
 
-    [Fact]
+    [UnitTest]
     public async Task ProcessBatchAsync_ChangeSetCreateOnPublicationDeclaringNoEditCapability_IsRefusedWithoutWriting()
     {
         var featureReader = Substitute.For<IFeatureReader>();
@@ -197,6 +198,8 @@ public sealed class ODataBatchHandlerTests
     }
 
     [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
     [InlineData("bob", false)]
     [InlineData("alice", true)]
     public async Task ProcessBatchAsync_ChangeSetUpdateOnOwnerPolicyLayer_IsWrittenOnlyForTheOwner(string principal, bool written)
@@ -219,7 +222,7 @@ public sealed class ODataBatchHandlerTests
         var metadata = CreateMetadataProvider(ownerField: ownerField);
         var user = CreateUser(principal, "data-editor");
         var accessor = new HttpContextAccessor();
-        var sharedWriter = new Honua.Infrastructure.Editing.OwnerEditPolicyEnforcingFeatureWriter(
+        var sharedWriter = new Honua.Infrastructure.Authentication.OwnerEditPolicyEnforcingFeatureWriter(
             providerWriter,
             metadata,
             accessor,

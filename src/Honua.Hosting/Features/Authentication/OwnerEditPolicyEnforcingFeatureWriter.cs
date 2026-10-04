@@ -11,11 +11,10 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Honua.Infrastructure.Editing;
+namespace Honua.Infrastructure.Authentication;
 
 /// <summary>
 /// Decorates the provider <see cref="IFeatureWriter"/> so a resource's owner-based edit policy
@@ -37,12 +36,14 @@ namespace Honua.Infrastructure.Editing;
 /// owning principal or an administrator (the owner is read from the current row through the
 /// row-security-enforced <see cref="IFeatureReader"/>), creates are refused for anonymous callers
 /// and stamped with the creator when the policy says so. The rules are the shared
-/// <see cref="OwnerEditPolicyEvaluator"/>, so every surface makes the same decision.
+/// <see cref="OwnerEditPolicyEvaluator"/>, so every surface makes the same decision. The owner read
+/// travels to the writer as a row-state precondition, so a row whose owner changes before the
+/// write is not written.
 /// </para>
 /// <para>
 /// <b>Who the principal is.</b> The current request's user; inside a background job with no
-/// request, the job submitter captured at submission time. A write with neither is treated as
-/// anonymous and refused on an owner-policy layer.
+/// request, the job submitter captured at submission time, evaluated in a service scope of its
+/// own. A write with neither is treated as anonymous and refused on an owner-policy layer.
 /// </para>
 /// <para>
 /// <b>How a refusal is reported.</b> As a rolled-back <see cref="FeatureEditResult"/> whose
@@ -216,14 +217,26 @@ internal readonly record struct OwnerEditPolicyOutcome(FeatureEditBatch Batch, s
 /// Evaluates a feature-edit batch against the owner-based edit policies of every resource bound
 /// to the target storage layer.
 /// </summary>
-internal sealed class OwnerEditPolicyEnforcer(
-    IMetadataV2GraphProvider metadata,
-    IHttpContextAccessor httpContextAccessor,
-    IServiceProvider services)
+internal sealed class OwnerEditPolicyEnforcer
 {
-    private readonly IMetadataV2GraphProvider _metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
-    private readonly IHttpContextAccessor _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
-    private readonly IServiceProvider _services = services ?? throw new ArgumentNullException(nameof(services));
+    private readonly IMetadataV2GraphProvider _metadata;
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IServiceProvider _services;
+    private readonly IServiceScopeFactory _scopeFactory;
+
+    public OwnerEditPolicyEnforcer(
+        IMetadataV2GraphProvider metadata,
+        IHttpContextAccessor httpContextAccessor,
+        IServiceProvider services)
+    {
+        _metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
+        _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
+        _services = services ?? throw new ArgumentNullException(nameof(services));
+
+        // A background job can outlive the request scope that built this writer, so job writes are
+        // evaluated in a scope of their own.
+        _scopeFactory = services.GetRequiredService<IServiceScopeFactory>();
+    }
 
     public async Task<OwnerEditPolicyOutcome> EvaluateAsync(
         int layerId,
@@ -236,45 +249,70 @@ internal sealed class OwnerEditPolicyEnforcer(
             return new OwnerEditPolicyOutcome(batch, null);
         }
 
-        var principal = ResolvePrincipal();
-
-        if (HasCreates(batch))
+        var (principal, services, jobScope) = ResolveEvaluationContext();
+        using (jobScope)
         {
-            foreach (var policy in policies)
+            // Anonymous callers are refused and administrators allowed whatever the row owner is,
+            // so neither needs a row read.
+            if (!principal.IsAuthenticated || string.IsNullOrEmpty(principal.Name) || principal.IsAdmin)
             {
-                var decision = OwnerEditPolicyEvaluator.Evaluate(policy, AttributeRuleEditEvent.Insert, null, principal);
-                if (!decision.IsAllowed)
+                var decision = OwnerEditPolicyEvaluator.Evaluate(policies[0], AttributeRuleEditEvent.Update, null, principal);
+                return decision.IsAllowed
+                    ? new OwnerEditPolicyOutcome(StampOwners(batch, policies, principal), null)
+                    : new OwnerEditPolicyOutcome(batch, decision.Reason);
+            }
+
+            var guarded = batch.Preconditions.IsDefaultOrEmpty
+                ? []
+                : batch.Preconditions.Select(static precondition => precondition.ObjectId).ToHashSet();
+            var snapshotPreconditions = ImmutableArray.CreateBuilder<FeatureEditPrecondition>();
+            IFeatureReader? reader = null;
+            foreach (var (objectId, editEvent) in CollectTargets(batch))
+            {
+                reader ??= services.GetRequiredService<IFeatureReader>();
+                var existing = await ReadCurrentRowAsync(reader, layerId, objectId, batch.VersionContext, cancellationToken)
+                    .ConfigureAwait(false);
+                foreach (var policy in policies)
                 {
-                    return new OwnerEditPolicyOutcome(batch, decision.Reason);
+                    // A row the caller cannot read has no owner the caller can be matched against.
+                    object? existingOwner = null;
+                    if (existing is { } row)
+                    {
+                        row.Attributes.TryGetValue(policy.OwnerField, out existingOwner);
+                    }
+
+                    var decision = OwnerEditPolicyEvaluator.Evaluate(policy, editEvent, existingOwner, principal);
+                    if (!decision.IsAllowed)
+                    {
+                        return new OwnerEditPolicyOutcome(batch, decision.Reason);
+                    }
+                }
+
+                // The writer re-checks this snapshot inside its transaction, so a row whose owner
+                // changes between this read and the write is not written. Named-version edits come
+                // only from GeoServices, which evaluates the policy on its own in-version reads.
+                if (existing is { } snapshot && batch.VersionContext is not { IsDefault: false } && guarded.Add(objectId))
+                {
+                    snapshotPreconditions.Add(new FeatureEditPrecondition
+                    {
+                        ObjectId = objectId,
+                        ExpectedStateToken = FeatureStateToken.FromReadSnapshot(snapshot)
+                    });
                 }
             }
-        }
 
-        IFeatureReader? reader = null;
-        foreach (var (objectId, editEvent) in CollectTargets(batch))
-        {
-            reader ??= _services.GetRequiredService<IFeatureReader>();
-            var existing = await ReadCurrentRowAsync(reader, layerId, objectId, batch.VersionContext, cancellationToken)
-                .ConfigureAwait(false);
-            foreach (var policy in policies)
+            var stamped = StampOwners(batch, policies, principal);
+            if (snapshotPreconditions.Count > 0)
             {
-                // A row the caller cannot read has no owner the caller can be matched against.
-                // The evaluator still lets an administrator through; anyone else is refused.
-                object? existingOwner = null;
-                if (existing is { } row)
+                stamped = stamped with
                 {
-                    row.Attributes.TryGetValue(policy.OwnerField, out existingOwner);
-                }
-
-                var decision = OwnerEditPolicyEvaluator.Evaluate(policy, editEvent, existingOwner, principal);
-                if (!decision.IsAllowed)
-                {
-                    return new OwnerEditPolicyOutcome(batch, decision.Reason);
-                }
+                    Preconditions = (stamped.Preconditions.IsDefault ? [] : stamped.Preconditions)
+                        .AddRange(snapshotPreconditions.ToImmutable())
+                };
             }
-        }
 
-        return new OwnerEditPolicyOutcome(StampOwners(batch, policies, principal), null);
+            return new OwnerEditPolicyOutcome(stamped, null);
+        }
     }
 
     /// <summary>
@@ -361,24 +399,25 @@ internal sealed class OwnerEditPolicyEnforcer(
     /// Resolves the principal the write is performed for: the request user, or the captured job
     /// submitter when the write runs in a background job. Anything else is anonymous.
     /// </summary>
-    private EditPrincipal ResolvePrincipal()
+    private (EditPrincipal Principal, IServiceProvider Services, IServiceScope? JobScope) ResolveEvaluationContext()
     {
-        var httpContext = _httpContextAccessor.HttpContext;
-        if (httpContext is null)
+        if (_httpContextAccessor.HttpContext is { } httpContext)
         {
-            if (JobSecurityScope.Current?.Submitter is not { } submitter)
-            {
-                return EditPrincipal.Anonymous;
-            }
-
-            httpContext = new DefaultHttpContext
-            {
-                RequestServices = _services,
-                User = JobSecurityContextCapture.Restore(submitter)
-            };
+            return (ResolvePrincipal(httpContext), _services, null);
         }
 
-        return ResolvePrincipal(httpContext);
+        if (JobSecurityScope.Current?.Submitter is not { } submitter)
+        {
+            return (EditPrincipal.Anonymous, _services, null);
+        }
+
+        var scope = _scopeFactory.CreateScope();
+        var jobContext = new DefaultHttpContext
+        {
+            RequestServices = scope.ServiceProvider,
+            User = JobSecurityContextCapture.Restore(submitter)
+        };
+        return (ResolvePrincipal(jobContext), scope.ServiceProvider, scope);
     }
 
     private static EditPrincipal ResolvePrincipal(HttpContext httpContext)

@@ -60,8 +60,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         IOptions<LimitsOptions> limitsOptions,
         IOptions<GrpcOptions> grpcOptions,
         ILogger<HonuaFeatureService> logger,
-        GrpcApplyEditsIdempotencyStore idempotencyStore,
-        FeatureMutationValidator mutationValidator)
+        GrpcApplyEditsDependencies editDependencies)
         : this(
             resourceValidator,
             featureReader,
@@ -73,8 +72,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             limitsOptions,
             grpcOptions,
             logger,
-            idempotencyStore,
-            mutationValidator)
+            editDependencies)
     {
     }
 
@@ -90,9 +88,9 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         IOptions<LimitsOptions> limitsOptions,
         IOptions<GrpcOptions> grpcOptions,
         ILogger<HonuaFeatureService> logger,
-        GrpcApplyEditsIdempotencyStore idempotencyStore,
-        FeatureMutationValidator mutationValidator)
+        GrpcApplyEditsDependencies editDependencies)
     {
+        ArgumentNullException.ThrowIfNull(editDependencies);
         _resourceValidator = resourceValidator;
         _featureReader = featureReader;
         _featureWriter = featureWriter;
@@ -102,10 +100,10 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         _mutationEventService = mutationEventService;
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
         _editLimits = limitsOptions?.Value?.Edits ?? new EditLimits();
-        _mutationValidator = mutationValidator ?? throw new ArgumentNullException(nameof(mutationValidator));
+        _mutationValidator = editDependencies.MutationValidator;
         _streamBatchSize = Math.Max(grpcOptions?.Value?.StreamBatchSize ?? 1000, 1);
         _logger = logger;
-        _idempotencyStore = idempotencyStore;
+        _idempotencyStore = editDependencies.IdempotencyStore;
     }
 
     public override async Task<Proto.QueryFeaturesResponse> QueryFeatures(

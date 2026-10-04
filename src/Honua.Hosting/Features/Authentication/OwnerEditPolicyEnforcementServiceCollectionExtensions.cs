@@ -1,12 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Honua.Infrastructure.Editing;
+namespace Honua.Infrastructure.Authentication;
 
 /// <summary>
 /// Registration for owner-based edit-policy enforcement at the shared edit-pipeline boundary
@@ -37,6 +39,10 @@ public static class OwnerEditPolicyEnforcementServiceCollectionExtensions
         }
 
         services.AddHttpContextAccessor();
+
+        // In-process background work (for example a temporal rollback) captures its submitter
+        // through this seam, so its writes are evaluated as that submitter after the request ends.
+        services.TryAddSingleton<IJobSubmitterCapture, HttpContextJobSubmitterCapture>();
         services.Remove(innerDescriptor);
         services.Add(ServiceDescriptor.Describe(
             typeof(IFeatureWriter),

@@ -80,8 +80,7 @@ public sealed class GrpcFeatureServiceTests
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions()),
             NullLogger<HonuaFeatureService>.Instance,
-            new GrpcApplyEditsIdempotencyStore(),
-            CreateMutationValidator());
+            new GrpcApplyEditsDependencies(new GrpcApplyEditsIdempotencyStore(), CreateMutationValidator()));
 
         // Default: valid service/layer
         _resourceValidator
@@ -1316,8 +1315,7 @@ public sealed class GrpcFeatureServiceTests
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions { StreamBatchSize = 1 }),
             NullLogger<HonuaFeatureService>.Instance,
-            new GrpcApplyEditsIdempotencyStore(),
-            CreateMutationValidator());
+            new GrpcApplyEditsDependencies(new GrpcApplyEditsIdempotencyStore(), CreateMutationValidator()));
 
         var features = Enumerable.Range(1, 3)
             .Select(i => Feature.Create(i, null))
@@ -1491,6 +1489,32 @@ public sealed class GrpcFeatureServiceTests
     [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_AddMissingARequiredField_IsRejectedWithoutWriting()
+    {
+        var resource = CreateResource() with
+        {
+            SchemaFields =
+            [
+                .. _testResource.SchemaFields,
+                new MetadataV2Field { Name = "status", Type = MetadataV2FieldType.String, Nullable = false }
+            ]
+        };
+        ArrangeLayer(_testService, resource);
+        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
+        request.Adds.Add(new Proto.Feature
+        {
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "created" } }
+        });
+
+        var act = () => _sut.ApplyEdits(request, CreateCallContext());
+
+        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        await _featureWriter.DidNotReceiveWithAnyArgs().ApplyEditsAsync(default, default, default);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_AddWithGeometryOfAnotherType_IsRejectedWithoutWriting()
     {
         // The test layer stores points.
@@ -1583,8 +1607,7 @@ public sealed class GrpcFeatureServiceTests
             Options.Create(limits),
             Options.Create(new GrpcOptions()),
             NullLogger<HonuaFeatureService>.Instance,
-            new GrpcApplyEditsIdempotencyStore(),
-            CreateMutationValidator());
+            new GrpcApplyEditsDependencies(new GrpcApplyEditsIdempotencyStore(), CreateMutationValidator()));
         var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
         request.Adds.Add(new Proto.Feature());
         request.Adds.Add(new Proto.Feature());
@@ -1622,7 +1645,7 @@ public sealed class GrpcFeatureServiceTests
         var callContext = CreateCallContext(new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim(ClaimTypes.Name, "bob"), new Claim(ClaimTypes.Role, "data-editor")], "Test")));
         var httpContext = callContext.GetHttpContext();
-        var sharedWriter = new Honua.Infrastructure.Editing.OwnerEditPolicyEnforcingFeatureWriter(
+        var sharedWriter = new Honua.Infrastructure.Authentication.OwnerEditPolicyEnforcingFeatureWriter(
             _featureWriter,
             new TestMetadataV2GraphProvider(graph),
             new HttpContextAccessor { HttpContext = httpContext },
@@ -1640,8 +1663,7 @@ public sealed class GrpcFeatureServiceTests
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions()),
             NullLogger<HonuaFeatureService>.Instance,
-            new GrpcApplyEditsIdempotencyStore(),
-            CreateMutationValidator());
+            new GrpcApplyEditsDependencies(new GrpcApplyEditsIdempotencyStore(), CreateMutationValidator()));
         var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0, RollbackOnFailure = true };
         request.Updates.Add(new Proto.Feature
         {
@@ -2121,8 +2143,7 @@ public sealed class GrpcFeatureServiceTests
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions()),
             NullLogger<HonuaFeatureService>.Instance,
-            new GrpcApplyEditsIdempotencyStore(),
-            CreateMutationValidator());
+            new GrpcApplyEditsDependencies(new GrpcApplyEditsIdempotencyStore(), CreateMutationValidator()));
 
         if (edit)
         {

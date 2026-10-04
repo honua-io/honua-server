@@ -5,12 +5,13 @@ using System.Collections.Immutable;
 using System.Data;
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
-using Honua.Infrastructure.Editing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
@@ -184,6 +185,44 @@ public sealed class OwnerEditPolicyEnforcingFeatureWriterTests
 
         await act.Should().ThrowAsync<FeatureEditNotPermittedException>();
         inner.UpdateCalls.Should().Be(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Update)]
+    public async Task ApplyEditsAsync_OwnerUpdate_CarriesTheOwnerReadAsAPrecondition()
+    {
+        // The writer re-checks this snapshot inside its transaction, so an ownership change
+        // between the owner read and the write fails the write instead of passing it.
+        var (writer, inner) = CreateWriter(User("alice"), rowOwner: "alice");
+
+        await writer.ApplyEditsAsync(
+            StorageLayerId,
+            FeatureEditBatch.Create(updates: [Row(42, ("name", "changed"))]));
+
+        var expectedToken = FeatureStateToken.FromReadSnapshot(Row(42, (OwnerField, "alice")));
+        inner.LastBatch!.Value.Preconditions.Should().ContainSingle(precondition =>
+            precondition.ObjectId == 42 && precondition.ExpectedStateToken == expectedToken);
+    }
+
+    [UnitTheory]
+    [InlineData("alice", true)]
+    [InlineData("bob", false)]
+    [Operation(Operations.Delete)]
+    public async Task ApplyEditsAsync_InABackgroundJob_EvaluatesTheCapturedSubmitter(string submitter, bool written)
+    {
+        var (writer, inner) = CreateWriter(user: null, rowOwner: "alice");
+
+        FeatureEditResult result;
+        using (JobSecurityScope.Begin(new JobSecurityContext(
+                   submitter,
+                   TenantId: null,
+                   Claims: [new JobSecurityClaim(ClaimTypes.Name, submitter)])))
+        {
+            result = await writer.ApplyEditsAsync(StorageLayerId, FeatureEditBatch.Create(deletes: [42L]));
+        }
+
+        result.WasRolledBack.Should().Be(!written);
+        inner.ApplyEditsCalls.Should().Be(written ? 1 : 0);
     }
 
     [UnitTest]

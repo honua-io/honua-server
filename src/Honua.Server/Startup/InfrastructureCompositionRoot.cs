@@ -16,7 +16,6 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Collaboration;
 using Honua.Infrastructure.Configuration;
-using Honua.Infrastructure.Editing;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Services;
@@ -83,7 +82,8 @@ internal static class InfrastructureCompositionRoot
         // and the attachment endpoints evaluate the policy themselves for their own error shape;
         // this decorator applies the same decision to every other write path. Outermost, so a
         // refused edit reaches neither the lease check nor the auditor.
-        services.AddOwnerEditPolicyEnforcingFeatureWriter();
+        Honua.Infrastructure.Authentication.OwnerEditPolicyEnforcementServiceCollectionExtensions
+            .AddOwnerEditPolicyEnforcingFeatureWriter(services);
 
         // Registry-backed geographic-SRID classification seam (#2794). Composes the provider's
         // ICrsRegistry (registered above for providers that ship one, e.g. Postgres) with the

@@ -19,8 +19,8 @@ namespace Honua.Server.Features.Protocols.Grpc;
 /// <summary>
 /// Turns a converted gRPC <c>ApplyEdits</c> batch into the batch the shared feature writer
 /// applies, enforcing the same edit contract as the other write surfaces (SEC-5): the edit
-/// limits, the layer schema (known, typed, editable fields), the layer geometry type, attribute
-/// rules and contingent values. Updates are merged over the stored row and carry a read-snapshot
+/// limits, the layer schema (known, typed, editable and required fields), the layer geometry
+/// type, attribute rules and contingent values. Updates are merged over the stored row and carry a read-snapshot
 /// precondition, so omitted attributes, omitted geometry and fields masked from the caller are
 /// kept rather than erased, and a row that changed since the read is not overwritten.
 /// </summary>
@@ -210,6 +210,13 @@ internal static class GrpcApplyEditsPreparation
         if (!ruleResult.IsValid)
         {
             throw InvalidArgument($"{location}: {ruleResult.Violations[0].Message}");
+        }
+
+        // A create must supply every required field (after calculation rules have run), as on the
+        // other create paths.
+        if (!isUpdate && EditProcessor.FindMissingRequiredFields(resource, ruleResult.Attributes) is { Count: > 0 } missing)
+        {
+            throw InvalidArgument($"{location}: Required attribute(s) missing: {string.Join(", ", missing)}.");
         }
 
         var contingentResult = ContingentValueValidator.Validate(resource, ruleResult.Attributes);
