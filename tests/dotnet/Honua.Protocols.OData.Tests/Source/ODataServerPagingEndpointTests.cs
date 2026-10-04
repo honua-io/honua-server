@@ -120,7 +120,7 @@ public sealed class ODataServerPagingEndpointTests : IAsyncLifetime
         pages[0].NextLink.Should().Contain("$skip=5").And.Contain("$top=7");
         pages[1].NextLink.Should().Contain("$skip=10").And.Contain("$top=2");
         pages[2].NextLink.Should().BeNull("the requested $top=12 is exhausted on the third page");
-        pages.SelectMany(page => page.Ids).Should().Equal(Enumerable.Range(1, 12));
+        pages.SelectMany(page => page.Ids).Should().Equal(Enumerable.Range(1, 12).Select(id => (long)id));
     }
 
     [IntegrationTest]
@@ -132,7 +132,7 @@ public sealed class ODataServerPagingEndpointTests : IAsyncLifetime
 
         pages.Select(page => page.Ids.Count).Should().Equal(5, 2);
         pages[0].NextLink.Should().Contain("$skiptoken=").And.Contain("$top=2");
-        pages.SelectMany(page => page.Ids).Should().Equal(Enumerable.Range(1, 7));
+        pages.SelectMany(page => page.Ids).Should().Equal(Enumerable.Range(1, 7).Select(id => (long)id));
     }
 
     [IntegrationTest]
