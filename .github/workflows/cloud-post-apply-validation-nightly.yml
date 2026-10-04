@@ -12,10 +12,11 @@ name: Cloud Post-Apply Validation (nightly)
 # (`featuresProcessed == 1`, `failedFeatures == 0`), the only row-count assertion in the deploy
 # story — has been unreachable, and skipped silently rather than failing.
 #
-# This lane gives the workflow a target it can always reach: it boots a real Honua.Server against a
-# real PostGIS on the runner and validates against that. It is FREE, needs no cloud account and no
-# repository variable, and it runs every night, so a regression in the post-apply contract or in
-# the validation script itself is caught within a day instead of never.
+# When cloud validation is provisioned, this lane gives the workflow a target it can always reach:
+# it boots a real Honua.Server against a real PostGIS on the runner and validates against that. It
+# runs every night, so a regression in the post-apply contract or in the validation script itself
+# is caught within a day instead of never. The operator secret preflight keeps an unprovisioned
+# repository from reporting a false failure.
 #
 # What it is NOT: a cloud substrate. It proves the post-apply CONTRACT (public health surface,
 # deploy preflight, admin control-plane availability, staged-import publish/query round-trip with an
@@ -42,9 +43,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  operator-preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      provisioned: ${{ steps.operator-secret.outputs.provisioned }}
+    steps:
+      - name: Check cloud validation operator precondition
+        id: operator-secret
+        shell: bash
+        env:
+          CLOUD_VALIDATION_ADMIN_API_KEY: ${{ secrets.CLOUD_VALIDATION_ADMIN_API_KEY }}
+        run: |
+          if [[ -z "$CLOUD_VALIDATION_ADMIN_API_KEY" ]]; then
+            reason="SKIPPED: cloud post-apply validation requires CLOUD_VALIDATION_ADMIN_API_KEY; the operator must configure this repository secret for a provisioned backend."
+            echo "::notice::$reason"
+            echo "$reason" >> "$GITHUB_STEP_SUMMARY"
+            echo "provisioned=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "provisioned=true" >> "$GITHUB_OUTPUT"
+          fi
+
   local-target:
     name: Post-apply contract (local target)
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.base_url == '' }}
+    needs: operator-preflight
+    if: ${{ needs.operator-preflight.outputs.provisioned == 'true' && (github.event_name != 'workflow_dispatch' || inputs.base_url == '') }}
     uses: ./.github/workflows/cloud-post-apply-validation.yml
     with:
       local_target: true
@@ -65,7 +87,8 @@ jobs:
 
   deployed-environment:
     name: Post-apply contract (deployed environment)
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.base_url != '' }}
+    needs: operator-preflight
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.base_url != '' && needs.operator-preflight.outputs.provisioned == 'true' }}
     uses: ./.github/workflows/cloud-post-apply-validation.yml
     with:
       base_url: ${{ inputs.base_url }}
