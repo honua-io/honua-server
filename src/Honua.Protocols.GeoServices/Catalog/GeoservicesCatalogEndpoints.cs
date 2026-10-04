@@ -155,8 +155,19 @@ internal static class GeoservicesCatalogEndpoints
         return endpoints;
     }
 
-    private static IResult HandleSiteRoot(HttpContext context)
-        => Results.Redirect($"{context.Request.PathBase}/rest/services");
+    internal static IResult HandleSiteRoot(HttpContext context)
+    {
+        var pathBase = context.Request.PathBase.Value ?? string.Empty;
+        // The bare /arcgis site-root alias keeps its canonical redirect. UsePathBase
+        // consumes that entire path; a mounted /arcgis/ request retains the slash.
+        // Preserve any external mount while removing only the consumed alias.
+        if (!context.Request.Path.HasValue && pathBase.EndsWith("/arcgis", StringComparison.OrdinalIgnoreCase))
+        {
+            pathBase = pathBase[..^"/arcgis".Length];
+        }
+
+        return Results.Redirect($"{pathBase}/rest/services");
+    }
 
     // ArcGIS Pro's site-root connection form probes GET /services before it posts
     // catalog operations, so the bare form answers with the same contract as ?wsdl.
