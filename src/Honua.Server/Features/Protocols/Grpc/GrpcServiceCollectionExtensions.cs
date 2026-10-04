@@ -65,7 +65,6 @@ internal static class GrpcServiceCollectionExtensions
         services.TryAddSingleton<GrpcExceptionInterceptor>();
         services.TryAddSingleton<GrpcApplyEditsIdempotencyStore>(sp =>
             new GrpcApplyEditsIdempotencyStore(sp.GetService<StackExchange.Redis.IConnectionMultiplexer>()));
-        services.TryAddScoped<GrpcApplyEditsDependencies>();
         services.TryAddScoped<SpatialReferenceResolver>();
 
         services.AddGrpcHealthChecks();

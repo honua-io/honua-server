@@ -755,18 +755,6 @@ internal sealed partial class Wfs20Handler
         TransactionFeatureChanges changes,
         CancellationToken cancellationToken)
     {
-        // The changed properties are an update of an existing row: read-only fields are refused
-        // here, before they are merged with the stored values that legitimately carry them (SEC-5).
-        var changesResult = _mutationValidator.ValidateAttributes(
-            resource,
-            changes.Attributes,
-            ValidationExtensions.AttributeValidationMode.Strict,
-            isUpdate: true);
-        if (!changesResult.IsValid)
-        {
-            throw new ArgumentException(changesResult.ErrorMessage ?? "Invalid attributes.");
-        }
-
         // The shared feature writer currently replaces both geometry and attributes; it
         // does not carry EditUpdateMode through to the provider. Materialize the merged
         // row here so a property-only WFS-T update cannot clear omitted fields or geometry.
@@ -1073,14 +1061,6 @@ internal sealed partial class Wfs20Handler
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult;
-        }
-
-        // Declared edit capabilities are a property of the publication, not of the caller, so
-        // they bind anonymous-write layers too (SEC-5).
-        var capabilityError = LayerValidationHelpers.ValidateDeclaredEditCapability(context, layerValidation, operation);
-        if (capabilityError != null)
-        {
-            return capabilityError;
         }
 
         if (IsAnonymousWriteAllowed(context, layerValidation.Resource!, layerValidation.Service))

@@ -67,10 +67,7 @@ never by parsing the message.
   scope (skipped with a logged warning), never failing the edit. Full Arcade parity is a non-goal.
 - Owner-based edit policy compares the row's owner field against the authenticated principal
   name; it is independent of (and composes with) AccessPolicy/RBAC write authorization, which is
-  still enforced first in the shared edit pipeline. It binds every write path: GeoServices
-  `applyEdits` and the attachment endpoints refuse with code `1007`, and OGC API Features, OData
-  (including `$batch`), WFS-T and gRPC `ApplyEdits` are refused at the shared feature writer as a
-  rolled-back edit.
+  still enforced first in the shared edit pipeline.
 
 ## Status summary
 

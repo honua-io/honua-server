@@ -16,7 +16,6 @@ using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
@@ -45,8 +44,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     private readonly ILogger<HonuaFeatureService> _logger;
     private readonly GrpcApplyEditsIdempotencyStore _idempotencyStore;
     private readonly GeometryLimits _geometryLimits;
-    private readonly EditLimits _editLimits;
-    private readonly FeatureMutationValidator _mutationValidator;
     private readonly int _streamBatchSize;
 
     public HonuaFeatureService(
@@ -60,7 +57,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         IOptions<LimitsOptions> limitsOptions,
         IOptions<GrpcOptions> grpcOptions,
         ILogger<HonuaFeatureService> logger,
-        GrpcApplyEditsDependencies editDependencies)
+        GrpcApplyEditsIdempotencyStore idempotencyStore)
         : this(
             resourceValidator,
             featureReader,
@@ -72,7 +69,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             limitsOptions,
             grpcOptions,
             logger,
-            editDependencies)
+            idempotencyStore)
     {
     }
 
@@ -88,9 +85,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         IOptions<LimitsOptions> limitsOptions,
         IOptions<GrpcOptions> grpcOptions,
         ILogger<HonuaFeatureService> logger,
-        GrpcApplyEditsDependencies editDependencies)
+        GrpcApplyEditsIdempotencyStore idempotencyStore)
     {
-        ArgumentNullException.ThrowIfNull(editDependencies);
         _resourceValidator = resourceValidator;
         _featureReader = featureReader;
         _featureWriter = featureWriter;
@@ -99,11 +95,9 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         _spatialReferenceResolver = spatialReferenceResolver;
         _mutationEventService = mutationEventService;
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
-        _editLimits = limitsOptions?.Value?.Edits ?? new EditLimits();
-        _mutationValidator = editDependencies.MutationValidator;
         _streamBatchSize = Math.Max(grpcOptions?.Value?.StreamBatchSize ?? 1000, 1);
         _logger = logger;
-        _idempotencyStore = editDependencies.IdempotencyStore;
+        _idempotencyStore = idempotencyStore;
     }
 
     public override async Task<Proto.QueryFeaturesResponse> QueryFeatures(
@@ -272,9 +266,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
         }
 
-        GrpcApplyEditsPreparation.EnsureWithinEditLimits(editBatch, _editLimits);
-
-        await EnsureWriteAccessAsync(context, layer, editBatch).ConfigureAwait(false);
+        await EnsureWriteAccessAsync(context, layer.Service, layer.Resource, editBatch).ConfigureAwait(false);
 
         var idempotencyKey = request.IdempotencyKey?.Trim();
         GrpcApplyEditsIdempotencyStore.Lease? idempotencyLease = null;
@@ -301,20 +293,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         // row is hidden from the caller — otherwise a caller could mutate or delete a row RLS
         // hides from them by supplying its objectid (#2071). Adds carry no objectid and are
         // not pre-read. Mirrors the GeoServices/OData/WFS-T not-found guards (#2066).
-        var existingRows = await EnsureEditTargetsVisibleAsync(
+        await EnsureEditTargetsVisibleAsync(
             layer.StorageLayerId, editBatch, context.CancellationToken).ConfigureAwait(false);
-
-        // Adds and updates pass the same schema, geometry and rule validation as the other edit
-        // surfaces, and updates are merged over the row just read (SEC-5).
-        var writeBatch = await GrpcApplyEditsPreparation.PrepareAsync(
-            editBatch,
-            layer.Resource,
-            layer.GeometryType,
-            layer.ObjectIdFieldName,
-            existingRows,
-            _mutationValidator,
-            new UnsupportedExpressionLogger(_logger),
-            context.CancellationToken).ConfigureAwait(false);
 
         var grpcHttpContext = context.GetHttpContext()
             ?? throw new InvalidOperationException("HttpContext is required for gRPC outbox dispatch.");
@@ -343,7 +323,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         var result = await _featureWriter.ApplyEditsAsync(
             layer.StorageLayerId,
-            writeBatch,
+            editBatch,
             context.CancellationToken).ConfigureAwait(false);
 
         await PublishFeatureChangeEventsAsync(
@@ -377,15 +357,14 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     /// deleting it, because the underlying edit SQL filters only on <c>(layer_id, objectid)</c>
     /// with no RLS predicate (#2071). Adds carry no objectid and are not pre-read.
     /// </summary>
-    private async Task<IReadOnlyDictionary<long, Feature>> EnsureEditTargetsVisibleAsync(
+    private async Task EnsureEditTargetsVisibleAsync(
         int storageLayerId,
         FeatureEditBatch editBatch,
         CancellationToken cancellationToken)
     {
-        var existingRows = new Dictionary<long, Feature>();
         if (editBatch.Updates.IsDefaultOrEmpty && editBatch.Deletes.IsDefaultOrEmpty)
         {
-            return existingRows;
+            return;
         }
 
         // Collect distinct target objectids across updates and deletes; a single hidden/missing
@@ -418,11 +397,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                     StatusCode.NotFound,
                     $"Feature with objectid {objectId} was not found."));
             }
-
-            existingRows[objectId] = existing.Value;
         }
-
-        return existingRows;
     }
 
     private async Task PublishFeatureChangeEventsAsync(
@@ -797,12 +772,11 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
     private static async Task EnsureWriteAccessAsync(
         ServerCallContext context,
-        GrpcLayerContext layer,
+        MetadataV2Service service,
+        MetadataV2Resource resource,
         FeatureEditBatch editBatch)
     {
         var httpContext = context.GetHttpContext();
-        var service = layer.Service;
-        var resource = layer.Resource;
 
         // Match the REST ApplyEdits seam: conversion first establishes the bounded
         // set of requested edit kinds, then every present kind must independently
@@ -839,48 +813,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                 context.CancellationToken).ConfigureAwait(false);
 
             ThrowIfAccessDenied(decision);
-
-            // The same publication contract as the REST write surfaces (SEC-5): write access on
-            // the canonical service and the publication's declared edit capabilities.
-            var contractError = await LayerValidationHelpers.EnforcePublicationWriteContractAsync(
-                httpContext,
-                service,
-                layer.Publication,
-                resource,
-                operation,
-                context.CancellationToken).ConfigureAwait(false);
-            ThrowIfContractRefused(contractError);
         }
-    }
-
-    private static void ThrowIfContractRefused(IResult? contractError)
-    {
-        if (contractError is null)
-        {
-            return;
-        }
-
-        var statusCode = (contractError as IStatusCodeHttpResult)?.StatusCode ?? StatusCodes.Status403Forbidden;
-        throw statusCode switch
-        {
-            StatusCodes.Status401Unauthorized => new RpcException(new Status(
-                StatusCode.Unauthenticated, AccessPolicyHelpers.AuthRequiredMessage)),
-            StatusCodes.Status405MethodNotAllowed => new RpcException(new Status(
-                StatusCode.FailedPrecondition, "The requested edit is not enabled for this layer.")),
-            _ => new RpcException(new Status(
-                StatusCode.PermissionDenied, AccessPolicyHelpers.AccessForbiddenMessage))
-        };
-    }
-
-    /// <summary>
-    /// Logs attribute-rule expressions outside the supported subset; the edit proceeds, as on
-    /// the GeoServices edit path.
-    /// </summary>
-    private sealed class UnsupportedExpressionLogger(ILogger logger) : Honua.Core.Features.AttributeRules.IUnsupportedExpressionSink
-    {
-        public void OnUnsupported(MetadataV2Resource resource, MetadataV2AttributeRule rule)
-            => HonuaFeatureServiceLog.AttributeRuleExpressionUnsupported(
-                logger, resource.Metadata.Id, rule.Name, rule.Type.ToString());
     }
 
     private static async Task EnsureReadAccessAsync(
@@ -935,17 +868,4 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         MetadataV2GeometryType GeometryType,
         IReadOnlyList<MetadataV2Field> AttributeFields,
         string ObjectIdFieldName);
-}
-
-internal static partial class HonuaFeatureServiceLog
-{
-    [LoggerMessage(
-        EventId = 5632,
-        Level = LogLevel.Warning,
-        Message = "Attribute rule {RuleName} ({RuleType}) on resource {ResourceId} uses an expression outside the supported subset and was skipped on the gRPC edit path.")]
-    public static partial void AttributeRuleExpressionUnsupported(
-        ILogger logger,
-        string resourceId,
-        string ruleName,
-        string ruleType);
 }
