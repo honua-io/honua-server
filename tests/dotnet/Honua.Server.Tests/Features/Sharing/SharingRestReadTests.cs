@@ -107,7 +107,7 @@ public sealed class SharingRestReadTests : IAsyncLifetime
         authInfo.GetProperty("tokenServicesUrl").GetString().Should().EndWith("/sharing/rest/generateToken");
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData("http", "")]
     [InlineData("https", "")]
     [InlineData("https", "/arcgis")]
@@ -128,7 +128,7 @@ public sealed class SharingRestReadTests : IAsyncLifetime
         document.RootElement.TryGetProperty("fullVersion", out _).Should().BeFalse();
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData("http", "")]
     [InlineData("https", "")]
     [InlineData("https", "/arcgis")]

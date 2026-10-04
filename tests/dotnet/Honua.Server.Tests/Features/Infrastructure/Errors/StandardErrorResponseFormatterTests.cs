@@ -204,7 +204,7 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
 
     #region GeoServices Error Formatting
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData("1.0.0", "ServiceExceptionReport", "1.2.0")]
     [InlineData("1.1.0", "ExceptionReport", "1.1.0")]
     [Operation(Operations.ErrorHandling)]
