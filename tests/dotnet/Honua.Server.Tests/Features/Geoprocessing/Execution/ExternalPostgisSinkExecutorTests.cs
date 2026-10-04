@@ -74,19 +74,25 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
             ("schema", _schemaName), ("table", "cancelled_publication"), ("targetSrid", "4326"),
             ("batchId", "committed-external-batch"));
 
-        var result = await executor.ExecuteAsync(job, context, cancellation.Token);
+        JobExecutionResult? result = null;
+        var error = await Xunit.Record.ExceptionAsync(async () =>
+        {
+            result = await executor.ExecuteAsync(job, context, cancellation.Token);
+        });
 
         Assert.True(cancellation.IsCancellationRequested);
-        Assert.Equal(ExecutionJobStatus.Succeeded, result.Status);
+        await using var connection = await _fixture.DataSource.OpenConnectionAsync();
+        await using var count = new NpgsqlCommand($"SELECT COUNT(*) FROM \"{_schemaName}\".cancelled_publication", connection);
+        Assert.Equal(1L, (long)(await count.ExecuteScalarAsync())!);
+        Assert.Null(error);
+        Assert.NotNull(result);
+        Assert.Equal(ExecutionJobStatus.Succeeded, result!.Status);
         Assert.NotNull(receipt);
         using var json = System.Text.Json.JsonDocument.Parse(Encoding.UTF8.GetString(
             Convert.FromBase64String(receipt![(receipt.IndexOf(',') + 1)..])));
         Assert.Equal("committed-external-batch", json.RootElement.GetProperty("batchId").GetString());
         Assert.Equal(1, json.RootElement.GetProperty("featuresWritten").GetInt64());
         Assert.True(json.RootElement.GetProperty("committed").GetBoolean());
-        await using var connection = await _fixture.DataSource.OpenConnectionAsync();
-        await using var count = new NpgsqlCommand($"SELECT COUNT(*) FROM \"{_schemaName}\".cancelled_publication", connection);
-        Assert.Equal(1L, (long)(await count.ExecuteScalarAsync())!);
     }
 
     [Fact]
