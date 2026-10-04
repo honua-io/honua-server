@@ -5402,6 +5402,7 @@ public sealed class GeoprocessingJobServiceTests
     [InlineData("progress")]
     [InlineData("enqueue")]
     [Trait("Tier", "Fast")]
+    [Operation(Operations.Create)]
     public async Task SubmitJob_CancellationAfterPersistence_CompensatesAndRejectsPhantomReplay(string cancelAt)
     {
         using var request = new CancellationTokenSource();
@@ -5450,6 +5451,7 @@ public sealed class GeoprocessingJobServiceTests
     }
 
     [UnitTest]
+    [Operation(Operations.Create)]
     public async Task SubmitJob_IdempotentReplayOfUnclaimedLocalJob_RepairsDispatchBeforeAcknowledging()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())

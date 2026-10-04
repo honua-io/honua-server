@@ -79,7 +79,7 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
         Assert.True(cancellation.IsCancellationRequested);
         Assert.Equal(ExecutionJobStatus.Succeeded, result.Status);
         Assert.NotNull(receipt);
-        var json = System.Text.Json.JsonDocument.Parse(Encoding.UTF8.GetString(
+        using var json = System.Text.Json.JsonDocument.Parse(Encoding.UTF8.GetString(
             Convert.FromBase64String(receipt![(receipt.IndexOf(',') + 1)..])));
         Assert.Equal("committed-external-batch", json.RootElement.GetProperty("batchId").GetString());
         Assert.Equal(1, json.RootElement.GetProperty("featuresWritten").GetInt64());
