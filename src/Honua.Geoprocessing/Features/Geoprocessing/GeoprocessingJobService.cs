@@ -25,6 +25,7 @@ using Honua.Geoprocessing.CustomCode;
 using Honua.Geoprocessing.Execution;
 using Honua.Infrastructure;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
 
@@ -559,6 +560,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         var resolvedSecurityContext = membershipResult.Context;
+        var ownerId = resumingApproved || inheritsSubmitterSecurityContext
+            ? resolvedSecurityContext.OwnerActorId
+            : JobOwnershipSecurity.ResolveOwner(principal);
+        if (!resumingApproved && !inheritsSubmitterSecurityContext && ownerId is not null)
+        {
+            resolvedSecurityContext = resolvedSecurityContext with { PrincipalId = ownerId };
+        }
 
         // Identity the RESOURCE gates below are evaluated against. For an ordinary submit that
         // is the caller. For an approval resume it is the restored submitter snapshot, because
@@ -716,6 +724,23 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 AuthorizationDenialReason.StalePrincipalMembership);
         }
 
+        // Every job is owned by its tenant and durable submitter (a subject or an API-key id).
+        // Refuse a submission without one here, before the approval lane can persist a proposal
+        // that could never be resumed and before any job record exists.
+        if (string.IsNullOrWhiteSpace(ownerId))
+        {
+            if (principal.Identity?.IsAuthenticated != true)
+            {
+                throw new GeoprocessingAuthorizationException(
+                    requiresAuthentication: true,
+                    "Authentication is required to submit a job.",
+                    OperatorResourceType.Process,
+                    OperatorOperation.Execute);
+            }
+
+            throw new GeoprocessingValidationException("A durable submitter identity is required for job submissions.");
+        }
+
         if (!resumingApproved)
         {
             await EnsureApprovedAsync(
@@ -727,7 +752,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var jobStore = RequireJobStore();
         var now = DateTimeOffset.UtcNow;
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey;
-        var jobId = CreateJobId(resolvedKey);
+        var jobId = CreateJobId(resolvedKey, ownerId, resolvedSecurityContext.TenantId);
         var requestFingerprint = CreateRequestFingerprint(plan);
 
         // Resolve authorized existing submissions before charging admission/quota or
@@ -744,10 +769,31 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             var existingByKey = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
             if (existingByKey != null)
             {
-                EnsureMatchingIdempotentRequest(existingByKey, requestFingerprint, principal);
+                EnsureMatchingIdempotentRequest(existingByKey, requestFingerprint, ownerId, resolvedSecurityContext.TenantId);
                 EnsureSubmissionDidNotRollback(existingByKey);
                 GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
                 return existingByKey;
+            }
+
+            // A keyed job written before ids were scoped by tenant and owner lives under the
+            // key-only id. Replay it to its own submitter and refuse the key to anyone else, so a
+            // retry that crosses that change does not execute the same request twice. Only a live
+            // caller can prove ownership of such a record; deferred lanes refuse the key.
+            var priorFormat = await jobStore
+                .GetAsync(JobOwnershipSecurity.CreatePriorFormatJobId("gp", resolvedKey), cancellationToken)
+                .ConfigureAwait(false);
+            if (priorFormat != null)
+            {
+                EnsureMatchingIdempotentRequest(
+                    priorFormat,
+                    requestFingerprint,
+                    ownedByCaller: !resumingApproved
+                        && !inheritsSubmitterSecurityContext
+                        && JobOwnershipSecurity.MatchesPriorFormatSubmitter(
+                            priorFormat.Audit, principal, resolvedSecurityContext.TenantId));
+                EnsureSubmissionDidNotRollback(priorFormat);
+                GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, priorFormat.OperationId);
+                return priorFormat;
             }
         }
 
@@ -848,7 +894,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     var existingInWindow = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
                     if (existingInWindow != null)
                     {
-                        EnsureMatchingIdempotentRequest(existingInWindow, requestFingerprint, principal);
+                        EnsureMatchingIdempotentRequest(existingInWindow, requestFingerprint, ownerId, resolvedSecurityContext.TenantId);
                         EnsureSubmissionDidNotRollback(existingInWindow);
                         GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
                         return existingInWindow;
@@ -889,7 +935,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     Audit = new OperationAuditInfo
                     {
                         IdempotencyKey = resolvedKey,
-                        RequestedBy = ResolvePrincipalId(principal),
+                        RequestedBy = ownerId,
                         RequestFingerprint = requestFingerprint,
                         CustomCodeOwnerScope = ownerScope,
                         // Pin the submitter's row/field security identity (#3068). Submit time is the
@@ -920,7 +966,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     var existing = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
                     if (existing != null)
                     {
-                        EnsureMatchingIdempotentRequest(existing, requestFingerprint, principal);
+                        EnsureMatchingIdempotentRequest(existing, requestFingerprint, ownerId, resolvedSecurityContext.TenantId);
                         EnsureSubmissionDidNotRollback(existing);
                         GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
                         return existing;
@@ -1036,7 +1082,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // cannot read — so a caller whose jobs are outnumbered by others' could receive a
         // near-empty page even though they own many jobs. Admins are not scoped (they see
         // all). The per-job ownership post-filter is retained as defense in depth.
-        var ownerScope = principal.IsInRole("admin") ? null : ResolvePrincipalId(principal);
+        var administrator = JobOwnershipSecurity.IsAdministrator(principal);
+        var ownerScope = administrator ? null : ResolvePrincipalId(principal);
+        if (!administrator && ownerScope is null)
+        {
+            return new GeoprocessingJobListPage { Items = [] };
+        }
 
         // Page the canonical store (newest first, status-filtered there), then apply
         // the adapter binding constraint and per-job ownership in the shared service so
@@ -1088,32 +1139,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     }
 
     private bool IsJobReadable(ExecutionJobRecord job, ClaimsPrincipal principal)
-    {
-        // Effective request tenancy is authoritative, including an explicitly unscoped
-        // context. Apply this before admin/owner grants and reuse submission capture so
-        // token claim fallbacks cannot diverge between job creation and retrieval.
-        var tenantId = _authorizer.CaptureSecurityContext(principal, _rbacOptions).TenantId;
-        if (!string.Equals(job.Audit.SubmitterSecurityContext?.TenantId, tenantId, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        if (principal.IsInRole("admin"))
-        {
-            return true;
-        }
-
-        var owner = job.Audit.RequestedBy;
-        if (string.IsNullOrWhiteSpace(owner))
-        {
-            // #2753: an ownerless job (empty/null RequestedBy) is readable ONLY by admin.
-            // Previously it was readable by anyone, so a coarse Job.Read holder (commonly
-            // granted "*") could enumerate jobs whose submitter was never recorded.
-            return false;
-        }
-
-        return string.Equals(owner, ResolvePrincipalId(principal), StringComparison.Ordinal);
-    }
+        => JobOwnershipSecurity.CanAccess(job.Audit,
+            _authorizer.CaptureSecurityContext(principal, _rbacOptions).TenantId, principal);
 
     public async Task<AnalysisResultPackage> GetJobResultsAsync(
         string jobId,
@@ -1397,10 +1424,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     }
 
     private static string? ResolvePrincipalId(ClaimsPrincipal principal)
-        => principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
-            ?? principal.FindFirst("sub")?.Value
-            ?? principal.FindFirst("api_key_id")?.Value
-            ?? principal.Identity?.Name;
+        => JobOwnershipSecurity.ResolveOwner(principal);
 
     private async Task EnsureApprovedAsync(
         ClaimsPrincipal principal,
@@ -1447,7 +1471,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 policyRef,
                 plan,
                 idempotencyKey,
-                ResolvePrincipalId(principal),
+                submitterSecurityContext.PrincipalId,
                 protocolMetadata,
                 isCustomCode,
                 approvalGatedProcessId,
@@ -1880,16 +1904,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         => _jobStore ?? throw GeoprocessingStoreUnavailableException.ForCause(
             _substrateOptions.Classify(jobStorePresent: false, jobQueuePresent: false));
 
-    internal static string CreateJobId(string? idempotencyKey)
-    {
-        if (string.IsNullOrWhiteSpace(idempotencyKey))
-        {
-            return $"gp-{Guid.NewGuid():N}";
-        }
-
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(idempotencyKey.Trim()));
-        return $"gp-{Convert.ToHexString(hashBytes.AsSpan(0, 12)).ToLowerInvariant()}";
-    }
+    internal static string CreateJobId(string? idempotencyKey, string? ownerId = null, string? tenantId = null)
+        => JobOwnershipSecurity.CreateJobId("gp", idempotencyKey, ownerId, tenantId);
 
     internal static string CreateRequestFingerprint(AnalysisPlan plan)
     {
@@ -1963,14 +1979,16 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     }
 
     private static void EnsureMatchingIdempotentRequest(
-        ExecutionJobRecord existing, string requestFingerprint, ClaimsPrincipal principal)
+        ExecutionJobRecord existing, string requestFingerprint, string? ownerId, string? tenantId)
+        => EnsureMatchingIdempotentRequest(
+            existing, requestFingerprint, JobOwnershipSecurity.MatchesSubmitter(existing.Audit, ownerId, tenantId));
+
+    private static void EnsureMatchingIdempotentRequest(
+        ExecutionJobRecord existing, string requestFingerprint, bool ownedByCaller)
     {
         // Reject cross-principal replay: a different caller must not silently
         // receive another principal's job via an idempotency-key collision.
-        var requestedBy = existing.Audit.RequestedBy;
-        var callerName = ResolvePrincipalId(principal);
-        if (!string.IsNullOrWhiteSpace(requestedBy)
-            && !string.Equals(requestedBy, callerName, StringComparison.Ordinal))
+        if (!ownedByCaller)
         {
             throw new GeoprocessingIdempotencyConflictException(existing.OperationId);
         }

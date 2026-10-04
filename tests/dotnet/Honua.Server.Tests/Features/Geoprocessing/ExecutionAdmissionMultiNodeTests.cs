@@ -14,6 +14,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -314,7 +315,7 @@ public sealed class ExecutionAdmissionMultiNodeTests
         var failure = async () => await nodeA.Service.SubmitJobAsync(BufferPlan(), "fails-after-admission", Principal("tenant-a", "alice"));
         await failure.Should().ThrowAsync<InvalidOperationException>();
 
-        var rolledBack = await _observerStore.GetAsync(GeoprocessingJobService.CreateJobId("fails-after-admission"));
+        var rolledBack = await _observerStore.GetAsync(ScopedJobId("fails-after-admission", "tenant-a", "alice"));
         rolledBack.Should().NotBeNull();
         rolledBack!.Status.Should().Be(ExecutionJobStatus.Failed);
         (await _observerStore.ListActiveAsync()).Should().BeEmpty();
@@ -345,7 +346,7 @@ public sealed class ExecutionAdmissionMultiNodeTests
         blocked.Dimension.Should().Be(ExecutionAdmissionDimension.Backpressure);
         blocked.PolicyRef.Should().Be(ExecutionAdmissionCoordinator.ContendedPolicyRef);
         blocked.RetryAfterSeconds.Should().Be(RetryAfterSeconds);
-        (await _observerStore.GetAsync(GeoprocessingJobService.CreateJobId("while-wedged"))).Should().BeNull();
+        (await _observerStore.GetAsync(ScopedJobId("while-wedged", "tenant-a", "alice"))).Should().BeNull();
 
         var deadline = DateTime.UtcNow.AddSeconds(10);
         while (await database.KeyExistsAsync(ExecutionAdmissionCoordinator.SharedLeaseKey) && DateTime.UtcNow < deadline)
@@ -381,7 +382,7 @@ public sealed class ExecutionAdmissionMultiNodeTests
         lost.Dimension.Should().Be(ExecutionAdmissionDimension.Backpressure);
         lost.PolicyRef.Should().Be(ExecutionAdmissionCoordinator.LeaseLostPolicyRef);
         lost.RetryAfterSeconds.Should().Be(RetryAfterSeconds);
-        (await _observerStore.GetAsync(GeoprocessingJobService.CreateJobId("lease-lost"))).Should().BeNull();
+        (await _observerStore.GetAsync(ScopedJobId("lease-lost", "tenant-a", "alice"))).Should().BeNull();
         (await _observerStore.ListActiveAsync()).Should().BeEmpty();
         node.EnqueuedJobIds.Should().BeEmpty();
     }
@@ -651,7 +652,7 @@ public sealed class ExecutionAdmissionMultiNodeTests
         {
             // A rejected request leaves no job record under its idempotency key, so a later retry
             // of the same key is a fresh submission rather than a replay of a ghost.
-            (await _observerStore.GetAsync(GeoprocessingJobService.CreateJobId(attempt.Key)))
+            (await _observerStore.GetAsync(ScopedJobId(attempt.Key, attempt.Tenant, attempt.User)))
                 .Should().BeNull($"rejected key '{attempt.Key}' must not leave a job record");
         }
 
@@ -695,6 +696,9 @@ public sealed class ExecutionAdmissionMultiNodeTests
                 $"maxCost={string.Join(',', sampler.MaxCostPerPartition.Select(p => $"{p.Key}:{p.Value.ToString(CultureInfo.InvariantCulture)}"))}");
         }
     }
+
+    private static string ScopedJobId(string key, string tenant, string user)
+        => GeoprocessingJobService.CreateJobId(key, CanonicalSecurityActor.Resolve(Principal(tenant, user))!.ActorId, tenant);
 
     private static ClaimsPrincipal Principal(string tenant, string user)
         => new(new ClaimsIdentity(

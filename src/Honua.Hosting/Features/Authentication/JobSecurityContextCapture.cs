@@ -53,7 +53,7 @@ internal static class JobSecurityContextCapture
     /// can never be confused with a live request identity.
     /// </summary>
     private const string RestoredAuthenticationType = "HonuaJobSecurityContext";
-    private const string CapturedAuthenticationClaimType = "honua:job-authenticated";
+    internal const string CapturedAuthenticationClaimType = "honua:job-authenticated";
 
     /// <summary>
     /// Upper bound on captured NON-ROLE, non-framework-identity claims, so a pathological token
@@ -226,7 +226,15 @@ internal static class JobSecurityContextCapture
                 ?? principal.Identity?.Name,
             tenantId,
             captured,
-            options.EffectiveRoleClaimType);
+            options.EffectiveRoleClaimType)
+        {
+            OwnerActorId = JobOwnershipSecurity.ResolveOwner(principal),
+            WorkspaceOwnerId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                ?? principal.FindFirstValue("sub")
+                ?? principal.FindFirstValue("api_key_id")
+                ?? principal.Identity?.Name
+                ?? "anonymous"
+        };
     }
 
     /// <summary>

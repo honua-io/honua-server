@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -9,6 +10,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Infrastructure.Security;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -181,6 +183,7 @@ public sealed class OgcProcessesJobOwnershipTestsFixture : IAsyncLifetime
         await _app.InitializeAsync();
         Client = _app.Client;
         Client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, "alice");
+        Client.DefaultRequestHeaders.Add(TestAuthHandler.SubjectHeader, "alice");
     }
 
     public Task DisposeAsync() => _app.DisposeAsync();
@@ -197,7 +200,14 @@ public sealed class OgcProcessesJobOwnershipTestsFixture : IAsyncLifetime
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
             ErrorMessage = errorMessage,
-            Audit = new OperationAuditInfo { RequestedBy = owner, SubmitterSecurityContext = new(null, "public", []) },
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = DurableActor(owner),
+                SubmitterSecurityContext = new(null, "public", [])
+                {
+                    OwnerActorId = DurableActor(owner)
+                }
+            },
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.Geoprocessing,
@@ -206,4 +216,21 @@ public sealed class OgcProcessesJobOwnershipTestsFixture : IAsyncLifetime
                 WorkloadName = "ownership-test"
             }
         };
+
+    private static string? DurableActor(string? subject)
+    {
+        if (string.IsNullOrWhiteSpace(subject))
+        {
+            return null;
+        }
+
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, subject),
+                new Claim(ClaimTypes.NameIdentifier, subject),
+                new Claim("sub", subject)
+            ],
+            TestAuthHandler.SchemeName));
+        return CanonicalSecurityActor.Resolve(principal)!.ActorId;
+    }
 }

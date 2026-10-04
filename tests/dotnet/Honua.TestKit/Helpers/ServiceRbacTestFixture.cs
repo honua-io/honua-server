@@ -226,6 +226,7 @@ public sealed class TestAuthHandler(
 {
     public const string SchemeName = "Test";
     public const string UserHeader = "X-Test-User";
+    public const string SubjectHeader = "X-Test-Subject";
     public const string RolesHeader = "X-Test-Roles";
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -242,6 +243,19 @@ public sealed class TestAuthHandler(
         }
 
         var claims = new List<Claim> { new(ClaimTypes.Name, userName) };
+
+        // A display name is not a durable job owner. Protocol fixtures that submit or
+        // read background jobs opt in with a stable subject so the shared ownership
+        // check can bind the same actor the production subject and API-key paths use.
+        if (Request.Headers.TryGetValue(SubjectHeader, out var subjectValues))
+        {
+            var subject = subjectValues.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(subject))
+            {
+                claims.Add(new Claim(ClaimTypes.NameIdentifier, subject));
+                claims.Add(new Claim("sub", subject));
+            }
+        }
 
         if (Request.Headers.TryGetValue(RolesHeader, out var rolesValues))
         {

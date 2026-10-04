@@ -945,6 +945,7 @@ public sealed class CustomCodeSubmitTests
         => new(new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.Name, "alice"),
+                new Claim(ClaimTypes.NameIdentifier, "alice"),
                 new Claim(TenantClaimType, "tenant-A"),
                 new Claim("permission", "read:parcels")
             ],
@@ -957,6 +958,7 @@ public sealed class CustomCodeSubmitTests
         => new(new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.Name, "bob"),
+                new Claim(ClaimTypes.NameIdentifier, "bob"),
                 new Claim(TenantClaimType, "tenant-A"),
                 new Claim(ClaimTypes.Role, "data-editor:parcels")
             ],
@@ -967,6 +969,7 @@ public sealed class CustomCodeSubmitTests
         => new(new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.Name, "admin-user"),
+                new Claim(ClaimTypes.NameIdentifier, "admin-user"),
                 new Claim(TenantClaimType, "tenant-A"),
                 new Claim(ClaimTypes.Role, "admin"),
                 new Claim("permission", "read:parcels")
