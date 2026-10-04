@@ -384,6 +384,7 @@ public static class SharingRestEndpoints
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var response = new SharingInfoResponse
         {
+            OwningSystemUrl = baseUrl.TrimEnd('/'),
             AuthInfo = new SharingAuthInfo
             {
                 IsTokenBasedSecurity = tokenOptions.Value.Enabled,

@@ -30,6 +30,11 @@ password-recovery, update and Esri basemap links are not advertised. The route
 uses the same configuration and entitlement gate as the Sharing read surface.
 This bootstrap document alone does not establish native sign-in compatibility.
 
+Sharing info also publishes `owningSystemUrl` as the actual public portal root,
+including the application prefix. It agrees with `authInfo.tokenServicesUrl` so
+native clients can resolve Sharing resources from the portal root. This
+discovery URL does not advertise an ArcGIS release or relax token bindings.
+
 The alias does not implement missing routing tools.
 `arcpy.nax.Route` and `ServiceArea` still require the ready-to-use GP tool contracts
 tracked in [#5192](https://github.com/honua-io/honua-server/issues/5192).
