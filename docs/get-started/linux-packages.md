@@ -16,8 +16,10 @@ selects `linux/amd64`; use an amd64 host for this rehearsal.
 
 Choose unused loopback ports if 18080 (HTTP) or 18081 (native gRPC) is occupied.
 Set `HONUA_GRPC_PORT` in `.env` to override the gRPC default. A new directory, Compose
-project, network and three volumes isolate this installation. Keep `.env` private
-and retain it with the volumes; recreating it does not rotate database passwords.
+project, network and three volumes isolate this installation. Keep `.env` and
+`secrets/keyring.pfx` private and retain both with the volumes. Recreating `.env`
+does not rotate database passwords, and a new certificate cannot decrypt operation
+secrets already stored in Redis.
 
 Production stores operation secrets in Redis and will not start until an RSA PKCS#12
 encrypts that key ring. The block writes `secrets/keyring.pfx` and mounts it read-only.
@@ -306,7 +308,10 @@ dc up -d --wait --wait-timeout 180
 ```
 
 Define `wait_honua_ready` again from the startup block, call it, then run the
-readback above. Preserve the original `.env` and volumes. See the
+readback above. Preserve the original `.env`, `secrets/keyring.pfx`, and volumes.
+The certificate password is `HONUA_KEYRING_PASSWORD` in that `.env`. A new
+certificate, even with the same password, cannot decrypt operation secrets already
+stored in Redis. See the
 [production guide](../guides/deploy/docker-compose.md) for backup and restore;
 container recreation alone is not a backup.
 
@@ -341,7 +346,7 @@ file-storage volumes, run this from its saved directory:
 
 ```bash
 dc down --volumes
-unset HONUA_ADMIN_PASSWORD POSTGRES_PASSWORD HONUA_MASTER_KEY
+unset HONUA_ADMIN_PASSWORD POSTGRES_PASSWORD HONUA_MASTER_KEY HONUA_KEYRING_PASSWORD
 ```
 
 The private installation directory remains for deliberate retention or deletion.

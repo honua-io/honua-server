@@ -175,7 +175,8 @@ New-Item -ItemType Directory -Path (Join-Path $Install 'secrets') | Out-Null
 $cert = New-SelfSignedCertificate -Subject 'CN=honua-windows' -KeyAlgorithm RSA -KeyLength 2048 -KeyExportPolicy Exportable -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter (Get-Date).AddYears(10)
 $secure = ConvertTo-SecureString -String $KeyringPassword -AsPlainText -Force
 Export-PfxCertificate -Cert $cert -FilePath (Join-Path $Install 'secrets\keyring.pfx') -Password $secure | Out-Null
-Remove-Item -LiteralPath ('Cert:\CurrentUser\My\' + $cert.Thumbprint)
+Remove-Item -LiteralPath ('Cert:\CurrentUser\My\' + $cert.Thumbprint) -DeleteKey
+Remove-Variable KeyringPassword
 icacls (Join-Path $Install 'secrets\keyring.pfx') /grant '*S-1-1-0:R' | Out-Null
 dc config --quiet
 dc pull
@@ -358,9 +359,11 @@ the retained volumes and original credentials. Only then run step 2's
 variable-loading and readiness blocks. Run
 `journey.py --verify-only` afterward. A restart or container recreation is not a
 backup restore; follow [backup and recovery](../guides/deploy/backup-and-restore.md)
-before storing irreplaceable data. Retain the private `.env`, database, Redis,
-file-storage backup, and exact image identity together. Never delete volumes or
-regenerate `.env` to bypass a migration or credential failure.
+before storing irreplaceable data. Retain the private `.env`, `secrets\keyring.pfx`,
+database, Redis, file-storage backup, and exact image identity together. The
+certificate password is `HONUA_KEYRING_PASSWORD` in `.env`. A new certificate cannot
+decrypt operation secrets already stored in Redis. Never delete volumes, the
+certificate, or regenerate `.env` to bypass a migration or credential failure.
 
 ## Diagnostics and scoped teardown
 
