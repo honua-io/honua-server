@@ -77,8 +77,10 @@ internal static class PostgresRasterRawDecoder
                 sample.CopyTo(destination);
                 if (!little && sampleBytes > 1) destination.Reverse();
                 var value = ReadSample(sample, type, little);
+                // NoData is a stored sentinel, not a computed measurement. Match it exactly:
+                // a tolerance would mask adjacent valid samples. Equals also matches NaN sentinels.
                 var invalid = (flags & 0x20) != 0 || ((flags & 0x40) != 0 &&
-                    (value == noData || double.IsNaN(value) && double.IsNaN(noData)));
+                    value.Equals(noData));
                 if (!invalid) masks[band][pixel / 8] |= (byte)(0x80 >> (pixel % 8));
             }
             offset += bandLength;

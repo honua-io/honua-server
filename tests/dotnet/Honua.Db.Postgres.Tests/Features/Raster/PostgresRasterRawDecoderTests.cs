@@ -51,6 +51,11 @@ public sealed class PostgresRasterRawDecoderTests
     [InlineData(8, "32BUI", "ffffffff", "00000000")]
     [InlineData(10, "32BF", "000080bf", "0000c07f")]
     [InlineData(11, "64BF", "000000000000f0bf", "000000000000f87f")]
+    // The nearest representable values on either side of -1 remain valid, even next to NoData.
+    [InlineData(10, "32BF", "ffff7fbf", "000080bf")]
+    [InlineData(10, "32BF", "010080bf", "000080bf")]
+    [InlineData(11, "64BF", "ffffffffffffefbf", "000000000000f0bf")]
+    [InlineData(11, "64BF", "010000000000f0bf", "000000000000f0bf")]
     public void Decode_TypedBoundarySamples_PreservesBitsAndNoData(int type, string name, string validHex, string noDataHex)
     {
         var valid = Convert.FromHexString(validHex);
