@@ -185,16 +185,20 @@ which the next step reads for you.
 ## 4. Publish a table and query it back
 
 Put a table in the bundled PostGIS. Any SQL client works; the compose project
-already has one:
+already has one. Create it in the `public` schema. The database role is also
+named `honua`, and PostgreSQL searches a schema of that name before `public`.
+Once the server has started, that `honua` schema holds its catalog, so an
+unqualified `CREATE TABLE` would put `places` there. The publish step below
+reads `public.places`.
 
 ```bash
 docker compose exec -T postgres psql -U honua -d honua <<'SQL'
-CREATE TABLE places (
+CREATE TABLE public.places (
   id   serial PRIMARY KEY,
   name text NOT NULL,
   geom geometry(Point, 4326) NOT NULL
 );
-INSERT INTO places (name, geom) VALUES
+INSERT INTO public.places (name, geom) VALUES
   ('west', ST_SetSRID(ST_MakePoint(-157.875, 21.3125), 4326)),
   ('east', ST_SetSRID(ST_MakePoint(-155.0625, 19.6875), 4326));
 SQL
