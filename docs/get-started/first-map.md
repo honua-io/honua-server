@@ -37,8 +37,8 @@ async def allow_anonymous():
         headers={"X-API-Key": os.environ["HONUA_API_KEY"]},
     )
     async with ClientSessionGroup() as group:
-        await group.connect_to_server(server)
-        return await group.call_tool("honua_admin_services_access_policy_set", {
+        session = await group.connect_to_server(server)
+        return await session.call_tool("honua_admin_services_access_policy_set", {
             "serviceName": service,
             "allowAnonymous": True,
         })

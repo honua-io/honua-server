@@ -63,8 +63,8 @@ async def ingest():
         headers={"X-API-Key": os.environ["HONUA_API_KEY"]},
     )
     async with ClientSessionGroup() as group:
-        await group.connect_to_server(server)
-        return await group.call_tool("honua_ingest_dataset", {
+        session = await group.connect_to_server(server)
+        return await session.call_tool("honua_ingest_dataset", {
             "format": "geojson",
             "datasetName": "hawaii_cities",
             "data": open("cities.geojson").read(),
