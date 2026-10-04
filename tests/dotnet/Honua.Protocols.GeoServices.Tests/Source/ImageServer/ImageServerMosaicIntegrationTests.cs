@@ -202,9 +202,9 @@ public sealed class ImageServerMosaicIntegrationTests
                          // Northwest: equal YMax, so the lower XMin ("west") wins.
                          ("{\"mosaicMethod\":\"esriMosaicNorthwest\"}", "20"),
                          // ByAttribute OBJECTID ascending: the lowest OBJECTID ("west") wins.
-                         ("{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"OBJECTID\",\"ascending\":true}", "20"),
+                         ("{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"OBJECTID\",\"ascending\":true}", "20"),
                          // ByAttribute OBJECTID descending (Esri default): the highest OBJECTID wins.
-                         ("{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"OBJECTID\"}", "5")
+                         ("{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"OBJECTID\"}", "5")
                      })
             {
                 using var json = await IdentifyJsonAsync(
@@ -217,7 +217,7 @@ public sealed class ImageServerMosaicIntegrationTests
             foreach (var unsupported in new[]
                      {
                          "{\"mosaicMethod\":\"esriMosaicCenter\"}",
-                         "{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"AcquisitionDate\",\"sortValue\":\"2024/01/10\"}"
+                         "{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"AcquisitionDate\",\"sortValue\":\"2024/01/10\"}"
                      })
             {
                 var response = await fixture.Client.GetAsync(

@@ -1289,7 +1289,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             geometry = "-122.5,37.5",
             geometryType = "esriGeometryPoint",
             inSR = 4326,
-            spatialRel = "esriSpatialRelWithinDistance",
+            spatialRel = "withinDistance",
             f = "json"
         });
 

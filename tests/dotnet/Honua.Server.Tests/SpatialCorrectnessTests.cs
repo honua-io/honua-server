@@ -383,7 +383,7 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
         var requestUri = $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
                          $"?geometry={Uri.EscapeDataString(nearAntimeridianPoint)}" +
                          "&geometryType=esriGeometryPoint" +
-                         "&spatialRel=esriSpatialRelWithinDistance" +
+                         "&spatialRel=withinDistance" +
                          $"&distance={bufferDistance}" +
                          "&units=esriSRUnit_Meter" +
                          "&inSR=4326&f=json";

@@ -77,7 +77,7 @@ public static partial class Extensions
         "Honua.Core.Edit",
         "Honua.Core.FeatureStore",
         // PA-108: federated ArcGIS REST provider query span (paging loop).
-        "Honua.ArcGisRest"
+        "Honua.GeoServicesRest"
     ];
 
     /// <summary>

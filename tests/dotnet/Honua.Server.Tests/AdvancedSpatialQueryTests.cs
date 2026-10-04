@@ -34,7 +34,7 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
     #region Distance-Based Query Tests (WithinDistance)
 
     /// <summary>
-    /// Tests that queries with esriSpatialRelWithinDistance return features within the specified distance
+    /// Tests that queries with withinDistance return features within the specified distance
     /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -49,7 +49,7 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
             $"?geometry={Uri.EscapeDataString(pointGeometry)}" +
-            $"&spatialRel=esriSpatialRelWithinDistance" +
+            $"&spatialRel=withinDistance" +
             $"&distance={distance}" +
             $"&units=esriSRUnit_Meter" +
             $"&f=json");
@@ -78,7 +78,7 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
         var json = """
             {
                 "geometry": "{\"x\":-122.4194,\"y\":37.7749}",
-                "spatialRel": "esriSpatialRelWithinDistance",
+                "spatialRel": "withinDistance",
                 "distance": 100000,
                 "units": "esriSRUnit_Meter",
                 "returnGeometry": true,
@@ -118,7 +118,7 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
             $"?geometry={Uri.EscapeDataString(pointGeometry)}" +
-            $"&spatialRel=esriSpatialRelWithinDistance" +
+            $"&spatialRel=withinDistance" +
             $"&distance={distance}" +
             $"&units=esriSRUnit_Kilometer" +
             $"&f=json");
@@ -150,7 +150,7 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
             $"?geometry={Uri.EscapeDataString(pointGeometry)}" +
-            $"&spatialRel=esriSpatialRelWithinDistance" +
+            $"&spatialRel=withinDistance" +
             $"&distance={distance}" +
             $"&units=esriSRUnit_StatuteMile" +
             $"&f=json");
@@ -181,7 +181,7 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
             $"?geometry={Uri.EscapeDataString(pointGeometry)}" +
-            $"&spatialRel=esriSpatialRelWithinDistance" +
+            $"&spatialRel=withinDistance" +
             $"&f=json");
 
         // Assert
@@ -193,7 +193,7 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
     #region Distance-Based Query Tests (BeyondDistance)
 
     /// <summary>
-    /// Tests that queries with esriSpatialRelBeyondDistance return features beyond the specified distance
+    /// Tests that queries with beyondDistance return features beyond the specified distance
     /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -208,7 +208,7 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
             $"?geometry={Uri.EscapeDataString(pointGeometry)}" +
-            $"&spatialRel=esriSpatialRelBeyondDistance" +
+            $"&spatialRel=beyondDistance" +
             $"&distance={distance}" +
             $"&units=esriSRUnit_Meter" +
             $"&f=json");
@@ -371,7 +371,7 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
             $"?geometry={Uri.EscapeDataString(pointGeometry)}" +
-            $"&spatialRel=esriSpatialRelWithinDistance" +
+            $"&spatialRel=withinDistance" +
             $"&distance=100000" +
             $"&units=esriSRUnit_Meter" +
             $"&where={Uri.EscapeDataString(whereClause)}" +
@@ -437,7 +437,7 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
             $"?geometry={Uri.EscapeDataString(pointGeometry)}" +
-            $"&spatialRel=esriSpatialRelWithinDistance" +
+            $"&spatialRel=withinDistance" +
             $"&distance=100000" +
             $"&units=meters" +
             $"&f=geojson");
@@ -515,7 +515,7 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
             $"?geometry={Uri.EscapeDataString(pointGeometry)}" +
-            $"&spatialRel=esriSpatialRelWithinDistance" +
+            $"&spatialRel=withinDistance" +
             $"&distance={distance}" +
             $"&units={unit}" +
             $"&f=json");

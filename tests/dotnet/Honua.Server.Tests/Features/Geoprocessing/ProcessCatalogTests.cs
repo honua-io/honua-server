@@ -2259,7 +2259,7 @@ public sealed class ProcessCatalogTests
                         ["cellSize"] = "100",
                         ["geometry"] = "{\"x\":0,\"y\":0}",
                         ["geometryType"] = "esriGeometryPoint",
-                        ["spatialRel"] = "esriSpatialRelWithinDistance"
+                        ["spatialRel"] = "withinDistance"
                     }
                 }
             ]
@@ -2295,7 +2295,7 @@ public sealed class ProcessCatalogTests
                     {
                         ["layerId"] = "100",
                         ["cellSize"] = "100",
-                        ["spatialRel"] = "esriSpatialRelWithinDistance"
+                        ["spatialRel"] = "withinDistance"
                     }
                 }
             ]

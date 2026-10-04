@@ -1,5 +1,5 @@
 {
-  "name": "honua-esri-leaflet-tests",
+  "name": "honua-leaflet-client-tests",
   "version": "1.0.0",
   "private": true,
   "type": "module",

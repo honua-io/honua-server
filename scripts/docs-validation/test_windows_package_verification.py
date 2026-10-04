@@ -58,7 +58,7 @@ class WindowsPackageVerificationTests(unittest.TestCase):
         mutations = {
             "lost-row": lambda r: r["features"].pop(),
             "wrong-crs": lambda r: r["spatialReference"].update(wkid=3857),
-            "wrong-geometry-type": lambda r: r.update(geometryType="esriGeometryNull"),
+            "wrong-geometry-type": lambda r: r.update(geometryType="none"),
             "wrong-id-field": lambda r: r.update(objectIdFieldName="other"),
             "wrong-value": lambda r: r["features"][0]["attributes"]["properties"].update(value=8),
             "duplicate-name": lambda r: r["features"][1]["attributes"]["properties"].update(name="west"),

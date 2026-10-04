@@ -119,7 +119,7 @@ internal static partial class ProcessPlanValidator
     // handler rejects (the analytics endpoints already overload `distance`).
     private static readonly HashSet<string> RejectedSpatialRelValues = new(StringComparer.OrdinalIgnoreCase)
     {
-        "esriSpatialRelWithinDistance", "esriSpatialRelBeyondDistance"
+        "withinDistance", "beyondDistance"
     };
 
     /// <summary>
@@ -2223,7 +2223,7 @@ internal static partial class ProcessPlanValidator
         if (RejectedSpatialRelValues.Contains(raw.Trim()))
         {
             AddRangeViolationIfNew(step, "spatialRel",
-                $"distance-based spatial relationships (esriSpatialRelWithinDistance / esriSpatialRelBeyondDistance) are not supported; use the operation-specific 'distance' parameter or apply the predicate via the 'where' clause instead, got '{raw}'",
+                $"distance-based spatial relationships (withinDistance / beyondDistance) are not supported; use the operation-specific 'distance' parameter or apply the predicate via the 'where' clause instead, got '{raw}'",
                 violations);
         }
     }

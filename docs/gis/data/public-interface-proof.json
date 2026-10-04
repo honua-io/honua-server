@@ -1886,8 +1886,8 @@
           "proofMechanism": "Esri Leaflet 3.x Playwright browser suite proving FeatureServer consumption through leaflet + esri-leaflet + esri-leaflet-renderers",
           "executionLane": "ci:esri-leaflet-browser-tests",
           "evidenceLocations": [
-            "tests/js-browser/esri-leaflet/feature-layer-load.spec.ts",
-            "tests/js-browser/esri-leaflet/support/cert-reporter.ts",
+            "tests/js-browser/leaflet-client/feature-layer-load.spec.ts",
+            "tests/js-browser/leaflet-client/support/cert-reporter.ts",
             "tests/js-browser/playwright.config.ts"
           ],
           "ownerRepo": "honua-server",
@@ -2132,8 +2132,8 @@
           "proofMechanism": "Esri Leaflet 3.x Playwright browser suite proving MapServer consumption through leaflet + esri-leaflet DynamicMapLayer",
           "executionLane": "ci:esri-leaflet-browser-tests",
           "evidenceLocations": [
-            "tests/js-browser/esri-leaflet/dynamic-map-layer.spec.ts",
-            "tests/js-browser/esri-leaflet/support/cert-reporter.ts",
+            "tests/js-browser/leaflet-client/dynamic-map-layer.spec.ts",
+            "tests/js-browser/leaflet-client/support/cert-reporter.ts",
             "tests/js-browser/playwright.config.ts"
           ],
           "ownerRepo": "honua-server",

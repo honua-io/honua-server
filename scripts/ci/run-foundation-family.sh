@@ -81,7 +81,7 @@ SPEC
       cat <<'SPEC'
 tests/dotnet/Honua.Db.DuckDB.Tests/Honua.DuckDB.Tests.csproj|Honua.DuckDB-tests|||
 tests/dotnet/Honua.Plugins.Tests/Honua.Plugins.Tests.csproj|Honua.Plugins-tests|||
-tests/dotnet/Honua.ArcGisRest.Tests/Honua.ArcGisRest.Tests.csproj|Honua.ArcGisRest-tests|||
+tests/dotnet/Honua.GeoServicesRest.Tests/Honua.GeoServicesRest.Tests.csproj|Honua.GeoServicesRest-tests|||
 tests/dotnet/Honua.Db.Oracle.Tests/Honua.Oracle.Tests.csproj|Honua.Oracle-tests|||
 tests/dotnet/Honua.Db.Postgres.Security.Tests/Honua.Postgres.Security.Tests.csproj|postgres-security-tests|||advisory
 tests/dotnet/Honua.Db.MySql.Tests/Honua.MySql.Tests.csproj|mysql-tests||HONUA_TEST_MYSQL=1|

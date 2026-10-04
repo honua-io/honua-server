@@ -52,7 +52,7 @@ Example response fragment:
       },
       "contractVersions": {
         "admin": "v1",
-        "geoservices": "1.0.0",
+        "geoservices": "2.0.0",
         "grpc": "v1",
         "metadata": "metadata.honua.io/v2alpha1",
         "ogc": "1.0.0",

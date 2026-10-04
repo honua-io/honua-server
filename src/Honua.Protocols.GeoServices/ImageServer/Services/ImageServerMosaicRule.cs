@@ -9,7 +9,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 /// <summary>
 /// The Esri <c>mosaicMethod</c> that an ImageServer <c>mosaicRule</c> selects, normalized to
 /// the subset this service understands. <see cref="Unsupported"/> covers recognized-but-not-yet
-/// implemented methods (for example <c>esriMosaicCenter</c>, or an <c>esriMosaicByAttribute</c>
+/// implemented methods (for example <c>esriMosaicCenter</c>, or an <c>esriMosaicAttribute</c>
 /// over a non-acquisition, non-allowlisted field) which must surface a clean 501 when more than
 /// one raster would be composited.
 /// </summary>
@@ -19,14 +19,14 @@ public enum MosaicMethod
     None = 0,
 
     /// <summary>
-    /// <c>esriMosaicByAttribute</c> over an allowlisted NON-date raster attribute — composites by
+    /// <c>esriMosaicAttribute</c> over an allowlisted NON-date raster attribute — composites by
     /// the named attribute value (ascending or descending). The resolved physical column is
     /// carried on <see cref="ImageServerMosaicRule.AttributeSortColumn"/>.
     /// </summary>
     Attribute = 1,
 
     /// <summary>
-    /// <c>esriMosaicByAttribute</c> over a date field, or <c>esriMosaicAttribute</c> resolved to
+    /// <c>esriMosaicAttribute</c> over a date field, or <c>esriMosaicAttribute</c> resolved to
     /// an acquisition ordering. Equivalent to <see cref="Attribute"/> for ordering purposes.
     /// </summary>
     ByDate = 2,
@@ -91,6 +91,15 @@ public readonly record struct ImageServerMosaicRule
     public const string DefaultMosaicMethod = "ByAttribute";
 
     /// <summary>
+    /// Wire <c>mosaicMethod</c> for an advertised short name. <c>ByAttribute</c> is
+    /// <c>esriMosaicAttribute</c>; the other advertised names take an <c>esriMosaic</c> prefix.
+    /// </summary>
+    public static string ToMosaicMethodWireValue(string shortName) =>
+        string.Equals(shortName, DefaultMosaicMethod, StringComparison.OrdinalIgnoreCase)
+            ? "esriMosaicAttribute"
+            : "esriMosaic" + shortName;
+
+    /// <summary>
     /// The raster-catalog date field the default <see cref="DefaultMosaicMethod"/> sorts on. It is
     /// the catalog attribute field name, and <see cref="TryParse"/> resolves it to the
     /// acquisition ordering.
@@ -119,7 +128,7 @@ public readonly record struct ImageServerMosaicRule
     public string? SortValue { get; init; }
 
     /// <summary>
-    /// The allowlisted physical raster-catalog column an <c>esriMosaicByAttribute</c> rule sorts
+    /// The allowlisted physical raster-catalog column an <c>esriMosaicAttribute</c> rule sorts
     /// on when <see cref="Method"/> is <see cref="MosaicMethod.Attribute"/> over a non-date
     /// field; <c>null</c> for date-attribute and all other methods. Always a vetted physical
     /// column name (never the caller's raw <see cref="SortField"/>), so it is safe to thread into
@@ -152,7 +161,7 @@ public readonly record struct ImageServerMosaicRule
 
     /// <summary>
     /// Builds the non-date attribute ordering passed to the raster store when this rule is an
-    /// <c>esriMosaicByAttribute</c> over an allowlisted non-date column; <c>null</c> otherwise.
+    /// <c>esriMosaicAttribute</c> over an allowlisted non-date column; <c>null</c> otherwise.
     /// </summary>
     public RasterMosaicAttributeSort? ToAttributeSort()
         => Method == MosaicMethod.Attribute && !string.IsNullOrEmpty(AttributeSortColumn)
@@ -297,8 +306,7 @@ public readonly record struct ImageServerMosaicRule
             return MosaicMethod.Nadir;
         }
 
-        if (methodName.Equals("esriMosaicAttribute", StringComparison.OrdinalIgnoreCase) ||
-            methodName.Equals("esriMosaicByAttribute", StringComparison.OrdinalIgnoreCase))
+        if (methodName.Equals("esriMosaicAttribute", StringComparison.OrdinalIgnoreCase))
         {
             // Esri ByAttribute with a base sortValue ranks rasters by their distance from that
             // value. The raster store only orders by the attribute itself, so a base value is a
@@ -328,14 +336,14 @@ public readonly record struct ImageServerMosaicRule
         return MosaicMethod.Unsupported;
     }
 
-    // Maps an Esri esriMosaicByAttribute sortField onto a strictly allowlisted physical raster
+    // Maps an Esri esriMosaicAttribute sortField onto a strictly allowlisted physical raster
     // catalog column. Only stable, numeric/sortable columns the catalog actually carries are
     // permitted; everything else (including sensor/nadir-style fields that are not modeled) is
     // rejected so an arbitrary, injectable, or meaningless sort never reaches the SQL ORDER BY.
     // Accepts the Esri canonical catalog field names and their physical aliases. Sensor- and
     // orientation-derived fields (e.g. off-nadir) are intentionally absent here: the dedicated
     // esriMosaicNadir method (MosaicMethod.Nadir) ranks by the off-nadir angle from sensor
-    // metadata; an esriMosaicByAttribute sort over a raw sensor field stays unsupported.
+    // metadata; an esriMosaicAttribute sort over a raw sensor field stays unsupported.
     private static bool TryResolveAttributeSortColumn(string? sortField, out string? column)
     {
         column = null;

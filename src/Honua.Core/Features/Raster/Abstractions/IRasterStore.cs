@@ -93,7 +93,7 @@ public interface IRasterStore
     /// snapshot filter that <see cref="QueryRastersAsync"/> would otherwise apply.
     /// </param>
     /// <param name="attributeSort">
-    /// Optional non-date attribute ordering for an <c>esriMosaicByAttribute</c> mosaic. When
+    /// Optional non-date attribute ordering for an <c>esriMosaicAttribute</c> mosaic. When
     /// supplied (and <paramref name="ordering"/> is <see cref="RasterMosaicOrdering.Attribute"/>),
     /// the contested pixel is resolved by the allowlisted raster-catalog column it names rather
     /// than by acquisition date. Ignored for the other ordering modes.

@@ -139,7 +139,7 @@ with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key=os.environ["HONUA_AP
         layer_name="hawaii-cities",
         srid=4326,
         # Without this the layer publishes as GeometryCollection and FeatureServer
-        # reports esriGeometryNull, even though the coordinates come through fine.
+        # omits geometryType, even though the coordinates come through fine.
         # The geometry column itself is discovered from the table.
         geometry_type="Point",
     ))
