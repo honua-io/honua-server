@@ -37,10 +37,12 @@ public sealed class DispatchBindingTests
         Assert.DoesNotContain("watch 303", result.Calls, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task Dispatch_ExactImageReceipt_BindsRunAttemptAndDigest()
+    [Theory]
+    [InlineData("valid")]
+    [InlineData("qualified-path")]
+    public async Task Dispatch_ExactImageReceipt_BindsRunAttemptAndDigest(string scenario)
     {
-        var result = await DispatchAsync("valid", "--input", "server_image=" + Image, "--expected-image", Image, "--image-input", "server_image");
+        var result = await DispatchAsync(scenario, "--input", "server_image=" + Image, "--expected-image", Image, "--image-input", "server_image");
         Assert.Equal(0, result.ExitCode);
         using var receipt = JsonDocument.Parse(result.Output);
         var root = receipt.RootElement;
@@ -60,6 +62,7 @@ public sealed class DispatchBindingTests
     [InlineData("wrong-event", "Run identity, source, workflow or attempt changed")]
     [InlineData("wrong-sha", "Run identity, source, workflow or attempt changed")]
     [InlineData("wrong-workflow", "Run identity, source, workflow or attempt changed")]
+    [InlineData("wrong-qualified-workflow", "Run identity, source, workflow or attempt changed")]
     [InlineData("wrong-repo", "Run identity, source, workflow or attempt changed")]
     [InlineData("wrong-run", "Run identity, source, workflow or attempt changed")]
     [InlineData("rerun", "Run identity, source, workflow or attempt changed")]
@@ -178,7 +181,51 @@ public sealed class DispatchBindingTests
         }
     }
 
-    private static async Task<(int ExitCode, string Output, string Error, string Calls)> DispatchAsync(string scenario, params string[] arguments)
+    [Fact]
+    public async Task CiteReceipt_RunningCandidate_ProducesExactDispatchImageReceipt()
+    {
+        var result = await RunAsync(true, "valid");
+        Assert.True(result.ExitCode == 0, result.Error);
+        using var receipt = JsonDocument.Parse(result.Receipt);
+        Assert.Equal(202, receipt.RootElement.GetProperty("runId").GetInt64());
+        Assert.Equal(1, receipt.RootElement.GetProperty("runAttempt").GetInt32());
+        Assert.Equal(Image, receipt.RootElement.GetProperty("image").GetString());
+        Assert.Equal(Image.Split('@')[1], receipt.RootElement.GetProperty("imageDigest").GetString());
+        Assert.Equal("conformance.yml", receipt.RootElement.GetProperty("workflow").GetString());
+    }
+
+    [Theory]
+    [InlineData("container-missing")]
+    [InlineData("container-ambiguous")]
+    [InlineData("container-wrong-image")]
+    [InlineData("container-stopped")]
+    [InlineData("container-wrong-digest")]
+    public async Task CiteReceipt_UnprovenRunningImage_DoesNotProduceReceipt(string scenario)
+    {
+        var result = await RunAsync(true, scenario);
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Empty(result.Receipt);
+    }
+
+    [Fact]
+    public void CiteWorkflow_ReleaseReceipt_FollowsStrictResultPolicyAndRetainsTestContainer()
+    {
+        var common = File.ReadAllText(Path.Join(RepositoryRoot, ".github/workflows/cite-conformance-common.yml"));
+        var caller = File.ReadAllText(Path.Join(RepositoryRoot, ".github/workflows/cite-conformance.yml"));
+        Assert.Contains("receipt_args+=(--no-cleanup)", common, StringComparison.Ordinal);
+        Assert.True(common.IndexOf("Enforce CITE result policy", StringComparison.Ordinal) <
+            common.IndexOf("Write release suite receipt", StringComparison.Ordinal));
+        Assert.Contains("if: success() && inputs.release-suite-id != '' && inputs.diagnostic-only != true", common, StringComparison.Ordinal);
+        Assert.Contains("if-no-files-found: error", common, StringComparison.Ordinal);
+        Assert.Contains("release-compose-file: docker/cite/ogc-api-features/compose.yml", caller, StringComparison.Ordinal);
+        Assert.Contains("'server-cite-conformance'", caller, StringComparison.Ordinal);
+        Assert.Contains("tested-honua-git-sha: ${{ github.sha }}", caller, StringComparison.Ordinal);
+    }
+
+    private static Task<(int ExitCode, string Output, string Error, string Calls, string Receipt)> DispatchAsync(string scenario, params string[] arguments)
+        => RunAsync(false, scenario, arguments);
+
+    private static async Task<(int ExitCode, string Output, string Error, string Calls, string Receipt)> RunAsync(bool produceReceipt, string scenario, params string[] arguments)
     {
         var temporary = Path.Join(Path.GetTempPath(), "release-dispatch-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(temporary);
@@ -187,7 +234,17 @@ public sealed class DispatchBindingTests
             var fixture = Path.Join(RepositoryRoot, "tests/dotnet/Honua.ReleaseWorkflows.Tests/Fixtures/github.py");
             await File.WriteAllTextAsync(Path.Join(temporary, "gh"), $"#!/bin/bash\nexec python3 '{fixture}' \"$@\"\n");
             await File.WriteAllTextAsync(Path.Join(temporary, "sleep"), "#!/bin/bash\nexit 0\n");
-            using (var chmod = Process.Start("chmod", $"+x {temporary}/gh {temporary}/sleep"))
+            await File.WriteAllTextAsync(Path.Join(temporary, "docker"), $"#!/bin/bash\nexec python3 '{fixture}' --docker \"$@\"\n");
+            if (produceReceipt)
+            {
+                var workflow = File.ReadAllText(Path.Join(RepositoryRoot, ".github/workflows/cite-conformance-common.yml"));
+                var step = workflow.Split("      - name: Write release suite receipt", StringSplitOptions.None)[1]
+                    .Split("      - name: Upload release suite receipt", StringSplitOptions.None)[0];
+                var script = step.Split("        run: |", StringSplitOptions.None)[1];
+                await File.WriteAllTextAsync(Path.Join(temporary, "receipt.sh"), string.Join('\n',
+                    script.Split('\n').Where(line => line.StartsWith("          ", StringComparison.Ordinal)).Select(line => line[10..])));
+            }
+            using (var chmod = Process.Start("chmod", $"+x {temporary}/gh {temporary}/sleep {temporary}/docker"))
             {
                 await chmod!.WaitForExitAsync();
                 Assert.Equal(0, chmod.ExitCode);
@@ -197,10 +254,10 @@ public sealed class DispatchBindingTests
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
-                WorkingDirectory = RepositoryRoot
+                WorkingDirectory = temporary
             };
-            start.ArgumentList.Add("scripts/release/dispatch-and-wait.sh");
-            foreach (var argument in DispatchArguments.Concat(arguments))
+            start.ArgumentList.Add(produceReceipt ? Path.Join(temporary, "receipt.sh") : Path.Join(RepositoryRoot, "scripts/release/dispatch-and-wait.sh"));
+            foreach (var argument in produceReceipt ? arguments : DispatchArguments.Concat(arguments))
             {
                 start.ArgumentList.Add(argument);
             }
@@ -208,6 +265,14 @@ public sealed class DispatchBindingTests
             start.Environment["PATH"] = temporary + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH");
             start.Environment["FIXTURE_ROOT"] = temporary;
             start.Environment["FIXTURE_SCENARIO"] = scenario;
+            start.Environment["CANDIDATE_IMAGE"] = Image;
+            start.Environment["RELEASE_SUITE_ID"] = "sdk-test";
+            start.Environment["CITE_COMPOSE_FILE"] = "compose.yml";
+            start.Environment["GITHUB_RUN_ID"] = "202";
+            start.Environment["GITHUB_RUN_ATTEMPT"] = "1";
+            start.Environment["GITHUB_SHA"] = new string('b', 40);
+            start.Environment["GITHUB_REPOSITORY"] = "honua-io/client";
+            start.Environment["GITHUB_WORKFLOW_REF"] = "honua-io/client/.github/workflows/conformance.yml@refs/heads/trunk";
             using var process = Process.Start(start)!;
             var output = process.StandardOutput.ReadToEndAsync();
             var error = process.StandardError.ReadToEndAsync();
@@ -223,7 +288,9 @@ public sealed class DispatchBindingTests
             }
 
             var calls = Path.Join(temporary, "calls");
-            return (process.ExitCode, await output, await error, File.Exists(calls) ? await File.ReadAllTextAsync(calls) : "");
+            var receipt = Path.Join(temporary, "release-suite-receipt.json");
+            return (process.ExitCode, await output, await error, File.Exists(calls) ? await File.ReadAllTextAsync(calls) : "",
+                File.Exists(receipt) ? await File.ReadAllTextAsync(receipt) : "");
         }
         finally
         {

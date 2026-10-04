@@ -46,5 +46,8 @@ jobs:
       job-timeout-minutes: 45
       cite-profile: ${{ inputs.profile || 'default' }}
       honua-image: ${{ inputs.honua_image || '' }}
+      tested-honua-git-sha: ${{ github.sha }}
+      release-suite-id: ${{ contains(inputs.honua_image, '@sha256:') && 'server-cite-conformance' || '' }}
+      release-compose-file: docker/cite/ogc-api-features/compose.yml
       validation-command: bash ./scripts/conformance/ogc/validate-ogc-conformance.sh --results cite-results
       extra-artifact-paths: docker/cite/ogc-api-features/config/

@@ -21,12 +21,34 @@ run = {'id': 202, 'run_attempt': 1, 'event': 'workflow_dispatch',
 for field, value in {'wrong-event': ('event', 'schedule'),
                      'wrong-sha': ('head_sha', 'c' * 40),
                      'wrong-workflow': ('path', '.github/workflows/other.yml'),
+                     'wrong-qualified-workflow': ('path', '.github/workflows/other.yml@trunk'),
+                     'qualified-path': ('path', '.github/workflows/conformance.yml@trunk'),
                      'wrong-repo': ('repository', {'full_name': 'honua-io/other'}),
                      'wrong-run': ('id', 303),
                      'rerun': ('run_attempt', 2),
                      'timeout': ('status', 'in_progress')}.items():
     if scenario == field:
         run[value[0]] = value[1]
+
+if args[0] == '--docker':
+    docker = args[1:]
+    image_id = 'sha256:' + 'b' * 64
+    if docker[0] == 'compose':
+        if scenario == 'container-missing':
+            print('')
+        elif scenario == 'container-ambiguous':
+            print('c' * 64 + '\n' + 'd' * 64)
+        else:
+            print('c' * 64)
+    elif docker[0] == 'inspect':
+        print(json.dumps([{'Image': 'sha256:' + 'd' * 64 if scenario == 'container-wrong-image' else image_id,
+                           'State': {'Running': scenario != 'container-stopped'}}]))
+    elif docker[:2] == ['image', 'inspect']:
+        digest = 'sha256:' + ('d' if scenario == 'container-wrong-digest' else 'a') * 64
+        print(json.dumps([{'Id': image_id, 'RepoDigests': ['ghcr.io/honua-io/server@' + digest]}]))
+    else:
+        raise AssertionError(docker)
+    sys.exit(0)
 
 if args[:2] == ['workflow', 'run']:
     (root / 'dispatched').touch()
