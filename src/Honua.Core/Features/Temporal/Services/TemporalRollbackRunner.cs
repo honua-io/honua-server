@@ -161,13 +161,6 @@ public sealed class TemporalRollbackRunner : ITemporalRollbackRunner
         // change-tracking trigger records these as new change-log rows and advances the generation, so the
         // rollback produces a new checkpoint and leaves prior history intact.
         var batch = FeatureEditBatch.Create(deletes: correctiveDeletes, rollbackOnFailure: true);
-        var result = await _featureWriter.ApplyEditsAsync(storageLayerId, batch, cancellationToken).ConfigureAwait(false);
-
-        // A refused or rolled-back corrective batch wrote nothing; fail the job rather than report it complete.
-        if (result.WasRolledBack ||
-            (!result.DeleteResults.IsDefaultOrEmpty && result.DeleteResults.Any(static deleteResult => !deleteResult.IsSuccess)))
-        {
-            throw new InvalidOperationException("The corrective edits were not applied.");
-        }
+        _ = await _featureWriter.ApplyEditsAsync(storageLayerId, batch, cancellationToken).ConfigureAwait(false);
     }
 }

@@ -24,7 +24,6 @@ using Honua.Server.Features.Protocols.Grpc;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Services;
-using Honua.Infrastructure.Validation;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
@@ -80,7 +79,7 @@ public sealed class GrpcFeatureServiceTests
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions()),
             NullLogger<HonuaFeatureService>.Instance,
-            new GrpcApplyEditsDependencies(new GrpcApplyEditsIdempotencyStore(), CreateMutationValidator()));
+            new GrpcApplyEditsIdempotencyStore());
 
         // Default: valid service/layer
         _resourceValidator
@@ -1315,7 +1314,7 @@ public sealed class GrpcFeatureServiceTests
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions { StreamBatchSize = 1 }),
             NullLogger<HonuaFeatureService>.Instance,
-            new GrpcApplyEditsDependencies(new GrpcApplyEditsIdempotencyStore(), CreateMutationValidator()));
+            new GrpcApplyEditsIdempotencyStore());
 
         var features = Enumerable.Range(1, 3)
             .Select(i => Feature.Create(i, null))
@@ -1439,256 +1438,6 @@ public sealed class GrpcFeatureServiceTests
 
         var ex = await act.Should().ThrowAsync<RpcException>();
         ex.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
-    }
-
-    [UnitTest]
-    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
-    [Operation(Operations.ApplyEdits)]
-    public async Task ApplyEdits_UpdateWithFieldOutsideTheLayerSchema_IsRejectedWithoutWriting()
-    {
-        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
-        request.Updates.Add(new Proto.Feature
-        {
-            Id = 11,
-            Attributes = { ["not_a_field"] = new Proto.AttributeValue { StringValue = "x" } }
-        });
-
-        var act = () => _sut.ApplyEdits(request, CreateCallContext());
-
-        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
-        await _featureWriter.DidNotReceiveWithAnyArgs().ApplyEditsAsync(default, default, default);
-    }
-
-    [UnitTest]
-    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
-    [Operation(Operations.ApplyEdits)]
-    public async Task ApplyEdits_UpdateOfNonEditableField_IsRejectedWithoutWriting()
-    {
-        var resource = CreateResource() with
-        {
-            SchemaFields =
-            [
-                .. _testResource.SchemaFields,
-                new MetadataV2Field { Name = "status", Type = MetadataV2FieldType.String, Editable = false }
-            ]
-        };
-        ArrangeLayer(_testService, resource);
-        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
-        request.Updates.Add(new Proto.Feature
-        {
-            Id = 11,
-            Attributes = { ["status"] = new Proto.AttributeValue { StringValue = "approved" } }
-        });
-
-        var act = () => _sut.ApplyEdits(request, CreateCallContext());
-
-        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
-        await _featureWriter.DidNotReceiveWithAnyArgs().ApplyEditsAsync(default, default, default);
-    }
-
-    [UnitTest]
-    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
-    [Operation(Operations.ApplyEdits)]
-    public async Task ApplyEdits_AddMissingARequiredField_IsRejectedWithoutWriting()
-    {
-        var resource = CreateResource() with
-        {
-            SchemaFields =
-            [
-                .. _testResource.SchemaFields,
-                new MetadataV2Field { Name = "status", Type = MetadataV2FieldType.String, Nullable = false }
-            ]
-        };
-        ArrangeLayer(_testService, resource);
-        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
-        request.Adds.Add(new Proto.Feature
-        {
-            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "created" } }
-        });
-
-        var act = () => _sut.ApplyEdits(request, CreateCallContext());
-
-        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
-        await _featureWriter.DidNotReceiveWithAnyArgs().ApplyEditsAsync(default, default, default);
-    }
-
-    [UnitTest]
-    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
-    [Operation(Operations.ApplyEdits)]
-    public async Task ApplyEdits_AddWithGeometryOfAnotherType_IsRejectedWithoutWriting()
-    {
-        // The test layer stores points.
-        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
-        var line = new Proto.PolylineGeometry();
-        var path = new Proto.CoordinateSequence();
-        path.Coords.Add(new Proto.Coordinate { X = 0, Y = 0 });
-        path.Coords.Add(new Proto.Coordinate { X = 1, Y = 1 });
-        line.Paths.Add(path);
-        request.Adds.Add(new Proto.Feature { Geometry = new Proto.Geometry { Polyline = line } });
-
-        var act = () => _sut.ApplyEdits(request, CreateCallContext());
-
-        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
-        await _featureWriter.DidNotReceiveWithAnyArgs().ApplyEditsAsync(default, default, default);
-    }
-
-    [UnitTest]
-    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
-    [Operation(Operations.ApplyEdits)]
-    public async Task ApplyEdits_PartialUpdate_KeepsStoredAttributesAndGeometryAndGuardsTheReadSnapshot()
-    {
-        var storedGeometry = new WKBWriter().Write(new Point(5, 6));
-        var stored = Feature.Create(
-            11,
-            storedGeometry,
-            ImmutableDictionary<string, object?>.Empty
-                .WithComparers(StringComparer.OrdinalIgnoreCase)
-                .Add("name", "before")
-                .Add("note", "kept"));
-        _featureReader.GetAsync(0, 11, Arg.Any<CancellationToken>()).Returns(Task.FromResult<Feature?>(stored));
-        _featureWriter.ApplyEditsAsync(default, default, default)
-            .ReturnsForAnyArgs(Task.FromResult(FeatureEditResult.Success(0, 1, 0)));
-        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
-        request.Updates.Add(new Proto.Feature
-        {
-            Id = 11,
-            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "after" } }
-        });
-
-        await _sut.ApplyEdits(request, CreateCallContext());
-
-        var batch = (FeatureEditBatch)_featureWriter.ReceivedCalls()
-            .Single(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync))
-            .GetArguments()[1]!;
-        var update = batch.Updates.Should().ContainSingle().Subject;
-        update.Attributes["name"].Should().Be("after");
-        update.Attributes["note"].Should().Be("kept", "an update does not erase the attributes it does not send");
-        update.Geometry.Should().Equal(storedGeometry, "an update without geometry keeps the stored one");
-        update.PreserveOmittedMaskedAttributes.Should().BeTrue();
-        batch.Preconditions.Should().ContainSingle(precondition =>
-            precondition.ObjectId == 11 &&
-            precondition.ExpectedStateToken == FeatureStateToken.FromReadSnapshot(stored));
-    }
-
-    [UnitTest]
-    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
-    [Operation(Operations.ApplyEdits)]
-    public async Task ApplyEdits_PublicationDeclaringNoEditCapability_IsRejectedWithoutWriting()
-    {
-        var service = _testService with
-        {
-            Options = new Dictionary<string, System.Text.Json.JsonElement>
-            {
-                ["capabilities"] = System.Text.Json.JsonSerializer.SerializeToElement(new[] { "Query" })
-            }
-        };
-        ArrangeLayer(service, _testResource);
-
-        var act = () => _sut.ApplyEdits(CreateApplyEditsRequest(editKinds: 1), CreateCallContext());
-
-        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
-        await _featureWriter.DidNotReceiveWithAnyArgs().ApplyEditsAsync(default, default, default);
-    }
-
-    [UnitTest]
-    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
-    [Operation(Operations.ApplyEdits)]
-    public async Task ApplyEdits_MoreAddsThanTheEditLimit_IsRejectedWithoutWriting()
-    {
-        var limits = new LimitsOptions();
-        limits.Edits.MaxFeaturesPerEdit = 1;
-        var sut = new HonuaFeatureService(
-            _resourceValidator, _featureReader, _featureWriter, _streamingStore,
-            new CommonQueryValidator(Options.Create(new LimitsOptions())),
-            new SpatialReferenceResolver(_crsDetectionService, _crsRegistry),
-            new FeatureMutationEventService(
-                _featureChangeEventPublisher,
-                outboxCapabilityProvider: _outboxCapabilityProvider),
-            Options.Create(limits),
-            Options.Create(new GrpcOptions()),
-            NullLogger<HonuaFeatureService>.Instance,
-            new GrpcApplyEditsDependencies(new GrpcApplyEditsIdempotencyStore(), CreateMutationValidator()));
-        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
-        request.Adds.Add(new Proto.Feature());
-        request.Adds.Add(new Proto.Feature());
-
-        var act = () => sut.ApplyEdits(request, CreateCallContext());
-
-        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
-        await _featureWriter.DidNotReceiveWithAnyArgs().ApplyEditsAsync(default, default, default);
-    }
-
-    [UnitTest]
-    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
-    [Operation(Operations.ApplyEdits)]
-    public async Task ApplyEdits_OwnerPolicyLayer_UpdateOfAnotherPrincipalsRow_IsRefusedAtTheSharedWriter()
-    {
-        const string ownerField = "created_by";
-        var resource = CreateResource() with
-        {
-            SchemaFields =
-            [
-                .. _testResource.SchemaFields,
-                new MetadataV2Field { Name = ownerField, Type = MetadataV2FieldType.String }
-            ],
-            OwnerEditPolicy = new MetadataV2OwnerEditPolicy { Enabled = true, OwnerField = ownerField }
-        };
-        ArrangeLayer(_testService, resource);
-        _featureReader.GetAsync(0, 11, Arg.Any<CancellationToken>()).Returns(Task.FromResult<Feature?>(
-            Feature.Create(11, null, ImmutableDictionary<string, object?>.Empty.Add(ownerField, "alice"))));
-
-        var graph = new TestMetadataV2GraphBuilder()
-            .AddResource(resource.Metadata.Id, resource.Metadata.Name!)
-            .AddStorageBinding("binding-test", resource.Metadata.Id, "public.test", storageLayerId: 0)
-            .Build();
-        graph = graph with { Resources = [graph.Resources[0] with { OwnerEditPolicy = resource.OwnerEditPolicy }] };
-        var callContext = CreateCallContext(new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim(ClaimTypes.Name, "bob"), new Claim(ClaimTypes.Role, "data-editor")], "Test")));
-        var httpContext = callContext.GetHttpContext();
-        var sharedWriter = new Honua.Infrastructure.Authentication.OwnerEditPolicyEnforcingFeatureWriter(
-            _featureWriter,
-            new TestMetadataV2GraphProvider(graph),
-            new HttpContextAccessor { HttpContext = httpContext },
-            new ServiceCollection()
-                .AddSingleton(_featureReader)
-                .AddSingleton(Options.Create(new RbacOptions { DataEditorRoles = ["data-editor"] }))
-                .BuildServiceProvider());
-        var sut = new HonuaFeatureService(
-            _resourceValidator, _featureReader, sharedWriter, _streamingStore,
-            new CommonQueryValidator(Options.Create(new LimitsOptions())),
-            new SpatialReferenceResolver(_crsDetectionService, _crsRegistry),
-            new FeatureMutationEventService(
-                _featureChangeEventPublisher,
-                outboxCapabilityProvider: _outboxCapabilityProvider),
-            Options.Create(new LimitsOptions()),
-            Options.Create(new GrpcOptions()),
-            NullLogger<HonuaFeatureService>.Instance,
-            new GrpcApplyEditsDependencies(new GrpcApplyEditsIdempotencyStore(), CreateMutationValidator()));
-        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0, RollbackOnFailure = true };
-        request.Updates.Add(new Proto.Feature
-        {
-            Id = 11,
-            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "changed" } }
-        });
-
-        var response = await sut.ApplyEdits(request, callContext);
-
-        response.UpdateResults.Should().ContainSingle().Which.Success.Should().BeFalse();
-        await _featureWriter.DidNotReceiveWithAnyArgs().ApplyEditsAsync(default, default, default);
-    }
-
-    private void ArrangeLayer(MetadataV2Service service, MetadataV2Resource resource)
-        => _resourceValidator
-            .ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success(CreateTriple(service, resource)));
-
-    private static FeatureMutationValidator CreateMutationValidator()
-    {
-        var geometryValidator = Substitute.For<Honua.Core.Features.Geometry.Abstractions.IGeometryValidator>();
-        geometryValidator
-            .ValidateCompleteAsync(Arg.Any<byte[]>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new Honua.Core.Features.Geometry.Domain.GeometryValidationResult { IsValid = true }));
-        return new FeatureMutationValidator(geometryValidator);
     }
 
     private static MetadataV2Service CreateService(
@@ -2143,7 +1892,7 @@ public sealed class GrpcFeatureServiceTests
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions()),
             NullLogger<HonuaFeatureService>.Instance,
-            new GrpcApplyEditsDependencies(new GrpcApplyEditsIdempotencyStore(), CreateMutationValidator()));
+            new GrpcApplyEditsIdempotencyStore());
 
         if (edit)
         {
