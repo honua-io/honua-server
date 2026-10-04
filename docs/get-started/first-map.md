@@ -19,6 +19,12 @@ The `honua_admin_services_access_policy_set` MCP tool sets a service's access po
 through the server's MCP endpoint (`POST /mcp`) with the official MCP Python client.
 `$HONUA_SERVICE` is the service name the publish step exported.
 
+A default install does not advertise that tool yet, so the call below is refused with
+`Unknown MCP tool`, and no SDK method or CLI command sets the policy either
+([honua-server#5444](https://github.com/honua-io/honua-server/issues/5444)).
+
+<!-- doc-run: blocked https://github.com/honua-io/honua-server/issues/5444 -->
+
 ```bash
 python3 -m pip install 'honua-admin==0.1.9' 'honua-sdk==0.1.12' 'mcp==2.1.1'
 python3 - <<'PY'

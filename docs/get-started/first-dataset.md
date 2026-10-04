@@ -86,8 +86,9 @@ A successful import responds with:
 {"success": true, "datasetName": "hawaii_cities", "rowCount": 2, "schema": "honua_data", "table": "imported_hawaii_cities"}
 ```
 
-The full result also carries `connectionId`, which stays `null` until a connection to the
-server's own database is registered (Step 3), and `rowErrors` when a feature is rejected.
+The full result also carries `srid`, `geometryColumn`, `primaryKey`, and `rowErrors` (empty when
+every feature loaded). Until Step 3 registers a connection to the server's own database,
+`connectionId` is absent and a `warnings` entry says so. Step 4 publishes through that connection.
 
 > **The table you publish is not the name you typed.** The importer stages files under a
 > physical `imported_<table>` name, so `datasetName` `hawaii_cities` creates
