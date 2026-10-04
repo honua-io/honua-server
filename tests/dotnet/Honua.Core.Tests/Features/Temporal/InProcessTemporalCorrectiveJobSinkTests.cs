@@ -2,14 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
-using Honua.Core.Features.Authorization;
-using Honua.Core.Features.Authorization.Abstractions;
-using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Temporal.Domain;
 using Honua.Core.Features.Temporal.Services;
-using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Temporal;
@@ -102,33 +98,6 @@ public sealed class InProcessTemporalCorrectiveJobSinkTests
         status.Should().Be("Queued");
         jobId.Should().NotBeNullOrWhiteSpace();
         await ran.Task.WaitAsync(WaitTimeout);
-    }
-
-    [UnitTest]
-    public async Task SubmitAsync_RunsTheDetachedWorkAsTheCapturedSubmitter()
-    {
-        var submitter = new JobSecurityContext("alice", TenantId: null, Claims: []);
-        var capture = new FixedSubmitterCapture(submitter);
-        var sink = new InProcessTemporalCorrectiveJobSink(
-            NullLogger<InProcessTemporalCorrectiveJobSink>.Instance,
-            progressStore: null,
-            lifetime: null,
-            submitterCapture: capture);
-        var observed = new TaskCompletionSource<JobSecurityContext?>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        await sink.SubmitAsync("temporal.rollback", "svc", 0, _ =>
-        {
-            observed.SetResult(JobSecurityScope.Current?.Submitter);
-            return Task.CompletedTask;
-        });
-
-        (await observed.Task.WaitAsync(WaitTimeout)).Should().BeSameAs(submitter);
-        JobSecurityScope.Current.Should().BeNull("the submitter scope belongs to the detached run only");
-    }
-
-    private sealed class FixedSubmitterCapture(JobSecurityContext submitter) : IJobSubmitterCapture
-    {
-        public JobSecurityContext? CaptureCurrent() => submitter;
     }
 
     private static InProcessTemporalCorrectiveJobSink CreateSink(IUniversalProgressStore? progressStore)

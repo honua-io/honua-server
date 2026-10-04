@@ -832,16 +832,10 @@ public sealed class EditProcessor : IEditProcessor
     /// that are absent from the supplied attribute dictionary. Uses case-insensitive field-name
     /// matching so the check is consistent regardless of how the caller built the dictionary.
     /// </summary>
-    /// <param name="resource">The resource being created into.</param>
-    /// <param name="attributes">The create's attributes.</param>
-    /// <returns>The names of the missing required fields; empty when none are missing.</returns>
-    public static IReadOnlyList<string> FindMissingRequiredFields(
+    private static List<string> FindMissingRequiredFields(
         MetadataV2Resource resource,
-        IReadOnlyDictionary<string, object?> attributes)
+        ImmutableDictionary<string, object?> attributes)
     {
-        ArgumentNullException.ThrowIfNull(resource);
-        ArgumentNullException.ThrowIfNull(attributes);
-
         var missing = new List<string>();
         var primaryIdFieldName = resource.FindPrimaryIdField()?.Name;
 

@@ -1004,7 +1004,7 @@ internal static class LayerValidationHelpers
     /// <param name="validation">Successful write-access validation result.</param>
     /// <param name="operation">Authorization operation the caller is performing, when known.</param>
     /// <returns>A 405 result when the capability is undeclared, otherwise null.</returns>
-    internal static IResult? ValidateDeclaredEditCapability(
+    private static IResult? ValidateDeclaredEditCapability(
         HttpContext context,
         MetadataV2ValidationResult validation,
         AuthorizationOperation? operation)
@@ -1266,56 +1266,7 @@ internal static class LayerValidationHelpers
                 canonicalError);
         }
 
-        // Declared edit capabilities bind this surface the same way they bind OGC API Features
-        // and GeoServices (SEC-5): a publication whose declared set omits the edit kind refuses it.
-        var capabilityError = ValidateDeclaredEditCapability(context, validation, operation);
-        if (capabilityError != null)
-        {
-            return new MetadataV2ValidationResult(
-                false,
-                validation.Publication,
-                validation.Resource,
-                validation.Service,
-                capabilityError);
-        }
-
         return validation;
-    }
-
-    /// <summary>
-    /// Applies the publication-level write contract to a write the caller is already authorized
-    /// for on the addressed publication: when that publication is not the resource's canonical
-    /// one the caller must also be a data editor on the canonical service, and the publication
-    /// must declare the edit kind (SEC-5). For write surfaces that resolve the layer and authorize
-    /// each operation themselves (the OData change set, the gRPC feature service).
-    /// </summary>
-    /// <param name="context">HTTP context carrying request services and principal.</param>
-    /// <param name="service">Service the write is addressed through.</param>
-    /// <param name="publication">Publication the write is addressed through.</param>
-    /// <param name="resource">Canonical resource backing the publication.</param>
-    /// <param name="operation">Edit operation being performed.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>An error result when the contract refuses the write, otherwise null.</returns>
-    internal static async Task<IResult?> EnforcePublicationWriteContractAsync(
-        HttpContext context,
-        MetadataV2Service service,
-        MetadataV2Publication publication,
-        MetadataV2Resource resource,
-        AuthorizationOperation operation,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(service);
-        ArgumentNullException.ThrowIfNull(publication);
-        ArgumentNullException.ThrowIfNull(resource);
-
-        var validation = new MetadataV2ValidationResult(true, publication, resource, service, ErrorResult: null);
-        var canonicalError = await EnforceCanonicalServiceWriteAccessAsync(
-            context,
-            validation,
-            operation,
-            cancellationToken).ConfigureAwait(false);
-        return canonicalError ?? ValidateDeclaredEditCapability(context, validation, operation);
     }
 
     /// <summary>
