@@ -14,6 +14,11 @@ name: Release Bundle (Compatibility Train)
 # not-yet-gated rather than silently skipped; widen coverage by flipping those.
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/release-bundle.yml'
+      - 'scripts/release/dispatch-and-wait.sh'
+      - 'tests/dotnet/Honua.ReleaseWorkflows.Tests/**'
   workflow_dispatch:
     inputs:
       release_id:
@@ -58,7 +63,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: release-bundle-${{ github.event.inputs.release_id }}
+  group: release-bundle-${{ github.event.inputs.release_id || github.event.pull_request.number }}
   cancel-in-progress: false
 
 env:
@@ -69,8 +74,26 @@ env:
   GH_TOKEN: ${{ secrets.RELEASE_BUNDLE_TOKEN || secrets.GITHUB_TOKEN }}
 
 jobs:
+  workflow-contract-tests:
+    name: Release workflow contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Verify dispatch and image receipt binding
+        run: dotnet test tests/dotnet/Honua.ReleaseWorkflows.Tests/Honua.ReleaseWorkflows.Tests.csproj --configuration Release
+
   release-context:
     name: Classify release ref
+    needs: workflow-contract-tests
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -240,7 +263,8 @@ jobs:
             # target repo's default branch (the candidate is pinned via the image input).
             dispatch_ref="trunk"
             [ "$repo" = "${{ github.repository }}" ] && dispatch_ref="${{ github.sha }}"
-            args=(--id "$id" --repo "$repo" --workflow "$(basename "$wf")" --ref "$dispatch_ref")
+            args=(--id "$id" --repo "$repo" --workflow "$(basename "$wf")" --ref "$dispatch_ref"
+              --expected-image "$image" --image-input "$input")
             [ -n "$input" ] && args+=(--input "${input}=${image}")
             ./scripts/release/dispatch-and-wait.sh "${args[@]}" >> integration-evidence.ndjson || true
           done
@@ -282,7 +306,8 @@ jobs:
             fi
             # Compat evidence pinned to the RC image, when the suite supports it.
             if [ -n "$compat" ] && [ "$pending" != "true" ]; then
-              args=(--id "$id" --repo "$repo" --workflow "$compat" --ref trunk)
+              args=(--id "$id" --repo "$repo" --workflow "$compat" --ref trunk
+                --expected-image "$image" --image-input "$input")
               [ -n "$input" ] && args+=(--input "${input}=${image}")
               ./scripts/release/dispatch-and-wait.sh "${args[@]}" >> sdk-evidence.ndjson || true
             else
