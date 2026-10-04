@@ -53,10 +53,12 @@ public sealed class HonuaLayerSinkExecutorTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
     [Trait("Tier", "Fast")]
-    public async Task HonuaLayerSink_CancellationAfterCommit_PreservesReceiptAndReportsCommittedCompletion(bool cancelToken)
+    public async Task HonuaLayerSink_CancellationAfterCommit_PreservesReceiptAndReportsCommittedCompletion(
+        bool cancelToken, bool stopLaterWork)
     {
         using var securityScope = BeginAdminSubmitterScope();
         using var cancellation = new CancellationTokenSource();
@@ -92,8 +94,13 @@ public sealed class HonuaLayerSinkExecutorTests
         var executor = Substitute.For<IJobExecutor>();
         executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
         executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
-            .Returns(call => sinkExecutor.ExecuteAsync(call.Arg<ExecutionJobRecord>(),
-                call.Arg<IJobExecutionContext>(), cancellation.Token));
+            .Returns(async call =>
+            {
+                var result = await sinkExecutor.ExecuteAsync(call.Arg<ExecutionJobRecord>(),
+                    call.Arg<IJobExecutionContext>(), cancellation.Token);
+                if (stopLaterWork) cancellation.Token.ThrowIfCancellationRequested();
+                return result;
+            });
         using var service = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor],
             new ExecutionJobCancellationTokens(), [], null, NullLogger<JobExecutionService>.Instance);
         var method = typeof(JobExecutionService).GetMethod("ProcessJobAsync",
@@ -105,9 +112,13 @@ public sealed class HonuaLayerSinkExecutorTests
         var receipt = DecodeDescriptor(record.ArtifactReferences[0]);
         receipt.GetProperty("batchId").GetString().Should().Be("committed-batch");
         receipt.GetProperty("featuresWritten").GetInt64().Should().Be(1);
-        record.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        receipt.GetProperty("committed").GetBoolean().Should().BeTrue();
+        record.Status.Should().Be(stopLaterWork ? ExecutionJobStatus.Cancelled : ExecutionJobStatus.Succeeded);
         record.CurrentPhase.Should().Contain("committed");
         record.Warnings.Should().Contain(w => w.Contains("committed", StringComparison.Ordinal));
+        var package = GeoprocessingResultPackageFactory.Create(record, new BuiltInProcessCatalog());
+        package.Artifacts.Should().ContainSingle().Which.Uri.Should().Be(record.ArtifactReferences[0]);
+        package.Summary.Description.Should().Contain("committed");
     }
 
     [UnitTest]

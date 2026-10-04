@@ -83,6 +83,7 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
             Convert.FromBase64String(receipt![(receipt.IndexOf(',') + 1)..])));
         Assert.Equal("committed-external-batch", json.RootElement.GetProperty("batchId").GetString());
         Assert.Equal(1, json.RootElement.GetProperty("featuresWritten").GetInt64());
+        Assert.True(json.RootElement.GetProperty("committed").GetBoolean());
         await using var connection = await _fixture.DataSource.OpenConnectionAsync();
         await using var count = new NpgsqlCommand($"SELECT COUNT(*) FROM \"{_schemaName}\".cancelled_publication", connection);
         Assert.Equal(1L, (long)(await count.ExecuteScalarAsync())!);
