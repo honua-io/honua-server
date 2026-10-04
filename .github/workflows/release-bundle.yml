@@ -76,6 +76,9 @@ env:
 jobs:
   workflow-contract-tests:
     name: Release workflow contracts
+    # Offline PR tests must not inherit the cross-repository dispatch token.
+    env:
+      GH_TOKEN: ''
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
