@@ -126,6 +126,7 @@ valid_run() {
     .repository.full_name == $repo and .path == $workflow and .head_sha == $sha' <<<"$1" >/dev/null
 }
 
+result=""
 deadline=$(( $(date +%s) + TIMEOUT ))
 while [[ $(date +%s) -lt $deadline ]]; do
   result="$(gh api "repos/$REPO/actions/runs/$run_id")" || refuse "Could not read dispatched run"
