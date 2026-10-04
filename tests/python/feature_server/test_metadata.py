@@ -148,19 +148,16 @@ class TestLayerMetadata:
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}"
         )
         data = response.json()
-        assert "geometryType" in data
-        # Valid Esri geometry types
+        # A layer that is not one of the five geometry tokens omits geometryType.
+        geom = data.get("geometryType")
         valid_types = [
             "esriGeometryPoint",
             "esriGeometryMultipoint",
             "esriGeometryPolyline",
             "esriGeometryPolygon",
             "esriGeometryEnvelope",
-            # Mixed/None/GeometryCollection layers (e.g. the shared "Mixed"
-            # integration fixture layer) report none.
-            "none",
         ]
-        assert data["geometryType"] in valid_types or data["geometryType"] is None
+        assert geom in valid_types or geom is None
 
     @pytest.mark.integration
     @pytest.mark.featureserver

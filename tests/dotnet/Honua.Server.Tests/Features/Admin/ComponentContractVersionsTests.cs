@@ -22,7 +22,7 @@ public sealed class ComponentContractVersionsTests
             "admin": "v1",
             "metadata": "metadata.honua.io/v2alpha1",
             "grpc": "v1",
-            "geoservices": "1.0.0",
+            "geoservices": "2.0.0",
             "ogc": "1.0.0",
             "stac": "1.0.0"
           },
@@ -67,12 +67,12 @@ public sealed class ComponentContractVersionsTests
     public void StartupCheck_RefusesAStaleDeclaredVersion()
     {
         var stale = ComponentVersionsDeclaration.Parse(
-            CurrentDeclaration.Replace("\"geoservices\": \"1.0.0\"", "\"geoservices\": \"0.9.0\"", StringComparison.Ordinal));
+            CurrentDeclaration.Replace("\"geoservices\": \"2.0.0\"", "\"geoservices\": \"0.9.0\"", StringComparison.Ordinal));
 
         var act = () => ContractVersionsStartupCheck.Validate(stale.ContractVersions, ServedContractVersions.Current);
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*'geoservices' is declared as '0.9.0' but served as '1.0.0'*");
+            .WithMessage("*'geoservices' is declared as '0.9.0' but served as '2.0.0'*");
     }
 
     [UnitTest]

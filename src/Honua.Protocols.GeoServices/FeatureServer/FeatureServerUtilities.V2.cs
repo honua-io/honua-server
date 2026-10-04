@@ -818,20 +818,8 @@ internal static partial class FeatureServerEndpoints
         return (int)(hash & 0x7FFFFFFFu);
     }
 
-    private static string MapGeometryTypeV2(MetadataV2GeometryType geometryType)
-        => geometryType switch
-        {
-            MetadataV2GeometryType.Point => "esriGeometryPoint",
-            MetadataV2GeometryType.LineString => "esriGeometryPolyline",
-            MetadataV2GeometryType.Polygon => "esriGeometryPolygon",
-            MetadataV2GeometryType.MultiPoint => "esriGeometryMultipoint",
-            MetadataV2GeometryType.MultiLineString => "esriGeometryPolyline",
-            MetadataV2GeometryType.MultiPolygon => "esriGeometryPolygon",
-            MetadataV2GeometryType.GeometryCollection => "none",
-            MetadataV2GeometryType.Mixed => "none",
-            MetadataV2GeometryType.None => "none",
-            _ => "none"
-        };
+    private static string? MapGeometryTypeV2(MetadataV2GeometryType geometryType)
+        => QueryFormatter.MapGeometryType(geometryType);
 
     private static string MapFieldTypeToSqlV2(MetadataV2FieldType type)
         // Shared with the query response so the layer resource and /query cannot

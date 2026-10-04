@@ -22,6 +22,19 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 public sealed class QueryFormatterTests
 {
     [UnitTest]
+    public void MapGeometryType_OmitsTypesThatAreNotLayerTokens()
+    {
+        QueryFormatter.MapGeometryType(MetadataV2GeometryType.Point).Should().Be("esriGeometryPoint");
+        QueryFormatter.MapGeometryType(MetadataV2GeometryType.MultiLineString).Should().Be("esriGeometryPolyline");
+        QueryFormatter.MapGeometryType(MetadataV2GeometryType.MultiPolygon).Should().Be("esriGeometryPolygon");
+        QueryFormatter.MapGeometryType(MetadataV2GeometryType.MultiPoint).Should().Be("esriGeometryMultipoint");
+
+        QueryFormatter.MapGeometryType(MetadataV2GeometryType.None).Should().BeNull();
+        QueryFormatter.MapGeometryType(MetadataV2GeometryType.Mixed).Should().BeNull();
+        QueryFormatter.MapGeometryType(MetadataV2GeometryType.GeometryCollection).Should().BeNull();
+    }
+
+    [UnitTest]
     public async Task FormatQueryResultAsync_Parquet_UsesConfiguredByteBudget()
     {
         var options = Options.Create(new LimitsOptions
