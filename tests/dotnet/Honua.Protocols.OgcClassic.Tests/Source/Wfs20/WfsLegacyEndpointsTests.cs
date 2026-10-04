@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Text;
+using System.Xml.Linq;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -39,6 +40,13 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WebAppFixture>
         content.Should().Contain("xmlns:ows=\"http://www.opengis.net/ows\"");
         content.Should().Contain("<ows:Operation name=\"GetFeature\">");
         content.Should().Contain("<wfs:DefaultSRS>");
+        XNamespace ows = "http://www.opengis.net/ows";
+        var operations = XElement.Parse(content).Descendants(ows + "Operation").ToArray();
+        var transaction = operations.Single(operation => operation.Attribute("name")?.Value == "Transaction");
+        transaction.Descendants(ows + "Get").Should().BeEmpty();
+        transaction.Descendants(ows + "Post").Should().ContainSingle();
+        operations.Single(operation => operation.Attribute("name")?.Value == "GetFeature")
+            .Descendants(ows + "Get").Should().ContainSingle();
     }
 
     [IntegrationTest]
@@ -302,6 +310,12 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WebAppFixture>
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         content.Should().Contain("<WFS_Capabilities");
+        XNamespace wfs = "http://www.opengis.net/wfs";
+        var transaction = XElement.Parse(content).Descendants(wfs + "Transaction").Single();
+        transaction.Descendants(wfs + "Get").Should().BeEmpty();
+        transaction.Descendants(wfs + "Post").Should().ContainSingle();
+        XElement.Parse(content).Descendants(wfs + "GetFeature").Single()
+            .Descendants(wfs + "Get").Should().ContainSingle();
         content.Should().Contain("version=\"1.0.0\"");
         content.Should().Contain("http://schemas.opengis.net/wfs/1.0.0/WFS-capabilities.xsd");
         content.Should().NotContain("http://schemas.opengis.net/wfs/1.0.0/WFS-basic.xsd");

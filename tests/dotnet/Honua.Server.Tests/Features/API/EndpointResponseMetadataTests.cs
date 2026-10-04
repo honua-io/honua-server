@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Infrastructure.Middleware;
 using Honua.Protocols.Ogc.Api.Processes;
 using Honua.TestKit;
 using Microsoft.AspNetCore.Http;
@@ -25,6 +26,22 @@ public sealed class EndpointResponseMetadataTests : IDisposable
         new(@"\{([^{}:]+):[^{}]+\}", RegexOptions.Compiled);
 
     private readonly TestWebApplicationFactory _factory = new();
+
+    [Fact]
+    [Trait("Category", "Architecture")]
+    public void PortalUriDiscovery_IsTenantIndependentLikeSharingInfo()
+    {
+        using var _ = _factory.CreateClient();
+        var endpoints = _factory.Services.GetServices<EndpointDataSource>()
+            .SelectMany(source => source.Endpoints).OfType<RouteEndpoint>().ToArray();
+
+        foreach (var path in new[] { "/arcgisuris.xml", "/sharing/rest/info" })
+        {
+            var endpoint = endpoints.Single(endpoint => endpoint.RoutePattern.RawText == path);
+            endpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>().Should().NotBeNull(
+                "deployment-wide discovery must accept authenticated callers without a tenant claim");
+        }
+    }
 
     [Fact]
     [Trait("Category", "Architecture")]
