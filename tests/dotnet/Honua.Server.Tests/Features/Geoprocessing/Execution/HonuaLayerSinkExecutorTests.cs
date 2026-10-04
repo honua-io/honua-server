@@ -61,7 +61,7 @@ public sealed class HonuaLayerSinkExecutorTests
         bool cancelToken, bool stopLaterWork)
     {
         using var securityScope = BeginAdminSubmitterScope();
-        using var cancellation = new CancellationTokenSource();
+        var cancellationTokens = new ExecutionJobCancellationTokens();
         var record = CreateRecord(
             ("input", BuildInputUri(Feature(Point(1, 2)))),
             ("layer", "parcels"), ("targetSrid", "4326"), ("batchId", "committed-batch")) with
@@ -85,7 +85,7 @@ public sealed class HonuaLayerSinkExecutorTests
             {
                 // The destination and its receipt have committed; another host stamps cancellation.
                 record = record with { CancellationRequestedAt = DateTimeOffset.UtcNow };
-                if (cancelToken) cancellation.Cancel();
+                if (cancelToken) cancellationTokens.Cancel(record.OperationId).Should().BeTrue();
                 var request = call.Arg<HonuaLayerSinkRequest>();
                 return new HonuaLayerSinkOutcome(1, request.Schema, request.Table, request.BatchId);
             });
@@ -97,12 +97,12 @@ public sealed class HonuaLayerSinkExecutorTests
             .Returns(async call =>
             {
                 var result = await sinkExecutor.ExecuteAsync(call.Arg<ExecutionJobRecord>(),
-                    call.Arg<IJobExecutionContext>(), cancellation.Token);
-                if (stopLaterWork) cancellation.Token.ThrowIfCancellationRequested();
+                    call.Arg<IJobExecutionContext>(), call.Arg<CancellationToken>());
+                if (stopLaterWork) call.Arg<CancellationToken>().ThrowIfCancellationRequested();
                 return result;
             });
         using var service = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor],
-            new ExecutionJobCancellationTokens(), [], null, NullLogger<JobExecutionService>.Instance);
+            cancellationTokens, [], null, NullLogger<JobExecutionService>.Instance);
         var method = typeof(JobExecutionService).GetMethod("ProcessJobAsync",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
 
