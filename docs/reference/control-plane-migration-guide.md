@@ -24,20 +24,6 @@ endpoint for this publication operation in the restored contract; defer workflow
 that depend on it until a validated implementation is available. Existing raster
 import and serving operations retain their previous contracts.
 
-## Withdrawal of the advertised contract-version maps
-
-The revert of PR #5401 in PR #5412 withdraws the newly added `contractVersions` and
-`schemaVersions` properties from `AdminCapabilitiesResponse` and
-`AdminCompatibilityMetadata` on `GET /api/v1/admin/capabilities`. The landing turned
-the trailing admin-authorization matrix red, because the anonymous capabilities
-envelope is pinned to a fixed set of keys. Both maps are being withdrawn together
-before they are reintroduced.
-
-Clients built against that trunk revision must stop reading these properties and
-regenerate from the restored admin contract. Until the maps return, the
-`compatibility` envelope (`controlPlaneApi`, `metadataSchemas`,
-`metadataApiVersion`, `metadataSchemaVersion`) remains the advertised version contract.
-
 ## Migration Baseline
 
 Before regenerating or upgrading SDK artifacts:
