@@ -527,7 +527,6 @@ public sealed class HonuaLayerSinkExecutorTests
         HonuaLayerSinkExecutor executor,
         params (string Name, string Value)[] inputs)
     {
-        const string processId = HonuaLayerSinkExecutor.HandledProcessId;
         var context = Substitute.For<IJobExecutionContext>();
         context.OperationId.Returns("op-test");
         string? publishedUri = null;
