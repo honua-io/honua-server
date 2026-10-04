@@ -65,6 +65,16 @@ on:
         required: false
         type: string
         default: ''
+      release-suite-id:
+        description: 'Release suite identity; retain containers and publish an exact image receipt when set'
+        required: false
+        type: string
+        default: ''
+      release-compose-file:
+        description: 'Compose file whose honua-server container supplied the release suite results'
+        required: false
+        type: string
+        default: ''
       tested-honua-git-sha:
         description: >-
           Optional checked-out Honua workflow commit. Suites that retain
@@ -201,10 +211,13 @@ jobs:
           HONUA_CITE_REQUIRE_SERVER_PROVENANCE: ${{ inputs.tested-honua-git-sha != '' && 'true' || 'false' }}
           HONUA_CITE_SERVER_BUILD_MODE: ${{ inputs.honua-image == '' && 'source-build' || 'prebuilt' }}
           HONUA_CITE_REQUESTED_SERVER_IMAGE: ${{ inputs.honua-image }}
+          RELEASE_SUITE_ID: ${{ inputs.release-suite-id }}
         run: |
+          receipt_args=()
+          [[ -z "$RELEASE_SUITE_ID" ]] || receipt_args+=(--no-cleanup)
           set +e
           timeout ${{ inputs.timeout-seconds }} ${{ inputs.runner-script }} \
-            --profile "$CITE_PROFILE" --verbose
+            --profile "$CITE_PROFILE" --verbose "${receipt_args[@]}"
           cite_exit_code=$?
           set -e
 
@@ -352,3 +365,47 @@ jobs:
           echo "CantTell tests: ${{ steps.parse-results.outputs.canttell_tests }}"
           echo "Review the test results and fix conformance issues"
           exit 1
+
+
+      - name: Write release suite receipt
+        if: success() && inputs.release-suite-id != '' && inputs.diagnostic-only != true
+        env:
+          CANDIDATE_IMAGE: ${{ inputs.honua-image }}
+          RELEASE_SUITE_ID: ${{ inputs.release-suite-id }}
+          CITE_COMPOSE_FILE: ${{ inputs.release-compose-file }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_IMAGE" =~ ^[^[:space:]@]+@sha256:[a-f0-9]{64}$ ]]
+          digest="${CANDIDATE_IMAGE##*@}"
+          container="$(docker compose -f "$CITE_COMPOSE_FILE" ps -q honua-server)"
+          [[ "$container" =~ ^[a-f0-9]{12,64}$ ]]
+          running="$(docker inspect "$container")"
+          candidate="$(docker image inspect "$CANDIDATE_IMAGE")"
+          # Bind the receipt to the container that actually served the suite,
+          # including its image ID and the pulled candidate repository digest.
+          jq -e --argjson candidate "$candidate" --arg digest "$digest" '
+            length == 1 and .[0].State.Running == true and
+            ($candidate | length) == 1 and .[0].Image == $candidate[0].Id and
+            any($candidate[0].RepoDigests[]; endswith("@" + $digest))' <<<"$running" >/dev/null
+          workflow="$(basename "${GITHUB_WORKFLOW_REF%%@*}")"
+          jq -n --arg id "$RELEASE_SUITE_ID" --arg repo "$GITHUB_REPOSITORY" \
+            --arg workflow "$workflow" --argjson runId "$GITHUB_RUN_ID" \
+            --argjson attempt "$GITHUB_RUN_ATTEMPT" --arg sha "$GITHUB_SHA" \
+            --arg image "$CANDIDATE_IMAGE" --arg digest "$digest" \
+            '{id:$id, owningRepo:$repo, workflow:$workflow, runId:$runId, runAttempt:$attempt,
+              headSha:$sha, image:$image, imageDigest:$digest}' > release-suite-receipt.json
+
+      - name: Upload release suite receipt
+        if: success() && inputs.release-suite-id != '' && inputs.diagnostic-only != true
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-suite-receipt
+          path: release-suite-receipt.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Clean up retained release suite containers
+        if: always() && inputs.release-suite-id != ''
+        env:
+          CITE_COMPOSE_FILE: ${{ inputs.release-compose-file }}
+        run: docker compose -f "$CITE_COMPOSE_FILE" down --remove-orphans --volumes

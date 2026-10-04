@@ -166,7 +166,7 @@ valid_run() {
   jq -e --argjson runId "$run_id" --argjson attempt "$run_attempt" \
     --arg repo "$REPO" --arg workflow ".github/workflows/$WORKFLOW" --arg sha "$head_sha" '
     .id == $runId and .run_attempt == $attempt and .event == "workflow_dispatch" and
-    .repository.full_name == $repo and .path == $workflow and .head_sha == $sha' <<<"$1" >/dev/null
+    .repository.full_name == $repo and (.path | split("@")[0]) == $workflow and .head_sha == $sha' <<<"$1" >/dev/null
 }
 
 result=""

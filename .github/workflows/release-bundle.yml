@@ -17,6 +17,8 @@ on:
   pull_request:
     paths:
       - '.github/workflows/release-bundle.yml'
+      - '.github/workflows/cite-conformance.yml'
+      - '.github/workflows/cite-conformance-common.yml'
       - 'scripts/release/dispatch-and-wait.sh'
       - 'release/bundle-suites.json'
       - 'tests/dotnet/Honua.ReleaseWorkflows.Tests/**'
