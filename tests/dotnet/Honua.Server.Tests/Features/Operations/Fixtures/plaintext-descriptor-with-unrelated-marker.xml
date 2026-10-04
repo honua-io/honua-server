@@ -1,0 +1,15 @@
+<key id="aaaaaaaa-0b0b-1c1c-2d2d-333333333333" version="1">
+  <creationDate>2015-03-19T23:32:02.3949887Z</creationDate>
+  <activationDate>2015-03-19T23:32:02.3839429Z</activationDate>
+  <expirationDate>2015-06-17T23:32:02.3839429Z</expirationDate>
+  <descriptor deserializerType="Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationModel.AuthenticatedEncryptorDescriptorDeserializer, Microsoft.AspNetCore.DataProtection">
+    <descriptor>
+      <encryption algorithm="AES_256_CBC" />
+      <validation algorithm="HMACSHA256" />
+      <masterKey>
+        <value>cGxhaW50ZXh0LW1hc3Rlci1rZXk=</value>
+      </masterKey>
+    </descriptor>
+  </descriptor>
+  <encryptedSecret />
+</key>

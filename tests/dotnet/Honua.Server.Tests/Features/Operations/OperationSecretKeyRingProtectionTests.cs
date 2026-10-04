@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
@@ -128,6 +129,25 @@ public sealed class OperationSecretKeyRingProtectionTests
         RedisDataProtectionKeyRepository.IsProtectedElement(legacyKey).Should().BeFalse();
     }
 
+    // The marker sits beside the descriptor XmlKeyManager imports. That sibling is not
+    // part of the master-key material, so the plaintext descriptor must still be rejected.
+    [UnitTest]
+    public void IsProtectedElement_RejectsPlaintextDescriptorDespiteUnrelatedMarker()
+    {
+        var key = XElement.Load(PlaintextDescriptorWithUnrelatedMarkerPath());
+        var consumed = key.Element("descriptor")!.Elements().Single();
+
+        key.Descendants().Any(element =>
+                string.Equals(element.Name.LocalName, "encryptedSecret", StringComparison.Ordinal))
+            .Should().BeTrue();
+        consumed.DescendantsAndSelf().Any(element =>
+                string.Equals(element.Name.LocalName, "encryptedSecret", StringComparison.Ordinal))
+            .Should().BeFalse();
+        consumed.Element("masterKey")!.Element("value")!.Value.Should().NotBeNullOrWhiteSpace();
+
+        RedisDataProtectionKeyRepository.IsProtectedElement(key).Should().BeFalse();
+    }
+
     // A private key on disk gets a unique name and 0600 at creation time, not a fixed
     // /tmp path tightened after the bytes land - otherwise a shared host leaves a
     // readable window, a symlink can be pre-created, and two processes clobber
@@ -171,6 +191,12 @@ public sealed class OperationSecretKeyRingProtectionTests
         repository.Elements.Should().ContainSingle();
         RedisDataProtectionKeyRepository.IsProtectedElement(repository.Elements[0]).Should().BeTrue();
     }
+
+    private static string PlaintextDescriptorWithUnrelatedMarkerPath([CallerFilePath] string sourceFile = "")
+        => Path.Combine(
+            Path.GetDirectoryName(sourceFile)!,
+            "Fixtures",
+            "plaintext-descriptor-with-unrelated-marker.xml");
 
     private static string Protect(MemoryKeyRepository repository, X509Certificate2 certificate, string value)
     {
