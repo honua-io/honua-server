@@ -147,7 +147,7 @@ block in the same terminal.
 ```bash
 python3 -m venv --without-pip .venv
 Python="$Install/.venv/bin/python"
-python3 -m pip --python "$Python" install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.9' 'honua-sdk==0.1.12' 'mcp==2.1.1'
+python3 -m pip --python "$Python" install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.10' 'honua-sdk==0.1.13' 'mcp==2.1.1'
 python3 -m pip --python "$Python" freeze > installed-packages.txt
 set -a
 source .env

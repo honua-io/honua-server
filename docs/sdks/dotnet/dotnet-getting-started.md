@@ -10,14 +10,14 @@ Install the Honua .NET SDK, point a client at your server, authenticate with an 
 
 **Prerequisites:** A running Honua server ([quickstart](../../get-started/quickstart.md)) with at least one published layer ([publish layers](../../guides/publish/publish-layers.md)), the .NET 10 SDK, and an API key (see [Authenticate clients](../../guides/secure/authentication.md) — the SDK landing page shows how to [mint a scoped key](../README.md#authentication)).
 
-The .NET SDK ships as `Honua.Sdk` — an umbrella package over a family of `Honua.Sdk.*` libraries (`Honua.Sdk.Grpc`, `Honua.Sdk.Admin`, `Honua.Sdk.GeoServices`, `Honua.Sdk.Catalogs`, and more). It is built for dependency injection. The current published release is **1.10.1**, targeting **net10.0**. `Host.CreateApplicationBuilder` lives in `Microsoft.Extensions.Hosting` 10.0.0. `Honua.Sdk` does not reference that package, so add it beside the SDK.
+The .NET SDK ships as `Honua.Sdk` — an umbrella package over a family of `Honua.Sdk.*` libraries (`Honua.Sdk.Grpc`, `Honua.Sdk.Admin`, `Honua.Sdk.GeoServices`, `Honua.Sdk.Catalogs`, and more). It is built for dependency injection. The current published release is **1.10.2**, targeting **net10.0**. `Host.CreateApplicationBuilder` lives in `Microsoft.Extensions.Hosting` 10.0.0. `Honua.Sdk` does not reference that package, so add it beside the SDK.
 
 ## Steps
 
 ### 1. Install the package
 
 ```bash
-dotnet add package Honua.Sdk --version 1.10.1
+dotnet add package Honua.Sdk --version 1.10.2
 dotnet add package Microsoft.Extensions.Hosting --version 10.0.0
 ```
 

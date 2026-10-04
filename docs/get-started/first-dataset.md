@@ -7,7 +7,7 @@ description: "Upload a GeoJSON file, publish it as a layer, and query it through
 
 Upload a GeoJSON file, publish it as a layer, and query it through the supported Honua clients.
 
-**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Python 3.11+ with the pinned clients `honua-admin` 0.1.9 and `honua-sdk` 0.1.12 and the MCP Python client `mcp` 2.1.1 (step 2 installs them), and Node.js with `npx`.
+**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Python 3.11+ with the pinned clients `honua-admin` 0.1.10 and `honua-sdk` 0.1.13 and the MCP Python client `mcp` 2.1.1 (step 2 installs them), and Node.js with `npx`.
 
 > **Shell.** Every block on this page is `bash` — heredocs, `export`, and `python3`. On Windows run
 > them in WSL or Git Bash, not PowerShell, and note that a bare `python3` there resolves to the
@@ -44,7 +44,7 @@ a database table. Install the pinned clients and the MCP client. MCP tool calls 
 the `X-API-Key` header. HTTP Basic auth is refused.
 
 ```bash
-python3 -m pip install 'honua-admin==0.1.9' 'honua-sdk==0.1.12' 'mcp==2.1.1'
+python3 -m pip install 'honua-admin==0.1.10' 'honua-sdk==0.1.13' 'mcp==2.1.1'
 ```
 
 ```bash
@@ -117,7 +117,7 @@ through that connection. The route accepts the connection id (`connection.connec
 connection name; the steps below pass the id.
 
 ```bash
-python3 -m pip install 'honua-admin==0.1.9' 'honua-sdk==0.1.12'
+python3 -m pip install 'honua-admin==0.1.10' 'honua-sdk==0.1.13'
 python3 - <<'PY'
 import os
 import subprocess
