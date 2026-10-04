@@ -677,7 +677,7 @@ internal static partial class FeatureServerEndpoints
         // the byte-identical non-versioned path.
 
         // Group entries by layer id while preserving first-seen layer order so the response
-        // emits one editResults entry per distinct layer (matching ArcGIS), and merge their
+        // emits one result entry per distinct layer (matching ArcGIS), and merge their
         // adds/updates/deletes so each layer is applied in a single transaction.
         var orderedLayerIds = new List<int>();
         var mergedEdits = new Dictionary<int, ServiceLayerEdits>();
@@ -806,11 +806,10 @@ internal static partial class FeatureServerEndpoints
             }
         }
 
-        var serviceResponse = new ServiceApplyEditsResponse { EditResults = results };
         var responseStatusCode = hasPartialFailure
             ? StatusCodes.Status207MultiStatus
             : StatusCodes.Status200OK;
-        return Results.Json(serviceResponse, FeatureServerJsonContext.Default.ServiceApplyEditsResponse,
+        return Results.Json(results, FeatureServerJsonContext.Default.ServiceLayerEditResultArray,
             statusCode: responseStatusCode, contentType: "application/json");
     }
 
