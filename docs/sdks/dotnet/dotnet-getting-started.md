@@ -10,14 +10,15 @@ Install the Honua .NET SDK, point a client at your server, authenticate with an 
 
 **Prerequisites:** A running Honua server ([quickstart](../../get-started/quickstart.md)) with at least one published layer ([publish layers](../../guides/publish/publish-layers.md)), the .NET 10 SDK, and an API key (see [Authenticate clients](../../guides/secure/authentication.md) — the SDK landing page shows how to [mint a scoped key](../README.md#authentication)).
 
-The .NET SDK ships as `Honua.Sdk` — an umbrella package over a family of `Honua.Sdk.*` libraries (`Honua.Sdk.Grpc`, `Honua.Sdk.Admin`, `Honua.Sdk.GeoServices`, `Honua.Sdk.Catalogs`, and more). It is built for dependency injection and `Microsoft.Extensions.Hosting`. The current published release is **1.6.4**, targeting **net10.0**.
+The .NET SDK ships as `Honua.Sdk` — an umbrella package over a family of `Honua.Sdk.*` libraries (`Honua.Sdk.Grpc`, `Honua.Sdk.Admin`, `Honua.Sdk.GeoServices`, `Honua.Sdk.Catalogs`, and more). It is built for dependency injection. The current published release is **1.10.1**, targeting **net10.0**. `Host.CreateApplicationBuilder` lives in `Microsoft.Extensions.Hosting` 10.0.0. `Honua.Sdk` does not reference that package, so add it beside the SDK.
 
 ## Steps
 
 ### 1. Install the package
 
 ```bash
-dotnet add package Honua.Sdk
+dotnet add package Honua.Sdk --version 1.10.1
+dotnet add package Microsoft.Extensions.Hosting --version 10.0.0
 ```
 
 Every `Honua.Sdk*` package is on [nuget.org](https://www.nuget.org/packages/Honua.Sdk/) and
@@ -72,15 +73,25 @@ using var host = builder.Build();
 
 ### 3. Make your first call
 
-Resolve a client from the container and query a published layer. This uses the gRPC feature client; swap `serviceId`/`layerId` for one of your own layers:
+Resolve a client from the container and query a published layer. This uses the gRPC feature client. Set `HONUA_SERVICE` and `HONUA_LAYER_ID` to a feature layer you published — the [quickstart](../../get-started/quickstart.md) prints the service name, and [the first dataset](../../get-started/first-dataset.md) exports both. Not every layer has a `name` attribute, so a missing value prints blank instead of throwing.
+
+```bash
+export HONUA_SERVICE="<your-service>"
+export HONUA_LAYER_ID="<your-layer-id>"
+```
 
 ```csharp
+var serviceId = Environment.GetEnvironmentVariable("HONUA_SERVICE")
+    ?? throw new InvalidOperationException("Set HONUA_SERVICE to a published service name.");
+var layerId = int.Parse(Environment.GetEnvironmentVariable("HONUA_LAYER_ID")
+    ?? throw new InvalidOperationException("Set HONUA_LAYER_ID to that service's layer id."));
+
 var grpc = host.Services.GetRequiredService<IHonuaGrpcClient>();
 
 var response = await grpc.QueryFeaturesAsync(new QueryFeaturesRequest
 {
-    ServiceId      = "default",
-    LayerId        = 0,
+    ServiceId      = serviceId,
+    LayerId        = layerId,
     Where          = "1=1",
     OutFields      = new[] { "*" },
     ReturnGeometry = true,
@@ -88,7 +99,8 @@ var response = await grpc.QueryFeaturesAsync(new QueryFeaturesRequest
 
 foreach (var feature in response.Features)
 {
-    Console.WriteLine($"{feature.Id}: {feature.Attributes["name"]}");
+    feature.Attributes.TryGetValue("name", out var name);
+    Console.WriteLine($"{feature.Id}: {name}");
 }
 ```
 

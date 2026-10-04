@@ -7,7 +7,7 @@ description: "You'll turn a published layer into a live MapLibre map using vecto
 
 You'll turn a published layer into a live MapLibre map using vector tiles, TileJSON, and the server's auto-generated style in about 10 minutes.
 
-**Prerequisites:** a published layer and its `layerId` (see [Publish your first dataset](first-dataset.md)), `$HONUA_BASE_URL` and `$HONUA_API_KEY` set as that page describes, and Python 3 to serve one HTML file.
+**Prerequisites:** a published layer and its `layerId` (see [Publish your first dataset](first-dataset.md)), `$HONUA_BASE_URL`, `$HONUA_API_KEY`, `$HONUA_SERVICE`, and `$HONUA_LAYER_ID` set as that page describes, and Python 3 to serve one HTML file. The quickstart virtual environment already has `honua-admin` 0.1.9, which installs `httpx` through `honua-sdk` 0.1.12. Step 1 installs those pins again so this page can be run on its own.
 
 Every published layer is automatically served as Mapbox Vector Tiles at `/tiles/{layerId}/{z}/{x}/{y}.mvt`, described by TileJSON at `/tiles/{layerId}/tile.json`, with a ready-made MapLibre style at `/api/styles/{layerId}.json` — no tile cache to build, no style to author.
 
@@ -16,22 +16,27 @@ Every published layer is automatically served as Mapbox Vector Tiles at `/tiles/
 1. Set variables and allow anonymous reads on the service so the browser can fetch tiles without credentials.
 
 The service access-policy operation does not yet have a high-level client method, so call it with
-`httpx` (already installed as a `honua-admin` dependency):
+`httpx` ([honua-sdk-python#267](https://github.com/honua-io/honua-sdk-python/issues/267)).
+`$HONUA_SERVICE` is the service name the publish step exported.
+
+<!-- doc-run: blocked https://github.com/honua-io/honua-sdk-python/issues/267 -->
 
 ```bash
+python3 -m pip install 'honua-admin==0.1.9' 'honua-sdk==0.1.12'
 python3 - <<'PY'
 import os
 
 import httpx
 
+service = os.environ["HONUA_SERVICE"]
 with httpx.Client() as client:
     response = client.put(
-        f"{os.environ['HONUA_BASE_URL']}/api/v1/admin/services/default/access-policy",
+        f"{os.environ['HONUA_BASE_URL']}/api/v1/admin/services/{service}/access-policy",
         headers={"X-API-Key": os.environ["HONUA_API_KEY"]},
         json={"allowAnonymous": True},
     )
 response.raise_for_status()
-print(response.json())
+print(f"anonymous read enabled on {service}")
 PY
 ```
 
@@ -43,7 +48,7 @@ The interactive API explorer at `/docs` is served only when `HONUA_SERVE_API_DOC
 
 2. Fetch the TileJSON. It carries the tile URL template, zoom range, data bounds, the vector layer schema, and a link to the auto-generated style.
 
-Open `$HONUA_BASE_URL/tiles/1/tile.json` in a browser (`http://localhost:18080/tiles/1/tile.json` on a default quickstart install), replacing `1` with your layer ID.
+Open `$HONUA_BASE_URL/tiles/$HONUA_LAYER_ID/tile.json` in a browser (`http://localhost:18080/tiles/1/tile.json` when the publish step printed layer id `1`), replacing `1` with `$HONUA_LAYER_ID`.
 
 ```text
 {"tilejson":"3.0.0","name":"hawaii-cities","scheme":"xyz",
@@ -54,9 +59,9 @@ Open `$HONUA_BASE_URL/tiles/1/tile.json` in a browser (`http://localhost:18080/t
 
 3. Fetch the auto-generated MapLibre style. It is a complete MapLibre v8 style document with geometry-appropriate defaults; add `?theme=dark`, `?theme=colorblind-safe`, or `?theme=print` for variants.
 
-Open `$HONUA_BASE_URL/api/styles/1.json` in a browser, replacing `1` with your layer ID. Add `?theme=dark`, `?theme=colorblind-safe`, or `?theme=print` for a variant.
+Open `$HONUA_BASE_URL/api/styles/$HONUA_LAYER_ID.json` in a browser, replacing `1` with `$HONUA_LAYER_ID`. Add `?theme=dark`, `?theme=colorblind-safe`, or `?theme=print` for a variant.
 
-4. Save this as `map.html`. It reads the TileJSON, fits the map to your data's bounds, and draws the features over an OpenStreetMap basemap (in every MVT tile the source-layer name is `layer`).
+4. Save this as `map.html`. It reads the TileJSON, fits the map to your data's bounds, and draws the features over an OpenStreetMap basemap (in every MVT tile the source-layer name is `layer`). Set `layerId` to `$HONUA_LAYER_ID` from the publish step. The sample below uses `1`, which is that id when the publish step printed `1`.
 
 ```bash
 cat > map.html <<'EOF'
@@ -95,7 +100,13 @@ docker compose up -d
 
 6. Serve the page and open <http://localhost:3000/map.html>.
 
+The process is ready when it prints `Serving HTTP on 0.0.0.0 port 3000 (http://0.0.0.0:3000/) ...`.
+`PYTHONUNBUFFERED=1` makes that line appear immediately when stdout is not a terminal. Leave the process running.
+
+<!-- doc-run: run ready-log="Serving HTTP on 0.0.0.0 port 3000 (http://0.0.0.0:3000/) ..." -->
+
 ```bash
+export PYTHONUNBUFFERED=1
 python3 -m http.server 3000
 ```
 

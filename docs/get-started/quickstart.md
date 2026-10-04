@@ -9,15 +9,17 @@ resource: "https://hub.docker.com/r/honuaio/honua-server"
 Honua runs as one container beside PostGIS and Redis. This page starts it with
 Docker Compose, publishes a small dataset, and queries it back.
 
-**You need** Docker with Compose 2.23.1 or later, and Python 3.11+ for the last
-step. Nothing else: no repository checkout, no compiler, and **no registry
-credentials** — the server image and both Python clients are public, and the
-Community edition needs no licence.
+**You need** Docker with Compose 2.23.1 or later, Python 3.11+ for the last
+step, and OpenSSL 3 with a POSIX shell (`grep`, `cut`, `chmod`) for the key-ring
+certificate. On Windows, run that certificate block in WSL or Git Bash. Nothing
+else: no repository checkout, no compiler, and **no registry credentials** —
+the server image and both Python clients are public, and the Community edition
+needs no licence.
 
 Everything below is pinned so a run is reproducible: server
-`ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9`,
-[honua-admin 0.1.8](https://pypi.org/project/honua-admin/0.1.8/), and
-[honua-sdk 0.1.11](https://pypi.org/project/honua-sdk/0.1.11/).
+`ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a`,
+[honua-admin 0.1.9](https://pypi.org/project/honua-admin/0.1.9/), and
+[honua-sdk 0.1.12](https://pypi.org/project/honua-sdk/0.1.12/).
 
 For a lasting deployment, continue to
 [production Compose](../guides/deploy/docker-compose.md). For a locked-down
@@ -45,6 +47,8 @@ services:
       ConnectionStrings__Redis: redis:6379
       HONUA_ADMIN_PASSWORD: ${HONUA_ADMIN_PASSWORD:?Required}
       Security__ConnectionEncryption__MasterKey: ${HONUA_MASTER_KEY:?Required}
+      Operations__SecretChannel__KeyRingCertificatePath: /var/lib/honua/keyring.pfx
+      Operations__SecretChannel__KeyRingCertificatePassword: ${HONUA_KEYRING_PASSWORD:?Required}
       Cors__AllowedOrigins__0: "http://localhost:${HONUA_HTTP_PORT}"
       Database__MigrationSafety__ContractApplyPolicy: Gate
       FileStorage__Provider: Local
@@ -62,6 +66,7 @@ services:
       - /tmp:noexec,nosuid,size=100m
     volumes:
       - storage:/var/lib/honua/storage
+      - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro
   postgres:
     image: pgrouting/pgrouting:17-3.5-3.7.3
     environment:
@@ -111,11 +116,12 @@ than inventing them.
 ```bash
 cat > .env <<EOF
 COMPOSE_PROJECT_NAME=honua-quickstart
-HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9
+HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a
 HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(openssl rand -hex 32)
 HONUA_ADMIN_PASSWORD=Aa1!$(openssl rand -hex 32)
 HONUA_MASTER_KEY=$(openssl rand -hex 32)
+HONUA_KEYRING_PASSWORD=$(openssl rand -hex 16)
 EOF
 ```
 
@@ -126,11 +132,12 @@ EOF
 function New-Secret { -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) }) }
 @"
 COMPOSE_PROJECT_NAME=honua-quickstart
-HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9
+HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a
 HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(New-Secret)
 HONUA_ADMIN_PASSWORD=Aa1!$(New-Secret)
 HONUA_MASTER_KEY=$(New-Secret)
+HONUA_KEYRING_PASSWORD=$(New-Secret)
 "@ | Set-Content .env -Encoding Ascii
 ```
 
@@ -141,6 +148,30 @@ project's own network. Change `HONUA_HTTP_PORT` if `18080` is taken, and set
 `HONUA_GRPC_PORT` if `18081` is.
 
 Keep `.env`. Losing it means losing the database.
+
+Production stores operation secrets in Redis. The server will not start until a certificate
+encrypts that key ring, so a copy of Redis does not hold both the secrets and the keys. This
+file is not a license. Generate a local RSA PKCS#12. The container runs as a different user
+than you, so the file is world-readable; the password still encrypts it.
+[honua-server#5439](https://github.com/honua-io/honua-server/issues/5439) tracks whether a
+root-owned `0640` mount can replace that mode.
+
+```bash
+mkdir -p secrets
+HONUA_KEYRING_PASSWORD="$(grep '^HONUA_KEYRING_PASSWORD=' .env | cut -d= -f2)"
+openssl req -x509 -newkey rsa:2048 \
+  -keyout secrets/keyring.pem -out secrets/keyring.crt \
+  -days 3650 -nodes -subj "/CN=honua-quickstart"
+openssl pkcs12 -export \
+  -inkey secrets/keyring.pem -in secrets/keyring.crt \
+  -out secrets/keyring.pfx -passout "pass:${HONUA_KEYRING_PASSWORD}"
+rm -f secrets/keyring.pem secrets/keyring.crt
+chmod a+r secrets/keyring.pfx
+```
+
+On Windows, run that block in WSL or Git Bash. `New-SelfSignedCertificate` plus
+`Export-PfxCertificate` produces the same PKCS#12 if you would rather stay in PowerShell;
+put the export password in `HONUA_KEYRING_PASSWORD`.
 
 ## 3. Start it
 
@@ -158,16 +189,20 @@ which the next step reads for you.
 ## 4. Publish a table and query it back
 
 Put a table in the bundled PostGIS. Any SQL client works; the compose project
-already has one:
+already has one. Create it in the `public` schema. The database role is also
+named `honua`, and PostgreSQL searches a schema of that name before `public`.
+Once the server has started, that `honua` schema holds its catalog, so an
+unqualified `CREATE TABLE` would put `places` there. The publish step below
+reads `public.places`.
 
 ```bash
 docker compose exec -T postgres psql -U honua -d honua <<'SQL'
-CREATE TABLE places (
+CREATE TABLE public.places (
   id   serial PRIMARY KEY,
   name text NOT NULL,
   geom geometry(Point, 4326) NOT NULL
 );
-INSERT INTO places (name, geom) VALUES
+INSERT INTO public.places (name, geom) VALUES
   ('west', ST_SetSRID(ST_MakePoint(-157.875, 21.3125), 4326)),
   ('east', ST_SetSRID(ST_MakePoint(-155.0625, 19.6875), 4326));
 SQL
@@ -177,7 +212,7 @@ Install the two public clients, ideally in a virtual environment:
 
 ```bash
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install 'honua-admin==0.1.8' 'honua-sdk==0.1.11'
+pip install 'honua-admin==0.1.9' 'honua-sdk==0.1.12'
 ```
 
 Save this as `quickstart.py`. It registers that database as a connection,
@@ -209,6 +244,7 @@ with HonuaClient(base, api_key=key) as client:
     result = client.query_features("quickstart", layer.layer_id,
                                    out_fields=["id", "name"], return_geometry=True)
 
+print(f"published service quickstart layer {layer.layer_id}")
 print(json.dumps(result["features"], indent=2))
 ```
 
@@ -216,7 +252,8 @@ print(json.dumps(result["features"], indent=2))
 python quickstart.py
 ```
 
-Two features come back with their geometry, in EPSG:4326.
+The first line is the service name and layer id. Two features follow, with their
+geometry, in EPSG:4326.
 
 `admin.discover_tables(connection.connection_id)` lists what else is in that
 database, with the schema, geometry column and SRID `publish_layer` wants — which
@@ -256,6 +293,9 @@ a backup.
 - **Readiness times out** — `docker compose logs honua postgres redis`. Do not
   switch to the Development environment or disable preflight to get past a
   startup failure; it is telling you something.
+- **`KeyRingCertificatePath` is required** — the key-ring PKCS#12 from step 2 is
+  missing. Re-run that `openssl` block so `secrets/keyring.pfx` exists before
+  `docker compose up`.
 - **A pull fails** — these pins need no credentials, so it is network or proxy
   policy. The optional .NET client uses a different registry; see
   [registry clients](registry-clients.md) only if you need it.
