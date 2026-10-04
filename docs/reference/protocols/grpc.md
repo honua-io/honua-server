@@ -84,6 +84,13 @@ Notes:
   `return_ids_only`, and `return_extent_only` shapes return the relevant scalar
   (`count`, `object_ids`, `extent`) and still carry `spatial_reference` /
   `geometry_type`, but omit `fields`.
+- `order_by` fields are resolved against the layer schema, so attributes declared
+  as numeric, date, or time sort by value rather than as text, matching the REST
+  adapters. Fields the schema does not declare keep text ordering.
+- `out_statistics` and `group_by` are rejected with `INVALID_ARGUMENT`.
+  `geospatial.v1` defines no aggregate result shape, so the server refuses the
+  request rather than returning ordinary features. Use the GeoServices FeatureServer
+  `query` parameters `outStatistics` and `groupByFieldsForStatistics` for aggregates.
 - Metadata-fallback contract: if a client is pinned to an older `Geospatial.Grpc`
   package whose `geospatial.v1` messages predate one of these fields, that field
   is absent (proto3 implicit default) and the client should fall back to the
