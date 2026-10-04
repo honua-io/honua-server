@@ -610,6 +610,73 @@ public sealed class TileExportJobServiceTests
             .Should().ThrowAsync<TileExportNotFoundException>();
     }
 
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task JobAccess_PriorFormatApiKeyRecord_MatchesCapturedKeyIdNotDisplayName()
+    {
+        // The prior tile resolver never read api_key_id: an API-key submission stored the key's
+        // display name in RequestedBy while the snapshot captured the key id.
+        const string ownerKey = "11111111-1111-1111-1111-111111111111";
+        var store = new InMemoryExecutionJobStore();
+        var service = CreateService(store, new InMemoryJobQueue());
+        var submitted = await service.SubmitAsync(CreatePlan(), null, null, ApiKeyPrincipal(ownerKey), default);
+        var priorJobId = "te-" + Convert.ToHexStringLower(
+            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("prior-key")).AsSpan(0, 12));
+        (await store.TryCreateAsync(submitted with
+        {
+            OperationId = priorJobId,
+            Audit = submitted.Audit with
+            {
+                IdempotencyKey = "prior-key",
+                RequestedBy = "shared-name",
+                SubmitterSecurityContext = submitted.Audit.SubmitterSecurityContext! with
+                {
+                    PrincipalId = "shared-name",
+                    OwnerActorId = null,
+                    WorkspaceOwnerId = null
+                }
+            }
+        })).Should().BeTrue();
+        var other = ApiKeyPrincipal("22222222-2222-2222-2222-222222222222");
+
+        (await service.GetStatusAsync(priorJobId, ScopeFor(CreatePlan()), ApiKeyPrincipal(ownerKey), default))
+            .OperationId.Should().Be(priorJobId);
+        (await service.SubmitAsync(CreatePlan(), "prior-key", null, ApiKeyPrincipal(ownerKey), default))
+            .OperationId.Should().Be(priorJobId);
+        await FluentActions.Awaiting(() => service.GetStatusAsync(priorJobId, ScopeFor(CreatePlan()), other, default))
+            .Should().ThrowAsync<TileExportNotFoundException>();
+        await FluentActions.Awaiting(() => service.CancelAsync(priorJobId, ScopeFor(CreatePlan()), other, default))
+            .Should().ThrowAsync<TileExportNotFoundException>();
+        await FluentActions.Awaiting(() => service.SubmitAsync(CreatePlan(), "prior-key", null, other, default))
+            .Should().ThrowAsync<TileExportIdempotencyConflictException>();
+        await FluentActions.Awaiting(() => service.GetStatusAsync(priorJobId, ScopeFor(CreatePlan()), Principal("shared-name"), default))
+            .Should().ThrowAsync<TileExportNotFoundException>();
+
+        await service.CancelAsync(priorJobId, ScopeFor(CreatePlan()), ApiKeyPrincipal(ownerKey), default);
+        (await store.GetAsync(priorJobId))!.Status.Should().Be(ExecutionJobStatus.Cancelled);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task JobAccess_PriorFormatApiKeyRecord_NameDifferingFromCapturedName_ReturnsNotFound()
+    {
+        const string ownerKey = "11111111-1111-1111-1111-111111111111";
+        var store = new InMemoryExecutionJobStore();
+        var service = CreateService(store, new InMemoryJobQueue());
+        var job = await service.SubmitAsync(CreatePlan(), null, null, ApiKeyPrincipal(ownerKey), default);
+        await store.SetAsync(job with
+        {
+            Audit = job.Audit with
+            {
+                RequestedBy = "another-name",
+                SubmitterSecurityContext = job.Audit.SubmitterSecurityContext! with { OwnerActorId = null, WorkspaceOwnerId = null }
+            }
+        });
+
+        await FluentActions.Awaiting(() => service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), ApiKeyPrincipal(ownerKey), default))
+            .Should().ThrowAsync<TileExportNotFoundException>();
+    }
+
     private static ClaimsPrincipal ApiKeyPrincipal(string id)
         => new(new ClaimsIdentity([new Claim("api_key_id", id), new Claim(ClaimTypes.Name, "shared-name")], AuthenticationExtensions.ApiKeyScheme));
 

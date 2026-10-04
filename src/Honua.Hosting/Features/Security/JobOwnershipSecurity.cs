@@ -49,8 +49,14 @@ internal static class JobOwnershipSecurity
     /// <see cref="JobSecurityContext.OwnerActorId"/> and <c>RequestedBy</c> holds the raw subject or
     /// API-key id. The caller owns it only when the snapshot was captured from an authenticated
     /// submitter whose subject and issuer, or API-key id, equal the caller's durable identity.
-    /// A display name never matches.
+    /// The caller's display name is never compared.
     /// </summary>
+    /// <remarks>
+    /// The prior tile-export resolver never read <c>api_key_id</c>, so its API-key records hold
+    /// the key's display name in <c>RequestedBy</c>. That form is accepted only when the snapshot
+    /// carries no subject (so the old resolver fell through to the name), the stored name equals
+    /// the name captured in that same snapshot, and the captured key id is the caller's.
+    /// </remarks>
     internal static bool MatchesPriorFormatSubmitter(OperationAuditInfo audit, ClaimsPrincipal principal, string? tenant)
     {
         if (audit.SubmitterSecurityContext is not { OwnerActorId: null } submitter
@@ -66,8 +72,9 @@ internal static class JobOwnershipSecurity
 
         if (actor.ApiKeyId is { } apiKeyId)
         {
-            return string.Equals(audit.RequestedBy, apiKeyId, StringComparison.Ordinal)
-                && string.Equals(FindClaim(submitter, "api_key_id"), apiKeyId, StringComparison.Ordinal);
+            return string.Equals(FindClaim(submitter, "api_key_id"), apiKeyId, StringComparison.Ordinal)
+                && (string.Equals(audit.RequestedBy, apiKeyId, StringComparison.Ordinal)
+                    || MatchesPriorTileApiKeyName(audit.RequestedBy, submitter));
         }
 
         return actor.SubjectId is { } subject
@@ -78,6 +85,12 @@ internal static class JobOwnershipSecurity
                 StringComparison.Ordinal)
             && string.Equals(FindClaim(submitter, "iss"), actor.SubjectIssuer, StringComparison.Ordinal);
     }
+
+    private static bool MatchesPriorTileApiKeyName(string? requestedBy, JobSecurityContext submitter)
+        => !string.IsNullOrWhiteSpace(requestedBy)
+            && FindClaim(submitter, ClaimTypes.NameIdentifier) is null
+            && FindClaim(submitter, "sub") is null
+            && string.Equals(FindClaim(submitter, ClaimTypes.Name), requestedBy, StringComparison.Ordinal);
 
     internal static string CreateJobId(string prefix, string? key, string? owner, string? tenant)
         => string.IsNullOrWhiteSpace(key)
