@@ -12,11 +12,10 @@ name: Cloud Post-Apply Validation (nightly)
 # (`featuresProcessed == 1`, `failedFeatures == 0`), the only row-count assertion in the deploy
 # story — has been unreachable, and skipped silently rather than failing.
 #
-# When cloud validation is provisioned, this lane gives the workflow a target it can always reach:
-# it boots a real Honua.Server against a real PostGIS on the runner and validates against that. It
-# runs every night, so a regression in the post-apply contract or in the validation script itself
-# is caught within a day instead of never. The operator secret preflight keeps an unprovisioned
-# repository from reporting a false failure.
+# This lane gives the workflow a target it can always reach: it boots a real Honua.Server against a
+# real PostGIS on the runner and validates against that. It is FREE, needs no cloud account and no
+# repository variable, and it runs every night, so a regression in the post-apply contract or in
+# the validation script itself is caught within a day instead of never.
 #
 # What it is NOT: a cloud substrate. It proves the post-apply CONTRACT (public health surface,
 # deploy preflight, admin control-plane availability, staged-import publish/query round-trip with an
@@ -65,8 +64,7 @@ jobs:
 
   local-target:
     name: Post-apply contract (local target)
-    needs: operator-preflight
-    if: ${{ needs.operator-preflight.outputs.provisioned == 'true' && (github.event_name != 'workflow_dispatch' || inputs.base_url == '') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.base_url == '' }}
     uses: ./.github/workflows/cloud-post-apply-validation.yml
     with:
       local_target: true
