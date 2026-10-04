@@ -7,7 +7,7 @@ description: "You'll turn a published layer into a live MapLibre map using vecto
 
 You'll turn a published layer into a live MapLibre map using vector tiles, TileJSON, and the server's auto-generated style in about 10 minutes.
 
-**Prerequisites:** a published layer and its `layerId` (see [Publish your first dataset](first-dataset.md)), `$HONUA_BASE_URL`, `$HONUA_API_KEY`, `$HONUA_SERVICE`, and `$HONUA_LAYER_ID` set as that page describes, and Python 3 to serve one HTML file. The quickstart virtual environment already has `honua-admin` 0.1.9, which installs `httpx` through `honua-sdk` 0.1.12. Step 1 installs those pins again so this page can be run on its own.
+**Prerequisites:** a published layer and its `layerId` (see [Publish your first dataset](first-dataset.md)), `$HONUA_BASE_URL`, `$HONUA_API_KEY`, `$HONUA_SERVICE`, and `$HONUA_LAYER_ID` set as that page describes, and Python 3 to serve one HTML file. Step 1 installs the pinned clients (`honua-admin` 0.1.9, `honua-sdk` 0.1.12) and the MCP Python client `mcp` 2.1.1, so this page can be run on its own.
 
 Every published layer is automatically served as Mapbox Vector Tiles at `/tiles/{layerId}/{z}/{x}/{y}.mvt`, described by TileJSON at `/tiles/{layerId}/tile.json`, with a ready-made MapLibre style at `/api/styles/{layerId}.json` — no tile cache to build, no style to author.
 
@@ -15,32 +15,43 @@ Every published layer is automatically served as Mapbox Vector Tiles at `/tiles/
 
 1. Set variables and allow anonymous reads on the service so the browser can fetch tiles without credentials.
 
-The service access-policy operation does not yet have a high-level client method, so call it with
-`httpx` ([honua-sdk-python#267](https://github.com/honua-io/honua-sdk-python/issues/267)).
+The `honua_admin_services_access_policy_set` MCP tool sets a service's access policy. Call it
+through the server's MCP endpoint (`POST /mcp`) with the official MCP Python client.
 `$HONUA_SERVICE` is the service name the publish step exported.
 
-<!-- doc-run: blocked https://github.com/honua-io/honua-sdk-python/issues/267 -->
-
 ```bash
-python3 -m pip install 'honua-admin==0.1.9' 'honua-sdk==0.1.12'
+python3 -m pip install 'honua-admin==0.1.9' 'honua-sdk==0.1.12' 'mcp==2.1.1'
 python3 - <<'PY'
+import asyncio
 import os
 
-import httpx
+from mcp import ClientSessionGroup
+from mcp.client.session_group import StreamableHttpParameters
 
 service = os.environ["HONUA_SERVICE"]
-with httpx.Client() as client:
-    response = client.put(
-        f"{os.environ['HONUA_BASE_URL']}/api/v1/admin/services/{service}/access-policy",
+
+
+async def allow_anonymous():
+    server = StreamableHttpParameters(
+        url=f"{os.environ['HONUA_BASE_URL']}/mcp",
         headers={"X-API-Key": os.environ["HONUA_API_KEY"]},
-        json={"allowAnonymous": True},
     )
-response.raise_for_status()
+    async with ClientSessionGroup() as group:
+        await group.connect_to_server(server)
+        return await group.call_tool("honua_admin_services_access_policy_set", {
+            "serviceName": service,
+            "allowAnonymous": True,
+        })
+
+
+call = asyncio.run(allow_anonymous())
+if call.is_error:
+    raise SystemExit(f"access policy not set: {call.content}")
 print(f"anonymous read enabled on {service}")
 PY
 ```
 
-The admin API authenticates with the `X-API-Key` header; HTTP Basic auth is refused.
+MCP tool calls authenticate with the `X-API-Key` header; HTTP Basic auth is refused.
 `$HONUA_BASE_URL` and `$HONUA_API_KEY` come from your quickstart install's `.env` — see
 [Publish your first dataset](first-dataset.md) for the two lines that read them.
 

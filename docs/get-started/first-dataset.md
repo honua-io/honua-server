@@ -7,7 +7,7 @@ description: "Upload a GeoJSON file, publish it as a layer, and query it through
 
 Upload a GeoJSON file, publish it as a layer, and query it through the supported Honua clients.
 
-**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Python 3.11+ with the pinned clients `honua-admin` 0.1.9 and `honua-sdk` 0.1.12 (step 2 installs them; `httpx` comes in with `honua-sdk`), and Node.js with `npx`.
+**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Python 3.11+ with the pinned clients `honua-admin` 0.1.9 and `honua-sdk` 0.1.12 and the MCP Python client `mcp` 2.1.1 (step 2 installs them), and Node.js with `npx`.
 
 > **Shell.** Every block on this page is `bash` — heredocs, `export`, and `python3`. On Windows run
 > them in WSL or Git Bash, not PowerShell, and note that a bare `python3` there resolves to the
@@ -38,63 +38,66 @@ EOF
 
 ## 2. Import the file
 
-The file-upload operation does not yet have a high-level SDK wrapper
-([honua-sdk-python#267](https://github.com/honua-io/honua-sdk-python/issues/267)). Install the pinned clients
-(`httpx` is a dependency of `honua-sdk`), then call the endpoint. The admin API authenticates with
+The import goes through the server's MCP endpoint (`POST /mcp`) with the official MCP Python
+client. The `honua_ingest_dataset` tool loads an inline GeoJSON or CSV dataset of up to 4 MB into
+a database table. Install the pinned clients and the MCP client. MCP tool calls authenticate with
 the `X-API-Key` header. HTTP Basic auth is refused.
 
 ```bash
-python3 -m pip install 'honua-admin==0.1.9' 'honua-sdk==0.1.12'
+python3 -m pip install 'honua-admin==0.1.9' 'honua-sdk==0.1.12' 'mcp==2.1.1'
 ```
-
-<!-- doc-run: blocked https://github.com/honua-io/honua-sdk-python/issues/267 -->
 
 ```bash
 python3 - <<'PY'
+import asyncio
 import json
 import os
 
-import httpx
+from mcp import ClientSessionGroup
+from mcp.client.session_group import StreamableHttpParameters
 
-with httpx.Client() as client, open("cities.geojson", "rb") as fh:
-    response = client.post(
-        f"{os.environ['HONUA_BASE_URL']}/api/v1/admin/import/upload",
+
+async def ingest():
+    server = StreamableHttpParameters(
+        url=f"{os.environ['HONUA_BASE_URL']}/mcp",
         headers={"X-API-Key": os.environ["HONUA_API_KEY"]},
-        files={"file": fh},
-        data={"TableName": "hawaii_cities"},
     )
-response.raise_for_status()
-result = response.json()
+    async with ClientSessionGroup() as group:
+        await group.connect_to_server(server)
+        return await group.call_tool("honua_ingest_dataset", {
+            "format": "geojson",
+            "datasetName": "hawaii_cities",
+            "data": open("cities.geojson").read(),
+        })
+
+
+call = asyncio.run(ingest())
+result = call.structured_content
+if call.is_error or not result or not result.get("success"):
+    raise SystemExit(f"import failed: {call.content}")
 json.dump(result, open("import.json", "w"))
-stable = {
-    key: result[key]
-    for key in (
-        "success",
-        "featureCount",
-        "tableName",
-        "physicalTableName",
-        "schema",
-        "detectedSrid",
-    )
-}
-print(json.dumps(stable))
+print(json.dumps({key: result[key] for key in ("success", "datasetName", "rowCount", "schema", "table")}))
 PY
 ```
 
 A successful import responds with:
 
 ```json
-{"success": true, "featureCount": 2, "tableName": "hawaii_cities", "physicalTableName": "imported_hawaii_cities", "schema": "honua_data", "detectedSrid": 4326}
+{"success": true, "datasetName": "hawaii_cities", "rowCount": 2, "schema": "honua_data", "table": "imported_hawaii_cities"}
 ```
 
-The full response also includes `sourceKind`, a numeric `format` code, and a `duration` that
-changes from run to run. The six fields above are the ones a caller can rely on.
+The full result also carries `connectionId`, which stays `null` until a connection to the
+server's own database is registered (Step 3), and `rowErrors` when a feature is rejected.
 
 > **The table you publish is not the name you typed.** The importer stages files under a
-> physical `imported_<table>` name, so `TableName=hawaii_cities` creates
-> `honua_data.imported_hawaii_cities`. Read `physicalTableName` and `schema` from this
-> response and pass them to Step 4 — they are returned precisely so callers do not have to
-> reconstruct the naming convention.
+> physical `imported_<table>` name, so `datasetName` `hawaii_cities` creates
+> `honua_data.imported_hawaii_cities`. Read `schema` and `table` from this result and pass
+> them to Step 4. They are returned so that callers do not have to reconstruct the naming
+> convention.
+
+Re-importing the same `datasetName` replaces that table. A file larger than 4 MB does not fit an
+inline tool call, and no client operation uploads a local file yet
+([honua-sdk-python#267](https://github.com/honua-io/honua-sdk-python/issues/267)).
 
 Imports create the table in the `honua_data` schema and default `TargetSrid` to 4326.
 
@@ -150,7 +153,7 @@ import os
 
 from honua_admin import HonuaAdminClient, PublishLayerRequest
 
-# Step 2 saved the import response; it names the physical table and its schema.
+# Step 2 saved the import result; it names the physical table and its schema.
 result = json.load(open("import.json"))
 connection_id = open("connection.id").read().strip()
 
@@ -158,7 +161,7 @@ with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key=os.environ["HONUA_AP
     layer = admin.publish_layer(connection_id, PublishLayerRequest(
         schema=result["schema"],
         # The physical staging table, not the logical name passed to the import.
-        table=result["physicalTableName"],
+        table=result["table"],
         layer_name="hawaii-cities",
         service_name="default",
         srid=4326,
@@ -208,7 +211,8 @@ npx --yes -p @honua/sdk-js@0.1.12 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" -
 ## Troubleshoot
 
 - **401 from an admin operation** — `HONUA_API_KEY` must be the `HONUA_ADMIN_PASSWORD` from your install's `.env`; re-run the two `export` lines at the top of this page.
-- **`Table name is required`** — pass `TableName` in the `data` field alongside `file` on the import call.
+- **`'datasetName' is required`** — pass a `datasetName` of letters, digits and underscores that does not start with a digit.
+- **`unauthenticated` from the import** — the MCP client must send the `X-API-Key` header. MCP tool calls are refused without it.
 - **`Table 'honua_data.hawaii_cities' was not found`** on publish — publish the physical `imported_hawaii_cities` name, not the logical one you imported under.
 - **`could not determine executable to run`** from `npx` — use `-p @honua/sdk-js@0.1.12 honua <command>`.
 - **`Master key not configured`** — set `Security__ConnectionEncryption__MasterKey` to a 32-or-more-character value before saving connection credentials.
