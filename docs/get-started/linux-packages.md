@@ -31,7 +31,7 @@ import secrets
 from pathlib import Path
 Path('.env').write_text(
     'COMPOSE_PROJECT_NAME=' + Path.cwd().name + '\n'
-    'HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9\n'
+    'HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a\n'
     'HONUA_HTTP_PORT=18080\n'
     'POSTGRES_PASSWORD=' + secrets.token_hex(32) + '\n'
     'HONUA_ADMIN_PASSWORD=Aa1!' + secrets.token_hex(32) + '\n'
@@ -124,7 +124,7 @@ block in the same terminal.
 ```bash
 python3 -m venv --without-pip .venv
 Python="$Install/.venv/bin/python"
-python3 -m pip --python "$Python" install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.8' 'honua-sdk==0.1.11' 'mcp==2.1.1'
+python3 -m pip --python "$Python" install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.9' 'honua-sdk==0.1.12' 'mcp==2.1.1'
 python3 -m pip --python "$Python" freeze > installed-packages.txt
 set -a
 source .env

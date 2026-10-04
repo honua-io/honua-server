@@ -21,12 +21,12 @@ this journey uses a small synchronous import and does not require durable jobs.
 ## Artifact identity and qualification
 
 The commands pin the anonymously published **pre-cut rehearsal** image
-`ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9`
+`ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a`
 (Docker Desktop Linux containers; this journey selects `linux/amd64`, source `5a657b9eaed7cdeac915d584ad58c028a52ca61e`). Its
-[registry manifest](https://ghcr.io/v2/honua-io/honua-server/manifests/sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9)
+[registry manifest](https://ghcr.io/v2/honua-io/honua-server/manifests/sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a)
 is fetched by `docker pull` below. The control-plane package is
-[honua-admin 0.1.8](https://pypi.org/project/honua-admin/0.1.8/); the data-plane
-package is [honua-sdk 0.1.11](https://pypi.org/project/honua-sdk/0.1.11/).
+[honua-admin 0.1.9](https://pypi.org/project/honua-admin/0.1.9/); the data-plane
+package is [honua-sdk 0.1.12](https://pypi.org/project/honua-sdk/0.1.12/).
 The import step invokes Honua's `honua_ingest_dataset` MCP tool using the
 published [MCP transport client 2.1.1](https://pypi.org/project/mcp/2.1.1/).
 
@@ -64,7 +64,7 @@ function New-InstallSecret {
     try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
     return ([BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
 }
-$Image = 'ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9'
+$Image = 'ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a'
 $Port = 18080
 @"
 COMPOSE_PROJECT_NAME=$Project
@@ -173,7 +173,7 @@ needed. Do not substitute `git+https` installs or local source packages.
 python -m venv .venv
 if ($LASTEXITCODE -ne 0) { throw 'Python virtual environment creation failed' }
 $Python = Join-Path $Install '.venv\Scripts\python.exe'
-& $Python -m pip install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.8' 'honua-sdk==0.1.11' 'mcp==2.1.1'
+& $Python -m pip install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.9' 'honua-sdk==0.1.12' 'mcp==2.1.1'
 if ($LASTEXITCODE -ne 0) { throw 'Registry package installation failed' }
 & $Python -m pip freeze | Set-Content -LiteralPath installed-packages.txt -Encoding Ascii
 $values = @{}

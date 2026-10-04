@@ -9,10 +9,12 @@ resource: "https://hub.docker.com/r/honuaio/honua-server"
 Honua runs as one container beside PostGIS and Redis. This page starts it with
 Docker Compose, publishes a small dataset, and queries it back.
 
-**You need** Docker with Compose 2.23.1 or later, and Python 3.11+ for the last
-step. Nothing else: no repository checkout, no compiler, and **no registry
-credentials** — the server image and both Python clients are public, and the
-Community edition needs no licence.
+**You need** Docker with Compose 2.23.1 or later, Python 3.11+ for the last
+step, and OpenSSL 3 with a POSIX shell (`grep`, `cut`, `chmod`) for the key-ring
+certificate. On Windows, run that certificate block in WSL or Git Bash. Nothing
+else: no repository checkout, no compiler, and **no registry credentials** —
+the server image and both Python clients are public, and the Community edition
+needs no licence.
 
 Everything below is pinned so a run is reproducible: server
 `ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a`,
@@ -151,6 +153,8 @@ Production stores operation secrets in Redis. The server will not start until a 
 encrypts that key ring, so a copy of Redis does not hold both the secrets and the keys. This
 file is not a license. Generate a local RSA PKCS#12. The container runs as a different user
 than you, so the file is world-readable; the password still encrypts it.
+[honua-server#5439](https://github.com/honua-io/honua-server/issues/5439) tracks whether a
+root-owned `0640` mount can replace that mode.
 
 ```bash
 mkdir -p secrets
@@ -240,6 +244,7 @@ with HonuaClient(base, api_key=key) as client:
     result = client.query_features("quickstart", layer.layer_id,
                                    out_fields=["id", "name"], return_geometry=True)
 
+print(f"published service quickstart layer {layer.layer_id}")
 print(json.dumps(result["features"], indent=2))
 ```
 
@@ -247,7 +252,8 @@ print(json.dumps(result["features"], indent=2))
 python quickstart.py
 ```
 
-Two features come back with their geometry, in EPSG:4326.
+The first line is the service name and layer id. Two features follow, with their
+geometry, in EPSG:4326.
 
 `admin.discover_tables(connection.connection_id)` lists what else is in that
 database, with the schema, geometry column and SRID `publish_layer` wants — which

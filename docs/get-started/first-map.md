@@ -16,8 +16,10 @@ Every published layer is automatically served as Mapbox Vector Tiles at `/tiles/
 1. Set variables and allow anonymous reads on the service so the browser can fetch tiles without credentials.
 
 The service access-policy operation does not yet have a high-level client method, so call it with
-`httpx`. `$HONUA_SERVICE` is the service name the publish step wrote (the quickstart dataset uses
-`default`).
+`httpx` ([honua-sdk-python#267](https://github.com/honua-io/honua-sdk-python/issues/267)).
+`$HONUA_SERVICE` is the service name the publish step exported.
+
+<!-- doc-run: blocked https://github.com/honua-io/honua-sdk-python/issues/267 -->
 
 ```bash
 python3 -m pip install 'honua-admin==0.1.9' 'honua-sdk==0.1.12'

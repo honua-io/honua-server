@@ -38,13 +38,16 @@ EOF
 
 ## 2. Import the file
 
-The file-upload operation does not yet have a high-level SDK wrapper. Install the pinned clients
+The file-upload operation does not yet have a high-level SDK wrapper
+([honua-sdk-python#267](https://github.com/honua-io/honua-sdk-python/issues/267)). Install the pinned clients
 (`httpx` is a dependency of `honua-sdk`), then call the endpoint. The admin API authenticates with
 the `X-API-Key` header. HTTP Basic auth is refused.
 
 ```bash
 python3 -m pip install 'honua-admin==0.1.9' 'honua-sdk==0.1.12'
 ```
+
+<!-- doc-run: blocked https://github.com/honua-io/honua-sdk-python/issues/267 -->
 
 ```bash
 python3 - <<'PY'
@@ -106,8 +109,8 @@ either way.
 The import writes into the server's own database. On the quickstart stack that database is
 `honua`, the user is `honua`, and SSL is off — the same values as `compose.yaml`. The host name
 `postgres` is the Compose service, which the server container can resolve. Later steps publish
-through the connection id (a GUID). The admin route is `/api/v1/admin/connections/{id}` and does
-not accept the connection name.
+through that connection. The route accepts the connection id (`connection.connection_id`) or the
+connection name; the steps below pass the id.
 
 ```bash
 python3 -m pip install 'honua-admin==0.1.9' 'honua-sdk==0.1.12'
@@ -209,7 +212,7 @@ npx --yes -p @honua/sdk-js@0.1.12 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" -
 - **`Table 'honua_data.hawaii_cities' was not found`** on publish — publish the physical `imported_hawaii_cities` name, not the logical one you imported under.
 - **`could not determine executable to run`** from `npx` — use `-p @honua/sdk-js@0.1.12 honua <command>`.
 - **`Master key not configured`** — set `Security__ConnectionEncryption__MasterKey` to a 32-or-more-character value before saving connection credentials.
-- **Publishing cannot find the connection** — pass `connection.connection_id` from step 3. The route takes that GUID, not the connection name.
+- **Publishing cannot find the connection** — pass `connection.connection_id` or the name from step 3. The route accepts either.
 - **The collection is missing** — confirm the publish result says `enabled=true`, then run `honua services` and `honua layers "$HONUA_SERVICE"` again.
 
 More help: [deployment troubleshooting](../guides/deploy/troubleshooting.md).
