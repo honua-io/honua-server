@@ -368,7 +368,9 @@ internal static class ImageServerSoapEndpoints
             new XElement("DefaultCompression", "None"),
             new XElement("DefaultCompressionQuality", 75),
             new XElement("DefaultResamplingMethod", "RSP_BilinearInterpolation"),
-            new XElement("DefaultMosaicMethod", "esriMosaic" + ImageServerMosaicRule.DefaultMosaicMethod),
+            new XElement(
+                "DefaultMosaicMethod",
+                ImageServerMosaicRule.ToMosaicMethodWireValue(ImageServerMosaicRule.DefaultMosaicMethod)),
             new XElement("SupportBSQ", false),
             new XElement("SupportsTime", false),
             new XElement("MensurationCapabilities", "Basic"),
@@ -850,7 +852,7 @@ internal static class ImageServerSoapEndpoints
             string value when value.Equals("LockRaster", StringComparison.OrdinalIgnoreCase)
                 || value.Equals("esriMosaicLockRaster", StringComparison.OrdinalIgnoreCase) => "esriMosaicLockRaster",
             string value when value.Equals("ByAttribute", StringComparison.OrdinalIgnoreCase)
-                || value.Equals("esriMosaicByAttribute", StringComparison.OrdinalIgnoreCase) => "esriMosaicByAttribute",
+                || value.Equals("esriMosaicAttribute", StringComparison.OrdinalIgnoreCase) => "esriMosaicAttribute",
             string value when value.Equals("Nadir", StringComparison.OrdinalIgnoreCase)
                 || value.Equals("esriMosaicNadir", StringComparison.OrdinalIgnoreCase) => "esriMosaicNadir",
             string value when value.Equals("Seamline", StringComparison.OrdinalIgnoreCase)
@@ -863,7 +865,7 @@ internal static class ImageServerSoapEndpoints
             return false;
         }
 
-        if (canonical == "esriMosaicByAttribute")
+        if (canonical == "esriMosaicAttribute")
         {
             var ascendingValue = NormalizeOptionalValue(FindDescendantValue(element, "Ascending"));
             bool? ascending = null;

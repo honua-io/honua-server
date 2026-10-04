@@ -26,8 +26,8 @@ export const NON_DISTANCE_SPATIAL_RELS = [
 
 /** Distance-based spatial relationships */
 export const DISTANCE_SPATIAL_RELS = [
-  'esriSpatialRelWithinDistance',
-  'esriSpatialRelBeyondDistance',
+  'withinDistance',
+  'beyondDistance',
 ] as const;
 
 /** All spatial relationships */
@@ -102,8 +102,8 @@ export const VALID_ESRI_GEOMETRY_TYPES = [
   'esriGeometryPolyline',
   'esriGeometryPolygon',
   'esriGeometryEnvelope',
-  // Honua reports Mixed / None / GeometryCollection layers' geometryType as esriGeometryNull.
-  'esriGeometryNull',
+  // Honua reports Mixed / None / GeometryCollection layers' geometryType as none.
+  'none',
 ] as const;
 
 // =============================================================================

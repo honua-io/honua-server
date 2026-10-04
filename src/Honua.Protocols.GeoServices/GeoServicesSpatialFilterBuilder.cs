@@ -136,8 +136,8 @@ internal static class GeoServicesSpatialFilterBuilder
             "esrispatialreloverlaps" => SpatialRelationship.Overlaps,
             "esrispatialreldisjoint" => SpatialRelationship.Disjoint,
             "esrispatialrelequals" => SpatialRelationship.Equals,
-            "esrispatialrelwithindistance" => SpatialRelationship.WithinDistance,
-            "esrispatialrelbeyonddistance" => SpatialRelationship.BeyondDistance,
+            "withindistance" => SpatialRelationship.WithinDistance,
+            "beyonddistance" => SpatialRelationship.BeyondDistance,
             _ => throw new ArgumentException($"Unsupported spatial relationship: {spatialRel}")
         };
     }

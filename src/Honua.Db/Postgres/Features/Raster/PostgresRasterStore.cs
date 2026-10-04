@@ -4950,7 +4950,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         var acquisitionColumn = seamlineRequested ? "rd.acquisition_date" : "acquisition_date";
         var layerIdColumn = seamlineRequested ? "rd.layer_id" : "layer_id";
 
-        // esriMosaicByAttribute over a non-date attribute needs the allowlisted attribute column
+        // esriMosaicAttribute over a non-date attribute needs the allowlisted attribute column
         // projected into the source CTE so the union's ORDER BY can reference it. The column name
         // is strictly allowlisted upstream (never caller free text). 'id' is already projected, so
         // skip the extra projection to avoid a duplicate column. Attribute ordering and seamline

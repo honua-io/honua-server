@@ -189,7 +189,7 @@ utility is introduced.
 | Lane | Collector | Substantiated | Pending-fixture |
 |---|---|---|---|
 | **JS — OpenLayers** | [`tests/js/openlayers/shared/evidence.ts`](../../../tests/js/openlayers/shared/evidence.ts) | `CERT-RNDR-SYM-01`, `CERT-RNDR-LIN-01`, `CERT-RNDR-FIL-01`, `CERT-RNDR-URL-01` | `CERT-RNDR-LBL-01`, `CERT-RNDR-SPR-01` |
-| **JS — Esri Leaflet** | [`tests/js-browser/esri-leaflet/support/cert-reporter.ts`](../../../tests/js-browser/esri-leaflet/support/cert-reporter.ts) | `CERT-RNDR-SYM-01`, `CERT-RNDR-URL-01` | `CERT-RNDR-LIN-01`, `CERT-RNDR-FIL-01`, `CERT-RNDR-LBL-01`, `CERT-RNDR-SPR-01` |
+| **JS — Esri Leaflet** | [`tests/js-browser/leaflet-client/support/cert-reporter.ts`](../../../tests/js-browser/leaflet-client/support/cert-reporter.ts) | `CERT-RNDR-SYM-01`, `CERT-RNDR-URL-01` | `CERT-RNDR-LIN-01`, `CERT-RNDR-FIL-01`, `CERT-RNDR-LBL-01`, `CERT-RNDR-SPR-01` |
 | **Desktop — PyQGIS** | [`tests/python/pyqgis/conftest.py`](../../../tests/python/pyqgis/conftest.py) | `CERT-RNDR-SYM-01`, `CERT-RNDR-LIN-01`, `CERT-RNDR-FIL-01` | `CERT-RNDR-LBL-01`, `CERT-RNDR-SPR-01`, `CERT-RNDR-URL-01` |
 
 The pixel-color sampling assertions in the JS lanes use the same RGB
@@ -267,7 +267,7 @@ For tests that use snapshot diffing (Esri Leaflet
 ```bash
 cd tests/js-browser
 npx playwright test --update-snapshots
-git add esri-leaflet/rendering.spec.ts-snapshots/
+git add leaflet-client/rendering.spec.ts-snapshots/
 ```
 
 For tests that use pixel-color sampling (the SYM/LIN/FIL/URL

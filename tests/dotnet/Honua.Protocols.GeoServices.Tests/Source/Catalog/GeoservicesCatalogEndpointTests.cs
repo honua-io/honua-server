@@ -1182,7 +1182,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             result.Elements().Single(element => element.Name.LocalName == "AllowedMosaicMethods")
                 .Value.Should().Be("None,NorthWest,LockRaster,ByAttribute,Nadir,Seamline");
             result.Elements().Single(element => element.Name.LocalName == "DefaultMosaicMethod")
-                .Value.Should().Be("esriMosaicByAttribute");
+                .Value.Should().Be("esriMosaicAttribute");
             result.Elements().Single(element => element.Name.LocalName == "SupportBSQ")
                 .Value.Should().Be("false");
             result.Descendants().Single(element => element.Name.LocalName == "WKID")
@@ -1641,7 +1641,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                          "<MosaicMethod>NorthWest</MosaicMethod>",
                          "<MosaicMethod>esriMosaicNadir</MosaicMethod>",
                          "<MosaicMethod>Seamline</MosaicMethod>",
-                         "<MosaicMethod>esriMosaicByAttribute</MosaicMethod><SortField>AcquisitionDate</SortField><Ascending>true</Ascending>",
+                         "<MosaicMethod>esriMosaicAttribute</MosaicMethod><SortField>AcquisitionDate</SortField><Ascending>true</Ascending>",
                          "<MosaicMethod>ByAttribute</MosaicMethod><SortField>OBJECTID</SortField>",
                          "<MosaicMethod>ByAttribute</MosaicMethod><SortField>AcquisitionDate</SortField><Ascending>1</Ascending>"
                      })

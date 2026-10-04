@@ -951,8 +951,8 @@ internal sealed class QueryFormatter : IQueryFormatter
             MetadataV2GeometryType.MultiPoint => "esriGeometryMultipoint",
             MetadataV2GeometryType.MultiLineString => "esriGeometryPolyline",
             MetadataV2GeometryType.MultiPolygon => "esriGeometryPolygon",
-            MetadataV2GeometryType.GeometryCollection or MetadataV2GeometryType.Mixed or MetadataV2GeometryType.None => "esriGeometryNull",
-            _ => "esriGeometryNull"
+            MetadataV2GeometryType.GeometryCollection or MetadataV2GeometryType.Mixed or MetadataV2GeometryType.None => "none",
+            _ => "none"
         };
 
     internal static bool ShouldReturnCentroid(MetadataV2Resource resource, bool returnCentroid)
@@ -1518,8 +1518,8 @@ internal sealed class StreamingQueryFormatter
             MetadataV2GeometryType.MultiPoint => "esriGeometryMultipoint",
             MetadataV2GeometryType.MultiLineString => "esriGeometryPolyline",
             MetadataV2GeometryType.MultiPolygon => "esriGeometryPolygon",
-            MetadataV2GeometryType.GeometryCollection or MetadataV2GeometryType.Mixed or MetadataV2GeometryType.None => "esriGeometryNull",
-            _ => "esriGeometryNull"
+            MetadataV2GeometryType.GeometryCollection or MetadataV2GeometryType.Mixed or MetadataV2GeometryType.None => "none",
+            _ => "none"
         };
 
 }

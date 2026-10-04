@@ -827,10 +827,10 @@ internal static partial class FeatureServerEndpoints
             MetadataV2GeometryType.MultiPoint => "esriGeometryMultipoint",
             MetadataV2GeometryType.MultiLineString => "esriGeometryPolyline",
             MetadataV2GeometryType.MultiPolygon => "esriGeometryPolygon",
-            MetadataV2GeometryType.GeometryCollection => "esriGeometryNull",
-            MetadataV2GeometryType.Mixed => "esriGeometryNull",
-            MetadataV2GeometryType.None => "esriGeometryNull",
-            _ => "esriGeometryNull"
+            MetadataV2GeometryType.GeometryCollection => "none",
+            MetadataV2GeometryType.Mixed => "none",
+            MetadataV2GeometryType.None => "none",
+            _ => "none"
         };
 
     private static string MapFieldTypeToSqlV2(MetadataV2FieldType type)

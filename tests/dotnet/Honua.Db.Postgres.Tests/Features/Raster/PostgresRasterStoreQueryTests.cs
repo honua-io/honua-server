@@ -677,7 +677,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         {
             var store = CreateStore(schemaName);
 
-            // esriMosaicByAttribute over a non-date attribute (#1870): sort by the catalog "id"
+            // esriMosaicAttribute over a non-date attribute (#1870): sort by the catalog "id"
             // column. west and overlap-newest are inserted first/second so overlap-newest has the
             // higher id. Descending (Esri default, highest value wins) keeps overlap-newest (5) in
             // the x[1,2] overlap pixel.

@@ -67,7 +67,7 @@
       "affectedEntryIds": [
         "js-esri-leaflet"
       ],
-      "note": "CROSS_CLIENT_CERTIFICATION_MATRIX.md registers an Esri Leaflet browser sub-lane with its own EL-EXT-01..04 extension IDs, and tests/js-browser/esri-leaflet implements it, but the artifact has no row for it. Including it makes the gap visible: no lanes-array row declares EL-EXT-* applicability and no envelope is committed under tests/baselines/client-compat."
+      "note": "CROSS_CLIENT_CERTIFICATION_MATRIX.md registers an Esri Leaflet browser sub-lane with its own EL-EXT-01..04 extension IDs, and tests/js-browser/leaflet-client implements it, but the artifact has no row for it. Including it makes the gap visible: no lanes-array row declares EL-EXT-* applicability and no envelope is committed under tests/baselines/client-compat."
     }
   ],
   "vocabulary": {
@@ -2366,7 +2366,7 @@
         ],
         "note": "Converges on the single logical fixture + server-config revision tracked by #3393."
       },
-      "evidenceProducer": "tests/js-browser/esri-leaflet (evidence emitted per run to tests/js-browser/evidence/, not committed under tests/baselines)",
+      "evidenceProducer": "tests/js-browser/leaflet-client (evidence emitted per run to tests/js-browser/evidence/, not committed under tests/baselines)",
       "laneBinding": {
         "matrixLaneId": "js",
         "role": "sub-lane"
@@ -2375,7 +2375,7 @@
       "needsOwningIssue": true,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "Registered as a sub-lane in CROSS_CLIENT_CERTIFICATION_MATRIX.md with its own EL-EXT-01..04 extension IDs and implemented in tests/js-browser/esri-leaflet, but no lanes-array row declares EL-EXT-* applicability and no envelope is committed under tests/baselines/client-compat. It has no row in the source artifact. It cannot be `activated` until real committed evidence lands, so it declares requiredTier `none`."
+      "notes": "Registered as a sub-lane in CROSS_CLIENT_CERTIFICATION_MATRIX.md with its own EL-EXT-01..04 extension IDs and implemented in tests/js-browser/leaflet-client, but no lanes-array row declares EL-EXT-* applicability and no envelope is committed under tests/baselines/client-compat. It has no row in the source artifact. It cannot be `activated` until real committed evidence lands, so it declares requiredTier `none`."
     },
     {
       "id": "arcgis-field-maps",

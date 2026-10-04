@@ -38,7 +38,7 @@
     <InternalsVisibleTo Include="Honua.Azure" />
     <InternalsVisibleTo Include="Honua.Io" />
     <InternalsVisibleTo Include="Honua.Plugins" />
-    <InternalsVisibleTo Include="Honua.ArcGisRest" />
+    <InternalsVisibleTo Include="Honua.GeoServicesRest" />
     <InternalsVisibleTo Include="Honua.Protocols.GeoServices" />
     <InternalsVisibleTo Include="Honua.Protocols.OData" />
     <InternalsVisibleTo Include="Honua.Protocols.OData.Tests" />

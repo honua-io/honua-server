@@ -602,9 +602,9 @@ public class ImageServerExportHandlerTests
         SetupTemporaryStorage();
 
         var context = CreateImageServerContext();
-        // esriMosaicByAttribute over an acquisition date field, descending (default).
+        // esriMosaicAttribute over an acquisition date field, descending (default).
         var request = CreateRequest(
-            mosaicRule: "{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"AcquisitionDate\"}");
+            mosaicRule: "{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"AcquisitionDate\"}");
         var result = await _handler.ExportImageAsync(context, 1, request);
 
         result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
@@ -628,7 +628,7 @@ public class ImageServerExportHandlerTests
 
         var context = CreateImageServerContext();
         var request = CreateRequest(
-            mosaicRule: "{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"AcquisitionDate\",\"ascending\":true}");
+            mosaicRule: "{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"AcquisitionDate\",\"ascending\":true}");
         var result = await _handler.ExportImageAsync(context, 1, request);
 
         result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();

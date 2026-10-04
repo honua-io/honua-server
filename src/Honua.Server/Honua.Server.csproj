@@ -63,7 +63,7 @@
     <ProjectReference Include="..\Honua.Db\SqlServer\Honua.SqlServer.csproj" />
     <ProjectReference Include="..\Honua.Db\MySql\Honua.MySql.csproj" />
     <ProjectReference Include="..\Honua.Db\Redshift\Honua.Redshift.csproj" />
-    <ProjectReference Include="..\Honua.ArcGisRest\Honua.ArcGisRest.csproj" />
+    <ProjectReference Include="..\Honua.GeoServicesRest\Honua.GeoServicesRest.csproj" />
     <ProjectReference Include="..\Honua.Db\Databricks\Honua.Databricks.csproj" />
     <ProjectReference Include="..\Honua.Db\Oracle\Honua.Oracle.csproj" Condition="'$(HonuaIncludeOracle)' == 'true'" />
     <ProjectReference Include="..\Honua.Snowflake\Honua.Snowflake.csproj" Condition="'$(HonuaIncludeSnowflake)' == 'true'" />

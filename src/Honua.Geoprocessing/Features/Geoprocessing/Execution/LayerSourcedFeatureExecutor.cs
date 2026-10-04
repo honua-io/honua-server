@@ -580,7 +580,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 
     private static readonly HashSet<string> DistanceSpatialRelationships = new(StringComparer.OrdinalIgnoreCase)
     {
-        "esriSpatialRelWithinDistance", "esriSpatialRelBeyondDistance",
+        "withinDistance", "beyondDistance",
     };
 
     private DagSourceRequest BuildSourceRequest(StepInputReader inputs)

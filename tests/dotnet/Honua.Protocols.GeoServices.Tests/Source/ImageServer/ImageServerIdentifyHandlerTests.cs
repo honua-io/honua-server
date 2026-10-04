@@ -753,8 +753,8 @@ public class ImageServerIdentifyHandlerTests
                      ("{\"mosaicMethod\":\"esriMosaicNorthwest\"}", RasterMosaicOrdering.Northwest, null),
                      ("{\"mosaicMethod\":\"esriMosaicNadir\"}", RasterMosaicOrdering.Nadir, null),
                      ("{\"mosaicMethod\":\"esriMosaicSeamline\"}", RasterMosaicOrdering.Seamline, null),
-                     ("{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"AcquisitionDate\",\"ascending\":true}", RasterMosaicOrdering.AcquisitionOldest, null),
-                     ("{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"OBJECTID\",\"ascending\":true}", RasterMosaicOrdering.Attribute, new RasterMosaicAttributeSort("id", true))
+                     ("{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"AcquisitionDate\",\"ascending\":true}", RasterMosaicOrdering.AcquisitionOldest, null),
+                     ("{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"OBJECTID\",\"ascending\":true}", RasterMosaicOrdering.Attribute, new RasterMosaicAttributeSort("id", true))
                  })
         {
             _rasterStore.ClearReceivedCalls();
@@ -787,7 +787,7 @@ public class ImageServerIdentifyHandlerTests
         foreach (var mosaicRule in new[]
                  {
                      "{\"mosaicMethod\":\"esriMosaicCenter\"}",
-                     "{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"AcquisitionDate\",\"sortValue\":\"2024/01/01\"}"
+                     "{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"AcquisitionDate\",\"sortValue\":\"2024/01/01\"}"
                  })
         {
             var context = CreateImageServerContext();

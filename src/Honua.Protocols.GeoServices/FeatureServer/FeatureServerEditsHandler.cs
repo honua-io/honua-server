@@ -2017,7 +2017,7 @@ internal sealed class FeatureServerEditsHandler(
             MetadataV2GeometryType.MultiPoint => "esriGeometryMultipoint",
             MetadataV2GeometryType.LineString or MetadataV2GeometryType.MultiLineString => "esriGeometryPolyline",
             MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon => "esriGeometryPolygon",
-            _ => "esriGeometryNull"
+            _ => "none"
         };
 
     private static bool TryGetObjectId(Dictionary<string, object?>? attributes, MetadataV2Resource resource, out long objectId)

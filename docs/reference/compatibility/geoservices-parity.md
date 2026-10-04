@@ -334,8 +334,8 @@ raster layer identifier.
 
 Mosaic semantics: rasters are selected by footprint intersection. The
 `mosaicRule.mosaicMethod` sets the pixel-selection ordering on overlap —
-`esriMosaicByAttribute` over an acquisition/date field (newest- or oldest-first by
-sort order), `esriMosaicByAttribute` over an allowlisted NON-date attribute (#1870 —
+`esriMosaicAttribute` over an acquisition/date field (newest- or oldest-first by
+sort order), `esriMosaicAttribute` over an allowlisted NON-date attribute (#1870 —
 `sortField` resolves to a vetted physical raster-catalog column: `OBJECTID`→`id`,
 `BandCount`/`num_bands`→`band_count`, `width`, `height`, `SRID`; the highest value
 wins by default, lowest when `ascending` is set; non-allowlisted/sensor fields stay
@@ -354,7 +354,7 @@ per-raster footprint and a default seamline (equal to the footprint) are persist
 import; automatic seamline generation/editing is out of scope. The merge strategy
 (pixel-resolution operation) is the request `mosaicRule.operation`, then the layer
 default, then `newest` (`newest`/`oldest`/`average`/`max`/`min` via PostGIS
-`ST_Union`). `esriMosaicByAttribute` over a non-allowlisted (e.g. raw
+`ST_Union`). `esriMosaicAttribute` over a non-allowlisted (e.g. raw
 sensor/orientation) field and the remaining unmodeled methods (`esriMosaicCenter`,
 `esriMosaicViewpoint`) return 501 when more than one raster is selected. Temporal
 `time` filters use newest-batch semantics (see

@@ -11,7 +11,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
 /// <summary>
 /// Unit tests for <see cref="ImageServerMosaicRule"/> parsing and ordering resolution, with a
-/// focus on the non-date <c>esriMosaicByAttribute</c> support added in #1870.
+/// focus on the non-date <c>esriMosaicAttribute</c> support added in #1870.
 /// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerMosaicRuleTests
@@ -28,7 +28,7 @@ public class ImageServerMosaicRuleTests
     public void TryParse_ByAttributeAllowlistedColumn_MapsToPhysicalColumn(string sortField, string expectedColumn)
     {
         var ok = ImageServerMosaicRule.TryParse(
-            $"{{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"{sortField}\"}}",
+            $"{{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"{sortField}\"}}",
             out var rule, out var error, out var notImplemented);
 
         ok.Should().BeTrue();
@@ -48,7 +48,7 @@ public class ImageServerMosaicRuleTests
     public void TryParse_ByAttributeAscending_SetsAscendingSort()
     {
         var ok = ImageServerMosaicRule.TryParse(
-            "{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"BandCount\",\"ascending\":true}",
+            "{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"BandCount\",\"ascending\":true}",
             out var rule, out _, out _);
 
         ok.Should().BeTrue();
@@ -62,7 +62,7 @@ public class ImageServerMosaicRuleTests
     public void TryParse_ByAttributeUnknownField_StaysUnsupported()
     {
         var ok = ImageServerMosaicRule.TryParse(
-            "{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"SensorAzimuth\"}",
+            "{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"SensorAzimuth\"}",
             out var rule, out _, out _);
 
         ok.Should().BeTrue();
@@ -76,7 +76,7 @@ public class ImageServerMosaicRuleTests
     public void TryParse_ByAttributeDateField_UsesAcquisitionOrdering()
     {
         var ok = ImageServerMosaicRule.TryParse(
-            "{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"AcquisitionDate\"}",
+            "{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"AcquisitionDate\"}",
             out var rule, out _, out _);
 
         ok.Should().BeTrue();
@@ -129,7 +129,7 @@ public class ImageServerMosaicRuleTests
         string sortField, string sortValue, MosaicMethod expectedMethod, bool expectedAscending)
     {
         var ok = ImageServerMosaicRule.TryParse(
-            $"{{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"{sortField}\",\"sortValue\":\"{sortValue}\"}}",
+            $"{{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"{sortField}\",\"sortValue\":\"{sortValue}\"}}",
             out var rule, out _, out _);
 
         ok.Should().BeTrue();
@@ -149,9 +149,15 @@ public class ImageServerMosaicRuleTests
 
         foreach (var token in advertised)
         {
+            var wireMethod = ImageServerMosaicRule.ToMosaicMethodWireValue(token);
+            if (token == "ByAttribute")
+            {
+                wireMethod.Should().Be("esriMosaicAttribute");
+            }
+
             var json = token == "LockRaster"
                 ? "{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[1]}"
-                : $"{{\"mosaicMethod\":\"esriMosaic{token}\"}}";
+                : $"{{\"mosaicMethod\":\"{wireMethod}\"}}";
 
             var ok = ImageServerMosaicRule.TryParse(json, out var rule, out var error, out var notImplemented);
 
@@ -175,8 +181,11 @@ public class ImageServerMosaicRuleTests
     {
         ImageServerMosaicRule.TryParse(null, out var ruleLess, out _, out _).Should().BeTrue();
 
+        var wireMethod = ImageServerMosaicRule.ToMosaicMethodWireValue(ImageServerMosaicRule.DefaultMosaicMethod);
+        wireMethod.Should().Be("esriMosaicAttribute");
+
         var ok = ImageServerMosaicRule.TryParse(
-            $"{{\"mosaicMethod\":\"esriMosaic{ImageServerMosaicRule.DefaultMosaicMethod}\",\"sortField\":\"{ImageServerMosaicRule.DefaultSortField}\"}}",
+            $"{{\"mosaicMethod\":\"{wireMethod}\",\"sortField\":\"{ImageServerMosaicRule.DefaultSortField}\"}}",
             out var advertisedDefault, out _, out _);
 
         ok.Should().BeTrue();
