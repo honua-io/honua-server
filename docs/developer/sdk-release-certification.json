@@ -12,10 +12,10 @@
   },
   "sdks": {
     "js": { "package": "@honua/sdk", "version": "0.1.9-beta.0", "registry": "https://registry.npmjs.org" },
-    "python": { "package": "honua-sdk", "version": "0.1.13", "registry": "https://pypi.org/simple" },
+    "python": { "package": "honua-sdk", "version": "0.1.11", "registry": "https://pypi.org/simple" },
     "dotnet": {
       "package": "Honua.Sdk",
-      "version": "1.10.2",
+      "version": "1.6.1",
       "registry": "https://api.nuget.org/v3/index.json",
       "protocolPackage": "Geospatial.Grpc",
       "protocolVersion": "1.0.0"

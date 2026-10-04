@@ -188,14 +188,14 @@ now available across every enabled protocol.
 ## 5. Query the published layer
 
 ```bash
-npx --yes -p @honua/sdk-js@0.1.13 honua services
-npx --yes -p @honua/sdk-js@0.1.13 honua layers "$HONUA_SERVICE"
-npx --yes -p @honua/sdk-js@0.1.13 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --limit 5
-npx --yes -p @honua/sdk-js@0.1.13 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --limit 5 --format geojson
-npx --yes -p @honua/sdk-js@0.1.13 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --count
+npx --yes -p @honua/sdk-js@0.1.12 honua services
+npx --yes -p @honua/sdk-js@0.1.12 honua layers "$HONUA_SERVICE"
+npx --yes -p @honua/sdk-js@0.1.12 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --limit 5
+npx --yes -p @honua/sdk-js@0.1.12 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --limit 5 --format geojson
+npx --yes -p @honua/sdk-js@0.1.12 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --count
 ```
 
-The `@honua/sdk-js` pin is the release version, 0.1.13. Omit `HONUA_API_KEY` after the service allows anonymous reads.
+The `@honua/sdk-js` pin is the release version, 0.1.12. Omit `HONUA_API_KEY` after the service allows anonymous reads.
 
 The package publishes its CLI as the `honua` binary, so `npx` needs `-p @honua/sdk-js honua`; `npx @honua/sdk-js <command>` looks for a binary named `sdk-js` and fails with `could not determine executable to run`.
 
@@ -206,7 +206,7 @@ The package publishes its CLI as the `honua` binary, so `npx` needs `-p @honua/s
 The count should be `2`. A one-row GeoJSON check should contain Honolulu or Hilo:
 
 ```bash
-npx --yes -p @honua/sdk-js@0.1.13 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --limit 1 --format geojson
+npx --yes -p @honua/sdk-js@0.1.12 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --limit 1 --format geojson
 ```
 
 ## Troubleshoot
@@ -215,7 +215,7 @@ npx --yes -p @honua/sdk-js@0.1.13 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" -
 - **`'datasetName' is required`** — pass a `datasetName` of letters, digits and underscores that does not start with a digit.
 - **`unauthenticated` from the import** — the MCP client must send the `X-API-Key` header. MCP tool calls are refused without it.
 - **`Table 'honua_data.hawaii_cities' was not found`** on publish — publish the physical `imported_hawaii_cities` name, not the logical one you imported under.
-- **`could not determine executable to run`** from `npx` — use `-p @honua/sdk-js@0.1.13 honua <command>`.
+- **`could not determine executable to run`** from `npx` — use `-p @honua/sdk-js@0.1.12 honua <command>`.
 - **`Master key not configured`** — set `Security__ConnectionEncryption__MasterKey` to a 32-or-more-character value before saving connection credentials.
 - **Publishing cannot find the connection** — pass `connection.connection_id` or the name from step 3. The route accepts either.
 - **The collection is missing** — confirm the publish result says `enabled=true`, then run `honua services` and `honua layers "$HONUA_SERVICE"` again.

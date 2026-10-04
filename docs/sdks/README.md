@@ -15,7 +15,7 @@ The three first-party server SDKs are generated and tested against the same admi
 |---|---|---|---|---|
 | **.NET** | `Honua.Sdk` (NuGet) | 1.10.2 | net10.0 | [.NET getting started](dotnet/dotnet-getting-started.md) |
 | **Python** | `honua-sdk` (PyPI) | 0.1.13 | Python ≥ 3.11 | [Python getting started](python/python-getting-started.md) |
-| **JavaScript / TypeScript** | `@honua/sdk-js` (npm) | 0.1.13 | Node ≥ 20 | [JavaScript getting started](javascript/javascript-getting-started.md) |
+| **JavaScript / TypeScript** | `@honua/sdk-js` (npm) | 0.1.12 | Node ≥ 20 | [JavaScript getting started](javascript/javascript-getting-started.md) |
 | Mobile controls (.NET MAUI) | [honua-mobile](https://github.com/honua-io/honua-mobile) | Experimental (Apache-2.0) | .NET MAUI | Reusable SDK and map/control foundation; repo README |
 | Field collection app | [honua-collect](https://github.com/honua-io/honua-collect) | Experimental (ELv2) | .NET MAUI | Full end-user app built on `honua-mobile`; repo README |
 

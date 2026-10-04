@@ -17,7 +17,7 @@ records the pins and where each comes from.
 | PyPI | `honua-admin==0.1.10` | Control plane used by this journey | None |
 | PyPI | `honua-sdk==0.1.13` | Data plane used by this journey | None |
 | PyPI | `mcp==2.1.1` | Only if you drive the server over MCP | None |
-| npm | `@honua/sdk-js@0.1.13` | Alternative JS SDK and CLI | None |
+| npm | `@honua/sdk-js@0.1.12` | Alternative JS SDK and CLI | None |
 | npm | `@honua/mcp-server@0.1.13` | Alternative MCP proxy | None |
 | NuGet | `Honua.Sdk` `1.10.2` | Alternative .NET SDK | None |
 
