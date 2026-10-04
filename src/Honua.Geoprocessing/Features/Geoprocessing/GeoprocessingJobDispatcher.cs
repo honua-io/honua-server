@@ -12,6 +12,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Geoprocessing.CustomCode;
+using Honua.Infrastructure.Security;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
 
@@ -202,6 +203,12 @@ internal sealed class GeoprocessingJobDispatcher
             SubmitterSecurityContext = submitterSecurityContext,
         };
 
+        // The envelope and gateway derive the proposal identity from the idempotency key and
+        // tenant alone, so scope the key to the durable submitter before it reaches them: two
+        // actors reusing one client key must not resolve to the same proposal. The payload keeps
+        // the client key, from which the resumed job derives its owner-scoped job id.
+        var proposalKey = JobOwnershipSecurity.CreateOwnerScopedKey(
+            payload.IdempotencyKey, requestedBy, submitterSecurityContext?.TenantId);
         var request = new OperationGatewayRequest
         {
             Kind = OperationClass.Geoprocess,
@@ -209,7 +216,7 @@ internal sealed class GeoprocessingJobDispatcher
             Reason = approvalGatedProcessId == null
                 ? "Destructive geoprocessing plan requires approval."
                 : $"Geoprocessing plan step '{approvalGatedProcessId}' requires approval.",
-            IdempotencyKey = payload.IdempotencyKey,
+            IdempotencyKey = proposalKey,
             ExecutionPayload = payload.Serialize(),
             Plan = GeoprocessOperationExecutor.BuildPlanSummary(payload, executionPayload: null),
         };
@@ -220,7 +227,7 @@ internal sealed class GeoprocessingJobDispatcher
                 {
                     PrincipalId = requestedBy,
                     AuthorizationOutcome = "approval-gate-authorized",
-                    IdempotencyKey = payload.IdempotencyKey,
+                    IdempotencyKey = proposalKey,
                 },
                 cancellationToken)
             .ConfigureAwait(false);

@@ -724,6 +724,23 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 AuthorizationDenialReason.StalePrincipalMembership);
         }
 
+        // Every job is owned by its tenant and durable submitter (a subject or an API-key id).
+        // Refuse a submission without one here, before the approval lane can persist a proposal
+        // that could never be resumed and before any job record exists.
+        if (string.IsNullOrWhiteSpace(ownerId))
+        {
+            if (principal.Identity?.IsAuthenticated != true)
+            {
+                throw new GeoprocessingAuthorizationException(
+                    requiresAuthentication: true,
+                    "Authentication is required to submit a job.",
+                    OperatorResourceType.Process,
+                    OperatorOperation.Execute);
+            }
+
+            throw new GeoprocessingValidationException("A durable submitter identity is required for job submissions.");
+        }
+
         if (!resumingApproved)
         {
             await EnsureApprovedAsync(
@@ -735,10 +752,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var jobStore = RequireJobStore();
         var now = DateTimeOffset.UtcNow;
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey;
-        if (resolvedKey is not null && string.IsNullOrWhiteSpace(ownerId))
-        {
-            throw new GeoprocessingValidationException("A durable submitter identity is required for keyed job submissions.");
-        }
         var jobId = CreateJobId(resolvedKey, ownerId, resolvedSecurityContext.TenantId);
         var requestFingerprint = CreateRequestFingerprint(plan);
 
@@ -760,6 +773,27 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 EnsureSubmissionDidNotRollback(existingByKey);
                 GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
                 return existingByKey;
+            }
+
+            // A keyed job written before ids were scoped by tenant and owner lives under the
+            // key-only id. Replay it to its own submitter and refuse the key to anyone else, so a
+            // retry that crosses that change does not execute the same request twice. Only a live
+            // caller can prove ownership of such a record; deferred lanes refuse the key.
+            var priorFormat = await jobStore
+                .GetAsync(JobOwnershipSecurity.CreatePriorFormatJobId("gp", resolvedKey), cancellationToken)
+                .ConfigureAwait(false);
+            if (priorFormat != null)
+            {
+                EnsureMatchingIdempotentRequest(
+                    priorFormat,
+                    requestFingerprint,
+                    ownedByCaller: !resumingApproved
+                        && !inheritsSubmitterSecurityContext
+                        && JobOwnershipSecurity.MatchesPriorFormatSubmitter(
+                            priorFormat.Audit, principal, resolvedSecurityContext.TenantId));
+                EnsureSubmissionDidNotRollback(priorFormat);
+                GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, priorFormat.OperationId);
+                return priorFormat;
             }
         }
 
@@ -1946,10 +1980,15 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
     private static void EnsureMatchingIdempotentRequest(
         ExecutionJobRecord existing, string requestFingerprint, string? ownerId, string? tenantId)
+        => EnsureMatchingIdempotentRequest(
+            existing, requestFingerprint, JobOwnershipSecurity.MatchesSubmitter(existing.Audit, ownerId, tenantId));
+
+    private static void EnsureMatchingIdempotentRequest(
+        ExecutionJobRecord existing, string requestFingerprint, bool ownedByCaller)
     {
         // Reject cross-principal replay: a different caller must not silently
         // receive another principal's job via an idempotency-key collision.
-        if (!JobOwnershipSecurity.MatchesSubmitter(existing.Audit, ownerId, tenantId))
+        if (!ownedByCaller)
         {
             throw new GeoprocessingIdempotencyConflictException(existing.OperationId);
         }

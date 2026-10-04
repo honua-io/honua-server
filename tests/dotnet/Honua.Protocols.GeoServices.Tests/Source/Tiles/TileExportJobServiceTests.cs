@@ -574,6 +574,42 @@ public sealed class TileExportJobServiceTests
         (await service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), principal, default)).OperationId.Should().Be(job.OperationId);
     }
 
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task Submit_KeyOfPriorFormatRecord_ReplaysForSameSubjectAndConflictsForOthers()
+    {
+        var store = new InMemoryExecutionJobStore();
+        var service = CreateService(store, new InMemoryJobQueue());
+        var submitted = await service.SubmitAsync(CreatePlan(), null, null, Principal(Owner), default);
+        var priorJobId = "te-" + Convert.ToHexStringLower(
+            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("prior-key")).AsSpan(0, 12));
+        (await store.TryCreateAsync(submitted with
+        {
+            OperationId = priorJobId,
+            Audit = submitted.Audit with
+            {
+                IdempotencyKey = "prior-key",
+                RequestedBy = Owner,
+                SubmitterSecurityContext = submitted.Audit.SubmitterSecurityContext! with
+                {
+                    PrincipalId = Owner,
+                    OwnerActorId = null,
+                    WorkspaceOwnerId = null
+                }
+            }
+        })).Should().BeTrue();
+
+        var replay = await service.SubmitAsync(CreatePlan(), "prior-key", null, Principal(Owner), default);
+        var status = await service.GetStatusAsync(priorJobId, ScopeFor(CreatePlan()), Principal(Owner), default);
+
+        replay.OperationId.Should().Be(priorJobId);
+        status.OperationId.Should().Be(priorJobId);
+        await FluentActions.Awaiting(() => service.SubmitAsync(CreatePlan(), "prior-key", null, Principal(Other), default))
+            .Should().ThrowAsync<TileExportIdempotencyConflictException>();
+        await FluentActions.Awaiting(() => service.GetStatusAsync(priorJobId, ScopeFor(CreatePlan()), Principal(Other), default))
+            .Should().ThrowAsync<TileExportNotFoundException>();
+    }
+
     private static ClaimsPrincipal ApiKeyPrincipal(string id)
         => new(new ClaimsIdentity([new Claim("api_key_id", id), new Claim(ClaimTypes.Name, "shared-name")], AuthenticationExtensions.ApiKeyScheme));
 

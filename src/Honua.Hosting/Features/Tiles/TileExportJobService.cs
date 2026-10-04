@@ -120,6 +120,23 @@ internal sealed partial class TileExportJobService : ITileExportJobService
                 Log.SubmittedIdempotent(_logger, jobId);
                 return replay;
             }
+
+            // A keyed job written before ids were scoped by tenant and owner lives under the
+            // key-only id: replay it to its own submitter and refuse the key to anyone else, so a
+            // retry that crosses that change does not export twice.
+            var priorFormat = await jobStore
+                .GetAsync(JobOwnershipSecurity.CreatePriorFormatJobId("te", resolvedKey), cancellationToken)
+                .ConfigureAwait(false);
+            if (priorFormat is not null)
+            {
+                EnsureMatchingIdempotentRequest(
+                    priorFormat,
+                    requestFingerprint,
+                    JobOwnershipSecurity.MatchesPriorFormatSubmitter(priorFormat.Audit, principal, submitter.TenantId));
+                EnsureSubmissionDidNotRollback(priorFormat);
+                Log.SubmittedIdempotent(_logger, priorFormat.OperationId);
+                return priorFormat;
+            }
         }
 
         ExecutionJobRecord record;
@@ -532,10 +549,17 @@ internal sealed partial class TileExportJobService : ITileExportJobService
         string requestFingerprint,
         string? principalId,
         string? tenantId)
+        => EnsureMatchingIdempotentRequest(
+            existing, requestFingerprint, JobOwnershipSecurity.MatchesSubmitter(existing.Audit, principalId, tenantId));
+
+    private static void EnsureMatchingIdempotentRequest(
+        ExecutionJobRecord existing,
+        string requestFingerprint,
+        bool ownedByCaller)
     {
         // A different principal must never silently receive another caller's job through an
         // idempotency-key collision.
-        if (!JobOwnershipSecurity.MatchesSubmitter(existing.Audit, principalId, tenantId))
+        if (!ownedByCaller)
         {
             throw new TileExportIdempotencyConflictException();
         }

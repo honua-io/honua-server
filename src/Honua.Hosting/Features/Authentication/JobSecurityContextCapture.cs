@@ -53,7 +53,7 @@ internal static class JobSecurityContextCapture
     /// can never be confused with a live request identity.
     /// </summary>
     private const string RestoredAuthenticationType = "HonuaJobSecurityContext";
-    private const string CapturedAuthenticationClaimType = "honua:job-authenticated";
+    internal const string CapturedAuthenticationClaimType = "honua:job-authenticated";
 
     /// <summary>
     /// Upper bound on captured NON-ROLE, non-framework-identity claims, so a pathological token
