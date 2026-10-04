@@ -248,6 +248,7 @@ internal sealed partial class Wfs20Handler
         AppendWfs10Operation(sb, "GetCapabilities", wfsUrl, includeSchemaDescriptionLanguage: false, includeResultFormat: false);
         AppendWfs10Operation(sb, "DescribeFeatureType", wfsUrl, includeSchemaDescriptionLanguage: true, includeResultFormat: false);
         AppendWfs10Operation(sb, "GetFeature", wfsUrl, includeSchemaDescriptionLanguage: false, includeResultFormat: true);
+        AppendWfs10Operation(sb, "Transaction", wfsUrl, includeSchemaDescriptionLanguage: false, includeResultFormat: false);
         sb.AppendLine("    </Request>");
         sb.AppendLine("  </Capability>");
         AppendWfs10FeatureTypeList(sb, featureTypes);
@@ -262,6 +263,7 @@ internal sealed partial class Wfs20Handler
         AppendWfs11Operation(sb, "GetCapabilities", wfsUrl);
         AppendWfs11Operation(sb, "DescribeFeatureType", wfsUrl);
         AppendWfs11Operation(sb, "GetFeature", wfsUrl);
+        AppendWfs11Operation(sb, "Transaction", wfsUrl);
         sb.AppendLine("  </ows:OperationsMetadata>");
     }
 
@@ -342,6 +344,9 @@ internal sealed partial class Wfs20Handler
         sb.AppendLine("  <FeatureTypeList>");
         sb.AppendLine("    <Operations>");
         sb.AppendLine("      <Query />");
+        sb.AppendLine("      <Insert />");
+        sb.AppendLine("      <Update />");
+        sb.AppendLine("      <Delete />");
         sb.AppendLine("    </Operations>");
         foreach (var featureType in featureTypes)
         {

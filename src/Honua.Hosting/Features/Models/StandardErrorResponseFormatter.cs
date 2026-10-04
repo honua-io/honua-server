@@ -26,6 +26,8 @@ namespace Honua.Infrastructure.Models;
 /// </remarks>
 internal static class StandardErrorResponseFormatter
 {
+    internal const string WfsRequestVersionItemKey = "Honua.Wfs.RequestVersion";
+
     /// <summary>
     /// Optional OData error formatter. When set, requests classified as OData
     /// (<see cref="ProtocolRequestClassifier.IsOData"/>) are formatted via the
@@ -191,11 +193,13 @@ internal static class StandardErrorResponseFormatter
         // PA-076: Select the version-appropriate exception envelope based on the VERSION query parameter.
         // WFS 1.0.0 → ogc:ServiceExceptionReport; WFS 1.1.0 → OWS 1.0 ows:ExceptionReport;
         // WFS 2.0.0 / absent → OWS 1.1 ows:ExceptionReport (current default, language required).
-        var wfsVersion = context.Request.Query.TryGetValue("VERSION", out var versionValue)
-            ? versionValue.ToString()
-            : context.Request.Query.TryGetValue("version", out var versionLowerValue)
-                ? versionLowerValue.ToString()
-                : null;
+        var wfsVersion = context.Items.TryGetValue(WfsRequestVersionItemKey, out var parsedVersion)
+            ? parsedVersion as string
+            : context.Request.Query.TryGetValue("VERSION", out var versionValue)
+                ? versionValue.ToString()
+                : context.Request.Query.TryGetValue("version", out var versionLowerValue)
+                    ? versionLowerValue.ToString()
+                    : null;
 
         string xmlContent;
         if (string.Equals(wfsVersion, "1.0.0", StringComparison.Ordinal))
