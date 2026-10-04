@@ -68,6 +68,7 @@ public sealed class HonuaLayerSinkExecutorTests
         {
             Status = ExecutionJobStatus.Provisioning,
             ClaimedBy = "worker-test",
+            AttemptCount = 1,
             Audit = new OperationAuditInfo
             {
                 SubmitterSecurityContext = new JobSecurityContext("admin", null,
