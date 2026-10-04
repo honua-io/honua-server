@@ -17,7 +17,7 @@ the server image and both Python clients are public, and the Community edition
 needs no licence.
 
 Everything below is pinned so a run is reproducible: server
-`ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a`,
+`ghcr.io/honua-io/honua-server@sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39`,
 [honua-admin 0.1.9](https://pypi.org/project/honua-admin/0.1.9/), and
 [honua-sdk 0.1.12](https://pypi.org/project/honua-sdk/0.1.12/).
 
@@ -116,7 +116,7 @@ than inventing them.
 ```bash
 cat > .env <<EOF
 COMPOSE_PROJECT_NAME=honua-quickstart
-HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a
+HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39
 HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(openssl rand -hex 32)
 HONUA_ADMIN_PASSWORD=Aa1!$(openssl rand -hex 32)
@@ -132,7 +132,7 @@ EOF
 function New-Secret { -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) }) }
 @"
 COMPOSE_PROJECT_NAME=honua-quickstart
-HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a
+HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39
 HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(New-Secret)
 HONUA_ADMIN_PASSWORD=Aa1!$(New-Secret)
