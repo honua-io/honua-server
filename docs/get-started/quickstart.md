@@ -15,9 +15,9 @@ credentials** — the server image and both Python clients are public, and the
 Community edition needs no licence.
 
 Everything below is pinned so a run is reproducible: server
-`ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9`,
-[honua-admin 0.1.8](https://pypi.org/project/honua-admin/0.1.8/), and
-[honua-sdk 0.1.11](https://pypi.org/project/honua-sdk/0.1.11/).
+`ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a`,
+[honua-admin 0.1.9](https://pypi.org/project/honua-admin/0.1.9/), and
+[honua-sdk 0.1.12](https://pypi.org/project/honua-sdk/0.1.12/).
 
 For a lasting deployment, continue to
 [production Compose](../guides/deploy/docker-compose.md). For a locked-down
@@ -111,7 +111,7 @@ than inventing them.
 ```bash
 cat > .env <<EOF
 COMPOSE_PROJECT_NAME=honua-quickstart
-HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9
+HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a
 HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(openssl rand -hex 32)
 HONUA_ADMIN_PASSWORD=Aa1!$(openssl rand -hex 32)
@@ -126,7 +126,7 @@ EOF
 function New-Secret { -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) }) }
 @"
 COMPOSE_PROJECT_NAME=honua-quickstart
-HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9
+HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a
 HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(New-Secret)
 HONUA_ADMIN_PASSWORD=Aa1!$(New-Secret)
@@ -177,7 +177,7 @@ Install the two public clients, ideally in a virtual environment:
 
 ```bash
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install 'honua-admin==0.1.8' 'honua-sdk==0.1.11'
+pip install 'honua-admin==0.1.9' 'honua-sdk==0.1.12'
 ```
 
 Save this as `quickstart.py`. It registers that database as a connection,
