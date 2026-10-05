@@ -1780,8 +1780,11 @@ internal sealed partial class Wfs20Handler
 
     private static string GetFirstTransactionError(FeatureEditResult editResult)
     {
-        return editResult.CreateResults.Concat(editResult.UpdateResults).Concat(editResult.DeleteResults)
-            .FirstOrDefault(result => !result.IsSuccess)
+        var results = editResult.CreateResults.Concat(editResult.UpdateResults).Concat(editResult.DeleteResults);
+        // Preserve the lease refusal when earlier layer edits now report rollback notices.
+        return results.FirstOrDefault(result => !result.IsSuccess && result.ErrorCode == StatusCodes.Status423Locked)
+            .ErrorMessage
+            ?? results.FirstOrDefault(result => !result.IsSuccess)
             .ErrorMessage
             ?? "Transaction failed.";
     }
