@@ -19,7 +19,8 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 /// <item><description><c>$top=0</c> returns a 200 with an empty <c>value</c> array (not a 400),
 /// while <c>$count=true</c> still reports the true total.</description></item>
 /// <item><description>The <c>Layers</c> collection emits a followable <c>@odata.nextLink</c>
-/// when more layers exist than the requested <c>$top</c>.</description></item>
+/// when more layers exist than the server page, and treats <c>$top</c> as a total ceiling
+/// (#5464).</description></item>
 /// <item><description>Feature pagination is not truncated: a full page always carries an
 /// <c>@odata.nextLink</c> regardless of provider <c>TotalCount</c> fidelity.</description></item>
 /// </list>
@@ -34,10 +35,10 @@ public sealed class ODataV4ConformanceEndpointTests : IAsyncLifetime
     private const int SeededFeatureCount = 15;
     private const int SeededLayerCount = 2;
 
-    // Server page smaller than the seeded feature count, so the #1989 feature paging tests
-    // exercise server-driven paging. A client $top is a total ceiling (#5464) and cannot
-    // produce a continuation on its own.
-    private const int MaxPageSize = 5;
+    // Server page smaller than the seeded layer and feature counts, so the #1989 paging
+    // tests exercise server-driven paging. A client $top is a total ceiling (#5464) and
+    // cannot produce a continuation on its own.
+    private const int MaxPageSize = 1;
 
     private readonly WebAppFixture _fixture = new WebAppFixture()
         .WithTestLicense(HonuaEdition.Pro)
@@ -108,9 +109,33 @@ public sealed class ODataV4ConformanceEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
-    [Endpoint("GET /odata/Layers?$top=1")]
-    public async Task Layers_WithTop_EmitsFollowableNextLink()
+    [Endpoint("GET /odata/Layers")]
+    public async Task Layers_FullPage_EmitsFollowableNextLink()
     {
+        var response = await _fixture.Client.GetAsync("/odata/Layers");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+
+        root.GetProperty("value").EnumerateArray().Should().HaveCount(MaxPageSize,
+            "the server page size is honored");
+        root.TryGetProperty("@odata.nextLink", out var nextLink).Should().BeTrue(
+            "more layers exist than the server page, so a continuation must be emitted (#1989)");
+        nextLink.GetString().Should().NotBeNullOrWhiteSpace();
+        nextLink.GetString().Should().NotContain("$top=",
+            "a request without $top has no client ceiling, so the continuation must not invent one");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Layers?$top=1")]
+    public async Task Layers_WithTop_IsTotalCeiling()
+    {
+        // OData 4.01 Part 1 §11.2.6.3 (#5464): $top=1 requests at most one layer, so the
+        // response that returns it ends the requested collection.
         var response = await _fixture.Client.GetAsync("/odata/Layers?$top=1");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -119,20 +144,18 @@ public sealed class ODataV4ConformanceEndpointTests : IAsyncLifetime
         using var document = JsonDocument.Parse(content);
         var root = document.RootElement;
 
-        root.GetProperty("value").EnumerateArray().Should().HaveCount(1,
-            "the requested page size is honored");
-        root.TryGetProperty("@odata.nextLink", out var nextLink).Should().BeTrue(
-            "more layers exist than the requested $top, so a continuation must be emitted (#1989)");
-        nextLink.GetString().Should().NotBeNullOrWhiteSpace();
+        root.GetProperty("value").EnumerateArray().Should().HaveCount(1);
+        root.TryGetProperty("@odata.nextLink", out _).Should().BeFalse(
+            "following a nextLink past $top=1 would return more layers than requested");
     }
 
     [IntegrationTest]
     [Operation(Operations.Query)]
-    [Endpoint("GET /odata/Layers?$top=1")]
+    [Endpoint("GET /odata/Layers")]
     public async Task Layers_PagesThroughAllLayersViaNextLink()
     {
         var seen = new HashSet<int>();
-        var relativePath = "/odata/Layers?$top=1";
+        var relativePath = "/odata/Layers";
         var pages = 0;
 
         while (relativePath != null && pages < 10)
@@ -158,7 +181,7 @@ public sealed class ODataV4ConformanceEndpointTests : IAsyncLifetime
         seen.Count.Should().Be(SeededLayerCount,
             "every layer must be reachable by following the Layers nextLink");
         pages.Should().BeGreaterThan(1,
-            "a 2-layer collection paged at size 1 requires multiple pages");
+            "a 2-layer collection paged at a server page size of 1 requires multiple pages");
     }
 
     [IntegrationTest]
