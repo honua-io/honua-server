@@ -74,6 +74,7 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
     private readonly int _maxUnpublishedResults;
     private readonly long _unpublishedBudgetBytes;
     private readonly ConcurrentDictionary<string, UnpublishedResult> _unpublished = new(StringComparer.Ordinal);
+    private readonly object _unpublishedLock = new();
     private long _unpublishedBytes;
     private int _publisherRunning;
     private readonly TimeSpan _ownershipWindow;
@@ -308,16 +309,21 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
     // retry is likely to reach another replica. The queue is bounded by count and bytes.
     private void QueueUnpublishedResult(string scope, RedisKey key, byte[] token, byte[] receipt)
     {
-        if (_unpublished.Count >= _maxUnpublishedResults
-            || Interlocked.Read(ref _unpublishedBytes) + receipt.Length > _unpublishedBudgetBytes)
+        // Admission and removal share one lock so concurrent completions cannot each
+        // consume the same remaining count or byte allowance.
+        lock (_unpublishedLock)
         {
-            Log.UnpublishedResultDropped(_logger, scope);
-            return;
-        }
+            if (_unpublished.Count >= _maxUnpublishedResults
+                || _unpublishedBytes + receipt.Length > _unpublishedBudgetBytes)
+            {
+                Log.UnpublishedResultDropped(_logger, scope);
+                return;
+            }
 
-        if (_unpublished.TryAdd(scope, new UnpublishedResult(key, token, receipt, Stopwatch.GetTimestamp())))
-        {
-            Interlocked.Add(ref _unpublishedBytes, receipt.Length);
+            if (_unpublished.TryAdd(scope, new UnpublishedResult(key, token, receipt, Stopwatch.GetTimestamp())))
+            {
+                _unpublishedBytes += receipt.Length;
+            }
         }
 
         if (Interlocked.CompareExchange(ref _publisherRunning, 1, 0) == 0)
@@ -375,9 +381,12 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
 
     private void RemoveUnpublished(string scope, UnpublishedResult pending)
     {
-        if (_unpublished.TryRemove(new KeyValuePair<string, UnpublishedResult>(scope, pending)))
+        lock (_unpublishedLock)
         {
-            Interlocked.Add(ref _unpublishedBytes, -pending.Receipt.Length);
+            if (_unpublished.TryRemove(new KeyValuePair<string, UnpublishedResult>(scope, pending)))
+            {
+                _unpublishedBytes -= pending.Receipt.Length;
+            }
         }
     }
 
