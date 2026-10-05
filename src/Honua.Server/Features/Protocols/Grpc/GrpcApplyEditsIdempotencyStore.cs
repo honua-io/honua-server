@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
@@ -29,13 +30,14 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
     internal static readonly TimeSpan DefaultResponseWindow = TimeSpan.FromHours(24);
     internal static readonly TimeSpan DefaultReservationWindow = TimeSpan.FromSeconds(60);
     internal const long DefaultLocalResponseBudgetBytes = 64L * 1024 * 1024;
+    internal const int DefaultMaxUnpublishedResults = 1024;
 
     private const string RedisPrefix = "honua:grpc:apply-edits:idempotency:v2:";
     private const byte PendingMarker = 0xFF;
     private const byte ReceiptMarker = 0x01;
     private const int LocalEntryOverheadBytes = 256;
     private static readonly TimeSpan PendingPollInterval = TimeSpan.FromMilliseconds(50);
-    private static readonly TimeSpan MaxReceiptRetryInterval = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan MaxPublishInterval = TimeSpan.FromMilliseconds(250);
 
     // Reserve KEYS[1] for the caller's token, or return whatever holds it.
     internal const string AcquireScript = """
@@ -68,6 +70,12 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
     private readonly TimeSpan _responseWindow;
     private readonly TimeSpan _reservationWindow;
     private readonly TimeSpan _renewInterval;
+    private readonly TimeSpan _publishInterval;
+    private readonly int _maxUnpublishedResults;
+    private readonly long _unpublishedBudgetBytes;
+    private readonly ConcurrentDictionary<string, UnpublishedResult> _unpublished = new(StringComparer.Ordinal);
+    private long _unpublishedBytes;
+    private int _publisherRunning;
     private readonly TimeSpan _ownershipWindow;
     private readonly MemoryCache _localResponses;
     private readonly Dictionary<string, KeyGate> _gates = new(StringComparer.Ordinal);
@@ -77,7 +85,13 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
     public GrpcApplyEditsIdempotencyStore(
         IConnectionMultiplexer? multiplexer = null,
         ILogger<GrpcApplyEditsIdempotencyStore>? logger = null)
-        : this(multiplexer, logger, DefaultReservationWindow, DefaultResponseWindow, DefaultLocalResponseBudgetBytes)
+        : this(
+            multiplexer,
+            logger,
+            DefaultReservationWindow,
+            DefaultResponseWindow,
+            DefaultLocalResponseBudgetBytes,
+            DefaultMaxUnpublishedResults)
     {
     }
 
@@ -86,13 +100,17 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
         ILogger? logger,
         TimeSpan reservationWindow,
         TimeSpan responseWindow,
-        long localResponseBudgetBytes)
+        long localResponseBudgetBytes,
+        int maxUnpublishedResults = DefaultMaxUnpublishedResults)
     {
         _redis = multiplexer?.GetDatabase();
         _logger = logger ?? NullLogger.Instance;
         _reservationWindow = reservationWindow;
         _responseWindow = responseWindow;
         _renewInterval = reservationWindow / 6;
+        _publishInterval = _renewInterval < MaxPublishInterval ? _renewInterval : MaxPublishInterval;
+        _maxUnpublishedResults = maxUnpublishedResults;
+        _unpublishedBudgetBytes = localResponseBudgetBytes / 4;
         // The owner stops trusting its reservation a third of a window before the reservation
         // itself could expire, measured from when its last successful renewal was sent.
         _ownershipWindow = reservationWindow - (reservationWindow / 3);
@@ -116,6 +134,8 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
     }
 
     internal int LocalResponseCount => _localResponses.Count;
+
+    internal int UnpublishedResultCount => _unpublished.Count;
 
     /// <summary>
     /// Builds the retry scope for a client idempotency key: service, layer, effective tenant,
@@ -282,34 +302,83 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
         return written == 1;
     }
 
-    private void RetryReceiptInBackground(string scope, RedisKey key, byte[] token, byte[] receipt)
+    // Queues a committed result whose shared receipt could not be written. One publisher
+    // retries the whole queue at a short fixed interval, so once Redis is reachable again the
+    // receipt lands (over this request's own reservation or a vacant key) before a client
+    // retry is likely to reach another replica. The queue is bounded by count and bytes.
+    private void QueueUnpublishedResult(string scope, RedisKey key, byte[] token, byte[] receipt)
     {
-        _ = Task.Run(async () =>
+        if (_unpublished.Count >= _maxUnpublishedResults
+            || Interlocked.Read(ref _unpublishedBytes) + receipt.Length > _unpublishedBudgetBytes)
         {
-            var started = Stopwatch.GetTimestamp();
-            var delay = _renewInterval;
-            while (!_shutdown.IsCancellationRequested && Stopwatch.GetElapsedTime(started) < _responseWindow)
+            Log.UnpublishedResultDropped(_logger, scope);
+            return;
+        }
+
+        if (_unpublished.TryAdd(scope, new UnpublishedResult(key, token, receipt, Stopwatch.GetTimestamp())))
+        {
+            Interlocked.Add(ref _unpublishedBytes, receipt.Length);
+        }
+
+        if (Interlocked.CompareExchange(ref _publisherRunning, 1, 0) == 0)
+        {
+            _ = Task.Run(PublishUnpublishedResultsAsync);
+        }
+    }
+
+    private async Task PublishUnpublishedResultsAsync()
+    {
+        try
+        {
+            while (!_shutdown.IsCancellationRequested)
             {
-                try
+                await Task.Delay(_publishInterval, _shutdown).ConfigureAwait(false);
+                foreach (var (scope, pending) in _unpublished)
                 {
-                    await Task.Delay(delay, _shutdown).ConfigureAwait(false);
-                    if (!await TryWriteReceiptAsync(key, token, receipt).ConfigureAwait(false))
+                    if (Stopwatch.GetElapsedTime(pending.QueuedAt) >= _responseWindow)
                     {
-                        Log.ReceiptHeldByAnotherRequest(_logger, scope);
+                        RemoveUnpublished(scope, pending);
+                        continue;
                     }
 
-                    return;
+                    try
+                    {
+                        if (!await TryWriteReceiptAsync(pending.Key, pending.Token, pending.Receipt).ConfigureAwait(false))
+                        {
+                            Log.ReceiptHeldByAnotherRequest(_logger, scope);
+                        }
+
+                        RemoveUnpublished(scope, pending);
+                    }
+                    catch (Exception ex) when (ex is RedisException or TimeoutException)
+                    {
+                        // Redis is still unavailable; retry the queue on the next tick.
+                        break;
+                    }
                 }
-                catch (OperationCanceledException)
+
+                if (_unpublished.IsEmpty)
                 {
-                    return;
-                }
-                catch (Exception ex) when (ex is RedisException or TimeoutException)
-                {
-                    delay = delay * 2 < MaxReceiptRetryInterval ? delay * 2 : MaxReceiptRetryInterval;
+                    Volatile.Write(ref _publisherRunning, 0);
+                    if (_unpublished.IsEmpty || Interlocked.CompareExchange(ref _publisherRunning, 1, 0) != 0)
+                    {
+                        return;
+                    }
                 }
             }
-        });
+        }
+        catch (OperationCanceledException)
+        {
+            // Store disposed.
+        }
+    }
+
+    private void RemoveUnpublished(string scope, UnpublishedResult pending)
+    {
+        if (_unpublished.TryRemove(new KeyValuePair<string, UnpublishedResult>(scope, pending)))
+        {
+            Interlocked.Add(ref _unpublishedBytes, -pending.Receipt.Length);
+        }
     }
 
     private async Task ReleaseReservationAsync(Reservation reservation)
@@ -415,7 +484,7 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
                 // publish it so other replicas replay it instead of executing again.
                 Log.ReceiptWriteFailed(_store._logger, _scope, ex);
                 _store.StoreLocal(_scope, response);
-                _store.RetryReceiptInBackground(_scope, _reservation.Key, _reservation.Token, receipt);
+                _store.QueueUnpublishedResult(_scope, _reservation.Key, _reservation.Token, receipt);
             }
         }
 
@@ -447,6 +516,8 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
             }
         }
     }
+
+    private sealed record UnpublishedResult(RedisKey Key, byte[] Token, byte[] Receipt, long QueuedAt);
 
     /// <summary>Serializes callers on one scope; <see cref="References"/> counts holders and waiters.</summary>
     internal sealed class KeyGate() : SemaphoreSlim(1, 1)
@@ -591,7 +662,7 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
         [LoggerMessage(
             EventId = 5633,
             Level = LogLevel.Warning,
-            Message = "Could not record the result of keyed gRPC edit {Scope}; retrying in the background.")]
+            Message = "Could not record the result of keyed gRPC edit {Scope} in Redis; publishing it again in the background.")]
         public static partial void ReceiptWriteFailed(ILogger logger, string scope, Exception exception);
 
         [LoggerMessage(
@@ -605,5 +676,11 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
             Level = LogLevel.Debug,
             Message = "Renewing a keyed gRPC edit reservation failed; retrying until its ownership deadline.")]
         public static partial void ReservationRenewalFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(
+            EventId = 5636,
+            Level = LogLevel.Warning,
+            Message = "The result of keyed gRPC edit {Scope} is replayable only on this replica: the queue of results awaiting Redis is full.")]
+        public static partial void UnpublishedResultDropped(ILogger logger, string scope);
     }
 }

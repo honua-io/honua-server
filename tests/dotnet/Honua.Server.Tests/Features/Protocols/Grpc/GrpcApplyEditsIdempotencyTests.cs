@@ -208,6 +208,47 @@ public sealed class GrpcApplyEditsIdempotencyTests
         retry.Response.Should().BeNull();
     }
 
+    [UnitTest]
+    public async Task ResultsAwaitingRedis_AreBoundedByCount_AndStayReplayableLocally()
+    {
+        var database = Substitute.For<IDatabase>();
+        database
+            .ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]?>(), Arg.Any<RedisValue[]?>(), Arg.Any<CommandFlags>())
+            .Returns(call =>
+            {
+                var script = call.ArgAt<string>(0);
+                if (ReferenceEquals(script, GrpcApplyEditsIdempotencyStore.AcquireScript))
+                {
+                    return Task.FromResult(RedisResult.Create(call.ArgAt<RedisValue[]>(2)[0]));
+                }
+
+                return ReferenceEquals(script, GrpcApplyEditsIdempotencyStore.CompleteScript)
+                    ? Task.FromException<RedisResult>(
+                        new RedisConnectionException(ConnectionFailureType.SocketFailure, "unavailable"))
+                    : Task.FromResult(RedisResult.Create((RedisValue)1));
+            });
+        var connection = Substitute.For<IConnectionMultiplexer>();
+        connection.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(database);
+        using var store = new GrpcApplyEditsIdempotencyStore(
+            connection,
+            logger: null,
+            GrpcApplyEditsIdempotencyStore.DefaultReservationWindow,
+            GrpcApplyEditsIdempotencyStore.DefaultResponseWindow,
+            GrpcApplyEditsIdempotencyStore.DefaultLocalResponseBudgetBytes,
+            maxUnpublishedResults: 4);
+
+        for (var i = 0; i < 20; i++)
+        {
+            await using var lease = await store.EnterAsync($"scope-{i}", CancellationToken.None);
+            (await lease.TryBeginWriteAsync(CancellationToken.None)).Should().NotBeNull();
+            await lease.CompleteAsync(Response(objectId: i));
+        }
+
+        store.UnpublishedResultCount.Should().BeLessThanOrEqualTo(4);
+        store.LocalResponseCount.Should().Be(20, "every committed result stays replayable on this replica");
+        store.GateCount.Should().Be(0);
+    }
+
     internal static Proto.ApplyEditsResponse Response(long objectId)
     {
         var response = new Proto.ApplyEditsResponse();
