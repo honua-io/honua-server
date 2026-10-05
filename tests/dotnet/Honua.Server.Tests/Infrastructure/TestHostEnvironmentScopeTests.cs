@@ -3,6 +3,8 @@
 
 using FluentAssertions;
 using Honua.TestKit;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NSubstitute;
 
@@ -60,6 +62,41 @@ public sealed class TestHostEnvironmentScopeTests
             Environment.SetEnvironmentVariable(dotnetKey, originalDotnet);
             Environment.SetEnvironmentVariable(aspnetKey, originalAspnet);
             Environment.SetEnvironmentVariable(schemaHeadersKey, originalSchemaHeaders);
+        }
+    }
+
+    [Fact]
+    public void ConfiguredFactory_ProcessEnvironmentHeldByAnotherHost_DoesNotLeakIntoTheRequestedEnvironment()
+    {
+        // WebApplicationFactory builds the web host builder, which snapshots ASPNETCORE_*,
+        // before CreateHost takes the environment gate. A concurrent host that is inside
+        // StartInEnvironment at that instant holds ASPNETCORE_ENVIRONMENT; an unpinned host
+        // inherited it and booted without the provider composition (#4640).
+        const string aspnetKey = "ASPNETCORE_ENVIRONMENT";
+        var originalAspnet = Environment.GetEnvironmentVariable(aspnetKey);
+        string? environmentSeenByConfigure = null;
+
+        try
+        {
+            Environment.SetEnvironmentVariable(aspnetKey, "Staging");
+
+            using var factory = ConfiguredWebApplicationFactory.Create(
+                builder =>
+                {
+                    environmentSeenByConfigure = builder.GetSetting(WebHostDefaults.EnvironmentKey);
+                    TestWebApplicationFactory.ConfigureForTests(builder);
+                },
+                "Test");
+            var environment = factory.Services.GetRequiredService<IHostEnvironment>();
+
+            environmentSeenByConfigure.Should().Be(
+                "Test",
+                "the factory pins its requested environment before the caller configures the builder");
+            environment.EnvironmentName.Should().Be("Test");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(aspnetKey, originalAspnet);
         }
     }
 
