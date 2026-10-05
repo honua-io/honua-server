@@ -139,6 +139,14 @@
       "shards": [
         "Server Features Admin Network and Jobs"
       ]
+    },
+    {
+      "prefix": "tests/dotnet/Honua.Server.Tests/Features/Import/ReplaceCompletenessParserSkipTests.cs",
+      "reason": "replace_completeness_import_exact_owner",
+      "exclusive": true,
+      "shards": [
+        "File and Raster Import"
+      ]
     }
   ],
   "_shard_partitions_comment": "Exact class-level partition contracts for split shards. scripts/ci/check-server-test-shard-coverage.py evaluates each legacy parent filter against every discovered test class and requires exactly one listed child to claim it. This preserves the pre-split test surface without gaps or duplicate class ownership while allowing the parent matrix entry to be removed.",
