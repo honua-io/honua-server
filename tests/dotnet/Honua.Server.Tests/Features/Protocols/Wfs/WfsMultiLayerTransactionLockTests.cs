@@ -38,6 +38,9 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Wfs;
 
+/// <summary>
+/// Checks edit leases through the WFS transaction handler and shared writer decorators.
+/// </summary>
 [Protocol(TestProtocols.Wfs20)]
 public sealed class WfsMultiLayerTransactionLockTests
 {
@@ -88,7 +91,7 @@ public sealed class WfsMultiLayerTransactionLockTests
         scenario.RollbackCalls.Should().Be(1);
         scenario.CommitCalls.Should().Be(0);
         scenario.DisposeCalls.Should().Be(1);
-        scenario.Features.Keys.Should().BeEquivalentTo([1, 2]);
+        scenario.Features.Keys.Should().BeEquivalentTo(new[] { 1, 2 });
         scenario.Features.Values.Should().OnlyContain(feature => (string)feature.Attributes["name"]! == "original");
         if (action == "Delete")
         {
