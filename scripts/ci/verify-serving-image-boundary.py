@@ -4,14 +4,16 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
 import sys
 import tarfile
 import time
+import tempfile
 import uuid
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Iterable
 
 
@@ -191,6 +193,121 @@ def _docker(*arguments: str, capture: bool = False) -> subprocess.CompletedProce
     )
 
 
+DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}$")
+PREDICATES = {
+    "sbom": ("https://spdx.dev/Document",),
+    "provenance": ("https://slsa.dev/provenance/v0.2", "https://slsa.dev/provenance/v1"),
+}
+
+
+def _verified_json(content: bytes, digest: str) -> dict:
+    """Decode only bytes matching an immutable registry descriptor."""
+    if not DIGEST_PATTERN.fullmatch(digest):
+        raise ValueError(f"invalid sha256 digest: {digest}")
+    # Some CLI versions append a newline when printing a raw manifest.
+    for candidate in (content, content.removesuffix(b"\n")):
+        if "sha256:" + hashlib.sha256(candidate).hexdigest() == digest:
+            value = json.loads(candidate)
+            if not isinstance(value, dict):
+                raise ValueError(f"expected a JSON object at {digest}")
+            return value
+    raise ValueError(f"registry content does not match digest {digest}")
+
+
+def _registry(*arguments: str) -> bytes:
+    """Use the existing Docker registry credentials; retry transport failures."""
+    delays = (10, 30, 60, 120, 80)
+    for attempt in range(len(delays) + 1):
+        result = subprocess.run(["skopeo", *arguments], capture_output=True)
+        if result.returncode == 0:
+            return result.stdout
+        detail = result.stderr.decode(errors="replace")
+        transient = any(marker in detail.lower() for marker in (
+            "could not resolve host", "connection reset by peer", "tls handshake timeout",
+            "tls timeout", "i/o timeout", "temporary failure in name resolution",
+            "timeout awaiting response", "error connecting to api.github.com",
+        ))
+        if not transient or attempt == len(delays):
+            raise RuntimeError(f"registry attestation read failed: {detail.strip()}")
+        time.sleep(delays[attempt])
+    raise AssertionError("unreachable")
+
+
+def verify_image_attestations(image: str) -> list[dict]:
+    """Verify index -> platform -> attestation -> in-toto subject and payload."""
+    repository, separator, digest = image.rpartition("@")
+    if not separator or not DIGEST_PATTERN.fullmatch(digest):
+        raise ValueError("attestation verification requires an image@sha256:<digest> reference")
+    index = _verified_json(_registry("inspect", "--raw", f"docker://{image}"), digest)
+    manifests = index.get("manifests", [])
+    serving = [item for item in manifests
+               if item.get("platform", {}).get("os") == "linux"
+               and item.get("platform", {}).get("architecture") in {"amd64", "arm64"}
+               and item.get("annotations", {}).get("vnd.docker.reference.type") != "attestation-manifest"]
+    if not serving:
+        raise ValueError("pushed digest has no supported serving platform manifests")
+    records: list[dict] = []
+    for target in serving:
+        target_digest = target["digest"]
+        _verified_json(_registry("inspect", "--raw", f"docker://{repository}@{target_digest}"), target_digest)
+        platform = target["platform"]
+        found: dict[str, dict] = {}
+        for descriptor in manifests:
+            annotations = descriptor.get("annotations", {})
+            if annotations.get("vnd.docker.reference.type") != "attestation-manifest":
+                continue
+            if annotations.get("vnd.docker.reference.digest") != target_digest:
+                continue
+            attestation_digest = descriptor["digest"]
+            attestation_ref = f"{repository}@{attestation_digest}"
+            attestation = _verified_json(
+                _registry("inspect", "--raw", f"docker://{attestation_ref}"), attestation_digest,
+            )
+            if "subject" in attestation and attestation["subject"].get("digest") != target_digest:
+                raise ValueError(f"attestation manifest subject differs from {target_digest}")
+            # Copy only the small attestation manifest, config and in-toto blobs.
+            # Never copy the runnable image layers just to inspect evidence.
+            with tempfile.TemporaryDirectory(prefix="honua-attestations-") as directory:
+                _registry("copy", "--preserve-digests", f"docker://{attestation_ref}", f"dir:{directory}")
+                for layer in attestation.get("layers", []):
+                    predicate_type = layer.get("annotations", {}).get("in-toto.io/predicate-type")
+                    if not any(predicate_type in types for types in PREDICATES.values()):
+                        continue
+                    if layer.get("mediaType") != "application/vnd.in-toto+json":
+                        raise ValueError(f"unexpected attestation media type at {layer['digest']}")
+                    layer_digest = layer["digest"]
+                    if not DIGEST_PATTERN.fullmatch(layer_digest):
+                        raise ValueError(f"invalid attestation layer digest: {layer_digest}")
+                    statement = _verified_json(
+                        (Path(directory) / layer_digest.removeprefix("sha256:")).read_bytes(), layer_digest,
+                    )
+                    if statement.get("predicateType") != predicate_type or not statement.get("predicate"):
+                        raise ValueError(f"missing or mismatched predicate at {layer_digest}")
+                    if statement.get("_type") not in {
+                        "https://in-toto.io/Statement/v0.1", "https://in-toto.io/Statement/v1",
+                    }:
+                        raise ValueError(f"invalid in-toto statement at {layer_digest}")
+                    if not any(subject.get("digest", {}).get("sha256") == target_digest.removeprefix("sha256:")
+                               for subject in statement.get("subject", [])):
+                        raise ValueError(f"attestation subject does not bind pushed platform digest {target_digest}")
+                    kind = next(name for name, types in PREDICATES.items() if predicate_type in types)
+                    found[kind] = {
+                        "attestation": f"oci://{attestation_ref}",
+                        "digest": layer_digest,
+                        "predicateType": predicate_type,
+                    }
+        missing = sorted(PREDICATES.keys() - found.keys())
+        if missing:
+            raise ValueError(f"missing {', '.join(missing)} attestations for {target_digest}")
+        records.append({
+            "image": f"oci://{image}",
+            "platform": f"{platform['os']}/{platform['architecture']}",
+            "subject": f"oci://{repository}@{target_digest}",
+            **found,
+        })
+    return records
+
+
 def verify_serving_image(image: str) -> list[str]:
     inspect = _docker("image", "inspect", image, capture=True)
     metadata = json.loads(inspect.stdout)[0]
@@ -361,14 +478,35 @@ def main() -> int:
         metavar="HOST:PORT",
         help="Redis endpoint used to smoke the worker image's real entrypoint",
     )
+    parser.add_argument("--require-attestations", action="store_true",
+                        help="Require digest-bound registry SBOM and provenance (needs skopeo)")
+    parser.add_argument("--attestation-report", metavar="PATH",
+                        help="Write immutable image, subject, manifest and statement references as JSON")
     args = parser.parse_args()
+
+    if (args.require_attestations or args.attestation_report) and not args.serving_image:
+        parser.error("attestation options require --serving-image")
+    if args.attestation_report and not args.require_attestations:
+        parser.error("--attestation-report requires --require-attestations")
 
     if args.worker_redis and not args.worker_image:
         parser.error("--worker-redis requires --worker-image")
 
     if args.serving_image:
+        records = []
+        if args.require_attestations:
+            try:
+                records = verify_image_attestations(args.serving_image)
+            except (OSError, RuntimeError, ValueError, KeyError) as exc:
+                return _write_result([str(exc)], "")
+        violations = verify_serving_image(args.serving_image)
+        if not violations and args.require_attestations:
+            report = json.dumps(records, indent=2) + "\n"
+            print(report, end="")
+            if args.attestation_report:
+                Path(args.attestation_report).write_text(report, encoding="utf-8")
         return _write_result(
-            verify_serving_image(args.serving_image),
+            violations,
             f"Serving image {args.serving_image} is native AOT and GDAL/PROJ/GEOS-free.",
         )
     if args.worker_image:
