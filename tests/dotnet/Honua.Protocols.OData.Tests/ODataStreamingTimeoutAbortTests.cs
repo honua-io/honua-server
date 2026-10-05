@@ -107,6 +107,26 @@ public sealed class ODataStreamingTimeoutAbortTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})")]
+    public async Task FeaturesWithSelect_LargeTopOverKestrel_StreamsChunkedSelectedFields()
+    {
+        _fixture.Client.BaseAddress!.IsLoopback.Should().BeTrue(
+            "only a real Kestrel host applies HTTP/1.1 chunked framing");
+        _source.Mode = StallMode.None;
+
+        using var response = await _fixture.Client.GetAsync("/odata/Features(0)?$top=2000&$select=ObjectId,LayerId");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TransferEncodingChunked.Should().BeTrue("a streamed page is chunked on the wire");
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        var first = document.RootElement.GetProperty("value").EnumerateArray().First();
+        first.TryGetProperty("ObjectId", out _).Should().BeTrue();
+        first.TryGetProperty("Geometry", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /odata/Layers({layerId})/Features")]
     public async Task Features_TimeoutAfterStreamStarted_AbortsResponseInsteadOfCompletingTruncatedBody()
     {
