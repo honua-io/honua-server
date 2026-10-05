@@ -113,10 +113,14 @@ public sealed class ODataStreamingTimeoutAbortTests : IAsyncLifetime
         _fixture.Client.BaseAddress!.IsLoopback.Should().BeTrue(
             "only a real Kestrel host applies HTTP/1.1 chunked framing");
         _source.Mode = StallMode.None;
+        var streamsBefore = _source.Streams;
 
         using var response = await _fixture.Client.GetAsync("/odata/Features(0)?$top=2000&$select=ObjectId,LayerId");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // Kestrel chunks any body without Content-Length, buffered or not; the reader call is what
+        // shows the page came from the streaming handler rather than the buffered one.
+        _source.Streams.Should().BeGreaterThan(streamsBefore, "a large $top page must use the streaming handler");
         response.Headers.TransferEncodingChunked.Should().BeTrue("a streamed page is chunked on the wire");
         var body = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(body);
@@ -188,15 +192,19 @@ public sealed class ODataStreamingTimeoutAbortTests : IAsyncLifetime
     private sealed class SlowSource
     {
         private int _stalled;
+        private int _streams;
 
         public StallMode Mode { get; set; }
 
         public bool Stalled => Volatile.Read(ref _stalled) == 1;
 
+        public int Streams => Volatile.Read(ref _streams);
+
         public async IAsyncEnumerable<Feature> StreamAsync(
             IAsyncEnumerable<Feature> inner,
             [EnumeratorCancellation] CancellationToken cancellationToken)
         {
+            Interlocked.Increment(ref _streams);
             if (Mode == StallMode.None)
             {
                 await foreach (var feature in inner.WithCancellation(cancellationToken))
