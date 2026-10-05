@@ -134,6 +134,7 @@ public static class SharingRestEndpoints
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
             .CacheOutput(NoOutputCache)
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces(StatusCodes.Status200OK, contentType: "application/xml")
             .Produces(StatusCodes.Status404NotFound);
 
