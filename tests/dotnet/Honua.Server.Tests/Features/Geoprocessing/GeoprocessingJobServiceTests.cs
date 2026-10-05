@@ -5498,10 +5498,20 @@ public sealed class GeoprocessingJobServiceTests
     [Operation(Operations.Create)]
     public async Task SubmitJob_IdempotentReplayOfUnclaimedLocalJob_RepairsDispatchBeforeAcknowledging()
     {
+        ExecutionJobRecord? persistedIntent = null;
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(true);
+            .Returns(call =>
+            {
+                persistedIntent = call.Arg<ExecutionJobRecord>();
+                return true;
+            });
         var first = await _sut.SubmitJobAsync(CreateValidPlan(), "interrupted-dispatch", CreatePrincipal());
-        _jobStore.GetAsync(first.OperationId, Arg.Any<CancellationToken>()).Returns(first);
+        // Replay the durable intent captured before dispatch, as after a serving
+        // process exits between record creation and enqueue acknowledgement.
+        persistedIntent.Should().NotBeNull();
+        persistedIntent!.Status.Should().Be(ExecutionJobStatus.Queued);
+        persistedIntent.AttemptCount.Should().Be(0);
+        _jobStore.GetAsync(first.OperationId, Arg.Any<CancellationToken>()).Returns(persistedIntent);
         _jobQueue.ClearReceivedCalls();
 
         var replay = await _sut.SubmitJobAsync(CreateValidPlan(), "interrupted-dispatch", CreatePrincipal());
