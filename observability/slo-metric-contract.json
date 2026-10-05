@@ -29,7 +29,7 @@
       "instrument": "honua_serving_request_duration_ms",
       "type": "histogram_count",
       "labels": ["honua_protocol", "honua_operation", "status_class"],
-      "scope": "Serving-plane requests: one sample per served request that classifies to a Honua protocol, EXCLUDING the non-serving-plane protocols Health and Monitoring (liveness/readiness probes and the /metrics scrape). Requests that classify to no protocol are also excluded, which bounds label cardinality.",
+      "scope": "Serving-plane requests: one sample per served request that classifies to a Honua protocol, EXCLUDING the non-serving-plane protocols Health and Monitoring (liveness/readiness probes, gRPC health checks and the /metrics scrape). Requests that classify to no protocol are also excluded, which bounds label cardinality. MCP (honua_protocol=\"Mcp\") and gRPC (honua_protocol=\"Grpc\", honua_operation=<package.Service/Method>) are serving-plane protocols; a gRPC sample's status_class comes from its grpc-status mapped to the HTTP equivalent, not from the transport's HTTP 200, and a gRPC response that ends without a grpc-status counts as 5xx (4xx when the client cancelled).",
       "role": "CANONICAL SLO DENOMINATOR. Always apply the selector for the numerator's scope — see slo_ratios.",
       "recorded_by": "HonuaTelemetry.RecordServingRequest (via CorrelationIdMiddleware)"
     },

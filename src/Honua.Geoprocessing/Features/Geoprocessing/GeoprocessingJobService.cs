@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -932,7 +933,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     CreatedAt = now,
                     UpdatedAt = now,
                     CurrentPhase = "Queued",
-                    Audit = new OperationAuditInfo
+                    // Carry the submitting request's correlation ID and trace context across the
+                    // queue boundary so the worker's execution span links back to it (#5474).
+                    Audit = ControlPlaneTelemetry.WithSubmissionTraceContext(new OperationAuditInfo
                     {
                         IdempotencyKey = resolvedKey,
                         RequestedBy = ownerId,
@@ -945,7 +948,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                         // unrestricted data through a job artifact. Persisted on the durable record, so
                         // it survives a restart and is available to whichever node dequeues the job.
                         SubmitterSecurityContext = resolvedSecurityContext
-                    },
+                    }, Activity.Current),
                     Spec = spec,
                     // The workload's supported timeout policy must be durable on the job
                     // record. Workers and reconciliation then share the same deadline after

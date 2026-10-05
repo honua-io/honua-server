@@ -164,7 +164,14 @@ public static class HonuaTelemetry
     {
         _exportExceptionDetails = exportDetails;
         _includeExceptionStackTraces = includeStackTraces;
-        _maxExceptionDetailLength = maxDetailLength > 0 ? maxDetailLength : DefaultMaxExceptionDetailLength;
+        var maxLength = maxDetailLength > 0 ? maxDetailLength : DefaultMaxExceptionDetailLength;
+        _maxExceptionDetailLength = maxLength;
+
+        // Span-event attributes are fixed once added, so providers that record exception text on
+        // events (retry callbacks) apply this same policy at construction (#5475).
+        TelemetryExceptionDetailPolicy.Configure(exportDetails
+            ? message => SanitizeTelemetryText(message, maxLength)
+            : static _ => null);
     }
 
     /// <summary>

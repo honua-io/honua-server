@@ -13,6 +13,12 @@ namespace Honua.ControlPlane;
 /// </summary>
 internal static class ControlPlaneTelemetry
 {
+    // Baggage key CorrelationIdMiddleware sets on the request activity.
+    private const string CorrelationBaggageKey = "correlation.id";
+
+    // W3C trace-context caps tracestate at 32 members; bound the persisted copy.
+    private const int MaxTraceStateLength = 512;
+
     internal static class Activities
     {
         public const string WorkflowCreate = "honua.controlplane.workflow.create";
@@ -300,12 +306,49 @@ internal static class ControlPlaneTelemetry
         tags.Add(Tags.Environment, spec.Environment);
     }
 
+    /// <summary>
+    /// Stamps the submitting request's correlation ID and W3C trace context onto a durable job's
+    /// audit record. The record is the only carrier that survives the queue boundary, so without
+    /// this the worker's execution span cannot be joined to the submission (honua-server#5474).
+    /// The correlation ID is the one <c>CorrelationIdMiddleware</c> established for the request and
+    /// propagated as Activity baggage.
+    /// </summary>
+    public static OperationAuditInfo WithSubmissionTraceContext(OperationAuditInfo audit, Activity? submission)
+    {
+        ArgumentNullException.ThrowIfNull(audit);
+        if (submission is null)
+        {
+            return audit;
+        }
+
+        var correlationId = string.IsNullOrWhiteSpace(audit.CorrelationId)
+            ? submission.GetBaggageItem(CorrelationBaggageKey)
+            : audit.CorrelationId;
+        var traceParent = submission.IdFormat == ActivityIdFormat.W3C ? submission.Id : null;
+        var traceState = traceParent is not null && submission.TraceStateString is { Length: <= MaxTraceStateLength } state
+            ? state
+            : null;
+
+        return audit with
+        {
+            CorrelationId = string.IsNullOrWhiteSpace(correlationId) ? null : correlationId,
+            TraceParent = traceParent,
+            TraceState = traceState,
+        };
+    }
+
     public static Activity? StartExecutionActivity(
         string activityName,
         string operation,
         ExecutionJobRecord job)
     {
-        var activity = HonuaTelemetry.ActivitySource.StartActivity(activityName, ActivityKind.Internal);
+        // A durable job runs after a queue hop, often on another node: the submission is linked
+        // (not parented) so the execution keeps its own trace while staying navigable from it.
+        var links = TryGetSubmissionLink(job.Audit, out var submissionLink)
+            ? new[] { submissionLink }
+            : null;
+        var activity = HonuaTelemetry.ActivitySource.StartActivity(
+            activityName, ActivityKind.Internal, parentContext: default, tags: null, links: links);
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Admin);
         activity?.SetTag(HonuaTelemetry.Tags.Operation, operation);
         activity?.SetTag(Tags.ExecutionJobKind, job.Spec.Kind.ToString());
@@ -317,6 +360,20 @@ internal static class ControlPlaneTelemetry
         }
 
         return activity;
+    }
+
+    private static bool TryGetSubmissionLink(OperationAuditInfo audit, out ActivityLink link)
+    {
+        if (!string.IsNullOrWhiteSpace(audit.TraceParent) &&
+            ActivityContext.TryParse(audit.TraceParent, audit.TraceState, isRemote: true, out var submission) &&
+            submission.TraceId != Activity.Current?.TraceId)
+        {
+            link = new ActivityLink(submission);
+            return true;
+        }
+
+        link = default;
+        return false;
     }
 
     public static TagList CreateExecutionTags(ExecutionJobRecord job, string? result = null, string? previousStatus = null)

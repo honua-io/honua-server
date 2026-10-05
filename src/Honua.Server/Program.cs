@@ -1478,6 +1478,10 @@ app.Use(async (context, next) =>
 // Enable gRPC-Web for all gRPC services (before CORS and endpoint mapping)
 app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
 
+// Record each gRPC call's grpc-status for the serving-latency sample while the gRPC-Web trailers
+// are still attached; the outer CorrelationIdMiddleware cannot see them (#5473).
+app.UseGrpcServingStatusCapture();
+
 // Add CORS middleware before the exception handler so error responses (4xx/5xx) carry
 // Access-Control-Allow-Origin headers; otherwise browsers report every server error as
 // a CORS failure, masking the real status/body from web clients (#1627). It also stays

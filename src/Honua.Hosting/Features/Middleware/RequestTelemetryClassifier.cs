@@ -1,7 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
+using Grpc.AspNetCore.Server;
+using Grpc.Core;
 using Honua.ServiceDefaults;
+using Microsoft.AspNetCore.Http.Features;
 
 namespace Honua.Infrastructure.Middleware;
 
@@ -14,9 +18,40 @@ internal static class RequestTelemetryClassifier
     private const string HostedSceneProtocol = "Scene-3DTiles";
     private const string OpenUsdProtocol = "openusd";
 
+    /// <summary>
+    /// <c>HttpContext.Items</c> key holding the completed call's gRPC status, captured inside the
+    /// gRPC-Web middleware (see <c>UseGrpcServingStatusCapture</c>) because gRPC-Web trailers are
+    /// detached from the response before the outer serving-latency recorder runs.
+    /// </summary>
+    internal const string GrpcStatusItemKey = "__honua.telemetry.grpc-status";
+
+    private const string McpPath = "/mcp";
+    private const string GrpcServicePathPrefix = "/geospatial.v1.";
+    private const string GrpcHealthPathPrefix = "/grpc.health.v1.";
+    private const string GrpcStatusHeader = "grpc-status";
+    private const string UnknownOperation = "unknown";
+    private const int ClientClosedRequestStatusCode = 499;
+
     internal static string? ResolveProtocol(PathString path)
     {
         var value = path.Value ?? string.Empty;
+
+        // gRPC routes are "/<package>.<Service>/<Method>" and MCP is the single "/mcp" route; both
+        // are serving-plane protocols whose samples would otherwise be dropped as unclassified.
+        if (value.StartsWith(GrpcServicePathPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return HonuaTelemetry.Protocols.Grpc;
+        }
+
+        if (value.StartsWith(GrpcHealthPathPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return HonuaTelemetry.Protocols.Health;
+        }
+
+        if (StartsWithPathSegment(value, McpPath))
+        {
+            return HonuaTelemetry.Protocols.Mcp;
+        }
 
         if (value.StartsWith("/rest/services/Utilities/PrintingTools/GPServer", StringComparison.OrdinalIgnoreCase))
         {
@@ -209,6 +244,16 @@ internal static class RequestTelemetryClassifier
 
         var path = context.Request.Path.Value ?? string.Empty;
         var method = context.Request.Method;
+
+        if (path.StartsWith(GrpcServicePathPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return ResolveGrpcOperation(context);
+        }
+
+        if (StartsWithPathSegment(path, McpPath))
+        {
+            return ResolveMcpOperation(method);
+        }
 
         if (StartsWithPathSegment(path, PMTilesProxyPathPrefix))
         {
@@ -840,6 +885,120 @@ internal static class RequestTelemetryClassifier
         }
 
         return "serviceInfo";
+    }
+
+    /// <summary>
+    /// Resolves the status code recorded for a serving sample. gRPC reports its outcome in the
+    /// <c>grpc-status</c> trailer while the transport status stays 200, so a failed call is mapped
+    /// to its HTTP equivalent; without that every gRPC error would be counted as a success. A
+    /// gRPC response that completed without any status (an aborted or truncated stream) is a
+    /// failure: 499 when the client went away, otherwise 500.
+    /// </summary>
+    internal static int ResolveServingStatusCode(HttpContext context, string protocol)
+    {
+        var statusCode = context.Response.StatusCode;
+        if (!string.Equals(protocol, HonuaTelemetry.Protocols.Grpc, StringComparison.Ordinal) ||
+            statusCode != StatusCodes.Status200OK)
+        {
+            return statusCode;
+        }
+
+        if (TryResolveGrpcStatus(context, out var grpcStatus))
+        {
+            return MapGrpcStatusToHttp(grpcStatus);
+        }
+
+        return context.RequestAborted.IsCancellationRequested
+            ? ClientClosedRequestStatusCode
+            : StatusCodes.Status500InternalServerError;
+    }
+
+    /// <summary>
+    /// Records the completed gRPC call's status in <see cref="GrpcStatusItemKey"/>. Must run inside
+    /// the gRPC-Web middleware, where the gRPC-Web trailers are still attached to the response.
+    /// </summary>
+    internal static void CaptureGrpcStatus(HttpContext context)
+    {
+        if (!string.Equals(ResolveProtocol(context.Request.Path), HonuaTelemetry.Protocols.Grpc, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (TryReadGrpcStatus(context, out var grpcStatus))
+        {
+            context.Items[GrpcStatusItemKey] = grpcStatus;
+        }
+    }
+
+    private static bool TryResolveGrpcStatus(HttpContext context, out StatusCode grpcStatus)
+    {
+        if (context.Items.TryGetValue(GrpcStatusItemKey, out var captured) && captured is StatusCode capturedStatus)
+        {
+            grpcStatus = capturedStatus;
+            return true;
+        }
+
+        return TryReadGrpcStatus(context, out grpcStatus);
+    }
+
+    // Trailers-only responses (a failure before any message) carry grpc-status in the headers;
+    // otherwise it is a trailer.
+    private static bool TryReadGrpcStatus(HttpContext context, out StatusCode grpcStatus)
+    {
+        var raw = context.Response.Headers[GrpcStatusHeader].ToString();
+        if (string.IsNullOrEmpty(raw))
+        {
+            raw = context.Features.Get<IHttpResponseTrailersFeature>()?.Trailers[GrpcStatusHeader].ToString();
+        }
+
+        if (int.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out var value))
+        {
+            grpcStatus = (StatusCode)value;
+            return true;
+        }
+
+        grpcStatus = StatusCode.Unknown;
+        return false;
+    }
+
+    // Canonical gRPC -> HTTP mapping (google.rpc.Code / grpc-gateway), so status_class and the
+    // ops-health error rate read the same for gRPC as for every HTTP protocol.
+    private static int MapGrpcStatusToHttp(StatusCode grpcStatus) => grpcStatus switch
+    {
+        StatusCode.OK => StatusCodes.Status200OK,
+        StatusCode.Cancelled => ClientClosedRequestStatusCode,
+        StatusCode.InvalidArgument => StatusCodes.Status400BadRequest,
+        StatusCode.FailedPrecondition => StatusCodes.Status400BadRequest,
+        StatusCode.OutOfRange => StatusCodes.Status400BadRequest,
+        StatusCode.Unauthenticated => StatusCodes.Status401Unauthorized,
+        StatusCode.PermissionDenied => StatusCodes.Status403Forbidden,
+        StatusCode.NotFound => StatusCodes.Status404NotFound,
+        StatusCode.AlreadyExists => StatusCodes.Status409Conflict,
+        StatusCode.Aborted => StatusCodes.Status409Conflict,
+        StatusCode.ResourceExhausted => StatusCodes.Status429TooManyRequests,
+        StatusCode.Unimplemented => StatusCodes.Status501NotImplemented,
+        StatusCode.Unavailable => StatusCodes.Status503ServiceUnavailable,
+        StatusCode.DeadlineExceeded => StatusCodes.Status504GatewayTimeout,
+        _ => StatusCodes.Status500InternalServerError,
+    };
+
+    // The operation is the routed method's full name, which is a member of the finite set of
+    // registered RPCs. An unmatched path (unknown service or method) gets "unknown" so a caller
+    // cannot mint label values.
+    private static string ResolveGrpcOperation(HttpContext context)
+    {
+        var fullName = context.GetEndpoint()?.Metadata.GetMetadata<GrpcMethodMetadata>()?.Method.FullName;
+        return string.IsNullOrEmpty(fullName) ? UnknownOperation : fullName.TrimStart('/');
+    }
+
+    private static string ResolveMcpOperation(string method)
+    {
+        if (HttpMethods.IsGet(method))
+        {
+            return "mcp.stream";
+        }
+
+        return HttpMethods.IsDelete(method) ? "mcp.session.delete" : "mcp.rpc";
     }
 
     private static bool StartsWithPathSegment(string path, string prefix)
