@@ -278,16 +278,16 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         GrpcApplyEditsIdempotencyStore.Lease? idempotencyLease = null;
         if (!string.IsNullOrEmpty(idempotencyKey))
         {
-            var principal = context.GetHttpContext()?.User;
-            var principalId = principal?.FindFirst("api_key_id")?.Value
-                ?? principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                ?? principal?.FindFirst("sub")?.Value
-                ?? principal?.Identity?.Name
-                ?? "anonymous";
-            var scopedKey = $"{request.ServiceId ?? ""}:{request.LayerId}:{principalId}:{idempotencyKey}";
-            idempotencyLease = await _idempotencyStore.EnterAsync(scopedKey, context.CancellationToken).ConfigureAwait(false);
+            // A stored result is replayed only within the same service, layer, effective
+            // tenant and scheme/issuer-qualified actor (SEC-34).
+            var scope = GrpcApplyEditsIdempotencyStore.CreateScope(
+                context.GetHttpContext(), request.ServiceId, request.LayerId, idempotencyKey)
+                ?? throw new RpcException(new Status(
+                    StatusCode.FailedPrecondition,
+                    "An idempotency key requires a caller identity the server can bind retries to."));
+            idempotencyLease = await _idempotencyStore.EnterAsync(scope, context.CancellationToken).ConfigureAwait(false);
         }
-        using var heldIdempotencyLease = idempotencyLease;
+        await using var heldIdempotencyLease = idempotencyLease;
         if (idempotencyLease?.Response is not null)
         {
             return idempotencyLease.Response;
@@ -327,10 +327,38 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             cancellationToken: context.CancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
 
-        var result = await _featureWriter.ApplyEditsAsync(
-            layer.StorageLayerId,
-            editBatch,
-            context.CancellationToken).ConfigureAwait(false);
+        // A keyed write runs only while its shared reservation is provably held, and is
+        // cancelled before that reservation could lapse, so another replica can never begin
+        // the same keyed edit while this one may still commit (SEC-36).
+        var writeCancellation = context.CancellationToken;
+        if (idempotencyLease is not null)
+        {
+            writeCancellation = await idempotencyLease.TryBeginWriteAsync(context.CancellationToken).ConfigureAwait(false)
+                ?? throw IdempotencyReservationLost();
+        }
+
+        FeatureEditResult result;
+        try
+        {
+            result = await _featureWriter.ApplyEditsAsync(
+                layer.StorageLayerId,
+                editBatch,
+                writeCancellation).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (
+            idempotencyLease?.OwnershipLost == true && !context.CancellationToken.IsCancellationRequested)
+        {
+            throw IdempotencyReservationLost();
+        }
+
+        var response = GrpcConversionHelpers.ToProtoApplyEditsResponse(result);
+
+        // Record the committed result before any later step can fail, so a retry replays it
+        // instead of executing the edit again.
+        if (idempotencyLease is not null)
+        {
+            await idempotencyLease.CompleteAsync(response).ConfigureAwait(false);
+        }
 
         await PublishFeatureChangeEventsAsync(
             request.ServiceId ?? "unknown",
@@ -340,19 +368,12 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             result,
             context).ConfigureAwait(false);
 
-        var response = GrpcConversionHelpers.ToProtoApplyEditsResponse(result);
-        if (idempotencyLease is not null)
-        {
-            var principal = context.GetHttpContext()?.User;
-            var principalId = principal?.FindFirst("api_key_id")?.Value
-                ?? principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                ?? principal?.FindFirst("sub")?.Value
-                ?? principal?.Identity?.Name
-                ?? "anonymous";
-            _idempotencyStore.Set($"{request.ServiceId ?? ""}:{request.LayerId}:{principalId}:{idempotencyKey}", response);
-        }
         return response;
     }
+
+    private static RpcException IdempotencyReservationLost() => new(new Status(
+        StatusCode.Aborted,
+        "The edit lost its idempotency reservation before it completed; retry with the same idempotency key."));
 
     /// <summary>
     /// Pre-reads every update and delete target through the RLS-enforced
