@@ -16,8 +16,8 @@ public sealed class GeoServicesDocumentationTruthTests
         var judgment = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "docs", "gis", "data", "geoservices-parity-judgment.json"));
 
         parity.Should().Contain("png/png8/png24/png32/jpg/jpeg").And.NotContain("png/png8/png24/png32/jpg/gif");
-        parity.Should().Contain("Explicit `noData` overrides and non-`UNKNOWN` `pixelType` values return 501");
-        judgment.Should().Contain("every explicit conversion type returns 501");
+        parity.Should().Contain("Explicit `noData` overrides, and `pixelType` values other than `UNKNOWN` or the service's own pixel type, return 501");
+        judgment.Should().Contain("every other explicit conversion type returns 501");
         judgment.Should().Contain("\"name\": \"noData, noDataInterpretation\"");
         judgment.Should().NotContain("\"name\": \"bandIds, noData, noDataInterpretation\"");
     }
