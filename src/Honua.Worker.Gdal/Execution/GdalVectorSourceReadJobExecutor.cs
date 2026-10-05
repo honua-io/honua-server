@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Frozen;
+using System.Globalization;
 using System.IO.Compression;
+using Honua.Core.Configuration;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Logging;
@@ -31,7 +33,9 @@ namespace Honua.Worker.Gdal.Execution;
 /// dataset arrives as a base64 step input; some formats (Shapefile, FileGDB) are
 /// multi-file directories shipped as a base64 ZIP, so the executor unzips a
 /// <c>.zip</c> payload into the workspace and points OGR at the extracted dataset via
-/// GDAL's <c>/vsizip/</c>-free directory open. The canonicalized FeatureCollection is
+/// GDAL's <c>/vsizip/</c>-free directory open. Unpack enforces the configured entry
+/// size, total size, compression ratio, entry count, and cancellation token before
+/// and during extraction. The canonicalized FeatureCollection is
 /// published as a <c>data:application/geo+json;base64,</c> artifact, matching the
 /// managed sources so downstream nodes are agnostic to which reader produced it.
 /// </summary>
@@ -125,7 +129,15 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
             string ogrSourcePath;
             if (IsZipArchive(sourceBytes))
             {
-                ogrSourcePath = ExtractZipSource(sourceBytes, workspace, sourceFormat);
+                var extracted = await ExtractZipSourceAsync(
+                    sourceBytes, workspace, sourceFormat, opts, cancellationToken).ConfigureAwait(false);
+                if (extracted.Failure is not null)
+                {
+                    Log.InvalidInputs(logger, job.OperationId, extracted.Failure);
+                    return JobExecutionResult.Failed($"Invalid source inputs: {extracted.Failure}");
+                }
+
+                ogrSourcePath = extracted.DatasetPath;
                 if (ogrSourcePath.Length == 0)
                 {
                     return JobExecutionResult.Failed(
@@ -194,18 +206,19 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(80, "Encoding source artifact", cancellationToken).ConfigureAwait(false);
 
-            var outputBytes = await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
-            if (outputBytes.Length == 0)
+            var bounded = await GdalArtifactPublisher.ReadBoundedPayloadAsync(
+                outputPath, opts.MaxArtifactBytes, cancellationToken).ConfigureAwait(false);
+            if (bounded.ExceededLimit)
             {
-                return JobExecutionResult.Failed("ogr2ogr produced an empty FeatureCollection.");
+                Log.ArtifactTooLarge(logger, job.OperationId, bounded.Length, opts.MaxArtifactBytes);
+                return JobExecutionResult.Failed(
+                    $"Source FeatureCollection size {bounded.Length.ToString(CultureInfo.InvariantCulture)} bytes exceeds configured " +
+                    $"MaxArtifactBytes={opts.MaxArtifactBytes.ToString(CultureInfo.InvariantCulture)}.");
             }
 
-            if (outputBytes.Length > opts.MaxArtifactBytes)
+            if (bounded.Payload is not { Length: > 0 } outputBytes)
             {
-                Log.ArtifactTooLarge(logger, job.OperationId, outputBytes.Length, opts.MaxArtifactBytes);
-                return JobExecutionResult.Failed(
-                    $"Source FeatureCollection size {outputBytes.Length} bytes exceeds configured " +
-                    $"MaxArtifactBytes={opts.MaxArtifactBytes}.");
+                return JobExecutionResult.Failed("ogr2ogr produced an empty FeatureCollection.");
             }
 
             var artifactUri = GdalDataUri.Build(GeoJsonContentType, outputBytes);
@@ -225,51 +238,274 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
     private static bool IsZipArchive(byte[] bytes)
         => bytes.Length >= 4 && bytes[0] == 0x50 && bytes[1] == 0x4B && bytes[2] == 0x03 && bytes[3] == 0x04;
 
+    private readonly record struct ZipExtraction(string DatasetPath, string? Failure);
+
     /// <summary>
     /// Extracts a ZIP-packaged multi-file dataset into a sandboxed sub-directory of
     /// the scratch workspace and returns the OGR-openable dataset path (the
     /// containing directory for a <c>.gdb</c> FileGDB, or the single <c>.shp</c>/
-    /// recognized vector file otherwise). Entry paths are validated to stay within
-    /// the extraction root (no zip-slip). Returns an empty string when no
-    /// recognizable dataset is found.
+    /// recognized vector file otherwise). Declared entry metadata and streamed
+    /// byte counts are both held to the archive budgets, and cancellation is
+    /// observed before any payload is written. A failure message is returned for
+    /// an invalid name, a path escape, or a budget overrun. The dataset path is
+    /// empty when extraction succeeded but no recognizable dataset was found.
     /// </summary>
-    private static string ExtractZipSource(byte[] zipBytes, string workspace, string sourceFormat)
+    private static async Task<ZipExtraction> ExtractZipSourceAsync(
+        byte[] zipBytes,
+        string workspace,
+        string sourceFormat,
+        GdalWorkerOptions opts,
+        CancellationToken cancellationToken)
     {
+        // Already cancelled by the time unpack starts: do not create directories
+        // or write entry bytes. The caller lets this propagate as cancellation.
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var maxEntry = opts.MaxArchiveEntryBytes > 0
+            ? opts.MaxArchiveEntryBytes
+            : FileSizeConstants.FiveHundredMB;
+        var maxTotal = opts.MaxArchiveExtractedBytes > 0
+            ? opts.MaxArchiveExtractedBytes
+            : FileSizeConstants.OneGB;
+        var maxRatio = opts.MaxArchiveCompressionRatio > 1d
+            ? opts.MaxArchiveCompressionRatio
+            : 200d;
+        var maxEntries = opts.MaxArchiveEntries > 0
+            ? opts.MaxArchiveEntries
+            : 100_000;
+
         // Second segment is a fixed relative literal, so it can never be rooted and
-        // silently discard workspace.
+        // silently discard workspace. The directory is created only after every
+        // entry name and declared budget has been accepted.
         var extractRoot = Path.Join(workspace, "src");
-        Directory.CreateDirectory(extractRoot);
         var fullExtractRoot = Path.GetFullPath(extractRoot) + Path.DirectorySeparatorChar;
 
-        using (var stream = new MemoryStream(zipBytes, writable: false))
-        using (var archive = new ZipArchive(stream, ZipArchiveMode.Read))
+        using var stream = new MemoryStream(zipBytes, writable: false);
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+        if (archive.Entries.Count > maxEntries)
         {
-            foreach (var entry in archive.Entries)
+            return new ZipExtraction(
+                string.Empty,
+                "Archive entry count " + archive.Entries.Count.ToString(CultureInfo.InvariantCulture)
+                + " exceeds maximum " + maxEntries.ToString(CultureInfo.InvariantCulture) + ".");
+        }
+
+        var declaredTotal = 0L;
+        foreach (var entry in archive.Entries)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var declaredFailure = ValidateDeclaredEntry(
+                entry, extractRoot, fullExtractRoot, maxEntry, maxTotal, maxRatio, ref declaredTotal);
+            if (declaredFailure is not null)
             {
-                // Directory entries have empty names.
-                if (entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\'))
-                {
-                    continue;
-                }
-
-                // entry.FullName is attacker-influenced (an untrusted ZIP entry name) and
-                // CAN be rooted, which would make Path.Combine here silently discard
-                // extractRoot — that is exactly why this result is never trusted
-                // directly: it is re-anchored with Path.GetFullPath and validated
-                // against fullExtractRoot immediately below (zip-slip / extraction-root
-                // escape guard) before anything is written to disk.
-                var destinationPath = Path.GetFullPath(Path.Join(extractRoot, entry.FullName));
-                if (!destinationPath.StartsWith(fullExtractRoot, StringComparison.Ordinal))
-                {
-                    // Zip-slip: entry escapes the extraction root — skip it.
-                    continue;
-                }
-
-                Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
-                entry.ExtractToFile(destinationPath, overwrite: true);
+                return new ZipExtraction(string.Empty, declaredFailure);
             }
         }
 
+        Directory.CreateDirectory(extractRoot);
+        var buffer = new byte[64 * 1024];
+        var writtenTotal = 0L;
+        foreach (var entry in archive.Entries)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!TryResolveEntryDestination(entry.FullName, extractRoot, fullExtractRoot, out var destination, out var nameFailure))
+            {
+                return new ZipExtraction(string.Empty, nameFailure);
+            }
+
+            if (IsDirectoryEntry(entry))
+            {
+                Directory.CreateDirectory(destination);
+                continue;
+            }
+
+            var parent = Path.GetDirectoryName(destination);
+            if (!string.IsNullOrEmpty(parent))
+            {
+                Directory.CreateDirectory(parent);
+            }
+
+            try
+            {
+                await using var entryStream = entry.Open();
+                await using var output = new FileStream(
+                    destination, FileMode.Create, FileAccess.Write, FileShare.None, 64 * 1024, useAsync: true);
+                var entryWritten = 0L;
+                while (true)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var read = await entryStream.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
+                    if (read <= 0)
+                    {
+                        break;
+                    }
+
+                    entryWritten += read;
+                    if (entryWritten > maxEntry)
+                    {
+                        return new ZipExtraction(string.Empty, UncompressedSizeMessage(entry.FullName, maxEntry));
+                    }
+
+                    if (read > maxTotal - writtenTotal)
+                    {
+                        return new ZipExtraction(string.Empty, TotalUncompressedMessage(maxTotal));
+                    }
+
+                    await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                    writtenTotal += read;
+                }
+            }
+            catch (InvalidDataException)
+            {
+                return new ZipExtraction(string.Empty, "Archive entry could not be read.");
+            }
+        }
+
+        return new ZipExtraction(DiscoverDataset(extractRoot, sourceFormat), null);
+    }
+
+    /// <summary>
+    /// Rejects an entry from its name and central-directory sizes before any
+    /// payload byte is written. <paramref name="declaredTotal"/> advances only
+    /// for an entry that fits.
+    /// </summary>
+    private static string? ValidateDeclaredEntry(
+        ZipArchiveEntry entry,
+        string extractRoot,
+        string fullExtractRoot,
+        long maxEntry,
+        long maxTotal,
+        double maxRatio,
+        ref long declaredTotal)
+    {
+        if (!TryResolveEntryDestination(entry.FullName, extractRoot, fullExtractRoot, out _, out var nameFailure))
+        {
+            return nameFailure;
+        }
+
+        if (entry.Length < 0 || entry.CompressedLength < 0)
+        {
+            return "Archive entry '" + entry.FullName + "' has an invalid size.";
+        }
+
+        if (entry.Length > maxEntry)
+        {
+            return UncompressedSizeMessage(entry.FullName, maxEntry);
+        }
+
+        if (entry.Length > maxTotal - declaredTotal)
+        {
+            return TotalUncompressedMessage(maxTotal);
+        }
+
+        if (entry.Length > 0)
+        {
+            if (entry.CompressedLength <= 0)
+            {
+                return "Archive entry '" + entry.FullName + "' has invalid compressed size.";
+            }
+
+            var ratio = (double)entry.Length / entry.CompressedLength;
+            if (ratio > maxRatio)
+            {
+                return "Archive entry '" + entry.FullName + "' exceeds maximum compression ratio ("
+                    + maxRatio.ToString(CultureInfo.InvariantCulture) + ").";
+            }
+        }
+
+        declaredTotal += entry.Length;
+        return null;
+    }
+
+    private static string UncompressedSizeMessage(string fullName, long maxEntry)
+        => "Archive entry '" + fullName + "' exceeds maximum uncompressed size ("
+            + maxEntry.ToString(CultureInfo.InvariantCulture) + " bytes).";
+
+    private static string TotalUncompressedMessage(long maxTotal)
+        => "Archive extraction exceeds maximum total uncompressed size ("
+            + maxTotal.ToString(CultureInfo.InvariantCulture) + " bytes).";
+
+    private static bool IsDirectoryEntry(ZipArchiveEntry entry)
+        => string.IsNullOrEmpty(entry.Name)
+            || entry.FullName.EndsWith('/')
+            || entry.FullName.EndsWith('\\');
+
+    /// <summary>
+    /// Classifies an untrusted ZIP entry name. A <c>..</c> segment, a rooted name,
+    /// a drive prefix, or an empty non-final segment is an invalid entry. A name
+    /// that still resolves outside the extraction root is path traversal. Neither
+    /// message includes the destination path.
+    /// </summary>
+    private static bool TryResolveEntryDestination(
+        string fullName,
+        string extractRoot,
+        string fullExtractRoot,
+        out string destination,
+        out string? failure)
+    {
+        destination = string.Empty;
+        if (IsInvalidEntryName(fullName))
+        {
+            failure = "Archive contains invalid entry name.";
+            return false;
+        }
+
+        try
+        {
+            // fullName is attacker-influenced and can be rooted, which would make
+            // Path.Join discard extractRoot. GetFullPath plus the prefix check is
+            // the containment guard; invalid names are rejected above first.
+            destination = Path.GetFullPath(Path.Join(extractRoot, fullName));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or IOException)
+        {
+            failure = "Archive contains path traversal.";
+            return false;
+        }
+
+        if (!destination.StartsWith(fullExtractRoot, StringComparison.Ordinal))
+        {
+            destination = string.Empty;
+            failure = "Archive contains path traversal.";
+            return false;
+        }
+
+        failure = null;
+        return true;
+    }
+
+    private static bool IsInvalidEntryName(string fullName)
+    {
+        if (string.IsNullOrEmpty(fullName) || fullName[0] is '/' or '\\' || fullName.Contains(':'))
+        {
+            return true;
+        }
+
+        var parts = fullName.Split(['/', '\\']);
+        for (var i = 0; i < parts.Length; i++)
+        {
+            var part = parts[i];
+            if (part.Length == 0)
+            {
+                if (i != parts.Length - 1)
+                {
+                    return true;
+                }
+
+                continue;
+            }
+
+            if (part is "." or "..")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string DiscoverDataset(string extractRoot, string sourceFormat)
+    {
         // A FileGDB is a directory ending in .gdb; OGR opens the directory.
         var gdb = Directory
             .EnumerateDirectories(extractRoot, "*.gdb", SearchOption.AllDirectories)
