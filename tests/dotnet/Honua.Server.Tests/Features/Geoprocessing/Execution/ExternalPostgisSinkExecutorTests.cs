@@ -9,6 +9,7 @@ using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Honua.ControlPlane;
 using Honua.Server.Tests.Infrastructure;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
@@ -49,7 +50,7 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
         await _fixture.DropSchemaAsync(_schemaName);
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task ExecuteAsync_CancellationAtCommittedPublication_PreservesDestinationReceipt()
     {
         using var cancellation = new CancellationTokenSource();
