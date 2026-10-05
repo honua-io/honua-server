@@ -42,6 +42,32 @@ namespace Honua.Server.Tests.Features.Protocols.Wfs;
 public sealed class WfsMultiLayerTransactionLockTests
 {
     [UnitTheory]
+    [InlineData(FeatureWriterTransactionCommitOutcome.Committed)]
+    [InlineData(FeatureWriterTransactionCommitOutcome.Unknown)]
+    [Operation(Operations.Update)]
+    public async Task WriterTransaction_PreservesProviderCompletion(FeatureWriterTransactionCommitOutcome outcome)
+    {
+        var provider = Substitute.For<IFeatureWriter>();
+        var inner = Substitute.For<IFeatureWriterTransaction>();
+        using var cancellation = new CancellationTokenSource();
+        provider.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellation.Token).Returns(Task.FromResult(inner));
+        inner.CommitAsync(cancellation.Token).Returns(Task.FromResult(outcome));
+        var locks = new InMemoryFeatureLockService();
+        var writer = new FeatureLockEnforcingFeatureWriter(provider, locks, new FeatureEditGuard(locks),
+            Substitute.For<IMetadataV2GraphProvider>(), new HttpContextAccessor());
+
+        await using (var transaction = await writer.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellation.Token))
+        {
+            (await transaction.CommitAsync(cancellation.Token)).Should().Be(outcome);
+        }
+
+        await provider.Received(1).BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellation.Token);
+        await inner.Received(1).CommitAsync(cancellation.Token);
+        await inner.Received(1).DisposeAsync();
+        await inner.DidNotReceive().RollbackAsync(Arg.Any<CancellationToken>());
+    }
+
+    [UnitTheory]
     [InlineData("Update")]
     [InlineData("Delete")]
     [Operation(Operations.Update)]
@@ -64,6 +90,10 @@ public sealed class WfsMultiLayerTransactionLockTests
         scenario.DisposeCalls.Should().Be(1);
         scenario.Features.Keys.Should().BeEquivalentTo([1, 2]);
         scenario.Features.Values.Should().OnlyContain(feature => (string)feature.Attributes["name"]! == "original");
+        if (action == "Delete")
+        {
+            scenario.AuditEvents.Should().ContainSingle().Which.Outcome.Should().Be(AuditOutcome.Failure);
+        }
     }
 
     [UnitTheory]
@@ -93,6 +123,7 @@ public sealed class WfsMultiLayerTransactionLockTests
         if (action == "Delete")
         {
             scenario.Features.Should().BeEmpty();
+            scenario.AuditEvents.Should().HaveCount(2).And.OnlyContain(audit => audit.Outcome == AuditOutcome.Success);
         }
         else
         {
@@ -115,6 +146,7 @@ public sealed class WfsMultiLayerTransactionLockTests
         };
 
         public List<int> AppliedLayers { get; } = [];
+        public List<AuditEvent> AuditEvents { get; } = [];
         public int OrdinaryApplyCalls { get; private set; }
         public int CommitCalls { get; private set; }
         public int RollbackCalls { get; private set; }
@@ -129,7 +161,7 @@ public sealed class WfsMultiLayerTransactionLockTests
             for (var layer = 1; layer <= 2; layer++)
             {
                 builder.AddResource($"res-{layer}", $"layer{layer}", fields:
-                    [new MetadataV2Field { Name = "name", FieldType = MetadataV2FieldType.String }], accessPolicy: policy)
+                    [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }], accessPolicy: policy)
                     .AddStorageBinding($"binding-{layer}", $"res-{layer}", $"public.layer{layer}", storageLayerId: layer)
                     .AddPublication($"pub-{layer}", "svc", $"res-{layer}", layerIndex: layer, storageBindingId: $"binding-{layer}");
             }
@@ -178,8 +210,14 @@ public sealed class WfsMultiLayerTransactionLockTests
                 return ValueTask.CompletedTask;
             });
 
+            var auditLog = Substitute.For<IAuditLog>();
+            auditLog.RecordAsync(Arg.Any<AuditEvent>(), Arg.Any<CancellationToken>()).Returns(call =>
+            {
+                AuditEvents.Add(call.Arg<AuditEvent>());
+                return Task.FromResult<string?>(null);
+            });
             var writer = new FeatureLockEnforcingFeatureWriter(
-                new AuditingFeatureWriter(provider, Substitute.For<IAuditLog>(), _accessor),
+                new AuditingFeatureWriter(provider, auditLog, _accessor),
                 _locks, new FeatureEditGuard(_locks), metadata, _accessor);
             var reader = Substitute.For<IFeatureReader>();
             reader.GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
@@ -207,7 +245,7 @@ public sealed class WfsMultiLayerTransactionLockTests
         {
             var claim = await _locks.ClaimAsync(FeatureRef.Canonical("parcels", 2, 22),
                 new LockHolder("alice", "Alice Editor"), TimeSpan.FromMinutes(5), FeatureLockAccessContext.AuthorizedWrite);
-            claim.Status.Should().Be(FeatureLockClaimStatus.Granted);
+            claim.Status.Should().Be(FeatureLockClaimStatus.Claimed);
         }
 
         public async Task<(int Status, string Body)> ExecuteAsync(string action, bool multiLayer, string holder = "bob")
