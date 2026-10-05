@@ -642,6 +642,92 @@ public sealed class GrpcApplyEditsDistributedIdempotencyTests(RedisFixture redis
         otherReplicaRetry.AddResults[0].ObjectId.Should().Be(original.AddResults[0].ObjectId);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task RedisOutageOutlastingTheReservation_AfterCommit_DoesNotLetAnotherReplicaExecuteAgain()
+    {
+        var reservationWindow = TimeSpan.FromSeconds(1);
+        var real = (await ConnectAsync()).GetDatabase();
+        var outage = 0;
+        var flaky = Substitute.For<IDatabase>();
+        flaky
+            .ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]?>(), Arg.Any<RedisValue[]?>(), Arg.Any<CommandFlags>())
+            .Returns(call => Volatile.Read(ref outage) == 1
+                ? Task.FromException<RedisResult>(
+                    new RedisConnectionException(ConnectionFailureType.SocketFailure, "redis unreachable"))
+                : real.ScriptEvaluateAsync(
+                    call.ArgAt<string>(0), call.ArgAt<RedisKey[]?>(1), call.ArgAt<RedisValue[]?>(2), call.ArgAt<CommandFlags>(3)));
+        var flakyConnection = Substitute.For<IConnectionMultiplexer>();
+        flakyConnection.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(flaky);
+
+        // Replica A loses Redis while its edit commits, so it can neither renew its key nor
+        // record the result.
+        using var storeA = Store(flakyConnection, reservationWindow);
+        var replicaA = new GrpcApplyEditsIdempotencyTests.ServiceHarness(
+            storeA,
+            beforeCommit: _ =>
+            {
+                Volatile.Write(ref outage, 1);
+                return Task.CompletedTask;
+            });
+        var replicaB = new GrpcApplyEditsIdempotencyTests.ServiceHarness(Store(await ConnectAsync(), reservationWindow));
+        var user = GrpcApplyEditsIdempotencyTests.Subject("editor", issuer: "https://issuer-a.example");
+
+        var original = await replicaA.Service.ApplyEdits(
+            GrpcApplyEditsIdempotencyTests.AddRequest(), replicaA.Context(user, tenantId: null));
+
+        // The outage outlasts the reservation window several times over.
+        await Task.Delay(reservationWindow * 3);
+        var duringOutage = async () => await replicaB.Service.ApplyEdits(
+            GrpcApplyEditsIdempotencyTests.AddRequest(), replicaB.Context(user, tenantId: null));
+        (await duringOutage.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.Aborted);
+        replicaB.WriteCount.Should().Be(0, "a key whose edit may have committed must not be executed again");
+
+        // Once Redis is reachable again, replica A publishes its result and B replays it.
+        Volatile.Write(ref outage, 0);
+        Proto.ApplyEditsResponse? replayed = null;
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (replayed is null && DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                replayed = await replicaB.Service.ApplyEdits(
+                    GrpcApplyEditsIdempotencyTests.AddRequest(), replicaB.Context(user, tenantId: null));
+            }
+            catch (RpcException ex) when (ex.StatusCode == StatusCode.Aborted)
+            {
+                await Task.Delay(100);
+            }
+        }
+
+        replayed.Should().NotBeNull();
+        replayed!.AddResults[0].ObjectId.Should().Be(original.AddResults[0].ObjectId);
+        (replicaA.WriteCount + replicaB.WriteCount).Should().Be(1, "the keyed edit must commit exactly once");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task WriteThatFails_ReturnsItsKeyToAShortReservation_SoARetryExecutes()
+    {
+        var reservationWindow = TimeSpan.FromSeconds(1);
+        var replicaA = new GrpcApplyEditsIdempotencyTests.ServiceHarness(
+            Store(await ConnectAsync(), reservationWindow),
+            beforeCommit: _ => throw new InvalidOperationException("storage rejected the edit"));
+        var replicaB = new GrpcApplyEditsIdempotencyTests.ServiceHarness(Store(await ConnectAsync(), reservationWindow));
+        var user = GrpcApplyEditsIdempotencyTests.Subject("editor", issuer: "https://issuer-a.example");
+
+        var failed = async () => await replicaA.Service.ApplyEdits(
+            GrpcApplyEditsIdempotencyTests.AddRequest(), replicaA.Context(user, tenantId: null));
+        await failed.Should().ThrowAsync<InvalidOperationException>();
+
+        var retry = await replicaB.Service.ApplyEdits(
+            GrpcApplyEditsIdempotencyTests.AddRequest(), replicaB.Context(user, tenantId: null))
+            .WaitAsync(TimeSpan.FromSeconds(15));
+
+        retry.AddResults.Should().ContainSingle();
+        replicaB.WriteCount.Should().Be(1, "a failed write must not hold its key for the whole response window");
+    }
+
     private static GrpcApplyEditsIdempotencyStore Store(IConnectionMultiplexer connection, TimeSpan reservationWindow)
         => new(
             connection,

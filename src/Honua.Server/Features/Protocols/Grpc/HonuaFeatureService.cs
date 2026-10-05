@@ -285,7 +285,18 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                 ?? throw new RpcException(new Status(
                     StatusCode.FailedPrecondition,
                     "An idempotency key requires a caller identity the server can bind retries to."));
-            idempotencyLease = await _idempotencyStore.EnterAsync(scope, context.CancellationToken).ConfigureAwait(false);
+            try
+            {
+                idempotencyLease = await _idempotencyStore.EnterAsync(scope, context.CancellationToken).ConfigureAwait(false);
+            }
+            catch (GrpcApplyEditsIdempotencyStore.OutcomeUnknownException)
+            {
+                throw new RpcException(new Status(
+                    StatusCode.Aborted,
+                    "An earlier request with this idempotency key may have applied its edit, but its result is not available, "
+                    + "so the edit was not run again. Retry later with the same key to receive the result, or confirm "
+                    + "whether the edit was applied before sending it with a new key."));
+            }
         }
         await using var heldIdempotencyLease = idempotencyLease;
         if (idempotencyLease?.Response is not null)
@@ -327,9 +338,9 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             cancellationToken: context.CancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
 
-        // A keyed write runs only while its shared reservation is provably held, and is
-        // cancelled before that reservation could lapse, so another replica can never begin
-        // the same keyed edit while this one may still commit (SEC-36).
+        // A keyed write runs only after its reservation is promoted to a write marker that
+        // outlives a Redis outage, and is cancelled if that marker is lost, so another replica
+        // can never begin the same keyed edit while this one may have committed (SEC-36).
         var writeCancellation = context.CancellationToken;
         if (idempotencyLease is not null)
         {

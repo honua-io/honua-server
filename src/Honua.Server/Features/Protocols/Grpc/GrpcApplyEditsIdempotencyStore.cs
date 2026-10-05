@@ -19,9 +19,10 @@ namespace Honua.Server.Features.Protocols.Grpc;
 /// issuer-qualified actor (<see cref="CreateScope"/>), so a stored result is replayed only to
 /// the caller that produced it. With Redis, the first caller holds an owner-token reservation
 /// that is renewed for as long as its edit runs, and its result replaces the reservation only
-/// while that token still holds it. A writer that can no longer prove it holds the reservation
-/// is cancelled a full safety margin before the reservation could lapse, so a second replica
-/// never begins the same edit while the first can still commit. Local state is bounded: key
+/// while that token still holds it. Before the writer runs, the reservation is promoted to a
+/// write marker that lives for the whole response window, so a committed edit's key cannot
+/// lapse while Redis is unreachable; a write marker whose owner stopped renewing it means the
+/// outcome is unknown, and a retry is refused instead of executing the edit again. Local state is bounded: key
 /// gates are reference counted and dropped when idle, and local result copies live in a
 /// size-limited, expiring cache that, with Redis, only holds results Redis could not persist.
 /// </remarks>
@@ -34,15 +35,42 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
 
     private const string RedisPrefix = "honua:grpc:apply-edits:idempotency:v2:";
     private const byte PendingMarker = 0xFF;
+    private const byte WritingMarker = 0xFE;
+    private const byte OutcomeUnknownMarker = 0xFD;
     private const byte ReceiptMarker = 0x01;
     private const int LocalEntryOverheadBytes = 256;
     private static readonly TimeSpan PendingPollInterval = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan MaxPublishInterval = TimeSpan.FromMilliseconds(250);
 
-    // Reserve KEYS[1] for the caller's token, or return whatever holds it.
+    // Reserve KEYS[1] for the caller's token, or return whatever holds it. A write marker
+    // whose owner has not renewed it for a reservation window (time-to-live below ARGV[3])
+    // is reported as an unknown outcome: its edit may have committed.
     internal const string AcquireScript = """
         if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'PX', ARGV[2]) then return ARGV[1] end
-        return redis.call('GET', KEYS[1])
+        local held = redis.call('GET', KEYS[1])
+        if held and string.byte(held, 1) == 254 and redis.call('PTTL', KEYS[1]) < tonumber(ARGV[3]) then
+          return string.char(253)
+        end
+        return held
+        """;
+
+    // Promotes the caller's reservation to a write marker that outlives any Redis outage
+    // short of the response window, so the key cannot lapse once the edit may commit.
+    internal const string BeginWriteScript = """
+        if redis.call('GET', KEYS[1]) == ARGV[1] then
+          redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
+          return 1
+        end
+        return 0
+        """;
+
+    // A write that ended without a result returns its key to a short reservation.
+    internal const string AbandonWriteScript = """
+        if redis.call('GET', KEYS[1]) == ARGV[1] then
+          redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
+          return 1
+        end
+        return 0
         """;
 
     internal const string RenewScript = """
@@ -61,7 +89,8 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
         """;
 
     internal const string ReleaseScript = """
-        if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end
+        local current = redis.call('GET', KEYS[1])
+        if current == ARGV[1] or current == ARGV[2] then return redis.call('DEL', KEYS[1]) end
         return 0
         """;
 
@@ -78,6 +107,8 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
     private long _unpublishedBytes;
     private int _publisherRunning;
     private readonly TimeSpan _ownershipWindow;
+    private readonly TimeSpan _writeOwnershipWindow;
+    private readonly TimeSpan _staleWriteGrace;
     private readonly MemoryCache _localResponses;
     private readonly Dictionary<string, KeyGate> _gates = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _shutdownSource = new();
@@ -115,6 +146,10 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
         // The owner stops trusting its reservation a third of a window before the reservation
         // itself could expire, measured from when its last successful renewal was sent.
         _ownershipWindow = reservationWindow - (reservationWindow / 3);
+        _writeOwnershipWindow = responseWindow - (responseWindow / 3);
+        // An unrenewed write marker is reported only after its owner has had time to renew it
+        // or publish its result once Redis is reachable again.
+        _staleWriteGrace = _renewInterval + _publishInterval;
         _localResponses = new MemoryCache(new MemoryCacheOptions
         {
             SizeLimit = localResponseBudgetBytes,
@@ -197,13 +232,19 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
             var token = new byte[17];
             token[0] = PendingMarker;
             RandomNumberGenerator.Fill(token.AsSpan(1));
+            long? staleSince = null;
             while (true)
             {
                 var sentAt = Stopwatch.GetTimestamp();
                 var held = (byte[]?)await _redis.ScriptEvaluateAsync(
                     AcquireScript,
                     new RedisKey[] { redisKey },
-                    new RedisValue[] { token, (long)_reservationWindow.TotalMilliseconds }).ConfigureAwait(false);
+                    new RedisValue[]
+                    {
+                        token,
+                        (long)_reservationWindow.TotalMilliseconds,
+                        (long)(_responseWindow - _reservationWindow).TotalMilliseconds,
+                    }).ConfigureAwait(false);
                 if (held is null)
                 {
                     continue;
@@ -217,6 +258,21 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
                 if (held.Length > 0 && held[0] == ReceiptMarker)
                 {
                     return new Lease(this, scope, gate, Proto.ApplyEditsResponse.Parser.ParseFrom(held, 1, held.Length - 1), reservation: null);
+                }
+
+                if (held.Length == 1 && held[0] == OutcomeUnknownMarker)
+                {
+                    // An earlier write may have committed and its owner can no longer be heard
+                    // from: refuse rather than execute the edit a second time (SEC-36).
+                    staleSince ??= Stopwatch.GetTimestamp();
+                    if (Stopwatch.GetElapsedTime(staleSince.Value) >= _staleWriteGrace)
+                    {
+                        throw new OutcomeUnknownException();
+                    }
+                }
+                else
+                {
+                    staleSince = null;
                 }
 
                 await Task.Delay(PendingPollInterval, cancellationToken).ConfigureAwait(false);
@@ -394,16 +450,43 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
     {
         try
         {
+            // The write marker is included in case a promotion whose reply was lost did apply.
             await _redis!.ScriptEvaluateAsync(
                 ReleaseScript,
                 new RedisKey[] { reservation.Key },
-                new RedisValue[] { reservation.Token }).ConfigureAwait(false);
+                new RedisValue[] { reservation.ReservedToken, reservation.WritingToken }).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is RedisException or TimeoutException)
         {
             // The reservation still expires on its own time-to-live.
         }
     }
+
+    private async Task AbandonWriteAsync(Reservation reservation)
+    {
+        try
+        {
+            await _redis!.ScriptEvaluateAsync(
+                AbandonWriteScript,
+                new RedisKey[] { reservation.Key },
+                new RedisValue[]
+                {
+                    reservation.WritingToken,
+                    reservation.ReservedToken,
+                    (long)_reservationWindow.TotalMilliseconds,
+                }).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is RedisException or TimeoutException)
+        {
+            // The write marker stays, so retries are refused as having an unknown outcome
+            // rather than executing an edit that may have committed.
+            Log.AbandonedWriteMarkerKept(_logger, ex);
+        }
+    }
+
+    /// <summary>An earlier request in this scope may have committed, but its result cannot be found.</summary>
+    internal sealed class OutcomeUnknownException()
+        : Exception("The outcome of an earlier keyed edit in this scope is unknown.");
 
     /// <summary>The caller's hold on one retry scope; dispose it when the edit request ends.</summary>
     public sealed class Lease : IAsyncDisposable
@@ -438,10 +521,10 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
         public bool OwnershipLost => _reservation?.Lost.IsCancellationRequested == true;
 
         /// <summary>
-        /// Confirms the reservation is still held immediately before the write and returns the
-        /// token the writer must observe: it is cancelled with the request or as soon as the
-        /// reservation can no longer be proven held. Returns <see langword="null"/> when the
-        /// reservation is already lost, in which case the caller must not write.
+        /// Promotes the reservation to a write marker immediately before the write and returns
+        /// the token the writer must observe: it is cancelled with the request or as soon as
+        /// the marker is found lost. Returns <see langword="null"/> when the marker could not
+        /// be stored, in which case the caller must not write.
         /// </summary>
         public async Task<CancellationToken?> TryBeginWriteAsync(CancellationToken requestCancellation)
         {
@@ -450,7 +533,7 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
                 return requestCancellation;
             }
 
-            if (!await _reservation.RenewNowAsync().ConfigureAwait(false))
+            if (!await _reservation.BeginWriteAsync().ConfigureAwait(false))
             {
                 return null;
             }
@@ -518,6 +601,12 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
                             // Nothing was written, so a retry may proceed at once.
                             await _store.ReleaseReservationAsync(_reservation).ConfigureAwait(false);
                         }
+                        else if (!_completed)
+                        {
+                            // The writer failed or was cancelled; keep the key reserved for a
+                            // short window instead of the whole response window.
+                            await _store.AbandonWriteAsync(_reservation).ConfigureAwait(false);
+                        }
                     }
                 }
                 finally
@@ -542,38 +631,72 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
         private readonly GrpcApplyEditsIdempotencyStore _store;
         private readonly CancellationTokenSource _lost = new();
         private readonly CancellationTokenSource _stop = new();
+        private readonly SemaphoreSlim _redisCalls = new(1, 1);
         private readonly Task _renewal;
         private long _ownedUntil;
+        private bool _writing;
 
         public Reservation(GrpcApplyEditsIdempotencyStore store, RedisKey key, byte[] token, long acquireSentAt)
         {
             _store = store;
             Key = key;
-            Token = token;
+            ReservedToken = token;
+            WritingToken = (byte[])token.Clone();
+            WritingToken[0] = WritingMarker;
             _ownedUntil = acquireSentAt + ToTimestampTicks(store._ownershipWindow);
             _renewal = Task.Run(RenewUntilStoppedAsync);
         }
 
         public RedisKey Key { get; }
 
-        public byte[] Token { get; }
+        public byte[] ReservedToken { get; }
+
+        public byte[] WritingToken { get; }
+
+        /// <summary>The value this caller holds the key with now.</summary>
+        public byte[] Token => Volatile.Read(ref _writing) ? WritingToken : ReservedToken;
 
         public CancellationToken Lost => _lost.Token;
 
-        public async Task<bool> RenewNowAsync()
+        /// <summary>
+        /// Replaces the reservation with a write marker that lives for the response window.
+        /// Returns <see langword="false"/> unless Redis confirmed it, because a writer whose
+        /// key could lapse during an outage after it commits could be executed again.
+        /// </summary>
+        public async Task<bool> BeginWriteAsync()
         {
             if (_lost.IsCancellationRequested)
             {
                 return false;
             }
 
+            await _redisCalls.WaitAsync().ConfigureAwait(false);
             try
             {
-                return await RenewAsync().ConfigureAwait(false);
+                var sentAt = Stopwatch.GetTimestamp();
+                var promoted = (long)await _store._redis!.ScriptEvaluateAsync(
+                    BeginWriteScript,
+                    new RedisKey[] { Key },
+                    new RedisValue[] { ReservedToken, WritingToken, (long)_store._responseWindow.TotalMilliseconds })
+                    .ConfigureAwait(false);
+                if (promoted != 1)
+                {
+                    MarkLost();
+                    return false;
+                }
+
+                Volatile.Write(ref _writing, true);
+                Volatile.Write(ref _ownedUntil, sentAt + ToTimestampTicks(_store._writeOwnershipWindow));
+                return true;
             }
             catch (Exception ex) when (ex is RedisException or TimeoutException)
             {
-                return RemainingOwnership() > TimeSpan.Zero && !_lost.IsCancellationRequested;
+                Log.ReservationRenewalFailed(_store._logger, ex);
+                return false;
+            }
+            finally
+            {
+                _redisCalls.Release();
             }
         }
 
@@ -592,6 +715,7 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
         {
             _lost.Dispose();
             _stop.Dispose();
+            _redisCalls.Dispose();
         }
 
         private static long ToTimestampTicks(TimeSpan duration)
@@ -602,19 +726,34 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
 
         private async Task<bool> RenewAsync()
         {
-            var sentAt = Stopwatch.GetTimestamp();
-            var renewed = (long)await _store._redis!.ScriptEvaluateAsync(
-                RenewScript,
-                new RedisKey[] { Key },
-                new RedisValue[] { Token, (long)_store._reservationWindow.TotalMilliseconds }).ConfigureAwait(false);
-            if (renewed != 1)
+            // Serialized with BeginWriteAsync so a renewal never races the promotion.
+            await _redisCalls.WaitAsync(_stop.Token).ConfigureAwait(false);
+            try
             {
-                MarkLost();
-                return false;
-            }
+                var writing = Volatile.Read(ref _writing);
+                var sentAt = Stopwatch.GetTimestamp();
+                var renewed = (long)await _store._redis!.ScriptEvaluateAsync(
+                    RenewScript,
+                    new RedisKey[] { Key },
+                    new RedisValue[]
+                    {
+                        writing ? WritingToken : ReservedToken,
+                        (long)(writing ? _store._responseWindow : _store._reservationWindow).TotalMilliseconds,
+                    }).ConfigureAwait(false);
+                if (renewed != 1)
+                {
+                    MarkLost();
+                    return false;
+                }
 
-            Volatile.Write(ref _ownedUntil, sentAt + ToTimestampTicks(_store._ownershipWindow));
-            return true;
+                var ownership = writing ? _store._writeOwnershipWindow : _store._ownershipWindow;
+                Volatile.Write(ref _ownedUntil, sentAt + ToTimestampTicks(ownership));
+                return true;
+            }
+            finally
+            {
+                _redisCalls.Release();
+            }
         }
 
         private async Task RenewUntilStoppedAsync()
@@ -687,6 +826,12 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
             Level = LogLevel.Debug,
             Message = "Renewing a keyed gRPC edit reservation failed; retrying until its ownership deadline.")]
         public static partial void ReservationRenewalFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(
+            EventId = 5637,
+            Level = LogLevel.Warning,
+            Message = "A failed keyed gRPC edit could not return its write marker to a short reservation; retries report an unknown outcome until it expires.")]
+        public static partial void AbandonedWriteMarkerKept(ILogger logger, Exception exception);
 
         [LoggerMessage(
             EventId = 5636,
