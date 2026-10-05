@@ -89,6 +89,9 @@
     <None Update="Features/Geoprocessing/customcode-harness-jobspec-contract.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="Features/Operations/Fixtures/plaintext-descriptor-with-unrelated-marker.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <!-- imagery.classify execution proof (#3935): the committed scene, the two
          committed models, the model server's inference program, and the decoder. -->
     <None Update="TestData/ImageryClassify/*">

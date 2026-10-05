@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
@@ -192,9 +191,11 @@ public sealed class OperationSecretKeyRingProtectionTests
         RedisDataProtectionKeyRepository.IsProtectedElement(repository.Elements[0]).Should().BeTrue();
     }
 
-    private static string PlaintextDescriptorWithUnrelatedMarkerPath([CallerFilePath] string sourceFile = "")
-        => Path.Combine(
-            Path.GetDirectoryName(sourceFile)!,
+    private static string PlaintextDescriptorWithUnrelatedMarkerPath()
+        => Path.Join(
+            AppContext.BaseDirectory,
+            "Features",
+            "Operations",
             "Fixtures",
             "plaintext-descriptor-with-unrelated-marker.xml");
 
