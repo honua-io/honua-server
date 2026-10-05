@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using Honua.Core.Configuration;
 
 namespace Honua.Worker.Gdal.Execution;
 
@@ -31,6 +32,38 @@ internal sealed class GdalWorkerOptions
     [Range(1024L * 1024L, 1024L * 1024L * 1024L * 1024L,
         ErrorMessage = "MaxStagedArtifactBytes must be between 1 MiB and 1 TiB")]
     public long MaxStagedArtifactBytes { get; set; } = 10L * 1024L * 1024L * 1024L;
+
+    /// <summary>
+    /// Maximum uncompressed bytes of one entry in a ZIP dataset accepted by
+    /// <c>source.ogr</c>. Matches the managed import budget
+    /// (<see cref="Honua.Core.Features.Import.Domain.ImportLimits.MaxArchiveEntryBytes"/>).
+    /// The compressed-byte ceiling is <see cref="MaxArtifactBytes"/>; this bound
+    /// applies to the decompressed entry.
+    /// </summary>
+    [Range(1024L, FileSizeConstants.OneGB, ErrorMessage = "MaxArchiveEntryBytes must be between 1 KiB and 1 GiB")]
+    public long MaxArchiveEntryBytes { get; set; } = FileSizeConstants.FiveHundredMB;
+
+    /// <summary>
+    /// Maximum total uncompressed bytes written while unpacking one ZIP dataset.
+    /// Matches <see cref="Honua.Core.Features.Import.Domain.ImportLimits.MaxArchiveExtractedBytes"/>.
+    /// </summary>
+    [Range(1024L, 4L * FileSizeConstants.OneGB, ErrorMessage = "MaxArchiveExtractedBytes must be between 1 KiB and 4 GiB")]
+    public long MaxArchiveExtractedBytes { get; set; } = FileSizeConstants.OneGB;
+
+    /// <summary>
+    /// Maximum uncompressed/compressed ratio of one ZIP entry.
+    /// Matches <see cref="Honua.Core.Features.Import.Domain.ImportLimits.MaxArchiveCompressionRatio"/>.
+    /// </summary>
+    [Range(2d, 1_000_000d, ErrorMessage = "MaxArchiveCompressionRatio must be between 2 and 1000000")]
+    public double MaxArchiveCompressionRatio { get; set; } = 200d;
+
+    /// <summary>
+    /// Maximum number of entries in one ZIP dataset, including directory entries.
+    /// A small archive of many names otherwise spends the worker on metadata
+    /// before the tool timeout starts.
+    /// </summary>
+    [Range(1, 1_000_000, ErrorMessage = "MaxArchiveEntries must be between 1 and 1000000")]
+    public int MaxArchiveEntries { get; set; } = 100_000;
 
     /// <summary>
     /// Root directory under which per-job scratch workspaces are created. Each
