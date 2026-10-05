@@ -660,4 +660,176 @@ public sealed class Fes20ParserTests
 
         act.Should().Throw<Fes20ParseException>().Which.ClientReason.Should().BeNull();
     }
+
+    [UnitTest]
+    public void ParseFilter_DistanceWithUom_FlagsTheNormalisedMetres()
+    {
+        // honua-server#5462: 20 m must reach a projected-foot layer as metres, not as a bare
+        // number that a planar translator reads as 20 native feet.
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:Beyond>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <gml:Point srsName="urn:ogc:def:crs:EPSG::2264"><gml:pos>2000000 700000</gml:pos></gml:Point>
+                <fes:Distance uom="ft">65.6</fes:Distance>
+              </fes:Beyond>
+            </fes:Filter>
+            """;
+
+        var spatial = Fes20Parser.ParseFilter(filterXml, 2264).Should().BeOfType<SpatialDistancePredicate>().Subject;
+
+        spatial.DistanceInMeters.Should().BeTrue();
+        ((double)spatial.Distance.Should().BeOfType<Literal>().Subject.Value!).Should().BeApproximately(65.6 * 0.3048, 1e-9);
+    }
+
+    [UnitTest]
+    public void ParseFilter_DistanceWithoutUom_KeepsTheRawNativeValue()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:DWithin>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <gml:Point srsName="urn:ogc:def:crs:EPSG::2264"><gml:pos>2000000 700000</gml:pos></gml:Point>
+                <fes:Distance>20</fes:Distance>
+              </fes:DWithin>
+            </fes:Filter>
+            """;
+
+        var spatial = Fes20Parser.ParseFilter(filterXml, 2264).Should().BeOfType<SpatialDistancePredicate>().Subject;
+
+        spatial.DistanceInMeters.Should().BeFalse();
+        spatial.Distance.Should().BeOfType<Literal>().Which.Value.Should().Be(20d);
+    }
+
+    [UnitTest]
+    public void ParseFilter_ThreeDimensionalPosList_HonoursTheStrideAndKeepsXy()
+    {
+        // honua-server#5463: srsDimension=3 lat/lon/h triples (0 0 5) and (0 10 5) describe the
+        // equator from lon 0 to lon 10. Reading them as pairs yields (0,0) (0,5) (5,10), a line
+        // that misses the point (5, 0).
+        var posList = ParseLine("""
+            <gml:LineString srsName="urn:ogc:def:crs:EPSG::4979" srsDimension="3">
+              <gml:posList srsDimension="3">0 0 5 0 10 5</gml:posList>
+            </gml:LineString>
+            """);
+        var positions = ParseLine("""
+            <gml:LineString srsName="urn:ogc:def:crs:EPSG::4979" srsDimension="3">
+              <gml:pos>0 0 5</gml:pos>
+              <gml:pos>0 10 5</gml:pos>
+            </gml:LineString>
+            """);
+
+        posList.Coordinates.Select(c => (c.X, c.Y)).Should().Equal((0d, 0d), (10d, 0d));
+        positions.Coordinates.Select(c => (c.X, c.Y)).Should().Equal((0d, 0d), (10d, 0d));
+        posList.Intersects(new Point(5, 0)).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void ParseFilter_SrsDimensionOnTheGeometry_AppliesToNestedPosLists()
+    {
+        var line = ParseLine("""
+            <gml:LineString srsName="urn:ogc:def:crs:EPSG::4979" srsDimension="3">
+              <gml:posList>0 0 5 0 10 5</gml:posList>
+            </gml:LineString>
+            """);
+
+        line.Coordinates.Select(c => (c.X, c.Y)).Should().Equal((0d, 0d), (10d, 0d));
+    }
+
+    [UnitTest]
+    public void ParseFilter_PolygonWithThreeDimensionalRing_HonoursTheStride()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:Intersects>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <gml:Polygon srsName="urn:ogc:def:crs:EPSG::4979">
+                  <gml:exterior><gml:LinearRing>
+                    <gml:posList srsDimension="3">0 0 1 0 10 1 10 10 1 10 0 1 0 0 1</gml:posList>
+                  </gml:LinearRing></gml:exterior>
+                </gml:Polygon>
+              </fes:Intersects>
+            </fes:Filter>
+            """;
+
+        var polygon = ParseGeometry(filterXml).Should().BeOfType<Polygon>().Subject;
+
+        polygon.ExteriorRing.Coordinates.Select(c => (c.X, c.Y))
+            .Should().Equal((0d, 0d), (10d, 0d), (10d, 10d), (0d, 10d), (0d, 0d));
+    }
+
+    [UnitTheory]
+    [InlineData("1", "0 0 0 10")]
+    [InlineData("4", "0 0 5 7 0 10 5 7")]
+    [InlineData("abc", "0 0 0 10")]
+    public void ParseFilter_UnsupportedSrsDimension_ThrowsParseException(string dimension, string ordinates)
+    {
+        var filterXml = $"""
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:Intersects>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <gml:LineString srsName="urn:ogc:def:crs:EPSG::4326">
+                  <gml:posList srsDimension="{dimension}">{ordinates}</gml:posList>
+                </gml:LineString>
+              </fes:Intersects>
+            </fes:Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>().WithMessage("*srsDimension*");
+    }
+
+    [UnitTest]
+    public void ParseFilter_PosListNotAMultipleOfTheDimension_ThrowsParseException()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:Intersects>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <gml:LineString srsName="urn:ogc:def:crs:EPSG::4979">
+                  <gml:posList srsDimension="3">0 0 5 0 10 5 1 1</gml:posList>
+                </gml:LineString>
+              </fes:Intersects>
+            </fes:Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>().WithMessage("*multiple of srsDimension*");
+    }
+
+    [UnitTest]
+    public void ParseFilter_PosOrdinateCountDisagreesWithSrsDimension_ThrowsParseException()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:Intersects>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <gml:Point srsName="urn:ogc:def:crs:EPSG::4979" srsDimension="3"><gml:pos>0 5</gml:pos></gml:Point>
+              </fes:Intersects>
+            </fes:Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>().WithMessage("*srsDimension*");
+    }
+
+    private static LineString ParseLine(string gmlLineString)
+        => ParseGeometry($"""
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:Intersects>
+                <fes:ValueReference>geom</fes:ValueReference>
+                {gmlLineString}
+              </fes:Intersects>
+            </fes:Filter>
+            """).Should().BeOfType<LineString>().Subject;
+
+    private static Geometry ParseGeometry(string filterXml)
+    {
+        var spatial = Fes20Parser.ParseFilter(filterXml).Should().BeOfType<SpatialPredicate>().Subject;
+        var literal = spatial.Right.Should().BeOfType<GeometryLiteral>().Subject;
+        return new WKBReader().Read(literal.Wkb);
+    }
 }

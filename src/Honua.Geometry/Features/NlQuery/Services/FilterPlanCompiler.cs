@@ -149,7 +149,10 @@ public static class FilterPlanCompiler
             var distanceMeters = ConvertDistanceToMeters(distance, clause.DistanceUnit);
             var distanceLiteral = new Literal(distanceMeters, LiteralType.Number);
 
-            return new SpatialDistancePredicate(spatialOp, propertyRef, geometryLiteral, distanceLiteral);
+            return new SpatialDistancePredicate(spatialOp, propertyRef, geometryLiteral, distanceLiteral)
+            {
+                DistanceInMeters = true
+            };
         }
 
         return new SpatialPredicate(spatialOp, propertyRef, geometryLiteral);

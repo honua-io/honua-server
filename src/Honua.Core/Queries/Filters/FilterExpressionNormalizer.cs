@@ -35,18 +35,20 @@ public static class FilterExpressionNormalizer
         {
             BinaryExpression binary => NormalizeBinaryExpression(binary, schema),
             UnaryExpression unary => new UnaryExpression(unary.Operator, NormalizeCore(unary.Operand, schema)),
-            // 'with' preserves protocol-scoped flags (SpatialPredicate.Geodesic) that a
-            // positional reconstruction would silently reset to their defaults.
+            // 'with' preserves protocol-scoped flags (SpatialPredicate.Geodesic,
+            // SpatialDistancePredicate.DistanceInMeters) that a positional reconstruction would
+            // silently reset to their defaults.
             SpatialPredicate spatial => spatial with
             {
                 Left = NormalizeCore(spatial.Left, schema),
                 Right = NormalizeCore(spatial.Right, schema)
             },
-            SpatialDistancePredicate spatialDistance => new SpatialDistancePredicate(
-                spatialDistance.Operator,
-                NormalizeCore(spatialDistance.Left, schema),
-                NormalizeCore(spatialDistance.Right, schema),
-                NormalizeCore(spatialDistance.Distance, schema)),
+            SpatialDistancePredicate spatialDistance => spatialDistance with
+            {
+                Left = NormalizeCore(spatialDistance.Left, schema),
+                Right = NormalizeCore(spatialDistance.Right, schema),
+                Distance = NormalizeCore(spatialDistance.Distance, schema)
+            },
             TemporalPredicate temporal => new TemporalPredicate(
                 temporal.Operator,
                 NormalizeCore(temporal.Left, schema),
