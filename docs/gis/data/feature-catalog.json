@@ -6718,6 +6718,9 @@
         "Honua.Server.Tests.Features.Protocols.OData.ODataEndpointTests.LayerFeatures_ReturnsCollection",
         "Honua.Server.Tests.Features.Protocols.OData.ODataExpansionBudgetRegressionTests.Expand_ExactlyAtBudget_ReturnsCompleteChildren",
         "Honua.Server.Tests.Features.Protocols.OData.ODataExpansionBudgetRegressionTests.Expand_OneRowPage_RejectsOverBudgetChildren",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataStreamingTimeoutAbortTests.Features_StreamedOverKestrel_CompletesWellFramedBody",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataStreamingTimeoutAbortTests.Features_TimeoutAfterStreamStarted_AbortsResponseInsteadOfCompletingTruncatedBody",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataStreamingTimeoutAbortTests.Features_TimeoutBeforeStreamStarted_ReturnsShapedRequestTimeout",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataQuery_NoGrant_FallsBackToCoarseDeny",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataQuery_QueryGrant_OverridesCoarseDeny"
       ],

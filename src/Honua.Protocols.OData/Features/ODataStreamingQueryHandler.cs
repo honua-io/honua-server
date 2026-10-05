@@ -568,9 +568,11 @@ internal sealed partial class ODataStreamingQueryHandler(
                 resource.ReadSrid() ?? 4326,
                 effectiveToken);
 
-            // Set up streaming response
+            // Set up streaming response. Leave Transfer-Encoding to the server: Kestrel chunks a body
+            // without Content-Length itself, while an application-set header means the application
+            // frames the chunks, so the JSON would go out unframed and a client could not tell a
+            // whole body from a cut one (#5472).
             context.Response.ContentType = ODataUtilityService.GetODataContentType(context.Request, format);
-            context.Response.Headers["Transfer-Encoding"] = "chunked";
             ODataUtilityService.SetODataHeaders(context);
             if (applyTrackChangesPreference)
             {
@@ -699,122 +701,137 @@ internal sealed partial class ODataStreamingQueryHandler(
             SkipValidation = false
         });
 
-        // Start OData response
-        writer.WriteStartObject();
-
-        // OData JSON Format v4.01 §4.5.1: @odata.context MUST be the first property.
-        var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
-        if (includeContext)
+        try
         {
-            writer.WriteString("@odata.context", ODataUtilityService.BuildContextUrl(baseUrl, "Features", select: select, expand: expand));
-        }
+            // Start OData response
+            writer.WriteStartObject();
 
-        if (count == true && totalCount.HasValue)
-        {
-            writer.WriteNumber("@odata.count", totalCount.Value);
-        }
-
-        // Start value array
-        writer.WriteStartArray("value");
-
-        var streamedCount = 0;
-        var hasMoreResults = false;
-        var featuresSinceFlush = 0;
-        await foreach (var feature in features.WithCancellation(cancellationToken))
-        {
-            if (streamedCount >= pagination.Limit)
+            // OData JSON Format v4.01 §4.5.1: @odata.context MUST be the first property.
+            var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
+            if (includeContext)
             {
-                hasMoreResults = true;
-                break;
+                writer.WriteString("@odata.context", ODataUtilityService.BuildContextUrl(baseUrl, "Features", select: select, expand: expand));
             }
 
-            await WriteODataFeatureAsync(
-                writer,
-                feature,
-                layerId,
-                layerSrid,
-                axisOrder,
-                selectedFields,
-                computeExpressions,
-                geometryService,
-                cancellationToken);
-            streamedCount++;
-
-            if (++featuresSinceFlush >= FlushInterval)
+            if (count == true && totalCount.HasValue)
             {
-                await writer.FlushAsync(cancellationToken);
-                featuresSinceFlush = 0;
+                writer.WriteNumber("@odata.count", totalCount.Value);
             }
-        }
 
-        // End value array
-        writer.WriteEndArray();
+            // Start value array
+            writer.WriteStartArray("value");
 
-        var shouldPaginate = totalCount.HasValue
-            ? ODataUtilityService.ShouldPaginate(streamedCount, pagination.Offset, totalCount.Value, pagination.Limit)
-            : hasMoreResults;
-
-        // An ordinary collection stops once the client $top is spent and carries the remaining
-        // budget forward (#5464); change-tracking continuations keep paging by $top.
-        int? continuationTop = pagination.Limit;
-        if (shouldPaginate && !trackChangesRequested && string.IsNullOrWhiteSpace(deltatoken))
-        {
-            shouldPaginate = ODataUtilityService.TryGetContinuationTop(requestedTop, streamedCount, out continuationTop);
-        }
-
-        if (shouldPaginate)
-        {
-            var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
-            var nextLink = !string.IsNullOrWhiteSpace(deltatoken)
-                ? ODataUtilityService.GenerateDeltaNextLink(
-                    context.Request,
-                    deltaState,
-                    nextSkip,
-                    pagination.Limit,
-                    useSkipToken,
-                    deltaState.Filter,
-                    deltaState.OrderBy)
-                : ODataUtilityService.GenerateNextLink(
-                    context.Request,
-                    nextSkip,
-                    continuationTop,
-                    filter,
-                    select,
-                    orderby,
-                    count,
-                    expand,
-                    useSkipToken,
-                    compute,
-                    format,
-                    trackChangesRequested,
-                    trackChangesRequested ? deltaState : null);
-            writer.WriteString("@odata.nextLink", nextLink);
-        }
-        else if (trackChangesRequested)
-        {
-            var finalDeltaState = !string.IsNullOrWhiteSpace(deltatoken)
-                ? deltaState with
+            var streamedCount = 0;
+            var hasMoreResults = false;
+            var featuresSinceFlush = 0;
+            await foreach (var feature in features.WithCancellation(cancellationToken))
+            {
+                if (streamedCount >= pagination.Limit)
                 {
-                    Timestamp = deltaState.UpperBoundTimestamp ?? DateTimeOffset.UtcNow,
-                    UpperBoundTimestamp = null,
-                    LayerId = layerId,
-                    Count = count
+                    hasMoreResults = true;
+                    break;
                 }
-                : deltaState with
+
+                await WriteODataFeatureAsync(
+                    writer,
+                    feature,
+                    layerId,
+                    layerSrid,
+                    axisOrder,
+                    selectedFields,
+                    computeExpressions,
+                    geometryService,
+                    cancellationToken);
+                streamedCount++;
+
+                if (++featuresSinceFlush >= FlushInterval)
                 {
-                    LayerId = layerId,
-                    Count = count
-                };
-            var deltaLink = ODataUtilityService.GenerateDeltaLink(
-                context.Request,
-                finalDeltaState);
-            writer.WriteString("@odata.deltaLink", deltaLink);
+                    // Utf8JsonWriter only advances a PipeWriter; flush the pipe too so rows reach the
+                    // client as they stream instead of buffering the whole page in memory.
+                    await writer.FlushAsync(cancellationToken);
+                    await context.Response.BodyWriter.FlushAsync(cancellationToken);
+                    featuresSinceFlush = 0;
+                }
+            }
+
+            // End value array
+            writer.WriteEndArray();
+
+            var shouldPaginate = totalCount.HasValue
+                ? ODataUtilityService.ShouldPaginate(streamedCount, pagination.Offset, totalCount.Value, pagination.Limit)
+                : hasMoreResults;
+
+            // An ordinary collection stops once the client $top is spent and carries the remaining
+            // budget forward (#5464); change-tracking continuations keep paging by $top.
+            int? continuationTop = pagination.Limit;
+            if (shouldPaginate && !trackChangesRequested && string.IsNullOrWhiteSpace(deltatoken))
+            {
+                shouldPaginate = ODataUtilityService.TryGetContinuationTop(requestedTop, streamedCount, out continuationTop);
+            }
+
+            if (shouldPaginate)
+            {
+                var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
+                var nextLink = !string.IsNullOrWhiteSpace(deltatoken)
+                    ? ODataUtilityService.GenerateDeltaNextLink(
+                        context.Request,
+                        deltaState,
+                        nextSkip,
+                        pagination.Limit,
+                        useSkipToken,
+                        deltaState.Filter,
+                        deltaState.OrderBy)
+                    : ODataUtilityService.GenerateNextLink(
+                        context.Request,
+                        nextSkip,
+                        continuationTop,
+                        filter,
+                        select,
+                        orderby,
+                        count,
+                        expand,
+                        useSkipToken,
+                        compute,
+                        format,
+                        trackChangesRequested,
+                        trackChangesRequested ? deltaState : null);
+                writer.WriteString("@odata.nextLink", nextLink);
+            }
+            else if (trackChangesRequested)
+            {
+                var finalDeltaState = !string.IsNullOrWhiteSpace(deltatoken)
+                    ? deltaState with
+                    {
+                        Timestamp = deltaState.UpperBoundTimestamp ?? DateTimeOffset.UtcNow,
+                        UpperBoundTimestamp = null,
+                        LayerId = layerId,
+                        Count = count
+                    }
+                    : deltaState with
+                    {
+                        LayerId = layerId,
+                        Count = count
+                    };
+                var deltaLink = ODataUtilityService.GenerateDeltaLink(
+                    context.Request,
+                    finalDeltaState);
+                writer.WriteString("@odata.deltaLink", deltaLink);
+            }
+
+            // End OData response
+            writer.WriteEndObject();
+
+            await writer.FlushAsync(cancellationToken);
         }
-
-        // End OData response
-        writer.WriteEndObject();
-
-        await writer.FlushAsync(cancellationToken);
+        catch
+        {
+            // Nothing written since the last flush has reached the client. Drop it so disposing the
+            // writer cannot commit a half-built collection: before the response starts that prefix
+            // would precede the error body written further up, and after it the abort already marks
+            // the response as cut (#5472).
+            writer.Reset();
+            throw;
+        }
     }
 
     private static string? ValidateDeltaRequestQuery(IEnumerable<string> queryKeys)
