@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1146,
+    "total": 1149,
     "byStatus": {
-      "not-executable": 1132,
+      "not-executable": 1135,
       "unvalidated": 11,
       "passed": 3
     }
@@ -13425,6 +13425,45 @@
       },
       "fence": 3,
       "line": 164,
+      "language": "bash"
+    },
+    {
+      "id": "169ff9eb4378c2e4",
+      "kind": "docs-fence",
+      "path": "docs/ops/aot-image-attestations-proof.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 32,
+      "language": "bash"
+    },
+    {
+      "id": "1c0a6a2366751a63",
+      "kind": "docs-fence",
+      "path": "docs/ops/aot-image-attestations.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 2,
+      "line": 101,
+      "language": "bash"
+    },
+    {
+      "id": "aa58464d6dc034ec",
+      "kind": "docs-fence",
+      "path": "docs/ops/aot-image-attestations.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 48,
       "language": "bash"
     },
     {
