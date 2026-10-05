@@ -20,6 +20,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Protocols.Grpc;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Events;
@@ -1725,6 +1726,15 @@ public sealed class GrpcFeatureServiceTests
         {
             opts.DataEditorRoles = ["data-editor"];
         });
+
+        // gRPC binds where clauses to the shared filter parser and translator (SEC-11);
+        // the provider-specific SQL is not under test here.
+        var sqlFilterTranslator = Substitute.For<ISqlFilterTranslator>();
+        sqlFilterTranslator
+            .Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Resource>())
+            .Returns(new SqlFragment("TRUE", []));
+        services.AddSingleton<IFilterExpressionService>(
+            new FilterExpressionService(new FilterExpressionTranslator(sqlFilterTranslator)));
 
         // Register the per-operation resolver (#1376) so the gRPC read/write seams
         // consult grants first; when no grant matches they fall back to the coarse
