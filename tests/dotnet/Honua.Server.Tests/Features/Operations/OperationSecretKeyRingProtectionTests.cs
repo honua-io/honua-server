@@ -117,15 +117,53 @@ public sealed class OperationSecretKeyRingProtectionTests
     [UnitTest]
     public void IsProtectedElement_RequiresEncryptedSecretDescriptor()
     {
+        XNamespace dataProtection = "http://schemas.asp.net/2015/03/dataProtection";
         var protectedKey = new XElement(
             "key",
-            new XElement("descriptor", new XElement("encryptedSecret")));
+            new XAttribute("id", "aaaaaaaa-0b0b-1c1c-2d2d-333333333333"),
+            new XAttribute("version", "1"),
+            new XElement("creationDate", "2015-03-19T23:32:02.3949887Z"),
+            new XElement("activationDate", "2015-03-19T23:32:02.3839429Z"),
+            new XElement("expirationDate", "2015-06-17T23:32:02.3839429Z"),
+            new XElement(
+                "descriptor",
+                new XAttribute(
+                    "deserializerType",
+                    "Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationModel.AuthenticatedEncryptorDescriptorDeserializer, Microsoft.AspNetCore.DataProtection"),
+                new XElement(
+                    "descriptor",
+                    new XElement("encryption", new XAttribute("algorithm", "AES_256_CBC")),
+                    new XElement("validation", new XAttribute("algorithm", "HMACSHA256")),
+                    new XElement(
+                        dataProtection + "encryptedSecret",
+                        new XAttribute(
+                            "decryptorType",
+                            "Microsoft.AspNetCore.DataProtection.XmlEncryption.EncryptedXmlDecryptor, Microsoft.AspNetCore.DataProtection"),
+                        new XElement(dataProtection + "EncryptedData")))));
+        var gcmKey = new XElement(protectedKey);
+        var gcmDescriptor = gcmKey.Element("descriptor")!.Element("descriptor")!;
+        gcmDescriptor.Element("validation")!.Remove();
+        gcmDescriptor.Element("encryption")!.SetAttributeValue("algorithm", "AES_256_GCM");
         var legacyKey = new XElement(
             "key",
             new XElement("descriptor", new XElement("descriptor")));
 
         RedisDataProtectionKeyRepository.IsProtectedElement(protectedKey).Should().BeTrue();
+        RedisDataProtectionKeyRepository.IsProtectedElement(gcmKey).Should().BeTrue();
         RedisDataProtectionKeyRepository.IsProtectedElement(legacyKey).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void IsProtectedElement_AcceptsARevocationRecord()
+    {
+        var revocation = new XElement(
+            "revocation",
+            new XAttribute("version", "1"),
+            new XElement("revocationDate", "2015-03-20T00:00:00.0000000Z"),
+            new XElement("key", new XAttribute("id", "*")));
+
+        RedisDataProtectionKeyRepository.IsProtectedElement(revocation).Should().BeTrue();
+        RedisDataProtectionKeyRepository.IsProtectedElement(new XElement("note")).Should().BeFalse();
     }
 
     // The marker sits beside the descriptor XmlKeyManager imports. That sibling is not
