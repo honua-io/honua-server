@@ -187,12 +187,12 @@ public sealed class WfsMultiLayerTransactionLockTests
                 foreach (var pair in Features) _pending.Add(pair.Key, pair.Value);
                 return Task.FromResult(transaction);
             });
-            provider.ApplyEditsAsync(Arg.Any<int>(), Arg.Any<FeatureEditBatch>(), Arg.Any<CancellationToken>()).Returns(call =>
+            provider.ApplyEditsAsync(0, new FeatureEditBatch(), CancellationToken.None).ReturnsForAnyArgs(call =>
             {
                 OrdinaryApplyCalls++;
                 return Task.FromResult(Apply(Features, call.Arg<int>(), call.Arg<FeatureEditBatch>()));
             });
-            transaction.ApplyEditsAsync(Arg.Any<int>(), Arg.Any<FeatureEditBatch>(), Arg.Any<CancellationToken>()).Returns(call =>
+            transaction.ApplyEditsAsync(0, new FeatureEditBatch(), CancellationToken.None).ReturnsForAnyArgs(call =>
             {
                 AppliedLayers.Add(call.Arg<int>());
                 return Task.FromResult(Apply(_pending, call.Arg<int>(), call.Arg<FeatureEditBatch>()));
@@ -222,8 +222,8 @@ public sealed class WfsMultiLayerTransactionLockTests
             var reader = Substitute.For<IFeatureReader>();
             reader.GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
                 .Returns(call => Task.FromResult<Feature?>(Features.GetValueOrDefault(call.Arg<int>())));
-            reader.QueryObjectIdsAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-                .Returns(call => Task.FromResult(ImmutableArray.Create(Features[call.Arg<int>()].Id)));
+            reader.QueryObjectIdsAsync(0, new FeatureQuery(), CancellationToken.None)
+                .ReturnsForAnyArgs(call => Task.FromResult(ImmutableArray.Create(Features[call.Arg<int>()].Id)));
             var coordinateTransform = Substitute.For<ICoordinateTransformService>();
             var limits = Options.Create(new LimitsOptions());
             _handler = new Wfs20Handler(NullLogger<Wfs20Handler>.Instance,
