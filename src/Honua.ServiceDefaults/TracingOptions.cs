@@ -38,7 +38,8 @@ public sealed class TracingOptions
     public bool TraceHealthEndpoints { get; set; }
 
     /// <summary>
-    /// Gets or sets whether sanitized exception details should be exported on spans.
+    /// Gets or sets whether sanitized exception details should be exported on spans. Applies to
+    /// span tags, the span status description and span-event attributes alike.
     /// </summary>
     public bool ExportExceptionDetails { get; set; }
 
@@ -72,7 +73,8 @@ public sealed class TracingOptions
     public int MaxAttributesPerSpan { get; set; } = 128;
 
     /// <summary>
-    /// Gets or sets the maximum number of events per span.
+    /// Gets or sets the maximum number of events per span. Enforced by the OTLP exporter, which drops
+    /// later events and reports them as dropped, unless <c>OTEL_SPAN_EVENT_COUNT_LIMIT</c> is set.
     /// </summary>
     public int MaxEventsPerSpan { get; set; } = 128;
 

@@ -225,12 +225,7 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
             operation,
             onRetry: (ex, delay, attempt) =>
             {
-                activity?.AddEvent(new ActivityEvent("deadlock_retry", tags: new ActivityTagsCollection
-                {
-                    { "attempt", attempt },
-                    { "delay_ms", delay.TotalMilliseconds },
-                    { "error.message", ex.Message }
-                }));
+                activity?.AddEvent(PostgresRetryActivityEvent.Create("deadlock_retry", ex, delay, attempt));
 
                 DatabaseDeadlockRetry(_logger, attempt, ex.Message, ex);
             },
@@ -254,12 +249,7 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
             operation,
             onRetry: (ex, delay, attempt) =>
             {
-                activity?.AddEvent(new ActivityEvent("deadlock_retry", tags: new ActivityTagsCollection
-                {
-                    { "attempt", attempt },
-                    { "delay_ms", delay.TotalMilliseconds },
-                    { "error.message", ex.Message }
-                }));
+                activity?.AddEvent(PostgresRetryActivityEvent.Create("deadlock_retry", ex, delay, attempt));
 
                 DatabaseDeadlockRetry(_logger, attempt, ex.Message, ex);
             },
