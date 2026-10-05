@@ -85,6 +85,25 @@ public sealed class ReplaceCompletenessParserSkipTests : IAsyncLifetime
 
     [IntegrationTheory]
     [Endpoint("POST /api/v1/admin/import/upload")]
+    [InlineData("POINT (invalid)\n", 1)]
+    [InlineData("POINT (invalid)\nPOINT (invalid)\n", 2)]
+    public async Task Upload_FirstReplaceWithOnlyParserSkips_FailsWithoutPublishingTarget(string source, int skipped)
+    {
+        var result = await UploadAsync(source);
+
+        using (new AssertionScope())
+        {
+            result.Success.Should().BeFalse();
+            result.FeatureCount.Should().Be(0);
+            result.ErrorMessage.Should().Contain("No features found in file");
+            result.Warnings.Should().Contain($"{skipped} record(s) could not be parsed as WKT, EWKT, or WKB and were skipped.");
+            (await TableExistsAsync($"imported_{_tableName}")).Should().BeFalse();
+            (await StagingExistsAsync()).Should().BeFalse();
+        }
+    }
+
+    [IntegrationTheory]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     [InlineData("Replace", false)]
     [InlineData("Append", true)]
     public async Task Upload_PartialNonDestructiveImport_RetainsRowsAndReportsSkips(string loadMode, bool seedTarget)
@@ -156,13 +175,15 @@ public sealed class ReplaceCompletenessParserSkipTests : IAsyncLifetime
         return rows;
     }
 
-    private async Task<bool> StagingExistsAsync()
+    private Task<bool> StagingExistsAsync() => TableExistsAsync($"imported_{_tableName}__staging");
+
+    private async Task<bool> TableExistsAsync(string tableName)
     {
         await using var connection = await _fixture.Postgres.GetConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = @schema AND tablename = @table)";
         command.Parameters.AddWithValue("schema", "honua_data");
-        command.Parameters.AddWithValue("table", $"imported_{_tableName}__staging");
+        command.Parameters.AddWithValue("table", tableName);
         return (bool)(await command.ExecuteScalarAsync())!;
     }
 }
