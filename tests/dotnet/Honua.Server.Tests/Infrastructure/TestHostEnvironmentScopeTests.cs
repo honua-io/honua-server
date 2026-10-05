@@ -3,6 +3,8 @@
 
 using FluentAssertions;
 using Honua.TestKit;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -11,6 +13,7 @@ using NSubstitute;
 namespace Honua.Server.Tests.Infrastructure;
 
 [Collection("Database")]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class TestHostEnvironmentScopeTests
 {
     [Fact]
@@ -65,7 +68,8 @@ public sealed class TestHostEnvironmentScopeTests
         }
     }
 
-    [Fact]
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public void ConfiguredFactory_ProcessEnvironmentHeldByAnotherHost_DoesNotLeakIntoTheRequestedEnvironment()
     {
         // WebApplicationFactory builds the web host builder, which snapshots ASPNETCORE_*,
