@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -90,7 +91,19 @@ internal static partial class GdalArtifactPublisher
         RasterOutputDescriptor descriptor;
         if (info.Length <= inlineCeiling && !hasRegistrationIntent)
         {
-            var payload = await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
+            var bounded = await ReadBoundedPayloadAsync(outputPath, inlineCeiling, cancellationToken)
+                .ConfigureAwait(false);
+            if (bounded.ExceededLimit)
+            {
+                return $"{artifactLabel} size {bounded.Length.ToString(CultureInfo.InvariantCulture)} bytes exceeds "
+                    + "the inline publication ceiling.";
+            }
+
+            if (bounded.Payload is not { Length: > 0 } payload)
+            {
+                return $"{artifactLabel} is empty or missing.";
+            }
+
             descriptor = new InlineRasterOutputDescriptor
             {
                 JobId = staged.Job.OperationId,
@@ -122,12 +135,20 @@ internal static partial class GdalArtifactPublisher
                 info.Name);
 
             RasterContentIdentity content;
-            await using (var source = new FileStream(
-                outputPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true))
+            try
             {
+                await using var source = new FileStream(
+                    outputPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
+                await using var bounded = new BoundedReadStream(source, options.MaxStagedArtifactBytes);
                 content = await staged.Store
-                    .WriteAsync(objectKey, source, mediaType, cancellationToken)
+                    .WriteAsync(objectKey, bounded, mediaType, cancellationToken)
                     .ConfigureAwait(false);
+            }
+            catch (ArtifactByteLimitException ex)
+            {
+                Log.StagedArtifactTooLarge(logger, operationId, ex.ObservedLength, options.MaxStagedArtifactBytes);
+                return $"{artifactLabel} size {ex.ObservedLength.ToString(CultureInfo.InvariantCulture)} bytes exceeds configured "
+                    + $"MaxStagedArtifactBytes={options.MaxStagedArtifactBytes.ToString(CultureInfo.InvariantCulture)}.";
             }
 
             // The object is now readable in the shared store, but no durable artifact
@@ -188,7 +209,17 @@ internal static partial class GdalArtifactPublisher
                 + "publish large outputs as staged artifact references (#3089).";
         }
 
-        var payload = await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
+        var bounded = await ReadBoundedPayloadAsync(outputPath, options.MaxArtifactBytes, cancellationToken)
+            .ConfigureAwait(false);
+        if (bounded.ExceededLimit)
+        {
+            Log.InlineArtifactTooLarge(logger, operationId, bounded.Length, options.MaxArtifactBytes);
+            return $"{artifactLabel} size {bounded.Length.ToString(CultureInfo.InvariantCulture)} bytes exceeds configured "
+                + $"MaxArtifactBytes={options.MaxArtifactBytes.ToString(CultureInfo.InvariantCulture)}. Configure Geoprocessing:OutputStaging to "
+                + "publish large outputs as staged artifact references (#3089).";
+        }
+
+        var payload = bounded.Payload ?? [];
         var artifactUri = GdalDataUri.Build(contentType, payload);
         await context.PublishArtifactAsync(artifactUri, cancellationToken).ConfigureAwait(false);
         return null;
@@ -323,5 +354,217 @@ internal static partial class GdalArtifactPublisher
         [LoggerMessage(9299, LogLevel.Warning,
             "Refused Zarr output publication for job {OperationId}: single-object Zarr artifacts are not supported (#3103)")]
         public static partial void ZarrOutputRefused(ILogger logger, string operationId);
+    }
+
+    /// <summary>
+    /// Bytes read from a file that stayed within <paramref name="Length"/>'s cap.
+    /// <see cref="ExceededLimit"/> is set when the file was already over the cap
+    /// or grew past it during the read; <see cref="Payload"/> is then null.
+    /// </summary>
+    /// <param name="Payload">The file bytes when the read stayed within the cap.</param>
+    /// <param name="Length">Observed length, including a byte that pushed the file over the cap.</param>
+    /// <param name="ExceededLimit">True when the cap was exceeded and no payload is retained.</param>
+    internal readonly record struct BoundedPayload(byte[]? Payload, long Length, bool ExceededLimit);
+
+    /// <summary>
+    /// Reads <paramref name="path"/> only when its length is within
+    /// <paramref name="maxBytes"/> and fits in one array. A missing or empty file
+    /// returns a null payload. A file that is already over the cap, or that grows
+    /// past the cap while it is read, returns <see cref="BoundedPayload.ExceededLimit"/>
+    /// without retaining the bytes.
+    /// </summary>
+    internal static async Task<BoundedPayload> ReadBoundedPayloadAsync(
+        string path,
+        long maxBytes,
+        CancellationToken cancellationToken)
+    {
+        var info = new FileInfo(path);
+        if (!info.Exists || info.Length == 0)
+        {
+            return new BoundedPayload(null, 0, false);
+        }
+
+        if (info.Length > maxBytes || info.Length > int.MaxValue || info.Length > Array.MaxLength)
+        {
+            return new BoundedPayload(null, info.Length, true);
+        }
+
+        var length = (int)info.Length;
+        var buffer = new byte[length];
+        await using var stream = new FileStream(
+            path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
+        var offset = 0;
+        while (offset < length)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(offset, length - offset), cancellationToken)
+                .ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            offset += read;
+        }
+
+        var extra = new byte[1];
+        var extraRead = await stream.ReadAsync(extra, cancellationToken).ConfigureAwait(false);
+        if (extraRead > 0)
+        {
+            return new BoundedPayload(null, offset + extraRead, true);
+        }
+
+        if (offset == 0)
+        {
+            return new BoundedPayload(null, 0, false);
+        }
+
+        if (offset != buffer.Length)
+        {
+            Array.Resize(ref buffer, offset);
+        }
+
+        return new BoundedPayload(buffer, offset, false);
+    }
+
+    /// <summary>
+    /// Raised when a staged read observes a byte past the configured cap.
+    /// The extra byte is not returned to the caller.
+    /// </summary>
+    private sealed class ArtifactByteLimitException : IOException
+    {
+        public ArtifactByteLimitException(long observedLength)
+            : base("Artifact read exceeded the configured byte limit.")
+        {
+            ObservedLength = observedLength;
+        }
+
+        public long ObservedLength { get; }
+    }
+
+    /// <summary>
+    /// Forwards reads up to a byte cap. <see cref="CanSeek"/> is false so a copy
+    /// cannot bypass the cap by seeking. The caller owns the inner stream.
+    /// </summary>
+    private sealed class BoundedReadStream : Stream
+    {
+        private readonly Stream _inner;
+        private readonly long _limit;
+        private long _delivered;
+        private bool _exhausted;
+
+        public BoundedReadStream(Stream inner, long limit)
+        {
+            _inner = inner;
+            _limit = limit;
+        }
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+            => ReadRemaining(buffer.AsSpan(offset, count));
+
+        public override int Read(Span<byte> buffer)
+            => ReadRemaining(buffer);
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_exhausted)
+            {
+                return 0;
+            }
+
+            var remaining = _limit - _delivered;
+            if (remaining <= 0)
+            {
+                var peek = new byte[1];
+                var extra = await _inner.ReadAsync(peek, cancellationToken).ConfigureAwait(false);
+                if (extra == 0)
+                {
+                    _exhausted = true;
+                    return 0;
+                }
+
+                throw new ArtifactByteLimitException(_delivered + extra);
+            }
+
+            var toRead = (int)Math.Min(buffer.Length, remaining);
+            var read = await _inner.ReadAsync(buffer[..toRead], cancellationToken).ConfigureAwait(false);
+            if (read > 0)
+            {
+                _delivered += read;
+            }
+            else
+            {
+                _exhausted = true;
+            }
+
+            return read;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            // The caller owns and disposes the inner stream.
+            base.Dispose(disposing);
+        }
+
+        private int ReadRemaining(Span<byte> buffer)
+        {
+            if (_exhausted)
+            {
+                return 0;
+            }
+
+            var remaining = _limit - _delivered;
+            if (remaining <= 0)
+            {
+                var peek = new byte[1];
+                var extra = _inner.Read(peek, 0, 1);
+                if (extra == 0)
+                {
+                    _exhausted = true;
+                    return 0;
+                }
+
+                throw new ArtifactByteLimitException(_delivered + extra);
+            }
+
+            var toRead = (int)Math.Min(buffer.Length, remaining);
+            var read = _inner.Read(buffer[..toRead]);
+            if (read > 0)
+            {
+                _delivered += read;
+            }
+            else
+            {
+                _exhausted = true;
+            }
+
+            return read;
+        }
     }
 }
