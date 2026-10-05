@@ -16053,6 +16053,7 @@
         "Honua.Server.Tests.Import.ImportReadWriteContractTests.Import_UploadFile_ShouldAcceptValidFormats",
         "Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests.Upload_CompleteReplace_PromotesAllSourceRows",
         "Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests.Upload_CsvWithUnparseableGeometry_RetainsBothRowsOnReplace",
+        "Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests.Upload_FirstReplaceWithOnlyParserSkips_FailsWithoutPublishingTarget",
         "Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests.Upload_PartialNonDestructiveImport_RetainsRowsAndReportsSkips",
         "Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests.Upload_ReplaceWithParserSkips_PreservesTargetAndReportsCount",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_CsvFile_WithLongitudeLatitudeColumns_StreamsRows",
