@@ -30,10 +30,21 @@ internal static class GeoprocessingResultPackageFactory
             : [];
         if (job.Status != ExecutionJobStatus.Succeeded)
         {
-            // Cancelled/failed work exposes only receipts for effects that already
-            // committed, retaining their original output slot and artifact identity.
-            artifacts = artifacts.Where((_, index) => job.CommittedEffectReferences.Contains(
-                job.ArtifactReferences[index], StringComparer.Ordinal)).ToArray();
+            // Consume each committed receipt once: byte-identical legacy outputs
+            // still occupy distinct artifact slots and must not all be exposed.
+            var remainingCommitted = job.CommittedEffectReferences
+                .GroupBy(reference => reference, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+            artifacts = artifacts.Where((_, index) =>
+            {
+                var reference = job.ArtifactReferences[index];
+                if (!remainingCommitted.TryGetValue(reference, out var count) || count == 0)
+                {
+                    return false;
+                }
+                remainingCommitted[reference] = count - 1;
+                return true;
+            }).ToArray();
         }
         var committedSummary = job.CommittedEffectReferences.Count > 0
             ? " Sink effects committed; committed-effect receipts are retained." : string.Empty;
