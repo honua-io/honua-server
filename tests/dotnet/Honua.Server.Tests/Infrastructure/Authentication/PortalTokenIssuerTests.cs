@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
@@ -15,6 +16,7 @@ using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -30,6 +32,48 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 [Operation(Operations.Security)]
 public sealed class PortalTokenIssuerTests
 {
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("   ", false)]
+    [InlineData("https://other.example.com/private?token=sensitive#fragment", true)]
+    [InlineData("http://app.example.com/private", true)]
+    [InlineData("https://app.example.com:8443/private", true)]
+    [Trait("Tier", "Fast")]
+    public async Task ValidateAsync_RefererMismatch_LogsBindingPresenceAndHashesWithoutSecrets(
+        string? requestReferer, bool expectedPresence)
+    {
+        var logger = Substitute.For<ILogger<PortalTokenIssuer>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var issuer = new PortalTokenIssuer(cache, logger);
+        var issuance = await issuer.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: "alice",
+                DisplayName: "Alice",
+                TenantId: null,
+                Roles: ["editor"],
+                ClientType: PortalTokenClientType.Referer,
+                BindingValue: "https://app.example.com/private?password=sensitive",
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5)),
+            CancellationToken.None);
+
+        var validation = await issuer.ValidateAsync(
+            issuance.Token, new PortalTokenBinding(requestReferer, null), CancellationToken.None);
+
+        validation.Should().BeNull();
+        var entry = logger.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(ILogger.Log))
+            .Select(call => call.GetArguments())
+            .Single(arguments => arguments[1] is EventId { Id: 7003 });
+        var fields = ((IEnumerable<KeyValuePair<string, object?>>)entry[2]!).ToDictionary(pair => pair.Key, pair => pair.Value);
+        fields["RequestBindingPresent"].Should().Be(expectedPresence);
+        fields["IssuedBindingHash"].Should().Be(LogValueRedactor.Hash("https://app.example.com"));
+        fields["RequestBindingHash"].Should().NotBeNull();
+        var message = entry[2]!.ToString()!;
+        message.Should().NotContain(issuance.Token).And.NotContain("sensitive").And.NotContain("private");
+        message.Should().NotContain("app.example.com").And.NotContain("other.example.com");
+    }
+
     [UnitTest]
     public async Task IssueAsync_RoundTripsRefererBoundToken_HydratesPrincipalWithRolesAndTenant()
     {

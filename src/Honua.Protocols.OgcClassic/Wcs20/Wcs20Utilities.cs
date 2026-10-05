@@ -202,6 +202,9 @@ internal static class Wcs20Utilities
         internal const string ResX = "RESX";
         internal const string ResY = "RESY";
 
+        /// <summary>The enumerated band axis advertised by DescribeCoverage.</summary>
+        internal const string Bands = "BANDS";
+
         /// <summary>Singular in 1.0; 2.0.1 uses the plural <c>SECTIONS</c>.</summary>
         internal const string Section = "SECTION";
 

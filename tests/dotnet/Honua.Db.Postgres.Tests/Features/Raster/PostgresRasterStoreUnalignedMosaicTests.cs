@@ -44,6 +44,69 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
 {
     private const int LayerId = 4792;
 
+    [IntegrationTheory]
+    [InlineData("single")]
+    [InlineData("mosaic")]
+    [InlineData("empty")]
+    public async Task ExportRaw_FloatBands_PreservesSamplesAndBandOrder(string mode)
+    {
+        var schemaName = await CreateSchemaAsync();
+        try
+        {
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO raster_data(layer_id, name, raster)
+                VALUES (4792, 'float-bsq', ST_SetValues(ST_SetValues(
+                    ST_AddBand(ST_AddBand(ST_MakeEmptyRaster(4,3,-122.44,37.79,0.01,-0.01,0,0,4326),
+                        '32BF'::text,-9999::double precision,-9999::double precision),
+                        '32BF'::text,-9999::double precision,-9999::double precision),1,1,1,
+                    ARRAY[[-17.25,0,33.5,8],[101,2,-9999,-9],[10,11,12,13]]::double precision[][]),2,1,1,
+                    ARRAY[[200,210,220,-9999],[-4.5,500,600,700],[800,900,1000,1100]]::double precision[][]))
+                RETURNING id;
+                """;
+            var id = Convert.ToInt64(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+            var y = mode == "empty" ? 38.79 : 37.79;
+            var envelope = new NetTopologySuite.Geometries.Envelope(-122.44, -122.40, y - 0.03, y);
+            var geometry = new NetTopologySuite.Geometries.GeometryFactory().ToGeometry(envelope);
+            var query = new RasterQuery
+            {
+                OutputFormat = RasterFormat.Raw,
+                Bands = [2, 1],
+                OutputWidth = 4,
+                OutputHeight = 3,
+                CoverClipExtent = true,
+                ResamplingAlgorithm = ResamplingAlgorithm.NearestNeighbor,
+                ClipRegion = new RasterClipRegion { Geometry = new NetTopologySuite.IO.WKBWriter().Write(geometry), Srid = 4326 }
+            };
+            var store = CreateStore(schemaName);
+            var result = mode switch
+            {
+                "single" => await store.ExportImageAsync(LayerId, id, query),
+                "mosaic" => await store.ExportMosaicAsync(LayerId, [id], RasterMergeStrategy.Newest, query),
+                _ => await store.ExportEmptyExtentAsync(LayerId, query)
+            };
+            var expected = mode == "empty" ? Enumerable.Repeat(-9999f, 24).ToArray()
+                : new float[] { 200,210,220,-9999,-4.5f,500,600,700,800,900,1000,1100,
+                    -17.25f,0,33.5f,8,101,2,-9999,-9,10,11,12,13 };
+            result.Data.Should().Equal(expected.SelectMany(BitConverter.GetBytes));
+            result.ContentType.Should().Be("application/octet-stream");
+            result.Width.Should().Be(4);
+            result.Height.Should().Be(3);
+            result.BandCount.Should().Be(2);
+            result.PixelType.Should().Be("32BF");
+            result.BandValidityMasks.Should().HaveCount(2);
+            result.BandValidityMasks![0].Should().Equal(mode == "empty" ? new byte[] { 0, 0 } : new byte[] { 0xef, 0xf0 });
+            result.BandValidityMasks[1].Should().Equal(mode == "empty" ? new byte[] { 0, 0 } : new byte[] { 0xfd, 0xf0 });
+            result.GeoTransform.Should().HaveCount(6);
+            result.GeoTransform![0].Should().BeApproximately(-122.44, 1e-12);
+            result.GeoTransform[1].Should().BeApproximately(0.01, 1e-12);
+            result.GeoTransform[3].Should().BeApproximately(y, 1e-12);
+            result.GeoTransform[5].Should().BeApproximately(-0.01, 1e-12);
+        }
+        finally { await fixture.DropSchemaAsync(schemaName); }
+    }
+
     [IntegrationTest]
     public async Task GetMosaicStatisticsAsync_WithMixedResolutionRasters_ReturnsStatisticsOfTheAlignedUnion()
     {

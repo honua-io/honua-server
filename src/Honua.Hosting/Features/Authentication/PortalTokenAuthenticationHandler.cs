@@ -35,7 +35,12 @@ internal sealed class PortalTokenAuthenticationHandler(
     /// <inheritdoc />
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        var token = await ExtractTokenAsync().ConfigureAwait(false);
+        var (token, hasConflictingValues) = await ExtractTokenAsync().ConfigureAwait(false);
+        if (hasConflictingValues)
+        {
+            return AuthenticateResult.Fail("Conflicting portal token values were supplied.");
+        }
+
         if (string.IsNullOrEmpty(token))
         {
             return AuthenticateResult.NoResult();
@@ -54,14 +59,14 @@ internal sealed class PortalTokenAuthenticationHandler(
         return AuthenticateResult.Success(new AuthenticationTicket(validation.Principal, Scheme.Name));
     }
 
-    private async ValueTask<string?> ExtractTokenAsync()
+    private async ValueTask<(string? Token, bool HasConflictingValues)> ExtractTokenAsync()
     {
         if (Request.Query.TryGetValue(TokenQueryParameter, out var queryToken) && !StringValues.IsNullOrEmpty(queryToken))
         {
-            var candidate = queryToken.ToString();
-            if (!string.IsNullOrWhiteSpace(candidate))
+            var extracted = ReadRepeatedToken(queryToken);
+            if (extracted.HasConflictingValues || extracted.Token is not null)
             {
-                return candidate.Trim();
+                return extracted;
             }
         }
 
@@ -70,7 +75,7 @@ internal sealed class PortalTokenAuthenticationHandler(
             var fromEsri = TryReadBearerHeader(esriHeader);
             if (!string.IsNullOrEmpty(fromEsri))
             {
-                return fromEsri;
+                return (fromEsri, false);
             }
         }
 
@@ -79,21 +84,21 @@ internal sealed class PortalTokenAuthenticationHandler(
             var fromAuthorization = TryReadBearerHeader(authHeader);
             if (!string.IsNullOrEmpty(fromAuthorization))
             {
-                return fromAuthorization;
+                return (fromAuthorization, false);
             }
         }
 
         return await TryReadFormTokenAsync().ConfigureAwait(false);
     }
 
-    private async ValueTask<string?> TryReadFormTokenAsync()
+    private async ValueTask<(string? Token, bool HasConflictingValues)> TryReadFormTokenAsync()
     {
         // Form tokens are an ArcGIS POST transport. Do not parse multipart or
         // arbitrary request bodies as credentials: those surfaces have their own
         // validation and must not gain an implicit authentication path.
         if (!HasFormUrlEncodedContentType(Request))
         {
-            return null;
+            return default;
         }
 
         Request.EnableBuffering();
@@ -102,17 +107,16 @@ internal sealed class PortalTokenAuthenticationHandler(
             var form = await Request.ReadFormAsync(Context.RequestAborted).ConfigureAwait(false);
             if (!form.TryGetValue(TokenQueryParameter, out var formToken) || StringValues.IsNullOrEmpty(formToken))
             {
-                return null;
+                return default;
             }
 
-            var candidate = formToken.ToString();
-            return string.IsNullOrWhiteSpace(candidate) ? null : candidate.Trim();
+            return ReadRepeatedToken(formToken);
         }
         catch (InvalidDataException)
         {
             // A malformed form is not a credential. Let the endpoint retain its
             // normal request-validation behavior rather than failing auth parsing.
-            return null;
+            return default;
         }
         finally
         {
@@ -123,6 +127,23 @@ internal sealed class PortalTokenAuthenticationHandler(
                 Request.Body.Position = 0;
             }
         }
+    }
+
+    private static (string? Token, bool HasConflictingValues) ReadRepeatedToken(StringValues values)
+    {
+        // Native Esri SOAP clients can repeat the same token. StringValues.ToString
+        // joins duplicates with commas and can discard empty values; inspect each
+        // supplied value so conflicts cannot select an identity or fall back.
+        var candidate = values[0]?.Trim();
+        for (var index = 1; index < values.Count; index++)
+        {
+            if (!string.Equals(candidate, values[index]?.Trim(), StringComparison.Ordinal))
+            {
+                return (null, true);
+            }
+        }
+
+        return (string.IsNullOrWhiteSpace(candidate) ? null : candidate, false);
     }
 
     internal static bool HasFormUrlEncodedContentType(HttpRequest request)

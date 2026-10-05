@@ -120,7 +120,19 @@ internal sealed partial class PortalTokenIssuer(
 
         if (!BindingMatches(record, binding))
         {
-            PortalTokenLog.BindingMismatch(_logger, record.ClientType.ToString(), LogValueRedactor.Hash(token));
+            var requestBindingValue = record.ClientType switch
+            {
+                PortalTokenClientType.Referer => binding.Referer,
+                PortalTokenClientType.Ip => binding.ClientIp,
+                _ => null,
+            };
+            PortalTokenLog.BindingMismatch(
+                _logger,
+                record.ClientType.ToString(),
+                LogValueRedactor.Hash(token),
+                !string.IsNullOrWhiteSpace(requestBindingValue),
+                LogValueRedactor.Hash(record.BindingValue),
+                LogValueRedactor.Hash(NormalizeBindingValue(record.ClientType, requestBindingValue ?? string.Empty)));
             return null;
         }
 

@@ -155,6 +155,11 @@ internal sealed class ImageServerExportHandler
 
             if (dimensionConstraints.Count > 0)
             {
+                if (exportQuery.OutputFormat == RasterFormat.Raw)
+                {
+                    return StandardErrorHelpers.CreateNotImplemented(context,
+                        "BSQ export of multidimensional slices requires a raw-sample slice reader.");
+                }
                 return await ExportMultidimensionalSliceAsync(
                         context,
                         storageLayerId,
@@ -229,6 +234,11 @@ internal sealed class ImageServerExportHandler
                         exportQuery,
                         cancellationToken).ConfigureAwait(false);
 
+                    if (exportQuery.OutputFormat == RasterFormat.Raw && emptyResult.Data.Length > 0)
+                    {
+                        emptyResult = ImageServerBsqEncoder.Encode(emptyResult);
+                    }
+
                     if (emptyResult.Data is { Length: > 0 })
                     {
                         if (WantsInlineImageResponse(request.F))
@@ -294,6 +304,11 @@ internal sealed class ImageServerExportHandler
                 ordering,
                 mosaicRule.ToAttributeSort(),
                 cancellationToken);
+
+            if (exportQuery.OutputFormat == RasterFormat.Raw)
+            {
+                result = ImageServerBsqEncoder.Encode(result);
+            }
 
             if (WantsInlineImageResponse(request.F))
             {
@@ -730,10 +745,11 @@ internal sealed class ImageServerExportHandler
             }
 
             if (!TryParseExportFormat(request.Format, out var outputFormat) ||
-                outputFormat is RasterFormat.COG or RasterFormat.Raw)
+                outputFormat == RasterFormat.COG ||
+                outputFormat == RasterFormat.Raw && !string.Equals(request.Format?.Trim(), "bsq", StringComparison.OrdinalIgnoreCase))
             {
                 error = new ExportParameterParseError(
-                    "format must be one of the supported export formats: png, png8, png24, png32, jpg, jpeg, jpgpng, tiff, tif.");
+                    "format must be one of the supported export formats: png, png8, png24, png32, jpg, jpeg, jpgpng, tiff, tif, bsq.");
                 return false;
             }
 
@@ -863,6 +879,9 @@ internal sealed class ImageServerExportHandler
 
         switch (normalized)
         {
+            case "bsq":
+                outputFormat = RasterFormat.Raw;
+                return true;
             case "jpgpng":
                 // Esri "jpgpng" means "JPEG where opaque, PNG where transparency is needed".
                 // This service emits a single concrete encoding; PNG preserves transparency
@@ -958,6 +977,13 @@ internal sealed class ImageServerExportHandler
         if (string.IsNullOrWhiteSpace(compression))
         {
             return true;
+        }
+
+        if (outputFormat == RasterFormat.Raw)
+        {
+            if (string.Equals(compression.Trim(), "None", StringComparison.OrdinalIgnoreCase)) return true;
+            errorMessage = "BSQ supports uncompressed samples only; compression must be None.";
+            return false;
         }
 
         if (outputFormat != RasterFormat.TIFF)

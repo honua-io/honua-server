@@ -517,6 +517,11 @@ internal sealed partial class Wcs20Handler
             return sizeError!;
         }
 
+        if (!TryResolveWcs10Bands(query, coverage.Raster, out var bands, out var bandsError))
+        {
+            return bandsError!;
+        }
+
         var rasterQuery = new RasterQuery
         {
             ClipRegion = CreateClipRegion(envelope, requestSrid),
@@ -525,6 +530,7 @@ internal sealed partial class Wcs20Handler
             OutputWidth = width,
             OutputHeight = height,
             ResamplingAlgorithm = ResamplingAlgorithm.NearestNeighbor,
+            Bands = bands,
         };
 
         var result = await _coverageBackend.ExportImageAsync(
@@ -536,6 +542,51 @@ internal sealed partial class Wcs20Handler
         Wcs20Log.CoverageReturned(_logger, identifier.Raw, result.Data.Length, result.ContentType);
 
         return Results.File(result.Data, result.ContentType);
+    }
+
+    private static bool TryResolveWcs10Bands(
+        IQueryCollection query,
+        RasterInfo raster,
+        out int[]? bands,
+        out IResult? error)
+    {
+        bands = null;
+        error = null;
+        var values = GetQueryValues(query, Wcs20Utilities.Parameters10.Bands);
+        if (values.Count == 0)
+        {
+            return true;
+        }
+
+        var bandCount = Math.Max(raster.BandCount, 1);
+        var selected = new List<int>();
+        if (values.Count == 1)
+        {
+            foreach (var token in (values[0] ?? string.Empty).Split(',', StringSplitOptions.TrimEntries))
+            {
+                // Reuse the coverage band's validation; 1.0 sends enumerated axis
+                // indexes while 2.0 sends named range fields (band1..bandN).
+                if (!TryParseBandField("band" + token, bandCount, out var band))
+                {
+                    selected.Clear();
+                    break;
+                }
+
+                selected.Add(band);
+            }
+        }
+
+        if (selected.Count == 0)
+        {
+            error = Wcs10ErrorResults.CreateBadRequest(
+                Wcs20Utilities.ExceptionCodes10.InvalidParameterValue,
+                $"BANDS must list advertised band indexes from 1 through {bandCount}.",
+                Wcs20Utilities.Parameters10.Bands);
+            return false;
+        }
+
+        bands = selected.ToArray();
+        return true;
     }
 
     private static IResult TranslateResolverError(IResult error)
