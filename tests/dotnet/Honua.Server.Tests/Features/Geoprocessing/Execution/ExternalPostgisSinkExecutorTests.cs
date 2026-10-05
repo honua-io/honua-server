@@ -28,6 +28,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 /// Requires Docker; skipped automatically when the database fixture is unavailable.
 /// </summary>
 [Collection("Database")]
+[Protocol(TestProtocols.Infrastructure)]
 public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";
@@ -51,6 +52,7 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task ExecuteAsync_CancellationAtCommittedPublication_PreservesDestinationReceipt()
     {
         using var cancellation = new CancellationTokenSource();
