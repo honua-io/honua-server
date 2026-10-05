@@ -6677,6 +6677,8 @@
         "Honua.Server.Tests.Features.Protocols.OData.ODataClientIntegrationTests.LayersQuery_ReturnsExpectedLayer_ViaODataClient",
         "Honua.Server.Tests.Features.Protocols.OData.ODataEndpointTests.Layers_ReturnsCollection",
         "Honua.Server.Tests.Features.Protocols.OData.ODataSkipTokenTests.GetLayers_WithSkipToken_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataV4ConformanceEndpointTests.Layers_FullPage_EmitsFollowableNextLink",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataV4ConformanceEndpointTests.Layers_PagesThroughAllLayersViaNextLink",
         "Honua.Server.Tests.Features.Security.ODataServiceBoundaryTests.GetLayers_WithSharedLayerInSecondaryService_DoesNotLeakCanonicalBoundary"
       ],
       "proof_ledger_surface": "odata-v4",

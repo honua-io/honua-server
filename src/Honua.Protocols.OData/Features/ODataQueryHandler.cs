@@ -110,7 +110,7 @@ internal sealed partial class ODataQueryHandler(
                 skiptoken,
                 count,
                 out var pagination,
-                out _,
+                out var topValue,
                 out _,
                 out var countValue,
                 out _);
@@ -172,8 +172,11 @@ internal sealed partial class ODataQueryHandler(
             var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
             var includeContext = ODataUtilityService.ShouldIncludeContext(context.Request, format);
 
+            // A client $top bounds the whole Layers collection, so the continuation carries
+            // the remaining budget and stops once it is spent (#5464).
             string? nextLink = null;
-            if (hasMoreLayers)
+            if (hasMoreLayers &&
+                ODataUtilityService.TryGetContinuationTop(topValue, layerData.Length, out var continuationTop))
             {
                 var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
                 // The Layers collection paginates in memory and decodes an incoming
@@ -183,7 +186,7 @@ internal sealed partial class ODataQueryHandler(
                 nextLink = ODataUtilityService.GenerateNextLink(
                     context.Request,
                     nextSkip,
-                    pagination.Limit,
+                    continuationTop,
                     filter,
                     select,
                     orderby,

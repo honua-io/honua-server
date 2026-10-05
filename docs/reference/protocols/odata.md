@@ -90,6 +90,10 @@ from forcing a pathological database plan on a very large `LIMIT`.
 - A request without `$top` has no ceiling. Its `@odata.nextLink` omits `$top`, and each
   page uses the server page size until the collection is exhausted.
 
+This applies to the `Layers` and feature collections. Change-tracking baselines
+(`Prefer: odata.track-changes` and `$deltatoken` continuations) use `$top` as their page
+size and page through the whole tracked snapshot.
+
 Opaque `$skiptoken` values are scoped to the query, resolved tenant, and authenticated
 subject or API key that received them. Clients must not reuse a token after changing
 identity or tenant. Treat emitted next links as short-lived: after a server upgrade that
