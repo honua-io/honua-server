@@ -4,15 +4,19 @@
 using System.Collections.Immutable;
 using Grpc.Core;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
@@ -109,7 +113,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         var layer = await ValidateGrpcLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
         await EnsureReadAccessAsync(context, layer.Service, layer.Resource).ConfigureAwait(false);
-        var queryContext = await CreateQueryContextAsync(request, layer, context.CancellationToken).ConfigureAwait(false);
+        var queryContext = await CreateQueryContextAsync(
+            request, layer, context.GetHttpContext().RequestServices, context.CancellationToken).ConfigureAwait(false);
         var query = queryContext.Query;
         var pkField = layer.ObjectIdFieldName;
 
@@ -182,7 +187,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         var layer = await ValidateGrpcLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
         await EnsureReadAccessAsync(context, layer.Service, layer.Resource).ConfigureAwait(false);
-        var queryContext = await CreateQueryContextAsync(request, layer, context.CancellationToken).ConfigureAwait(false);
+        var queryContext = await CreateQueryContextAsync(
+            request, layer, context.GetHttpContext().RequestServices, context.CancellationToken).ConfigureAwait(false);
         var query = queryContext.Query;
         var pkField = layer.ObjectIdFieldName;
 
@@ -604,6 +610,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     private async Task<QueryContext> CreateQueryContextAsync(
         Proto.QueryFeaturesRequest request,
         GrpcLayerContext layer,
+        IServiceProvider requestServices,
         CancellationToken cancellationToken,
         bool streaming = false)
     {
@@ -616,6 +623,9 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                 StatusCode.InvalidArgument,
                 whereValidation.ErrorMessage ?? "Invalid where clause."));
         }
+
+        var whereFilter = await BindWhereClauseAsync(
+            request.Where, layer.Resource, requestServices, cancellationToken).ConfigureAwait(false);
 
         // 0.2.0-alpha.1 retired the int32 result_offset / result_record_count fields in favour of
         // the int64 result_offset_long / result_record_count_long; narrow here so the existing
@@ -646,6 +656,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         var query = GrpcConversionHelpers.ToFeatureQuery(request) with
         {
+            SqlFilter = whereFilter,
             SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
             Offset = pagination.Offset,
             Limit = streaming && !requestedLimit.HasValue ? null : pagination.Limit
@@ -711,6 +722,80 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             GrpcConversionHelpers.CreateEffectiveGeometryLimits(_geometryLimits, request),
             request.ReturnGeometry);
     }
+
+    /// <summary>
+    /// Binds the request's <c>where</c> clause to the shared filter pipeline, as FeatureServer
+    /// does with the same GeoServices SQL parameter: the clause is parsed by the shared parser,
+    /// refused when any field it references is masked from the caller, and translated against
+    /// the layer schema. The raw text stays on <see cref="FeatureQuery.Where"/> for providers
+    /// that re-parse it, and the provider's own field-security check still runs on both.
+    /// </summary>
+    private static async Task<SqlFragment?> BindWhereClauseAsync(
+        string? where,
+        MetadataV2Resource resource,
+        IServiceProvider requestServices,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(where))
+        {
+            return null;
+        }
+
+        var filterService = requestServices.GetService<IFilterExpressionService>()
+            ?? throw new InvalidOperationException("A where clause requires the shared filter expression service.");
+
+        var parse = filterService.Parse(FilterLanguage.ArcGisSql, where);
+        if (!parse.IsSuccess || parse.Expression is null)
+        {
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                parse.ErrorMessage ?? "Invalid where clause."));
+        }
+
+        var expression = parse.Expression;
+        if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "Invalid where clause."));
+        }
+
+        if (requestServices.GetService<IFieldMaskSource>() is { } fieldMaskSource)
+        {
+            var maskedFields = await fieldMaskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                FeatureQuerySecurity.ValidateFilterExpression(expression, maskedFields, "where");
+            }
+            catch (ArgumentException ex)
+            {
+                throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
+            }
+        }
+
+        // ArcGIS clients send "1=1" for "no filter"; providers already accept it as raw text.
+        if (IsConstantTrue(expression))
+        {
+            return null;
+        }
+
+        var translation = filterService.Translate(expression, resource);
+        if (!translation.IsSuccess)
+        {
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                translation.ErrorMessage ?? "Invalid where clause."));
+        }
+
+        return translation.SqlFilter;
+    }
+
+    private static bool IsConstantTrue(FilterExpression expression)
+        => expression switch
+        {
+            Literal { Type: LiteralType.Boolean, Value: true } => true,
+            BinaryExpression { Operator: BinaryOperator.Equal, Left: Literal left, Right: Literal right }
+                => left.Type == right.Type && Equals(left.Value, right.Value),
+            _ => false
+        };
 
     private static void EnsureAggregationNotRequested(Proto.QueryFeaturesRequest request)
     {
