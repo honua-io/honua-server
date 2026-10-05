@@ -670,9 +670,14 @@ internal sealed partial class ODataQueryHandler(
 
             // Calculate @odata.nextLink if there are more results. The continuation probe
             // (Limit + 1 fetch) is the source of truth here so paging is not truncated when
-            // the provider TotalCount degrades to the page length (#1989).
+            // the provider TotalCount degrades to the page length (#1989). An ordinary
+            // collection also stops once the client $top is spent and carries the remaining
+            // budget forward (#5464); change-tracking continuations keep paging by $top.
+            int? continuationTop = pagination.Limit;
+            var isDeltaPaging = trackChangesRequested || !string.IsNullOrWhiteSpace(deltatoken);
             string? nextLink = null;
-            if (hasMoreResults)
+            if (hasMoreResults &&
+                (isDeltaPaging || ODataUtilityService.TryGetContinuationTop(top, queryResult.Items.Length, out continuationTop)))
             {
                 var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
                 nextLink = !string.IsNullOrWhiteSpace(deltatoken)
@@ -687,7 +692,7 @@ internal sealed partial class ODataQueryHandler(
                     : ODataUtilityService.GenerateNextLink(
                         context.Request,
                         nextSkip,
-                        pagination.Limit,
+                        continuationTop,
                         filter,
                         select,
                         orderby,

@@ -163,11 +163,13 @@ internal static class ODataUtilityService
     /// Generates the @odata.nextLink URL for pagination support.
     /// When useSkipToken is true, the skip value is encoded as an opaque Base64Url cursor
     /// that includes a query fingerprint to prevent token reuse across different queries.
+    /// A <see langword="null"/> <c>top</c> omits <c>$top</c> so the next page uses the server
+    /// page size (see <see cref="TryGetContinuationTop"/>).
     /// </summary>
     public static string GenerateNextLink(
         HttpRequest request,
         int nextSkip,
-        int top,
+        int? top,
         string? filter,
         string? select,
         string? orderby,
@@ -197,7 +199,10 @@ internal static class ODataUtilityService
             queryParams.Add($"$skip={nextSkip}");
         }
 
-        queryParams.Add($"$top={top}");
+        if (top.HasValue)
+        {
+            queryParams.Add($"$top={top.Value}");
+        }
 
         var bbox = request.Query["bbox"].ToString();
         if (!string.IsNullOrWhiteSpace(bbox))
@@ -485,6 +490,36 @@ internal static class ODataUtilityService
     public static bool ShouldPaginate(int resultCount, int currentSkip, long totalCount, int? top)
     {
         return (long)currentSkip + resultCount < totalCount;
+    }
+
+    /// <summary>
+    /// Resolves the <c>$top</c> an ordinary collection continuation carries (#5464). OData 4.01
+    /// Part 1 §11.2.6.3 makes a client <c>$top</c> a ceiling on the whole requested collection,
+    /// and §11.2.6.7 next links only page within that collection, so the server page size
+    /// (<c>OData:MaxPageSize</c>) must not replace it. The continuation carries the budget left
+    /// after this page; a request without <c>$top</c> has no ceiling, so its continuation omits
+    /// <c>$top</c> and the next page again uses the server page size.
+    /// </summary>
+    /// <param name="requestedTop">The client <c>$top</c>, or <see langword="null"/> when absent.</param>
+    /// <param name="returnedCount">Number of items returned in this page.</param>
+    /// <param name="continuationTop">The <c>$top</c> for the next link, or <see langword="null"/> to omit it.</param>
+    /// <returns><see langword="false"/> when the requested <c>$top</c> is spent and no next link may be emitted.</returns>
+    public static bool TryGetContinuationTop(int? requestedTop, int returnedCount, out int? continuationTop)
+    {
+        continuationTop = null;
+        if (requestedTop is not { } top)
+        {
+            return true;
+        }
+
+        var remaining = top - returnedCount;
+        if (remaining <= 0)
+        {
+            return false;
+        }
+
+        continuationTop = remaining;
+        return true;
     }
 
     /// <summary>
