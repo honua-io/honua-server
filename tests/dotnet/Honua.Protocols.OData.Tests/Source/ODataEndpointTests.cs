@@ -761,7 +761,9 @@ public sealed class ODataEndpointTests : IAsyncLifetime
             $"/odata/Features({TestLayerId})?$top=2000&$select=ObjectId,LayerId");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        Assert.True(response.Headers.TransferEncodingChunked ?? false, "Expected chunked transfer encoding for streaming responses");
+        // Chunked framing is applied by the transport, which the in-memory test server does not
+        // have; ODataStreamingTimeoutAbortTests proves this page is chunked on a real Kestrel host
+        // (#5472).
 
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);

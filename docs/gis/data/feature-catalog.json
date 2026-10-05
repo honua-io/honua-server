@@ -6550,6 +6550,7 @@
         "Honua.Server.Tests.Features.Protocols.OData.ODataSkipTokenTests.Query_WithInvalidSkipToken_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.OData.ODataSkipTokenTests.Query_WithSkipTokenAndSkip_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.OData.ODataSkipTokenTests.Query_WithSkipToken_ReturnsCursorBasedPagination",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataStreamingTimeoutAbortTests.FeaturesWithSelect_LargeTopOverKestrel_StreamsChunkedSelectedFields",
         "Honua.Server.Tests.Features.Protocols.OData.ODataTemporalFilteringTests.ODataFilter_ComplexTemporalExpression_ReturnsCorrectFeatures",
         "Honua.Server.Tests.Features.Protocols.OData.ODataTemporalFilteringTests.ODataFilter_DateOnlyField_HandlesDateComparisons",
         "Honua.Server.Tests.Features.Protocols.OData.ODataTemporalFilteringTests.ODataFilter_DateTimeEquality_ReturnsMatchingFeatures",
