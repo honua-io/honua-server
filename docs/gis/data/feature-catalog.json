@@ -9180,7 +9180,9 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_WithEpsgPrefixedSpatialReferences_ReturnsSeededRaster",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_WithEsriJsonLatestWkidSpatialReference_ReturnsSeededRaster",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_WithEsriJsonSpatialReferences_ReturnsSeededRaster",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_WithSafeCurieSpatialReferences_ReturnsSeededRaster"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_WithSafeCurieSpatialReferences_ReturnsSeededRaster",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRawPixelExportTests.RestExportImage_PixelTypeOtherThanNative_IsStillNotImplemented",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRawPixelExportTests.RestExportImage_RawFormatWithNativePixelType_ReturnsFixturePixelBlock"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "preview",
@@ -22347,7 +22349,9 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoap_UnsupportedOperations_DoNotCreateAttackerControlledTelemetry",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapImageServer_DtdPayload_ReturnsClientFault",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.SoapXmlSecurityTests.PostSoap_DtdWithExternalEntity_RejectsWithoutResolving",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.SoapXmlSecurityTests.PostSoap_InvalidEnvelopeWithSchemaLocation_RejectsWithoutLoadingClientSchema"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.SoapXmlSecurityTests.PostSoap_InvalidEnvelopeWithSchemaLocation_RejectsWithoutLoadingClientSchema",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRawPixelExportTests.SoapExportImage_EsriImageBsqFullExtent_ReturnsFixturePixelBlock",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRawPixelExportTests.SoapExportImage_EsriImageBsqTwoByTwoNearestNeighbor_ReturnsPointBlock"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "preview",
