@@ -899,7 +899,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     if (existingInWindow != null)
                     {
                         EnsureMatchingIdempotentRequest(existingInWindow, requestFingerprint, ownerId, resolvedSecurityContext.TenantId);
-                        existingInWindow = await _dispatcher.RepairLocalDispatchAsync(existingInWindow, jobStore, cancellationToken)
+                        existingInWindow = await _dispatcher.RepairLocalDispatchAsync(existingInWindow, jobStore, cancellationToken, admissionWindowHeld: true)
                             .ConfigureAwait(false);
                         EnsureSubmissionDidNotRollback(existingInWindow);
                         GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
@@ -973,7 +973,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     if (existing != null)
                     {
                         EnsureMatchingIdempotentRequest(existing, requestFingerprint, ownerId, resolvedSecurityContext.TenantId);
-                        existing = await _dispatcher.RepairLocalDispatchAsync(existing, jobStore, cancellationToken)
+                        existing = await _dispatcher.RepairLocalDispatchAsync(existing, jobStore, cancellationToken, admissionWindowHeld: true)
                             .ConfigureAwait(false);
                         EnsureSubmissionDidNotRollback(existing);
                         GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
@@ -1000,7 +1000,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             await _progressStore.SetProgressAsync(jobId, progress, ProgressRetention, cancellationToken)
                 .ConfigureAwait(false);
 
-            await _dispatcher.MaybeEnqueueLocalAsync(jobId, jobRecord.Spec.Backend, cancellationToken, jobRecord.Priority)
+            jobRecord = await _dispatcher.MaybeEnqueueLocalAsync(jobRecord, jobStore, cancellationToken)
                 .ConfigureAwait(false);
 
             jobRecord = await _dispatcher.TrySubmitToBackendAsync(jobRecord, jobStore, cancellationToken).ConfigureAwait(false);

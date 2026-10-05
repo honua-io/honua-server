@@ -12,6 +12,7 @@ internal static partial class ExecutionJobSubmissionHelper
 {
     internal const string SubmissionFailurePhase = "Failed (submission)";
     internal const string SubmissionFailureMessage = "Submission failed.";
+    internal const string LocalDispatchAcceptedPhase = "Queued for execution";
 
     // A persisted initial local Queued record is durable dispatch intent. Both replay
     // and the background sweep repair it after a cancelled request or process loss.
@@ -39,7 +40,9 @@ internal static partial class ExecutionJobSubmissionHelper
         {
             var current = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
             if (current == null || current.Status is not (ExecutionJobStatus.Queued or ExecutionJobStatus.Provisioning)
-                || ((current.AttemptCount > 0 || current.ClaimedBy != null) && string.Equals(current.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)))
+                || ((current.AttemptCount > 0 || current.ClaimedBy != null
+                    || current.CurrentPhase == LocalDispatchAcceptedPhase)
+                    && string.Equals(current.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)))
             {
                 return;
             }
