@@ -496,23 +496,25 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
             }
 
             _disposed = true;
-            try
+            using (_writeCancellation)
+            using (_reservation)
             {
-                if (_reservation is not null)
+                try
                 {
-                    await _reservation.StopAsync().ConfigureAwait(false);
-                    if (!_completed && !_writeStarted)
+                    if (_reservation is not null)
                     {
-                        // Nothing was written, so a retry may proceed at once.
-                        await _store.ReleaseReservationAsync(_reservation).ConfigureAwait(false);
+                        await _reservation.StopAsync().ConfigureAwait(false);
+                        if (!_completed && !_writeStarted)
+                        {
+                            // Nothing was written, so a retry may proceed at once.
+                            await _store.ReleaseReservationAsync(_reservation).ConfigureAwait(false);
+                        }
                     }
                 }
-            }
-            finally
-            {
-                _writeCancellation?.Dispose();
-                _reservation?.Dispose();
-                _store.ReleaseGate(_scope, _gate);
+                finally
+                {
+                    _store.ReleaseGate(_scope, _gate);
+                }
             }
         }
     }
