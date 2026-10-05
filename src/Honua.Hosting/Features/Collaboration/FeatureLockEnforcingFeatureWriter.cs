@@ -89,10 +89,13 @@ public sealed class FeatureLockEnforcingFeatureWriter : IFeatureWriter
     }
 
     /// <inheritdoc />
-    public Task<IFeatureWriterTransaction> BeginTransactionAsync(
+    public async Task<IFeatureWriterTransaction> BeginTransactionAsync(
         IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
         CancellationToken cancellationToken = default)
-        => _inner.BeginTransactionAsync(isolationLevel, cancellationToken);
+    {
+        var transaction = await _inner.BeginTransactionAsync(isolationLevel, cancellationToken).ConfigureAwait(false);
+        return new FeatureLockEnforcingTransaction(this, transaction);
+    }
 
     /// <inheritdoc />
     public Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
@@ -124,10 +127,17 @@ public sealed class FeatureLockEnforcingFeatureWriter : IFeatureWriter
     }
 
     /// <inheritdoc />
-    public async Task<FeatureEditResult> ApplyEditsAsync(
+    public Task<FeatureEditResult> ApplyEditsAsync(
         int layerId,
         FeatureEditBatch editBatch,
         CancellationToken cancellationToken = default)
+        => ApplyEditsAsync(layerId, editBatch, transaction: null, cancellationToken);
+
+    private async Task<FeatureEditResult> ApplyEditsAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        IFeatureWriterTransaction? transaction,
+        CancellationToken cancellationToken)
     {
         var targets = CollectMutatedObjectIds(editBatch);
         if (targets.Count > 0)
@@ -139,7 +149,31 @@ public sealed class FeatureLockEnforcingFeatureWriter : IFeatureWriter
             }
         }
 
-        return await _inner.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        return transaction is null
+            ? await _inner.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false)
+            : await transaction.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Keeps lease enforcement on every transaction-bound layer batch.
+    /// </summary>
+    private sealed class FeatureLockEnforcingTransaction(
+        FeatureLockEnforcingFeatureWriter owner,
+        IFeatureWriterTransaction inner) : IFeatureWriterTransaction
+    {
+        public Task<FeatureEditResult> ApplyEditsAsync(
+            int layerId,
+            FeatureEditBatch editBatch,
+            CancellationToken cancellationToken = default)
+            => owner.ApplyEditsAsync(layerId, editBatch, inner, cancellationToken);
+
+        public Task<FeatureWriterTransactionCommitOutcome> CommitAsync(CancellationToken cancellationToken = default)
+            => inner.CommitAsync(cancellationToken);
+
+        public Task RollbackAsync(CancellationToken cancellationToken = default)
+            => inner.RollbackAsync(cancellationToken);
+
+        public ValueTask DisposeAsync() => inner.DisposeAsync();
     }
 
     /// <summary>
