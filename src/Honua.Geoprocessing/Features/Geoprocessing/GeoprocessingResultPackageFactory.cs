@@ -66,7 +66,8 @@ internal static class GeoprocessingResultPackageFactory
                     Kind = GeoprocessingErrorKind.ExecutionFailed,
                     Message = job.ErrorMessage ?? "The geoprocessing job failed."
                 }],
-                provenance) with { Artifacts = artifacts },
+                provenance) with
+            { Artifacts = artifacts },
             ExecutionJobStatus.Cancelled => new AnalysisResultPackage
             {
                 ResultPackageId = CreateResultPackageId(job),
