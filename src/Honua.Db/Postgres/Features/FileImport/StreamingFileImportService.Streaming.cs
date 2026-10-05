@@ -203,7 +203,8 @@ internal sealed partial class StreamingFileImportService
                             JobId = jobId,
                             Status = ImportStatus.Processing,
                             FeaturesProcessed = totalImported,
-                            FailedFeatures = totalFailed + repairTally.SkippedInvalid,
+                            FailedFeatures = totalFailed + repairTally.SkippedInvalid +
+                                (wktGeometryDiagnostics?.UnparseableRecords ?? 0),
                             RepairedFeatures = repairTally.Repaired,
                             BatchesCommitted = batchesCommitted,
                             TableName = request.TableName,
@@ -251,6 +252,10 @@ internal sealed partial class StreamingFileImportService
                 // batch insert failure (see InsertBatchFastAsync/InsertBatchIndividuallyAsync), so
                 // totalFailed would otherwise read zero here even though input rows were dropped.
                 totalFailed += repairTally.SkippedInvalid;
+
+                // Parser skips never enter a batch, so count them before deciding whether
+                // the staging dataset is complete enough to replace an existing target.
+                totalFailed += wktGeometryDiagnostics?.UnparseableRecords ?? 0;
 
                 // For a replace, the load streamed into the staging sibling. Promote it over the
                 // live target unless doing so would destroy a prior COMPLETE dataset: when a target
