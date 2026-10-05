@@ -331,56 +331,32 @@ public sealed class ODataPaginationTests : IAsyncLifetime
 
     #region nextLink Validation Tests
 
+    // OData 4.01 Part 1 §11.2.6.3: $top=n limits the requested collection to at most n
+    // items, and §11.2.6.7 next links only retrieve partial sets of that collection. A
+    // $top smaller than the server page is therefore satisfied in one response with no
+    // @odata.nextLink (#5464). Server-driven paging below OData:MaxPageSize is covered by
+    // ODataServerPagingEndpointTests, which pins a small page size.
     [IntegrationTest]
     [Operation(Operations.Pagination)]
     [Endpoint("GET /odata/Features({layerId})?$top=5")]
-    public async Task NextLink_WhenMoreResultsExist_ReturnsValidNextLink()
+    public async Task Top_SmallerThanCollection_ReturnsNoNextLink()
     {
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=5");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(content);
-
-        document.RootElement.TryGetProperty("@odata.nextLink", out var nextLinkElement).Should().BeTrue();
-        var nextLink = nextLinkElement.GetString();
-
-        nextLink.Should().NotBeNullOrEmpty();
-        nextLink.Should().Contain("$skip=5");
-        nextLink.Should().Contain("$top=5");
+        var (features, document) = await ParseResponseAsync(response);
+        using (document)
+        {
+            features.Should().HaveCount(5);
+            document.RootElement.TryGetProperty("@odata.nextLink", out _).Should().BeFalse(
+                "$top=5 requests at most five items, so the fifth item ends the requested collection");
+        }
     }
 
     [IntegrationTest]
     [Operation(Operations.Pagination)]
     [Endpoint("GET /odata/Features({layerId})?$top=5 follow nextLink")]
-    public async Task NextLink_FollowNextLink_ReturnsNextPage()
-    {
-        // Get first page
-        var firstResponse = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=5");
-        var firstContent = await firstResponse.Content.ReadAsStringAsync();
-        using var firstDocument = JsonDocument.Parse(firstContent);
-
-        var nextLink = firstDocument.RootElement.GetProperty("@odata.nextLink").GetString();
-
-        // Extract relative path from nextLink
-        var nextUri = new Uri(nextLink!);
-        var relativePath = nextUri.PathAndQuery;
-
-        // Follow next link
-        var secondResponse = await _fixture.Client.GetAsync(relativePath);
-
-        secondResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var (secondFeatures, _) = await ParseResponseAsync(secondResponse);
-        secondFeatures.Should().HaveCount(5);
-
-        // First feature should be objectId 6
-        secondFeatures[0].GetProperty("ObjectId").GetInt64().Should().Be(6);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Pagination)]
-    [Endpoint("GET /odata/Features({layerId})?$top=5 iterate all pages")]
-    public async Task NextLink_IterateAllPages_ReturnsAllFeatures()
+    public async Task Top_FollowingNextLinks_ReturnsAtMostTopItems()
     {
         var allFeatures = new List<JsonElement>();
         string? nextLink = $"/odata/Features({TestLayerId})?$top=5";
@@ -392,32 +368,22 @@ public sealed class ODataPaginationTests : IAsyncLifetime
             var response = await _fixture.Client.GetAsync(nextLink);
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-            var content = await response.Content.ReadAsStringAsync();
-            using var document = JsonDocument.Parse(content);
-
-            var features = document.RootElement.GetProperty("value")
-                .EnumerateArray()
-                .Select(e => e.Clone())
-                .ToList();
-
-            allFeatures.AddRange(features);
-
-            if (document.RootElement.TryGetProperty("@odata.nextLink", out var nextLinkElement))
+            var (features, document) = await ParseResponseAsync(response);
+            using (document)
             {
-                var fullNextLink = nextLinkElement.GetString();
-                var nextUri = new Uri(fullNextLink!);
-                nextLink = nextUri.PathAndQuery;
-            }
-            else
-            {
-                nextLink = null;
+                allFeatures.AddRange(features);
+                nextLink = document.RootElement.TryGetProperty("@odata.nextLink", out var nextLinkElement)
+                    ? new Uri(nextLinkElement.GetString()!).PathAndQuery
+                    : null;
             }
 
             pageCount++;
         }
 
-        allFeatures.Should().HaveCount(TotalTestFeatures);
-        pageCount.Should().Be(3); // 15 features / 5 per page = 3 pages
+        allFeatures.Should().HaveCount(5,
+            "a client that follows every emitted nextLink must not receive more than the requested $top");
+        allFeatures.Select(f => f.GetProperty("ObjectId").GetInt64()).Should().Equal(1, 2, 3, 4, 5);
+        pageCount.Should().Be(1);
     }
 
     [IntegrationTest]
@@ -469,61 +435,6 @@ public sealed class ODataPaginationTests : IAsyncLifetime
             nextLink.Should().Contain("$filter");
             nextLink.Should().Contain("California");
         }
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Pagination)]
-    [Endpoint("GET /odata/Features({layerId})?$orderby=...&$top=3")]
-    public async Task NextLink_WithOrderBy_PreservesOrderByInNextLink()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/odata/Features({TestLayerId})?$orderby=population desc&$top=3");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(content);
-
-        document.RootElement.TryGetProperty("@odata.nextLink", out var nextLinkElement).Should().BeTrue();
-        var nextLink = nextLinkElement.GetString();
-        nextLink.Should().Contain("$orderby");
-        nextLink.Should().Contain("population");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Pagination)]
-    [Endpoint("GET /odata/Features({layerId})?$format=...&$top=3")]
-    public async Task NextLink_WithFormat_PreservesFormatInNextLink()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/odata/Features({TestLayerId})?$format=application/json;odata.metadata=none&$top=3");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(content);
-
-        document.RootElement.TryGetProperty("@odata.nextLink", out var nextLinkElement).Should().BeTrue();
-        var nextLink = nextLinkElement.GetString();
-        nextLink.Should().Contain("$format=");
-        nextLink.Should().Contain("odata.metadata");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Pagination)]
-    [Endpoint("GET /odata/Features({layerId})?$top=3&$skiptoken=0")]
-    public async Task NextLink_WithSkipToken_UsesSkipTokenInNextLink()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/odata/Features({TestLayerId})?$top=3&$skiptoken=0");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(content);
-
-        document.RootElement.TryGetProperty("@odata.nextLink", out var nextLinkElement).Should().BeTrue();
-        var nextLink = nextLinkElement.GetString();
-        // Skip token is now an opaque Base64Url-encoded cursor, not a raw integer
-        nextLink.Should().Contain("$skiptoken=");
-        nextLink.Should().NotContain("$skip=");
     }
 
     #endregion

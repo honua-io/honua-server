@@ -953,6 +953,22 @@ internal static class GrpcConversionHelpers
         };
     }
 
+    /// <summary>
+    /// Resolves parsed <c>order_by</c> clauses against the layer schema (#5466) so the declared
+    /// field name and type reach the SQL builder, matching the OData and WFS sort adapters.
+    /// Managed JSONB attributes sort as text without a type, so population <c>20</c> would
+    /// precede <c>3</c>. Fields the schema does not declare keep the untyped clause.
+    /// </summary>
+    public static ImmutableArray<OrderByClause> WithSchemaFieldTypes(
+        ImmutableArray<OrderByClause> orderBy,
+        IReadOnlyList<MetadataV2Field> schemaFields)
+        => orderBy
+            .Select(clause => schemaFields.FirstOrDefault(field =>
+                    string.Equals(field.Name, clause.Field, StringComparison.OrdinalIgnoreCase)) is { } declared
+                ? clause with { Field = declared.Name, FieldType = declared.Type }
+                : clause)
+            .ToImmutableArray();
+
     private static ImmutableArray<OrderByClause> ParseOrderBy(string orderBy)
     {
         var clauses = orderBy.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

@@ -110,7 +110,7 @@ internal sealed partial class ODataQueryHandler(
                 skiptoken,
                 count,
                 out var pagination,
-                out _,
+                out var topValue,
                 out _,
                 out var countValue,
                 out _);
@@ -172,8 +172,11 @@ internal sealed partial class ODataQueryHandler(
             var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
             var includeContext = ODataUtilityService.ShouldIncludeContext(context.Request, format);
 
+            // A client $top bounds the whole Layers collection, so the continuation carries
+            // the remaining budget and stops once it is spent (#5464).
             string? nextLink = null;
-            if (hasMoreLayers)
+            if (hasMoreLayers &&
+                ODataUtilityService.TryGetContinuationTop(topValue, layerData.Length, out var continuationTop))
             {
                 var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
                 // The Layers collection paginates in memory and decodes an incoming
@@ -183,7 +186,7 @@ internal sealed partial class ODataQueryHandler(
                 nextLink = ODataUtilityService.GenerateNextLink(
                     context.Request,
                     nextSkip,
-                    pagination.Limit,
+                    continuationTop,
                     filter,
                     select,
                     orderby,
@@ -670,9 +673,14 @@ internal sealed partial class ODataQueryHandler(
 
             // Calculate @odata.nextLink if there are more results. The continuation probe
             // (Limit + 1 fetch) is the source of truth here so paging is not truncated when
-            // the provider TotalCount degrades to the page length (#1989).
+            // the provider TotalCount degrades to the page length (#1989). An ordinary
+            // collection also stops once the client $top is spent and carries the remaining
+            // budget forward (#5464); change-tracking continuations keep paging by $top.
+            int? continuationTop = pagination.Limit;
+            var isDeltaPaging = trackChangesRequested || !string.IsNullOrWhiteSpace(deltatoken);
             string? nextLink = null;
-            if (hasMoreResults)
+            if (hasMoreResults &&
+                (isDeltaPaging || ODataUtilityService.TryGetContinuationTop(top, queryResult.Items.Length, out continuationTop)))
             {
                 var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
                 nextLink = !string.IsNullOrWhiteSpace(deltatoken)
@@ -687,7 +695,7 @@ internal sealed partial class ODataQueryHandler(
                     : ODataUtilityService.GenerateNextLink(
                         context.Request,
                         nextSkip,
-                        pagination.Limit,
+                        continuationTop,
                         filter,
                         select,
                         orderby,

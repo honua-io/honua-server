@@ -871,7 +871,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features({layerId})?$top=2&$skip=0")]
-    public async Task Features_WithPagination_ReturnsNextLink()
+    public async Task Features_WithTop_TreatsTopAsTotalCeiling()
     {
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=2&$skip=0");
 
@@ -879,12 +879,9 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
-        // NextLink should be present if there are more results
-        var hasNextLink = document.RootElement.TryGetProperty("@odata.nextLink", out var nextLink);
-        hasNextLink.Should().BeTrue();
-        var nextLinkValue = nextLink.GetString();
-        nextLinkValue.Should().NotBeNullOrEmpty();
-        nextLinkValue.Should().Contain("$skip=2");
-        nextLinkValue.Should().Contain("$top=2");
+        // OData 4.01 Part 1 §11.2.6.3 (#5464): $top=2 requests at most two items, so the
+        // response that returns them ends the requested collection with no nextLink.
+        document.RootElement.GetProperty("value").EnumerateArray().Should().HaveCount(2);
+        document.RootElement.TryGetProperty("@odata.nextLink", out _).Should().BeFalse();
     }
 }

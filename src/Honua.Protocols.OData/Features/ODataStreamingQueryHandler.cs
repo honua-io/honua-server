@@ -592,6 +592,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                 resource.ReadSrid() ?? 4326,
                 axisOrder,
                 pagination,
+                topValue,
                 selectedFields,
                 filter,
                 select,
@@ -667,6 +668,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         int? layerSrid,
         AxisOrder axisOrder,
         PaginationValues pagination,
+        int? requestedTop,
         HashSet<string>? selectedFields,
         string? filter,
         string? select,
@@ -752,6 +754,14 @@ internal sealed partial class ODataStreamingQueryHandler(
             ? ODataUtilityService.ShouldPaginate(streamedCount, pagination.Offset, totalCount.Value, pagination.Limit)
             : hasMoreResults;
 
+        // An ordinary collection stops once the client $top is spent and carries the remaining
+        // budget forward (#5464); change-tracking continuations keep paging by $top.
+        int? continuationTop = pagination.Limit;
+        if (shouldPaginate && !trackChangesRequested && string.IsNullOrWhiteSpace(deltatoken))
+        {
+            shouldPaginate = ODataUtilityService.TryGetContinuationTop(requestedTop, streamedCount, out continuationTop);
+        }
+
         if (shouldPaginate)
         {
             var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
@@ -767,7 +777,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                 : ODataUtilityService.GenerateNextLink(
                     context.Request,
                     nextSkip,
-                    pagination.Limit,
+                    continuationTop,
                     filter,
                     select,
                     orderby,

@@ -76,12 +76,23 @@ clock skew, while PostgreSQL enforces receipt expiry.
 The server applies a page-size cap so a single request never tries to materialize an
 unbounded result set. The effective page size is `min($top, OData:MaxPageSize)`
 (default `1000`, configurable via the `OData:MaxPageSize` setting or the
-`OData__MaxPageSize` environment variable). When a client requests a `$top` larger than
-the cap, the server returns the first page (up to the cap) and an `@odata.nextLink` that
-carries the clamped `$top` and the next `$skip`; clients follow `@odata.nextLink` to page
-through the remaining rows. This is standard OData server-driven paging and keeps ad hoc
-spatial queries (for example `geo.intersects` combined with `$select`) from forcing a
-pathological database plan on a very large `LIMIT`.
+`OData__MaxPageSize` environment variable). This is standard OData server-driven paging
+and keeps ad hoc spatial queries (for example `geo.intersects` combined with `$select`)
+from forcing a pathological database plan on a very large `LIMIT`.
+
+`$top` limits the whole requested collection, not each page (OData 4.01 Part 1
+§11.2.6.3 and §11.2.6.7). Following every `@odata.nextLink` returns at most `$top` items:
+
+- `$top` at or below the page cap is answered in one response with no `@odata.nextLink`.
+- `$top` above the cap returns the first page and an `@odata.nextLink` that carries the
+  next `$skip` (or `$skiptoken`) and the remaining budget as `$top`. For example, with
+  the default cap `$top=1500` returns 1000 items, then 500, then stops.
+- A request without `$top` has no ceiling. Its `@odata.nextLink` omits `$top`, and each
+  page uses the server page size until the collection is exhausted.
+
+This applies to the `Layers` and feature collections. Change-tracking baselines
+(`Prefer: odata.track-changes` and `$deltatoken` continuations) use `$top` as their page
+size and page through the whole tracked snapshot.
 
 Opaque `$skiptoken` values are scoped to the query, resolved tenant, and authenticated
 subject or API key that received them. Clients must not reuse a token after changing
