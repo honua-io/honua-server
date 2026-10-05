@@ -281,7 +281,7 @@ public sealed class NativeArchiveAndOutputBoundsTests : IDisposable
             ("source", Convert.ToBase64String(zip)),
             ("sourceFormat", "GeoJSON"));
 
-    private IOptionsMonitor<GdalWorkerOptions> Options(
+    private StaticOptionsMonitor Options(
         long maxArtifactBytes = 50L * 1024L * 1024L,
         long? maxArchiveEntryBytes = null,
         long? maxArchiveExtractedBytes = null,
