@@ -208,6 +208,31 @@ public sealed class AuditTelemetryCoverageTests
         }
     }
 
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task ExecutionActivity_InsideSubmittingRequest_KeepsRequestAsParentWithoutSelfLink()
+    {
+        // Submission-side backend calls (remote StartAsync, observe, cancel) run inside the
+        // request: their span must stay a child of it rather than become a linked root.
+        using var listener = ListenTo(HonuaTelemetry.ServiceName, "Honua.AuditTelemetryCoverage.Submit");
+        using var submitSource = new ActivitySource("Honua.AuditTelemetryCoverage.Submit");
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(true);
+        var service = CreateGeoprocessingJobService(jobStore);
+
+        using var request = submitSource.StartActivity("POST /ogc/processes/execution", ActivityKind.Server);
+        Assert.NotNull(request);
+        var submitted = await service.SubmitJobAsync(CreatePlan(), null, CreatePrincipal());
+
+        using var backendCall = ControlPlaneTelemetry.StartExecutionActivity(
+            ControlPlaneTelemetry.Activities.ExecutionRun, "start", submitted);
+
+        Assert.NotNull(backendCall);
+        Assert.Equal(request.TraceId, backendCall.TraceId);
+        Assert.Equal(request.SpanId, backendCall.ParentSpanId);
+        Assert.Empty(backendCall.Links);
+    }
+
     // ── A3-003 / #5475: span-event exception details and the event ceiling ────────────────
 
     [Theory]
