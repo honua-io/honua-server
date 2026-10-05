@@ -279,6 +279,7 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
         var artifacts = new List<string>();
         var context = Substitute.For<IJobExecutionContext>();
         context.When(c => c.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())).Do(c => artifacts.Add(c.ArgAt<string>(0)));
+        context.When(c => c.RecordCommittedEffectAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())).Do(c => artifacts.Add(c.ArgAt<string>(0)));
         return (await executor.ExecuteAsync(job, context, CancellationToken.None), artifacts);
     }
 

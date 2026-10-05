@@ -55,6 +55,14 @@ internal sealed class WorkspaceRoutingJobExecutionContext : IJobExecutionContext
     public Task AppendLogAsync(ExecutionLogEntry entry, CancellationToken cancellationToken = default)
         => _inner.AppendLogAsync(entry, cancellationToken);
 
+    // Persist the receipt before workspace indexing so even a workspace collision
+    // cannot hide the committed sink effect from the job's terminal result.
+    public async Task RecordCommittedEffectAsync(string artifactReference, CancellationToken cancellationToken = default)
+    {
+        await _inner.RecordCommittedEffectAsync(artifactReference, cancellationToken).ConfigureAwait(false);
+        await PublishWorkspaceReferenceAsync(artifactReference, committedEffect: true, cancellationToken).ConfigureAwait(false);
+    }
+
     public Task ThrowIfExecutionLeaseLostAsync(CancellationToken cancellationToken = default)
         => _inner.ThrowIfExecutionLeaseLostAsync(cancellationToken);
 
@@ -73,7 +81,11 @@ internal sealed class WorkspaceRoutingJobExecutionContext : IJobExecutionContext
         await TryPublishArtifactAsync(artifactReference, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<bool> TryPublishArtifactAsync(string artifactReference, CancellationToken cancellationToken = default)
+    public Task<bool> TryPublishArtifactAsync(string artifactReference, CancellationToken cancellationToken = default)
+        => PublishWorkspaceReferenceAsync(artifactReference, committedEffect: false, cancellationToken);
+
+    private async Task<bool> PublishWorkspaceReferenceAsync(
+        string artifactReference, bool committedEffect, CancellationToken cancellationToken)
     {
         var index = _publishedArtifactIndex++;
 
@@ -93,7 +105,8 @@ internal sealed class WorkspaceRoutingJobExecutionContext : IJobExecutionContext
 
         var published = await _workspaceLifecycle.PublishArtifactAsync(
             new WorkspaceArtifactPublication(_workspaceId, OperationId, slotIndex, kind, label, _overwrite, artifactReference),
-            ct => _inner.TryPublishArtifactAsync(artifactReference, ct), cancellationToken).ConfigureAwait(false);
+            ct => committedEffect ? Task.FromResult(true) : _inner.TryPublishArtifactAsync(artifactReference, ct),
+            cancellationToken).ConfigureAwait(false);
         return published is not null;
     }
 

@@ -67,6 +67,13 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
                 call.Arg<CancellationToken>().ThrowIfCancellationRequested();
                 receipt = call.Arg<string>();
             });
+        context.When(c => c.RecordCommittedEffectAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                cancellation.Cancel();
+                call.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                receipt = call.Arg<string>();
+            });
         var input = BuildInputUri(new Feature(
             new GeometryFactory(new PrecisionModel(), 4326).CreatePoint(new Coordinate(1, 2)),
             new AttributesTable()));
@@ -115,6 +122,9 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
         context
             .When(c => c.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
             .Do(call => publishedUri = call.ArgAt<string>(0));
+
+        context.When(c => c.RecordCommittedEffectAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(call => publishedUri = call.Arg<string>());
 
         var record = Record(
             ("input", input),

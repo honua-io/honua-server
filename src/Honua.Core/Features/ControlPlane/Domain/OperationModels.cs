@@ -1344,6 +1344,12 @@ public sealed record ExecutionJobRecord
     public IReadOnlyList<string> ArtifactReferences { get; init; } = Array.Empty<string>();
 
     /// <summary>
+    /// Receipts for already committed sink effects, also exposed in artifact references.
+    /// These survive operator cancellation and distinguish committed work from fenced output.
+    /// </summary>
+    public IReadOnlyList<string> CommittedEffectReferences { get; init; } = Array.Empty<string>();
+
+    /// <summary>
     /// Normalized execution-admission cost weight pinned at submit time for jobs whose exact-key spec
     /// contract forbids carrying the admission cost in <see cref="ExecutionJobSpec.Parameters"/>
     /// (for example durable tile-export jobs). The admission evaluator sums this when computing active

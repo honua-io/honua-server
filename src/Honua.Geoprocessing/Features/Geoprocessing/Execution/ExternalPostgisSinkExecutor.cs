@@ -258,18 +258,21 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             return JobExecutionResult.Failed($"{HandledProcessId} write failed: {ex.GetType().Name}.");
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-        await context.PublishArtifactAsync(
+        // The transaction has committed. Cancellation may stop later work, but must
+        // not suppress this destination receipt or misreport the committed load.
+        await context.RecordCommittedEffectAsync(
             SinkResultArtifact.Build(
                 HandledProcessId,
                 ("schema", schema),
                 ("table", table),
+                ("batchId", batchId),
+                ("committed", true),
                 ("featuresWritten", written),
                 ("featuresRejected", rejected)),
-            cancellationToken).ConfigureAwait(false);
-        await context.ReportProgressAsync(100, $"{HandledProcessId} completed", cancellationToken).ConfigureAwait(false);
+            CancellationToken.None).ConfigureAwait(false);
+        await context.ReportProgressAsync(100, $"{HandledProcessId} completed", CancellationToken.None).ConfigureAwait(false);
 
-        return JobExecutionResult.Succeeded();
+        return JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true };
     }
 
     private async Task<(string? ConnectionString, string? Error)> ResolveConnectionStringAsync(

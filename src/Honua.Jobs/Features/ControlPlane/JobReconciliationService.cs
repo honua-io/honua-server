@@ -85,7 +85,19 @@ internal sealed partial class JobReconciliationService(
 
             if (job.Status is ExecutionJobStatus.Queued)
             {
-                continue; // Not yet claimed; nothing to reconcile.
+                // Creation can commit just before request cancellation or process loss.
+                // Queued initial local records are dispatch intent, even if no pending
+                // queue membership was ever written. Re-read to avoid repairing a stale
+                // snapshot; atomic enqueue refuses deliveries already in the claimed set.
+                if (ExecutionJobSubmissionHelper.NeedsLocalDispatchRepair(job))
+                {
+                    var current = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+                    if (current != null && ExecutionJobSubmissionHelper.NeedsLocalDispatchRepair(current))
+                    {
+                        await jobQueue.EnqueueAsync(current.OperationId, current.Priority, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+                continue;
             }
 
             // Timeout takes precedence: timed-out jobs must fail terminally
@@ -216,7 +228,7 @@ internal sealed partial class JobReconciliationService(
                 ErrorMessage = null,
                 ProviderOperationId = null,
                 CompletedAt = null,
-                ArtifactReferences = Array.Empty<string>(),
+                ArtifactReferences = preRetry.CommittedEffectReferences,
                 NextRetryAt = delay > TimeSpan.Zero ? now.Add(delay) : null
             };
             if (!await jobStore.TrySetAsync(abandoned, cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -411,8 +423,11 @@ internal sealed partial class JobReconciliationService(
             Status = ExecutionJobStatus.Cancelled,
             UpdatedAt = now,
             CompletedAt = now,
-            ErrorMessage = "Cancelled by operator (durable signal honoured by reconciler).",
-            CurrentPhase = "Cancelled"
+            ErrorMessage = job.CommittedEffectReferences.Count > 0
+                ? JobExecutionService.CommittedCancellationWarning : "Cancelled by operator (durable signal honoured by reconciler).",
+            Warnings = job.CommittedEffectReferences.Count > 0
+                ? [.. job.Warnings, JobExecutionService.CommittedCancellationWarning] : job.Warnings,
+            CurrentPhase = job.CommittedEffectReferences.Count > 0 ? "Cancelled after committed effects" : "Cancelled"
         };
         if (!await jobStore.TrySetAsync(cancelledJob, cancellationToken: cancellationToken).ConfigureAwait(false))
         {

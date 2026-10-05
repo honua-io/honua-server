@@ -546,6 +546,9 @@ public sealed class HonuaLayerSinkExecutorTests
             .When(c => c.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
             .Do(call => publishedUri = call.ArgAt<string>(0));
 
+        context.When(c => c.RecordCommittedEffectAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(call => publishedUri = call.Arg<string>());
+
         var record = CreateRecord(inputs);
         var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
         return (result.Status, publishedUri, result.ErrorMessage ?? string.Empty);

@@ -25,6 +25,36 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Collection("ControlPlaneTransitionTelemetry")]
 public sealed class JobExecutionServiceTests
 {
+    [UnitTest]
+    public async Task ProcessJob_OrdinaryCompletionAfterEarlierCommittedEffect_HonoursCancellationAndReturnsOnlyReceipt()
+    {
+        var durable = CreateProvisioningJob();
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { durable = call.Arg<ExecutionJobRecord>(); return true; });
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var context = call.Arg<IJobExecutionContext>();
+                await context.RecordCommittedEffectAsync("earlier-committed-receipt");
+                durable = durable with { CancellationRequestedAt = DateTimeOffset.UtcNow };
+                Assert.False(await context.TryPublishArtifactAsync("ordinary-later-output"));
+                return JobExecutionResult.Succeeded();
+            });
+        using var service = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor],
+            new ExecutionJobCancellationTokens(), [], null, NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, durable.OperationId, durable.ClaimedBy!);
+
+        Assert.Equal(ExecutionJobStatus.Cancelled, durable.Status);
+        Assert.Equal("Cancelled after committed effects", durable.CurrentPhase);
+        Assert.Equal(new[] { "earlier-committed-receipt" }, durable.ArtifactReferences);
+        Assert.Contains(durable.Warnings, warning => warning.Contains("committed", StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -770,6 +770,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             if (existingByKey != null)
             {
                 EnsureMatchingIdempotentRequest(existingByKey, requestFingerprint, ownerId, resolvedSecurityContext.TenantId);
+                existingByKey = await _dispatcher.RepairLocalDispatchAsync(existingByKey, jobStore, cancellationToken)
+                    .ConfigureAwait(false);
                 EnsureSubmissionDidNotRollback(existingByKey);
                 GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
                 return existingByKey;
@@ -791,6 +793,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                         && !inheritsSubmitterSecurityContext
                         && JobOwnershipSecurity.MatchesPriorFormatSubmitter(
                             priorFormat.Audit, principal, resolvedSecurityContext.TenantId));
+                priorFormat = await _dispatcher.RepairLocalDispatchAsync(priorFormat, jobStore, cancellationToken)
+                    .ConfigureAwait(false);
                 EnsureSubmissionDidNotRollback(priorFormat);
                 GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, priorFormat.OperationId);
                 return priorFormat;
@@ -895,6 +899,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     if (existingInWindow != null)
                     {
                         EnsureMatchingIdempotentRequest(existingInWindow, requestFingerprint, ownerId, resolvedSecurityContext.TenantId);
+                        existingInWindow = await _dispatcher.RepairLocalDispatchAsync(existingInWindow, jobStore, cancellationToken)
+                            .ConfigureAwait(false);
                         EnsureSubmissionDidNotRollback(existingInWindow);
                         GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
                         return existingInWindow;
@@ -967,6 +973,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     if (existing != null)
                     {
                         EnsureMatchingIdempotentRequest(existing, requestFingerprint, ownerId, resolvedSecurityContext.TenantId);
+                        existing = await _dispatcher.RepairLocalDispatchAsync(existing, jobStore, cancellationToken)
+                            .ConfigureAwait(false);
                         EnsureSubmissionDidNotRollback(existing);
                         GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
                         return existing;
@@ -992,24 +1000,27 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             await _progressStore.SetProgressAsync(jobId, progress, ProgressRetention, cancellationToken)
                 .ConfigureAwait(false);
 
-            await _dispatcher.MaybeEnqueueLocalAsync(jobId, jobRecord.Spec.Backend, cancellationToken)
+            await _dispatcher.MaybeEnqueueLocalAsync(jobId, jobRecord.Spec.Backend, cancellationToken, jobRecord.Priority)
                 .ConfigureAwait(false);
 
             jobRecord = await _dispatcher.TrySubmitToBackendAsync(jobRecord, jobStore, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        catch (Exception) when (!cancellationToken.IsCancellationRequested
+            || string.Equals(jobRecord.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
         {
             await _customCodeGate.TryRevokeTokenAsync(mintedCustomCodeToken).ConfigureAwait(false);
 
             // The rollback's terminal transition removes the record from the active set, which
             // is what releases its concurrency and cost charge on every node.
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
                 jobStore,
                 jobId,
                 progressStore: _progressStore,
                 progressRetention: ProgressRetention,
                 failureMessage: "Submission failed.",
-                cancellationToken: CancellationToken.None).ConfigureAwait(false);
+                logger: _logger,
+                cancellationToken: cleanup.Token).ConfigureAwait(false);
 
             throw;
         }

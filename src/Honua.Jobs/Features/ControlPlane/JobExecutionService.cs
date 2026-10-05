@@ -895,14 +895,13 @@ internal sealed partial class JobExecutionService(
             return true;
         }
 
-        // Durable cancellation wins over a racing success (#3089): the artifact
-        // publication fence already refuses to publish once CancellationRequestedAt
-        // is stamped, so finalizing this record as Succeeded would durably expose a
-        // success with silently missing outputs and no repair path. Honour the stamp
-        // and finalize as Cancelled instead — consistent with every other path that
-        // observes the durable signal.
+        // Ordinary output remains fenced by durable cancellation. A completed sink
+        // with an already committed receipt instead reports its actual successful effect;
+        // the cancellation stamp and warning explain why cancellation could not undo it.
         var effectiveStatus = result.Status;
-        if (result.Status == ExecutionJobStatus.Succeeded && job.CancellationRequestedAt.HasValue)
+        var hasCommittedCancellation = job.CancellationRequestedAt.HasValue && job.CommittedEffectReferences.Count > 0;
+        var committedAfterCancellation = result.CompletedWithCommittedEffects && hasCommittedCancellation;
+        if (result.Status == ExecutionJobStatus.Succeeded && job.CancellationRequestedAt.HasValue && !committedAfterCancellation)
         {
             Log.FinalizeHonouredDurableCancellation(logger, operationId);
             effectiveStatus = ExecutionJobStatus.Cancelled;
@@ -917,14 +916,19 @@ internal sealed partial class JobExecutionService(
             ErrorMessage = effectiveStatus switch
             {
                 ExecutionJobStatus.Failed => SafeExecutionFailureMessage,
+                ExecutionJobStatus.Cancelled when hasCommittedCancellation => CommittedCancellationWarning,
                 ExecutionJobStatus.Cancelled => "Cancelled by operator (durable signal honoured at finalization).",
                 _ => null
             },
-            Warnings = result.Warnings,
+            Warnings = hasCommittedCancellation
+                ? [.. result.Warnings, CommittedCancellationWarning]
+                : result.Warnings,
             PercentComplete = effectiveStatus == ExecutionJobStatus.Succeeded ? 100 : job.PercentComplete,
             CurrentPhase = effectiveStatus switch
             {
+                ExecutionJobStatus.Succeeded when committedAfterCancellation => "Completed with committed effects (cancellation requested)",
                 ExecutionJobStatus.Succeeded => "Completed",
+                ExecutionJobStatus.Cancelled when hasCommittedCancellation => "Cancelled after committed effects",
                 ExecutionJobStatus.Cancelled => "Cancelled",
                 _ => "Failed"
             }
@@ -983,6 +987,8 @@ internal sealed partial class JobExecutionService(
         return true;
     }
 
+    internal const string CommittedCancellationWarning = "Cancellation requested after sink data committed; committed-effect receipts are retained.";
+
     private async Task TerminateJobAsync(
         string operationId,
         string workerId,
@@ -1010,10 +1016,21 @@ internal sealed partial class JobExecutionService(
             Status = terminalStatus,
             UpdatedAt = now,
             CompletedAt = now,
-            ErrorMessage = reason,
-            ArtifactReferences = reason is "license expired" or DrainDeadlineFailureMessage ? [] : job.ArtifactReferences,
+            ErrorMessage = terminalStatus == ExecutionJobStatus.Cancelled && job.CommittedEffectReferences.Count > 0
+                ? CommittedCancellationWarning : reason,
+            Warnings = terminalStatus == ExecutionJobStatus.Cancelled && job.CommittedEffectReferences.Count > 0
+                ? [.. job.Warnings, CommittedCancellationWarning] : job.Warnings,
+            ArtifactReferences = reason switch
+            {
+                "license expired" => [],
+                DrainDeadlineFailureMessage => job.CommittedEffectReferences,
+                _ => job.ArtifactReferences
+            },
+            CommittedEffectReferences = reason == "license expired" ? [] : job.CommittedEffectReferences,
             PercentComplete = reason is "license expired" or DrainDeadlineFailureMessage ? null : job.PercentComplete,
-            CurrentPhase = terminalStatus == ExecutionJobStatus.Cancelled ? "Cancelled" : "Failed"
+            CurrentPhase = terminalStatus == ExecutionJobStatus.Cancelled
+                ? job.CommittedEffectReferences.Count > 0 ? "Cancelled after committed effects" : "Cancelled"
+                : "Failed"
         };
 
         if (!await jobStore.TrySetAsync(terminal, cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -1084,8 +1101,11 @@ internal sealed partial class JobExecutionService(
                 Status = ExecutionJobStatus.Cancelled,
                 UpdatedAt = cancelNow,
                 CompletedAt = cancelNow,
-                ErrorMessage = "Cancelled by operator (durable signal honoured during abandon).",
-                CurrentPhase = "Cancelled"
+                ErrorMessage = current.CommittedEffectReferences.Count > 0
+                    ? CommittedCancellationWarning : "Cancelled by operator (durable signal honoured during abandon).",
+                Warnings = current.CommittedEffectReferences.Count > 0
+                    ? [.. current.Warnings, CommittedCancellationWarning] : current.Warnings,
+                CurrentPhase = current.CommittedEffectReferences.Count > 0 ? "Cancelled after committed effects" : "Cancelled"
             };
             if (!await jobStore.TrySetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false))
             {
@@ -1187,8 +1207,9 @@ internal sealed partial class JobExecutionService(
                 ErrorMessage = null,
                 ProviderOperationId = null,
                 CompletedAt = null,
-                ArtifactReferences = Array.Empty<string>(),
-                Warnings = Array.Empty<string>(),
+                ArtifactReferences = latestBeforeRequeue.CommittedEffectReferences,
+                Warnings = latestBeforeRequeue.CommittedEffectReferences.Count > 0
+                    ? latestBeforeRequeue.Warnings : Array.Empty<string>(),
                 AttemptCount = restoreClaimAttempt
                     ? Math.Max(0, latestBeforeRequeue.AttemptCount - 1)
                     : latestBeforeRequeue.AttemptCount,
@@ -1548,9 +1569,22 @@ internal sealed partial class JobExecutionContext(
     }
 
     /// <inheritdoc />
-    public async Task<bool> TryPublishArtifactAsync(
+    public Task<bool> TryPublishArtifactAsync(
         string artifactReference,
         CancellationToken cancellationToken = default)
+        => TryPublishReferenceAsync(artifactReference, committedEffect: false, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task RecordCommittedEffectAsync(string artifactReference, CancellationToken cancellationToken = default)
+    {
+        if (!await TryPublishReferenceAsync(artifactReference, committedEffect: true, cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException($"The execution fence rejected a committed-effect receipt for job '{operationId}'.");
+        }
+    }
+
+    private async Task<bool> TryPublishReferenceAsync(
+        string artifactReference, bool committedEffect, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(artifactReference);
         const int maxCasRetries = 10;
@@ -1576,7 +1610,7 @@ internal sealed partial class JobExecutionContext(
                     return false;
                 }
 
-                if (job.CancellationRequestedAt.HasValue)
+                if (!committedEffect && job.CancellationRequestedAt.HasValue)
                 {
                     // Durable cancellation wins: an attempt racing its own cancellation
                     // cannot expose new output through the job record.
@@ -1584,7 +1618,17 @@ internal sealed partial class JobExecutionContext(
                     return false;
                 }
 
-                if (!TryAppendArtifactReference(job.ArtifactReferences, artifactReference, out var refs))
+                var effects = job.CommittedEffectReferences;
+                if (committedEffect && effects.Contains(artifactReference, StringComparer.Ordinal))
+                {
+                    return true;
+                }
+                var appended = TryAppendArtifactReference(job.ArtifactReferences, artifactReference, out var refs);
+                if (!appended)
+                {
+                    refs = [.. job.ArtifactReferences];
+                }
+                if (!appended && !committedEffect)
                 {
                     // Identical publication already durable — retried publish is a no-op.
                     return true;
@@ -1593,6 +1637,7 @@ internal sealed partial class JobExecutionContext(
                 var updated = job with
                 {
                     ArtifactReferences = refs,
+                    CommittedEffectReferences = committedEffect ? [.. effects, artifactReference] : effects,
                     UpdatedAt = DateTimeOffset.UtcNow,
                     LastHeartbeatAt = DateTimeOffset.UtcNow
                 };

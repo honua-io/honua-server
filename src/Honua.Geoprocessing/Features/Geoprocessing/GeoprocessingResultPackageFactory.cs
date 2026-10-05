@@ -25,9 +25,18 @@ internal static class GeoprocessingResultPackageFactory
                 $"Execution job '{job.OperationId}' is not terminal and cannot produce a result package.");
         }
 
-        var artifacts = job.Status == ExecutionJobStatus.Succeeded
+        var artifacts = job.Status == ExecutionJobStatus.Succeeded || job.CommittedEffectReferences.Count > 0
             ? BuildArtifacts(job, processCatalog)
             : [];
+        if (job.Status != ExecutionJobStatus.Succeeded)
+        {
+            // Cancelled/failed work exposes only receipts for effects that already
+            // committed, retaining their original output slot and artifact identity.
+            artifacts = artifacts.Where((_, index) => job.CommittedEffectReferences.Contains(
+                job.ArtifactReferences[index], StringComparer.Ordinal)).ToArray();
+        }
+        var committedSummary = job.CommittedEffectReferences.Count > 0
+            ? " Sink effects committed; committed-effect receipts are retained." : string.Empty;
         var provenance = BuildProvenance(job, processCatalog, artifacts);
 
         return job.Status switch
@@ -37,9 +46,10 @@ internal static class GeoprocessingResultPackageFactory
                 new ResultSummary
                 {
                     Title = $"Results for {ResolvePlanLabel(job)}",
-                    Description = artifacts.Length == 1
+                    Description = (artifacts.Length == 1
                         ? "Produced 1 artifact."
-                        : $"Produced {artifacts.Length} artifacts."
+                        : $"Produced {artifacts.Length} artifacts.")
+                        + (job.CancellationRequestedAt.HasValue ? committedSummary : string.Empty)
                 },
                 artifacts,
                 [],
@@ -49,14 +59,14 @@ internal static class GeoprocessingResultPackageFactory
                 new ResultSummary
                 {
                     Title = $"Job {ResolvePlanLabel(job)} failed",
-                    Description = job.ErrorMessage ?? "The geoprocessing job failed."
+                    Description = (job.ErrorMessage ?? "The geoprocessing job failed.") + committedSummary
                 },
                 [new GeoprocessingError
                 {
                     Kind = GeoprocessingErrorKind.ExecutionFailed,
                     Message = job.ErrorMessage ?? "The geoprocessing job failed."
                 }],
-                provenance),
+                provenance) with { Artifacts = artifacts },
             ExecutionJobStatus.Cancelled => new AnalysisResultPackage
             {
                 ResultPackageId = CreateResultPackageId(job),
@@ -64,9 +74,10 @@ internal static class GeoprocessingResultPackageFactory
                 Summary = new ResultSummary
                 {
                     Title = $"Job {ResolvePlanLabel(job)} cancelled",
-                    Description = job.ErrorMessage ?? "The geoprocessing job was cancelled."
+                    Description = (job.ErrorMessage ?? "The geoprocessing job was cancelled.") + committedSummary
                 },
                 Provenance = provenance,
+                Artifacts = artifacts,
                 Errors =
                 [
                     new GeoprocessingError

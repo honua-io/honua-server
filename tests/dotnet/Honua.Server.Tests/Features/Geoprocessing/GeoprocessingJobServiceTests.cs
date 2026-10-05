@@ -5398,6 +5398,50 @@ public sealed class GeoprocessingJobServiceTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_CancellationRacingQueueClaim_PreservesAcceptedAttemptForReplay(bool requeued)
+    {
+        using var request = new CancellationTokenSource();
+        ExecutionJobRecord? durable = null;
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => durable);
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { durable = call.Arg<ExecutionJobRecord>(); return true; });
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { durable = call.Arg<ExecutionJobRecord>(); return true; });
+        _jobQueue.EnqueueAsync(Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                // Delivery and its worker claim committed before the request observed cancellation.
+                var accepted = durable!;
+                durable = accepted with
+                {
+                    Status = requeued ? ExecutionJobStatus.Queued : ExecutionJobStatus.Provisioning,
+                    ClaimedBy = requeued ? null : "accepted-worker",
+                    AttemptCount = 1,
+                    Version = accepted.Version + 1
+                };
+                request.Cancel();
+                call.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                return Task.CompletedTask;
+            });
+
+        await FluentActions.Awaiting(() => _sut.SubmitJobAsync(
+                CreateValidPlan(), "claimed-admission", CreatePrincipal(), cancellationToken: request.Token))
+            .Should().ThrowAsync<OperationCanceledException>();
+
+        durable!.Status.Should().Be(requeued ? ExecutionJobStatus.Queued : ExecutionJobStatus.Provisioning);
+        durable.ClaimedBy.Should().Be(requeued ? null : "accepted-worker");
+        var replay = await _sut.SubmitJobAsync(CreateValidPlan(), "claimed-admission", CreatePrincipal());
+        replay.Should().BeSameAs(durable);
+        replay.AttemptCount.Should().Be(1);
+        await _jobQueue.Received(1).EnqueueAsync(replay.OperationId, replay.Priority, Arg.Any<CancellationToken>());
+        await _jobStore.DidNotReceive().TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
     [InlineData("create")]
     [InlineData("progress")]
     [InlineData("enqueue")]

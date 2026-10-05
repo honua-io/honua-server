@@ -300,12 +300,35 @@ internal sealed class GeoprocessingJobDispatcher
     /// Enqueues the job on the local in-process queue when a queue is configured and the job
     /// targets the local backend. No-ops otherwise.
     /// </summary>
-    public async Task MaybeEnqueueLocalAsync(string jobId, string backend, CancellationToken cancellationToken)
+    public async Task MaybeEnqueueLocalAsync(
+        string jobId, string backend, CancellationToken cancellationToken, OperationPriority priority = OperationPriority.Normal)
     {
         if (_jobQueue != null && string.Equals(backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
         {
-            await _jobQueue.EnqueueAsync(jobId, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await _jobQueue.EnqueueAsync(jobId, priority, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Repairs an interrupted local admission before acknowledging a keyed replay.
+    /// The queue keeps repair idempotent and fences deliveries already claimed by workers.
+    /// </summary>
+    public async Task<ExecutionJobRecord> RepairLocalDispatchAsync(
+        ExecutionJobRecord job, IExecutionJobStore jobStore, CancellationToken cancellationToken)
+    {
+        if (_jobQueue != null && ExecutionJobSubmissionHelper.NeedsLocalDispatchRepair(job))
+        {
+            var current = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+            if (current != null)
+            {
+                if (ExecutionJobSubmissionHelper.NeedsLocalDispatchRepair(current))
+                {
+                    await _jobQueue.EnqueueAsync(current.OperationId, current.Priority, cancellationToken).ConfigureAwait(false);
+                }
+                return current;
+            }
+        }
+        return job;
     }
 
     /// <summary>
