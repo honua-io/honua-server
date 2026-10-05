@@ -86,7 +86,8 @@ public sealed class AuditTelemetryCoverageTests
         using var metrics = new ServingMetrics();
         var before = ReservoirCounts(HonuaTelemetry.Protocols.Mcp);
 
-        using var response = await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), "/mcp"));
+        using var request = new HttpRequestMessage(new HttpMethod(method), "/mcp");
+        using var response = await client.SendAsync(request);
         await app.StopAsync();
 
         Assert.Equal(statusCode, (int)response.StatusCode);
