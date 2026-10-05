@@ -118,6 +118,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         // selector before it will execute any image operation (honua-server#3375).
         payload.RootElement.GetProperty("currentVersion").GetDouble().Should().Be(10.8);
         payload.RootElement.TryGetProperty("fullVersion", out _).Should().BeFalse();
+        payload.RootElement.GetProperty("owningSystemUrl").GetString().Should().Be("http://localhost");
         payload.RootElement.GetProperty("soapUrl").GetString().Should().Be("http://localhost/services");
         payload.RootElement.GetProperty("secureSoapUrl").ValueKind.Should().Be(JsonValueKind.Null);
         payload.RootElement.TryGetProperty("authInfo", out var authInfo).Should().BeTrue();
@@ -174,6 +175,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         payload.RootElement.TryGetProperty("error", out _).Should().BeFalse();
         payload.RootElement.GetProperty("currentVersion").GetDouble().Should().Be(10.8);
+        payload.RootElement.GetProperty("owningSystemUrl").GetString().Should().Be("http://localhost");
         payload.RootElement.GetProperty("soapUrl").GetString().Should().Be("http://localhost/services");
         payload.RootElement.TryGetProperty("authInfo", out _).Should().BeTrue();
     }
@@ -201,6 +203,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             response.Be200Ok();
             var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var expected = $"{publicBaseUrl}/services";
+            payload.RootElement.GetProperty("owningSystemUrl").GetString().Should().Be(publicBaseUrl);
             payload.RootElement.GetProperty("soapUrl").GetString().Should().Be(expected);
             payload.RootElement.GetProperty("secureSoapUrl").GetString().Should().Be(
                 expected,

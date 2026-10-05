@@ -45,6 +45,14 @@ internal sealed record RestInfoResponse
     [JsonPropertyName("currentVersion")]
     public double CurrentVersion { get; init; } = 10.8;
 
+    /// <summary>
+    /// Portal that owns this server, without a trailing slash. A client that already
+    /// holds a token for that portal exchanges it at
+    /// <see cref="RestAuthInfo.TokenServicesUrl"/> for a token this server accepts.
+    /// </summary>
+    [JsonPropertyName("owningSystemUrl")]
+    public required string OwningSystemUrl { get; init; }
+
     [JsonPropertyName("soapUrl")]
     public required string SoapUrl { get; init; }
 

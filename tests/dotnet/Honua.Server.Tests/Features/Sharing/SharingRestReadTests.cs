@@ -167,9 +167,12 @@ public sealed class SharingRestReadTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var owning = doc.RootElement.GetProperty("owningSystemUrl").GetString();
+        owning.Should().NotBeNullOrWhiteSpace();
+        doc.RootElement.GetProperty("soapUrl").GetString().Should().Be(owning + "/services");
         var authInfo = doc.RootElement.GetProperty("authInfo");
         authInfo.GetProperty("isTokenBasedSecurity").GetBoolean().Should().BeTrue();
-        authInfo.GetProperty("tokenServicesUrl").GetString().Should().EndWith("/sharing/rest/generateToken");
+        authInfo.GetProperty("tokenServicesUrl").GetString().Should().Be(owning + "/sharing/rest/generateToken");
     }
 
     [IntegrationTest]

@@ -100,6 +100,79 @@ internal sealed partial class PortalTokenIssuer(
         PortalTokenBinding binding,
         CancellationToken cancellationToken)
     {
+        var record = await ReadBoundRecordAsync(token, binding, cancellationToken).ConfigureAwait(false);
+        if (record is null)
+        {
+            return null;
+        }
+
+        var principal = ProjectPrincipal(record, ResolveRoles(record));
+        return new PortalTokenValidation(principal, record.ExpiresAt);
+    }
+
+    /// <inheritdoc />
+    public async Task<PortalTokenIssuance?> ExchangeForServerAsync(
+        string portalToken,
+        PortalTokenBinding presentedBinding,
+        PortalTokenClientType clientType,
+        string bindingValue,
+        DateTimeOffset expiresAt,
+        CancellationToken cancellationToken)
+    {
+        var record = await ReadBoundRecordAsync(portalToken, presentedBinding, cancellationToken).ConfigureAwait(false);
+        if (record?.Source is not { } source)
+        {
+            return null;
+        }
+
+        // The exchange is a new issuance for the same principal. It must not outlive
+        // the portal token it was minted from, and a token that is already due is unusable.
+        var boundedExpiry = expiresAt < record.ExpiresAt ? expiresAt : record.ExpiresAt;
+        if (boundedExpiry <= DateTimeOffset.UtcNow)
+        {
+            return null;
+        }
+
+        var issuance = await IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: record.PrincipalId,
+                DisplayName: record.DisplayName,
+                TenantId: record.TenantId,
+                Roles: record.Roles,
+                ClientType: clientType,
+                BindingValue: bindingValue,
+                ExpiresAt: boundedExpiry,
+                RolesRequireClaimsMappingEntitlement: record.RolesRequireClaimsMappingEntitlement,
+                TenantRequiresClaimsMappingEntitlement: record.TenantRequiresClaimsMappingEntitlement,
+                RolesWithoutClaimsMapping: record.RolesWithoutClaimsMapping,
+                Source: new PortalCredentialSource(source.Kind, source.Reference, source.Version, source.ExpiresAt)),
+            cancellationToken).ConfigureAwait(false);
+
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+#pragma warning disable CA1873 // LogValueRedactor.Hash / ToString only invoked inside the IsEnabled gate above
+            PortalTokenLog.TokenIssued(
+                _logger,
+                LogValueRedactor.Hash(record.PrincipalId),
+                LogValueRedactor.Hash(record.TenantId ?? string.Empty),
+                clientType.ToString(),
+                issuance.ExpiresAt);
+#pragma warning restore CA1873
+        }
+
+        return issuance;
+    }
+
+    /// <summary>
+    /// Loads the token record and applies the same binding, tenant, and source checks
+    /// <see cref="ValidateAsync"/> uses. Returns the stored record so an exchange can
+    /// copy provenance instead of reconstructing it from the hydrated principal.
+    /// </summary>
+    private async Task<PortalTokenRecord?> ReadBoundRecordAsync(
+        string token,
+        PortalTokenBinding binding,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(binding);
 
         if (string.IsNullOrWhiteSpace(token))
@@ -152,8 +225,7 @@ internal sealed partial class PortalTokenIssuer(
             return null;
         }
 
-        var principal = ProjectPrincipal(record, ResolveRoles(record));
-        return new PortalTokenValidation(principal, record.ExpiresAt);
+        return record;
     }
 
     /// <inheritdoc />

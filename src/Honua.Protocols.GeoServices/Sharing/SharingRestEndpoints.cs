@@ -60,6 +60,10 @@ public static class SharingRestEndpoints
     private const int DefaultSearchPageSize = 10;
     private const int MaxSearchPageSize = 100;
 
+    // Paths under the resolved public base that name this server. The catalog publishes
+    // the SOAP root as `{base}/services`; clients also address the REST root.
+    private static readonly string[] RecognizedServerUrlSuffixes = ["", "/services", "/rest", "/rest/services"];
+
     /// <summary>
     /// Maps the <c>/sharing/rest/generateToken</c> POST and GET endpoints.
     /// </summary>
@@ -253,7 +257,7 @@ public static class SharingRestEndpoints
             return entitlementFailure;
         }
 
-        var (username, password, clientType, refererInput, expirationMinutes, _, formatValid) =
+        var (username, password, clientType, refererInput, expirationMinutes, _, formatValid, portalToken, serverUrl) =
             await ReadParametersAsync(context).ConfigureAwait(false);
 
         // Detect whether credentials arrived via query string (GET or non-form POST). This is
@@ -288,6 +292,23 @@ public static class SharingRestEndpoints
         if (credentialsInQueryString)
         {
             PortalTokenLog.CredentialsFromQueryString(logger);
+        }
+
+        // A presented portal token is an exchange, even when a username and password
+        // are also posted. The server URL is checked before the token so an unrecognized
+        // server is rejected without consulting the credential.
+        if (!string.IsNullOrWhiteSpace(portalToken))
+        {
+            return await ExchangePortalTokenAsync(
+                context,
+                tokenIssuer,
+                logger,
+                settings,
+                portalToken,
+                serverUrl,
+                clientType,
+                refererInput,
+                expirationMinutes).ConfigureAwait(false);
         }
 
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
@@ -367,6 +388,72 @@ public static class SharingRestEndpoints
             Ssl = true,
         };
 
+        return Results.Json(response, SharingRestJsonContext.Default.GenerateTokenResponse, contentType: JsonContentType);
+    }
+
+    private static async Task<IResult> ExchangePortalTokenAsync(
+        HttpContext context,
+        IPortalTokenIssuer tokenIssuer,
+        ILogger<SharingRestLog> logger,
+        PortalTokenAuthenticationOptions settings,
+        string portalToken,
+        string? serverUrl,
+        PortalTokenClientType clientType,
+        string? refererInput,
+        int? expirationMinutes)
+    {
+        if (string.IsNullOrWhiteSpace(serverUrl))
+        {
+            PortalTokenLog.TokenIssuanceRejected(logger, "missing server url");
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "A server URL is required to exchange a portal token.");
+        }
+
+        if (!IsRecognizedServerUrl(context, serverUrl))
+        {
+            PortalTokenLog.TokenIssuanceRejected(logger, "unrecognized server url");
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "The server URL is not recognized by this portal.");
+        }
+
+        var binding = ResolveBinding(context, clientType, refererInput);
+        if (binding is null)
+        {
+            PortalTokenLog.TokenIssuanceRejected(logger, "missing binding");
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                clientType == PortalTokenClientType.Referer
+                    ? "A 'referer' header or parameter is required when 'client' is 'referer'."
+                    : "Client IP could not be determined for an 'ip' binding.");
+        }
+
+        // A browser sends the Referer header of the page that posted the form. When that
+        // header is present the portal token must match it, so a page on another origin
+        // cannot exchange a token bound to this one. A non-browser client that omits the
+        // header is bound by the referer parameter, the same value the new token uses.
+        var headerReferer = context.Request.Headers.Referer.FirstOrDefault();
+        var presentedReferer = string.IsNullOrWhiteSpace(headerReferer) ? refererInput : headerReferer.Trim();
+        var issuance = await tokenIssuer.ExchangeForServerAsync(
+            portalToken,
+            new PortalTokenBinding(presentedReferer, context.Connection.RemoteIpAddress?.ToString()),
+            clientType,
+            binding,
+            DateTimeOffset.UtcNow.AddMinutes(ResolveExpirationMinutes(expirationMinutes, settings)),
+            context.RequestAborted).ConfigureAwait(false);
+        if (issuance is null)
+        {
+            PortalTokenLog.TokenIssuanceRejected(logger, "invalid portal token");
+            return StandardErrorHelpers.CreateBadRequest(context, "Unable to generate token.");
+        }
+
+        var response = new GenerateTokenResponse
+        {
+            Token = issuance.Token,
+            Expires = issuance.ExpiresAt.ToUnixTimeMilliseconds(),
+            Ssl = true,
+        };
         return Results.Json(response, SharingRestJsonContext.Default.GenerateTokenResponse, contentType: JsonContentType);
     }
 
@@ -791,6 +878,8 @@ public static class SharingRestEndpoints
         string? refererInput;
         string? expirationRaw;
         string? format;
+        string? portalToken;
+        string? serverUrl;
 
         if (HttpMethods.IsPost(context.Request.Method) && context.Request.HasFormContentType)
         {
@@ -801,6 +890,8 @@ public static class SharingRestEndpoints
             refererInput = ReadFirst(form["referer"]);
             expirationRaw = ReadFirst(form["expiration"]);
             format = ReadFirst(form["f"]);
+            portalToken = ReadFirst(form["token"]);
+            serverUrl = ReadFirst(form["serverUrl"]) ?? ReadFirst(form["serverURL"]);
         }
         else
         {
@@ -810,6 +901,8 @@ public static class SharingRestEndpoints
             refererInput = ReadFirst(context.Request.Query["referer"]);
             expirationRaw = ReadFirst(context.Request.Query["expiration"]);
             format = ReadFirst(context.Request.Query["f"]);
+            portalToken = ReadFirst(context.Request.Query["token"]);
+            serverUrl = ReadFirst(context.Request.Query["serverUrl"]) ?? ReadFirst(context.Request.Query["serverURL"]);
         }
 
         var clientType = ParseClientType(clientRaw);
@@ -832,7 +925,9 @@ public static class SharingRestEndpoints
             refererInput,
             expirationMinutes,
             format,
-            formatValid);
+            formatValid,
+            portalToken,
+            serverUrl);
     }
 
     private static string? ReadFirst(Microsoft.Extensions.Primitives.StringValues values)
@@ -915,6 +1010,50 @@ public static class SharingRestEndpoints
         return false;
     }
 
+    private static bool IsRecognizedServerUrl(HttpContext context, string serverUrl)
+    {
+        if (!Uri.TryCreate(serverUrl, UriKind.Absolute, out var requested) ||
+            !string.IsNullOrEmpty(requested.UserInfo) ||
+            !string.IsNullOrEmpty(requested.Query) ||
+            !string.IsNullOrEmpty(requested.Fragment) ||
+            (requested.Scheme != Uri.UriSchemeHttp && requested.Scheme != Uri.UriSchemeHttps))
+        {
+            return false;
+        }
+
+        var baseRaw = BaseUrlResolver.GetBaseUrl(context);
+        if (string.IsNullOrWhiteSpace(baseRaw) ||
+            !Uri.TryCreate(baseRaw, UriKind.Absolute, out var basis) ||
+            !string.Equals(requested.Scheme, basis.Scheme, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(requested.Host, basis.Host, StringComparison.OrdinalIgnoreCase) ||
+            requested.Port != basis.Port)
+        {
+            return false;
+        }
+
+        var basePath = NormalizeServerPath(basis.AbsolutePath);
+        var requestedPath = NormalizeServerPath(requested.AbsolutePath);
+        foreach (var suffix in RecognizedServerUrlSuffixes)
+        {
+            if (string.Equals(requestedPath, basePath + suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string NormalizeServerPath(string path)
+    {
+        if (string.IsNullOrEmpty(path) || path == "/")
+        {
+            return string.Empty;
+        }
+
+        return path.TrimEnd('/');
+    }
+
     private readonly record struct GenerateTokenInputs(
         string? Username,
         string? Password,
@@ -922,7 +1061,9 @@ public static class SharingRestEndpoints
         string? RefererInput,
         int? ExpirationMinutes,
         string? Format,
-        bool FormatValid);
+        bool FormatValid,
+        string? PortalToken,
+        string? ServerUrl);
 }
 
 internal sealed partial class SharingRestLog

@@ -42,6 +42,31 @@ public interface IPortalTokenIssuer
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Exchanges a portal token for a new token of the same principal, bound to the
+    /// requested client, referer, and expiration. The new token copies the source
+    /// credential, so rotation and revocation of that credential stop the exchanged
+    /// token as well. Returns <see langword="null"/> when the presented token is
+    /// missing, expired, revoked, or bound to a different client.
+    /// </summary>
+    /// <param name="portalToken">Portal token presented for exchange.</param>
+    /// <param name="presentedBinding">Binding observed for the presented token.</param>
+    /// <param name="clientType">Whether the new token binds to a referer or a client IP.</param>
+    /// <param name="bindingValue">Referer or client IP the new token is bound to.</param>
+    /// <param name="expiresAt">
+    /// Requested expiry. Clamped to the presented token's own expiry so the exchange
+    /// cannot extend the principal's session.
+    /// </param>
+    /// <param name="cancellationToken">Token used to abort the exchange.</param>
+    /// <returns>The issued token, or <see langword="null"/> when the portal token is unusable.</returns>
+    Task<PortalTokenIssuance?> ExchangeForServerAsync(
+        string portalToken,
+        PortalTokenBinding presentedBinding,
+        PortalTokenClientType clientType,
+        string bindingValue,
+        DateTimeOffset expiresAt,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Resolves an active token reference for RFC 7662 introspection (#1890),
     /// <em>without</em> the referer/IP binding check that
     /// <see cref="ValidateAsync"/> applies. Introspection is a trusted,

@@ -275,7 +275,12 @@ internal sealed class PortalTokenAuthenticationMiddleware(
             {
                 context.User = result.Principal;
             }
-            else if (!result.Succeeded && result.Failure is not null && IsGeoServicesPortalRequest(context))
+            // generateToken takes `token` as an issuance operand: a portal token
+            // exchanged for a server token. The endpoint reports an unusable operand
+            // itself. Flagging it here would turn that exchange into an invalid-token
+            // response before the endpoint runs.
+            else if (!result.Succeeded && result.Failure is not null && IsGeoServicesPortalRequest(context)
+                && !IsGenerateTokenRequest(context))
             {
                 context.Items[PortalTokenAuthenticationExtensions.AuthenticationFailureKey] = true;
             }
@@ -321,6 +326,9 @@ internal sealed class PortalTokenAuthenticationMiddleware(
 
         return false;
     }
+
+    private static bool IsGenerateTokenRequest(HttpContext context)
+        => context.Request.Path.StartsWithSegments("/sharing/rest/generateToken");
 
     private static bool IsGeoServicesPortalRequest(HttpContext context)
     {
