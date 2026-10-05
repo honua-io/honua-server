@@ -253,6 +253,15 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
             : TranslateGeometryExpression(spatial.Right, context);
         var distance = TranslateExpression(spatial.Distance, context);
 
+        // Geography measures metres. The planar path measures in the layer CRS's own unit, so a
+        // distance the parser already normalised to metres (FES uom) is converted to that unit:
+        // 20 m on a US-foot layer is 65.6 ftUS, not 20 ftUS (#5462). Distances without a unit
+        // keep their native planar-in-CRS reading.
+        if (!useGeography && spatial.DistanceInMeters)
+        {
+            distance = $"({distance} / {PostgresCrsUnitSql.MetersPerProjectedUnit(context.Wkid)})";
+        }
+
         return spatial.Operator switch
         {
             SpatialOperator.DWithin => $"ST_DWithin({left}, {right}, {distance})",

@@ -191,6 +191,7 @@ public sealed class FilterPlanCompilerTests
         var distance = spatial.Distance.Should().BeOfType<Literal>().Subject;
         distance.Type.Should().Be(LiteralType.Number);
         ((double)distance.Value!).Should().Be(5000.0); // 5 km converted to meters
+        spatial.DistanceInMeters.Should().BeTrue("projected-layer translators convert metres to the native unit (#5462)");
     }
 
     [UnitTest]
