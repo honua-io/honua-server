@@ -992,6 +992,12 @@ internal sealed partial class Wfs20Handler
     {
         var filterElement = actionElement.Elements()
             .FirstOrDefault(element => string.Equals(element.Name.LocalName, "Filter", StringComparison.OrdinalIgnoreCase));
+        if (filterElement is not null)
+        {
+            filterElement = PrepareLegacyTransactionFilter(
+                filterElement, descriptor.Resource.ReadSrid() ?? SpatialReference.WGS84.Wkid);
+        }
+
         var filterChildren = filterElement?.Elements().ToArray() ?? [];
         var resourceIdValues = filterElement == null
             ? []

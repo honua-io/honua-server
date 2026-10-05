@@ -2,6 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Xml.Linq;
+using Honua.Core.Features.Shared.Models;
+using Honua.Core.Queries.Filters.Fes20;
+using Honua.Infrastructure.Services;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
@@ -30,7 +33,20 @@ internal sealed partial class Wfs20Handler
 
         foreach (var filter in normalized.Descendants(XName.Get("Filter", OgcFilterNamespace)).ToArray())
         {
-            filter.ReplaceWith(NormalizeLegacyFilterElement(filter));
+            foreach (var geometry in filter.Descendants().Where(element =>
+                         element.Name.NamespaceName == GmlLegacyNamespace &&
+                         element.Parent?.Name.NamespaceName != GmlLegacyNamespace))
+            {
+                EnsureTwoDimensionalLegacyGeometry(geometry);
+            }
+
+            var convertedFilter = NormalizeLegacyFilterElement(filter);
+            if (version == "1.0.0")
+            {
+                convertedFilter.AddAnnotation(new LegacyWfs10Coordinates());
+            }
+
+            filter.ReplaceWith(convertedFilter);
         }
 
         // Preserve application properties, including names which happen to match GML
@@ -85,6 +101,63 @@ internal sealed partial class Wfs20Handler
     {
     }
 
+    internal static XElement PrepareLegacyTransactionFilter(XElement filter, int defaultSrid)
+    {
+        if (filter.Annotation<LegacyWfs10Coordinates>() is null)
+        {
+            return filter;
+        }
+
+        // FES uses the CRS axis order. Rewrite legacy XY ordinates only after the
+        // target layer's default CRS is known, including filters without srsName.
+        var canonical = new XElement(filter);
+        foreach (var geometry in canonical.Descendants().Where(element =>
+                     element.Name.NamespaceName == Wfs20Utilities.GmlNamespace &&
+                     element.Parent?.Name.NamespaceName != Wfs20Utilities.GmlNamespace))
+        {
+            var axisOrder = SpatialReference.Create(defaultSrid).IsGeographic
+                ? AxisOrder.NorthEast
+                : AxisOrder.EastNorth;
+            var srsName = geometry.Attribute("srsName")?.Value;
+            if (!string.IsNullOrWhiteSpace(srsName))
+            {
+                if (!SpatialReferenceHelpers.TryParseCrsDefinition(srsName, out var crs))
+                {
+                    throw new ArgumentException($"Unsupported or unrecognized srsName '{srsName}'.");
+                }
+
+                axisOrder = crs.AxisOrder;
+            }
+
+            if (axisOrder != AxisOrder.NorthEast)
+            {
+                continue;
+            }
+
+            foreach (var coordinates in geometry.Descendants().Where(element =>
+                         element.Name.NamespaceName == Wfs20Utilities.GmlNamespace &&
+                         element.Name.LocalName is "pos" or "posList" or "lowerCorner" or "upperCorner"))
+            {
+                Fes20Parser.EnsureGeometryTextWithinLimits(coordinates.Value);
+                var ordinates = coordinates.Value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+                if (ordinates.Length % 2 != 0)
+                {
+                    throw Fes20ParseException.Reportable("Legacy filter coordinates require two dimensions.");
+                }
+
+                Fes20Parser.EnsureCoordinateCountWithinLimits(ordinates.Length / 2);
+                for (var index = 0; index < ordinates.Length; index += 2)
+                {
+                    (ordinates[index], ordinates[index + 1]) = (ordinates[index + 1], ordinates[index]);
+                }
+
+                coordinates.Value = string.Join(' ', ordinates);
+            }
+        }
+
+        return canonical;
+    }
+
     internal static string FormatLegacyTransactionResponse(string canonicalResponse, string version)
     {
         XNamespace wfs = LegacyWfsNamespace;
@@ -95,6 +168,31 @@ internal sealed partial class Wfs20Handler
         var canonical = XElement.Parse(canonicalResponse);
         if (version == "1.1.0")
         {
+            var receipts = canonical.Element(honua + "OperationResults");
+            var failures = receipts?.Elements(honua + "OperationResult")
+                .Where(receipt => receipt.Attribute("committed")?.Value != "true")
+                .Select(receipt => new XElement(wfs20 + "Action",
+                    new XAttribute("locator", receipt.Attribute("handle")?.Value
+                        ?? $"operation-{receipt.Attribute("sequence")?.Value ?? "unknown"}"),
+                    new XAttribute("code", receipt.Attribute("committed")?.Value == "unknown"
+                        ? "CommitOutcomeUnknown" : "OperationFailed"),
+                    new XElement(wfs20 + "Message", receipt.Element(honua + "Error")?.Value
+                        ?? "Operation did not report a committed result.")))
+                .ToArray() ?? [];
+            receipts?.Remove();
+            if (failures.Length > 0)
+            {
+                var results = new XElement(wfs20 + "TransactionResults", failures);
+                if (canonical.Element(wfs20 + "InsertResults") is { } inserts)
+                {
+                    inserts.AddBeforeSelf(results);
+                }
+                else
+                {
+                    canonical.Add(results);
+                }
+            }
+
             if (canonical.Element(wfs20 + "TransactionSummary") is { } summary)
             {
                 var totals = LegacyTransactionSummaryNames
