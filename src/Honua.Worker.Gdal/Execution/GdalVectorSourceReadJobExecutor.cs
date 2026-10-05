@@ -308,9 +308,27 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
         foreach (var entry in archive.Entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!TryResolveEntryDestination(entry.FullName, extractRoot, fullExtractRoot, out var destination, out var nameFailure))
+            if (IsInvalidEntryName(entry.FullName))
             {
-                return new ZipExtraction(string.Empty, nameFailure);
+                return new ZipExtraction(string.Empty, "Archive contains invalid entry name.");
+            }
+
+            // FullName is attacker-controlled. Resolve and reject it here, in the
+            // method that writes, so a path that escapes the extraction root is
+            // never passed to a filesystem call.
+            string destination;
+            try
+            {
+                destination = Path.GetFullPath(Path.Join(extractRoot, entry.FullName));
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or IOException)
+            {
+                return new ZipExtraction(string.Empty, "Archive contains path traversal.");
+            }
+
+            if (!destination.StartsWith(fullExtractRoot, StringComparison.Ordinal))
+            {
+                return new ZipExtraction(string.Empty, "Archive contains path traversal.");
             }
 
             if (IsDirectoryEntry(entry))
