@@ -13,6 +13,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Helpers;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Raster;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using static Honua.Protocols.GeoServices.Soap.ArcGisSoapProtocol;
 using Honua.ServiceDefaults;
@@ -1186,21 +1187,7 @@ internal static class ImageServerSoapEndpoints
         };
 
     private static string MapPixelType(string postgisPixelType)
-        => postgisPixelType.ToUpperInvariant() switch
-        {
-            "1BB" => "U1",
-            "2BUI" => "U2",
-            "4BUI" => "U4",
-            "8BUI" => "U8",
-            "8BSI" => "S8",
-            "16BUI" => "U16",
-            "16BSI" => "S16",
-            "32BUI" => "U32",
-            "32BSI" => "S32",
-            "32BF" => "F32",
-            "64BF" => "F64",
-            _ => "U8"
-        };
+        => ImageServerPixelTypes.ToEsriPixelType(postgisPixelType) ?? "U8";
 
     private static string FormatDouble(double value)
         => value.ToString("R", CultureInfo.InvariantCulture);
