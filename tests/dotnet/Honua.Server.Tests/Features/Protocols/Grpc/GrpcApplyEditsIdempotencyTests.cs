@@ -249,6 +249,56 @@ public sealed class GrpcApplyEditsIdempotencyTests
         store.GateCount.Should().Be(0);
     }
 
+    [UnitTheory]
+    [InlineData(4, 65536)]
+    [InlineData(128, 64)]
+    public async Task ConcurrentFailedCompletions_RespectQueueCountAndByteBudgets(int maxResults, long localBudgetBytes)
+    {
+        var database = Substitute.For<IDatabase>();
+        database
+            .ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]?>(), Arg.Any<RedisValue[]?>(), Arg.Any<CommandFlags>())
+            .Returns(call =>
+            {
+                var script = call.ArgAt<string>(0);
+                if (ReferenceEquals(script, GrpcApplyEditsIdempotencyStore.AcquireScript))
+                {
+                    return Task.FromResult(RedisResult.Create(call.ArgAt<RedisValue[]>(2)[0]));
+                }
+
+                return ReferenceEquals(script, GrpcApplyEditsIdempotencyStore.CompleteScript)
+                    ? Task.FromException<RedisResult>(
+                        new RedisConnectionException(ConnectionFailureType.SocketFailure, "unavailable"))
+                    : Task.FromResult(RedisResult.Create((RedisValue)1));
+            });
+        var connection = Substitute.For<IConnectionMultiplexer>();
+        connection.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(database);
+        var response = Response(objectId: 7);
+        var receiptBytes = response.CalculateSize() + 1;
+        var expectedLimit = Math.Min(maxResults, (int)(localBudgetBytes / 4 / receiptBytes));
+
+        for (var round = 0; round < 10; round++)
+        {
+            using var store = new GrpcApplyEditsIdempotencyStore(
+                connection, logger: null,
+                GrpcApplyEditsIdempotencyStore.DefaultReservationWindow,
+                GrpcApplyEditsIdempotencyStore.DefaultResponseWindow,
+                localBudgetBytes, maxResults);
+            var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var completions = Enumerable.Range(0, 64).Select(async i =>
+            {
+                await using var lease = await store.EnterAsync($"scope-{i}", CancellationToken.None);
+                await start.Task;
+                await lease.CompleteAsync(response);
+            }).ToArray();
+
+            start.SetResult();
+            await Task.WhenAll(completions).WaitAsync(TimeSpan.FromSeconds(30));
+
+            store.UnpublishedResultCount.Should().Be(expectedLimit, "concurrent producers must honor both limits");
+            store.GateCount.Should().Be(0);
+        }
+    }
+
     internal static Proto.ApplyEditsResponse Response(long objectId)
     {
         var response = new Proto.ApplyEditsResponse();
