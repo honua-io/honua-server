@@ -5510,6 +5510,43 @@ public sealed class GeoprocessingJobServiceTests
         await _jobQueue.Received(1).EnqueueAsync(first.OperationId, first.Priority, Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_CancellationAfterQueueAcceptance_AcknowledgesDeliveryBeforeReplay()
+    {
+        using var request = new CancellationTokenSource();
+        ExecutionJobRecord? durable = null;
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => durable);
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                durable = call.Arg<ExecutionJobRecord>();
+                return true;
+            });
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                call.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                durable = call.Arg<ExecutionJobRecord>();
+                return true;
+            });
+        _jobQueue.EnqueueAsync(Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                request.Cancel();
+                return Task.CompletedTask;
+            });
+
+        var submitted = await _sut.SubmitJobAsync(
+            CreateValidPlan(), "accepted-dispatch", CreatePrincipal(), cancellationToken: request.Token);
+        var replay = await _sut.SubmitJobAsync(CreateValidPlan(), "accepted-dispatch", CreatePrincipal());
+
+        replay.OperationId.Should().Be(submitted.OperationId);
+        durable!.Status.Should().Be(ExecutionJobStatus.Queued);
+        durable.CurrentPhase.Should().Be("Queued for execution");
+        await _jobQueue.Received(1).EnqueueAsync(replay.OperationId, replay.Priority, Arg.Any<CancellationToken>());
+    }
+
     // -----------------------------------------------------------------------
     // ProcessId disambiguation
     // -----------------------------------------------------------------------
