@@ -24,6 +24,7 @@ using Honua.Infrastructure.Collaboration;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Validation;
+using Honua.Protocols.Ogc.Classic.Wfs20;
 using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using Honua.Protocols.Ogc.Common;
 using Honua.TestKit.Attributes;
@@ -140,6 +141,7 @@ public sealed class WfsMultiLayerTransactionLockTests
         private readonly HttpContextAccessor _accessor = new();
         private readonly ServiceProvider _services;
         private readonly Wfs20Handler _handler;
+        private readonly IFeatureWriterTransaction _transaction;
         private readonly Dictionary<int, Feature> _pending = [];
 
         public Dictionary<int, Feature> Features { get; } = new()
@@ -153,7 +155,8 @@ public sealed class WfsMultiLayerTransactionLockTests
         public int OrdinaryApplyCalls { get; private set; }
         public int CommitCalls { get; private set; }
         public int RollbackCalls { get; private set; }
-        public int DisposeCalls { get; private set; }
+        public int DisposeCalls => _transaction.ReceivedCalls()
+            .Count(call => call.GetMethodInfo().Name == nameof(IAsyncDisposable.DisposeAsync));
         public IsolationLevel IsolationLevel { get; private set; }
 
         public TransactionScenario()
@@ -177,6 +180,7 @@ public sealed class WfsMultiLayerTransactionLockTests
 
             var provider = Substitute.For<IFeatureWriter>();
             var transaction = Substitute.For<IFeatureWriterTransaction>();
+            _transaction = transaction;
             provider.BeginTransactionAsync(Arg.Any<IsolationLevel>(), Arg.Any<CancellationToken>()).Returns(call =>
             {
                 IsolationLevel = call.Arg<IsolationLevel>();
@@ -206,13 +210,6 @@ public sealed class WfsMultiLayerTransactionLockTests
                 _pending.Clear();
                 return Task.CompletedTask;
             });
-            transaction.DisposeAsync().Returns(_ =>
-            {
-                DisposeCalls++;
-                _pending.Clear();
-                return ValueTask.CompletedTask;
-            });
-
             var auditLog = Substitute.For<IAuditLog>();
             auditLog.RecordAsync(Arg.Any<AuditEvent>(), Arg.Any<CancellationToken>()).Returns(call =>
             {
@@ -291,6 +288,7 @@ public sealed class WfsMultiLayerTransactionLockTests
         private static Feature FeatureWithId(long id) => new()
         {
             Id = id,
+            Geometry = null,
             Attributes = ImmutableDictionary<string, object?>.Empty.Add("name", "original")
         };
 
