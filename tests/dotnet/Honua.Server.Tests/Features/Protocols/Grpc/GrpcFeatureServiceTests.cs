@@ -1207,7 +1207,7 @@ public sealed class GrpcFeatureServiceTests
     private static void AssertTypedOrdering(FeatureQuery? query)
     {
         query.Should().NotBeNull();
-        var orderBy = query!.OrderBy!.Value;
+        var orderBy = query!.Value.OrderBy!.Value;
         orderBy.Should().HaveCount(3);
         orderBy[0].Field.Should().Be("population", "the clause resolves to the declared field name");
         orderBy[0].FieldType.Should().Be(MetadataV2FieldType.Integer);

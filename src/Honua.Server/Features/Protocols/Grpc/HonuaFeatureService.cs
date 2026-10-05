@@ -607,6 +607,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         CancellationToken cancellationToken,
         bool streaming = false)
     {
+        EnsureAggregationNotRequested(request);
+
         var whereValidation = _queryValidator.ValidateWhereClause(request.Where);
         if (!whereValidation.IsValid)
         {
@@ -648,6 +650,14 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             Offset = pagination.Offset,
             Limit = streaming && !requestedLimit.HasValue ? null : pagination.Limit
         };
+
+        if (query.OrderBy is { } orderBy)
+        {
+            query = query with
+            {
+                OrderBy = GrpcConversionHelpers.WithSchemaFieldTypes(orderBy, layer.Resource.SchemaFields)
+            };
+        }
 
         var outputSrid = query.OutputSrid;
         if (request.OutSr != null)
@@ -700,6 +710,20 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             responseSpatialReference,
             GrpcConversionHelpers.CreateEffectiveGeometryLimits(_geometryLimits, request),
             request.ReturnGeometry);
+    }
+
+    private static void EnsureAggregationNotRequested(Proto.QueryFeaturesRequest request)
+    {
+        // #5465: geospatial.v1 defines no aggregate result shape. QueryFeaturesResponse and
+        // FeaturePage carry the layer's attribute field definitions and feature rows only, so
+        // answering out_statistics/group_by would either invent an unpublished response shape
+        // or silently return ordinary features. Refuse until the contract defines one.
+        if (request.OutStatistics.Count > 0 || request.GroupBy.Count > 0)
+        {
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                "out_statistics and group_by are not supported by geospatial.v1 feature queries. Use the GeoServices FeatureServer query outStatistics and groupByFieldsForStatistics parameters for aggregates."));
+        }
     }
 
     private static void EnsureStreamingFlagsSupported(Proto.QueryFeaturesRequest request)
