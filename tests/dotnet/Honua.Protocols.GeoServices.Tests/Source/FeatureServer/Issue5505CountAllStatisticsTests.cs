@@ -58,4 +58,70 @@ public sealed class Issue5505CountAllStatisticsTests
         parsed.Should().BeFalse();
         error.Should().Contain("Field '*'");
     }
+
+    [UnitTest]
+    public void Issue5505_CountOnWildcard_UsesDefaultIdColumnWhenObjectIdIsAbsent()
+    {
+        // DuckDB ObjectIdColumn and Databricks PrimaryKeyColumn both default to "id".
+        var layer = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "layer", Name = "layer" },
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.BigInteger, Nullable = false },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }
+            ]
+        };
+
+        const string json =
+            """[{"statisticType":"count","onStatisticField":"*","outStatisticFieldName":"ROW_COUNT"}]""";
+
+        var parsed = FeatureServerQueryHandler.TryParseStatisticsDefinitions(
+            json, layer, out var definitions, out var error);
+
+        parsed.Should().BeTrue(error);
+        definitions.Should().ContainSingle().Which.Should().BeEquivalentTo(new StatisticDefinition
+        {
+            StatisticType = StatisticType.Count,
+            OnStatisticField = "id",
+            OutStatisticFieldName = "ROW_COUNT",
+            FieldType = MetadataV2FieldType.BigInteger
+        });
+    }
+
+    [UnitTest]
+    public void Issue5505_CountOnWildcard_UsesDeclaredPrimaryKeyInsteadOfCanonicalObjectId()
+    {
+        var layer = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "layer", Name = "layer" },
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger },
+                new MetadataV2Field
+                {
+                    Name = "parcel_key",
+                    Type = MetadataV2FieldType.Integer,
+                    Nullable = false,
+                    SemanticRoles = ["id.primary"]
+                },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }
+            ]
+        };
+
+        const string json =
+            """[{"statisticType":"count","onStatisticField":"*","outStatisticFieldName":"ROW_COUNT"}]""";
+
+        var parsed = FeatureServerQueryHandler.TryParseStatisticsDefinitions(
+            json, layer, out var definitions, out var error);
+
+        parsed.Should().BeTrue(error);
+        definitions.Should().ContainSingle().Which.Should().BeEquivalentTo(new StatisticDefinition
+        {
+            StatisticType = StatisticType.Count,
+            OnStatisticField = "parcel_key",
+            OutStatisticFieldName = "ROW_COUNT",
+            FieldType = MetadataV2FieldType.Integer
+        });
+    }
 }

@@ -2846,11 +2846,14 @@ internal sealed partial class FeatureServerQueryHandler(
                 }
 
                 // The protocol represents a row count as count on "*". Normalize it to
-                // the non-null object identifier so every provider emits an equivalent
-                // COUNT expression without accepting the wildcard as a general field.
+                // the resource's object-id field so every provider emits COUNT on a
+                // real column without accepting the wildcard as a general field.
+                // DuckDB and Databricks quote OnStatisticField verbatim, and their
+                // primary key defaults to "id" (or a custom column), so the canonical
+                // name "objectid" is not a column on those layers.
                 if (statisticType == StatisticType.Count && onField == "*")
                 {
-                    onField = FieldNames.ObjectId;
+                    onField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
                 }
 
                 if (!fieldNames.Contains(onField))
