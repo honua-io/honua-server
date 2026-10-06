@@ -1270,6 +1270,7 @@
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.ScopedAndWrongKeys_WithRedisRegistry_AreHeldToTheSharedAdminPolicy",
         "Honua.Server.Tests.Features.Admin.ScopedAdminKeyOidcEnforcementTests.ApprovedOperationKey_WithOidcEnabled_AllowsOnlyExactOperation",
         "Honua.Server.Tests.Features.Admin.ScopedAdminKeyOidcEnforcementTests.ScopedApproveKey_WithOidcEnabled_IsDeniedGeneralAdminMutation",
+        "Honua.Server.Tests.Features.Security.ApiKeyTokenParameterTests.AdminApi_ApiKeyPresentedAsToken_StillRequiresXApiKey",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -10444,6 +10445,9 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpRestFeatureReadParityIntegrationTests.FeatureRead_DeniedPrincipal_ReceivesZeroRecordsOverMcpAndRest",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpRestFeatureReadParityIntegrationTests.FeatureRead_SamePrincipalOverRestAndMcp_ReturnsTheSameRecordSetAndNoDeniedLayerRows",
         "Honua.Server.Tests.Features.Protocols.PrefixedSchemaFieldProjectionTests.QueryFeatures_WithPrefixedSchemaFieldInOutFields_IncludesFieldInAttributes",
+        "Honua.Server.Tests.Features.Security.ApiKeyTokenParameterTests.ProtectedQuery_ApiKeyPresentedAsToken_AnswersAsXApiKeyDoes",
+        "Honua.Server.Tests.Features.Security.ApiKeyTokenParameterTests.ProtectedQuery_ScopedApiKeyPresentedAsToken_IsNotWidened",
+        "Honua.Server.Tests.Features.Security.ApiKeyTokenParameterTests.RevokedOrExpiredApiKeyPresentedAsToken_RemainsInvalidToken",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.FeatureServerQuery_GrantScopedToOtherLayer_DeniesUngrantedLayer",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.FeatureServerQuery_GrantScopedToTargetLayer_AllowsThatLayer",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.FeatureServerQuery_NoGrant_FallsBackToCoarseDeny",
@@ -13067,6 +13071,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.PortalHelperServicesTests.PortalsSelf_RestrictedProvider_OmitsUnavailableHelpers",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.PortalHelperServicesTests.PortalsSelf_SupportedHelpers_ResolveToMatchingAnalysisLayers",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.PortalHelperServicesTests.PortalsSelf_UnavailableRoutingProvider_PreservesPortalIdentityWithoutHelpers",
+        "Honua.Server.Tests.Features.Security.ApiKeyTokenParameterTests.PortalsSelf_ApiKeyPresentedAsToken_DescribesTheKeyUser",
+        "Honua.Server.Tests.Features.Security.ApiKeyTokenParameterTests.RevokedOrExpiredApiKeyPresentedAsToken_RemainsInvalidToken",
         "Honua.Server.Tests.Features.Sharing.PortalFacadeDiscoveryContractTests.PortalsSelf_WithNamedUserToken_PopulatesUserBlock",
         "Honua.Server.Tests.Features.Sharing.SharingRestReadTests.PortalsSelf_Anonymous_OmitsUser"
       ],
@@ -14010,6 +14016,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsLegacyEndpointsTests.Wfs11_GetFeature_UnknownType_ReturnsOws10ExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsLegacyEndpointsTests.Wfs11_GetFeature_UnsupportedSrsName_ReturnsOws10ExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsLegacyGeometryMetadataTests.GetFeature_GeometryMetadataWithoutSchemaField_PreservesGeometryAndControls",
+        "Honua.Server.Tests.Features.Security.ApiKeyTokenParameterTests.WfsCapabilities_ApiKeyInTokenParameter_ListsWhatXApiKeyLists",
         "Honua.Server.Tests.Infrastructure.Middleware.HeadMethodEndpointTests.Head_WfsGetCapabilities_MatchesGetStatusWithEmptyBodyAndContentLength"
       ],
       "proof_ledger_surface": "wfs-2.0",
@@ -20657,6 +20664,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerStatisticsFieldsTests.Statistics_HiddenOrMaskedInput_DoesNotExposeResultSchema",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerStatisticsFieldsTests.Statistics_Post_DescribesNativeAggregateAliases",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalTests.GeoServicesQuery_TemporalFilterViaPost_ReturnsCorrectFeatures",
+        "Honua.Server.Tests.Features.Security.ApiKeyTokenParameterTests.ProtectedQuery_ApiKeyPresentedAsToken_AnswersAsXApiKeyDoes",
+        "Honua.Server.Tests.Features.Security.ApiKeyTokenParameterTests.ProtectedQuery_ScopedApiKeyPresentedAsToken_IsNotWidened",
         "Honua.Server.Tests.Features.Security.InputValidationIntegrationTests.Query_FormUrlEncoded_MaliciousWhereClause_IsStillRejected",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_SqlInspectionExemption_IsLimitedToPassword",
         "Honua.Server.Tests.LimitsEnforcementTests.PayloadSize_ExceedsLimit_Returns413",
