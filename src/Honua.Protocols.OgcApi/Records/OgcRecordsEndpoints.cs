@@ -113,6 +113,9 @@ internal static class OgcRecordsEndpoints
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var basePath = $"{baseUrl}/ogc/records";
         var links = OgcCoreMetadataUtilities.BuildLandingPageLinks(context, basePath, outputFormat);
+        // OGC API - Records Part 1 /req/core/root-success (via OGC API - Common): the landing page
+        // links the API definition. Clients that start from service-desc stop here without it (#5510).
+        links.Add(Link.Create($"{baseUrl}/openapi.json", RelationTypes.ServiceDesc, MediaTypes.OpenApi, "API definition"));
         links.Add(Link.Create($"{basePath}/conformance", RelationTypes.Conformance, MediaTypes.Json, "Conformance declaration"));
         links.Add(Link.Create($"{basePath}/collections", RelationTypes.Data, MediaTypes.Json, "Record collections"));
 
@@ -440,6 +443,8 @@ internal static class OgcRecordsEndpoints
             .Select(p => snapshot.ResolveStorageLayerId(p.Publication))
             .Where(id => id.HasValue)
             .Select(id => id!.Value)
+            // Several protocol-specific service rows can publish the same storage layer (#5510).
+            .Distinct()
             .ToImmutableArray();
 
         var properties = new OgcRecordProperties
@@ -694,11 +699,15 @@ internal static class OgcRecordsEndpoints
         pageOffset = offset ?? 0;
         error = null;
 
-        if (pageLimit < 1 || pageLimit > MaxLimit)
+        if (pageLimit < 1)
         {
-            error = $"limit must be between 1 and {MaxLimit}.";
+            error = "limit must be greater than or equal to 1.";
             return false;
         }
+
+        // OGC API - Features Part 1 §7.15.4: a limit above the maximum SHALL NOT result in an
+        // error; the maximum is used instead, and the paging links carry the applied value (#5510).
+        pageLimit = Math.Min(pageLimit, MaxLimit);
 
         if (pageOffset < 0)
         {
