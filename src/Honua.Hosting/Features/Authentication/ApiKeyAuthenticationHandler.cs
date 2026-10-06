@@ -33,12 +33,12 @@ internal sealed class ApiKeyAuthenticationHandler(
     private const string AdminPasswordEnvVar = "HONUA_ADMIN_PASSWORD";
     private const string AuthFailureMessageKey = "AuthFailureMessage";
     private const string AuthRealm = "Honua Admin";
+    private const string AdminAuthenticationNotConfigured = "Admin authentication not configured";
     private static readonly Guid DevelopmentBypassActorId = new("00000000-0000-0000-0000-000000000001");
     private static readonly Guid BootstrapAdminActorId = new("00000000-0000-0000-0000-000000000002");
 
-    private readonly ApiKeyAuthenticationOptions _authOptions = dependencies?.Options ?? throw new ArgumentNullException(nameof(dependencies));
-    private readonly IConnectionSecretResolver? _secretResolver = dependencies.SecretResolver;
-    private readonly IAdminApiKeyStore? _adminApiKeyStore = dependencies.AdminApiKeyStore;
+    private readonly ApiKeyAuthenticationDependencies _dependencies = dependencies ?? throw new ArgumentNullException(nameof(dependencies));
+    private readonly ApiKeyAuthenticationOptions _authOptions = dependencies.Options;
 
     /// <summary>
     /// Handles API key authentication with development bypass support
@@ -49,7 +49,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         if (IsDevelopmentBypassEnabled())
         {
             AuthenticationLog.DevelopmentBypassEnabled(Logger);
-            return CreateSuccessfulAuthenticationResult("dev-bypass", DevelopmentBypassActorId);
+            return CreateSuccessfulAuthenticationResult(Scheme.Name, "dev-bypass", DevelopmentBypassActorId);
         }
 
         // Extract API key from explicit header, or from Basic auth compatibility mode.
@@ -73,17 +73,63 @@ internal sealed class ApiKeyAuthenticationHandler(
             return AuthenticateResult.NoResult();
         }
 
-        if (_adminApiKeyStore is not null)
+        var validation = await ValidateApiKeyAsync(
+            providedApiKey,
+            Scheme.Name,
+            _dependencies,
+            Logger,
+            Context.RequestAborted);
+        switch (validation.Rejection)
         {
-            var storedKey = await _adminApiKeyStore.ValidateAsync(providedApiKey, Context.RequestAborted);
+            case ApiKeyRejection.None:
+                return validation.Success!;
+            case ApiKeyRejection.AdminPasswordNotConfigured:
+                AuthenticationLog.NoAdminPasswordConfigured(Logger, AdminPasswordEnvVar);
+                // Store the failure message for the challenge handler
+                Context.Items[AuthFailureMessageKey] = AdminAuthenticationNotConfigured;
+                return AuthenticateResult.Fail(AdminAuthenticationNotConfigured);
+            case ApiKeyRejection.AdminPasswordUnavailable:
+                Context.Items[AuthFailureMessageKey] = AdminAuthenticationNotConfigured;
+                return AuthenticateResult.Fail(AdminAuthenticationNotConfigured);
+            default:
+                AuthenticationLog.InvalidApiKeyProvided(Logger);
+                return AuthenticateResult.Fail("Invalid API key");
+        }
+    }
+
+    /// <summary>
+    /// Validates a presented API key against the managed key store and the bootstrap
+    /// admin credential, and projects the key's own authority onto a principal.
+    /// </summary>
+    /// <remarks>
+    /// Shared with <see cref="PortalTokenAuthenticationHandler"/> so a key presented through
+    /// a GeoServices token transport (#5492) yields exactly the principal the
+    /// <c>X-API-Key</c> header yields: same roles, permission claims and credential kind.
+    /// Rejections are returned rather than logged so each caller reports its own transport.
+    /// </remarks>
+    internal static async Task<ApiKeyValidation> ValidateApiKeyAsync(
+        string providedApiKey,
+        string schemeName,
+        ApiKeyAuthenticationDependencies dependencies,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dependencies);
+
+        if (dependencies.AdminApiKeyStore is not null)
+        {
+            var storedKey = await dependencies.AdminApiKeyStore.ValidateAsync(providedApiKey, cancellationToken);
             if (storedKey is not null)
             {
-                AuthenticationLog.ApiKeyAuthenticationSuccessful(Logger);
-                return CreateSuccessfulAuthenticationResult(
-                    "admin-api-key",
-                    storedKey.Record.Id,
-                    storedKey.Record.Name,
-                    storedKey.Record.Permissions);
+                AuthenticationLog.ApiKeyAuthenticationSuccessful(logger);
+                return new ApiKeyValidation(
+                    CreateSuccessfulAuthenticationResult(
+                        schemeName,
+                        "admin-api-key",
+                        storedKey.Record.Id,
+                        storedKey.Record.Name,
+                        storedKey.Record.Permissions),
+                    ApiKeyRejection.None);
             }
         }
 
@@ -91,34 +137,31 @@ internal sealed class ApiKeyAuthenticationHandler(
         string? configuredPassword;
         try
         {
-            configuredPassword = await ResolveAdminPasswordAsync(Context.RequestAborted);
+            configuredPassword = await ResolveAdminPasswordAsync(dependencies, cancellationToken);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional: secret resolution can fan out to heterogeneous cloud SDKs (AWS
             // Secrets Manager, Azure Key Vault, etc.) with provider-specific exception types;
             // this boundary must fail the request safely rather than crash, and it already logs.
-            AuthenticationLog.AdminPasswordResolutionFailed(Logger, ex);
-            Context.Items[AuthFailureMessageKey] = "Admin authentication not configured";
-            return AuthenticateResult.Fail("Admin authentication not configured");
+            AuthenticationLog.AdminPasswordResolutionFailed(logger, ex);
+            return new ApiKeyValidation(null, ApiKeyRejection.AdminPasswordUnavailable);
         }
         if (string.IsNullOrEmpty(configuredPassword))
         {
-            AuthenticationLog.NoAdminPasswordConfigured(Logger, AdminPasswordEnvVar);
-            // Store the failure message for the challenge handler
-            Context.Items[AuthFailureMessageKey] = "Admin authentication not configured";
-            return AuthenticateResult.Fail("Admin authentication not configured");
+            return new ApiKeyValidation(null, ApiKeyRejection.AdminPasswordNotConfigured);
         }
 
         // Perform constant-time comparison to prevent timing attacks
         if (!IsApiKeyValid(providedApiKey, configuredPassword))
         {
-            AuthenticationLog.InvalidApiKeyProvided(Logger);
-            return AuthenticateResult.Fail("Invalid API key");
+            return new ApiKeyValidation(null, ApiKeyRejection.InvalidKey);
         }
 
-        AuthenticationLog.ApiKeyAuthenticationSuccessful(Logger);
-        return CreateSuccessfulAuthenticationResult("admin", BootstrapAdminActorId);
+        AuthenticationLog.ApiKeyAuthenticationSuccessful(logger);
+        return new ApiKeyValidation(
+            CreateSuccessfulAuthenticationResult(schemeName, "admin", BootstrapAdminActorId),
+            ApiKeyRejection.None);
     }
 
     private string? GetApiKeyFromHeader()
@@ -338,7 +381,8 @@ internal sealed class ApiKeyAuthenticationHandler(
     /// <summary>
     /// Creates a successful authentication result with admin claims
     /// </summary>
-    private AuthenticateResult CreateSuccessfulAuthenticationResult(
+    private static AuthenticateResult CreateSuccessfulAuthenticationResult(
+        string schemeName,
         string authenticationType,
         Guid? apiKeyId = null,
         string? apiKeyName = null,
@@ -447,7 +491,7 @@ internal sealed class ApiKeyAuthenticationHandler(
             }
         }
 
-        var identity = new ClaimsIdentity(claims, Scheme.Name);
+        var identity = new ClaimsIdentity(claims, schemeName);
 
         // Every authority claim above comes from the persisted key record (or the bootstrap
         // password / dev-bypass branches), so mark them framework-owned: shared claim
@@ -455,30 +499,32 @@ internal sealed class ApiKeyAuthenticationHandler(
         CanonicalSecurityActor.StampAuthorityClaims(identity);
 
         var principal = new ClaimsPrincipal(identity);
-        var ticket = new AuthenticationTicket(principal, Scheme.Name);
+        var ticket = new AuthenticationTicket(principal, schemeName);
 
         return AuthenticateResult.Success(ticket);
     }
 
-    private async Task<string?> ResolveAdminPasswordAsync(CancellationToken cancellationToken)
+    private static async Task<string?> ResolveAdminPasswordAsync(
+        ApiKeyAuthenticationDependencies dependencies,
+        CancellationToken cancellationToken)
     {
-        var configuredPassword = _authOptions.AdminPassword;
+        var configuredPassword = dependencies.Options.AdminPassword;
         if (string.IsNullOrWhiteSpace(configuredPassword))
         {
             return null;
         }
 
         var resolvedPassword = configuredPassword;
-        if (_secretResolver is not null)
+        if (dependencies.SecretResolver is { } secretResolver)
         {
-            var canResolve = await _secretResolver.CanResolveSecretAsync(configuredPassword, cancellationToken);
+            var canResolve = await secretResolver.CanResolveSecretAsync(configuredPassword, cancellationToken);
             if (canResolve)
             {
-                resolvedPassword = await _secretResolver.ResolveConnectionStringAsync(configuredPassword, cancellationToken);
+                resolvedPassword = await secretResolver.ResolveConnectionStringAsync(configuredPassword, cancellationToken);
             }
         }
 
-        AdminPasswordValidation.ValidateRefreshedPassword(resolvedPassword, _authOptions.EnvironmentName);
+        AdminPasswordValidation.ValidateRefreshedPassword(resolvedPassword, dependencies.Options.EnvironmentName);
         return resolvedPassword;
     }
 
@@ -507,3 +553,27 @@ internal sealed class ApiKeyAuthenticationHandler(
             StandardErrorResponse.Unauthorized(detail));
     }
 }
+
+/// <summary>
+/// Why <see cref="ApiKeyAuthenticationHandler.ValidateApiKeyAsync"/> refused a presented key.
+/// </summary>
+internal enum ApiKeyRejection
+{
+    /// <summary>The key was accepted.</summary>
+    None,
+
+    /// <summary>The key matched no managed key and the bootstrap admin credential.</summary>
+    InvalidKey,
+
+    /// <summary>The key matched no managed key and no bootstrap admin credential is configured.</summary>
+    AdminPasswordNotConfigured,
+
+    /// <summary>The key matched no managed key and the bootstrap admin credential could not be resolved.</summary>
+    AdminPasswordUnavailable,
+}
+
+/// <summary>
+/// Outcome of <see cref="ApiKeyAuthenticationHandler.ValidateApiKeyAsync"/>: the success
+/// result carrying the key's own principal, or the reason it was refused.
+/// </summary>
+internal readonly record struct ApiKeyValidation(AuthenticateResult? Success, ApiKeyRejection Rejection);

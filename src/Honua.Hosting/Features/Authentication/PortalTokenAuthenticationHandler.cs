@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Honua.Core.Features.Authorization.Abstractions;
 using Microsoft.AspNetCore.Authentication;
@@ -19,6 +20,12 @@ namespace Honua.Infrastructure.Authentication;
 /// SDKs, or the <c>token</c> field in an <c>application/x-www-form-urlencoded</c>
 /// request body. The handler accepts any of these and delegates to
 /// <see cref="IPortalTokenIssuer.ValidateAsync"/> for verification.
+/// <para>
+/// GeoServices clients present an API key exactly as they present an access token, so
+/// a value that is not a portal token is then checked as an API key (#5492). A key
+/// accepted this way yields the principal the <c>X-API-Key</c> header yields: the key's
+/// own roles and permission claims, under the API-key credential kind.
+/// </para>
 /// </remarks>
 internal sealed class PortalTokenAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -51,12 +58,38 @@ internal sealed class PortalTokenAuthenticationHandler(
             ClientIp: Context.Connection.RemoteIpAddress?.ToString());
 
         var validation = await _tokenIssuer.ValidateAsync(token, binding, Context.RequestAborted).ConfigureAwait(false);
-        if (validation is null)
+        if (validation is not null)
         {
-            return AuthenticateResult.Fail("The supplied portal token is invalid, expired, or bound to a different client.");
+            return AuthenticateResult.Success(new AuthenticationTicket(validation.Principal, Scheme.Name));
         }
 
-        return AuthenticateResult.Success(new AuthenticationTicket(validation.Principal, Scheme.Name));
+        var apiKeyPrincipal = await TryAuthenticateApiKeyAsync(token).ConfigureAwait(false);
+        if (apiKeyPrincipal is not null)
+        {
+            return AuthenticateResult.Success(new AuthenticationTicket(apiKeyPrincipal, Scheme.Name));
+        }
+
+        return AuthenticateResult.Fail("The supplied portal token is invalid, expired, or bound to a different client.");
+    }
+
+    private async Task<ClaimsPrincipal?> TryAuthenticateApiKeyAsync(string token)
+    {
+        // Hosts that do not register API-key authentication have no key to match.
+        var dependencies = Context.RequestServices.GetService<ApiKeyAuthenticationDependencies>();
+        if (dependencies is null)
+        {
+            return null;
+        }
+
+        // Validate under the API-key scheme so the principal is indistinguishable from an
+        // X-API-Key one: tenant binding, audit actor type and authorization all key off it.
+        var apiKey = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
+            token,
+            AuthenticationExtensions.ApiKeyScheme,
+            dependencies,
+            Logger,
+            Context.RequestAborted).ConfigureAwait(false);
+        return apiKey.Success?.Principal;
     }
 
     private async ValueTask<(string? Token, bool HasConflictingValues)> ExtractTokenAsync()
