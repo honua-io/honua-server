@@ -25,6 +25,55 @@ public sealed class JobExecutionContextPublishFencingTests
     private const string WorkerId = "worker-test";
 
     [UnitTest]
+    public async Task RecordCommittedEffect_CancellationAndCasConflict_RetainsReceiptIdempotently()
+    {
+        var durable = CreateRunningJob(attemptCount: 1) with { CancellationRequestedAt = DateTimeOffset.UtcNow };
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
+        var writes = 0;
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                if (++writes == 1)
+                {
+                    durable = durable with { Version = durable.Version + 1, ArtifactReferences = ["earlier-output"] };
+                    return false;
+                }
+                durable = call.Arg<ExecutionJobRecord>();
+                return true;
+            });
+        using var context = CreateContext(durable.OperationId, store, claimedAttempt: 1);
+
+        await context.RecordCommittedEffectAsync("committed-receipt", CancellationToken.None);
+        await context.RecordCommittedEffectAsync("committed-receipt", CancellationToken.None);
+
+        durable.ArtifactReferences.Should().Equal("earlier-output", "committed-receipt");
+        durable.CommittedEffectReferences.Should().Equal("committed-receipt");
+        writes.Should().Be(2);
+        (await context.TryPublishArtifactAsync("later-output", CancellationToken.None)).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Trait("Tier", "Fast")]
+    public async Task RecordCommittedEffect_StaleOwnershipOrAttempt_IsRejectedExplicitly(bool staleAttempt)
+    {
+        var durable = CreateRunningJob(attemptCount: staleAttempt ? 2 : 1) with
+        {
+            ClaimedBy = staleAttempt ? WorkerId : "replacement-worker",
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+        var store = Substitute.For<IExecutionJobStore>().WithTrySet();
+        store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(durable);
+        using var context = CreateContext(durable.OperationId, store, claimedAttempt: 1);
+
+        await FluentActions.Awaiting(() => context.RecordCommittedEffectAsync("committed-receipt"))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*fence rejected*committed-effect receipt*");
+        await store.DidNotReceive().TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task PublishArtifact_StaleAttempt_IsFenced()
     {
         // The record was requeued and reclaimed: its attempt is now 2, while this

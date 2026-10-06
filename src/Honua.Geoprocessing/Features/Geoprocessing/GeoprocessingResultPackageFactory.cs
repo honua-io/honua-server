@@ -25,9 +25,29 @@ internal static class GeoprocessingResultPackageFactory
                 $"Execution job '{job.OperationId}' is not terminal and cannot produce a result package.");
         }
 
-        var artifacts = job.Status == ExecutionJobStatus.Succeeded
+        var artifacts = job.Status == ExecutionJobStatus.Succeeded || job.CommittedEffectReferences.Count > 0
             ? BuildArtifacts(job, processCatalog)
             : [];
+        if (job.Status != ExecutionJobStatus.Succeeded)
+        {
+            // Consume each committed receipt once: byte-identical legacy outputs
+            // still occupy distinct artifact slots and must not all be exposed.
+            var remainingCommitted = job.CommittedEffectReferences
+                .GroupBy(reference => reference, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+            artifacts = artifacts.Where((_, index) =>
+            {
+                var reference = job.ArtifactReferences[index];
+                if (!remainingCommitted.TryGetValue(reference, out var count) || count == 0)
+                {
+                    return false;
+                }
+                remainingCommitted[reference] = count - 1;
+                return true;
+            }).ToArray();
+        }
+        var committedSummary = job.CommittedEffectReferences.Count > 0
+            ? " Sink effects committed; committed-effect receipts are retained." : string.Empty;
         var provenance = BuildProvenance(job, processCatalog, artifacts);
 
         return job.Status switch
@@ -37,9 +57,10 @@ internal static class GeoprocessingResultPackageFactory
                 new ResultSummary
                 {
                     Title = $"Results for {ResolvePlanLabel(job)}",
-                    Description = artifacts.Length == 1
+                    Description = (artifacts.Length == 1
                         ? "Produced 1 artifact."
-                        : $"Produced {artifacts.Length} artifacts."
+                        : $"Produced {artifacts.Length} artifacts.")
+                        + (job.CancellationRequestedAt.HasValue ? committedSummary : string.Empty)
                 },
                 artifacts,
                 [],
@@ -49,14 +70,15 @@ internal static class GeoprocessingResultPackageFactory
                 new ResultSummary
                 {
                     Title = $"Job {ResolvePlanLabel(job)} failed",
-                    Description = job.ErrorMessage ?? "The geoprocessing job failed."
+                    Description = (job.ErrorMessage ?? "The geoprocessing job failed.") + committedSummary
                 },
                 [new GeoprocessingError
                 {
                     Kind = GeoprocessingErrorKind.ExecutionFailed,
                     Message = job.ErrorMessage ?? "The geoprocessing job failed."
                 }],
-                provenance),
+                provenance) with
+            { Artifacts = artifacts },
             ExecutionJobStatus.Cancelled => new AnalysisResultPackage
             {
                 ResultPackageId = CreateResultPackageId(job),
@@ -64,9 +86,10 @@ internal static class GeoprocessingResultPackageFactory
                 Summary = new ResultSummary
                 {
                     Title = $"Job {ResolvePlanLabel(job)} cancelled",
-                    Description = job.ErrorMessage ?? "The geoprocessing job was cancelled."
+                    Description = (job.ErrorMessage ?? "The geoprocessing job was cancelled.") + committedSummary
                 },
                 Provenance = provenance,
+                Artifacts = artifacts,
                 Errors =
                 [
                     new GeoprocessingError

@@ -22,6 +22,31 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 /// </summary>
 public sealed class GeoprocessingResultPackageFactoryOutputTests
 {
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(ExecutionJobStatus.Failed, 1)]
+    [InlineData(ExecutionJobStatus.Cancelled, 1)]
+    [InlineData(ExecutionJobStatus.Failed, 2)]
+    [InlineData(ExecutionJobStatus.Cancelled, 2)]
+    public void Create_DuplicateLegacyReferences_ExposesOnlyCommittedOccurrences(
+        ExecutionJobStatus status, int committedCount)
+    {
+        const string reference = "https://example.test/shared-output.geojson";
+        var job = CreateSucceededJob(reference) with
+        {
+            Status = status,
+            ArtifactReferences = [reference, reference, reference, "https://example.test/uncommitted.geojson"],
+            CommittedEffectReferences = Enumerable.Repeat(reference, committedCount).ToArray()
+        };
+
+        var package = GeoprocessingResultPackageFactory.Create(job, Substitute.For<IProcessCatalog>());
+
+        package.Artifacts.Should().HaveCount(committedCount);
+        package.Artifacts.Should().OnlyContain(artifact => artifact.Uri == reference);
+        package.Artifacts.Select(artifact => artifact.ArtifactId).Should().OnlyHaveUniqueItems();
+    }
+
     [UnitTest]
     public void Create_UnsupportedDescriptorShapedReference_DoesNotLeakDescriptorJson()
     {
