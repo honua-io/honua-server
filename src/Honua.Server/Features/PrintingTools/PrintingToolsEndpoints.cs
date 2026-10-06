@@ -154,7 +154,7 @@ internal static partial class PrintingToolsEndpoints
         // PUBLIC by design: sibling GPServer SOAP discovery is anonymous at the route
         // and enforces access inside the handler. Print execution reuses the REST handlers.
         endpoints.MapPost(GpSoapRoute,
-                static (HttpContext context) => HandleGpSoapAsync(context))
+                (Delegate)(static (HttpContext context) => HandleGpSoapAsync(context)))
             .WithDisplayName("PrintingTools SOAP GPServer")
             .WithName("PrintingToolsGpSoap")
             .WithSummary("Discover and execute PrintingTools through the GPServer SOAP binding")
