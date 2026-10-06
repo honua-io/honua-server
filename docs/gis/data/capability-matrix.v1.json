@@ -817,10 +817,10 @@
       "category": "Editing",
       "edition": "Pro",
       "status": null,
-      "entryCount": 16,
-      "provingTestCount": 63,
+      "entryCount": 19,
+      "provingTestCount": 78,
       "maturity": {
-        "experimental": 16
+        "experimental": 19
       },
       "noSurface": null,
       "cite": [],
@@ -1674,7 +1674,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 49,
-      "provingTestCount": 523,
+      "provingTestCount": 524,
       "maturity": {
         "implemented": 49
       },
@@ -1823,7 +1823,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 47,
-      "provingTestCount": 388,
+      "provingTestCount": 390,
       "maturity": {
         "implemented": 45,
         "preview": 2

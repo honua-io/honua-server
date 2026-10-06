@@ -6,10 +6,13 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -103,6 +106,88 @@ public sealed class BranchVersioningMetadataTests(ITestOutputHelper output) : IA
         postPayload.RootElement.GetRawText().Should().Be(getPayload.RootElement.GetRawText());
         canonicalGetPayload.RootElement.GetRawText().Should().Be(getPayload.RootElement.GetRawText());
         canonicalPostPayload.RootElement.GetRawText().Should().Be(getPayload.RootElement.GetRawText());
+    }
+
+    /// <summary>
+    /// #5036: a client fetches {name}/MapServer (by POST) and reads <c>supportedExtensions</c> to
+    /// decide whether {name}/FeatureServer is a versioned workspace. When a map-only service shares
+    /// the name, the MapServer route resolves that service, and the list must still describe the
+    /// extensions the sibling FeatureServer route serves rather than come back empty.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer")]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    public async Task MapServerSharingItsNameWithAMapOnlyService_AdvertisesTheFeatureServiceExtensions()
+    {
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise);
+        _fixture = fixture;
+        fixture.ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("Capabilities:Experimental:Enabled", "false");
+            builder.UseSetting("Capabilities:Experimental:versioning.branch:Enabled", "true");
+        });
+        await fixture.InitializeAsync();
+        BranchVersioningPublicationFixture.ConfigureManagedPublications(fixture);
+        AddMapOnlyServiceSharingName(fixture, BranchVersioningPublicationFixture.ServiceName);
+
+        using var featureService = await fixture.Client.GetAsync(
+            $"/rest/services/{BranchVersioningPublicationFixture.ServiceName}/FeatureServer?f=json");
+        var featureBody = await featureService.Content.ReadAsStringAsync();
+        featureService.StatusCode.Should().Be(HttpStatusCode.OK, featureBody);
+        using (var featureDocument = JsonDocument.Parse(featureBody))
+        {
+            featureDocument.RootElement.GetProperty("supportsBranchVersioning").GetBoolean().Should().BeTrue(featureBody);
+        }
+
+        using var get = await fixture.Client.GetAsync(
+            $"/rest/services/{BranchVersioningPublicationFixture.ServiceName}/MapServer?f=json");
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json" });
+        using var post = await fixture.Client.PostAsync(
+            $"/rest/services/{BranchVersioningPublicationFixture.ServiceName}/MapServer", form);
+        foreach (var response in new[] { get, post })
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            using var document = JsonDocument.Parse(body);
+            document.RootElement.GetProperty("serviceDescription").GetString().Should().Be(MapOnlyServiceDescription,
+                "the MapServer route must resolve the map-only sibling for this case to exercise the twin: {0}", body);
+            document.RootElement.GetProperty("supportedExtensions").GetString()!.Split(',')
+                .Should().Contain(["FeatureServer", "VersionManagementServer"], body);
+        }
+    }
+
+    private const string MapOnlyServiceDescription = "Map-only service sharing the feature service name";
+
+    private static void AddMapOnlyServiceSharingName(WebAppFixture fixture, string serviceName)
+    {
+        var snapshot = fixture.GetCurrentV2GraphSnapshot();
+        var featureService = snapshot.Index.ServicesByName[serviceName];
+        var mapServiceId = featureService.Metadata.Id + "-map-only";
+        var mapPublications = snapshot.Index.PublicationsByService[featureService.Metadata.Id]
+            .Select(publication => publication with
+            {
+                Metadata = publication.Metadata with { Id = publication.Metadata.Id + "-map-only" },
+                ServiceId = mapServiceId,
+                PublicationType = MetadataV2PublicationType.EsriMapLayer,
+            })
+            .ToArray();
+        var mapService = featureService with
+        {
+            Metadata = featureService.Metadata with { Id = mapServiceId, Description = MapOnlyServiceDescription },
+            ServiceType = MetadataV2ServiceType.EsriMapService,
+            Protocols = [ServiceProtocols.MapServer],
+            EnabledProtocols = [ServiceProtocols.MapServer],
+            PublicationIds = [.. mapPublications.Select(publication => publication.Metadata.Id)],
+        };
+        var provider = (TestMetadataV2GraphProvider)fixture.GetService<IMetadataV2GraphProvider>();
+        provider.SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Services = [.. snapshot.Graph.Services, mapService],
+            Publications = [.. snapshot.Graph.Publications, .. mapPublications],
+        }, schema: fixture.CurrentSchema);
     }
 
     [IntegrationTest]

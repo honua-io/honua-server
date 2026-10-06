@@ -9909,6 +9909,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.AdminFeatureServer_UsesEffectivePublicCapabilitiesAndQueryLimit",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.DisabledExperimentalCapability_KeepsVersionedDataWithoutVersionManagement",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.EnabledProviderAndLicense_AdvertiseBranchVersioningAtEveryLevel",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.MapServerSharingItsNameWithAMapOnlyService_AdvertisesTheFeatureServiceExtensions",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.UnlicensedProvider_DoesNotAdvertiseBranchVersioning",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.UnsupportedProvider_DoesNotAdvertiseBranchVersioning",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.EmptyService_DoesNotInheritHostVersioningCapability",
@@ -11604,6 +11605,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerTileLimitsTests.ServiceMetadata_WithMaxTileZoom24_AdvertisesZoom24InTileInfo",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.DisabledExperimentalCapability_KeepsVersionedDataWithoutVersionManagement",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.EnabledProviderAndLicense_AdvertiseBranchVersioningAtEveryLevel",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.MapServerSharingItsNameWithAMapOnlyService_AdvertisesTheFeatureServiceExtensions",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.UnlicensedProvider_DoesNotAdvertiseBranchVersioning",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.UnsupportedProvider_DoesNotAdvertiseBranchVersioning",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.EmptyService_DoesNotInheritHostVersioningCapability",
@@ -12523,6 +12525,21 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.RetiredManagedPublication_DoesNotMakeExternalServiceVersioned",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.SelectedReaderWithoutBranchCapability_DoesNotInheritPostgresHostCapability",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.ServiceInfo_ReturnsCapabilities"
+      ],
+      "proof_ledger_surface": "version-management-server",
+      "maturity": "experimental",
+      "capability": "editing.branch-versioning"
+    },
+    {
+      "id": "get-rest-services-serviceid-versionmanagementserver-versioninfos",
+      "route": "/rest/services/{serviceId}/VersionManagementServer/versionInfos",
+      "method": "GET",
+      "family": "GeoServices REST VersionManagementServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.VersionInfos_OwnerFilter_ListsOnlyThatOwnersVersions",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.WorkspaceOpen_DefaultVersionExchange_AnswersEveryStep"
       ],
       "proof_ledger_surface": "version-management-server",
       "maturity": "experimental",
@@ -21564,7 +21581,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.MetadataPostTests.MapServer_ServiceMetadata_Post_ReturnsSameAsGet"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MetadataPostTests.MapServer_ServiceMetadata_Post_ReturnsSameAsGet",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.MapServerSharingItsNameWithAMapOnlyService_AdvertisesTheFeatureServiceExtensions"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented",
@@ -22019,7 +22037,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.ManagedPublication_AdvertisesAtLayerServiceAndAdmin",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.RetiredManagedPublication_DoesNotMakeExternalServiceVersioned",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.SelectedReaderWithoutBranchCapability_DoesNotInheritPostgresHostCapability",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.ServiceInfo_PostReturnsSameMetadataAsGet"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.ServiceInfo_PostReturnsSameMetadataAsGet",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.WorkspaceOpen_DefaultVersionExchange_AnswersEveryStep"
       ],
       "proof_ledger_surface": "version-management-server",
       "maturity": "experimental",
@@ -22034,9 +22053,42 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerAuthorizationTests.Anonymous_IsDeniedOnCreateAndDelete_AndTheOwnersVersionSurvives",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerAuthorizationTests.ReadSessions_FollowVersionVisibility_AndEditSessionsStayOwnerOnly",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Create_DuplicateVersionName_Returns409Conflict",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Create_IgnoresCallerSuppliedOwner",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Create_NewVersion_ReturnsVersionInfo"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Create_NewVersion_ReturnsVersionInfo",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.VersionInfos_OwnerFilter_ListsOnlyThatOwnersVersions",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.WorkspaceOpen_DefaultVersionExchange_AnswersEveryStep"
+      ],
+      "proof_ledger_surface": "version-management-server",
+      "maturity": "experimental",
+      "capability": "editing.branch-versioning"
+    },
+    {
+      "id": "post-rest-services-serviceid-versionmanagementserver-versioninfos",
+      "route": "/rest/services/{serviceId}/VersionManagementServer/versionInfos",
+      "method": "POST",
+      "family": "GeoServices REST VersionManagementServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.VersionInfos_OwnerFilter_ListsOnlyThatOwnersVersions",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.WorkspaceOpen_DefaultVersionExchange_AnswersEveryStep"
+      ],
+      "proof_ledger_surface": "version-management-server",
+      "maturity": "experimental",
+      "capability": "editing.branch-versioning"
+    },
+    {
+      "id": "post-rest-services-serviceid-versionmanagementserver-versions-versionguid",
+      "route": "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}",
+      "method": "POST",
+      "family": "GeoServices REST VersionManagementServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerAuthorizationTests.ReadSessions_FollowVersionVisibility_AndEditSessionsStayOwnerOnly",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.WorkspaceOpen_DefaultVersionExchange_AnswersEveryStep"
       ],
       "proof_ledger_surface": "version-management-server",
       "maturity": "experimental",
@@ -22134,6 +22186,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerAuthorizationTests.ReadSessions_FollowVersionVisibility_AndEditSessionsStayOwnerOnly",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.StartEditing_AcknowledgesSession",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.StartEditing_UnknownVersion_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.StartEditing_VersionMidReconcile_Returns409Locked"
@@ -22150,8 +22203,10 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerAuthorizationTests.ReadSessions_FollowVersionVisibility_AndEditSessionsStayOwnerOnly",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.StartReading_AcknowledgesSession",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.StartReading_UnknownVersion_ReturnsNotFound"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.StartReading_UnknownVersion_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.WorkspaceOpen_DefaultVersionExchange_AnswersEveryStep"
       ],
       "proof_ledger_surface": "version-management-server",
       "maturity": "experimental",
@@ -22179,7 +22234,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.StopReading_AcknowledgesSession"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerAuthorizationTests.ReadSessions_FollowVersionVisibility_AndEditSessionsStayOwnerOnly",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.StopReading_AcknowledgesSession",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.WorkspaceOpen_DefaultVersionExchange_AnswersEveryStep"
       ],
       "proof_ledger_surface": "version-management-server",
       "maturity": "experimental",

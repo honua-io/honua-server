@@ -239,6 +239,89 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// #5036: a read session follows the read rule, not the lifecycle rule. A client starts one on
+    /// DEFAULT to open the workspace and on each version it creates or switches to, so a non-owner,
+    /// non-admin reader opens and closes read sessions on DEFAULT and on another owner's public
+    /// version, while another owner's private version stays undisclosed (404, no acknowledgement).
+    /// Edit sessions are not part of that exchange and stay owner-or-admin only.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/startReading")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/stopReading")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/startEditing")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]
+    public async Task ReadSessions_FollowVersionVisibility_AndEditSessionsStayOwnerOnly()
+    {
+        // The GeoServices branch-versioning contract's fixed DEFAULT version GUID.
+        const string defaultGuid = "BD3F4817-9A00-41AC-B0CC-58F78DBAE0A1";
+
+        using (var info = await PostFormAsync(
+            _nonOwnerToken, $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{defaultGuid}", ("f", "json")))
+        {
+            var body = await info.Content.ReadAsStringAsync();
+            info.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            using var document = JsonDocument.Parse(body);
+            document.RootElement.TryGetProperty("error", out _).Should().BeFalse(body);
+            document.RootElement.GetProperty("versionName").GetString().Should().Be("sde.DEFAULT");
+        }
+
+        foreach (var url in new[]
+                 {
+                     $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{defaultGuid}/startReading",
+                     $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{defaultGuid}/stopReading",
+                 })
+        {
+            using var session = await PostFormAsync(
+                _nonOwnerToken, url, ("f", "json"), ("sessionId", "{D447A85D-E9BE-498C-892C-F5D89C791D94}"));
+            var body = await session.Content.ReadAsStringAsync();
+            session.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            using var document = JsonDocument.Parse(body);
+            document.RootElement.TryGetProperty("error", out _).Should().BeFalse("{0}: {1}", url, body);
+            document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue("{0}: {1}", url, body);
+        }
+
+        var publicVersion = await CreateVersionAsync(
+            _ownerToken, $"alice.public_read_{Guid.NewGuid():N}", "public-read", access: "public");
+        var privateVersion = await CreateVersionAsync(
+            _ownerToken, $"alice.private_read_{Guid.NewGuid():N}", "private-read");
+        var publicGuid = publicVersion.GetProperty("versionGuid").GetString()!;
+        var privateGuid = privateVersion.GetProperty("versionGuid").GetString()!;
+        foreach (var operation in new[] { "startReading", "stopReading" })
+        {
+            using var readable = await PostFormAsync(
+                _nonOwnerToken,
+                $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{publicGuid}/{operation}",
+                ("f", "json"), ("sessionId", "{D447A85D-E9BE-498C-892C-F5D89C791D94}"));
+            var readableBody = await readable.Content.ReadAsStringAsync();
+            readable.StatusCode.Should().Be(HttpStatusCode.OK, readableBody);
+            using var readableDocument = JsonDocument.Parse(readableBody);
+            readableDocument.RootElement.TryGetProperty("error", out _).Should().BeFalse("{0}: {1}", operation, readableBody);
+            readableDocument.RootElement.GetProperty("success").GetBoolean().Should().BeTrue("{0}: {1}", operation, readableBody);
+
+            using var hidden = await PostFormAsync(
+                _nonOwnerToken,
+                $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{privateGuid}/{operation}",
+                ("f", "json"));
+            var hiddenBody = await hidden.Content.ReadAsStringAsync();
+            await hidden.AssertGeoServicesErrorAsync((int)HttpStatusCode.NotFound);
+            hiddenBody.Should().NotContain("\"success\":true", "{0} must not acknowledge another owner's private version", operation);
+        }
+
+        foreach (var guid in new[] { defaultGuid, publicGuid })
+        {
+            using var editing = await PostFormAsync(
+                _nonOwnerToken,
+                $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/startEditing",
+                ("f", "json"));
+            var editingBody = await editing.Content.ReadAsStringAsync();
+            await editing.AssertGeoServicesErrorAsync((int)HttpStatusCode.NotFound, (int)HttpStatusCode.Forbidden);
+            editingBody.Should().NotContain("\"success\":true", "an edit session on {0} stays owner-or-admin only", guid);
+        }
+    }
+
+    /// <summary>
     /// With the development bypass off, an unauthenticated caller reaches no VMS lifecycle
     /// operation and learns nothing about the versions that exist.
     /// </summary>
@@ -306,13 +389,14 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
                 DateTimeOffset.UtcNow.AddMinutes(30)),
             CancellationToken.None)).Token;
 
-    private async Task<JsonElement> CreateVersionAsync(string token, string versionName, string description)
+    private async Task<JsonElement> CreateVersionAsync(
+        string token, string versionName, string description, string access = "private")
     {
         using var response = await PostFormAsync(
             token,
             $"{ServiceBase}/create",
             ("versionName", versionName),
-            ("accessPermission", "private"),
+            ("accessPermission", access),
             ("description", description),
             ("f", "json"));
         var body = await response.Content.ReadAsStringAsync();

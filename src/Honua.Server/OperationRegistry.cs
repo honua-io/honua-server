@@ -151,6 +151,7 @@ public static class OperationRegistry
         new(VersionManagementServer, "serviceInfo"),
         new(VersionManagementServer, "versions"),
         new(VersionManagementServer, "versionInfo"),
+        new(VersionManagementServer, "versionInfos"),
         new(VersionManagementServer, "create"),
         new(VersionManagementServer, "delete"),
         new(VersionManagementServer, "alter"),

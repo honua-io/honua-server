@@ -127,7 +127,8 @@ internal static partial class MapServerEndpoints
                 limitsOptions.Tiles.MaxTileZoom,
                 limitsOptions.Tiles.MaxTilesPerRequest,
                 MergeServiceTimeInfo(timeInfos),
-                await BuildSupportedFeatureExtensionsAsync(context, service, snapshot, cancellationToken).ConfigureAwait(false));
+                await BuildSupportedFeatureExtensionsAsync(
+                    context, resourceValidator, serviceId, service, snapshot, cancellationToken).ConfigureAwait(false));
 
             stopwatch.Stop();
             scope.SetSuccess(visibleLayers.Length);
@@ -342,12 +343,25 @@ internal static partial class MapServerEndpoints
     }
 
     private static async Task<string> BuildSupportedFeatureExtensionsAsync(
-        HttpContext context, MetadataV2Service service, MetadataV2GraphSnapshot snapshot,
-        CancellationToken cancellationToken)
+        HttpContext context, IResourceValidator resourceValidator, string serviceId,
+        MetadataV2Service service, MetadataV2GraphSnapshot snapshot, CancellationToken cancellationToken)
     {
+        // GeoServices clients treat {name}/FeatureServer and {name}/VersionManagementServer as
+        // extensions of the {name}/MapServer service and read this list to decide whether the
+        // feature service is a versioned workspace. When the MapServer route resolves a map-only
+        // service that shares its name with the feature service, describe the extensions of the
+        // service the sibling FeatureServer route actually serves (#5036).
         if (!service.Protocols.Contains(ServiceProtocols.FeatureServer, StringComparer.OrdinalIgnoreCase))
         {
-            return string.Empty;
+            var featureService = await resourceValidator
+                .ValidateServiceV2Async(serviceId, ServiceProtocols.FeatureServer, cancellationToken)
+                .ConfigureAwait(false);
+            if (!featureService.IsValid)
+            {
+                return string.Empty;
+            }
+
+            service = featureService.Resource!;
         }
 
         // FeatureServer itself remains available for external/non-versioned readers. The
