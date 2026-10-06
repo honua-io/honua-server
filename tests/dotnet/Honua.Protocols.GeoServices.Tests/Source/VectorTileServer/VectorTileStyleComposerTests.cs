@@ -5,6 +5,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.VectorTileServer.Services;
+using Honua.TestKit.Attributes;
 using Xunit;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer;
@@ -22,6 +23,7 @@ public sealed class VectorTileStyleComposerTests
     private const string TileUrl = "https://host/rest/services/test/VectorTileServer/tile/{z}/{y}/{x}.pbf";
     private const string SpriteUrl = "https://host/rest/services/test/VectorTileServer/resources/sprites/sprite";
     private const string GlyphsUrl = "https://host/rest/services/test/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf";
+    private const string ServiceUrl = "https://host/rest/services/test/VectorTileServer";
 
     [Fact]
     public void Compose_DefaultPointStyle_OmitsSpriteAndGlyphs()
@@ -146,5 +148,87 @@ public sealed class VectorTileStyleComposerTests
 
         root.TryGetProperty("sprite", out _).Should().BeFalse();
         root.TryGetProperty("glyphs", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Issue5534_DefaultStyle_VectorSourceReferencesTheServiceDescriptor()
+    {
+        var json = VectorTileStyleComposer.Compose(
+            storedMapLibreJson: null,
+            ServiceName,
+            SourceId,
+            TileUrl,
+            MetadataV2GeometryType.Point,
+            SpriteUrl,
+            GlyphsUrl,
+            ServiceUrl);
+
+        using var document = JsonDocument.Parse(json);
+        var source = document.RootElement.GetProperty("sources").GetProperty(SourceId);
+
+        source.GetProperty("type").GetString().Should().Be("vector");
+        source.GetProperty("url").GetString().Should().Be(ServiceUrl);
+        source.GetProperty("tiles").EnumerateArray().Select(tile => tile.GetString())
+            .Should().Equal(TileUrl);
+    }
+
+    [UnitTest]
+    public void Issue5534_StoredStyle_EveryVectorSourceUrlIsReplacedWithTheServiceDescriptor()
+    {
+        const string storedStyle = """
+            {
+              "version": 8,
+              "sources": {
+                "esri": { "type": "vector", "url": "https://old/tilejson" },
+                "other": { "type": "vector", "tiles": ["https://old/{z}/{y}/{x}.pbf"] }
+              },
+              "layers": [
+                { "id": "fill", "type": "fill", "source": "esri", "source-layer": "layer" }
+              ]
+            }
+            """;
+
+        var json = VectorTileStyleComposer.Compose(
+            storedStyle,
+            ServiceName,
+            SourceId,
+            TileUrl,
+            MetadataV2GeometryType.Polygon,
+            SpriteUrl,
+            GlyphsUrl,
+            ServiceUrl);
+
+        using var document = JsonDocument.Parse(json);
+        foreach (var source in document.RootElement.GetProperty("sources").EnumerateObject())
+        {
+            source.Value.GetProperty("url").GetString().Should().Be(ServiceUrl, source.Name);
+            source.Value.GetProperty("tiles").EnumerateArray().Select(tile => tile.GetString())
+                .Should().Equal(TileUrl);
+        }
+    }
+
+    [UnitTest]
+    public void Compose_WithoutServiceUrl_DropsStoredSourceUrl()
+    {
+        const string storedStyle = """
+            {
+              "version": 8,
+              "sources": { "esri": { "type": "vector", "url": "https://old/tilejson" } },
+              "layers": [
+                { "id": "fill", "type": "fill", "source": "esri", "source-layer": "layer" }
+              ]
+            }
+            """;
+
+        var json = VectorTileStyleComposer.Compose(
+            storedStyle,
+            ServiceName,
+            SourceId,
+            TileUrl,
+            MetadataV2GeometryType.Polygon);
+
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("sources").GetProperty(SourceId)
+            .TryGetProperty("url", out _).Should().BeFalse();
     }
 }
