@@ -155,13 +155,12 @@ public sealed class DispatchBindingTests
         using var registry = JsonDocument.Parse(File.ReadAllText(Path.Join(RepositoryRoot, "release/bundle-suites.json")));
         var helper = File.ReadAllText(Path.Join(RepositoryRoot, "scripts/release/dispatch-and-wait.sh"));
         var workflows = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var suite in registry.RootElement.GetProperty("integration").EnumerateArray())
+        var dispatchableIntegrationSuites = registry.RootElement.GetProperty("integration").EnumerateArray()
+            .Where(suite => suite.GetProperty("mode").GetString()!.StartsWith("dispatch", StringComparison.Ordinal) &&
+                            !suite.GetProperty("refactorPending").GetBoolean());
+        foreach (var suite in dispatchableIntegrationSuites)
         {
-            if (suite.GetProperty("mode").GetString()!.StartsWith("dispatch", StringComparison.Ordinal) &&
-                !suite.GetProperty("refactorPending").GetBoolean())
-            {
-                workflows.Add(Path.GetFileName(suite.GetProperty("workflow").GetString()!));
-            }
+            workflows.Add(Path.GetFileName(suite.GetProperty("workflow").GetString()!));
         }
 
         foreach (var suite in registry.RootElement.GetProperty("sdk").EnumerateArray())
