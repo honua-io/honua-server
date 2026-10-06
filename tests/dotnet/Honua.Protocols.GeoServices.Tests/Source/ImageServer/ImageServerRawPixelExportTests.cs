@@ -72,6 +72,40 @@ public sealed class ImageServerRawPixelExportTests
         });
     }
 
+    [IntegrationTheory]
+    [InlineData("esriNoDataMatchAny")]
+    [InlineData("esriNoDataMatchAll")]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task HonuaServer5559_SoapExportImage_ServiceNoDataOverride_ReturnsFixturePixelBlock(
+        string noDataInterpretation)
+    {
+        await RunWithFixtureRasterAsync(async fixture =>
+        {
+            using var response = await PostSoapAsync(fixture, BuildSoapExportImage(
+                XMin,
+                YMin,
+                XMax,
+                YMax,
+                Size,
+                Size,
+                "RSP_NearestNeighbor",
+                "esriImageReturnURL",
+                noDataInterpretation));
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            var result = XDocument.Parse(body).Descendants().Single(element => element.Name.LocalName == "Result");
+
+            var block = await ReadSoapImageAsync(fixture, result, "esriImageReturnURL");
+            AssertBsqBlockMatchesFixture(block, 0, 0, Size, Size);
+            var maskOffset = Size * Size * BandCount;
+            var noDataPixelIndex = (NoDataRow * Size) + NoDataColumn;
+            (block[maskOffset + (noDataPixelIndex / 8)] & (0x80 >> (noDataPixelIndex % 8)))
+                .Should().Be(0, "the stored NoData pixel remains masked");
+        });
+    }
+
     [IntegrationTest]
     [Operation(Operations.Export)]
     [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
@@ -473,10 +507,12 @@ public sealed class ImageServerRawPixelExportTests
         int width,
         int height,
         string interpolation,
-        string returnType)
+        string returnType,
+        string? noDataInterpretation = null)
         => FormattableString.Invariant($"""
             <ExportImage xmlns="http://www.esri.com/schemas/ArcGIS/10.8"
-                         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+                         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                         xmlns:xsd="http://www.w3.org/2001/XMLSchema">
               <ImageDescription xsi:type="GeoImageDescription">
                 <Compression>None</Compression>
                 <Extent xsi:type="EnvelopeN">
@@ -487,6 +523,7 @@ public sealed class ImageServerRawPixelExportTests
                 <Interpolation>{interpolation}</Interpolation>
                 <MosaicRule xsi:type="MosaicRule"><MosaicMethod>esriMosaicNone</MosaicMethod></MosaicRule>
                 <PixelType>U8</PixelType>
+                {(noDataInterpretation is null ? string.Empty : $"<NoData xsi:type=\"xsd:base64Binary\">AAAA</NoData><NoDataInterpretation>{noDataInterpretation}</NoDataInterpretation>")}
                 <Width>{width}</Width>
               </ImageDescription>
               <ImageType xsi:type="ImageType">
