@@ -9,13 +9,14 @@ resource: "https://github.com/honua-io/honua-server/releases"
 Run these blocks in order in **Windows PowerShell 5.1 or PowerShell 7**, from a
 directory where you can create a private installation folder. You need Docker
 Desktop running Linux containers, Docker Compose **2.23.1+**, and Python **3.11+**
-on `PATH`. This local, single-node Community installation uses Production startup
+on `PATH`. This local, single-node installation uses Production startup
 validation, loopback HTTP, and isolated persistent storage. For a public hostname
 and TLS, use [production deployment](../guides/deploy/docker-compose.md).
 
 No repository checkout, compiler, Bash, Git, developer helper, or GitHub Packages
 credential is needed. The server image and the two PyPI clients below are public.
-Community needs no license. Installing Redis does not grant paid capabilities;
+The 2026.1 release runs with licensing disabled, so there is no licence or
+edition-selection step. Redis is installed for Production operation secrets;
 this journey uses a small synchronous import and does not require durable jobs.
 
 ## Artifact identity and qualification
@@ -105,6 +106,7 @@ services:
       - "127.0.0.1:${HONUA_GRPC_PORT:-18081}:8081"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      Licensing__Mode: Disabled
       AllowedHosts: "localhost;127.0.0.1"
       PUBLIC_BASE_URL: "http://localhost:${HONUA_HTTP_PORT}"
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua;Username=honua;Password=${POSTGRES_PASSWORD:?Required}"

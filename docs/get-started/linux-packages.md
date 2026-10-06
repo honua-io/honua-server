@@ -58,6 +58,7 @@ services:
       - "127.0.0.1:${HONUA_GRPC_PORT:-18081}:8081"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      Licensing__Mode: Disabled
       AllowedHosts: "localhost;127.0.0.1"
       PUBLIC_BASE_URL: "http://localhost:${HONUA_HTTP_PORT}"
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua;Username=honua;Password=${POSTGRES_PASSWORD:?Required}"

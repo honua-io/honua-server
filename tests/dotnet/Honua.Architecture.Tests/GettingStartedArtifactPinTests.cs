@@ -27,7 +27,9 @@ public sealed class GettingStartedArtifactPinTests
         quickstart.Should().Contain(CandidateImage);
         quickstart.Should().Contain("Licensing__Mode: Disabled");
         linuxPackages.Should().Contain(CandidateImage);
+        linuxPackages.Should().Contain("Licensing__Mode: Disabled");
         windowsPackages.Should().Contain(CandidateImage);
+        windowsPackages.Should().Contain("Licensing__Mode: Disabled");
         firstDataset.Should().Contain("@honua/sdk-js@0.1.13");
         registryClients.Should().Contain("`@honua/sdk-js@0.1.13`");
         registryClients.Should().Contain("`create-honua-app@0.1.6`");
