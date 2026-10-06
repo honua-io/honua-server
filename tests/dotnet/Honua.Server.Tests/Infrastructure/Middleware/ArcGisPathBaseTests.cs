@@ -68,6 +68,19 @@ public sealed class ArcGisPathBaseTests : IAsyncLifetime
         anonymous.Should().Be("https://localhost/wfs");
     }
 
+    [UnitTest]
+    public async Task Issue5520_AdvertisedUrl_CollapsesRepeatedIdenticalTokenAndDropsConflicts()
+    {
+        // PortalTokenAuthenticationHandler accepts ?token=abc&token=abc as one credential
+        // and rejects conflicting values; the advertised URL must follow the same rule
+        // rather than StringValues.ToString()'s "abc,abc" join.
+        var repeated = await _client.GetStringAsync("/advertised?token=abc&token=abc");
+        var conflicting = await _client.GetStringAsync("/advertised?token=abc&token=xyz");
+
+        repeated.Should().Be("https://localhost/wfs?token=abc");
+        conflicting.Should().Be("https://localhost/wfs");
+    }
+
     public async Task DisposeAsync()
     {
         _client.Dispose();
