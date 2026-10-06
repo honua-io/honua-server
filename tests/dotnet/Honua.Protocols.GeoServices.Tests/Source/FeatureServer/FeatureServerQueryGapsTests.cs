@@ -133,6 +133,69 @@ public sealed class FeatureServerQueryGapsTests : IClassFixture<WebAppFixture>
         y.Should().Be(Math.Truncate(y), "quantized coordinates are integers");
     }
 
+    // #5438: a desktop client's draw request (envelope filter, outSR with its coordinate
+    // grid, view-mode lowerLeft quantization). The client reads the featureSet front to
+    // back, so the transform must precede features; the decoded points must land on the
+    // seeded coordinates.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithViewModeLowerLeftQuantization_EmitsTransformBeforeFeaturesAndDecodesToSeededPoints()
+    {
+        const string extent =
+            """{"xmin":-122.80687566301286,"ymin":37.1681245869876307,"xmax":-121.793124336987134,"ymax":37.9318754130123708,"spatialReference":{"wkid":4326,"latestWkid":4326}}""";
+        const string outSr =
+            """{"wkid":4326,"latestWkid":4326,"xyTolerance":8.983152841195215e-09,"zTolerance":0.001,"mTolerance":0.001,"falseX":-400,"falseY":-400,"xyUnits":999999999.99999988,"falseZ":-100000,"zUnits":10000,"falseM":-100000,"mUnits":10000}""";
+        var quantization =
+            $$"""{"mode":"view","originPosition":"lowerLeft","tolerance":0.0010000020000040025,"extent":{{extent}}}""";
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
+            $"?outFields=objectid&where=1+%3D+1&f=json&returnGeometry=true&outSR={Uri.EscapeDataString(outSr)}" +
+            $"&geometry={Uri.EscapeDataString(extent)}&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects" +
+            $"&quantizationParameters={Uri.EscapeDataString(quantization)}" +
+            "&resultOffset=0&resultRecordCount=2000&orderByFields=objectid+ASC");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var document = JsonDocument.Parse(content);
+        var memberOrder = document.RootElement.EnumerateObject().Select(member => member.Name).ToList();
+        memberOrder.Should().Contain(["transform", "features"]);
+        memberOrder.IndexOf("transform").Should().BeLessThan(
+            memberOrder.IndexOf("features"),
+            "a streaming client dequantizes features with the transform it has already read: {0}",
+            content);
+
+        var transform = document.RootElement.GetProperty("transform");
+        transform.GetProperty("originPosition").GetString().Should().Be("lowerLeft");
+        var scale = transform.GetProperty("scale").EnumerateArray().Select(value => value.GetDouble()).ToArray();
+        var translate = transform.GetProperty("translate").EnumerateArray().Select(value => value.GetDouble()).ToArray();
+        scale.Should().Equal(0.0010000020000040025, 0.0010000020000040025);
+        translate.Should().Equal(-122.80687566301286, 37.16812458698763);
+
+        var decoded = document.RootElement.GetProperty("features").EnumerateArray()
+            .Select(feature =>
+            {
+                var geometry = feature.GetProperty("geometry");
+                return (
+                    ObjectId: feature.GetProperty("attributes").GetProperty("objectid").GetInt64(),
+                    X: translate[0] + (geometry.GetProperty("x").GetInt64() * scale[0]),
+                    Y: translate[1] + (geometry.GetProperty("y").GetInt64() * scale[1]));
+            })
+            .ToList();
+
+        // The seeded test layer's located points; feature 3 has no geometry and is filtered
+        // out by the envelope.
+        (long ObjectId, double X, double Y)[] expected =
+            [(1, -122.5, 37.5), (2, -122.7, 37.7), (4, -121.9, 37.3), (5, -122.3, 37.8)];
+        decoded.Select(point => point.ObjectId).Should().Equal(expected.Select(point => point.ObjectId));
+        for (var i = 0; i < expected.Length; i++)
+        {
+            decoded[i].X.Should().BeApproximately(expected[i].X, scale[0] / 2);
+            decoded[i].Y.Should().BeApproximately(expected[i].Y, scale[1] / 2);
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
