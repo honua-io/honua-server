@@ -263,10 +263,14 @@ internal sealed partial class PortalTokenIssuer(
     {
         return record.ClientType switch
         {
-            PortalTokenClientType.Referer => string.Equals(
-                record.BindingValue,
-                NormalizeRefererValue(binding.Referer ?? string.Empty),
-                StringComparison.OrdinalIgnoreCase),
+            // A missing Referer does not contradict the token's binding. Some protocol
+            // clients omit the header on later requests in the same authenticated
+            // session. A supplied Referer must still match the bound origin.
+            PortalTokenClientType.Referer => string.IsNullOrWhiteSpace(binding.Referer)
+                || string.Equals(
+                    record.BindingValue,
+                    NormalizeRefererValue(binding.Referer),
+                    StringComparison.OrdinalIgnoreCase),
             PortalTokenClientType.Ip => string.Equals(
                 record.BindingValue,
                 (binding.ClientIp ?? string.Empty).Trim(),

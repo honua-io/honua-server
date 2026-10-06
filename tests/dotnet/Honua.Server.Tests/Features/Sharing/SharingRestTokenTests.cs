@@ -389,6 +389,21 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/portals/self")]
+    public async Task Issue5558_RefererBoundTokenWithoutReferer_AuthenticatesPortalsSelf()
+    {
+        using var client = _fixture.CreateClient();
+        var token = await IssueTokenAsync(client, ("client", "referer"), ("referer", SecureRefererA));
+
+        using var response = await client.GetAsync($"/sharing/rest/portals/self?f=json&token={token}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
     public async Task IssuedToken_AcceptedViaAuthorizationBearerHeader_Authenticates()
     {
