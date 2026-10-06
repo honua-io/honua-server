@@ -438,7 +438,10 @@ internal static class OgcTilesUtilities
     /// Determines whether the requested tile format is PNG (raster).
     /// Checks the <c>f</c> query parameter and <c>Accept</c> header.
     /// </summary>
-    public static bool IsRasterTileFormat(string? format, HttpRequest request)
+    public static bool IsRasterTileFormat(
+        string? format,
+        HttpRequest request,
+        bool defaultToRaster = false)
     {
         if (!string.IsNullOrWhiteSpace(format) &&
             string.Equals(format, "png", StringComparison.OrdinalIgnoreCase))
@@ -455,12 +458,14 @@ internal static class OgcTilesUtilities
         var accept = request.Headers.Accept;
         if (Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(accept))
         {
-            return false;
+            return defaultToRaster;
         }
 
         var pngQuality = ContentNegotiationHelpers.GetBestQuality(_pngTileMediaTypes, accept);
         var vectorQuality = ContentNegotiationHelpers.GetBestQuality(_vectorTileMediaTypes, accept);
-        return pngQuality > vectorQuality;
+        return defaultToRaster
+            ? pngQuality >= vectorQuality
+            : pngQuality > vectorQuality;
     }
 
     /// <summary>
