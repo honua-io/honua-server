@@ -20,9 +20,9 @@ namespace Honua.Scene;
 /// <remarks>
 /// <para>
 /// The attribute values are derived <b>honestly from the geometry that is
-/// actually served</b>: the transcoded geometry buffer carries a feature section
-/// (per-feature <c>id</c> + vertex range) emitted by
-/// <see cref="I3sGeometryTranscoder"/>, so the attribute file is read back from
+/// actually served</b>: the transcoded geometry buffer carries a contiguous
+/// feature-id array emitted by <see cref="I3sGeometryTranscoder"/>, so the
+/// attribute file is read back from
 /// that same buffer rather than from a parallel data path. This guarantees the
 /// attribute order matches the geometry's feature order, which is exactly the
 /// invariant an I3S client relies on when mapping a picked vertex's feature id to
@@ -203,14 +203,18 @@ public static class I3sAttributeBufferBuilder
         var featureCount = geometry.FeatureCount;
         var ids = new int[featureCount];
 
-        var featureSectionOffset = I3sGeometryTranscoder.HeaderBytes
+        // Ids are a contiguous UInt64 array immediately after the vertex
+        // attributes. faceRange follows the whole id array and is not interleaved
+        // with the ids (I3S PerAttributeArray / geometryBuffer order).
+        var featureIdOffset = I3sGeometryTranscoder.HeaderBytes
             + (geometry.VertexCount * I3sGeometryTranscoder.VertexStrideBytes);
 
         var span = buffer.AsSpan();
         for (var i = 0; i < featureCount; i++)
         {
-            var recordOffset = featureSectionOffset + (i * I3sGeometryTranscoder.FeatureRecordBytes);
-            var id = BinaryPrimitives.ReadUInt64LittleEndian(span.Slice(recordOffset, 8));
+            var recordOffset = featureIdOffset + (i * I3sGeometryTranscoder.FeatureIdBytes);
+            var id = BinaryPrimitives.ReadUInt64LittleEndian(
+                span.Slice(recordOffset, I3sGeometryTranscoder.FeatureIdBytes));
             // BH-S-03: guard against silent truncation — Oid32 only holds values up to
             // Int32.MaxValue. Fail loudly if a geometry transcoded with a large ID was
             // somehow persisted so the caller can diagnose the mismatch.

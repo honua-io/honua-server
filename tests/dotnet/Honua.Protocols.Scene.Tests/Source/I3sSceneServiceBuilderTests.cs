@@ -49,10 +49,16 @@ public sealed class I3sSceneServiceBuilderTests
         var schema = document.GetProperty("store").GetProperty("defaultGeometrySchema");
         schema.GetProperty("topology").GetString().Should().Be("PerAttributeArray");
         schema.GetProperty("header").GetArrayLength().Should().BePositive();
-        schema.GetProperty("ordering").GetArrayLength().Should().BePositive();
+        schema.GetProperty("ordering").EnumerateArray().Select(value => value.GetString())
+            .Should().Equal("position", "normal", "uv0", "color");
         schema.GetProperty("vertexAttributes").GetProperty("position")
             .GetProperty("valueType").GetString().Should().Be("Float32");
-        schema.GetProperty("featureAttributeOrder").GetArrayLength().Should().BePositive();
+        schema.GetProperty("vertexAttributes").GetProperty("color")
+            .GetProperty("valueType").GetString().Should().Be("UInt8");
+        schema.GetProperty("vertexAttributes").GetProperty("color")
+            .GetProperty("valuesPerElement").GetInt32().Should().Be(4);
+        schema.GetProperty("featureAttributeOrder").EnumerateArray().Select(value => value.GetString())
+            .Should().Equal("id", "faceRange");
         schema.GetProperty("featureAttributes").GetProperty("faceRange")
             .GetProperty("valuesPerElement").GetInt32().Should().Be(2);
 
@@ -63,6 +69,8 @@ public sealed class I3sSceneServiceBuilderTests
         geometry.GetProperty("topology").GetString().Should().Be("triangle");
         var geometryBuffer = geometry.GetProperty("geometryBuffers")[0];
         geometryBuffer.GetProperty("offset").GetInt32().Should().Be(8);
+        geometryBuffer.GetProperty("color").GetProperty("type").GetString().Should().Be("UInt8");
+        geometryBuffer.GetProperty("color").GetProperty("component").GetInt32().Should().Be(4);
         geometryBuffer.GetProperty("featureId").GetProperty("binding")
             .GetString().Should().Be("per-feature");
         geometryBuffer.GetProperty("faceRange").GetProperty("binding")

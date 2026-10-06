@@ -190,9 +190,9 @@ internal static class I3sSceneServiceBuilder
     ];
 
     /// <summary>
-    /// Default node geometry schema: a single uncompressed buffer carrying
-    /// interleaved position/normal/uv0 vertex streams. Describes the format the
-    /// hosted 3D Tiles content maps to; no geometry buffer is fetchable here.
+    /// Default node geometry schema: one uncompressed <c>PerAttributeArray</c>
+    /// buffer (position, normal, uv0, color, then per-feature id and faceRange).
+    /// Matches the bytes <see cref="I3sGeometryTranscoder"/> writes.
     /// </summary>
     private static readonly IReadOnlyList<I3sGeometryDefinition> DefaultGeometryDefinitions =
     [
@@ -207,6 +207,7 @@ internal static class I3sSceneServiceBuilder
                     Position = new I3sVertexLayout { Type = "Float32", Component = 3 },
                     Normal = new I3sVertexLayout { Type = "Float32", Component = 3 },
                     Uv0 = new I3sVertexLayout { Type = "Float32", Component = 2 },
+                    Color = new I3sVertexLayout { Type = "UInt8", Component = 4 },
                     FeatureId = new I3sVertexLayout { Type = "UInt64", Component = 1, Binding = "per-feature" },
                     FaceRange = new I3sVertexLayout { Type = "UInt32", Component = 2, Binding = "per-feature" },
                 },
@@ -223,12 +224,13 @@ internal static class I3sSceneServiceBuilder
             new I3sGeometryHeader { Property = "featureCount", Type = "UInt32" },
         ],
         Topology = "PerAttributeArray",
-        Ordering = ["position", "normal", "uv0"],
+        Ordering = ["position", "normal", "uv0", "color"],
         VertexAttributes = new Dictionary<string, I3sAttributeValues>
         {
             ["position"] = new() { ValueType = "Float32", ValuesPerElement = 3 },
             ["normal"] = new() { ValueType = "Float32", ValuesPerElement = 3 },
             ["uv0"] = new() { ValueType = "Float32", ValuesPerElement = 2 },
+            ["color"] = new() { ValueType = "UInt8", ValuesPerElement = 4 },
         },
         FeatureAttributeOrder = ["id", "faceRange"],
         FeatureAttributes = new Dictionary<string, I3sAttributeValues>

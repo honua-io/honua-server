@@ -202,6 +202,10 @@ public sealed class I3sGeometryBuffer
     [JsonPropertyName("uv0")]
     public I3sVertexLayout? Uv0 { get; set; }
 
+    /// <summary>Uncompressed descriptor for the per-vertex RGBA color stream.</summary>
+    [JsonPropertyName("color")]
+    public I3sVertexLayout? Color { get; set; }
+
     /// <summary>Per-feature identifier stream.</summary>
     [JsonPropertyName("featureId")]
     public I3sVertexLayout? FeatureId { get; set; }
