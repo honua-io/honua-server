@@ -239,7 +239,7 @@ internal static class McpEndpointExtensions
                         McpLog.SessionRejected(logger, "principal-mismatch");
                         await WriteSingleAsync(
                             context,
-                            ErrorResponse(JsonNullId, McpErrorMapper.SessionPrincipalMismatch()),
+                            ErrorResponse(ResponseIdForEarlyError(root), McpErrorMapper.SessionPrincipalMismatch()),
                             cancellationToken).ConfigureAwait(false);
                         return;
                 }
@@ -918,6 +918,25 @@ internal static class McpEndpointExtensions
                 // Null, Boolean, Array, Object — all disallowed for request ids.
                 return new RequestIdState(RequestIdKind.Invalid, null);
         }
+    }
+
+    /// <summary>
+    /// Preserves a valid request id when transport-level validation rejects a
+    /// request before normal JSON-RPC dispatch. Without the original id, clients
+    /// cannot correlate the error to their pending request and may wait forever.
+    /// </summary>
+    internal static JsonElement ResponseIdForEarlyError(JsonElement message)
+    {
+        if (message.ValueKind == JsonValueKind.Object)
+        {
+            var idState = ClassifyRequestId(message);
+            if (idState.Kind == RequestIdKind.Valid)
+            {
+                return idState.Element!.Value;
+            }
+        }
+
+        return JsonNullId;
     }
 
     /// <summary>
