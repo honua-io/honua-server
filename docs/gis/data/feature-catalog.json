@@ -7680,7 +7680,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsDepthTests.Metadata_FormatParameter_SupportsHtmlAndRejectsUnknown",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetLandingPage_ReturnsRecordsLinks"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetLandingPage_ReturnsRecordsLinks",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.RecordsLandingAndLimitTests.GetLandingPage_LinksApiDefinition_AndLinkResolves"
       ],
       "proof_ledger_surface": "ogc-api-records",
       "maturity": "implemented",
@@ -7748,7 +7749,9 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItems_Datetime_StillKeepsRecordsThatHaveNoTemporalValue",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItems_OpenEndedDatetime_BoundsTheRecordOnOneSideOnly",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItems_QMatchesThePrefixedRecordId",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItems_QMatchesTheRecordTitle"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItems_QMatchesTheRecordTitle",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.RecordsLandingAndLimitTests.GetItems_WithLimitAboveMaximum_PagingLinksCarryTheClampedLimit",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.RecordsLandingAndLimitTests.GetItems_WithLimitAboveMaximum_ServesTheMaximumInsteadOfRejecting"
       ],
       "proof_ledger_surface": "ogc-api-records",
       "maturity": "implemented",
@@ -7769,7 +7772,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetItem_WithLayerRecordId_ReturnsRecordLinks",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetItem_WithRetiredProtocolSibling_OmitsInactiveProtocolLink",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetItem_WithUnknownRecordId_ReturnsNotFound",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItem_ReturnsTheDistinctTitleRatherThanTheName"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItem_ReturnsTheDistinctTitleRatherThanTheName",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.RecordsLandingAndLimitTests.GetItem_ServiceRecord_ListsEachLayerIdOnce"
       ],
       "proof_ledger_surface": "ogc-api-records",
       "maturity": "implemented",
@@ -7785,6 +7789,22 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsDepthTests.Metadata_FormatParameter_SupportsHtmlAndRejectsUnknown",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetConformance_ReturnsImplementedRecordsClasses"
+      ],
+      "proof_ledger_surface": "ogc-api-records",
+      "maturity": "implemented",
+      "capability": "serve.ogc-api-records"
+    },
+    {
+      "id": "get-ogc-records-openapi-json",
+      "route": "/ogc/records/openapi.json",
+      "method": "GET",
+      "family": "OGC API Records",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.RecordsLandingAndLimitTests.GetApiDefinition_DescribesRecordsPaths_AndAdvertisesTheEnforcedLimitBounds",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.GlobalControlPlaneEndpoints_AreMarkedTenantIndependent",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.OpenApiDocuments_OidcEnabled_TenantlessValidBearer_ContinuePastTenantResolution"
       ],
       "proof_ledger_surface": "ogc-api-records",
       "maturity": "implemented",

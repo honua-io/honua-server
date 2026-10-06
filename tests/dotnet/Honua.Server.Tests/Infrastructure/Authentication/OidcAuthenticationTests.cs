@@ -734,6 +734,7 @@ public class OidcAuthenticationTests
     [Endpoint("GET /ogc/maps/openapi.json")]
     [Endpoint("GET /ogc/styles/openapi.json")]
     [Endpoint("GET /ogc/processes/openapi.json")]
+    [Endpoint("GET /ogc/records/openapi.json")]
     [Endpoint("GET /stac/openapi.json")]
     public void GlobalControlPlaneEndpoints_AreMarkedTenantIndependent()
     {
@@ -765,6 +766,7 @@ public class OidcAuthenticationTests
             "/ogc/maps/openapi.json",
             "/ogc/styles/openapi.json",
             "/ogc/processes/openapi.json",
+            "/ogc/records/openapi.json",
             "/stac/openapi.json"
         })
         {
@@ -1090,6 +1092,7 @@ public class OidcAuthenticationTests
     [Endpoint("GET /ogc/maps/openapi.json")]
     [Endpoint("GET /ogc/styles/openapi.json")]
     [Endpoint("GET /ogc/processes/openapi.json")]
+    [Endpoint("GET /ogc/records/openapi.json")]
     [Endpoint("GET /stac/openapi.json")]
     public async Task OpenApiDocuments_OidcEnabled_TenantlessValidBearer_ContinuePastTenantResolution()
     {
@@ -1111,6 +1114,7 @@ public class OidcAuthenticationTests
             "/ogc/maps/openapi.json",
             "/ogc/styles/openapi.json",
             "/ogc/processes/openapi.json",
+            "/ogc/records/openapi.json",
             "/stac/openapi.json"
         })
         {

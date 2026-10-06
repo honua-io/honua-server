@@ -1336,7 +1336,7 @@ if (serveApiDocs)
 
         ## Explore in this reference (OpenAPI)
         Use the document switcher (top-left) to open any of these:
-        - **OGC API — Features**, **Tiles**, **Maps**, **Coverages**, **Styles**, **Processes**
+        - **OGC API — Features**, **Tiles**, **Maps**, **Coverages**, **Styles**, **Processes**, **Records**
         - **STAC API**
         - **Admin API**
 
@@ -1374,6 +1374,7 @@ if (serveApiDocs)
             .AddDocument("maps", "OGC API Maps", "/ogc/maps/openapi.json")
             .AddDocument("styles", "OGC API Styles", "/ogc/styles/openapi.json")
             .AddDocument("processes", "OGC API Processes", "/ogc/processes/openapi.json")
+            .AddDocument("records", "OGC API Records", "/ogc/records/openapi.json")
             .AddDocument("stac", "STAC API", "/stac/openapi.json")
             .AddDocument("admin", "Admin API", "/api/v1/admin/openapi.json");
     }).WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
