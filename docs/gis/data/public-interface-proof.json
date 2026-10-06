@@ -2421,7 +2421,16 @@
         "ImageServer::GetMultidimensionalInfo",
         "ImageServer::ExecuteAISRequest",
         "ImageServer::ExportImage",
-        "ImageServer::GetImage"
+        "ImageServer::GetImage",
+        "ImageServer::GetCatalogItemCount",
+        "ImageServer::GetCatalogItemIDs",
+        "ImageServer::GetCatalogItems",
+        "ImageServer::GetRasterKeyProperties",
+        "ImageServer::ComputeHistograms",
+        "ImageServer::GetCacheDescriptionInfo",
+        "ImageServer::GetTileCacheInfo",
+        "ImageServer::GetTileImageInfo",
+        "ImageServer::GetImageTile"
       ],
       "proofs": [
         {
