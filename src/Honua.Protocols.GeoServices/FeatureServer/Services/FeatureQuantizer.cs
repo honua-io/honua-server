@@ -125,6 +125,60 @@ internal static class FeatureQuantizer
     }
 
     /// <summary>
+    /// Rebuilds the Esri json featureSet with quantized (integer grid, delta-encoded)
+    /// geometry coordinates and the matching transform, which lets clients recover
+    /// world coordinates.
+    /// </summary>
+    public static QueryResponse Apply(QueryResponse response, QuantizationTransform transform)
+    {
+        ArgumentNullException.ThrowIfNull(response);
+        ArgumentNullException.ThrowIfNull(transform);
+
+        GeoServicesFeature[]? features = response.Features;
+        if (features is { Length: > 0 })
+        {
+            var quantized = new GeoServicesFeature[features.Length];
+            for (var i = 0; i < features.Length; i++)
+            {
+                var feature = features[i];
+                quantized[i] = new GeoServicesFeature
+                {
+                    Attributes = feature.Attributes,
+                    Geometry = feature.Geometry is { } geometry ? Quantize(geometry, transform) : null,
+                    Centroid = feature.Centroid is { } centroid ? Quantize(centroid, transform) : null,
+                    IncludeGeometry = feature.IncludeGeometry,
+                };
+            }
+
+            features = quantized;
+        }
+
+        return new QueryResponse
+        {
+            GeometryType = response.GeometryType,
+            SpatialReference = response.SpatialReference,
+            DisplayFieldName = response.DisplayFieldName,
+            Fields = response.Fields,
+            HasZ = response.HasZ,
+            HasM = response.HasM,
+            ObjectIdFieldName = response.ObjectIdFieldName,
+            ObjectIds = response.ObjectIds,
+            Count = response.Count,
+            Extent = response.Extent,
+            UniqueIdField = response.UniqueIdField,
+            GlobalIdFieldName = response.GlobalIdFieldName,
+            Features = features,
+            ExceededTransferLimit = response.ExceededTransferLimit,
+            Transform = new GeoServicesTransform
+            {
+                OriginPosition = transform.OriginPosition,
+                Scale = [transform.ScaleX, transform.ScaleY],
+                Translate = [transform.TranslateX, transform.TranslateY],
+            },
+        };
+    }
+
+    /// <summary>
     /// Returns a copy of <paramref name="geometry"/> with its coordinates quantized to the
     /// integer grid and delta-encoded per ring/path. Only the X/Y ordinates are quantized;
     /// envelope geometries and null geometries are returned unchanged.
