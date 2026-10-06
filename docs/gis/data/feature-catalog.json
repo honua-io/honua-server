@@ -18576,6 +18576,7 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Post_TenantBoundBearerToolCall_UsesResolvedTenantAndSucceeds",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Post_TenantlessBearerResourceRead_IsDeniedBeforeHandlerLookup",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Post_TenantlessBearerToolCall_IsDeniedBeforeToolExecution",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Post_ToolCallAfterSessionApiKeyIsRevoked_EchoesRequestIdInAuthenticationError",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Post_WithExpiredBearer_Returns401",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Post_WithInvalidSignatureBearer_Returns401WithChallengeAndStructuredError",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Post_WithTokenForDifferentAudience_Returns401",
