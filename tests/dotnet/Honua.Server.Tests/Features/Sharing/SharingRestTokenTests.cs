@@ -4,8 +4,10 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Authentication;
 using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -34,6 +36,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     private const string AdminPassword = WebAppFixture.SharedAdminPassword + "--opaque";
     private const string TokenEndpoint = "/sharing/rest/generateToken";
     private const string SecureRefererA = "https://app.example.com/maps/";
+    private const string OtherReferer = "https://other.example.com/maps/";
     private const string ProtectedServiceId = "portal-token-protected";
 
     // The in-process WebApplicationFactory transport leaves Connection.RemoteIpAddress
@@ -64,6 +67,9 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
                 // Allow the in-process test transport to issue tokens; production
                 // defaults remain RequireHttps=true.
                 builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
+                // Re-check a token's backing credential on every request so a revocation is
+                // observable immediately instead of after the revalidation window.
+                builder.UseSetting("Authentication:PortalToken:SourceRevalidationSeconds", "0");
                 builder.UseSetting("Cors:AllowedOrigins:0", "http://localhost:3000");
                 builder.ConfigureServices(services =>
                     services.AddSingleton<IStartupFilter>(new RemoteIpStartupFilter(ClientIp)));
@@ -442,12 +448,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
         var portalToken = await IssueTokenAsync(
             client, ("client", "referer"), ("referer", SecureRefererA));
 
-        using var response = await PostFormAsync(client,
-            ("token", portalToken),
-            ("serverUrl", "https://server.example.com/services"),
-            ("client", "referer"),
-            ("referer", SecureRefererA),
-            ("f", "json"));
+        using var response = await ExchangePortalTokenAsync(client, portalToken, SecureRefererA);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var serverToken = await ReadTokenPayloadAsync(response);
@@ -475,6 +476,120 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
             ("f", "json"));
 
         await response.AssertGeoServicesErrorAsync(498);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/generateToken")]
+    public async Task GenerateToken_ExchangePresentedFromAnotherReferer_Returns498_Issue5491()
+    {
+        // The exchange authenticates with the presented token, so the token must be usable
+        // from this request exactly as on any other request. A token bound to referer A
+        // cannot be replayed from referer B to mint a token bound to B.
+        using var client = _fixture.CreateClient();
+        var portalToken = await IssueTokenAsync(
+            client, ("client", "referer"), ("referer", SecureRefererA));
+
+        using var response = await ExchangePortalTokenAsync(client, portalToken, OtherReferer);
+
+        await response.AssertGeoServicesErrorAsync(498);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/generateToken")]
+    public async Task GenerateToken_ExchangeOnRequestAuthenticatedByAnotherCredential_ChecksTokenBinding_Issue5491()
+    {
+        // A request the caller authenticates with their own credential skips the portal-token
+        // handler, so the exchange itself must hold the presented token to its binding: a
+        // read-only key holder replaying another principal's referer-bound token from a
+        // different referer must not mint a token for that principal.
+        var store = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var callerKey = await store.CreateAsync("exchange-caller", ["read:" + ProtectedServiceId],
+            DateTimeOffset.UtcNow.AddMinutes(30), "test", CancellationToken.None);
+        using var client = _fixture.CreateClient();
+        var portalToken = await IssueTokenAsync(
+            client, ("client", "referer"), ("referer", SecureRefererA));
+
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["token"] = portalToken,
+            ["serverUrl"] = "https://server.example.com/services",
+            ["client"] = "referer",
+            ["referer"] = OtherReferer,
+            ["f"] = "json",
+        });
+        using var request = new HttpRequestMessage(HttpMethod.Post, TokenEndpoint) { Content = content };
+        request.Headers.Referrer = new Uri(OtherReferer);
+        request.Headers.TryAddWithoutValidation("X-API-Key", callerKey.Key);
+        using var response = await client.SendAsync(request);
+
+        await response.AssertGeoServicesErrorAsync(498);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/generateToken")]
+    public async Task GenerateToken_ExchangePresentedFromAnotherIp_Returns498_Issue5491()
+    {
+        // generateToken always binds an IP token to the caller's own address, so mint one
+        // bound to another address directly; the request comes from the fixture's client IP.
+        var issuer = _fixture.Services.GetRequiredService<IPortalTokenIssuer>();
+        var portalToken = await issuer.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: "admin",
+                DisplayName: null,
+                TenantId: null,
+                Roles: ["admin"],
+                ClientType: PortalTokenClientType.Ip,
+                BindingValue: "198.51.100.20",
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30)),
+            CancellationToken.None);
+        using var client = _fixture.CreateClient();
+
+        using var response = await PostFormAsync(client,
+            ("token", portalToken.Token),
+            ("serverUrl", "https://server.example.com/services"),
+            ("client", "requestip"),
+            ("f", "json"));
+
+        await response.AssertGeoServicesErrorAsync(498);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/generateToken")]
+    public async Task GenerateToken_ExchangedTokenFromManagedKey_StopsWhenKeyIsRevoked_Issue5491()
+    {
+        var store = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var issuer = _fixture.Services.GetRequiredService<IPortalTokenIssuer>();
+        var key = await store.CreateAsync("exchange-source", ["admin:*"],
+            DateTimeOffset.UtcNow.AddMinutes(30), "test", CancellationToken.None);
+        using var client = _fixture.CreateClient();
+
+        using var portalResponse = await PostFormAsync(client,
+            ("username", "admin"),
+            ("password", key.Key),
+            ("client", "referer"),
+            ("referer", SecureRefererA),
+            ("f", "json"));
+        portalResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var portalToken = (await ReadTokenPayloadAsync(portalResponse)).Token;
+
+        using var exchangeResponse = await ExchangePortalTokenAsync(client, portalToken, SecureRefererA);
+        exchangeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var serverToken = (await ReadTokenPayloadAsync(exchangeResponse)).Token;
+
+        var binding = new PortalTokenBinding(SecureRefererA, null);
+        (await issuer.ValidateAsync(serverToken, binding, CancellationToken.None))
+            .Should().NotBeNull("the key behind the portal token is live");
+
+        await store.RevokeAsync(key.Record.Id, CancellationToken.None);
+
+        (await issuer.ValidateAsync(portalToken, binding, CancellationToken.None))
+            .Should().BeNull("the key the portal token was minted from was revoked");
+        (await issuer.ValidateAsync(serverToken, binding, CancellationToken.None))
+            .Should().BeNull("a token exchanged from that portal token is backed by the same key");
     }
 
     [IntegrationTest]
@@ -599,6 +714,24 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     {
         using var content = new FormUrlEncodedContent(pairs.Select(p => new KeyValuePair<string, string>(p.Key, p.Value)));
         return await client.PostAsync(TokenEndpoint, content);
+    }
+
+    private static async Task<HttpResponseMessage> ExchangePortalTokenAsync(
+        HttpClient client,
+        string portalToken,
+        string referer)
+    {
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["token"] = portalToken,
+            ["serverUrl"] = "https://server.example.com/services",
+            ["client"] = "referer",
+            ["referer"] = referer,
+            ["f"] = "json",
+        });
+        using var request = new HttpRequestMessage(HttpMethod.Post, TokenEndpoint) { Content = content };
+        request.Headers.Referrer = new Uri(referer);
+        return await client.SendAsync(request);
     }
 
     private static string BuildQuery(params (string Key, string Value)[] pairs)

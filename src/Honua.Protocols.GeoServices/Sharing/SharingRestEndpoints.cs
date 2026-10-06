@@ -290,24 +290,25 @@ public static class SharingRestEndpoints
             PortalTokenLog.CredentialsFromQueryString(logger);
         }
 
-        PortalTokenIntrospection? sourceToken = null;
-        if (!string.IsNullOrWhiteSpace(portalToken) && !string.IsNullOrWhiteSpace(serverUrl))
+        // Federated exchange (#5491): a client signed in to the portal trades its portal token
+        // for one scoped to this server by presenting the token with the server's URL in place
+        // of a username and password.
+        var exchangeRequested = !string.IsNullOrWhiteSpace(portalToken) || !string.IsNullOrWhiteSpace(serverUrl);
+        if (exchangeRequested)
         {
-            if (!Uri.TryCreate(serverUrl, UriKind.Absolute, out _))
+            if (string.IsNullOrWhiteSpace(portalToken) || string.IsNullOrWhiteSpace(serverUrl))
             {
-                return StandardErrorHelpers.CreateBadRequest(context, "A valid absolute 'serverUrl' is required.");
+                PortalTokenLog.TokenIssuanceRejected(logger, "incomplete token exchange");
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Both 'token' and 'serverUrl' are required for token exchange.");
             }
 
-            sourceToken = await tokenIssuer.IntrospectAsync(portalToken, context.RequestAborted).ConfigureAwait(false);
-            if (sourceToken is null)
+            if (!Uri.TryCreate(serverUrl, UriKind.Absolute, out _))
             {
-                context.Items[PortalTokenAuthenticationExtensions.AuthenticationFailureKey] = true;
-                return StandardErrorHelpers.CreateInvalidToken(context);
+                PortalTokenLog.TokenIssuanceRejected(logger, "invalid server url");
+                return StandardErrorHelpers.CreateBadRequest(context, "A valid absolute 'serverUrl' is required.");
             }
-        }
-        else if (!string.IsNullOrWhiteSpace(portalToken) || !string.IsNullOrWhiteSpace(serverUrl))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context, "Both 'token' and 'serverUrl' are required for token exchange.");
         }
         else if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
         {
@@ -328,10 +329,43 @@ public static class SharingRestEndpoints
                     : "Client IP could not be determined for an 'ip' binding.");
         }
 
-        var verified = sourceToken is null
-            ? await credentialVerifier.VerifyAsync(username!, password!, context.RequestAborted).ConfigureAwait(false)
-            : null;
-        if (sourceToken is null && verified is null)
+        var ttlMinutes = ResolveExpirationMinutes(expirationMinutes, settings);
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(ttlMinutes);
+
+        if (exchangeRequested)
+        {
+            // The presented token is the credential here, so the issuer checks it against this
+            // request's binding exactly as the authentication handler would, and derives the new
+            // token from the stored token rather than from a fresh credential check.
+            var exchange = await tokenIssuer.ExchangeAsync(
+                new PortalTokenExchangeRequest(
+                    Token: portalToken!,
+                    PresentedBinding: new PortalTokenBinding(
+                        Referer: context.Request.Headers.Referer.FirstOrDefault(),
+                        ClientIp: context.Connection.RemoteIpAddress?.ToString()),
+                    ClientType: clientType,
+                    BindingValue: binding,
+                    ExpiresAt: expiresAt),
+                context.RequestAborted).ConfigureAwait(false);
+            if (exchange is null)
+            {
+                PortalTokenLog.TokenIssuanceRejected(logger, "invalid token");
+                context.Items[PortalTokenAuthenticationExtensions.AuthenticationFailureKey] = true;
+                return StandardErrorHelpers.CreateInvalidToken(context);
+            }
+
+            return CreateGenerateTokenResponse(
+                logger,
+                exchange.PrincipalId,
+                exchange.TenantId,
+                clientType,
+                exchange.Issuance);
+        }
+
+        var verified = await credentialVerifier
+            .VerifyAsync(username!, password!, context.RequestAborted)
+            .ConfigureAwait(false);
+        if (verified is null)
         {
             PortalTokenLog.TokenIssuanceRejected(logger, "invalid credentials");
             return StandardErrorHelpers.CreateBadRequest(
@@ -339,50 +373,53 @@ public static class SharingRestEndpoints
                 "Unable to generate token.");
         }
 
-        var ttlMinutes = ResolveExpirationMinutes(expirationMinutes, settings);
-        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(ttlMinutes);
-        if (sourceToken is not null && sourceToken.ExpiresAt < expiresAt)
-        {
-            expiresAt = sourceToken.ExpiresAt;
-        }
-
         var issuance = await tokenIssuer.IssueAsync(
             new PortalTokenIssueRequest(
-                PrincipalId: sourceToken?.PrincipalId ?? verified!.PrincipalId,
-                DisplayName: verified?.DisplayName,
-                TenantId: sourceToken?.TenantId ?? verified?.TenantId ?? tenantContext.TenantId,
-                Roles: sourceToken?.Roles ?? verified!.Roles,
+                PrincipalId: verified.PrincipalId,
+                DisplayName: verified.DisplayName,
+                TenantId: verified.TenantId ?? tenantContext.TenantId,
+                Roles: verified.Roles,
                 ClientType: clientType,
                 BindingValue: binding,
                 ExpiresAt: expiresAt,
                 // Carry the verifier's provenance so the issued token's roles are revalidated
                 // against the live claims-mapping entitlement on every restore, rather than
                 // outliving it for the token's whole lifetime (honua-server#2997 review).
-                RolesRequireClaimsMappingEntitlement: verified?.RolesRequireClaimsMappingEntitlement ?? false,
+                RolesRequireClaimsMappingEntitlement: verified.RolesRequireClaimsMappingEntitlement,
                 // Same for the tenant: only the verifier's OWN tenant can carry mapping
                 // provenance. When it supplied none and the ambient tenant rail is used
                 // instead, that value never touched claims mapping.
                 TenantRequiresClaimsMappingEntitlement:
-                    verified is not null &&
-                    verified.TenantId is not null &&
-                    verified.TenantRequiresClaimsMappingEntitlement,
-                RolesWithoutClaimsMapping: verified?.RolesWithoutClaimsMapping ?? sourceToken?.Roles,
+                    verified.TenantId is not null && verified.TenantRequiresClaimsMappingEntitlement,
+                RolesWithoutClaimsMapping: verified.RolesWithoutClaimsMapping,
                 // Carry the verified credential so the issuer clamps this token's lifetime to
                 // that credential's own expiry and re-checks it on every restore, instead of
                 // leaving the token valid after the credential stops being (SEC-9).
-                Source: verified?.Source ?? new PortalCredentialSource(
-                    PortalCredentialSourceKind.FederatedToken,
-                    Reference: sourceToken!.PrincipalId,
-                    ExpiresAt: sourceToken.ExpiresAt)),
+                Source: verified.Source),
             context.RequestAborted).ConfigureAwait(false);
 
+        return CreateGenerateTokenResponse(
+            logger,
+            verified.PrincipalId,
+            verified.TenantId ?? tenantContext.TenantId,
+            clientType,
+            issuance);
+    }
+
+    private static IResult CreateGenerateTokenResponse(
+        ILogger<SharingRestLog> logger,
+        string principalId,
+        string? tenantId,
+        PortalTokenClientType clientType,
+        PortalTokenIssuance issuance)
+    {
         if (logger.IsEnabled(LogLevel.Information))
         {
 #pragma warning disable CA1873 // LogValueRedactor.Hash / ToString only invoked inside the IsEnabled gate above
             PortalTokenLog.TokenIssued(
                 logger,
-                LogValueRedactor.Hash(sourceToken?.PrincipalId ?? verified!.PrincipalId),
-                LogValueRedactor.Hash(sourceToken?.TenantId ?? verified?.TenantId ?? tenantContext.TenantId ?? string.Empty),
+                LogValueRedactor.Hash(principalId),
+                LogValueRedactor.Hash(tenantId ?? string.Empty),
                 clientType.ToString(),
                 issuance.ExpiresAt);
 #pragma warning restore CA1873
