@@ -253,7 +253,7 @@ public static class SharingRestEndpoints
             return entitlementFailure;
         }
 
-        var (username, password, clientType, refererInput, expirationMinutes, _, formatValid) =
+        var (username, password, portalToken, serverUrl, clientType, refererInput, expirationMinutes, _, formatValid) =
             await ReadParametersAsync(context).ConfigureAwait(false);
 
         // Detect whether credentials arrived via query string (GET or non-form POST). This is
@@ -290,7 +290,26 @@ public static class SharingRestEndpoints
             PortalTokenLog.CredentialsFromQueryString(logger);
         }
 
-        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
+        PortalTokenIntrospection? sourceToken = null;
+        if (!string.IsNullOrWhiteSpace(portalToken) && !string.IsNullOrWhiteSpace(serverUrl))
+        {
+            if (!Uri.TryCreate(serverUrl, UriKind.Absolute, out _))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "A valid absolute 'serverUrl' is required.");
+            }
+
+            sourceToken = await tokenIssuer.IntrospectAsync(portalToken, context.RequestAborted).ConfigureAwait(false);
+            if (sourceToken is null)
+            {
+                context.Items[PortalTokenAuthenticationExtensions.AuthenticationFailureKey] = true;
+                return StandardErrorHelpers.CreateInvalidToken(context);
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(portalToken) || !string.IsNullOrWhiteSpace(serverUrl))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Both 'token' and 'serverUrl' are required for token exchange.");
+        }
+        else if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
         {
             PortalTokenLog.TokenIssuanceRejected(logger, "missing credentials");
             return StandardErrorHelpers.CreateBadRequest(
@@ -309,10 +328,10 @@ public static class SharingRestEndpoints
                     : "Client IP could not be determined for an 'ip' binding.");
         }
 
-        var verified = await credentialVerifier
-            .VerifyAsync(username!, password!, context.RequestAborted)
-            .ConfigureAwait(false);
-        if (verified is null)
+        var verified = sourceToken is null
+            ? await credentialVerifier.VerifyAsync(username!, password!, context.RequestAborted).ConfigureAwait(false)
+            : null;
+        if (sourceToken is null && verified is null)
         {
             PortalTokenLog.TokenIssuanceRejected(logger, "invalid credentials");
             return StandardErrorHelpers.CreateBadRequest(
@@ -322,30 +341,39 @@ public static class SharingRestEndpoints
 
         var ttlMinutes = ResolveExpirationMinutes(expirationMinutes, settings);
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(ttlMinutes);
+        if (sourceToken is not null && sourceToken.ExpiresAt < expiresAt)
+        {
+            expiresAt = sourceToken.ExpiresAt;
+        }
 
         var issuance = await tokenIssuer.IssueAsync(
             new PortalTokenIssueRequest(
-                PrincipalId: verified.PrincipalId,
-                DisplayName: verified.DisplayName,
-                TenantId: verified.TenantId ?? tenantContext.TenantId,
-                Roles: verified.Roles,
+                PrincipalId: sourceToken?.PrincipalId ?? verified!.PrincipalId,
+                DisplayName: verified?.DisplayName,
+                TenantId: sourceToken?.TenantId ?? verified?.TenantId ?? tenantContext.TenantId,
+                Roles: sourceToken?.Roles ?? verified!.Roles,
                 ClientType: clientType,
                 BindingValue: binding,
                 ExpiresAt: expiresAt,
                 // Carry the verifier's provenance so the issued token's roles are revalidated
                 // against the live claims-mapping entitlement on every restore, rather than
                 // outliving it for the token's whole lifetime (honua-server#2997 review).
-                RolesRequireClaimsMappingEntitlement: verified.RolesRequireClaimsMappingEntitlement,
+                RolesRequireClaimsMappingEntitlement: verified?.RolesRequireClaimsMappingEntitlement ?? false,
                 // Same for the tenant: only the verifier's OWN tenant can carry mapping
                 // provenance. When it supplied none and the ambient tenant rail is used
                 // instead, that value never touched claims mapping.
                 TenantRequiresClaimsMappingEntitlement:
-                    verified.TenantId is not null && verified.TenantRequiresClaimsMappingEntitlement,
-                RolesWithoutClaimsMapping: verified.RolesWithoutClaimsMapping,
+                    verified is not null &&
+                    verified.TenantId is not null &&
+                    verified.TenantRequiresClaimsMappingEntitlement,
+                RolesWithoutClaimsMapping: verified?.RolesWithoutClaimsMapping ?? sourceToken?.Roles,
                 // Carry the verified credential so the issuer clamps this token's lifetime to
                 // that credential's own expiry and re-checks it on every restore, instead of
                 // leaving the token valid after the credential stops being (SEC-9).
-                Source: verified.Source),
+                Source: verified?.Source ?? new PortalCredentialSource(
+                    PortalCredentialSourceKind.FederatedToken,
+                    Reference: sourceToken!.PrincipalId,
+                    ExpiresAt: sourceToken.ExpiresAt)),
             context.RequestAborted).ConfigureAwait(false);
 
         if (logger.IsEnabled(LogLevel.Information))
@@ -353,8 +381,8 @@ public static class SharingRestEndpoints
 #pragma warning disable CA1873 // LogValueRedactor.Hash / ToString only invoked inside the IsEnabled gate above
             PortalTokenLog.TokenIssued(
                 logger,
-                LogValueRedactor.Hash(verified.PrincipalId),
-                LogValueRedactor.Hash(verified.TenantId ?? tenantContext.TenantId ?? string.Empty),
+                LogValueRedactor.Hash(sourceToken?.PrincipalId ?? verified!.PrincipalId),
+                LogValueRedactor.Hash(sourceToken?.TenantId ?? verified?.TenantId ?? tenantContext.TenantId ?? string.Empty),
                 clientType.ToString(),
                 issuance.ExpiresAt);
 #pragma warning restore CA1873
@@ -787,6 +815,8 @@ public static class SharingRestEndpoints
     {
         string? username;
         string? password;
+        string? portalToken;
+        string? serverUrl;
         string? clientRaw;
         string? refererInput;
         string? expirationRaw;
@@ -797,6 +827,8 @@ public static class SharingRestEndpoints
             var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
             username = ReadFirst(form["username"]);
             password = ReadFirst(form["password"]);
+            portalToken = ReadFirst(form["token"]);
+            serverUrl = ReadFirst(form["serverUrl"]);
             clientRaw = ReadFirst(form["client"]);
             refererInput = ReadFirst(form["referer"]);
             expirationRaw = ReadFirst(form["expiration"]);
@@ -806,6 +838,8 @@ public static class SharingRestEndpoints
         {
             username = ReadFirst(context.Request.Query["username"]);
             password = ReadFirst(context.Request.Query["password"]);
+            portalToken = ReadFirst(context.Request.Query["token"]);
+            serverUrl = ReadFirst(context.Request.Query["serverUrl"]);
             clientRaw = ReadFirst(context.Request.Query["client"]);
             refererInput = ReadFirst(context.Request.Query["referer"]);
             expirationRaw = ReadFirst(context.Request.Query["expiration"]);
@@ -828,6 +862,8 @@ public static class SharingRestEndpoints
         return new GenerateTokenInputs(
             username,
             password,
+            portalToken,
+            serverUrl,
             clientType,
             refererInput,
             expirationMinutes,
@@ -918,6 +954,8 @@ public static class SharingRestEndpoints
     private readonly record struct GenerateTokenInputs(
         string? Username,
         string? Password,
+        string? PortalToken,
+        string? ServerUrl,
         PortalTokenClientType ClientType,
         string? RefererInput,
         int? ExpirationMinutes,
