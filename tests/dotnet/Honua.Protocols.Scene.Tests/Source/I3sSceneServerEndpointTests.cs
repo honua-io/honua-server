@@ -478,7 +478,9 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        json.RootElement.GetProperty("nodes").GetArrayLength().Should().BeGreaterThan(0);
+        var nodes = json.RootElement.GetProperty("nodes");
+        nodes.GetArrayLength().Should().BeGreaterThan(0);
+        nodes[0].GetProperty("index").GetInt32().Should().Be(0);
     }
 
     [IntegrationTest]
