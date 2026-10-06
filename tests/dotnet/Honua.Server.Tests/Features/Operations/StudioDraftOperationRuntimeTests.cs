@@ -89,7 +89,7 @@ public sealed class StudioDraftOperationRuntimeTests
             });
         lifecycle.CreatePublicationRequestAsync(
                 itemId, versionId, versionId, Arg.Any<StudioPublicationIntent?>(), Arg.Any<string?>(),
-                Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<string?>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(new StudioPublicationRequest
             {
                 RequestId = Guid.NewGuid(),
@@ -299,7 +299,14 @@ public sealed class StudioDraftOperationRuntimeTests
 
         proposal.Operation.Status.Should().Be(OperationHandleStatus.RequiresApproval);
         proposal.Operation.ProposalId.Should().Be("proposal-studio");
+        proposal.Operation.ResourceIds.Should().ContainKey("requestId");
+        Guid.TryParse(proposal.Operation.ResourceIds["requestId"], out var publicationRequestId)
+            .Should().BeTrue();
         bridge.Request!.OperationId.Should().Be(StudioDraftOperations.CreatePublicationRequest);
+        var proposalPayload = JsonSerializer.Deserialize(
+            bridge.Request.Parameters[StudioDraftOperations.PayloadParameter],
+            StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload);
+        proposalPayload!.RequestId.Should().Be(publicationRequestId);
         (await store.GetPointersAsync(saved.ItemId))!.PublishedVersionId.Should().BeNull(
             "a proposal must never move the published pointer before a separate principal approves it");
 
