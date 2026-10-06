@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Security.Claims;
+using System.Text.Json;
 using FluentAssertions;
 using Grpc.Core;
 using Honua.Core.Configuration;
@@ -11,6 +12,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -106,6 +108,90 @@ public sealed class GrpcFeatureServiceTests
         }
 
         return cases;
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task SRV_GRPC_001_QueryFeatures_SourceBackedPublication_UsesRoutedReader()
+    {
+        var routedReader = Substitute.For<IFeatureReader>();
+        routedReader.QueryAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, [Feature.Create(42, null)]));
+        var provider = Substitute.For<IFeatureDataProvider>();
+        provider.ProviderName.Returns(DataProviderNames.Postgis);
+        provider.Capabilities.Returns(FeatureProviderCapabilities.ReadOnlyAnalytical);
+        provider.Reader.Returns(routedReader);
+
+        var resource = CreateResource("source") with { StorageBindingIds = ["source-binding"] };
+        var service = CreateService("source");
+        var publication = CreateTriple(service, resource).Publication with
+        {
+            StorageBindingId = "source-binding"
+        };
+        var binding = new MetadataV2StorageBinding
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "source-binding", Name = "source-binding" },
+            ResourceId = resource.Metadata.Id,
+            StorageType = MetadataV2StorageType.RelationalTable,
+            Locator = "public.source_features",
+            StorageLayerId = 7,
+            Options = new Dictionary<string, JsonElement>
+            {
+                [FeatureStorageMapping.SourceBackedOption] = JsonSerializer.SerializeToElement(true)
+            }
+        };
+        var snapshot = new MetadataV2GraphSnapshot(
+            new MetadataV2Graph
+            {
+                Revision = 1,
+                Environment = "test",
+                Resources = [resource],
+                StorageBindings = [binding],
+                Services = [service],
+                Publications = [publication]
+            },
+            "source-test",
+            DateTimeOffset.UtcNow);
+        var graphProvider = Substitute.For<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>();
+#pragma warning disable CA2012 // NSubstitute setup for a ValueTask-returning member.
+        graphProvider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(new ValueTask<MetadataV2GraphSnapshot>(snapshot));
+#pragma warning restore CA2012
+        var router = new FeatureProviderQueryRouter(
+            Substitute.For<ISecureConnectionRegistry>(),
+            new FeatureDataProviderRegistry([provider]));
+        var validator = Substitute.For<IResourceValidator>();
+        validator.ValidateServiceLayerV2Async("source", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(new MetadataV2ServiceLayerTriple(service, publication, resource)
+            {
+                StorageLayerId = 7
+            }));
+        var sut = new HonuaFeatureService(
+            validator, _featureReader, _featureWriter, _streamingStore,
+            new CommonQueryValidator(Options.Create(new LimitsOptions())),
+            new SpatialReferenceResolver(_crsDetectionService, _crsRegistry),
+            new FeatureMutationEventService(_featureChangeEventPublisher, outboxCapabilityProvider: _outboxCapabilityProvider),
+            Options.Create(new LimitsOptions()),
+            Options.Create(new GrpcOptions()),
+            router,
+            graphProvider,
+            NullLogger<HonuaFeatureService>.Instance,
+            new GrpcApplyEditsIdempotencyStore());
+
+        var response = await sut.QueryFeatures(
+            new Proto.QueryFeaturesRequest { ServiceId = "source", LayerId = 0 },
+            CreateCallContext());
+
+        response.Features.Should().ContainSingle();
+        await routedReader.Received(1).QueryAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        await _featureReader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+
+        var edit = async () => await sut.ApplyEdits(
+            new Proto.ApplyEditsRequest { ServiceId = "source", LayerId = 0 },
+            CreateCallContext());
+        var exception = await edit.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+        await _featureWriter.DidNotReceive().ApplyEditsAsync(
+            Arg.Any<int>(), Arg.Any<FeatureEditBatch>(), Arg.Any<CancellationToken>());
     }
 
     [Theory]
@@ -1405,6 +1491,30 @@ public sealed class GrpcFeatureServiceTests
         writer.Pages.Should().HaveCount(1);
         writer.Pages[0].IsLastPage.Should().BeTrue();
         writer.Pages[0].Features.Should().HaveCount(1000);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeaturesStream")]
+    public async Task SRV_GRPC_002_QueryFeaturesStream_WithoutRequestedCount_HasNoQueryLimit()
+    {
+        FeatureQuery? capturedQuery = null;
+        _streamingStore
+            .StreamFeaturesAsync(0, Arg.Do<FeatureQuery>(query => capturedQuery = query), Arg.Any<CancellationToken>())
+            .Returns(AsyncEnumerable.Empty<Feature>());
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0
+        };
+
+        await _sut.QueryFeaturesStream(
+            request,
+            new TestServerStreamWriter<Proto.FeaturePage>(),
+            CreateCallContext());
+
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.Limit.Should().BeNull();
     }
 
     [UnitTest]
