@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Protocols.Scene.I3s;
@@ -29,6 +30,49 @@ public sealed class I3sSceneServiceBuilderTests
     // (read from the tileset's root bounding volume) rather than being passed as
     // separate height parameters.
     private static readonly SceneExtent ExtentWithZ = new(-122.5, 37.7, -122.4, 37.8, ZMin: 0.0, ZMax: 100.0);
+
+    [UnitTest]
+    public void Issue5443_LayerDocument_ConformsToI3s17ThreeDSceneLayer()
+    {
+        var layer = I3sSceneServiceBuilder.BuildLayer(Scene, ExtentWithZ, advertiseNodePages: true);
+        var document = JsonSerializer.SerializeToElement(
+            layer,
+            I3sServingJsonContext.Default.I3sSceneLayerDocument);
+
+        document.GetProperty("capabilities").EnumerateArray()
+            .Select(value => value.GetString()).Should().Contain("View");
+
+        var nodePages = document.GetProperty("nodePages");
+        nodePages.GetProperty("nodesPerPage").GetInt32().Should().BePositive();
+        document.GetProperty("store").TryGetProperty("nodePages", out _).Should().BeFalse();
+
+        var schema = document.GetProperty("store").GetProperty("defaultGeometrySchema");
+        schema.GetProperty("topology").GetString().Should().Be("PerAttributeArray");
+        schema.GetProperty("header").GetArrayLength().Should().BePositive();
+        schema.GetProperty("ordering").GetArrayLength().Should().BePositive();
+        schema.GetProperty("vertexAttributes").GetProperty("position")
+            .GetProperty("valueType").GetString().Should().Be("Float32");
+        schema.GetProperty("featureAttributeOrder").GetArrayLength().Should().BePositive();
+        schema.GetProperty("featureAttributes").GetProperty("faceRange")
+            .GetProperty("valuesPerElement").GetInt32().Should().Be(2);
+
+        document.GetProperty("attributeStorageInfo")[0].GetProperty("header")
+            .GetArrayLength().Should().BePositive();
+
+        var geometry = document.GetProperty("geometryDefinitions")[0];
+        geometry.GetProperty("topology").GetString().Should().Be("triangle");
+        var geometryBuffer = geometry.GetProperty("geometryBuffers")[0];
+        geometryBuffer.GetProperty("offset").GetInt32().Should().Be(8);
+        geometryBuffer.GetProperty("featureId").GetProperty("binding")
+            .GetString().Should().Be("per-feature");
+        geometryBuffer.GetProperty("faceRange").GetProperty("binding")
+            .GetString().Should().Be("per-feature");
+
+        document.GetProperty("materialDefinitions")[0].GetProperty("alphaMode")
+            .GetString().Should().Be("opaque");
+        document.GetProperty("textureSetDefinitions")[0].GetProperty("formats")[0]
+            .GetProperty("format").GetString().Should().Be("jpg");
+    }
 
     [UnitTest]
     public void BuildLayer_WithExtent_MapsToWgs84ThreeDObjectLayer()

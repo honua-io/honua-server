@@ -491,7 +491,7 @@ internal static partial class I3sSceneServerEndpoints
         var datasetType = await ResolveDatasetTypeAsync(context, scene, cancellationToken)
             .ConfigureAwait(false);
 
-        // Advertise store.nodePages only when the tileset actually projects to
+        // Advertise layer.nodePages only when the tileset actually projects to
         // fetchable node pages (#1809), so a conformant client never requests a
         // node URL that 404s.
         var advertiseNodePages = I3sNodeStore.TryBuildNodePages(scene, out _);
