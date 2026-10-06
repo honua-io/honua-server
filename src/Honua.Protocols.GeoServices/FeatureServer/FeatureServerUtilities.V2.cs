@@ -774,10 +774,12 @@ internal static partial class FeatureServerEndpoints
                 Id = relationshipId,
                 Name = relationship.Name,
                 RelatedTableId = relatedLayerId,
-                Role = relationship.Role,
+                Role = MapEsriRelationshipRole(relationship.Role),
                 Cardinality = MapEsriCardinality(relationship.Cardinality),
                 Composite = relationship.Composite,
-                KeyField = relationship.OriginField,
+                KeyField = IsDestinationRelationshipRole(relationship.Role)
+                    ? relationship.DestinationField
+                    : relationship.OriginField,
                 OriginKeyField = relationship.OriginField,
                 DestinationKeyField = relationship.DestinationField,
                 Description = relationship.Description
@@ -798,6 +800,28 @@ internal static partial class FeatureServerEndpoints
             "many-to-many" => "esriRelCardinalityManyToMany",
             _ => "esriRelCardinalityOneToMany",
         };
+
+    private static string MapEsriRelationshipRole(string? role)
+    {
+        var value = role?.Trim() ?? string.Empty;
+        if (value.Equals("origin", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("esriRelRoleOrigin", StringComparison.OrdinalIgnoreCase))
+        {
+            return "esriRelRoleOrigin";
+        }
+
+        if (IsDestinationRelationshipRole(value))
+        {
+            return "esriRelRoleDestination";
+        }
+
+        return role ?? string.Empty;
+    }
+
+    private static bool IsDestinationRelationshipRole(string? role)
+        => role?.Trim() is { } value &&
+           (value.Equals("destination", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("esriRelRoleDestination", StringComparison.OrdinalIgnoreCase));
 
     internal static int StableStringHash(string value)
     {
