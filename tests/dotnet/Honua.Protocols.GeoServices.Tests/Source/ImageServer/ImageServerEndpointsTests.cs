@@ -924,7 +924,30 @@ public class ImageServerEndpointsTests
             restfulResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             var restfulContent = await restfulResponse.Content.ReadAsStringAsync();
             restfulContent.Should().Contain($"<ows:Identifier>{serviceId}</ows:Identifier>");
-            restfulContent.Should().Contain("/ImageServer/WMTS/{Layer}/{Style}/{TileMatrixSet}");
+            restfulContent.Should().Contain($"/ImageServer/WMTS/{serviceId}/{{Style}}/{{TileMatrixSet}}");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/WMTS/{**restPath}")]
+    [Operation(Operations.Metadata)]
+    public async Task Issue5522_GetCapabilities_ResourceUrlUsesLiteralLayerIdentifier()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var serviceId = WebAppFixture.TestServiceId;
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{serviceId}/ImageServer/WMTS/1.0.0/WMTSCapabilities.xml");
+
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+            content.Should().Contain($"/ImageServer/WMTS/{serviceId}/{{Style}}/{{TileMatrixSet}}");
+            content.Should().NotContain("/ImageServer/WMTS/{Layer}/");
         }
         finally
         {

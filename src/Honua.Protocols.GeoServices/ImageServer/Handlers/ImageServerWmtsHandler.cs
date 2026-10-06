@@ -823,13 +823,18 @@ internal sealed class ImageServerWmtsHandler(
     {
         var wmtsBaseUrl = BuildWmtsBaseUrl(context);
         var escapedLayer = EscapeXml(layerIdentifier);
-        var escapedBaseUrl = EscapeXml(wmtsBaseUrl);
+        var credentialedBaseUrl = BaseUrlResolver.PreserveToken(context.Request, wmtsBaseUrl);
+        var escapedBaseUrl = EscapeXml(credentialedBaseUrl);
+        var escapedTileBaseUrl = EscapeXml(wmtsBaseUrl);
+        var escapedTokenSuffix = credentialedBaseUrl.Length == wmtsBaseUrl.Length
+            ? string.Empty
+            : EscapeXml(credentialedBaseUrl[wmtsBaseUrl.Length..]);
         var escapedTemplate =
-            $"{escapedBaseUrl}/{{Layer}}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png";
+            $"{escapedTileBaseUrl}/{escapedLayer}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png{escapedTokenSuffix}";
         var escapedJpegTemplate =
-            $"{escapedBaseUrl}/{{Layer}}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.jpg";
+            $"{escapedTileBaseUrl}/{escapedLayer}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.jpg{escapedTokenSuffix}";
         var escapedTiffTemplate =
-            $"{escapedBaseUrl}/{{Layer}}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.tif";
+            $"{escapedTileBaseUrl}/{escapedLayer}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.tif{escapedTokenSuffix}";
 
         var sb = new StringBuilder(8192);
         sb.AppendLine("""<?xml version="1.0" encoding="UTF-8"?>""");

@@ -36,6 +36,24 @@ internal static class BaseUrlResolver
         return request.PathBase.HasValue ? request.PathBase.Value!.TrimEnd('/') : string.Empty;
     }
 
+    /// <summary>
+    /// Carries the request's URL credential onto an advertised operation URL.
+    /// </summary>
+    public static string PreserveToken(HttpRequest request, string url)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(url);
+
+        var token = request.Query["token"].ToString();
+        if (string.IsNullOrEmpty(token))
+        {
+            return url;
+        }
+
+        var separator = url.Contains('?') ? '&' : '?';
+        return string.Concat(url, separator, "token=", Uri.EscapeDataString(token));
+    }
+
     public static bool TryGetConfiguredBaseUrl(HttpContext context, out string baseUrl)
     {
         ArgumentNullException.ThrowIfNull(context);
