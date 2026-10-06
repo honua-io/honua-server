@@ -46,10 +46,49 @@ public sealed class RecordsLandingAndLimitTests : IClassFixture<OgcRecordsEndpoi
         serviceDesc[0].GetProperty("type").GetString().Should().Be("application/vnd.oai.openapi+json;version=3.0");
 
         var href = new Uri(serviceDesc[0].GetProperty("href").GetString()!);
+        href.AbsolutePath.Should().Be("/ogc/records/openapi.json");
         var definition = await _fixture.Client.GetAsync(href.PathAndQuery);
         await AssertOkAsync(definition);
         using var definitionJson = await ReadJsonAsync(definition);
         definitionJson.RootElement.GetProperty("openapi").GetString().Should().StartWith("3.");
+        definitionJson.RootElement.GetProperty("paths").TryGetProperty("/collections/{collectionId}/items", out _)
+            .Should().BeTrue("the linked API definition must describe this API's record search");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/records/openapi.json")]
+    public async Task GetApiDefinition_DescribesRecordsPaths_AndAdvertisesTheEnforcedLimitBounds()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/records/openapi.json");
+        await AssertOkAsync(response);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.oai.openapi+json");
+
+        using var json = await ReadJsonAsync(response);
+        var root = json.RootElement;
+        root.GetProperty("info").GetProperty("title").GetString().Should().Be("Honua OGC API Records");
+        root.GetProperty("servers")[0].GetProperty("url").GetString().Should().EndWith("/ogc/records");
+
+        var paths = root.GetProperty("paths").EnumerateObject().Select(path => path.Name).ToArray();
+        paths.Should().BeEquivalentTo(
+            "/",
+            "/openapi.json",
+            "/conformance",
+            "/collections",
+            "/collections/{collectionId}",
+            "/collections/{collectionId}/items",
+            "/collections/{collectionId}/items/{recordId}");
+
+        var limit = root.GetProperty("paths").GetProperty("/collections/{collectionId}/items")
+            .GetProperty("get").GetProperty("parameters").EnumerateArray()
+            .Single(parameter => parameter.GetProperty("name").GetString() == "limit")
+            .GetProperty("schema");
+        limit.GetProperty("minimum").GetInt32().Should().Be(1);
+        limit.GetProperty("maximum").GetInt32().Should().Be(MaximumLimit);
+        limit.GetProperty("default").GetInt32().Should().Be(10);
+
+        var unsupported = await _fixture.Client.GetAsync("/ogc/records/openapi.json?f=html");
+        unsupported.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]

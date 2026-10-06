@@ -7,6 +7,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Api.Records.Models;
 using Honua.Protocols.Ogc.Common;
@@ -55,6 +56,16 @@ internal static class OgcRecordsEndpoints
             .WithSummary("Get OGC API Records landing page")
             .WithTags("OGC API Records")
             .Produces<LandingPage>(200, MediaTypes.Json)
+            .Produces(400);
+
+        endpoints.MapGet("/ogc/records/openapi.json", HandleGetApiDefinition)
+            .WithDisplayName("OGC API Records OpenAPI Specification")
+            .WithName("OgcRecordsOpenApiSpec")
+            .WithSummary("Get OpenAPI 3.0 specification for OGC API Records")
+            .WithDescription("The OpenAPI specification describes all available OGC API Records endpoints")
+            .WithTags("OGC API Records")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
+            .Produces<object>(200, MediaTypes.OpenApi)
             .Produces(400);
 
         endpoints.MapGet("/ogc/records/conformance", HandleGetConformance)
@@ -115,7 +126,7 @@ internal static class OgcRecordsEndpoints
         var links = OgcCoreMetadataUtilities.BuildLandingPageLinks(context, basePath, outputFormat);
         // OGC API - Records Part 1 /req/core/root-success (via OGC API - Common): the landing page
         // links the API definition. Clients that start from service-desc stop here without it (#5510).
-        links.Add(Link.Create($"{baseUrl}/openapi.json", RelationTypes.ServiceDesc, MediaTypes.OpenApi, "API definition"));
+        links.Add(Link.Create($"{basePath}/openapi.json", RelationTypes.ServiceDesc, MediaTypes.OpenApi, "API definition"));
         links.Add(Link.Create($"{basePath}/conformance", RelationTypes.Conformance, MediaTypes.Json, "Conformance declaration"));
         links.Add(Link.Create($"{basePath}/collections", RelationTypes.Data, MediaTypes.Json, "Record collections"));
 
@@ -132,6 +143,23 @@ internal static class OgcRecordsEndpoints
             OgcRecordsJsonContext.Default.LandingPage,
             outputFormat,
             landingPage.Title);
+    }
+
+    private static IResult HandleGetApiDefinition(HttpContext context, string? f)
+    {
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, MetadataQueryParameters);
+        if (validationError is not null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(f) && !string.Equals(f, "json", StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, $"Unsupported format '{f}'. Supported formats: json.");
+        }
+
+        var document = OgcRecordsOpenApiDocument.Build(BaseUrlResolver.GetBaseUrl(context), DefaultLimit, MaxLimit);
+        return Results.Text(document, MediaTypes.OpenApi);
     }
 
     private static IResult HandleGetConformance(HttpContext context, string? f)
