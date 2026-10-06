@@ -676,7 +676,11 @@ internal sealed class StudioDraftMutationRuntime(
         string? warningAcknowledgement, string? actorId,
         StudioDraftMutationContext context, CancellationToken cancellationToken = default)
     {
-        var requestId = Guid.NewGuid();
+        // A retry of a lost 202 folds onto the proposal the first invocation already sealed.
+        // The dispatcher does not adopt this payload, so the id in the 202 has to be that
+        // sealed id. Deriving it from the scoped idempotency key makes both invocations
+        // agree; without a key each call is its own operation and keeps a fresh id.
+        var requestId = PublicationRequestId(context);
         return InvokeAsync(
             StudioDraftOperations.CreatePublicationRequest,
             new StudioPublicationRequestPayload
@@ -804,6 +808,20 @@ internal sealed class StudioDraftMutationRuntime(
         }
 
         return new StudioDraftMutationReceipt<TResult> { Operation = durable, Value = value };
+    }
+
+    private static Guid PublicationRequestId(StudioDraftMutationContext context)
+    {
+        var scoped = ScopeIdempotencyKey(context);
+        if (scoped is null)
+        {
+            return Guid.NewGuid();
+        }
+
+        var material = Encoding.UTF8.GetBytes(
+            $"{StudioDraftOperations.CreatePublicationRequest}:{scoped}");
+        var hash = SHA256.HashData(material);
+        return new Guid(hash.AsSpan(0, 16));
     }
 
     private static string? ScopeIdempotencyKey(StudioDraftMutationContext context)
