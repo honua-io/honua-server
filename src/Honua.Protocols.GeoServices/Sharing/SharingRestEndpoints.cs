@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Net;
 using System.Security.Claims;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Infrastructure.Logging;
@@ -59,6 +60,7 @@ public static class SharingRestEndpoints
     // the search result page size is bounded to a sane default/maximum.
     private const int DefaultSearchPageSize = 10;
     private const int MaxSearchPageSize = 100;
+    private const string PortalId = "0123456789ABCDEF";
 
     /// <summary>
     /// Maps the <c>/sharing/rest/generateToken</c> POST and GET endpoints.
@@ -127,6 +129,16 @@ public static class SharingRestEndpoints
     /// <returns>The original builder, to support fluent chaining.</returns>
     private static IEndpointRouteBuilder MapSharingRestReadEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet("/sharing/rest", HandleSharingRoot)
+            .WithDisplayName("Portal Sharing Root")
+            .WithName("SharingRestRoot")
+            .WithSummary("Portal Sharing REST root discovery")
+            .WithTags("GeoServices Sharing")
+            .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
+            .Produces<SharingRootResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(StatusCodes.Status404NotFound);
+
         endpoints.MapGet("/arcgisuris.xml", HandlePortalUriList)
             .WithDisplayName("ArcGIS Portal URI Discovery")
             .WithName("SharingPortalUriList")
@@ -175,6 +187,22 @@ public static class SharingRestEndpoints
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status404NotFound);
 
+        endpoints.MapGet("/sharing/rest/community/users/{username}", HandleCommunityUserAsync)
+            .WithName("SharingRestCommunityUser")
+            .WithSummary("Describe the authenticated portal user")
+            .WithTags("GeoServices Sharing")
+            .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
+            .Produces<CommunitySelfResponse>(StatusCodes.Status200OK, JsonContentType);
+
+        endpoints.MapGet("/sharing/rest/content/users/{username}", HandleContentUserAsync)
+            .WithName("SharingRestContentUser")
+            .WithSummary("List the authenticated portal user's content")
+            .WithTags("GeoServices Sharing")
+            .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
+            .Produces<ContentUserResponse>(StatusCodes.Status200OK, JsonContentType);
+
         endpoints.MapGet("/sharing/rest/search", HandleSearchAsync)
             .WithDisplayName("ArcGIS Portal Search")
             .WithName("SharingRestSearch")
@@ -185,6 +213,14 @@ public static class SharingRestEndpoints
             .Produces<SearchResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound);
+
+        endpoints.MapPost("/sharing/rest/search", HandleSearchAsync)
+            .WithName("SharingRestSearchPost")
+            .WithSummary("Search visible portal items with form parameters")
+            .WithTags("GeoServices Sharing")
+            .AllowAnonymous()
+            .DisableAntiforgery()
+            .Produces<SearchResponse>(StatusCodes.Status200OK, JsonContentType);
 
         endpoints.MapGet("/sharing/rest/content/items/{id}", HandleContentItemAsync)
             .WithDisplayName("ArcGIS Portal Content Item")
@@ -207,6 +243,12 @@ public static class SharingRestEndpoints
             .Produces(StatusCodes.Status404NotFound);
 
         return endpoints;
+    }
+
+    private static IResult HandleSharingRoot(HttpContext context, string? f, ILogger<SharingRestLog> logger)
+    {
+        var gate = GateReadSurface(context, f, logger);
+        return gate ?? Results.Json(new SharingRootResponse(), SharingRestJsonContext.Default.SharingRootResponse, contentType: JsonContentType);
     }
 
     private static IResult HandlePortalUriList(HttpContext context, ILogger<SharingRestLog> logger)
@@ -418,7 +460,7 @@ public static class SharingRestEndpoints
 
         var response = new PortalSelfResponse
         {
-            Id = "0123456789ABCDEF",
+            Id = PortalId,
             Name = "Honua",
             User = user,
             HelperServices = await BuildRoutingHelpersAsync(context, logger).ConfigureAwait(false),
@@ -483,11 +525,58 @@ public static class SharingRestEndpoints
 
         var response = new CommunitySelfResponse
         {
+            Id = ResolveUsername(principal),
             Username = ResolveUsername(principal),
             FullName = ResolveDisplayName(principal),
         };
 
         return Results.Json(response, SharingRestJsonContext.Default.CommunitySelfResponse, contentType: JsonContentType);
+    }
+
+    private static IResult HandleCommunityUserAsync(HttpContext context, string username, string? f, ILogger<SharingRestLog> logger)
+    {
+        var gate = GateReadSurface(context, f, logger);
+        if (gate is not null)
+        {
+            return gate;
+        }
+
+        if (context.User.Identity?.IsAuthenticated != true)
+        {
+            return StandardErrorHelpers.CreateUnauthorized(context, "Authentication is required to describe a user.");
+        }
+
+        var current = ResolveUsername(context.User);
+        if (!string.Equals(current, username, StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "User does not exist or is inaccessible.");
+        }
+
+        return Results.Json(new CommunitySelfResponse { Id = current, Username = current, FullName = ResolveDisplayName(context.User) }, SharingRestJsonContext.Default.CommunitySelfResponse, contentType: JsonContentType);
+    }
+
+    private static async Task<IResult> HandleContentUserAsync(HttpContext context, string username, string? f, IMetadataV2GraphProvider graphProvider, IPortalItemProjector projector, ILogger<SharingRestLog> logger)
+    {
+        var gate = GateReadSurface(context, f, logger);
+        if (gate is not null)
+        {
+            return gate;
+        }
+
+        if (context.User.Identity?.IsAuthenticated != true)
+        {
+            return StandardErrorHelpers.CreateUnauthorized(context, "Authentication is required to list user content.");
+        }
+
+        var current = ResolveUsername(context.User);
+        if (!string.Equals(current, username, StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "User does not exist or is inaccessible.");
+        }
+
+        var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+        var items = projector.ProjectVisibleItems(snapshot, context.User, BaseUrlResolver.GetBaseUrl(context)).Where(item => string.Equals(item.Owner, current, StringComparison.OrdinalIgnoreCase)).ToArray();
+        return Results.Json(new ContentUserResponse { Username = current, Items = items }, SharingRestJsonContext.Default.ContentUserResponse, contentType: JsonContentType);
     }
 
     private static async Task<IResult> HandleSearchAsync(
@@ -503,15 +592,19 @@ public static class SharingRestEndpoints
             return gate;
         }
 
-        var query = ReadFirst(context.Request.Query["q"]) ?? string.Empty;
-        var (start, num) = ResolvePaging(context.Request.Query);
+        IFormCollection? form = context.Request.HasFormContentType ? await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false) : null;
+        var query = ReadFirst(context.Request.Query["q"]) ?? (form is null ? null : ReadFirst(form["q"])) ?? string.Empty;
+        var parameters = form is null
+            ? context.Request.Query
+            : new QueryCollection(form.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase));
+        var (start, num) = ResolvePaging(parameters);
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         var visible = projector.ProjectVisibleItems(snapshot, context.User, baseUrl);
 
         var filtered = ApplyQuery(visible, query);
-        var sorted = ApplySort(filtered, context.Request.Query);
+        var sorted = ApplySort(filtered, parameters);
 
         var total = sorted.Count;
         // Esri start is 1-based; clamp the slice to the available range.
@@ -638,24 +731,43 @@ public static class SharingRestEndpoints
     /// </summary>
     private static List<PortalItem> ApplyQuery(IReadOnlyList<PortalItem> items, string query)
     {
-        if (string.IsNullOrWhiteSpace(query))
+        if (string.IsNullOrWhiteSpace(query) || query.Trim() == "*")
         {
             return items.ToList();
         }
 
-        var terms = TokenizeQuery(query);
+        var terms = Regex.Matches(query, """(?<negative>-)?(?<field>[A-Za-z]+):\s*(?:\((?<group>[^)]*)\)|"(?<quoted>[^"]*)"|(?<value>[^\s()]+))""")
+            .Select(match => new SearchTerm(
+                match.Groups["field"].Value,
+                match.Groups["group"].Success ? match.Groups["group"].Value : match.Groups["quoted"].Success ? match.Groups["quoted"].Value : match.Groups["value"].Value,
+                match.Groups["negative"].Success))
+            .ToList();
         if (terms.Count == 0)
         {
-            return items.ToList();
+            return items.Where(item => FreeTextMatch(item, query.Trim(' ', '"'))).ToList();
         }
 
-        var result = new List<PortalItem>(items.Count);
-        foreach (var item in items.Where(item => terms.All(term => MatchesTerm(item, term))))
+        return items.Where(item => terms.All(term => term.Negative != MatchesQualifiedTerm(item, term.Field, term.Value))).ToList();
+    }
+
+    private readonly record struct SearchTerm(string Field, string Value, bool Negative);
+
+    private static bool MatchesQualifiedTerm(PortalItem item, string field, string value)
+    {
+        var alternatives = Regex.Split(value, @"\s+OR\s+", RegexOptions.IgnoreCase)
+            .Select(candidate => candidate.Trim(' ', '"', '(', ')'));
+        return alternatives.Any(candidate => field.ToLowerInvariant() switch
         {
-            result.Add(item);
-        }
-
-        return result;
+            "type" => item.Type.Contains(candidate, StringComparison.OrdinalIgnoreCase),
+            "typekeywords" => item.TypeKeywords.Any(keyword => keyword.Contains(candidate, StringComparison.OrdinalIgnoreCase)),
+            "owner" => string.Equals(item.Owner, candidate, StringComparison.OrdinalIgnoreCase),
+            "access" => string.Equals(item.Access, candidate, StringComparison.OrdinalIgnoreCase),
+            "orgid" => string.Equals(PortalId, candidate, StringComparison.OrdinalIgnoreCase),
+            "tags" => item.Tags.Any(tag => string.Equals(tag, candidate, StringComparison.OrdinalIgnoreCase)),
+            "id" => string.Equals(item.Id, candidate, StringComparison.OrdinalIgnoreCase),
+            "title" => item.Title.Contains(candidate, StringComparison.OrdinalIgnoreCase),
+            _ => true,
+        });
     }
 
     /// <summary>

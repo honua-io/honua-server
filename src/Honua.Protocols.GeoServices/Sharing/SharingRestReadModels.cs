@@ -34,6 +34,14 @@ internal sealed record SharingInfoResponse
     public required SharingAuthInfo AuthInfo { get; init; }
 }
 
+/// <summary>Portal Sharing REST root discovery document.</summary>
+internal sealed record SharingRootResponse
+{
+    /// <summary>Identifies this endpoint as a portal sharing root.</summary>
+    [JsonPropertyName("isPortal")]
+    public bool IsPortal { get; init; } = true;
+}
+
 /// <summary>
 /// Authentication metadata block embedded in <see cref="SharingInfoResponse"/>.
 /// </summary>
@@ -122,6 +130,10 @@ internal sealed record PortalHelperService
 /// </summary>
 internal sealed record CommunitySelfResponse
 {
+    /// <summary>Stable identifier of the calling principal.</summary>
+    [JsonPropertyName("id")]
+    public required string Id { get; init; }
+
     /// <summary>Username of the calling principal.</summary>
     [JsonPropertyName("username")]
     public required string Username { get; init; }
@@ -133,6 +145,26 @@ internal sealed record CommunitySelfResponse
     /// <summary>Roles granted to the calling principal.</summary>
     [JsonPropertyName("role")]
     public string Role { get; init; } = "org_user";
+
+    /// <summary>Groups visible through this minimal portal facade.</summary>
+    [JsonPropertyName("groups")]
+    public IReadOnlyList<object> Groups { get; init; } = Array.Empty<object>();
+}
+
+/// <summary>Content collection for an authenticated portal user.</summary>
+internal sealed record ContentUserResponse
+{
+    [JsonPropertyName("username")]
+    public required string Username { get; init; }
+
+    [JsonPropertyName("currentFolder")]
+    public string? CurrentFolder { get; init; }
+
+    [JsonPropertyName("folders")]
+    public IReadOnlyList<object> Folders { get; init; } = Array.Empty<object>();
+
+    [JsonPropertyName("items")]
+    public IReadOnlyList<PortalItem> Items { get; init; } = Array.Empty<PortalItem>();
 }
 
 /// <summary>

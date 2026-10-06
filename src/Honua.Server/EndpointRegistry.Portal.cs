@@ -20,10 +20,14 @@ public static partial class EndpointRegistry
         new("GET", "/sharing/rest/generateToken"),
 
         // ArcGIS Portal Sharing read surface (#1243).
+        new("GET", "/sharing/rest"),
         new("GET", "/sharing/rest/info"),
         new("GET", "/sharing/rest/portals/self"),
         new("GET", "/sharing/rest/community/self"),
+        new("GET", "/sharing/rest/community/users/{username}"),
+        new("GET", "/sharing/rest/content/users/{username}"),
         new("GET", "/sharing/rest/search"),
+        new("POST", "/sharing/rest/search"),
         new("GET", "/sharing/rest/content/items/{id}"),
         new("GET", "/sharing/rest/content/items/{id}/data"),
 

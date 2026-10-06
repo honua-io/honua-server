@@ -370,4 +370,57 @@ public sealed class PortalFacadeDiscoveryContractTests : IAsyncLifetime
 
         public bool Ssl { get; init; }
     }
+
+    [IntegrationTheory]
+    [InlineData("/sharing/rest?f=json")]
+    [InlineData("/sharing/rest/?f=json")]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /sharing/rest")]
+    public async Task Server5547_PortalRoot_ReturnsDiscoveryDocument(string path)
+    {
+        using var client = _fixture.CreateClient();
+        using var response = await client.GetAsync(path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("isPortal").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/search")]
+    public async Task Server5548_UserResourcesAndStructuredPostSearch_AreAccepted()
+    {
+        using var client = _fixture.CreateClient();
+        var token = await IssueAdminTokenAsync(client);
+
+        using var community = await client.GetAsync($"/sharing/rest/community/users/admin?f=json&token={token}");
+        community.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var communityDocument = JsonDocument.Parse(await community.Content.ReadAsStringAsync());
+        communityDocument.RootElement.GetProperty("id").GetString().Should().Be("admin");
+        communityDocument.RootElement.GetProperty("username").GetString().Should().Be("admin");
+        communityDocument.RootElement.GetProperty("groups").ValueKind.Should().Be(JsonValueKind.Array);
+
+        using var content = await client.GetAsync($"/sharing/rest/content/users/admin?f=json&token={token}");
+        content.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var contentDocument = JsonDocument.Parse(await content.Content.ReadAsStringAsync());
+        contentDocument.RootElement.GetProperty("folders").ValueKind.Should().Be(JsonValueKind.Array);
+        contentDocument.RootElement.GetProperty("items").ValueKind.Should().Be(JsonValueKind.Array);
+
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["token"] = token,
+            ["q"] = $"((type:\"Feature Service\")) -typekeywords:(\"CatalogLayer\" OR \"Elevation 3D Layer\") AND owner: admin AND orgid: 0123456789ABCDEF AND access: public",
+            ["start"] = "1",
+            ["num"] = "100",
+            ["sortField"] = "title",
+            ["sortOrder"] = "asc",
+        });
+        using var search = await client.PostAsync("/sharing/rest/search", form);
+
+        search.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadSearchAsync(search);
+        payload.Results.Should().Contain(item => item.Id == PublicServiceId);
+    }
 }
