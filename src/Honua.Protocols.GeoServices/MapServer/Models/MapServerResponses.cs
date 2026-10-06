@@ -12,9 +12,15 @@ namespace Honua.Protocols.GeoServices.MapServer.Models;
 /// </summary>
 internal sealed class MapServerResponse
 {
-    // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
-    // independent, Esri-compatible server and must not impersonate a specific ArcGIS Server
-    // release. Do NOT add a currentVersion/fullVersion field (guarded by NoArcGisServerVersionTests).
+    /// <summary>
+    /// GeoServices REST compatibility level used to select supported MapServer operations.
+    /// </summary>
+    /// <remarks>
+    /// Tile-cache export consumers require this selector before discovering the
+    /// <c>estimateExportTilesSize</c> and <c>exportTiles</c> operations.
+    /// </remarks>
+    [JsonPropertyName("currentVersion")]
+    public double CurrentVersion { get; init; } = 10.8;
 
     /// <summary>
     /// Service description displayed by ArcGIS clients.

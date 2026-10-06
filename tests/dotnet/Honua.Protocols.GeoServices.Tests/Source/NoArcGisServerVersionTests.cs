@@ -8,6 +8,7 @@ using System.Text.Json.Serialization.Metadata;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using Honua.Protocols.GeoServices.Catalog;
+using Honua.Protocols.GeoServices.MapServer.Models;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices;
@@ -22,9 +23,10 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices;
 /// This test asserts on the actual source-generated JSON wire contract for every type registered
 /// in the GeoServices assembly's serialization contexts, so it FAILS the moment anyone re-adds a
 /// <c>currentVersion</c>/<c>fullVersion</c> property to any of these models. The sole bounded
-/// exception is <c>/rest/info</c>: ArcGIS Pro 3.7's native ImageServer reader requires a
-/// <c>currentVersion</c> compatibility selector before it issues any image operation
-/// (honua-server#3375). <c>fullVersion</c> remains forbidden everywhere.
+/// exceptions are <c>/rest/info</c>, whose ImageServer reader requires a compatibility selector
+/// before issuing an image operation (honua-server#3375), and MapServer metadata, whose tile-cache
+/// export reader requires the selector before discovering export operations (honua-server#5560).
+/// <c>fullVersion</c> remains forbidden everywhere.
 /// </summary>
 public sealed class NoArcGisServerVersionTests
 {
@@ -94,12 +96,12 @@ public sealed class NoArcGisServerVersionTests
 
             foreach (var forbidden in ForbiddenWireNames)
             {
-                if (typeInfo.Type == typeof(RestInfoResponse)
+                if ((typeInfo.Type == typeof(RestInfoResponse) || typeInfo.Type == typeof(MapServerResponse))
                     && string.Equals(forbidden, "currentVersion", StringComparison.OrdinalIgnoreCase))
                 {
                     wireNames.Should().ContainSingle(
                         wireName => string.Equals(wireName, forbidden, StringComparison.OrdinalIgnoreCase),
-                        "the licensed ArcGIS Pro ImageServer reader requires exactly one /rest/info compatibility selector");
+                        "protocol readers require exactly one bounded compatibility selector");
                     continue;
                 }
 

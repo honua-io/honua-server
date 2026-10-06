@@ -28,6 +28,24 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer")]
+    public async Task Issue5560_MapServerMetadata_AdvertisesTileExportCompatibilityLevel()
+    {
+        var response = await Fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer?f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var document = JsonDocument.Parse(content);
+        var metadata = document.RootElement;
+        metadata.GetProperty("currentVersion").GetDouble().Should().Be(10.8);
+        metadata.GetProperty("exportTilesAllowed").GetBoolean().Should().BeTrue();
+        metadata.GetProperty("maxExportTilesCount").GetInt32().Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer")]
     public async Task MapServer_Metadata_ReturnsServiceInfo()
     {
         var response = await Fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestServiceId}/MapServer?f=json");
