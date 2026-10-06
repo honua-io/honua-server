@@ -83,6 +83,18 @@ internal sealed class MapServerResponse
     public bool SingleFusedMapCache { get; init; }
 
     /// <summary>
+    /// Indicates whether clients may create offline tile packages from the cache.
+    /// </summary>
+    [JsonPropertyName("exportTilesAllowed")]
+    public bool ExportTilesAllowed { get; init; }
+
+    /// <summary>
+    /// Maximum number of tiles accepted by one export operation.
+    /// </summary>
+    [JsonPropertyName("maxExportTilesCount")]
+    public int MaxExportTilesCount { get; init; }
+
+    /// <summary>
     /// Supported image format types.
     /// </summary>
     [JsonPropertyName("supportedImageFormatTypes")]

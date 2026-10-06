@@ -67,6 +67,14 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         service.TileInfo.SpatialReference.Should().NotBeNull();
         service.TileInfo.SpatialReference!.Wkid.Should().Be(3857);
         service.TileInfo.Lods.Should().NotBeNullOrEmpty();
+        service.SingleFusedMapCache.Should().BeTrue();
+        service.ExportTilesAllowed.Should().BeTrue();
+        service.MaxExportTilesCount.Should().BeGreaterThan(0);
+        service.SpatialReference!.Wkid.Should().Be(3857);
+        service.FullExtent!.SpatialReference.Wkid.Should().Be(3857);
+        service.InitialExtent!.SpatialReference.Wkid.Should().Be(3857);
+        service.FullExtent.Xmin.Should().BeApproximately(service.TileInfo.Origin!.X, 0.01);
+        service.FullExtent.Ymax.Should().BeApproximately(service.TileInfo.Origin.Y, 0.01);
         service.TimeInfo.Should().NotBeNull();
         service.TimeInfo!.StartTimeField.Should().Be("timestamp");
         service.TimeInfo.TimeExtent.Should().HaveCount(2);

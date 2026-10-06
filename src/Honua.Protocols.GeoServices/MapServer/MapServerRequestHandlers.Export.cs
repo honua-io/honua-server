@@ -625,15 +625,6 @@ internal static partial class MapServerEndpoints
             return false;
         }
 
-        if (isGeographic &&
-            (minX < -180.0 || minX > 180.0 ||
-             maxX < -180.0 || maxX > 180.0 ||
-             minY < -90.0 || minY > 90.0 ||
-             maxY < -90.0 || maxY > 90.0))
-        {
-            return false;
-        }
-
         if (minY >= maxY)
             return false;
 

@@ -109,6 +109,7 @@ internal static partial class MapServerEndpoints
                 visibleLayers,
                 limitsOptions.Query.MaxRecordCount,
                 limitsOptions.Tiles.MaxTileZoom,
+                limitsOptions.Tiles.MaxTilesPerRequest,
                 MergeServiceTimeInfo(timeInfos),
                 await BuildSupportedFeatureExtensionsAsync(context, service, snapshot, cancellationToken).ConfigureAwait(false));
 
@@ -257,11 +258,25 @@ internal static partial class MapServerEndpoints
         IReadOnlyList<MapServerMetadataLayerDescriptor> layers,
         int maxRecordCount,
         int maxTileZoom,
+        int maxExportTilesCount,
         FeatureServerTimeInfo? timeInfo,
         string supportedExtensions)
     {
-        var serviceSpatialReference = ResolveServiceSpatialReference(service, layers);
-        var serviceExtent = ResolveServiceExtent(layers, serviceSpatialReference);
+        const int cachedSpatialReferenceId = 3857;
+        const double webMercatorExtent = SpatialConstants.WebMercatorExtent;
+        var cachedSpatialReference = new EsriSpatialReference
+        {
+            Wkid = cachedSpatialReferenceId,
+            LatestWkid = cachedSpatialReferenceId
+        };
+        var serviceExtent = new EsriExtent
+        {
+            Xmin = -webMercatorExtent,
+            Ymin = -webMercatorExtent,
+            Xmax = webMercatorExtent,
+            Ymax = webMercatorExtent,
+            SpatialReference = cachedSpatialReference
+        };
         var visibleFeatureLayers = layers.Where(static layer => HasMapServerGeometry(layer.Resource)).ToArray();
         var visibleTables = layers.Where(static layer => !HasMapServerGeometry(layer.Resource)).ToArray();
 
@@ -270,7 +285,7 @@ internal static partial class MapServerEndpoints
             ServiceDescription = service.Metadata.Description,
             MapName = service.Metadata.Name,
             Description = service.Metadata.Description,
-            SpatialReference = ToEsriSpatialReference(serviceSpatialReference),
+            SpatialReference = cachedSpatialReference,
             Layers = [.. visibleFeatureLayers.Select(layer => new MapServerLayerInfo
             {
                 Id = layer.PublicLayerId,
@@ -297,8 +312,10 @@ internal static partial class MapServerEndpoints
             // The current MapServer implementation only accepts a narrow dynamicLayers subset
             // for interoperability; do not advertise the full ArcGIS dynamic-layer contract.
             SupportsDynamicLayers = false,
-            SingleFusedMapCache = false,
-            Units = ResolveMapUnits(serviceSpatialReference),
+            SingleFusedMapCache = true,
+            ExportTilesAllowed = true,
+            MaxExportTilesCount = maxExportTilesCount,
+            Units = "esriMeters",
             Capabilities = BuildMapServerCapabilities(),
             SupportedExtensions = supportedExtensions,
             FullExtent = serviceExtent,
