@@ -8207,7 +8207,9 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesCrsTests.GetTile_WorldCRS84Quad_ReturnsTile",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesEndpointTests.GetDatasetTile_ReturnsMvtOrNoContent",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesEndpointTests.GetDatasetTile_WithMultipleCollections_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesEndpointTests.GetDatasetTile_WithNoAcceptableTileFormat_ReturnsNotAcceptable",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesEndpointTests.GetDatasetTile_WithoutCollections_WhenMultipleCollectionsExist_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesEndpointTests.GetDatasetTile_WithoutFormatOrAccept_ReturnsPngMapTile",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesRasterTests.GetTile_WithPngFormat_ReturnsRasterImage",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesRasterTests.GetTile_WithPngFormat_WorldCRS84Quad_ReturnsRasterImage",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesRasterTests.GetTile_WithUnsupportedFormat_ReturnsBadRequest"
