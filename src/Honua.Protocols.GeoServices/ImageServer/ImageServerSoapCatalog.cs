@@ -127,7 +127,8 @@ internal static partial class ImageServerSoapEndpoints
             values["outFields"] = attributes.Length == 0 ? "OBJECTID" : string.Join(',', attributes);
         }
 
-        if (DirectChild(queryFilter, "OutputSpatialReference") is { } spatialReference)
+        if (DirectChild(queryFilter, "OutputSpatialReference") is { } spatialReference
+            && !IsNilElement(spatialReference))
         {
             var wkid = DirectChildText(spatialReference, "WKID");
             if (string.IsNullOrWhiteSpace(wkid))

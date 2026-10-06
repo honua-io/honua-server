@@ -71,6 +71,15 @@ internal sealed class ImageServerCatalogFilterEvaluator : IImageServerCatalogFil
         }
 
         var left = ResolveValue(expression.Left, item);
+
+        // IN carries a ValueList AST node rather than a scalar right operand. Resolve
+        // its members in MatchIn; attempting to resolve the container rejects every
+        // otherwise-valid value-list predicate before the operator is dispatched.
+        if (expression.Operator is BinaryOperator.In or BinaryOperator.NotIn)
+        {
+            return MatchIn(left, expression.Right, item, expression.Operator == BinaryOperator.NotIn);
+        }
+
         var right = ResolveValue(expression.Right, item);
 
         return expression.Operator switch
@@ -83,8 +92,6 @@ internal sealed class ImageServerCatalogFilterEvaluator : IImageServerCatalogFil
             BinaryOperator.GreaterThanOrEqual => Compare(left, right) >= 0,
             BinaryOperator.Like => MatchLike(left, right, negate: false),
             BinaryOperator.NotLike => MatchLike(left, right, negate: true),
-            BinaryOperator.In => MatchIn(left, expression.Right, item, negate: false),
-            BinaryOperator.NotIn => MatchIn(left, expression.Right, item, negate: true),
             _ => throw new ImageServerCatalogFilterException(
                 $"Unsupported binary operator '{expression.Operator}' in raster catalog WHERE clause.")
         };
