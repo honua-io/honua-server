@@ -44,5 +44,5 @@ public sealed class GettingStartedArtifactPinTests
     }
 
     private static string Read(string root, params string[] path)
-        => File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, path));
+        => File.ReadAllText(ArchitectureTestHelpers.CombinePath([root, .. path]));
 }
