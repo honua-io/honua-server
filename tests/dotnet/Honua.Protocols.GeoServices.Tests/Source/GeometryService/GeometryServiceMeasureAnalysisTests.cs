@@ -451,6 +451,33 @@ public sealed class GeometryServiceMeasureAnalysisTests : IClassFixture<WebAppFi
     [IntegrationTest]
     [Operation(Operations.Densify)]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/densify")]
+    public async Task SRV_GS_002_Densify_CumulativeRequestVertexBudget_Returns400WithoutOom()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolyline",
+                "geometries": [
+                    {"paths": [[[0,0],[9000000,0]]]},
+                    {"paths": [[[0,0],[9000000,0]]]}
+                ]
+            },
+            "sr": "3857",
+            "maxSegmentLength": 1.0
+        }
+        """;
+
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/densify",
+            requestContent);
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Densify)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/densify")]
     public async Task Densify_ReasonableMaxSegmentLengthOverLargeExtent_StillSucceeds()
     {
         // The cap must not reject legitimate densify requests: a 2,000,000-unit segment at

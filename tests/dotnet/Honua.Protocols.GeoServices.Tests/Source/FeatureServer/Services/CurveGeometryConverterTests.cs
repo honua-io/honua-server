@@ -107,4 +107,15 @@ public sealed class CurveGeometryConverterTests
             ParseCurve("""{"paths":[[[0,0],[1,1]]]}""")).Should().BeFalse();
     }
 
+    [UnitTest]
+    public void SRV_GS_003_TrueCurveConversion_EnforcesVertexBudget()
+    {
+        const string fullSweepArc = "{\"a\":[[1,0],[0,0],0,0]}";
+        var curve = ParseCurve($"{{\"curvePaths\":[[[1,0],{string.Join(',', Enumerable.Repeat(fullSweepArc, 500))}]]]}}");
+
+        var action = () => GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(curve);
+
+        action.Should().Throw<ArgumentException>().WithMessage("*vertex limit*");
+    }
+
 }
