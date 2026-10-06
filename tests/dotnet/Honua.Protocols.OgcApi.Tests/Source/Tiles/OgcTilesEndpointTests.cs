@@ -536,7 +536,7 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
     [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
     public async Task GetDatasetTile_ReturnsMvtOrNoContent()
     {
-        var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles/WebMercatorQuad/0/0/0?collections=0");
+        var response = await GetDatasetTileAsync("/ogc/tiles/tiles/WebMercatorQuad/0/0/0?collections=0", MediaTypes.Mvt);
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
 
@@ -551,7 +551,7 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
     [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
     public async Task GetDatasetTile_WithoutCollections_WhenMultipleCollectionsExist_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles/WebMercatorQuad/0/0/0");
+        var response = await GetDatasetTileAsync("/ogc/tiles/tiles/WebMercatorQuad/0/0/0", MediaTypes.Mvt);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -561,9 +561,41 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
     [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
     public async Task GetDatasetTile_WithMultipleCollections_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles/WebMercatorQuad/0/0/0?collections=1,0");
+        var response = await GetDatasetTileAsync("/ogc/tiles/tiles/WebMercatorQuad/0/0/0?collections=1,0", MediaTypes.Mvt);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
+    public async Task GetDatasetTile_WithoutFormatOrAccept_ReturnsPngMapTile()
+    {
+        // The dataset tileset is a map tileset advertising only image/png (#5446).
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles/WebMercatorQuad/0/0/0?collections=0");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+        if (response.StatusCode == HttpStatusCode.OK)
+        {
+            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
+    public async Task GetDatasetTile_WithNoAcceptableTileFormat_ReturnsNotAcceptable()
+    {
+        var response = await GetDatasetTileAsync("/ogc/tiles/tiles/WebMercatorQuad/0/0/0?collections=0", "application/json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
+    }
+
+    private async Task<HttpResponseMessage> GetDatasetTileAsync(string url, string accept)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Accept.ParseAdd(accept);
+        return await _fixture.Client.SendAsync(request);
     }
 
     [IntegrationTest]
