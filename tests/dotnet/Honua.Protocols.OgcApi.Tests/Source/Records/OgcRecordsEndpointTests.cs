@@ -262,6 +262,31 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /ogc/records/collections/{collectionId}/items")]
+    [Endpoint("GET /ogc/records/collections/{collectionId}/items/{recordId}")]
+    public async Task Issue5565_RecordsWithExtent_ReturnBboxPolygonGeometry()
+    {
+        var collectionResponse = await _fixture.Client.GetAsync(
+            $"/ogc/records/collections/{CatalogId}/items?limit=10");
+        await AssertOkAsync(collectionResponse);
+
+        using var collection = await ReadJsonAsync(collectionResponse);
+        var collectionRecord = collection.RootElement.GetProperty("features")
+            .EnumerateArray()
+            .Single(feature => feature.GetProperty("id").GetString() == "service:test");
+        AssertGeometryMatchesBbox(collectionRecord);
+
+        var recordId = Uri.EscapeDataString("service:test");
+        var itemResponse = await _fixture.Client.GetAsync(
+            $"/ogc/records/collections/{CatalogId}/items/{recordId}");
+        await AssertOkAsync(itemResponse);
+
+        using var item = await ReadJsonAsync(itemResponse);
+        AssertGeometryMatchesBbox(item.RootElement);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Pagination)]
     [Endpoint("GET /ogc/records/collections/{collectionId}/items")]
     public async Task GetItems_WithLimitAndOffset_ReturnsPagedLinks()
@@ -366,6 +391,27 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
             : "<none>";
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, "Allow: {0}; Body: {1}", allowHeader, body);
+    }
+
+    private static void AssertGeometryMatchesBbox(JsonElement feature)
+    {
+        var bbox = feature.GetProperty("bbox").EnumerateArray().Select(value => value.GetDouble()).ToArray();
+        var geometry = feature.GetProperty("geometry");
+
+        geometry.GetProperty("type").GetString().Should().Be("Polygon");
+        var ring = geometry.GetProperty("coordinates")[0]
+            .EnumerateArray()
+            .Select(position => position.EnumerateArray().Select(value => value.GetDouble()).ToArray())
+            .ToArray();
+        ring.Should().BeEquivalentTo(
+            [
+                new[] { bbox[0], bbox[1] },
+                new[] { bbox[2], bbox[1] },
+                new[] { bbox[2], bbox[3] },
+                new[] { bbox[0], bbox[3] },
+                new[] { bbox[0], bbox[1] }
+            ],
+            options => options.WithStrictOrdering());
     }
 
     private static bool HasRel(JsonElement link, string rel)

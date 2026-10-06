@@ -489,7 +489,7 @@ internal static class OgcRecordsEndpoints
             new OgcRecordFeature
             {
                 Id = $"service:{serviceMetadata.Name}",
-                Geometry = null,
+                Geometry = CreateExtentGeometry(bbox),
                 Bbox = bbox,
                 Properties = properties,
                 Links = links.ToImmutable()
@@ -555,7 +555,7 @@ internal static class OgcRecordsEndpoints
             new OgcRecordFeature
             {
                 Id = $"layer:{layerIdString}",
-                Geometry = null,
+                Geometry = CreateExtentGeometry(bbox),
                 Bbox = bbox,
                 Properties = properties,
                 Links = links.ToImmutable()
@@ -569,6 +569,32 @@ internal static class OgcRecordsEndpoints
                 resource.Metadata.Name,
                 resource.Metadata.Title,
                 resource.Metadata.Description));
+    }
+
+    private static OgcRecordGeometry? CreateExtentGeometry(ImmutableArray<double>? bbox)
+    {
+        if (bbox is not { Length: 4 } extent)
+        {
+            return null;
+        }
+
+        var west = extent[0];
+        var south = extent[1];
+        var east = extent[2];
+        var north = extent[3];
+        return new OgcRecordGeometry
+        {
+            Coordinates =
+            [
+                [
+                    [west, south],
+                    [east, south],
+                    [east, north],
+                    [west, north],
+                    [west, south]
+                ]
+            ]
+        };
     }
 
     /// <summary>
