@@ -67,6 +67,24 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         service.TileInfo.SpatialReference.Should().NotBeNull();
         service.TileInfo.SpatialReference!.Wkid.Should().Be(3857);
         service.TileInfo.Lods.Should().NotBeNullOrEmpty();
+        service.SingleFusedMapCache.Should().BeTrue();
+        service.ExportTilesAllowed.Should().BeTrue();
+        service.MaxExportTilesCount.Should().BeGreaterThan(0);
+        service.SpatialReference!.Wkid.Should().Be(3857);
+        service.FullExtent!.SpatialReference.Wkid.Should().Be(3857);
+        service.InitialExtent!.SpatialReference.Wkid.Should().Be(3857);
+        // The seeded map covers layer 0 only (-123,37,-122,38 in EPSG:4326). The cache
+        // origin stays in tileInfo; fullExtent is that bbox projected to EPSG:3857.
+        service.FullExtent.Xmin.Should().BeApproximately(-13692297.3676, 0.05);
+        service.FullExtent.Ymin.Should().BeApproximately(4439106.7873, 0.05);
+        service.FullExtent.Xmax.Should().BeApproximately(-13580977.8768, 0.05);
+        service.FullExtent.Ymax.Should().BeApproximately(4579425.8129, 0.05);
+        service.InitialExtent.Xmin.Should().Be(service.FullExtent.Xmin);
+        service.InitialExtent.Ymin.Should().Be(service.FullExtent.Ymin);
+        service.InitialExtent.Xmax.Should().Be(service.FullExtent.Xmax);
+        service.InitialExtent.Ymax.Should().Be(service.FullExtent.Ymax);
+        service.FullExtent.Xmin.Should().BeGreaterThan(service.TileInfo.Origin!.X);
+        service.FullExtent.Ymax.Should().BeLessThan(service.TileInfo.Origin.Y);
         service.TimeInfo.Should().NotBeNull();
         service.TimeInfo!.StartTimeField.Should().Be("timestamp");
         service.TimeInfo.TimeExtent.Should().HaveCount(2);
