@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -8,6 +9,12 @@ using Honua.Core.Queries.Filters;
 using Honua.Db.Oracle.Features.FeatureStore.Services;
 
 namespace Honua.Db.Oracle.Tests;
+
+// Audit platform-20261006 outcomes:
+// SRV-DB-008 -> fixed; BuildSelectQuery_SRV_DB_008_WhereAndSqlFilterFailsClosed.
+// SRV-DB-010 -> fixed; BuildSelectQuery_SRV_DB_010_EwkbIsNormalizedAndSridAssigned.
+// SRV-AUTH-008 -> fixed; OracleConnectionDriverTests.BuildConnectionString_SRV_AUTH_008_*.
+// SRV-DB-018 -> fixed; MySqlFeatureQueryBuilderTests.BuildExtentQuery_SRV_DB_018_*.
 
 /// <summary>
 /// Unit tests for the Oracle query builder. Verifies Oracle SQL dialect, identifier
@@ -405,10 +412,8 @@ public class OracleFeatureQueryBuilderTests
     }
 
     [Fact]
-    public void BuildSelectQuery_SqlFilterIgnoredWhenWherePresent_UsesOracleParser()
+    public void BuildSelectQuery_SRV_DB_008_WhereAndSqlFilterFailsClosed()
     {
-        // Canonical Where wins over SqlFilter — the docs promise the provider re-parses
-        // Where with its own Oracle parser and ignores any Postgres-styled SqlFilter.
         var mapping = BuildMapping();
         var query = new FeatureQuery
         {
@@ -416,12 +421,33 @@ public class OracleFeatureQueryBuilderTests
             SqlFilter = new SqlFragment("\"attributes\" ->> 'name' = @p0", new object?[] { "ShouldNotAppear" })
         };
 
-        var result = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
+        var exception = Assert.Throws<NotSupportedException>(
+            () => OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
 
-        Assert.Contains("\"name\" = :p0", result.Sql, StringComparison.Ordinal);
-        Assert.DoesNotContain("attributes", result.Sql, StringComparison.Ordinal);
-        Assert.Single(result.WhereParameters);
-        Assert.Equal("Alpha", result.WhereParameters[0]);
+        Assert.Contains("cannot safely combine", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_SRV_DB_010_EwkbIsNormalizedAndSridAssigned()
+    {
+        // Little-endian EWKB Point(12.5, 41.9), with the SRID flag and embedded EPSG:4326.
+        var ewkb = new byte[25];
+        ewkb[0] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(ewkb.AsSpan(1), 0x20000001);
+        BinaryPrimitives.WriteInt32LittleEndian(ewkb.AsSpan(5), 4326);
+        BinaryPrimitives.WriteInt64LittleEndian(ewkb.AsSpan(9), BitConverter.DoubleToInt64Bits(12.5));
+        BinaryPrimitives.WriteInt64LittleEndian(ewkb.AsSpan(17), BitConverter.DoubleToInt64Bits(41.9));
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(ewkb, SpatialRelationship.Intersects, srid: 4326)
+        };
+
+        var result = OracleFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns);
+
+        var normalized = Assert.IsType<byte[]>(Assert.Single(result.WhereParameters));
+        Assert.Equal(21, normalized.Length);
+        Assert.Equal(1U, BinaryPrimitives.ReadUInt32LittleEndian(normalized.AsSpan(1)));
+        Assert.Contains("SDO_CS.MAKE_2D(SDO_UTIL.FROM_WKBGEOMETRY(:p0), 4326)", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]

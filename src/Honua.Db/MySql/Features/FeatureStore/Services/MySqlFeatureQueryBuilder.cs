@@ -116,16 +116,22 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         // are rejected explicitly — callers should compute extents in the application
         // layer or use a PostGIS-backed layer.
         //
-        // Axis order: ST_X/ST_Y return the first/second stored axis. For MySQL 8 with a
-        // geographic SRS (e.g. 4326) that is latitude-first; for MariaDB it is the WKB
-        // order. The slice does not normalize this; the documented contract is "as stored".
+        // MySQL's EPSG:4326 SRS is latitude-first, so ST_X/ST_Y would invert the protocol's
+        // canonical longitude/latitude extent. Its semantic accessors keep the extent aligned
+        // with the axis-normalized WKB read path. MariaDB does not provide these accessors.
+        var pointX = _engineFlavor == MySqlEngineFlavor.Mysql && mapping.Srid == 4326
+            ? $"ST_Longitude({mapping.QuotedGeometryColumn})"
+            : $"ST_X({mapping.QuotedGeometryColumn})";
+        var pointY = _engineFlavor == MySqlEngineFlavor.Mysql && mapping.Srid == 4326
+            ? $"ST_Latitude({mapping.QuotedGeometryColumn})"
+            : $"ST_Y({mapping.QuotedGeometryColumn})";
         var extentSelect = mapping.GeometryType switch
         {
             GeometryType.Point => $"""
-                MIN(ST_X({mapping.QuotedGeometryColumn})),
-                MIN(ST_Y({mapping.QuotedGeometryColumn})),
-                MAX(ST_X({mapping.QuotedGeometryColumn})),
-                MAX(ST_Y({mapping.QuotedGeometryColumn}))
+                MIN({pointX}),
+                MIN({pointY}),
+                MAX({pointX}),
+                MAX({pointY})
                 """,
             GeometryType.Polygon or GeometryType.MultiPolygon => $"""
                 MIN(ST_X(ST_PointN(ST_ExteriorRing(ST_Envelope({mapping.QuotedGeometryColumn})), 1))),

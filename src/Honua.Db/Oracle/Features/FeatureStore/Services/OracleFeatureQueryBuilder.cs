@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Db.Oracle.Features.FeatureStore.Services;
@@ -316,6 +317,13 @@ internal static partial class OracleFeatureQueryBuilder
         // Where is rejected up front rather than masked as an opaque ORA-* failure.
         if (!string.IsNullOrWhiteSpace(query.Where))
         {
+            if (query.SqlFilter is not null)
+            {
+                throw new NotSupportedException(
+                    "Oracle cannot safely combine canonical Where text with a translated SqlFilter. " +
+                    "Submit the additional constraints through provider-neutral FeatureQuery properties.");
+            }
+
             var parameterized = ParseAndParameterizeWhereClause(query.Where!.Trim(), parameters, resolveColumnName);
             sb.Append(" AND (").Append(parameterized).Append(')');
             return;
@@ -376,13 +384,25 @@ internal static partial class OracleFeatureQueryBuilder
                 "Reproject the filter geometry to the layer CRS before querying.");
         }
 
+        if (WkbSridNormalizer.HasZOrMOrdinates(filter.Geometry))
+        {
+            throw new NotSupportedException(
+                "Oracle spatial filters with Z or M ordinates are not supported; submit a two-dimensional geometry.");
+        }
+
         var geomCol = mapping.QuotedGeometryColumn!;
         var wkbParam = ":p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
-        parameters.Add(filter.Geometry);
+        parameters.Add(WkbSridNormalizer.RemoveEmbeddedSrid(filter.Geometry));
 
-        // SDO_UTIL.FROM_WKBGEOMETRY produces a 2D SDO_GEOMETRY; Oracle applies the SRID from
-        // the spatial index/metadata. Both SRIDs are either matching or unspecified at this point.
+        // FROM_WKBGEOMETRY accepts OGC WKB, not EWKB. Strip the embedded SRID and assign the
+        // validated layer/filter SRID explicitly so SDO_RELATE never compares an SRID-null
+        // geometry with an indexed geometry in a known coordinate system.
         var filterExpr = $"SDO_UTIL.FROM_WKBGEOMETRY({wkbParam})";
+        var srid = filter.Srid ?? mapping.Srid;
+        if (srid is > 0)
+        {
+            filterExpr = $"SDO_CS.MAKE_2D({filterExpr}, {srid.Value.ToString(CultureInfo.InvariantCulture)})";
+        }
 
         var clause = filter.SpatialRelationship switch
         {
