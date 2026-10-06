@@ -417,7 +417,7 @@ internal static partial class ImageServerSoapEndpoints
                     new XElement(
                         "PointArray",
                         new XAttribute(xsi + "type", "tns:ArrayOfPoint"),
-                        ring.Where(static point => point.Length >= 2).Select(static point => new XElement(
+                        ring.Where(static point => point.Length >= 2).Select(point => new XElement(
                             "Point",
                             new XAttribute(xsi + "type", "tns:PointN"),
                             new XElement("X", FormatDouble(point[0])),

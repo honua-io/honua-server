@@ -71,18 +71,18 @@ internal static partial class ImageServerSoapEndpoints
         CancellationToken cancellationToken)
         => HandleFixedScaleCacheAsync(
             request,
-            cancellationToken,
             "GetTileCacheInfoResponse",
-            static tileInfo => BuildTileCacheElement("Result", tileInfo));
+            static tileInfo => BuildTileCacheElement("Result", tileInfo),
+            cancellationToken);
 
     private static Task<IResult> HandleGetTileImageInfoAsync(
         SoapRasterRequestContext request,
         CancellationToken cancellationToken)
         => HandleFixedScaleCacheAsync(
             request,
-            cancellationToken,
             "GetTileImageInfoResponse",
-            static tileInfo => BuildTileImageElement("Result", tileInfo));
+            static tileInfo => BuildTileImageElement("Result", tileInfo),
+            cancellationToken);
 
     private static async Task<IResult> HandleGetImageTileAsync(
         XElement operation,
@@ -163,9 +163,9 @@ internal static partial class ImageServerSoapEndpoints
 
     private static async Task<IResult> HandleFixedScaleCacheAsync(
         SoapRasterRequestContext request,
-        CancellationToken cancellationToken,
         string responseName,
-        Func<TileInfo, XElement> build)
+        Func<TileInfo, XElement> build,
+        CancellationToken cancellationToken)
     {
         var revalidation = await RevalidateMetadataAsync(request, cancellationToken).ConfigureAwait(false);
         if (revalidation.Error is not null)
