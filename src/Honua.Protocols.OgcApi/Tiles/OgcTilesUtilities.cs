@@ -463,8 +463,10 @@ internal static class OgcTilesUtilities
 
         var pngQuality = ContentNegotiationHelpers.GetBestQuality(_pngTileMediaTypes, accept);
         var vectorQuality = ContentNegotiationHelpers.GetBestQuality(_vectorTileMediaTypes, accept);
+        // The raster default only breaks ties PNG is party to (e.g. */*); when neither
+        // format is acceptable, fall through so the vector path answers 406.
         return defaultToRaster
-            ? pngQuality >= vectorQuality
+            ? pngQuality > 0 && pngQuality >= vectorQuality
             : pngQuality > vectorQuality;
     }
 

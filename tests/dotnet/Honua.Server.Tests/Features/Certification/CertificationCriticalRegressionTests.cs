@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Infrastructure.Helpers;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Api.Tiles;
-using Honua.Server.Features.Styling;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Certification;
@@ -22,7 +22,7 @@ public sealed class CertificationCriticalRegressionTests
         OgcFeaturesUtilities.AllowedQueryParameters.Transactions.Should().Contain("token");
         OgcFeaturesUtilities.AllowedQueryParameters.H3.Should().Contain("token");
 
-        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "openapi.json")));
+        using var document = JsonDocument.Parse(File.ReadAllText(Path.Join(AppContext.BaseDirectory, "openapi.json")));
         var scheme = document.RootElement
             .GetProperty("components")
             .GetProperty("securitySchemes")
@@ -47,6 +47,20 @@ public sealed class CertificationCriticalRegressionTests
             .Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("application/json")]
+    [InlineData("image/png;q=0, application/vnd.mapbox-vector-tile;q=0")]
+    public void Issue5446_DatasetMapTilesDoNotDefaultToPngWhenNoTileFormatIsAcceptable(string accept)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Headers.Accept = accept;
+
+        // Neither branch accepts the request, so the handler's vector path answers 406.
+        OgcTilesUtilities.IsRasterTileFormat(null, context.Request, defaultToRaster: true)
+            .Should().BeFalse();
+        OgcTilesUtilities.AcceptsVectorTiles(context.Request).Should().BeFalse();
+    }
+
     [Fact]
     public void Issue5442_StyleDocumentEmitsAbsoluteEndpointUrls()
     {
@@ -66,7 +80,7 @@ public sealed class CertificationCriticalRegressionTests
             }
             """);
 
-        var resolved = StyleEndpoints.ResolveEndpointUrls(input.RootElement, "https://public.example.test");
+        var resolved = StyleEndpointUrlResolver.Resolve(input.RootElement, "https://public.example.test");
 
         resolved.GetProperty("sprite").GetString().Should().Be("https://public.example.test/sprites/default");
         resolved.GetProperty("glyphs").GetString().Should().Be("https://public.example.test/fonts/{fontstack}/{range}.pbf");
@@ -74,5 +88,28 @@ public sealed class CertificationCriticalRegressionTests
             .GetProperty("layer-2110")
             .GetProperty("tiles")[0]
             .GetString().Should().Be("https://public.example.test/tiles/2110/{z}/{x}/{y}.mvt");
+    }
+
+    [Fact]
+    public void Issue5442_CanonicalStylesheetContentEmitsAbsoluteEndpointUrls()
+    {
+        const string stored =
+            """{"version":8,"sprite":"//cdn.example.test/sprites/default","sources":{"layer-2110":{"type":"vector","tiles":["/tiles/2110/{z}/{x}/{y}.mvt","https://other.example.test/t/{z}/{x}/{y}.mvt"]}},"layers":[]}""";
+
+        using var resolved = JsonDocument.Parse(
+            StyleEndpointUrlResolver.Resolve(stored, "https://public.example.test/"));
+
+        var tiles = resolved.RootElement.GetProperty("sources").GetProperty("layer-2110").GetProperty("tiles");
+        tiles[0].GetString().Should().Be("https://public.example.test/tiles/2110/{z}/{x}/{y}.mvt");
+        tiles[1].GetString().Should().Be("https://other.example.test/t/{z}/{x}/{y}.mvt");
+        resolved.RootElement.GetProperty("sprite").GetString().Should().Be("//cdn.example.test/sprites/default");
+    }
+
+    [Fact]
+    public void Issue5442_CanonicalStylesheetContentWithoutRelativeUrlsIsReturnedUnchanged()
+    {
+        const string stored = """{ "version": 8, "sources": {}, "layers": [] }""";
+
+        StyleEndpointUrlResolver.Resolve(stored, "https://public.example.test").Should().BeSameAs(stored);
     }
 }

@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using Honua.Core.Features.Styling.Domain;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Models;
@@ -100,7 +99,7 @@ internal static class StyleEndpoints
 
         if (themeProfile == ThemeProfile.Default)
         {
-            var resolvedStyle = ResolveEndpointUrls(styleElement.Value, BaseUrlResolver.GetBaseUrl(context));
+            var resolvedStyle = StyleEndpointUrlResolver.Resolve(styleElement.Value, BaseUrlResolver.GetBaseUrl(context));
             return Results.Json(resolvedStyle, StyleJsonContext.Default.JsonElement, contentType: MediaTypes.Json);
         }
 
@@ -119,72 +118,13 @@ internal static class StyleEndpoints
         var themedElement = StyleJsonUtilities.ParseJsonElement(themed);
         if (!themedElement.HasValue)
         {
-            var resolvedStyle = ResolveEndpointUrls(styleElement.Value, BaseUrlResolver.GetBaseUrl(context));
+            var resolvedStyle = StyleEndpointUrlResolver.Resolve(styleElement.Value, BaseUrlResolver.GetBaseUrl(context));
             return Results.Json(resolvedStyle, StyleJsonContext.Default.JsonElement, contentType: MediaTypes.Json);
         }
 
-        var resolvedThemedStyle = ResolveEndpointUrls(themedElement.Value, BaseUrlResolver.GetBaseUrl(context));
+        var resolvedThemedStyle = StyleEndpointUrlResolver.Resolve(themedElement.Value, BaseUrlResolver.GetBaseUrl(context));
         return Results.Json(resolvedThemedStyle, StyleJsonContext.Default.JsonElement, contentType: MediaTypes.Json);
     }
-
-    internal static JsonElement ResolveEndpointUrls(JsonElement style, string baseUrl)
-    {
-        if (JsonNode.Parse(style.GetRawText()) is not JsonObject root)
-        {
-            return style;
-        }
-
-        var changed = ResolveProperty(root, "sprite", baseUrl);
-        changed |= ResolveProperty(root, "glyphs", baseUrl);
-
-        if (root["sources"] is JsonObject sources)
-        {
-            foreach (var source in sources)
-            {
-                if (source.Value is not JsonObject sourceObject || sourceObject["tiles"] is not JsonArray tiles)
-                {
-                    continue;
-                }
-
-                for (var index = 0; index < tiles.Count; index++)
-                {
-                    if (tiles[index] is JsonValue value && value.TryGetValue<string>(out var url))
-                    {
-                        var resolved = ResolveUrl(url, baseUrl);
-                        if (!string.Equals(url, resolved, StringComparison.Ordinal))
-                        {
-                            tiles[index] = resolved;
-                            changed = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        return changed
-            ? StyleJsonUtilities.ParseJsonElement(root.ToJsonString()) ?? style
-            : style;
-    }
-
-    private static bool ResolveProperty(JsonObject root, string propertyName, string baseUrl)
-    {
-        if (root[propertyName] is JsonValue value && value.TryGetValue<string>(out var url))
-        {
-            var resolved = ResolveUrl(url, baseUrl);
-            if (!string.Equals(url, resolved, StringComparison.Ordinal))
-            {
-                root[propertyName] = resolved;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static string ResolveUrl(string url, string baseUrl)
-        => url.StartsWith("/", StringComparison.Ordinal)
-            ? string.Concat(baseUrl.TrimEnd('/'), url)
-            : url;
 
     internal static bool TryParseTheme(string? raw, out ThemeProfile theme)
     {
