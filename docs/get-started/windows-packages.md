@@ -21,9 +21,9 @@ this journey uses a small synchronous import and does not require durable jobs.
 ## Artifact identity and qualification
 
 The commands pin the anonymously published **pre-cut rehearsal** image
-`ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a`
+`ghcr.io/honua-io/honua-server@sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39`
 (Docker Desktop Linux containers; this journey selects `linux/amd64`, source `87966c3f7b6c840ffc4d4da0b451714ab717b18a`). Its
-[registry manifest](https://ghcr.io/v2/honua-io/honua-server/manifests/sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a)
+[registry manifest](https://ghcr.io/v2/honua-io/honua-server/manifests/sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39)
 is fetched by `docker pull` below. The control-plane package is
 [honua-admin 0.1.10](https://pypi.org/project/honua-admin/0.1.10/); the data-plane
 package is [honua-sdk 0.1.13](https://pypi.org/project/honua-sdk/0.1.13/).
@@ -71,7 +71,7 @@ function New-InstallSecret {
     try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
     return ([BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
 }
-$Image = 'ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a'
+$Image = 'ghcr.io/honua-io/honua-server@sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39'
 $Port = 18080
 $KeyringPassword = New-InstallSecret
 @"

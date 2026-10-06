@@ -2,7 +2,7 @@
 type: guide
 title: "Quickstart: install, publish, and query"
 description: "Run Honua with Docker Compose, publish a dataset, and query it over the protocols - in about ten minutes, on any machine that runs Docker."
-resource: "https://hub.docker.com/r/honuaio/honua-server"
+resource: "https://github.com/honua-io/honua-server/pkgs/container/honua-server"
 ---
 # Quickstart: install, publish, and query
 
@@ -13,11 +13,11 @@ Docker Compose, publishes a small dataset, and queries it back.
 step, and OpenSSL 3 with a POSIX shell (`grep`, `cut`, `chmod`) for the key-ring
 certificate. On Windows, run that certificate block in WSL or Git Bash. Nothing
 else: no repository checkout, no compiler, and **no registry credentials** —
-the server image and both Python clients are public, and the Community edition
-needs no licence.
+the server image and both Python clients are public. The 2026.1 release runs
+with licensing disabled, so there is no licence or edition-selection step.
 
 Everything below is pinned so a run is reproducible: server
-`ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a`,
+`ghcr.io/honua-io/honua-server@sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39`,
 [honua-admin 0.1.10](https://pypi.org/project/honua-admin/0.1.10/), and
 [honua-sdk 0.1.13](https://pypi.org/project/honua-sdk/0.1.13/).
 
@@ -41,6 +41,7 @@ services:
       - "127.0.0.1:${HONUA_GRPC_PORT:-18081}:8081"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      Licensing__Mode: Disabled
       AllowedHosts: "localhost;127.0.0.1"
       PUBLIC_BASE_URL: "http://localhost:${HONUA_HTTP_PORT}"
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua;Username=honua;Password=${POSTGRES_PASSWORD:?Required}"
@@ -116,7 +117,7 @@ than inventing them.
 ```bash
 cat > .env <<EOF
 COMPOSE_PROJECT_NAME=honua-quickstart
-HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a
+HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39
 HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(openssl rand -hex 32)
 HONUA_ADMIN_PASSWORD=Aa1!$(openssl rand -hex 32)
@@ -132,7 +133,7 @@ EOF
 function New-Secret { -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) }) }
 @"
 COMPOSE_PROJECT_NAME=honua-quickstart
-HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a
+HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39
 HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(New-Secret)
 HONUA_ADMIN_PASSWORD=Aa1!$(New-Secret)

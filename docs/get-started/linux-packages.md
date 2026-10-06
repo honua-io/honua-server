@@ -40,7 +40,7 @@ import secrets
 from pathlib import Path
 Path('.env').write_text(
     'COMPOSE_PROJECT_NAME=' + Path.cwd().name + '\n'
-    'HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a\n'
+    'HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39\n'
     'HONUA_HTTP_PORT=18080\n'
     'POSTGRES_PASSWORD=' + secrets.token_hex(32) + '\n'
     'HONUA_ADMIN_PASSWORD=Aa1!' + secrets.token_hex(32) + '\n'
