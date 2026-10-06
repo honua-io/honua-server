@@ -19,6 +19,34 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 public sealed class PostgresStorageMappedFeatureReaderSqlTests
 {
+    [Fact]
+    public void SRV_DB_006_SourceTemporalFilterConvertsTypedColumnToTextBeforeEpochDetection()
+    {
+        var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "WrapEpochAwareTimestamp", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        var expression = (string)method.Invoke(null, ["\"observed_at\""])!;
+
+        expression.Should().Contain("NULLIF((\"observed_at\")::text, '')");
+        expression.Should().NotContain("NULLIF(\"observed_at\", '')");
+    }
+
+    [Fact]
+    public void SRV_DB_020_JsonbNumericSortTreatsEmptyStringAsNull()
+    {
+        var resource = CreateResource() with
+        {
+            SchemaFields = [new MetadataV2Field { Name = "measurement", Type = MetadataV2FieldType.Integer }],
+        };
+        var query = new FeatureQuery { OrderBy = [new OrderByClause("measurement", ascending: true)] };
+
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(CreateReader(resource, attributesColumn: "attributes"), [query, false])!.ToString()!;
+
+        sql.Should().Contain("NULLIF(((\"attributes\" ->> $1::text))::text, '')::bigint");
+    }
+
     [Theory]
     [InlineData(MetadataV2FieldType.Integer)]
     [InlineData(MetadataV2FieldType.BigInteger)]
