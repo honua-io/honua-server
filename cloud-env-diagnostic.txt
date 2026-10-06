@@ -1,0 +1,72 @@
+Step 1: command -v dotnet
+/root/.dotnet/dotnet
+Exit status: 0
+
+Step 2: dotnet --version
+10.0.401
+Exit status: 0
+
+Step 3: echo "NuGetAudit=[$NuGetAudit] DOTNET_ROOT=[$DOTNET_ROOT]"
+NuGetAudit=[false] DOTNET_ROOT=[/root/.dotnet]
+Exit status: 0
+
+Step 4: echo "$PATH" | tr ":" "\n" | grep -i dotnet
+/root/.dotnet
+/root/.dotnet/tools
+/root/.dotnet
+/root/.dotnet/tools
+/root/.dotnet
+/root/.dotnet/tools
+/root/.dotnet
+/root/.dotnet/tools
+Exit status: 0
+
+Step 5: timeout 600 dotnet build tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj --no-restore -nologo -clp:NoSummary 2>&1 | tail -15
+/root/.nuget/packages/microsoft.sourcelink.common/10.0.401/build/Microsoft.SourceLink.Common.targets(56,5): warning : Source control information is not available - the generated source link is empty. [/workspace/honua-server/src/Honua.Protocols.OgcClassic/Honua.Protocols.OgcClassic.csproj]
+/root/.nuget/packages/microsoft.build.tasks.git/10.0.401/build/Microsoft.Build.Tasks.Git.targets(25,5): warning : Repository '/workspace/honua-server' has no remote. [/workspace/honua-server/src/Honua.Protocols.OgcApi/Honua.Protocols.OgcApi.csproj]
+/root/.nuget/packages/microsoft.sourcelink.common/10.0.401/build/Microsoft.SourceLink.Common.targets(56,5): warning : Source control information is not available - the generated source link is empty. [/workspace/honua-server/src/Honua.Protocols.OgcApi/Honua.Protocols.OgcApi.csproj]
+/root/.nuget/packages/microsoft.build.tasks.git/10.0.401/build/Microsoft.Build.Tasks.Git.targets(25,5): warning : Repository '/workspace/honua-server' has no remote. [/workspace/honua-server/src/Honua.Protocols.Stac/Honua.Protocols.Stac.csproj]
+/root/.nuget/packages/microsoft.sourcelink.common/10.0.401/build/Microsoft.SourceLink.Common.targets(56,5): warning : Source control information is not available - the generated source link is empty. [/workspace/honua-server/src/Honua.Protocols.Stac/Honua.Protocols.Stac.csproj]
+/root/.nuget/packages/microsoft.build.tasks.git/10.0.401/build/Microsoft.Build.Tasks.Git.targets(25,5): warning : Repository '/workspace/honua-server' has no remote. [/workspace/honua-server/src/Honua.Server/Honua.Server.csproj]
+/root/.nuget/packages/microsoft.sourcelink.common/10.0.401/build/Microsoft.SourceLink.Common.targets(56,5): warning : Source control information is not available - the generated source link is empty. [/workspace/honua-server/src/Honua.Server/Honua.Server.csproj]
+/root/.nuget/packages/microsoft.build.tasks.git/10.0.401/build/Microsoft.Build.Tasks.Git.targets(25,5): warning : Repository '/workspace/honua-server' has no remote. [/workspace/honua-server/tests/dotnet/Honua.TestKit/Honua.TestKit.csproj]
+/root/.nuget/packages/microsoft.sourcelink.common/10.0.401/build/Microsoft.SourceLink.Common.targets(56,5): warning : Source control information is not available - the generated source link is empty. [/workspace/honua-server/tests/dotnet/Honua.TestKit/Honua.TestKit.csproj]
+/root/.nuget/packages/microsoft.build.tasks.git/10.0.401/build/Microsoft.Build.Tasks.Git.targets(25,5): warning : Repository '/workspace/honua-server' has no remote. [/workspace/honua-server/tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj]
+/root/.nuget/packages/microsoft.sourcelink.common/10.0.401/build/Microsoft.SourceLink.Common.targets(56,5): warning : Source control information is not available - the generated source link is empty. [/workspace/honua-server/tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj]
+    80 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:07:34.59
+Exit status: 0
+Wall-clock seconds: 455
+
+Step 6: timeout 900 dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj --no-build --filter "FullyQualifiedName~Geometry" -nologo 2>&1 | tail -8
+Test run for /workspace/honua-server/tests/dotnet/Honua.Core.Tests/bin/Debug/net10.0/Honua.Core.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:   131, Skipped:     0, Total:   131, Duration: 2 s - Honua.Core.Tests.dll (net10.0)
+Exit status: 0
+Wall-clock seconds: 5
+
+Step 7: timeout 900 dotnet build tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --no-restore -nologo -clp:NoSummary 2>&1 | tail -12
+/root/.nuget/packages/microsoft.build.tasks.git/10.0.401/build/Microsoft.Build.Tasks.Git.targets(25,5): warning : Repository '/workspace/honua-server' has no remote. [/workspace/honua-server/src/Honua.Server/Honua.Server.csproj]
+/root/.nuget/packages/microsoft.sourcelink.common/10.0.401/build/Microsoft.SourceLink.Common.targets(56,5): warning : Source control information is not available - the generated source link is empty. [/workspace/honua-server/src/Honua.Server/Honua.Server.csproj]
+/root/.nuget/packages/microsoft.build.tasks.git/10.0.401/build/Microsoft.Build.Tasks.Git.targets(25,5): warning : Repository '/workspace/honua-server' has no remote. [/workspace/honua-server/tests/dotnet/Honua.TestKit/Honua.TestKit.csproj]
+/root/.nuget/packages/microsoft.sourcelink.common/10.0.401/build/Microsoft.SourceLink.Common.targets(56,5): warning : Source control information is not available - the generated source link is empty. [/workspace/honua-server/tests/dotnet/Honua.TestKit/Honua.TestKit.csproj]
+/root/.nuget/packages/microsoft.build.tasks.git/10.0.401/build/Microsoft.Build.Tasks.Git.targets(25,5): warning : Repository '/workspace/honua-server' has no remote. [/workspace/honua-server/tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj]
+/root/.nuget/packages/microsoft.sourcelink.common/10.0.401/build/Microsoft.SourceLink.Common.targets(56,5): warning : Source control information is not available - the generated source link is empty. [/workspace/honua-server/tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj]
+/root/.nuget/packages/microsoft.build.tasks.git/10.0.401/build/Microsoft.Build.Tasks.Git.targets(25,5): warning : Repository '/workspace/honua-server' has no remote. [/workspace/honua-server/tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj]
+/root/.nuget/packages/microsoft.sourcelink.common/10.0.401/build/Microsoft.SourceLink.Common.targets(56,5): warning : Source control information is not available - the generated source link is empty. [/workspace/honua-server/tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj]
+    88 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:02:28.68
+Exit status: 0
+Wall-clock seconds: 149
+
+Step 8: nproc ; free -g | head -2 ; df -h . | tail -1
+3
+               total        used        free      shared  buff/cache   available
+Mem:              17           3           1           0          13          13
+overlay          32G   13G   17G  44% /
+Exit status: 0
