@@ -442,6 +442,43 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("POST /sharing/rest/generateToken")]
+    public async Task GenerateToken_VerifierWithoutSource_ReturnsUsableToken()
+    {
+        await using var fixture = new WebAppFixture()
+            .ReplaceService<IPortalCredentialVerifier>(new SourceIndependentCredentialVerifier())
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
+            });
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateClient();
+
+        using var response = await PostFormAsync(client,
+            ("username", "external-user"), ("password", "external-password"),
+            ("client", "referer"), ("referer", SecureRefererA), ("f", "json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadTokenPayloadAsync(response);
+        var issuer = fixture.Services.GetRequiredService<IPortalTokenIssuer>();
+        var validation = await issuer.ValidateAsync(
+            payload.Token, new PortalTokenBinding(SecureRefererA, null), CancellationToken.None);
+        validation.Should().NotBeNull();
+        validation!.Principal.Identity!.Name.Should().Be("external-user");
+    }
+
+    private sealed class SourceIndependentCredentialVerifier : IPortalCredentialVerifier
+    {
+        public Task<PortalCredentialPrincipal?> VerifyAsync(
+            string username, string password, CancellationToken cancellationToken)
+            => Task.FromResult<PortalCredentialPrincipal?>(new PortalCredentialPrincipal(
+                "external-user", null, null, ["viewer"]));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/generateToken")]
     public async Task GenerateToken_WithPortalTokenAndServerUrl_ReturnsServerToken()
     {
         using var client = _fixture.CreateClient();
