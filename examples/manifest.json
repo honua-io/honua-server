@@ -3893,7 +3893,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 347,
+      "line": 348,
       "language": "bash"
     },
     {
@@ -3906,7 +3906,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 290,
+      "line": 291,
       "language": "bash"
     },
     {
@@ -3919,7 +3919,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 340,
+      "line": 341,
       "language": "bash"
     },
     {
@@ -3945,7 +3945,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 203,
+      "line": 204,
       "language": "bash"
     },
     {
@@ -3958,7 +3958,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 298,
+      "line": 299,
       "language": "bash"
     },
     {
@@ -3971,7 +3971,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 320,
+      "line": 321,
       "language": "bash"
     },
     {
@@ -3984,7 +3984,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 147,
+      "line": 148,
       "language": "bash"
     },
     {
@@ -3997,7 +3997,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 4,
-      "line": 159,
+      "line": 160,
       "language": "bash",
       "contentSha256": "290d666f1d62e55dbdd8e744f3736fd46e0931e140346417503b2b93fc2937a6"
     },
@@ -4011,7 +4011,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 5,
-      "line": 178,
+      "line": 179,
       "language": "bash",
       "contentSha256": "37314c95ec829697032de866c421070bfe92182cd343ade5ac1cfa146586d850"
     },
@@ -4025,9 +4025,9 @@
         "check": "content-hash-evidence"
       },
       "fence": 3,
-      "line": 131,
+      "line": 132,
       "language": "powershell",
-      "contentSha256": "b7d9dec6a7bbbc805e85c4381130dc7b3abea8676651b22cffd497576040de15"
+      "contentSha256": "2723218956d65c8cd732397546627eece56e7f13ba592dc04afc026a96ae8184"
     },
     {
       "id": "28da1cee54396e02",
@@ -4041,7 +4041,7 @@
       "fence": 1,
       "line": 34,
       "language": "yaml",
-      "contentSha256": "b022d51dd107c1bd9f94481496028a2588248eb4ce0427301e901997855624b3"
+      "contentSha256": "515cf0811437f97eed5e4a1dd911fd02e264d395ec91c56bc9a49019833e63d2"
     },
     {
       "id": "30ac7bc0ce1dbb2b",
@@ -4053,7 +4053,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 7,
-      "line": 213,
+      "line": 214,
       "language": "bash",
       "contentSha256": "d550ed541fc8ac3b444dfaf8f8fcabd7e81dd90891d07c15c9643a76e3d31062"
     },
@@ -4067,7 +4067,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 10,
-      "line": 279,
+      "line": 280,
       "language": "bash",
       "contentSha256": "668c8bf3ed79497ec0e9ea2c5960cd3bb6f056f01d550717218bff11a7116cae"
     },
@@ -4081,9 +4081,9 @@
         "check": "content-hash-evidence"
       },
       "fence": 2,
-      "line": 116,
+      "line": 117,
       "language": "bash",
-      "contentSha256": "393d76ae7fd738b8f6ae748a3d4501343a337ae5ca0c4ecaf2aa80901032e362"
+      "contentSha256": "e814ced9d5a90425ba5117b41bf0359d166ed13ad00298a7421ae9edfa8c8810"
     },
     {
       "id": "77b9999559e6114b",
@@ -4095,7 +4095,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 9,
-      "line": 251,
+      "line": 252,
       "language": "bash",
       "contentSha256": "1dbf290131afb98991c4335fd6204e47f3c7f44b7f47f479b1740c85b17721fd"
     },
@@ -4109,7 +4109,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 6,
-      "line": 198,
+      "line": 199,
       "language": "bash",
       "contentSha256": "0081c527235bda649a7a3ceedcf66d1aef0b45bbd9dff73c6b069a1d0b89dee1"
     },
@@ -4123,7 +4123,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 8,
-      "line": 221,
+      "line": 222,
       "language": "python",
       "contentSha256": "a0ef49bd299165f48617571fefec6b7dc6a36a6519317ac847fe938599feba01"
     },
@@ -4137,7 +4137,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 34,
+      "line": 36,
       "language": "bash"
     },
     {
@@ -4150,7 +4150,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 398,
+      "line": 400,
       "language": "powershell"
     },
     {
@@ -4163,7 +4163,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 191,
+      "line": 193,
       "language": "powershell"
     },
     {
@@ -4176,7 +4176,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 406,
+      "line": 408,
       "language": "powershell"
     },
     {
@@ -4189,7 +4189,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 97,
+      "line": 98,
       "language": "powershell"
     },
     {
@@ -4202,7 +4202,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 259,
+      "line": 261,
       "language": "powershell"
     },
     {
@@ -4215,7 +4215,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 56,
+      "line": 57,
       "language": "powershell"
     },
     {
@@ -4228,7 +4228,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 370,
+      "line": 372,
       "language": "powershell"
     },
     {
@@ -4241,7 +4241,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 348,
+      "line": 350,
       "language": "powershell"
     },
     {
