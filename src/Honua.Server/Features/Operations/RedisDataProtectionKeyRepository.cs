@@ -39,8 +39,18 @@ internal sealed class RedisDataProtectionKeyRepository(IConnectionMultiplexer re
     internal static bool IsProtectedElement(XElement element)
     {
         ArgumentNullException.ThrowIfNull(element);
-        return element.Descendants()
-            .Any(child => string.Equals(child.Name.LocalName, "encryptedSecret", StringComparison.Ordinal));
+
+        // Revocation and other metadata records do not contain key material. For a key,
+        // XmlKeyManager consumes the descriptor element's single child, so only an
+        // encryptedSecret in that position proves that the consumed descriptor is protected.
+        if (element.Name != "key")
+        {
+            return true;
+        }
+
+        var descriptorPayload = element.Element("descriptor")?.Elements().Take(2).ToArray();
+        return descriptorPayload is { Length: 1 }
+            && descriptorPayload[0].Name == "encryptedSecret";
     }
 
     public void StoreElement(XElement element, string friendlyName)

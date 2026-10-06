@@ -128,6 +128,42 @@ public sealed class OperationSecretKeyRingProtectionTests
         RedisDataProtectionKeyRepository.IsProtectedElement(legacyKey).Should().BeFalse();
     }
 
+    [UnitTest]
+    public void IsProtectedElement_WithPlaintextDescriptorAndUnrelatedEncryptedSecret_ReturnsFalse()
+    {
+        var key = new XElement(
+            "key",
+            new XElement(
+                "descriptor",
+                new XElement(
+                    "descriptor",
+                    new XElement("masterKey", new XElement("value", "plaintext")))),
+            new XElement("encryptedSecret"));
+
+        RedisDataProtectionKeyRepository.IsProtectedElement(key).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void IsProtectedElement_WithNamespacedEncryptionMarker_ReturnsFalse()
+    {
+        XNamespace unrelatedNamespace = "urn:example:unrelated";
+        var key = new XElement(
+            "key",
+            new XElement("descriptor", new XElement(unrelatedNamespace + "encryptedSecret")));
+
+        RedisDataProtectionKeyRepository.IsProtectedElement(key).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void IsProtectedElement_WithRevocationMetadata_ReturnsTrue()
+    {
+        var revocation = new XElement(
+            "revocation",
+            new XElement("revocationDate", "2026-10-06T00:00:00Z"));
+
+        RedisDataProtectionKeyRepository.IsProtectedElement(revocation).Should().BeTrue();
+    }
+
     // A private key on disk gets a unique name and 0600 at creation time, not a fixed
     // /tmp path tightened after the bytes land - otherwise a shared host leaves a
     // readable window, a symlink can be pre-created, and two processes clobber
