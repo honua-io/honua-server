@@ -326,6 +326,20 @@ internal static class AccessPolicyHelpers
         var serviceName = service?.Metadata.Name;
         if (!string.IsNullOrWhiteSpace(serviceName))
         {
+            if (LayerScopedWriteKey.IsScopeGovernedPrincipal(principal))
+            {
+                var allowed = operation is AuthorizationOperation.Query
+                    or AuthorizationOperation.Metadata
+                    or AuthorizationOperation.Export
+                    ? LayerScopedWriteKey.AllowsRead(principal, serviceName, resource.Metadata.Name)
+                    : LayerScopedWriteKey.IsScopedWritePrincipal(principal)
+                      && LayerScopedWriteKey.AllowsWrite(principal, serviceName, resource.Metadata.Name);
+
+                return allowed
+                    ? AccessDecision.Allowed()
+                    : AccessDecision.Forbidden("API key permission does not grant access to this resource.");
+            }
+
             var grantDecision = await EvaluateGrantCoreAsync(
                 services,
                 principal,

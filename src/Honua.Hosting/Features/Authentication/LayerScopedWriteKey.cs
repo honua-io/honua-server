@@ -35,6 +35,8 @@ internal static class LayerScopedWriteKey
     /// </summary>
     public const string WritePermissionPrefix = "write:";
 
+    private const string ReadPermissionPrefix = "read:";
+
     /// <summary>
     /// Exact full-administration grants. A key carrying any of these is NOT scoped
     /// and retains full admin authority (legacy behavior).
@@ -171,6 +173,32 @@ internal static class LayerScopedWriteKey
            principal.HasClaim("auth_type", AuthType);
 
     /// <summary>
+    /// Determines whether resource access for an API-key principal is governed by
+    /// its permission claims rather than by the coarse authenticated-user fallback.
+    /// </summary>
+    public static bool IsScopeGovernedPrincipal(ClaimsPrincipal? principal)
+        => principal is not null &&
+           (IsScopedWritePrincipal(principal) || principal.IsInRole(ScopedKeyRole));
+
+    /// <summary>
+    /// Determines whether a scoped API key has a read grant for a resource.
+    /// </summary>
+    public static bool AllowsRead(ClaimsPrincipal principal, string? serviceName, string? layerName)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+
+        if (string.IsNullOrWhiteSpace(serviceName))
+        {
+            return false;
+        }
+
+        var service = serviceName.Trim();
+        var layer = layerName?.Trim();
+        return principal.FindAll("permission")
+            .Any(claim => GrantMatchesResource(claim.Value, ReadPermissionPrefix, service, layer));
+    }
+
+    /// <summary>
     /// Evaluates whether a scoped write principal is authorized to write to the
     /// supplied <c>(service, layer)</c>. The principal must carry a matching
     /// <c>write:{service}</c> or <c>write:{service}/{layer}</c> grant. A
@@ -198,15 +226,18 @@ internal static class LayerScopedWriteKey
     }
 
     private static bool GrantAllowsWrite(string? grant, string service, string? layer)
+        => GrantMatchesResource(grant, WritePermissionPrefix, service, layer);
+
+    private static bool GrantMatchesResource(string? grant, string prefix, string service, string? layer)
     {
         var trimmed = grant?.Trim();
         if (string.IsNullOrEmpty(trimmed) ||
-            !trimmed.StartsWith(WritePermissionPrefix, StringComparison.OrdinalIgnoreCase))
+            !trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
-        var scope = trimmed[WritePermissionPrefix.Length..].Trim();
+        var scope = trimmed[prefix.Length..].Trim();
         if (scope.Length == 0)
         {
             return false;
