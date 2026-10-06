@@ -599,7 +599,7 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "preview",
+      "maturity": "internal",
       "capability": "admin.multi-tenancy"
     },
     {
@@ -4275,7 +4275,7 @@
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "preview",
+      "maturity": "internal",
       "capability": "admin.multi-tenancy"
     },
     {
@@ -4289,7 +4289,7 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantUsage_ReturnsBillingUsageEnvelope"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "preview",
+      "maturity": "internal",
       "capability": "admin.multi-tenancy"
     },
     {
@@ -4303,7 +4303,7 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "preview",
+      "maturity": "internal",
       "capability": "admin.multi-tenancy"
     },
     {
@@ -17295,7 +17295,7 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "preview",
+      "maturity": "internal",
       "capability": "admin.multi-tenancy"
     },
     {
@@ -17309,7 +17309,7 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "preview",
+      "maturity": "internal",
       "capability": "admin.multi-tenancy"
     },
     {
@@ -17323,7 +17323,7 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "preview",
+      "maturity": "internal",
       "capability": "admin.multi-tenancy"
     },
     {
