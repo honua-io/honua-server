@@ -777,9 +777,7 @@ internal static partial class FeatureServerEndpoints
                 Role = MapEsriRelationshipRole(relationship.Role),
                 Cardinality = MapEsriCardinality(relationship.Cardinality),
                 Composite = relationship.Composite,
-                KeyField = IsDestinationRelationshipRole(relationship.Role)
-                    ? relationship.DestinationField
-                    : relationship.OriginField,
+                KeyField = relationship.OriginField,
                 OriginKeyField = relationship.OriginField,
                 DestinationKeyField = relationship.DestinationField,
                 Description = relationship.Description
