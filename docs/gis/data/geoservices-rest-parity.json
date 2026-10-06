@@ -2347,7 +2347,7 @@
           {
             "name": "pixelType",
             "status": "partial",
-            "notes": "UNKNOWN and the service's own pixel type are accepted as the no-conversion default; every other explicit conversion type returns 501 because pixel conversion is not implemented."
+            "notes": "UNKNOWN and the service\u0027s own pixel type are accepted as the no-conversion default; every other explicit conversion type returns 501 because pixel conversion is not implemented."
           },
           {
             "name": "compression",
