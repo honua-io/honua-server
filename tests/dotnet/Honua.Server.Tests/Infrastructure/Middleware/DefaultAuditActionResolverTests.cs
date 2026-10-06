@@ -39,6 +39,19 @@ public sealed class DefaultAuditActionResolverTests
         _resolver.Resolve(method, route).Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("PUT", "/api/v{version:apiVersion}/console/content/{id}/share/access")]
+    [InlineData("POST", "/api/v{version:apiVersion}/console/content/{id}/share/link")]
+    [InlineData("PATCH", "/api/v{version:apiVersion}/console/content/{id}")]
+    [InlineData("DELETE", "/api/enrich/datasets/{id}")]
+    public void SRV_INF_010_ControlPlaneMutation_ReturnsAuditDescriptor(string method, string route)
+    {
+        var descriptor = _resolver.Resolve(method, route);
+
+        descriptor.Should().NotBeNull();
+        descriptor!.EventType.Should().Be(AuditEventType.AdminAction);
+    }
+
     [Fact]
     public void Resolve_AdminLoginTokenExchange_ReturnsAuthenticationDescriptor()
     {

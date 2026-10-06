@@ -20,6 +20,20 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 public sealed class GeoServicesErrorTelemetryTests
 {
     [Fact]
+    public void SRV_INF_014_UnknownPathSegment_UsesBoundedOperationLabel()
+    {
+        var context = CreateContext("/rest/services/a/b/callerControlledValue");
+        using var collector = new ErrorMetricsCollector("honua_geoservices_error_total");
+
+        _ = StandardErrorResponseFormatter.FormatError(context, StandardErrorResponse.NotFound("Missing"));
+
+        collector.Match("honua_geoservices_error_total", ("operation", "unknown"))
+            .Should().ContainSingle();
+        collector.Match("honua_geoservices_error_total", ("operation", "callercontrolledvalue"))
+            .Should().BeEmpty();
+    }
+
+    [Fact]
     public void FormatError_GeoServicesInBand200Envelope_IncrementsCountersWithInBandTrue()
     {
         // Arrange: GeoServices returns HTTP 200 with an {error} body for Esri compat.

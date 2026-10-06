@@ -16,6 +16,7 @@ using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using Microsoft.Net.Http.Headers;
 
 namespace Honua.Server.Features.Protocols.Terrain;
 
@@ -285,6 +286,16 @@ internal static class TerrainEndpoints
             _ => StandardErrorHelpers.CreateBadRequest(context, exception.Message)
         };
 
-    private static void SetCacheHeader(HttpContext context, int cacheMaxAge)
-        => context.Response.Headers["Cache-Control"] = $"public, max-age={Math.Max(0, cacheMaxAge)}";
+    internal static void SetCacheHeader(HttpContext context, int cacheMaxAge)
+    {
+        var credentialed = context.User.Identity?.IsAuthenticated == true
+            || context.Request.Headers.ContainsKey(HeaderNames.Authorization)
+            || context.Request.Headers.ContainsKey("X-API-Key");
+        context.Response.Headers[HeaderNames.CacheControl] =
+            $"{(credentialed ? "private" : "public")}, max-age={Math.Max(0, cacheMaxAge)}";
+        if (credentialed)
+        {
+            context.Response.Headers[HeaderNames.Vary] = "Authorization, X-API-Key";
+        }
+    }
 }

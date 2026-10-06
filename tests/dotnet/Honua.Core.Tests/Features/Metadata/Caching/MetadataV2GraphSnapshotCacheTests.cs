@@ -130,6 +130,33 @@ public sealed class MetadataV2GraphSnapshotCacheTests
     }
 
     [Fact]
+    public async Task SRV_INF_013_CancellingLeadingCaller_DoesNotCancelSharedLoad()
+    {
+        var loadStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseLoad = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cache = NewCache(ttlSeconds: 60, out _);
+        using var leadingCancellation = new CancellationTokenSource();
+
+        async ValueTask<MetadataV2GraphSnapshot> Load(CancellationToken cancellationToken)
+        {
+            cancellationToken.Should().Be(CancellationToken.None);
+            loadStarted.TrySetResult();
+            await releaseLoad.Task;
+            return SnapshotWithRevision(1);
+        }
+
+        var leading = cache.GetOrLoadAsync(Environment, Load, leadingCancellation.Token).AsTask();
+        await loadStarted.Task;
+        var waiting = cache.GetOrLoadAsync(Environment, Load, CancellationToken.None).AsTask();
+        leadingCancellation.Cancel();
+        releaseLoad.TrySetResult();
+
+        Func<Task> awaitLeading = async () => await leading;
+        await awaitLeading.Should().ThrowAsync<OperationCanceledException>();
+        (await waiting).Revision.Should().Be(1);
+    }
+
+    [Fact]
     public async Task GetCurrentAsync_WhenLoadThrows_DoesNotCacheFailure()
     {
         var provider = new CountingProvider(SnapshotWithRevision(1)) { ThrowOnce = true };

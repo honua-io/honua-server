@@ -660,16 +660,14 @@ internal static class StandardErrorResponseFormatter
             return "unknown";
         }
 
-        // Use the last segment as the operation only when it is purely alphabetic
-        // (Esri operations like query/addFeatures/applyEdits/exportImage). Numeric
-        // or mixed segments are identifiers (layer/feature ids) and would explode
-        // metric cardinality, so they collapse to "unknown".
         var last = segments[^1];
-        if (last.Any(ch => !char.IsLetter(ch)))
+        return last.ToLowerInvariant() switch
         {
-            return "unknown";
-        }
-
-        return last.ToLowerInvariant();
+            "query" or "addfeatures" or "updatefeatures" or "deletefeatures" or "applyedits"
+                or "calculate" or "queryrelatedrecords" or "queryattachments" or "export"
+                or "exportimage" or "identify" or "find" or "generate" or "solve"
+                or "submitjob" or "execute" or "cancel" => last.ToLowerInvariant(),
+            _ => "unknown"
+        };
     }
 }

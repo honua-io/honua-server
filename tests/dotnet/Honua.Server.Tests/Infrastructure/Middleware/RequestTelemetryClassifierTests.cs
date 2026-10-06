@@ -218,6 +218,21 @@ public sealed class RequestTelemetryClassifierTests
     }
 
     [Theory]
+    [InlineData("/wfs", "wfs")]
+    [InlineData("/ogc/services/test/wms", "wms")]
+    [InlineData("/rest/services/test/MapServer/WMTS", "wmts")]
+    [InlineData("/rest/services/0/ImageServer/WCS", "wcs")]
+    public void SRV_INF_018_UnknownRequestValue_HasBoundedOperationLabel(string path, string prefix)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Method = HttpMethods.Get;
+        context.Request.Path = path;
+        context.Request.QueryString = new QueryString("?REQUEST=callerControlledValue");
+
+        RequestTelemetryClassifier.ResolveOperation(context).Should().Be(prefix + ".unsupported");
+    }
+
+    [Theory]
     [InlineData("$apply", "aggregate")]
     [InlineData("apply", "aggregate")]
     [InlineData("$search", "search")]
