@@ -157,14 +157,15 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         viaHeader.Headers.Add("X-API-Key", key);
         using var headerResponse = await client.SendAsync(viaHeader);
         var headerBody = await headerResponse.Content.ReadAsStringAsync();
-        headerResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden, headerBody);
+        // GeoServices answers a scope refusal with the Esri error envelope, code 403.
+        ReadErrorCode(headerBody).Should().Be(403, headerBody);
 
         using var response = await SendAsync(client, HttpMethod.Get, ProtectedQueryPath, CountParameters, key, transport);
         var body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(headerResponse.StatusCode, body);
         (await ReadCountAsync(response)).Should().BeNull("a scoped key must not read an admin-only layer");
-        ReadErrorCode(body).Should().NotBe(498, "the key is valid; only its scope is insufficient: {0}", body);
+        ReadErrorCode(body).Should().Be(403, "the key is valid and only its scope is insufficient: {0}", body);
     }
 
     /// <summary>
