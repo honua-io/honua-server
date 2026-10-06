@@ -5,12 +5,50 @@ using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
+using Honua.Core.Queries.Filters.Fes20;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Queries.Filters;
 
 public sealed class FilterExpressionNormalizerTests
 {
+    [UnitTest]
+    public void SRV_DB_007_StringFieldPreservesUntypedFesLiteralLexicalValue()
+    {
+        var expression = Fes20Parser.ParseFilter(
+            "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:PropertyIsEqualTo><fes:ValueReference>zip</fes:ValueReference><fes:Literal>02134</fes:Literal></fes:PropertyIsEqualTo></fes:Filter>");
+
+        var normalized = FilterExpressionNormalizer.Normalize(
+            expression, ResourceWithField("zip", MetadataV2FieldType.String));
+
+        var literal = normalized.Should().BeOfType<BinaryExpression>().Subject.Right
+            .Should().BeOfType<Literal>().Subject;
+        literal.Type.Should().Be(LiteralType.Text);
+        literal.Value.Should().Be("02134");
+    }
+
+    [UnitTest]
+    public void SRV_DB_017_TimeFieldCoercesTextLiteralToTimeOnly()
+    {
+        var expression = new BinaryExpression(
+            new PropertyReference("open_time"), BinaryOperator.Equal,
+            new Literal("08:00:00", LiteralType.Text));
+
+        var normalized = FilterExpressionNormalizer.Normalize(
+            expression, ResourceWithField("open_time", MetadataV2FieldType.Time));
+
+        normalized.Should().BeOfType<BinaryExpression>().Subject.Right
+            .Should().BeOfType<Literal>().Subject.Value.Should().Be(new TimeOnly(8, 0));
+    }
+
+    private static MetadataV2Resource ResourceWithField(string name, MetadataV2FieldType type)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "audit", Name = "Audit" },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            SchemaFields = [new MetadataV2Field { Name = name, Type = type }],
+        };
+
     [UnitTest]
     public void EnsureWithinBounds_NodeCountWithinCap_DoesNotThrow()
     {

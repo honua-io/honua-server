@@ -826,7 +826,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     // numeric form and convert via to_timestamp; otherwise cast the ISO text.
     private static string WrapEpochAwareTimestamp(string textExpression)
     {
-        var trimmed = $"NULLIF({textExpression}, '')";
+        // Physical source columns can already be timestamp/date typed. Converting to text
+        // before empty/epoch detection keeps that path type-correct while retaining support
+        // for JSONB epoch-millisecond values.
+        var trimmed = $"NULLIF(({textExpression})::text, '')";
         return $"CASE WHEN {trimmed} ~ '^-?[0-9]+$' " +
                $"THEN to_timestamp({trimmed}::double precision / 1000.0) " +
                $"ELSE {trimmed}::timestamptz END";
@@ -1519,7 +1522,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             or MetadataV2FieldType.Date
             or MetadataV2FieldType.Time
             ? BuildEpochAwareTemporalExpression(column, field.Type)
-            : sortCast is null ? column : $"{column}{sortCast}";
+            : sortCast is null ? column : $"NULLIF(({column})::text, ''){sortCast}";
     }
 
     private MetadataV2Field ResolveFieldDefinition(string fieldName)
