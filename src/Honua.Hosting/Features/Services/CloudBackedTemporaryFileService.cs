@@ -586,7 +586,8 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
             // Without this check a caller could craft a token for an arbitrary object
             // key in the storage container and read it via the public /temp/{fileId} endpoint.
             if (string.IsNullOrWhiteSpace(decoded) ||
-                !decoded.StartsWith(TemporaryFolder + "/", StringComparison.Ordinal))
+                !decoded.StartsWith(TemporaryPrefix, StringComparison.Ordinal) ||
+                !IsDirectTemporaryObjectKey(decoded))
             {
                 cloudObjectKey = null;
                 return false;
@@ -600,6 +601,15 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
             cloudObjectKey = null;
             return false;
         }
+    }
+
+    private static bool IsDirectTemporaryObjectKey(string objectKey)
+    {
+        var relativeKey = objectKey[TemporaryPrefix.Length..];
+        return relativeKey.Length > 0 &&
+            relativeKey.IndexOfAny(['/', '\\']) < 0 &&
+            !relativeKey.Contains("..", StringComparison.Ordinal) &&
+            !relativeKey.Contains('%', StringComparison.Ordinal);
     }
 
     public void Dispose()

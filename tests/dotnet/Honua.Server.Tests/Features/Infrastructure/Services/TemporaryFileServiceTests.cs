@@ -6,6 +6,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Infrastructure.Services;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -24,6 +25,29 @@ public sealed class TemporaryFileServiceTests : IDisposable
     private readonly string _storageDirectory = Path.Join(
         Path.GetTempPath(),
         $"honua-temp-tests-{Guid.NewGuid():N}");
+
+    [Fact]
+    public async Task SRV_AUTH_003_RejectsEncodedTemporaryObjectKeyWithParentTraversal()
+    {
+        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AzureBlob);
+        var redis = CreateRedisLeaseMultiplexer();
+        var service = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
+                BaseUrl = "/temp"
+            },
+            cloudStorage,
+            redis: redis);
+        var token = WebEncoders.Base64UrlEncode(
+            System.Text.Encoding.UTF8.GetBytes("temporary-files/../exports/package.zip"));
+
+        var result = await service.GetTemporaryFileAsync(token + ".bin");
+
+        result.Should().BeNull();
+        cloudStorage.MetadataRequests.Should().BeEmpty(
+            "a client-chosen traversal key must be rejected before it reaches the storage provider");
+    }
 
     [Fact]
     public async Task StoreTemporaryFileAsync_ExceedingTotalStorageLimit_ThrowsLimitExceeded()
@@ -867,6 +891,8 @@ public sealed class TemporaryFileServiceTests : IDisposable
 
         public CloudStorageProvider Provider { get; }
 
+        public ConcurrentQueue<string> MetadataRequests { get; } = new();
+
         public Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
         {
             using var memoryStream = new MemoryStream();
@@ -958,6 +984,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
 
         public Task<CloudFile?> GetMetadataAsync(string fileId, CancellationToken cancellationToken = default)
         {
+            MetadataRequests.Enqueue(fileId);
             _files.TryGetValue(fileId, out var cloudFile);
             return Task.FromResult(cloudFile);
         }
