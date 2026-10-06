@@ -384,8 +384,8 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     {
         // The enriched 1.7 descriptor carries the z-bearing fullExtent (read from
         // the tileset root bounding volume), heightModelInfo, and format
-        // definitions/schema. With #1809 landed, the store now ALSO advertises the
-        // I3S 1.7 store.nodePages model (the fixture tileset is loadable), while
+        // definitions/schema. With #1809 landed, the layer now ALSO advertises the
+        // I3S 1.7 nodePages model (the fixture tileset is loadable), while
         // the legacy 1.6 store.rootNode tree stays absent — Honua serves the
         // nodePages traversal model, not a 1.6 root-node tree.
         var response = await _enterpriseFixture.Client.GetAsync($"/rest/services/{ExtentSceneId}/SceneServer/layers/0");
@@ -410,11 +410,11 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         root.TryGetProperty("attributeStorageInfo", out _).Should().BeTrue();
 
         // #1809: the loadable tileset projects to fetchable node pages, so the
-        // store advertises store.nodePages (and a defaultGeometrySchema) but NOT
+        // layer advertises nodePages (and a defaultGeometrySchema) but NOT
         // a legacy 1.6 rootNode tree.
         var store = root.GetProperty("store");
         store.TryGetProperty("rootNode", out _).Should().BeFalse();
-        store.TryGetProperty("nodePages", out var nodePages).Should().BeTrue();
+        root.TryGetProperty("nodePages", out var nodePages).Should().BeTrue();
         nodePages.GetProperty("nodesPerPage").GetInt32().Should().BePositive();
         store.TryGetProperty("defaultGeometrySchema", out _).Should().BeTrue();
     }
@@ -439,16 +439,17 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}")]
     public async Task GetLayer_SceneWithLoadableTileset_AdvertisesNodePagesStore()
     {
-        // #1809: once the tileset projects to fetchable node pages, the store
-        // advertises store.nodePages so a conformant client traverses the layer.
+        // #1809: once the tileset projects to fetchable node pages, the layer
+        // advertises nodePages so a conformant client traverses it.
         var response = await _enterpriseFixture.Client.GetAsync(
             $"/rest/services/{ExtentSceneId}/SceneServer/layers/0");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var store = json.RootElement.GetProperty("store");
-        store.TryGetProperty("nodePages", out var nodePages).Should().BeTrue();
+        var root = json.RootElement;
+        var store = root.GetProperty("store");
+        root.TryGetProperty("nodePages", out var nodePages).Should().BeTrue();
         nodePages.GetProperty("nodesPerPage").GetInt32().Should().BePositive();
         store.GetProperty("profile").GetString().Should().Be("meshpyramids");
         store.GetProperty("normalReferenceFrame").GetString().Should().Be("east-north-up");

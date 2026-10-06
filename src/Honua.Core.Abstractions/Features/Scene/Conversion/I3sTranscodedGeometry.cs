@@ -9,8 +9,8 @@ namespace Honua.Core.Features.Scene.Conversion;
 /// position stream is relative to.
 /// </summary>
 /// <param name="Buffer">
-/// The I3S Default geometry binary buffer (header + interleaved vertex stream +
-/// feature section). Suitable to serve verbatim at
+/// The I3S Default geometry binary buffer (header + contiguous PerAttributeArray
+/// vertex and feature sections). Suitable to serve verbatim at
 /// <c>nodes/{id}/geometries/0</c>.
 /// </param>
 /// <param name="MbsCenterEcef">

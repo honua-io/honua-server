@@ -27,7 +27,7 @@ public sealed class I3sNodePageEntry
 {
     /// <summary>
     /// LOD selection threshold for this node, in the metric declared by
-    /// <c>store.nodePages.lodSelectionMetricType</c>. Higher thresholds refine to
+    /// <c>nodePages.lodSelectionMetricType</c>. Higher thresholds refine to
     /// finer LODs; the root carries 0 (always selectable).
     /// </summary>
     [JsonPropertyName("lodThreshold")]

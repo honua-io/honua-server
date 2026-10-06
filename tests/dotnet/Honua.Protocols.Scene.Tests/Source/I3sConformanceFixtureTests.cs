@@ -93,8 +93,7 @@ public sealed class I3sConformanceFixtureTests : IAsyncLifetime
 
         // The fixture tileset is loadable, so the descriptor must advertise a
         // fetchable node-page store (#1809).
-        var store = root.GetProperty("store");
-        store.TryGetProperty("nodePages", out var nodePages).Should().BeTrue();
+        root.TryGetProperty("nodePages", out var nodePages).Should().BeTrue();
         nodePages.GetProperty("nodesPerPage").GetInt32().Should().BePositive();
     }
 
