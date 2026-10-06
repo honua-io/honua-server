@@ -135,14 +135,14 @@ public sealed class QuantizedQueryResponseTests
                 transform.Should().NotBeNull(
                     "the quantization transform must be serialized before features so a streaming client can dequantize them: {0}",
                     json);
+                var readTransform = transform.GetValueOrDefault();
                 decoded = member.Value.EnumerateArray()
-                    .Select(feature => Dequantize(feature.GetProperty("geometry"), transform!.Value))
+                    .Select(feature => Dequantize(feature.GetProperty("geometry"), readTransform))
                     .ToList();
             }
         }
 
-        decoded.Should().NotBeNull("the featureSet must carry features: {0}", json);
-        return decoded!;
+        return decoded ?? throw new InvalidOperationException($"The featureSet carries no features: {json}");
     }
 
     private static DecodedGeometry Dequantize(JsonElement geometry, JsonElement transform)
