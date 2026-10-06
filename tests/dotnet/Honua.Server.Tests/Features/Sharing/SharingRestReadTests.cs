@@ -159,6 +159,35 @@ public sealed class SharingRestReadTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /arcgisuris.xml")]
+    public async Task Server5429_PortalUriDescriptor_UsesConfiguredHttpsPortalRootForGetAndHead()
+    {
+        const string publicRoot = "https://portal.example.test:7443/enterprise";
+        await using var fixture = CreateFixture().ConfigureWebHost(builder =>
+            builder.UseSetting("Public:BaseUrl", publicRoot));
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateClient();
+
+        using var response = await client.GetAsync("/arcgisuris.xml");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/xml");
+        var root = XElement.Parse(await response.Content.ReadAsStringAsync());
+        root.Name.LocalName.Should().Be("ArcGISOnlineURIList");
+        root.Elements().Select(element => element.Name.LocalName)
+            .Should().Equal("Name", "Base", "PingTest", "Secure");
+        root.Element("Base")!.Value.Should().Be(publicRoot + "/");
+        root.Element("Secure")!.Value.Should().Be(publicRoot + "/");
+
+        using var request = new HttpRequestMessage(HttpMethod.Head, "/arcgisuris.xml");
+        using var head = await client.SendAsync(request);
+        head.StatusCode.Should().Be(HttpStatusCode.OK);
+        head.Content.Headers.ContentType!.MediaType.Should().Be("application/xml");
+        (await head.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/info")]
     public async Task GeoServicesInfo_AdvertisesTokenAuthentication()
     {
