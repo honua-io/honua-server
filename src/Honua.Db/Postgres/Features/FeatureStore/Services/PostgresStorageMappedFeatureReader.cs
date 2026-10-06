@@ -1271,11 +1271,18 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         if (query.OrderBy.HasValue && !query.OrderBy.Value.IsDefaultOrEmpty)
         {
+            var ordersByPrimaryKey = false;
             foreach (var clause in query.OrderBy.Value)
             {
                 var column = ResolveSortColumnExpression(clause.Field, sql);
+                ordersByPrimaryKey |= column.Equals(_primaryKeyColumn, StringComparison.OrdinalIgnoreCase);
                 yield return (column,
                     $" {(clause.Ascending ? "ASC" : "DESC")}{FeatureQueryBuilder.GetNullOrderingSuffix(clause.NullOrdering)}");
+            }
+
+            if ((query.Limit.HasValue || query.Offset.HasValue) && !ordersByPrimaryKey)
+            {
+                yield return (_primaryKeyColumn, string.Empty);
             }
             yield break;
         }
