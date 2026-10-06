@@ -303,8 +303,10 @@ public sealed class StudioDraftOperationRuntimeTests
         Guid.TryParse(proposal.Operation.ResourceIds["requestId"], out var publicationRequestId)
             .Should().BeTrue();
         bridge.Request!.OperationId.Should().Be(StudioDraftOperations.CreatePublicationRequest);
+        var proposalJson = bridge.Request.Parameters[StudioDraftOperations.PayloadParameter];
+        proposalJson.Should().NotBeNull();
         var proposalPayload = JsonSerializer.Deserialize(
-            bridge.Request.Parameters[StudioDraftOperations.PayloadParameter],
+            proposalJson!,
             StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload);
         proposalPayload!.RequestId.Should().Be(publicationRequestId);
         (await store.GetPointersAsync(saved.ItemId))!.PublishedVersionId.Should().BeNull(
