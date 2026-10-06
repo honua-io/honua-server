@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Collections.Immutable;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -25,6 +27,29 @@ public sealed class MapServerTileEndpointTests : IClassFixture<WebAppFixture>
     private readonly WebAppFixture _fixture;
 
     public MapServerTileEndpointTests(WebAppFixture fixture) => _fixture = fixture;
+
+    [UnitTest]
+    public async Task SRV_INF_002_FieldMasksPartitionMapTileCache()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("resource-mask-cache", "Mask cache")
+            .Build();
+        var resource = graph.Resources.Single();
+        var layers = new[] { new MapServerEndpoints.TileLayerDescriptor(0, 17, resource) };
+        var unmasked = Substitute.For<IFieldMaskSource>();
+        unmasked.ResolveAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray<string>.Empty);
+        var masked = Substitute.For<IFieldMaskSource>();
+        masked.ResolveAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create("classification"));
+
+        var unmaskedFingerprint = await MapServerEndpoints.BuildTileFieldMaskFingerprintAsync(
+            unmasked, layers, CancellationToken.None);
+        var maskedFingerprint = await MapServerEndpoints.BuildTileFieldMaskFingerprintAsync(
+            masked, layers, CancellationToken.None);
+
+        maskedFingerprint.Should().NotBe(unmaskedFingerprint);
+    }
 
     [UnitTest]
     public async Task ResolveTileLayerDescriptors_DraftStorageBinding_ExcludesPublication()
