@@ -2786,7 +2786,7 @@ internal sealed partial class FeatureServerQueryHandler(
     private static object? GeoServicesAttributeValue(object? value)
         => GeoServicesAttributeProjection.ToEsriValue(value);
 
-    private static bool TryParseStatisticsDefinitions(
+    internal static bool TryParseStatisticsDefinitions(
         string outStatisticsJson,
         MetadataV2Resource resource,
         out ImmutableArray<StatisticDefinition> definitions,
@@ -2839,15 +2839,23 @@ internal sealed partial class FeatureServerQueryHandler(
                     return false;
                 }
 
-                if (!fieldNames.Contains(onField))
-                {
-                    error = $"Field '{onField}' does not exist on the layer.";
-                    return false;
-                }
-
                 if (!TryParseStatisticType(statisticTypeStr, out var statisticType))
                 {
                     error = $"Unsupported statisticType: '{statisticTypeStr}'. Supported types: count, sum, min, max, avg, stddev, var.";
+                    return false;
+                }
+
+                // The protocol represents a row count as count on "*". Normalize it to
+                // the non-null object identifier so every provider emits an equivalent
+                // COUNT expression without accepting the wildcard as a general field.
+                if (statisticType == StatisticType.Count && onField == "*")
+                {
+                    onField = FieldNames.ObjectId;
+                }
+
+                if (!fieldNames.Contains(onField))
+                {
+                    error = $"Field '{onField}' does not exist on the layer.";
                     return false;
                 }
 
