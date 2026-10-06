@@ -139,6 +139,14 @@
       "shards": [
         "Server Features Admin Network and Jobs"
       ]
+    },
+    {
+      "prefix": "tests/dotnet/Honua.Server.Tests/Features/Import/ReplaceCompletenessParserSkipTests.cs",
+      "reason": "replace_completeness_import_exact_owner",
+      "exclusive": true,
+      "shards": [
+        "File and Raster Import"
+      ]
     }
   ],
   "_shard_partitions_comment": "Exact class-level partition contracts for split shards. scripts/ci/check-server-test-shard-coverage.py evaluates each legacy parent filter against every discovered test class and requires exactly one listed child to claim it. This preserves the pre-split test surface without gaps or duplicate class ownership while allowing the parent matrix entry to be removed.",
@@ -253,7 +261,7 @@
     },
     {
       "name": "File and Raster Import capacity split (#3204)",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.CloudStorage|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.GeoParquet|FullyQualifiedName~Honua.Server.Tests.Import.StreamingImport|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.ImportHttpClientHelper|FullyQualifiedName~Honua.Server.Tests.Import.ImportSourceUrlValidation|FullyQualifiedName~Honua.Server.Tests.Import.ImportUrlEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.Emulator|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.AwsS3|FullyQualifiedName~Honua.Server.Tests.Import.AzureBlob|FullyQualifiedName~Honua.Server.Tests.Import.ImportValidationErrorMessage|FullyQualifiedName~Honua.Server.Tests.Import.RedisJobQueueFallback|FullyQualifiedName~Honua.Server.Tests.Import.ImportCoordinatorRecovery|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.CloudStorage|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.GeoParquet|FullyQualifiedName~Honua.Server.Tests.Import.StreamingImport|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.ImportHttpClientHelper|FullyQualifiedName~Honua.Server.Tests.Import.ImportSourceUrlValidation|FullyQualifiedName~Honua.Server.Tests.Import.ImportUrlEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.Emulator|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.AwsS3|FullyQualifiedName~Honua.Server.Tests.Import.AzureBlob|FullyQualifiedName~Honua.Server.Tests.Import.ImportValidationErrorMessage|FullyQualifiedName~Honua.Server.Tests.Import.RedisJobQueueFallback|FullyQualifiedName~Honua.Server.Tests.Import.ImportCoordinatorRecovery|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService|FullyQualifiedName~Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests",
       "children": [
         "File and Raster Import",
         "Cloud and Streaming Import"
@@ -535,8 +543,9 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "_comment": "Offline TRX rebalance (#3711): combines the 2.1m-p90 RasterImport micro-shard with the 11.5m-p90 FileImport owner.",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.ImportValidationErrorMessage|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.ImportValidationErrorMessage|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService|FullyQualifiedName~Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests",
       "paths": [
+        "tests/dotnet/Honua.Server.Tests/Features/Import/ReplaceCompletenessParserSkipTests.cs",
         "src/Honua.Core/Features/FileImport/",
         "src/Honua.Core/Features/Import/",
         "src/Honua.Db/Postgres/Features/FileImport/",

@@ -92,7 +92,7 @@ internal sealed partial class StreamingFileImportService
                     // Replace via transactional staging-table swap. Record whether a live
                     // target already existed before this request: a first-ever replace into a
                     // brand-new target has no prior complete dataset to protect (#4006), so it
-                    // must still promote even if the load dropped rows.
+                    // must still promote if the load imported rows even if it dropped others.
                     hadExistingTarget = await ImportTableExistsAsync(
                         connection, targetSchema, allowedTableName, cancellationToken);
                     loadTableName = await CreateStagingTableAsync(
@@ -203,7 +203,8 @@ internal sealed partial class StreamingFileImportService
                             JobId = jobId,
                             Status = ImportStatus.Processing,
                             FeaturesProcessed = totalImported,
-                            FailedFeatures = totalFailed + repairTally.SkippedInvalid,
+                            FailedFeatures = totalFailed + repairTally.SkippedInvalid +
+                                (wktGeometryDiagnostics?.UnparseableRecords ?? 0),
                             RepairedFeatures = repairTally.Repaired,
                             BatchesCommitted = batchesCommitted,
                             TableName = request.TableName,
@@ -252,17 +253,21 @@ internal sealed partial class StreamingFileImportService
                 // totalFailed would otherwise read zero here even though input rows were dropped.
                 totalFailed += repairTally.SkippedInvalid;
 
+                // Parser skips never enter a batch, so count them before deciding whether
+                // the staging dataset is complete enough to replace an existing target.
+                totalFailed += wktGeometryDiagnostics?.UnparseableRecords ?? 0;
+
                 // For a replace, the load streamed into the staging sibling. Promote it over the
                 // live target unless doing so would destroy a prior COMPLETE dataset: when a target
                 // already existed and this load dropped rows (skip/continue), promoting the
                 // incomplete staging sibling would silently replace a complete dataset with a
                 // partial one (#4006). A first-ever replace into a brand-new target has nothing to
-                // protect, so it still promotes even with dropped rows — that is a normal partial
-                // import, not data loss.
+                // protect, so it still promotes imported rows even with dropped rows — that is a
+                // normal partial import, not data loss. A load with no imported rows is discarded.
                 var replacementBlocked = loadMode == ImportLoadMode.Replace && hadExistingTarget && totalFailed > 0;
                 if (loadMode == ImportLoadMode.Replace)
                 {
-                    if (replacementBlocked)
+                    if (replacementBlocked || totalImported == 0)
                     {
                         await DropStagingTableAsync(connection, targetSchema, allowedTableName, cancellationToken);
                     }
@@ -274,7 +279,7 @@ internal sealed partial class StreamingFileImportService
 
                 // Skip ANALYZE when the replace was blocked: the live table is unchanged, so its
                 // statistics are already current, and re-analyzing it is pure overhead.
-                if (!replacementBlocked)
+                if (!replacementBlocked && totalImported > 0)
                 {
                     await AnalyzeTableAsync(connection, targetSchema, allowedTableName, cancellationToken);
                 }
