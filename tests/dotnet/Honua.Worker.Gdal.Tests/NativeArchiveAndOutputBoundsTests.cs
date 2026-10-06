@@ -31,6 +31,22 @@ public sealed class NativeArchiveAndOutputBoundsTests : IDisposable
         Directory.CreateDirectory(_scratch);
     }
 
+    // The poller races the executor, which creates, truncates and deletes scratch files while
+    // it runs. A file that disappears (or is briefly locked) between enumeration and stat holds
+    // no extracted bytes at that instant, so it contributes zero to the observed peak; any bytes
+    // it did hold are caught by the next poll iteration while it still exists.
+    private static long ScratchFileLengthOrZero(string path)
+    {
+        try
+        {
+            return new FileInfo(path).Length;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return 0;
+        }
+    }
+
     public void Dispose()
     {
         try
@@ -161,16 +177,7 @@ public sealed class NativeArchiveAndOutputBoundsTests : IDisposable
                 {
                     foreach (var file in Directory.EnumerateFiles(_scratch, "*", SearchOption.AllDirectories))
                     {
-                        try
-                        {
-                            total += new FileInfo(file).Length;
-                        }
-                        catch (IOException)
-                        {
-                        }
-                        catch (UnauthorizedAccessException)
-                        {
-                        }
+                        total += ScratchFileLengthOrZero(file);
                     }
                 }
 
