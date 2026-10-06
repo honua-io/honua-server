@@ -266,6 +266,29 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
         bitmap.Height.Should().Be(201);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithoutSpatialReference_UsesAdvertisedWebMercator()
+    {
+        // The service resource advertises EPSG:3857. Omitting bboxSR and imageSR must
+        // not fall back to the native EPSG:4326, which would reject these ordinates
+        // or report them in degrees.
+        var response = await Fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-13600000,4400000,-13500000,4500000&size=64,64&f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
+        export.Should().NotBeNull();
+        export!.Extent.Should().NotBeNull();
+        export.Extent!.SpatialReference.Wkid.Should().Be(3857);
+        export.Extent.Xmin.Should().BeApproximately(-13600000, 0.01);
+        export.Extent.Ymin.Should().BeApproximately(4400000, 0.01);
+        export.Extent.Xmax.Should().BeApproximately(-13500000, 0.01);
+        export.Extent.Ymax.Should().BeApproximately(4500000, 0.01);
+    }
+
     [IntegrationTheory]
     [InlineData("{")]
     [InlineData("{}")]
@@ -405,6 +428,10 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
 
         export.Should().NotBeNull();
         export!.Extent.Should().NotBeNull();
+        export.Extent!.Xmin.Should().BeApproximately(-180, 1e-6);
+        export.Extent.Ymin.Should().BeApproximately(-90, 1e-6);
+        export.Extent.Xmax.Should().BeApproximately(180, 1e-6);
+        export.Extent.Ymax.Should().BeApproximately(90, 1e-6);
         export.Scale.Should().NotBeNull();
     }
 

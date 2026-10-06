@@ -7,6 +7,7 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -19,6 +20,8 @@ using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.MapServer.Models;
 using Honua.Protocols.GeoServices.Models;
+using Honua.Protocols.GeoServices.VectorTileServer.Models;
+using Honua.Protocols.GeoServices.VectorTileServer.Services;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -28,6 +31,12 @@ namespace Honua.Protocols.GeoServices.MapServer;
 internal static partial class MapServerEndpoints
 {
     private const string DefaultMapServerCapabilities = "Map,Query,Data,Extract";
+
+    /// <summary>
+    /// Spatial reference of the WebMercatorQuad cache advertised by every MapServer.
+    /// Service <c>spatialReference</c>, extents, and omitted export SR parameters use it.
+    /// </summary>
+    private const int CachedMapSpatialReferenceId = 3857;
 
     private sealed record MapServerMetadataLayerDescriptor(
         int PublicLayerId,
@@ -104,9 +113,16 @@ internal static partial class MapServerEndpoints
                     featureReader,
                     logger,
                     cancellationToken))).ConfigureAwait(false);
+            var transformService = context.RequestServices.GetRequiredService<ICoordinateTransformService>();
+            var serviceExtent = await ResolveCachedServiceExtentAsync(
+                service,
+                visibleLayers,
+                transformService,
+                cancellationToken).ConfigureAwait(false);
             var response = MapServiceToMapServerResponse(
                 service,
                 visibleLayers,
+                serviceExtent,
                 limitsOptions.Query.MaxRecordCount,
                 limitsOptions.Tiles.MaxTileZoom,
                 limitsOptions.Tiles.MaxTilesPerRequest,
@@ -256,27 +272,13 @@ internal static partial class MapServerEndpoints
     private static MapServerResponse MapServiceToMapServerResponse(
         MetadataV2Service service,
         IReadOnlyList<MapServerMetadataLayerDescriptor> layers,
+        EsriExtent serviceExtent,
         int maxRecordCount,
         int maxTileZoom,
         int maxExportTilesCount,
         FeatureServerTimeInfo? timeInfo,
         string supportedExtensions)
     {
-        const int cachedSpatialReferenceId = 3857;
-        const double webMercatorExtent = SpatialConstants.WebMercatorExtent;
-        var cachedSpatialReference = new EsriSpatialReference
-        {
-            Wkid = cachedSpatialReferenceId,
-            LatestWkid = cachedSpatialReferenceId
-        };
-        var serviceExtent = new EsriExtent
-        {
-            Xmin = -webMercatorExtent,
-            Ymin = -webMercatorExtent,
-            Xmax = webMercatorExtent,
-            Ymax = webMercatorExtent,
-            SpatialReference = cachedSpatialReference
-        };
         var visibleFeatureLayers = layers.Where(static layer => HasMapServerGeometry(layer.Resource)).ToArray();
         var visibleTables = layers.Where(static layer => !HasMapServerGeometry(layer.Resource)).ToArray();
 
@@ -285,7 +287,7 @@ internal static partial class MapServerEndpoints
             ServiceDescription = service.Metadata.Description,
             MapName = service.Metadata.Name,
             Description = service.Metadata.Description,
-            SpatialReference = cachedSpatialReference,
+            SpatialReference = serviceExtent.SpatialReference,
             Layers = [.. visibleFeatureLayers.Select(layer => new MapServerLayerInfo
             {
                 Id = layer.PublicLayerId,
@@ -628,6 +630,55 @@ internal static partial class MapServerEndpoints
         }
 
         return [.. formats.Select(static format => format.ToUpperInvariant()).Distinct(StringComparer.OrdinalIgnoreCase)];
+    }
+
+    /// <summary>
+    /// Unions accessible resource bboxes and projects them into the advertised tile CRS.
+    /// A bbox that cannot be projected is left out. When none remain, the tile-scheme
+    /// world is used so the extent stays in the same spatial reference as <c>tileInfo</c>.
+    /// </summary>
+    private static async Task<EsriExtent> ResolveCachedServiceExtentAsync(
+        MetadataV2Service service,
+        IReadOnlyList<MapServerMetadataLayerDescriptor> layers,
+        ICoordinateTransformService transformService,
+        CancellationToken cancellationToken)
+    {
+        var spatialReference = new EsriSpatialReference
+        {
+            Wkid = CachedMapSpatialReferenceId,
+            LatestWkid = CachedMapSpatialReferenceId
+        };
+        var projected = await VectorTileServerExtentResolver.ResolveAsync(
+            layers.Select(static layer => layer.Resource),
+            service.SpatialReference,
+            new VectorTileSpatialReference
+            {
+                Wkid = CachedMapSpatialReferenceId,
+                LatestWkid = CachedMapSpatialReferenceId
+            },
+            transformService,
+            cancellationToken).ConfigureAwait(false);
+        if (projected is { } extent)
+        {
+            return new EsriExtent
+            {
+                Xmin = extent.Xmin,
+                Ymin = extent.Ymin,
+                Xmax = extent.Xmax,
+                Ymax = extent.Ymax,
+                SpatialReference = spatialReference
+            };
+        }
+
+        var world = SpatialConstants.WebMercatorExtent;
+        return new EsriExtent
+        {
+            Xmin = -world,
+            Ymin = -world,
+            Xmax = world,
+            Ymax = world,
+            SpatialReference = spatialReference
+        };
     }
 
     private static EsriExtent? ResolveLayerExtent(MetadataV2Resource resource, EsriExtent? serviceExtent)
