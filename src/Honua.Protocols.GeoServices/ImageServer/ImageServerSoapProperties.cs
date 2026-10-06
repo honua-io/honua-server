@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text;
+using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Domain;
@@ -10,6 +12,7 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
+using Microsoft.Extensions.Primitives;
 using static Honua.Protocols.GeoServices.Soap.ArcGisSoapProtocol;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
@@ -97,31 +100,133 @@ internal static partial class ImageServerSoapEndpoints
         SoapRasterRequestContext request,
         CancellationToken cancellationToken)
     {
-        var geometry = DirectChild(operation, "Geometry");
-        if (geometry is not null && !IsNilElement(geometry))
+        // A request with no geometry, mosaic rule, pixel size, or rendering rule is the
+        // stored service histogram (REST /histograms). Any of those arguments is a
+        // computeHistograms request and must reach that handler instead of being dropped.
+        if (!HasComputeHistogramArguments(operation))
         {
-            return CreateSoapFault(
-                "ComputeHistograms geometry filters are not supported; omit geometry for whole-service histograms.",
-                StatusCodes.Status400BadRequest,
-                request.SoapNamespace);
+            var revalidation = await RevalidateMetadataAsync(request, cancellationToken).ConfigureAwait(false);
+            if (revalidation.Error is not null)
+            {
+                return revalidation.Error;
+            }
+
+            var histograms = await ReadServiceHistogramsAsync(
+                request.HttpContext,
+                revalidation.LayerId,
+                request.SoapNamespace,
+                cancellationToken).ConfigureAwait(false);
+            if (histograms.Error is not null)
+            {
+                return histograms.Error;
+            }
+
+            return HistogramSoapResponse(request, histograms.Histograms!);
         }
 
-        var revalidation = await RevalidateMetadataAsync(request, cancellationToken).ConfigureAwait(false);
-        if (revalidation.Error is not null)
+        if (!TryBuildComputeHistogramQuery(operation, out var values, out var error))
         {
-            return revalidation.Error;
+            return CreateSoapFault(error!, StatusCodes.Status400BadRequest, request.SoapNamespace);
         }
 
-        var histograms = await ReadServiceHistogramsAsync(
+        var computeRevalidation = await RevalidateMetadataAsync(request, cancellationToken).ConfigureAwait(false);
+        if (computeRevalidation.Error is not null)
+        {
+            return computeRevalidation.Error;
+        }
+
+        var handler = request.HttpContext.RequestServices.GetRequiredService<ImageServerStatisticsHistogramsHandler>();
+        var result = await handler.ComputeHistogramsAsync(
             request.HttpContext,
-            revalidation.LayerId,
-            request.SoapNamespace,
+            computeRevalidation.LayerId,
+            values,
             cancellationToken).ConfigureAwait(false);
-        if (histograms.Error is not null)
+        if (!TryGetPayload<ComputeHistogramsResponse>(result, out var computed))
         {
-            return histograms.Error;
+            return CreateSoapFaultFromResult(result, "Image histograms could not be read.", request.SoapNamespace);
         }
 
+        return HistogramSoapResponse(request, computed.Histograms);
+    }
+
+    private static bool HasComputeHistogramArguments(XElement operation)
+        => IsPresent(operation, "Geometry")
+            || IsPresent(operation, "MosaicRule")
+            || IsPresent(operation, "PixelSize")
+            || IsPresent(operation, "RenderingRule");
+
+    private static bool IsPresent(XElement parent, string localName)
+    {
+        var child = DirectChild(parent, localName);
+        return child is not null && !IsNilElement(child);
+    }
+
+    private static bool TryBuildComputeHistogramQuery(
+        XElement operation,
+        out Dictionary<string, StringValues> values,
+        out string? error)
+    {
+        values = new Dictionary<string, StringValues>(StringComparer.Ordinal) { ["f"] = "json" };
+        error = null;
+
+        if (IsPresent(operation, "Geometry"))
+        {
+            if (!TrySerializeSoapGeometry(
+                    DirectChild(operation, "Geometry")!,
+                    out var geometry,
+                    out var geometryType,
+                    out var wkid,
+                    out error))
+            {
+                return false;
+            }
+
+            values["geometry"] = geometry;
+            values["geometryType"] = geometryType;
+            if (wkid is int srid)
+            {
+                values["inSR"] = srid.ToString(CultureInfo.InvariantCulture);
+            }
+        }
+
+        if (IsPresent(operation, "MosaicRule"))
+        {
+            if (!TrySerializeSoapMosaicRule(operation, out var mosaicRule, out error))
+            {
+                return false;
+            }
+
+            if (mosaicRule is not null)
+            {
+                values["mosaicRule"] = mosaicRule;
+            }
+        }
+
+        if (IsPresent(operation, "PixelSize"))
+        {
+            if (!TrySerializeSoapPixelSize(DirectChild(operation, "PixelSize")!, out var pixelSize, out error))
+            {
+                return false;
+            }
+
+            values["pixelSize"] = pixelSize;
+        }
+
+        if (IsPresent(operation, "RenderingRule"))
+        {
+            if (!TrySerializeSoapRenderingRule(DirectChild(operation, "RenderingRule")!, out var renderingRule, out error))
+            {
+                return false;
+            }
+
+            values["renderingRule"] = renderingRule;
+        }
+
+        return error is null;
+    }
+
+    private static IResult HistogramSoapResponse(SoapRasterRequestContext request, BandHistogram[] histograms)
+    {
         XNamespace xsi = XmlSchemaInstanceNamespace;
         return CreateSoapResponse(
             request.SoapNamespace,
@@ -130,7 +235,149 @@ internal static partial class ImageServerSoapEndpoints
             new XElement(
                 "Result",
                 new XAttribute(xsi + "type", "tns:ArrayOfRasterHistogram"),
-                histograms.Histograms!.Select(BuildRasterHistogram)));
+                histograms.Select(BuildRasterHistogram)));
+    }
+
+    private static bool TrySerializeSoapPixelSize(XElement pixelSize, out string json, out string? error)
+    {
+        json = string.Empty;
+        error = null;
+        if (!TryReadSoapDouble(pixelSize, "X", out var x) || !TryReadSoapDouble(pixelSize, "Y", out var y))
+        {
+            error = "PixelSize requires X and Y.";
+            return false;
+        }
+
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber("x", x);
+            writer.WriteNumber("y", y);
+            writer.WriteEndObject();
+        }
+
+        json = Encoding.UTF8.GetString(stream.ToArray());
+        return true;
+    }
+
+    private static bool TrySerializeSoapRenderingRule(XElement renderingRule, out string json, out string? error)
+    {
+        json = string.Empty;
+        error = null;
+        var function = DirectChild(renderingRule, "Function") ?? renderingRule;
+        var name = DirectChildText(function, "FunctionName")
+            ?? DirectChildText(function, "Name")
+            ?? DirectChildText(renderingRule, "Name");
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            error = "RenderingRule requires a function name.";
+            return false;
+        }
+
+        var arguments = DirectChild(function, "Arguments") ?? DirectChild(renderingRule, "Arguments");
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("rasterFunction", name.Trim());
+            if (arguments is not null && !IsNilElement(arguments))
+            {
+                writer.WritePropertyName("rasterFunctionArguments");
+                writer.WriteStartObject();
+                if (!TryWriteRenderingArguments(writer, arguments, out error))
+                {
+                    return false;
+                }
+
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndObject();
+        }
+
+        json = Encoding.UTF8.GetString(stream.ToArray());
+        return true;
+    }
+
+    private static bool TryWriteRenderingArguments(Utf8JsonWriter writer, XElement arguments, out string? error)
+    {
+        error = null;
+        var properties = arguments.Descendants()
+            .Where(element => element.Name.LocalName == "PropertySetProperty")
+            .ToArray();
+        if (properties.Length > 0)
+        {
+            foreach (var property in properties)
+            {
+                var key = DirectChildText(property, "Key");
+                var value = DirectChild(property, "Value");
+                if (string.IsNullOrWhiteSpace(key) || value is null || value.HasElements)
+                {
+                    error = "RenderingRule argument properties require a scalar Key and Value.";
+                    return false;
+                }
+
+                writer.WritePropertyName(key.Trim());
+                WriteSoapScalar(writer, value);
+            }
+
+            return true;
+        }
+
+        foreach (var child in arguments.Elements())
+        {
+            if (child.HasElements)
+            {
+                error = $"RenderingRule argument '{child.Name.LocalName}' is not a scalar value.";
+                return false;
+            }
+
+            writer.WritePropertyName(child.Name.LocalName);
+            WriteSoapScalar(writer, child);
+        }
+
+        return true;
+    }
+
+    private static void WriteSoapScalar(Utf8JsonWriter writer, XElement value)
+    {
+        var text = value.Value.Trim();
+        var typeName = SoapTypeName(value);
+        if (typeName is "boolean" or "bool")
+        {
+            writer.WriteBooleanValue(text is "1" || bool.TryParse(text, out var typed) && typed);
+            return;
+        }
+
+        if (typeName is "double" or "float" or "decimal"
+            && double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var typedNumber))
+        {
+            writer.WriteNumberValue(typedNumber);
+            return;
+        }
+
+        if (long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer)
+            && text.IndexOf('.') < 0)
+        {
+            writer.WriteNumberValue(integer);
+            return;
+        }
+
+        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
+            && text.IndexOfAny(['.', 'e', 'E']) >= 0)
+        {
+            writer.WriteNumberValue(number);
+            return;
+        }
+
+        if (bool.TryParse(text, out var boolean))
+        {
+            writer.WriteBooleanValue(boolean);
+            return;
+        }
+
+        writer.WriteStringValue(text);
     }
 
     private static async Task<IResult> HandleGetMultidimensionalInfoAsync(

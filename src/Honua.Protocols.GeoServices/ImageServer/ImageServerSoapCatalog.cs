@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text;
+using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Domain;
@@ -140,6 +142,11 @@ internal static partial class ImageServerSoapEndpoints
             }
 
             values["outSR"] = wkid;
+        }
+
+        if (!TryAppendSpatialFilter(queryFilter, values, out error))
+        {
+            return false;
         }
 
         values["returnGeometry"] = XmlConvert.ToString(returnGeometry);
@@ -491,4 +498,373 @@ internal static partial class ImageServerSoapEndpoints
                 return false;
         }
     }
+
+    // SpatialFilter is either the QueryFilter itself (xsi:type SpatialFilter) or a nested
+    // element. A geometry that cannot be expressed is a fault: dropping it would return
+    // catalog rows outside the requested area.
+    private static bool TryAppendSpatialFilter(
+        XElement queryFilter,
+        Dictionary<string, StringValues> values,
+        out string? error)
+    {
+        error = null;
+        var holders = new List<XElement>();
+        if (DirectChild(queryFilter, "FilterGeometry") is not null)
+        {
+            holders.Add(queryFilter);
+        }
+
+        var nested = DirectChild(queryFilter, "SpatialFilter");
+        if (nested is not null && !IsNilElement(nested))
+        {
+            holders.Add(nested);
+        }
+
+        if (holders.Count == 0)
+        {
+            return true;
+        }
+
+        XElement? geometry = null;
+        XElement? holder = null;
+        foreach (var candidate in holders)
+        {
+            var filterGeometry = DirectChild(candidate, "FilterGeometry");
+            if (filterGeometry is null || IsNilElement(filterGeometry))
+            {
+                continue;
+            }
+
+            if (geometry is not null)
+            {
+                error = "QueryFilter contains more than one FilterGeometry.";
+                return false;
+            }
+
+            geometry = filterGeometry;
+            holder = candidate;
+        }
+
+        if (geometry is null || holder is null)
+        {
+            return true;
+        }
+
+        var description = DirectChildText(holder, "SpatialRelDescription")
+            ?? DirectChildText(queryFilter, "SpatialRelDescription");
+        if (!string.IsNullOrWhiteSpace(description))
+        {
+            error = "SpatialRelDescription is not supported.";
+            return false;
+        }
+
+        var geometryField = DirectChildText(holder, "GeometryFieldName")
+            ?? DirectChildText(queryFilter, "GeometryFieldName");
+        if (!string.IsNullOrWhiteSpace(geometryField)
+            && !geometryField.Equals("Shape", StringComparison.OrdinalIgnoreCase))
+        {
+            error = $"GeometryFieldName '{geometryField.Trim()}' is not the catalog footprint.";
+            return false;
+        }
+
+        if (!TrySerializeSoapGeometry(geometry, out var json, out var geometryType, out var wkid, out error))
+        {
+            return false;
+        }
+
+        values["geometry"] = json;
+        values["geometryType"] = geometryType;
+        if (wkid is int srid)
+        {
+            values["inSR"] = srid.ToString(CultureInfo.InvariantCulture);
+        }
+
+        var spatialRel = DirectChildText(holder, "SpatialRel") ?? DirectChildText(queryFilter, "SpatialRel");
+        if (!string.IsNullOrWhiteSpace(spatialRel))
+        {
+            values["spatialRel"] = spatialRel.Trim();
+        }
+
+        return true;
+    }
+
+    private static bool TrySerializeSoapGeometry(
+        XElement geometry,
+        out string json,
+        out string geometryType,
+        out int? wkid,
+        out string? error)
+    {
+        json = string.Empty;
+        geometryType = string.Empty;
+        wkid = null;
+        error = null;
+
+        var kind = SoapTypeName(geometry) ?? InferSoapGeometryKind(geometry);
+        geometryType = SoapGeometryType(kind);
+        if (geometryType.Length == 0)
+        {
+            error = string.IsNullOrEmpty(kind)
+                ? "Geometry type is required."
+                : $"Geometry type '{kind}' is not supported.";
+            return false;
+        }
+
+        if (!TryReadGeometryWkid(geometry, out wkid, out error))
+        {
+            return false;
+        }
+
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            if (!TryWriteSoapGeometryBody(writer, geometry, geometryType, out error))
+            {
+                return false;
+            }
+
+            if (wkid is int srid)
+            {
+                writer.WriteStartObject("spatialReference");
+                writer.WriteNumber("wkid", srid);
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndObject();
+        }
+
+        json = Encoding.UTF8.GetString(stream.ToArray());
+        return true;
+    }
+
+    private static bool TryWriteSoapGeometryBody(
+        Utf8JsonWriter writer,
+        XElement geometry,
+        string geometryType,
+        out string? error)
+    {
+        error = null;
+        switch (geometryType)
+        {
+            case "esriGeometryEnvelope":
+                if (!TryReadSoapDouble(geometry, "XMin", out var xmin)
+                    || !TryReadSoapDouble(geometry, "YMin", out var ymin)
+                    || !TryReadSoapDouble(geometry, "XMax", out var xmax)
+                    || !TryReadSoapDouble(geometry, "YMax", out var ymax))
+                {
+                    error = "Envelope geometry requires XMin, YMin, XMax, and YMax.";
+                    return false;
+                }
+
+                writer.WriteNumber("xmin", xmin);
+                writer.WriteNumber("ymin", ymin);
+                writer.WriteNumber("xmax", xmax);
+                writer.WriteNumber("ymax", ymax);
+                return true;
+            case "esriGeometryPoint":
+                if (!TryReadSoapDouble(geometry, "X", out var x) || !TryReadSoapDouble(geometry, "Y", out var y))
+                {
+                    error = "Point geometry requires X and Y.";
+                    return false;
+                }
+
+                writer.WriteNumber("x", x);
+                writer.WriteNumber("y", y);
+                return true;
+            case "esriGeometryPolygon":
+                return TryWriteSoapPointParts(writer, geometry, "rings", "Ring", out error);
+            case "esriGeometryPolyline":
+                return TryWriteSoapPointParts(writer, geometry, "paths", "Path", out error);
+            case "esriGeometryMultipoint":
+                return TryWriteSoapMultipoint(writer, geometry, out error);
+            default:
+                error = $"Geometry type '{geometryType}' is not supported.";
+                return false;
+        }
+    }
+
+    private static bool TryWriteSoapPointParts(
+        Utf8JsonWriter writer,
+        XElement geometry,
+        string propertyName,
+        string partName,
+        out string? error)
+    {
+        error = null;
+        var parts = geometry.Descendants().Where(element => element.Name.LocalName == partName).ToArray();
+        if (parts.Length == 0)
+        {
+            error = $"{partName} geometry requires at least one {partName.ToLowerInvariant()}.";
+            return false;
+        }
+
+        writer.WritePropertyName(propertyName);
+        writer.WriteStartArray();
+        foreach (var part in parts)
+        {
+            writer.WriteStartArray();
+            var wrote = false;
+            foreach (var point in part.Descendants().Where(element => element.Name.LocalName == "Point"))
+            {
+                if (!TryReadSoapDouble(point, "X", out var x) || !TryReadSoapDouble(point, "Y", out var y))
+                {
+                    continue;
+                }
+
+                writer.WriteStartArray();
+                writer.WriteNumberValue(x);
+                writer.WriteNumberValue(y);
+                writer.WriteEndArray();
+                wrote = true;
+            }
+
+            writer.WriteEndArray();
+            if (!wrote)
+            {
+                error = $"{partName} geometry requires point coordinates.";
+                return false;
+            }
+        }
+
+        writer.WriteEndArray();
+        return true;
+    }
+
+    private static bool TryWriteSoapMultipoint(Utf8JsonWriter writer, XElement geometry, out string? error)
+    {
+        error = null;
+        writer.WritePropertyName("points");
+        writer.WriteStartArray();
+        var wrote = false;
+        foreach (var point in geometry.Descendants().Where(element => element.Name.LocalName == "Point"))
+        {
+            if (!TryReadSoapDouble(point, "X", out var x) || !TryReadSoapDouble(point, "Y", out var y))
+            {
+                continue;
+            }
+
+            writer.WriteStartArray();
+            writer.WriteNumberValue(x);
+            writer.WriteNumberValue(y);
+            writer.WriteEndArray();
+            wrote = true;
+        }
+
+        writer.WriteEndArray();
+        if (!wrote)
+        {
+            error = "Multipoint geometry requires at least one point.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryReadGeometryWkid(XElement geometry, out int? wkid, out string? error)
+    {
+        wkid = null;
+        error = null;
+        var spatialReference = geometry.Descendants()
+            .FirstOrDefault(element => element.Name.LocalName == "SpatialReference");
+        if (spatialReference is null || IsNilElement(spatialReference))
+        {
+            return true;
+        }
+
+        var text = DirectChildText(spatialReference, "WKID");
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            text = DirectChildText(spatialReference, "LatestWKID");
+        }
+
+        if (!int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            error = "Geometry spatial reference requires a WKID.";
+            return false;
+        }
+
+        wkid = parsed;
+        return true;
+    }
+
+    private static string InferSoapGeometryKind(XElement geometry)
+    {
+        if (DirectChild(geometry, "XMin") is not null)
+        {
+            return "EnvelopeN";
+        }
+
+        if (geometry.Descendants().Any(element => element.Name.LocalName == "Ring"))
+        {
+            return "PolygonN";
+        }
+
+        if (geometry.Descendants().Any(element => element.Name.LocalName == "Path"))
+        {
+            return "PolylineN";
+        }
+
+        if (DirectChild(geometry, "PointArray") is not null)
+        {
+            return "MultipointN";
+        }
+
+        if (DirectChild(geometry, "X") is not null && DirectChild(geometry, "Y") is not null)
+        {
+            return "PointN";
+        }
+
+        return string.Empty;
+    }
+
+    private static string SoapGeometryType(string kind)
+    {
+        if (kind.Contains("Envelope", StringComparison.OrdinalIgnoreCase))
+        {
+            return "esriGeometryEnvelope";
+        }
+
+        if (kind.Contains("Multipoint", StringComparison.OrdinalIgnoreCase))
+        {
+            return "esriGeometryMultipoint";
+        }
+
+        if (kind.Contains("Polyline", StringComparison.OrdinalIgnoreCase))
+        {
+            return "esriGeometryPolyline";
+        }
+
+        if (kind.Contains("Polygon", StringComparison.OrdinalIgnoreCase))
+        {
+            return "esriGeometryPolygon";
+        }
+
+        if (kind.Contains("Point", StringComparison.OrdinalIgnoreCase))
+        {
+            return "esriGeometryPoint";
+        }
+
+        return string.Empty;
+    }
+
+    private static string? SoapTypeName(XElement element)
+    {
+        var raw = element.Attribute(XName.Get("type", XmlSchemaInstanceNamespace))?.Value;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        var separator = raw.LastIndexOf(':');
+        return (separator >= 0 ? raw[(separator + 1)..] : raw).Trim();
+    }
+
+    private static bool TryReadSoapDouble(XElement parent, string localName, out double value)
+        => double.TryParse(
+               DirectChildText(parent, localName),
+               NumberStyles.Float | NumberStyles.AllowThousands,
+               CultureInfo.InvariantCulture,
+               out value)
+           && double.IsFinite(value);
 }

@@ -137,6 +137,75 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetCatalogItemCount")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetCatalogItemIDs")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetCatalogItems")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task CatalogSpatialFilter_MatchesRestQuery()
+    {
+        var service = ServicePath();
+        var envelope = """{"xmin":1,"ymin":1,"xmax":1.64,"ymax":2.28,"spatialReference":{"wkid":4326}}""";
+        var polygon = """{"rings":[[[0,0],[0.14,0],[0.14,0.15],[0,0.15],[0,0]]],"spatialReference":{"wkid":4326}}""";
+        using var restIds = await _fixture.Client.GetAsync(
+            $"{service}/query?geometry={Uri.EscapeDataString(envelope)}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelEnvelopeIntersects&returnIdsOnly=true&f=json");
+        using var restCount = await _fixture.Client.GetAsync(
+            $"{service}/query?geometry={Uri.EscapeDataString(envelope)}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelEnvelopeIntersects&returnCountOnly=true&f=json");
+        using var restPolygon = await _fixture.Client.GetAsync(
+            $"{service}/query?geometry={Uri.EscapeDataString(polygon)}&geometryType=esriGeometryPolygon&inSR=4326&spatialRel=esriSpatialRelIntersects&returnIdsOnly=true&f=json");
+        var idsJson = await ReadJsonAsync(restIds);
+        var countJson = await ReadJsonAsync(restCount);
+        var polygonJson = await ReadJsonAsync(restPolygon);
+
+        var ids = await PostSoapAsync(SpatialCatalogRequest("GetCatalogItemIDs", EnvelopeFilter()));
+        ids.Status.Should().Be(HttpStatusCode.OK, ids.Body);
+        ids.Body.Should().NotContain("Unsupported ImageServer operation");
+        FidSet(ids.Document).Should().Equal(ObjectIds(idsJson));
+        FidSet(ids.Document).Should().Equal(3);
+
+        var count = await PostSoapAsync(SpatialCatalogRequest("GetCatalogItemCount", EnvelopeFilter()));
+        count.Status.Should().Be(HttpStatusCode.OK, count.Body);
+        IntValue(count.Document, "Result").Should().Be(countJson.GetProperty("count").GetInt32());
+        IntValue(count.Document, "Result").Should().Be(1);
+
+        var polygonIds = await PostSoapAsync(SpatialCatalogRequest("GetCatalogItemIDs", PolygonFilter()));
+        polygonIds.Status.Should().Be(HttpStatusCode.OK, polygonIds.Body);
+        FidSet(polygonIds.Document).Should().Equal(ObjectIds(polygonJson));
+        FidSet(polygonIds.Document).Should().Equal(1);
+
+        var items = await PostSoapAsync(
+            SpatialCatalogRequest(
+                "GetCatalogItems",
+                $"""
+                <SubFields>OBJECTID,Name</SubFields>
+                {EnvelopeFilter()}
+                """));
+        items.Status.Should().Be(HttpStatusCode.OK, items.Body);
+        var values = items.Document.Descendants()
+            .Where(element => element.Name.LocalName == "Value")
+            .Select(element => element.Value)
+            .ToArray();
+        values.Should().ContainInOrder("3", "Other Raster");
+
+        var unsupportedRel = await PostSoapAsync(
+            SpatialCatalogRequest(
+                "GetCatalogItemIDs",
+                EnvelopeFilter().Replace("esriSpatialRelEnvelopeIntersects", "esriSpatialRelCrosses", StringComparison.Ordinal)));
+        unsupportedRel.Status.Should().Be(HttpStatusCode.BadRequest, unsupportedRel.Body);
+        unsupportedRel.Body.Should().NotContain("Unsupported ImageServer operation");
+
+        var unsupportedGeometry = await PostSoapAsync(
+            SpatialCatalogRequest(
+                "GetCatalogItemIDs",
+                """
+                <FilterGeometry xsi:type="tns:CircularArc"><X>1</X><Y>1</Y></FilterGeometry>
+                <SpatialRel>esriSpatialRelIntersects</SpatialRel>
+                """));
+        unsupportedGeometry.Status.Should().Be(HttpStatusCode.BadRequest, unsupportedGeometry.Body);
+        unsupportedGeometry.Body.Should().NotContain("Unsupported ImageServer operation");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [InterfaceOperation(TestProtocols.ImageServer, "GetRasterKeyProperties")]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
@@ -257,6 +326,38 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         var serviceInfo = await PostSoapAsync($"""<GetServiceInfo xmlns="{ArcGisNamespace}" />""");
         serviceInfo.Status.Should().Be(HttpStatusCode.OK, serviceInfo.Body);
         AssertHistograms(Element(serviceInfo.Document, "Histograms"), expected);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "ComputeHistograms")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task ComputeHistogramsAoi_MatchesRestComputeHistograms()
+    {
+        var service = ServicePath();
+        const string geometry = """{"xmin":0,"ymin":0,"xmax":0.14,"ymax":0.15,"spatialReference":{"wkid":4326}}""";
+        const string mosaicRule = """{"mosaicMethod":"esriMosaicNorthwest"}""";
+        const string renderingRule = """{"rasterFunction":"Stretch","rasterFunctionArguments":{"StretchType":5}}""";
+        const string pixelSize = """{"x":0.0021875,"y":0.00234375}""";
+        var geometryQuery = $"geometry={Uri.EscapeDataString(geometry)}&geometryType=esriGeometryEnvelope&f=json";
+
+        using var restClipped = await _fixture.Client.GetAsync($"{service}/computeHistograms?{geometryQuery}");
+        using var restRendered = await _fixture.Client.GetAsync(
+            $"{service}/computeHistograms?{geometryQuery}&mosaicRule={Uri.EscapeDataString(mosaicRule)}&renderingRule={Uri.EscapeDataString(renderingRule)}&pixelSize={Uri.EscapeDataString(pixelSize)}");
+        var clipped = (await ReadJsonAsync(restClipped)).GetProperty("histograms").EnumerateArray().ToArray();
+        var rendered = (await ReadJsonAsync(restRendered)).GetProperty("histograms").EnumerateArray().ToArray();
+        clipped.Should().ContainSingle();
+        clipped[0].GetProperty("counts").EnumerateArray().Select(count => count.GetInt64()).Should().Equal(9, 8, 7);
+        rendered[0].GetProperty("counts").EnumerateArray().Select(count => count.GetInt64()).Should().Equal(4, 5, 6);
+
+        var soapClipped = await PostSoapAsync(ComputeHistogramsRequest(includeRendering: false));
+        soapClipped.Status.Should().Be(HttpStatusCode.OK, soapClipped.Body);
+        soapClipped.Body.Should().NotContain("Unsupported ImageServer operation");
+        AssertHistograms(Element(soapClipped.Document, "Result"), clipped);
+
+        var soapRendered = await PostSoapAsync(ComputeHistogramsRequest(includeRendering: true));
+        soapRendered.Status.Should().Be(HttpStatusCode.OK, soapRendered.Body);
+        AssertHistograms(Element(soapRendered.Document, "Result"), rendered);
     }
 
     [IntegrationTest]
@@ -495,6 +596,80 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
             </GetCatalogItems>
             """;
 
+    private static string SpatialCatalogRequest(string operation, string filter)
+        => $"""
+            <{operation} xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+              <Name>Catalog</Name>
+              <QueryFilter xsi:type="tns:SpatialFilter">
+                {filter}
+              </QueryFilter>
+            </{operation}>
+            """;
+
+    private static string EnvelopeFilter()
+        => """
+            <FilterGeometry xsi:type="tns:EnvelopeN">
+              <XMin>1</XMin>
+              <YMin>1</YMin>
+              <XMax>1.64</XMax>
+              <YMax>2.28</YMax>
+              <SpatialReference><WKID>4326</WKID></SpatialReference>
+            </FilterGeometry>
+            <GeometryFieldName>Shape</GeometryFieldName>
+            <SpatialRel>esriSpatialRelEnvelopeIntersects</SpatialRel>
+            """;
+
+    private static string PolygonFilter()
+        => """
+            <FilterGeometry xsi:type="tns:PolygonN">
+              <RingArray>
+                <Ring>
+                  <PointArray>
+                    <Point><X>0</X><Y>0</Y></Point>
+                    <Point><X>0.14</X><Y>0</Y></Point>
+                    <Point><X>0.14</X><Y>0.15</Y></Point>
+                    <Point><X>0</X><Y>0.15</Y></Point>
+                    <Point><X>0</X><Y>0</Y></Point>
+                  </PointArray>
+                </Ring>
+              </RingArray>
+              <SpatialReference><WKID>4326</WKID></SpatialReference>
+            </FilterGeometry>
+            <SpatialRel>esriSpatialRelIntersects</SpatialRel>
+            """;
+
+    private static string ComputeHistogramsRequest(bool includeRendering)
+    {
+        var tail = includeRendering
+            ? """
+              <MosaicRule><MosaicMethod>NorthWest</MosaicMethod></MosaicRule>
+              <PixelSize xsi:type="tns:PointN"><X>0.0021875</X><Y>0.00234375</Y></PixelSize>
+              <RenderingRule>
+                <Function>
+                  <FunctionName>Stretch</FunctionName>
+                  <Arguments><StretchType>5</StretchType></Arguments>
+                </Function>
+              </RenderingRule>
+              """
+            : """
+              <MosaicRule xsi:nil="true" />
+              <PixelSize xsi:nil="true" />
+              <RenderingRule xsi:nil="true" />
+              """;
+        return $"""
+            <ComputeHistograms xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+              <Geometry xsi:type="tns:EnvelopeN">
+                <XMin>0</XMin>
+                <YMin>0</YMin>
+                <XMax>0.14</XMax>
+                <YMax>0.15</YMax>
+                <SpatialReference><WKID>4326</WKID></SpatialReference>
+              </Geometry>
+              {tail}
+            </ComputeHistograms>
+            """;
+    }
+
     private static string ImageTileRequest()
         => $"""
             <GetImageTile xmlns="{ArcGisNamespace}">
@@ -656,6 +831,76 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
                 Arg.Any<RasterIdentifyRendering?>(),
                 Arg.Any<CancellationToken>())
             .Returns(histograms);
+        var clippedHistogram = new RasterHistogram
+        {
+            Band = 1,
+            BinCount = 3,
+            Min = 0,
+            Max = 255,
+            Counts = [9, 8, 7],
+        };
+        var renderedHistogram = new RasterHistogram
+        {
+            Band = 1,
+            BinCount = 3,
+            Min = 1,
+            Max = 9,
+            Counts = [4, 5, 6],
+        };
+        var clippedStatistics = new RasterStatistics
+        {
+            Band = 1,
+            MinValue = 1,
+            MaxValue = 9,
+            MeanValue = 4,
+            StandardDeviation = 1,
+            ValidPixelCount = 15,
+            NoDataPixelCount = 0,
+        };
+        store.GetClippedStatisticsAsync(
+                Arg.Any<int>(),
+                Arg.Any<long>(),
+                Arg.Any<byte[]>(),
+                Arg.Any<int?>(),
+                Arg.Any<int[]?>(),
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<CancellationToken>())
+            .Returns([clippedStatistics]);
+        store.GetClippedHistogramsAsync(
+                Arg.Any<int>(),
+                Arg.Any<long>(),
+                Arg.Any<byte[]>(),
+                Arg.Any<int?>(),
+                Arg.Any<int[]?>(),
+                Arg.Any<int>(),
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => call.ArgAt<RasterIdentifyRendering?>(6) is { HasRendering: true }
+                ? new[] { renderedHistogram }
+                : new[] { clippedHistogram });
+        store.GetClippedMosaicStatisticsAsync(
+                Arg.Any<int>(),
+                Arg.Any<long[]>(),
+                Arg.Any<RasterMergeStrategy>(),
+                Arg.Any<byte[]>(),
+                Arg.Any<int?>(),
+                Arg.Any<int[]?>(),
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<CancellationToken>())
+            .Returns([clippedStatistics]);
+        store.GetClippedMosaicHistogramsAsync(
+                Arg.Any<int>(),
+                Arg.Any<long[]>(),
+                Arg.Any<RasterMergeStrategy>(),
+                Arg.Any<byte[]>(),
+                Arg.Any<int?>(),
+                Arg.Any<int[]?>(),
+                Arg.Any<int>(),
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => call.ArgAt<RasterIdentifyRendering?>(7) is { HasRendering: true }
+                ? new[] { renderedHistogram }
+                : new[] { clippedHistogram });
         store.GetImageTileAsync(
                 Arg.Any<int>(),
                 Arg.Any<long>(),
