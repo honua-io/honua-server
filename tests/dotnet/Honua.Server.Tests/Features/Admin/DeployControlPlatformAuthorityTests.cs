@@ -66,6 +66,14 @@ public sealed class DeployControlPlatformAuthorityTests
         "HandleConvergePlatformRelease",
     ];
 
+    private static readonly string[] CoordinatedReleaseHandlers =
+    [
+        "HandleCreate",
+        "HandleGet",
+        "HandleApproveGate",
+        "HandleRollback",
+    ];
+
     public static TheoryData<string, string> DeniedMcpCases => Cross(
         [.. ProposalTools, ProposeDeployPlanTool.ToolName], [TenantAdmin, ApprovedTenantCredential]);
 
@@ -141,6 +149,35 @@ public sealed class DeployControlPlatformAuthorityTests
         harness.Gateway.ReceivedCalls().Should().BeEmpty();
         harness.Invoker.ReceivedCalls().Should().BeEmpty();
     }
+
+    [Theory]
+    [MemberData(nameof(CoordinatedReleaseDeniedCases))]
+    public async Task SRV_INF_004_CoordinatedRelease_TenantBoundAdmin_IsDeniedBeforeControlPlaneAccess(
+        string handler, string scenario)
+    {
+        var harness = RestHarness.Create(scenario);
+        var method = typeof(CoordinatedReleaseControlEndpoints).GetMethod(
+            handler,
+            BindingFlags.NonPublic | BindingFlags.Static);
+        method.Should().NotBeNull();
+        var arguments = method!.GetParameters().Select(parameter => parameter.ParameterType switch
+        {
+            var type when type == typeof(HttpContext) => (object?)harness.Context,
+            var type when type == typeof(string) => (object?)"value",
+            var type when type == typeof(CreateCoordinatedReleaseOperationRequest) =>
+                (object?)new CreateCoordinatedReleaseOperationRequest(),
+            _ => null,
+        }).ToArray();
+
+        var result = await (Task<IResult>)method.Invoke(null, arguments)!;
+
+        var problem = result.Should().BeOfType<ProblemHttpResult>().Subject;
+        problem.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        problem.ProblemDetails.Extensions["code"].Should().Be(PlatformDeployAuthority.DenialCode);
+    }
+
+    public static TheoryData<string, string> CoordinatedReleaseDeniedCases =>
+        Cross(CoordinatedReleaseHandlers, [TenantAdmin, ApprovedTenantCredential]);
 
     [Theory]
     [MemberData(nameof(AllowedRestCases))]
