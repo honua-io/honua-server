@@ -6,8 +6,9 @@
 Each output file is a standard glyph protobuf (``glyphs`` > ``fontstack`` > ``glyph``) for one
 256-codepoint range, rendered with the conventional SDF parameters used by vector tile
 renderers: 24 px em, 3 px buffer, 8 px radius, 0.25 cutoff. ``top`` is reported relative to
-the font ascender, ``left``/``top`` are zig-zag encoded ``sint32`` values, and glyphs without
-ink (spaces) carry metrics only.
+the fixed shaping baseline renderers assume (25 px at a 24 px em) rather than this font's own
+ascender, ``left``/``top`` are zig-zag encoded ``sint32`` values, and glyphs without ink
+(spaces) carry metrics only.
 
 Usage (DejaVu Sans Book is the face the server images install for rendering):
 
@@ -29,6 +30,10 @@ BUFFER = 3
 RADIUS = 8.0
 CUTOFF = 0.25
 SCALE = 16  # supersampling factor used to compute the distance field
+# Renderer shaping places glyph tops against a fixed 25 px baseline at a 24 px em, whatever the
+# font's own ascender, so ``top`` is measured from it to keep labels aligned with icons and
+# collision boxes.
+SHAPING_BASELINE = 25
 FONTSTACK_NAME = "DejaVu Sans Book"
 
 
@@ -61,7 +66,7 @@ def has_glyph(font, codepoint):
     return not (codepoint < 0x20 or 0x7F <= codepoint < 0xA0)
 
 
-def render_glyph(hi_font, codepoint, ascender):
+def render_glyph(hi_font, codepoint):
     char = chr(codepoint)
     advance = int(round(hi_font.getlength(char) / SCALE))
 
@@ -78,7 +83,7 @@ def render_glyph(hi_font, codepoint, ascender):
 
     if not inside.any():
         return {"id": codepoint, "bitmap": b"", "width": 0, "height": 0,
-                "left": 0, "top": 0 - ascender, "advance": advance}
+                "left": 0, "top": 0 - SHAPING_BASELINE, "advance": advance}
 
     rows = np.where(inside.any(axis=1))[0]
     cols = np.where(inside.any(axis=0))[0]
@@ -111,7 +116,7 @@ def render_glyph(hi_font, codepoint, ascender):
             bitmap[row * bitmap_width + col] = max(0, min(255, int(round(value))))
 
     return {"id": codepoint, "bitmap": bytes(bitmap), "width": glyph_width,
-            "height": glyph_height, "left": left, "top": top - ascender, "advance": advance}
+            "height": glyph_height, "left": left, "top": top - SHAPING_BASELINE, "advance": advance}
 
 
 def encode_glyph(glyph):
@@ -133,8 +138,6 @@ def main(argv):
 
     font_path = argv[1]
     hi_font = ImageFont.truetype(font_path, FONT_SIZE * SCALE, layout_engine=ImageFont.Layout.BASIC)
-    em_font = ImageFont.truetype(font_path, FONT_SIZE, layout_engine=ImageFont.Layout.BASIC)
-    ascender = em_font.getmetrics()[0]
     out_dir = os.path.dirname(os.path.abspath(__file__))
 
     for glyph_range in argv[2:]:
@@ -145,7 +148,7 @@ def main(argv):
         for codepoint in range(start, end + 1):
             if not has_glyph(hi_font, codepoint):
                 continue
-            stack += field_bytes(3, encode_glyph(render_glyph(hi_font, codepoint, ascender)))
+            stack += field_bytes(3, encode_glyph(render_glyph(hi_font, codepoint)))
             count += 1
 
         path = os.path.join(out_dir, f"{glyph_range}.pbf")

@@ -93,6 +93,68 @@ public sealed class VectorTileEmbeddedAssetsTests
         glyphIds.Should().BeEquivalentTo(printable);
     }
 
+    [UnitTest]
+    public void Issue5535_GlyphTops_AreMeasuredFromTheRendererShapingBaseline()
+    {
+        // Renderers shape against a fixed 25 px baseline at a 24 px em, whatever the font's
+        // ascender; a glyph that sits on the baseline ("H", "x") therefore has top = height - 25.
+        VectorTileEmbeddedAssets.TryGetGlyphPbf("Arial Regular", "0-255", out var glyphPbf).Should().BeTrue();
+
+        foreach (var codepoint in "Hx")
+        {
+            var (width, height, top) = ReadGlyphMetrics(glyphPbf!, codepoint);
+            width.Should().BePositive();
+            (top + 25).Should().Be(height, $"'{codepoint}' sits on the baseline");
+        }
+    }
+
+    private static (int Width, int Height, int Top) ReadGlyphMetrics(byte[] payload, int codepoint)
+    {
+        var offset = 0;
+        ReadVarint(payload, ref offset);
+        var stackEnd = (int)ReadVarint(payload, ref offset) + offset;
+        while (offset < stackEnd)
+        {
+            var key = ReadVarint(payload, ref offset);
+            var length = (int)ReadVarint(payload, ref offset);
+            var glyph = payload.AsSpan(offset, length).ToArray();
+            offset += length;
+            if (key != 0x1A)
+            {
+                continue;
+            }
+
+            int id = -1, width = 0, height = 0, top = 0;
+            var glyphOffset = 0;
+            while (glyphOffset < glyph.Length)
+            {
+                var glyphKey = ReadVarint(glyph, ref glyphOffset);
+                if ((glyphKey & 7) == 2)
+                {
+                    var skip = (int)ReadVarint(glyph, ref glyphOffset);
+                    glyphOffset += skip;
+                    continue;
+                }
+
+                var value = ReadVarint(glyph, ref glyphOffset);
+                switch (glyphKey >> 3)
+                {
+                    case 1: id = (int)value; break;
+                    case 3: width = (int)value; break;
+                    case 4: height = (int)value; break;
+                    case 6: top = (int)(value >> 1) ^ -(int)(value & 1); break;
+                }
+            }
+
+            if (id == codepoint)
+            {
+                return (width, height, top);
+            }
+        }
+
+        throw new InvalidDataException($"Glyph {codepoint} is not in the payload.");
+    }
+
     private static ulong ReadVarint(byte[] payload, ref int offset)
     {
         ulong value = 0;
