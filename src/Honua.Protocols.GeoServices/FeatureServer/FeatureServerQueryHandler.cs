@@ -2786,7 +2786,7 @@ internal sealed partial class FeatureServerQueryHandler(
     private static object? GeoServicesAttributeValue(object? value)
         => GeoServicesAttributeProjection.ToEsriValue(value);
 
-    private static bool TryParseStatisticsDefinitions(
+    internal static bool TryParseStatisticsDefinitions(
         string outStatisticsJson,
         MetadataV2Resource resource,
         out ImmutableArray<StatisticDefinition> definitions,
@@ -2839,15 +2839,26 @@ internal sealed partial class FeatureServerQueryHandler(
                     return false;
                 }
 
-                if (!fieldNames.Contains(onField))
-                {
-                    error = $"Field '{onField}' does not exist on the layer.";
-                    return false;
-                }
-
                 if (!TryParseStatisticType(statisticTypeStr, out var statisticType))
                 {
                     error = $"Unsupported statisticType: '{statisticTypeStr}'. Supported types: count, sum, min, max, avg, stddev, var.";
+                    return false;
+                }
+
+                // The protocol represents a row count as count on "*". Normalize it to
+                // the resource's object-id field so every provider emits COUNT on a
+                // real column without accepting the wildcard as a general field.
+                // DuckDB and Databricks quote OnStatisticField verbatim, and their
+                // primary key defaults to "id" (or a custom column), so the canonical
+                // name "objectid" is not a column on those layers.
+                if (statisticType == StatisticType.Count && onField == "*")
+                {
+                    onField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+                }
+
+                if (!fieldNames.Contains(onField))
+                {
+                    error = $"Field '{onField}' does not exist on the layer.";
                     return false;
                 }
 
