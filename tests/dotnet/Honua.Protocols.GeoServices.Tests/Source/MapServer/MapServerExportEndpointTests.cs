@@ -233,13 +233,69 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     }
 
     [IntegrationTheory]
+    [InlineData(false, "-180.00000000000003,-121.2,181.2,120")]
+    [InlineData(true, "-180.00000000000003,-121.2,181.2,120")]
+    [InlineData(false, "{\"xmin\":-180.00000000000003,\"ymin\":-121.2,\"xmax\":181.2,\"ymax\":120,\"spatialReference\":{\"wkid\":4326,\"latestWkid\":4326}}")]
+    [InlineData(true, "{\"xmin\":-180.00000000000003,\"ymin\":-121.2,\"xmax\":181.2,\"ymax\":120,\"spatialReference\":{\"wkid\":4326,\"latestWkid\":4326}}")]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithPaddedGeographicEnvelope_ReturnsRequestedImage(bool usePost, string bbox)
+    {
+        var endpoint = $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export";
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["bbox"] = bbox,
+            ["bboxSR"] = "4326",
+            ["imageSR"] = "4326",
+            ["size"] = "301,201",
+            ["dpi"] = "12",
+            ["format"] = "png32",
+            ["f"] = "image"
+        });
+        using var response = usePost
+            ? await Fixture.Client.PostAsync(endpoint, content)
+            : await Fixture.Client.GetAsync(endpoint + "?" + await content.ReadAsStringAsync());
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, Encoding.UTF8.GetString(bytes));
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        using var bitmap = SkiaSharp.SKBitmap.Decode(bytes);
+        bitmap.Should().NotBeNull();
+        bitmap.Width.Should().Be(301);
+        bitmap.Height.Should().Be(201);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithoutSpatialReference_UsesAdvertisedWebMercator()
+    {
+        // The service resource advertises EPSG:3857. Omitting bboxSR and imageSR must
+        // not fall back to the native EPSG:4326, which would reject these ordinates
+        // or report them in degrees.
+        var response = await Fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-13600000,4400000,-13500000,4500000&size=64,64&f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
+        export.Should().NotBeNull();
+        export!.Extent.Should().NotBeNull();
+        export.Extent!.SpatialReference.Wkid.Should().Be(3857);
+        export.Extent.Xmin.Should().BeApproximately(-13600000, 0.01);
+        export.Extent.Ymin.Should().BeApproximately(4400000, 0.01);
+        export.Extent.Xmax.Should().BeApproximately(-13500000, 0.01);
+        export.Extent.Ymax.Should().BeApproximately(4500000, 0.01);
+    }
+
+    [IntegrationTheory]
     [InlineData("{")]
     [InlineData("{}")]
     [InlineData("{\"xmin\":-123,\"ymin\":37,\"xmax\":-122}")]
     [InlineData("{\"xmin\":null,\"ymin\":37,\"xmax\":-122,\"ymax\":38}")]
     [InlineData("{\"xmin\":\"NaN\",\"ymin\":37,\"xmax\":-122,\"ymax\":38}")]
     [InlineData("{\"xmin\":-123,\"ymin\":37,\"xmax\":1e999,\"ymax\":38}")]
-    [InlineData("{\"xmin\":-123,\"ymin\":37,\"xmax\":-122,\"ymax\":91}")]
     [InlineData("{\"xmin\":-123,\"ymin\":38,\"xmax\":-122,\"ymax\":37}")]
     [InlineData("{\"xmin\":-123,\"ymin\":37,\"xmax\":-123,\"ymax\":38}")]
     [Operation(Operations.Export)]
@@ -372,6 +428,10 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
 
         export.Should().NotBeNull();
         export!.Extent.Should().NotBeNull();
+        export.Extent!.Xmin.Should().BeApproximately(-180, 1e-6);
+        export.Extent.Ymin.Should().BeApproximately(-90, 1e-6);
+        export.Extent.Xmax.Should().BeApproximately(180, 1e-6);
+        export.Extent.Ymax.Should().BeApproximately(90, 1e-6);
         export.Scale.Should().NotBeNull();
     }
 

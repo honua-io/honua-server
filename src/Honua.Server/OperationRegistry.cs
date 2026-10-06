@@ -207,6 +207,15 @@ public static class OperationRegistry
         new(ImageServer, "ExecuteAISRequest"),
         new(ImageServer, "ExportImage"),
         new(ImageServer, "GetImage"),
+        new(ImageServer, "GetCatalogItemCount"),
+        new(ImageServer, "GetCatalogItemIDs"),
+        new(ImageServer, "GetCatalogItems"),
+        new(ImageServer, "GetRasterKeyProperties"),
+        new(ImageServer, "ComputeHistograms"),
+        new(ImageServer, "GetCacheDescriptionInfo"),
+        new(ImageServer, "GetTileCacheInfo"),
+        new(ImageServer, "GetTileImageInfo"),
+        new(ImageServer, "GetImageTile"),
     ];
 }
 

@@ -120,18 +120,13 @@ internal static class I3sSceneServiceBuilder
         };
 
         // #1809: once the layer's tileset projects to fetchable node pages, the
-        // store advertises store.nodePages so a conformant client traverses the
+        // layer advertises nodePages so a conformant client traverses the
         // layer through nodepages/{n}. When no node pages are available (e.g. a
         // config-registry scene with no loadable tileset) the store stays a
         // descriptor-only block rather than advertising a node URL that 404s.
         if (advertiseNodePages)
         {
-            store.NodePages = new I3sNodePageDefinition
-            {
-                NodesPerPage = I3sNodePageProjector.NodesPerPage,
-                LodSelectionMetricType = I3sNodePageProjector.LodSelectionMetricType,
-            };
-            store.DefaultGeometrySchema = DefaultGeometryDefinitions[0];
+            store.DefaultGeometrySchema = DefaultGeometrySchema;
         }
 
         return new I3sSceneLayerDocument
@@ -141,6 +136,7 @@ internal static class I3sSceneServiceBuilder
             Name = scene.Name,
             Description = scene.Description,
             Version = I3sVersion,
+            Capabilities = ["View"],
             SpatialReference = spatialReference,
             HeightModelInfo = new I3sHeightModelInfo
             {
@@ -150,6 +146,13 @@ internal static class I3sSceneServiceBuilder
             },
             FullExtent = fullExtent,
             Store = store,
+            NodePages = advertiseNodePages
+                ? new I3sNodePageDefinition
+                {
+                    NodesPerPage = I3sNodePageProjector.NodesPerPage,
+                    LodSelectionMetricType = I3sNodePageProjector.LodSelectionMetricType,
+                }
+                : null,
             // Format definitions/schema that DESCRIBE the served format
             // (vertex/material/texture/attribute layout) and bind the node-page
             // resource references emitted by I3sNodePageProjector.
@@ -173,6 +176,10 @@ internal static class I3sSceneServiceBuilder
         {
             Key = "f_0",
             Name = "OBJECTID",
+            Header =
+            [
+                new I3sAttributeHeader { Property = "count", ValueType = "UInt32" },
+            ],
             Ordering = ["attributeValues"],
             AttributeValues = new I3sAttributeValues
             {
@@ -183,25 +190,55 @@ internal static class I3sSceneServiceBuilder
     ];
 
     /// <summary>
-    /// Default node geometry schema: a single uncompressed buffer carrying
-    /// interleaved position/normal/uv0 vertex streams. Describes the format the
-    /// hosted 3D Tiles content maps to; no geometry buffer is fetchable here.
+    /// Default node geometry schema: one uncompressed <c>PerAttributeArray</c>
+    /// buffer (position, normal, uv0, color, then per-feature id and faceRange).
+    /// Matches the bytes <see cref="I3sGeometryTranscoder"/> writes.
     /// </summary>
     private static readonly IReadOnlyList<I3sGeometryDefinition> DefaultGeometryDefinitions =
     [
         new I3sGeometryDefinition
         {
+            Topology = "triangle",
             GeometryBuffers =
             [
                 new I3sGeometryBuffer
                 {
+                    Offset = 8,
                     Position = new I3sVertexLayout { Type = "Float32", Component = 3 },
                     Normal = new I3sVertexLayout { Type = "Float32", Component = 3 },
                     Uv0 = new I3sVertexLayout { Type = "Float32", Component = 2 },
+                    Color = new I3sVertexLayout { Type = "UInt8", Component = 4 },
+                    FeatureId = new I3sVertexLayout { Type = "UInt64", Component = 1, Binding = "per-feature" },
+                    FaceRange = new I3sVertexLayout { Type = "UInt32", Component = 2, Binding = "per-feature" },
                 },
             ],
         },
     ];
+
+    private static readonly I3sDefaultGeometrySchema DefaultGeometrySchema = new()
+    {
+        GeometryType = "triangles",
+        Header =
+        [
+            new I3sGeometryHeader { Property = "vertexCount", Type = "UInt32" },
+            new I3sGeometryHeader { Property = "featureCount", Type = "UInt32" },
+        ],
+        Topology = "PerAttributeArray",
+        Ordering = ["position", "normal", "uv0", "color"],
+        VertexAttributes = new Dictionary<string, I3sAttributeValues>
+        {
+            ["position"] = new() { ValueType = "Float32", ValuesPerElement = 3 },
+            ["normal"] = new() { ValueType = "Float32", ValuesPerElement = 3 },
+            ["uv0"] = new() { ValueType = "Float32", ValuesPerElement = 2 },
+            ["color"] = new() { ValueType = "UInt8", ValuesPerElement = 4 },
+        },
+        FeatureAttributeOrder = ["id", "faceRange"],
+        FeatureAttributes = new Dictionary<string, I3sAttributeValues>
+        {
+            ["id"] = new() { ValueType = "UInt64", ValuesPerElement = 1 },
+            ["faceRange"] = new() { ValueType = "UInt32", ValuesPerElement = 2 },
+        },
+    };
 
     /// <summary>
     /// Default PBR material the served geometry references. Descriptive only.
@@ -210,7 +247,7 @@ internal static class I3sSceneServiceBuilder
     [
         new I3sMaterialDefinition
         {
-            AlphaMode = "OPAQUE",
+            AlphaMode = "opaque",
             DoubleSided = false,
             PbrMetallicRoughness = new I3sPbrMetallicRoughness
             {

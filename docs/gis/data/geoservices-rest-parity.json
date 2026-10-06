@@ -2332,7 +2332,7 @@
           {
             "name": "format",
             "status": "partial",
-            "notes": "Supports png, jpg, jpeg, tif, and tiff."
+            "notes": "Supports png, png8, png24, png32, jpg, jpeg, jpgpng, tif, and tiff, plus raw pixel blocks of the stored samples: bsq, bip, and lossless lerc (one LERC2 blob per band)."
           },
           {
             "name": "f",
@@ -2347,12 +2347,12 @@
           {
             "name": "pixelType",
             "status": "partial",
-            "notes": "UNKNOWN is accepted as the no-conversion default; every explicit conversion type returns 501 because pixel conversion is not implemented."
+            "notes": "UNKNOWN and the service\u0027s own pixel type are accepted as the no-conversion default; every other explicit conversion type returns 501 because pixel conversion is not implemented."
           },
           {
             "name": "compression",
             "status": "partial",
-            "notes": "Applied to TIFF output only. Supports None, JPEG, and LZ77; LZ77 maps to GDAL DEFLATE. Ignored for non-TIFF outputs."
+            "notes": "Applied to TIFF output, which supports None, JPEG, and LZ77; LZ77 maps to GDAL DEFLATE. Raw pixel blocks accept None, and lerc also accepts LERC. Ignored for PNG and JPEG outputs."
           },
           {
             "name": "renderingRule",

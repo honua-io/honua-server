@@ -355,10 +355,28 @@ jobs:
           done
           curl -fsS "$BASE_URL/rest/services/test/FeatureServer/0/query?f=json&where=1%3D1&returnCountOnly=true"
 
+      # Under workflow_call GITHUB_WORKFLOW_REF names the caller; the attestation signer
+      # (Fulcio buildSignerURI) is this workflow's OIDC job_workflow_ref, so record that.
+      - name: Resolve the executing workflow identity
+        id: signer
+        run: |
+          python3 - <<'PYTHON'
+          import base64, json, os, urllib.request
+          request = urllib.request.Request(os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"] + "&audience=honua-capacity-signer",
+                                           headers={"Authorization": "bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]})
+          with urllib.request.urlopen(request, timeout=60) as response:
+              token = json.load(response)["value"]
+          payload = token.split(".")[1]
+          claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"workflow_ref={claims['job_workflow_ref']}\n")
+          PYTHON
+
       - name: Collect the complete candidate observation window
         id: soak
         working-directory: producer
         env:
+          CAPACITY_SIGNER_WORKFLOW_REF: ${{ steps.signer.outputs.workflow_ref }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           IMAGE_DIGEST: ${{ steps.pulled.outputs.digest }}
           STEADY: ${{ steps.window.outputs.steady }}

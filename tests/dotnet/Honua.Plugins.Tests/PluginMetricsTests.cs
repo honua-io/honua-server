@@ -9,42 +9,19 @@ using Xunit;
 
 namespace Honua.Plugins.Tests;
 
-public sealed class PluginMetricsTests
+public sealed class PluginMetricsTests : IClassFixture<PluginMetricsListenerFixture>
 {
+    private readonly PluginMetricsListenerFixture _metrics;
+
+    public PluginMetricsTests(PluginMetricsListenerFixture metrics)
+    {
+        _metrics = metrics;
+    }
+
     [Fact]
     public void Measure_EmitsInvocationAndDuration_WithPluginTags()
     {
         var pluginId = UniquePluginId();
-        // Other plugin tests emit through this static meter concurrently. Unique
-        // tags isolate assertions, but callback collection must also be thread-safe.
-        var invocations = new ConcurrentBag<(string Plugin, string Extension)>();
-        var durations = new ConcurrentBag<(string Plugin, string Extension)>();
-        var meter = PluginMetrics.InstrumentMeter;
-
-        using var listener = new MeterListener();
-        listener.InstrumentPublished = (instrument, l) =>
-        {
-            if (ReferenceEquals(instrument.Meter, meter))
-            {
-                l.EnableMeasurementEvents(instrument);
-            }
-        };
-        listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
-        {
-            if (instrument.Name == "honua_plugin_invocations_total")
-            {
-                invocations.Add(ReadTags(tags));
-            }
-        });
-        listener.SetMeasurementEventCallback<double>((instrument, value, tags, _) =>
-        {
-            if (instrument.Name == "honua_plugin_duration_ms")
-            {
-                durations.Add(ReadTags(tags));
-            }
-        });
-        listener.Start();
-
         using var unrelatedMeter = new Meter("Honua");
         var unrelatedInvocations = unrelatedMeter.CreateCounter<long>("honua_plugin_invocations_total");
         var unrelatedDuration = unrelatedMeter.CreateHistogram<double>("honua_plugin_duration_ms");
@@ -60,11 +37,9 @@ public sealed class PluginMetricsTests
         {
         }
 
-        listener.Dispose();
-
-        invocations.Should().ContainSingle(measurement =>
+        _metrics.Invocations.Should().ContainSingle(measurement =>
             measurement.Plugin == pluginId && measurement.Extension == "validate");
-        durations.Should().ContainSingle(measurement =>
+        _metrics.Durations.Should().ContainSingle(measurement =>
             measurement.Plugin == pluginId && measurement.Extension == "validate");
     }
 
@@ -72,37 +47,21 @@ public sealed class PluginMetricsTests
     public void Measure_EmitsFailure_WhenMarkedFailed()
     {
         var pluginId = UniquePluginId();
-        var failures = new ConcurrentBag<(string Plugin, string Extension)>();
-        var meter = PluginMetrics.InstrumentMeter;
-
-        using var listener = new MeterListener();
-        listener.InstrumentPublished = (instrument, l) =>
-        {
-            if (ReferenceEquals(instrument.Meter, meter) && instrument.Name == "honua_plugin_failures_total")
-            {
-                l.EnableMeasurementEvents(instrument);
-            }
-        };
-        listener.SetMeasurementEventCallback<long>((_, _, tags, _) => failures.Add(ReadTags(tags)));
-        listener.Start();
-
         using (var scope = PluginMetrics.Measure(pluginId, "compute"))
         {
             scope.MarkFailed();
         }
 
-        listener.Dispose();
-
-        failures.Should().ContainSingle(measurement =>
+        _metrics.Failures.Should().ContainSingle(measurement =>
             measurement.Plugin == pluginId && measurement.Extension == "compute");
     }
 
     /// <summary>
     /// Regression test for #3734: the assertion above depends only on a per-invocation unique
     /// <c>plugin_id</c>, so it must hold even when many <see cref="PluginMetrics.Measure"/> calls
-    /// (and their own <see cref="MeterListener"/> instances) race concurrently on the shared static
-    /// <see cref="PluginMetrics.InstrumentMeter"/> instruments, as happens under the full parallel
-    /// test-matrix load that reopened this issue.
+    /// race concurrently on the shared static <see cref="PluginMetrics.InstrumentMeter"/>
+    /// instruments. The class fixture deliberately keeps one listener alive for the complete test
+    /// class so unrelated listener disposal cannot interrupt these assertions.
     /// </summary>
     [Fact]
     public async Task Measure_EmitsInvocationAndDuration_WithPluginTags_UnderConcurrentLoad()
@@ -112,43 +71,13 @@ public sealed class PluginMetricsTests
         var tasks = Enumerable.Range(0, concurrency).Select(_ => Task.Run(() =>
         {
             var pluginId = UniquePluginId();
-            var invocations = new ConcurrentBag<(string Plugin, string Extension)>();
-            var durations = new ConcurrentBag<(string Plugin, string Extension)>();
-            var meter = PluginMetrics.InstrumentMeter;
-
-            using var listener = new MeterListener();
-            listener.InstrumentPublished = (instrument, l) =>
-            {
-                if (ReferenceEquals(instrument.Meter, meter))
-                {
-                    l.EnableMeasurementEvents(instrument);
-                }
-            };
-            listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
-            {
-                if (instrument.Name == "honua_plugin_invocations_total")
-                {
-                    invocations.Add(ReadTags(tags));
-                }
-            });
-            listener.SetMeasurementEventCallback<double>((instrument, value, tags, _) =>
-            {
-                if (instrument.Name == "honua_plugin_duration_ms")
-                {
-                    durations.Add(ReadTags(tags));
-                }
-            });
-            listener.Start();
-
             using (PluginMetrics.Measure(pluginId, "validate"))
             {
             }
 
-            listener.Dispose();
-
-            invocations.Should().ContainSingle(measurement =>
+            _metrics.Invocations.Should().ContainSingle(measurement =>
                 measurement.Plugin == pluginId && measurement.Extension == "validate");
-            durations.Should().ContainSingle(measurement =>
+            _metrics.Durations.Should().ContainSingle(measurement =>
                 measurement.Plugin == pluginId && measurement.Extension == "validate");
         })).ToArray();
 
@@ -156,6 +85,50 @@ public sealed class PluginMetricsTests
     }
 
     private static string UniquePluginId() => $"p-{Guid.NewGuid():N}";
+}
+
+public sealed class PluginMetricsListenerFixture : IDisposable
+{
+    private readonly MeterListener _listener = new();
+
+    public PluginMetricsListenerFixture()
+    {
+        _listener.InstrumentPublished = (instrument, listener) =>
+        {
+            if (ReferenceEquals(instrument.Meter, PluginMetrics.InstrumentMeter))
+            {
+                listener.EnableMeasurementEvents(instrument);
+            }
+        };
+        _listener.SetMeasurementEventCallback<long>((instrument, _, tags, _) =>
+        {
+            var measurement = ReadTags(tags);
+            if (instrument.Name == "honua_plugin_invocations_total")
+            {
+                Invocations.Add(measurement);
+            }
+            else if (instrument.Name == "honua_plugin_failures_total")
+            {
+                Failures.Add(measurement);
+            }
+        });
+        _listener.SetMeasurementEventCallback<double>((instrument, _, tags, _) =>
+        {
+            if (instrument.Name == "honua_plugin_duration_ms")
+            {
+                Durations.Add(ReadTags(tags));
+            }
+        });
+        _listener.Start();
+    }
+
+    public ConcurrentBag<(string Plugin, string Extension)> Invocations { get; } = [];
+
+    public ConcurrentBag<(string Plugin, string Extension)> Failures { get; } = [];
+
+    public ConcurrentBag<(string Plugin, string Extension)> Durations { get; } = [];
+
+    public void Dispose() => _listener.Dispose();
 
     private static (string Plugin, string Extension) ReadTags(ReadOnlySpan<KeyValuePair<string, object?>> tags)
     {

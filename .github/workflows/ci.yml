@@ -123,6 +123,16 @@ env:
   # but its artifacts are not release-grade evidence.
   # workflow_dispatch `sdk_ref` overrides this value for manual replays.
   MCP_SDK_REF: '404242df3cbf10f707ee9137405bf93b3de0012d'
+  # Release certification lanes (honua-io/honua-release#376 R18): the job ids
+  # whose check-runs must ALL conclude `success` in the newest completed
+  # schedule/workflow_dispatch run of this workflow before a trunk sha is
+  # certified. This is the one declaration of that list: the nightly container
+  # build reads it (scripts/ci/select-certified-nightly-sha.py) to image only
+  # certified shas, and honua-release's resolver requires the same check-run
+  # names (certification/full-matrix-checks.yaml there). Every lane here must
+  # run on a full-matrix workflow_dispatch -- see the run_all escalation in
+  # the `changes` job.
+  CERTIFICATION_LANE_JOBS: 'build dotnet-foundation-tests python-integration-tests test-all ci-gate'
 
 permissions:
   contents: read
@@ -420,13 +430,24 @@ jobs:
           # build_changes=false (that left PRs stuck BLOCKED with build jobs "skipping").
           if ! CHANGED_FILES=$(git diff --name-only "${{ steps.diff.outputs.range }}" 2>/dev/null); then
             echo "::warning::Diff range '${{ steps.diff.outputs.range }}' unavailable (no merge-base); running the full build lane."
+            # targeted-shards fails safe to run_all on the same range, so a
+            # dispatch here is a full matrix and must run every lane, including
+            # the full_ci-gated certification lanes (see the run_all escalation
+            # below). A pull request keeps the baseline compatibility set.
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              UNAVAILABLE_FULL_CI=false
+              UNAVAILABLE_POSTGRES="${POSTGRES_BASELINE}"
+            else
+              UNAVAILABLE_FULL_CI=true
+              UNAVAILABLE_POSTGRES="${POSTGRES_FULL}"
+            fi
             {
               echo "build_changes=true"
               echo "non_test_changes=true"
               echo "integration_changes=true"
               echo "integration_reason=diff_range_unavailable"
-              echo "full_ci=false"
-              echo "postgres_matrix=${POSTGRES_BASELINE}"
+              echo "full_ci=${UNAVAILABLE_FULL_CI}"
+              echo "postgres_matrix=${UNAVAILABLE_POSTGRES}"
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -450,6 +471,32 @@ jobs:
              [ "${{ steps.diff.outputs.trailing_selective }}" = "true" ] &&
              [ "${{ inputs.full_ci }}" != "true" ]; then
             SELECTIVE_BATCH=true
+          fi
+          # A selective dispatch the shard router cannot scope is a FULL matrix
+          # (honua-io/honua-release#376 R18). The router answers run_all for an
+          # empty range -- a re-dispatch at an already-verified head, where
+          # selective_base == HEAD -- and for infrastructure/unmapped changes,
+          # and targeted-shards then selects every shard. This job used to
+          # derive build/integration/full_ci from the bare diff regardless, so
+          # Build & Format Check, .NET Foundation Tests and Python Integration
+          # Tests SKIPPED in a run that still concluded success; as the newest
+          # completed run on its sha it superseded the real full-matrix
+          # certification there (7aad613: run 37183672893 over 37181115405).
+          # Run the whole matrix instead, so a dispatched full matrix certifies.
+          # Pull requests keep their path-based skipping: this only applies to
+          # selective workflow_dispatch runs.
+          if [ "${SELECTIVE_BATCH}" = "true" ]; then
+            if ROUTER_DESCRIPTOR=$(printf '%s\n' "${CHANGED_FILES}" | scripts/ci/honua-server-targeted-tests.sh --stdin); then
+              ROUTER_RUN_ALL=$(jq -r '.run_all' <<<"${ROUTER_DESCRIPTOR}")
+              ROUTER_REASON=$(jq -r '.reason' <<<"${ROUTER_DESCRIPTOR}")
+            else
+              ROUTER_RUN_ALL=true
+              ROUTER_REASON=targeted_selection_failed
+            fi
+            if [ "${ROUTER_RUN_ALL}" = "true" ]; then
+              echo "Shard router resolved run_all (${ROUTER_REASON}); this dispatch runs the full matrix."
+              SELECTIVE_BATCH=false
+            fi
           fi
           echo "Selective batch decision: ref_name=${GITHUB_REF_NAME} full_ci=${{ inputs.full_ci }} selective=${SELECTIVE_BATCH}"
           if [ "${{ github.event_name }}" != "pull_request" ] && [ "${SELECTIVE_BATCH}" != "true" ]; then

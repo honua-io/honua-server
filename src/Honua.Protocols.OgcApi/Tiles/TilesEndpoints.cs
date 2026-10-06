@@ -284,7 +284,8 @@ internal static partial class TilesEndpoints
             tileProvider,
             tileOptions,
             limitsOptions,
-            tileMatrixSetRegistry);
+            tileMatrixSetRegistry,
+            defaultToRaster: true);
     }
 
     private static async Task<IResult> HandleGetCollectionTilesets(
@@ -473,7 +474,8 @@ internal static partial class TilesEndpoints
         ITileProvider tileProvider,
         IOptions<TileOptions> tileOptions,
         IOptions<LimitsOptions> limitsOptions,
-        ITileMatrixSetRegistry tileMatrixSetRegistry)
+        ITileMatrixSetRegistry tileMatrixSetRegistry,
+        bool defaultToRaster = false)
     {
         // Resolved from the request container rather than taken as a formal parameter
         // (honua-server#2962): this method and its callers are already at the
@@ -489,7 +491,7 @@ internal static partial class TilesEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        var isRaster = OgcTilesUtilities.IsRasterTileFormat(format, request);
+        var isRaster = OgcTilesUtilities.IsRasterTileFormat(format, request, defaultToRaster);
 
         if (!isRaster)
         {

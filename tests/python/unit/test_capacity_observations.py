@@ -149,6 +149,33 @@ def test_candidate_source_mismatch_refused_before_emitting():
         emitter.assert_candidate(REVISION, REVISION, "c"*40)
 
 
+@pytest.mark.parametrize("field,value", [
+    ("repository", "honua-io/another-repository"),
+    ("workflowPath", ".github/workflows/load-soak-nightly.yml"),
+    ("workflowRef", "honua-io/honua-server/.github/workflows/load-soak-nightly.yml@refs/heads/candidate"),
+])
+def test_only_the_approved_candidate_workflow_can_emit_evidence(field, value):
+    source = observations()
+    source["producer"][field] = value
+    with pytest.raises(ValueError, match="approved capacity signer"):
+        emit(source)
+
+
+def test_reusable_invocation_records_the_called_workflow_not_the_caller():
+    called = "honua-io/honua-server/.github/workflows/capacity-soak-candidate.yml@refs/heads/candidate"
+    producer = collector_module.producer_identity(dict(
+        GITHUB_REPOSITORY="honua-io/honua-server", GITHUB_SHA=REVISION, GITHUB_RUN_ID="123", GITHUB_RUN_ATTEMPT="1",
+        GITHUB_WORKFLOW_REF="honua-io/honua-server/.github/workflows/release-caller.yml@refs/heads/candidate",
+        CAPACITY_SIGNER_WORKFLOW_REF=called))
+    assert producer["workflowRef"] == called
+    source = observations()
+    source["producer"] = {**source["producer"], **producer}
+    assert emit(source)[0]["producer"]["workflowRef"] == called
+    with pytest.raises(KeyError):
+        collector_module.producer_identity(dict(GITHUB_REPOSITORY="honua-io/honua-server", GITHUB_SHA=REVISION,
+                                                GITHUB_RUN_ID="123", GITHUB_RUN_ATTEMPT="1", GITHUB_WORKFLOW_REF=called))
+
+
 def test_legacy_aggregate_cannot_be_expanded_into_raw_observations():
     with pytest.raises(ValueError, match="not legacy aggregates"):
         emit({"allRequestCount": 4320000, "p95Ms": 200})

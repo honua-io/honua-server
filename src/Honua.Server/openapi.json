@@ -467,6 +467,9 @@
           },
           {
             "BearerAuth": []
+          },
+          {
+            "PortalTokenQuery": []
           }
         ],
         "requestBody": {
@@ -567,6 +570,9 @@
           },
           {
             "BearerAuth": []
+          },
+          {
+            "PortalTokenQuery": []
           }
         ],
         "requestBody": {
@@ -870,6 +876,9 @@
           },
           {
             "BearerAuth": []
+          },
+          {
+            "PortalTokenQuery": []
           }
         ],
         "requestBody": {
@@ -979,6 +988,9 @@
           },
           {
             "BearerAuth": []
+          },
+          {
+            "PortalTokenQuery": []
           }
         ],
         "requestBody": {
@@ -1074,6 +1086,9 @@
           },
           {
             "BearerAuth": []
+          },
+          {
+            "PortalTokenQuery": []
           }
         ],
         "responses": {
@@ -1693,6 +1708,11 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT"
+      },
+      "PortalTokenQuery": {
+        "type": "apiKey",
+        "in": "query",
+        "name": "token"
       }
     },
     "schemas": {

@@ -362,6 +362,11 @@ jobs:
             --config container-structure-test.yaml
 
       - name: Start container for runtime security analysis
+        env:
+          # A per-run database password: the Production cold start refuses the shipped
+          # harness placeholders (ConfigurationValidationService.KnownPlaceholderSecrets),
+          # so a fixed literal such as `honua_password` keeps the app from ever going live.
+          RUNTIME_DB_PASSWORD: sec-nightly-db-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
 
@@ -376,7 +381,7 @@ jobs:
             --network honua-runtime-net \
             -e POSTGRES_DB=honua \
             -e POSTGRES_USER=honua \
-            -e POSTGRES_PASSWORD=honua_password \
+            -e POSTGRES_PASSWORD="$RUNTIME_DB_PASSWORD" \
             postgis/postgis:16-3.4
 
           echo "Waiting for PostGIS to accept connections..."
@@ -406,7 +411,7 @@ jobs:
             --security-opt no-new-privileges:true \
             -e HONUA_ADMIN_PASSWORD="Sec-Nightly-${{ github.run_id }}-${{ github.run_attempt }}-Aa1!" \
             -e Security__ConnectionEncryption__MasterKey="sec-nightly-master-key-${{ github.run_id }}-${{ github.run_attempt }}-padding0000" \
-            -e ConnectionStrings__DefaultConnection="Host=honua-runtime-db;Port=5432;Database=honua;Username=honua;Password=honua_password" \
+            -e ConnectionStrings__DefaultConnection="Host=honua-runtime-db;Port=5432;Database=honua;Username=honua;Password=$RUNTIME_DB_PASSWORD" \
             -p 8080:8080 \
             ${{ env.IMAGE_NAME }}:${{ matrix.image_tag }}
 

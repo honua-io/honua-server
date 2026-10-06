@@ -4,6 +4,7 @@
 using System.Text.Json;
 using Honua.Core.Features.Styling.Domain;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
@@ -99,7 +100,8 @@ internal static class StyleEndpoints
 
         if (themeProfile == ThemeProfile.Default)
         {
-            return Results.Json(styleElement.Value, StyleJsonContext.Default.JsonElement, contentType: MediaTypes.Json);
+            var resolvedStyle = StyleEndpointUrlResolver.Resolve(styleElement.Value, BaseUrlResolver.GetBaseUrl(context));
+            return Results.Json(resolvedStyle, StyleJsonContext.Default.JsonElement, contentType: MediaTypes.Json);
         }
 
         var rawJson = styleElement.Value.GetRawText();
@@ -117,10 +119,12 @@ internal static class StyleEndpoints
         var themedElement = StyleJsonUtilities.ParseJsonElement(themed);
         if (!themedElement.HasValue)
         {
-            return Results.Json(styleElement.Value, StyleJsonContext.Default.JsonElement, contentType: MediaTypes.Json);
+            var resolvedStyle = StyleEndpointUrlResolver.Resolve(styleElement.Value, BaseUrlResolver.GetBaseUrl(context));
+            return Results.Json(resolvedStyle, StyleJsonContext.Default.JsonElement, contentType: MediaTypes.Json);
         }
 
-        return Results.Json(themedElement.Value, StyleJsonContext.Default.JsonElement, contentType: MediaTypes.Json);
+        var resolvedThemedStyle = StyleEndpointUrlResolver.Resolve(themedElement.Value, BaseUrlResolver.GetBaseUrl(context));
+        return Results.Json(resolvedThemedStyle, StyleJsonContext.Default.JsonElement, contentType: MediaTypes.Json);
     }
 
     internal static bool TryParseTheme(string? raw, out ThemeProfile theme)

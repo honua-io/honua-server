@@ -26,8 +26,15 @@ public sealed class I3sNodePageDocument
 public sealed class I3sNodePageEntry
 {
     /// <summary>
+    /// Global index of this node within the node-page store. I3S 1.7 requires
+    /// every node entry to carry this identity, including the root node.
+    /// </summary>
+    [JsonPropertyName("index")]
+    public int Index { get; set; }
+
+    /// <summary>
     /// LOD selection threshold for this node, in the metric declared by
-    /// <c>store.nodePages.lodSelectionMetricType</c>. Higher thresholds refine to
+    /// <c>nodePages.lodSelectionMetricType</c>. Higher thresholds refine to
     /// finer LODs; the root carries 0 (always selectable).
     /// </summary>
     [JsonPropertyName("lodThreshold")]

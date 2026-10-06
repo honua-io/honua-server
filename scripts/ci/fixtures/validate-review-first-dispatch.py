@@ -56,6 +56,28 @@ def mode(source: str, path: Path) -> str:
     return matches[0]
 
 
+def validate_synthetic_artifact_catalog(
+    page_counts: list[int], declared_total: int, maximum_pages: int
+) -> None:
+    """Exercise the workflow's bounded, fail-closed catalog pagination contract."""
+    discovered = 0
+    for page, page_count in enumerate(page_counts[:maximum_pages], start=1):
+        discovered += page_count
+        if page * 100 >= declared_total:
+            if discovered < declared_total:
+                raise AssertionError(
+                    "repository artifact catalog ended before its declared total"
+                )
+            return
+        if page_count != 100:
+            raise AssertionError("repository artifact catalog ended before its declared total")
+
+    raise AssertionError(
+        "review-first-observation-v1 artifact catalog needs more than "
+        f"{maximum_pages} page(s) of 100 (declared total {declared_total})"
+    )
+
+
 def main() -> None:
     pr_gate = read_text(PR_GATE)
     review_gate = read_text(REVIEW_GATE)
@@ -501,6 +523,29 @@ def main() -> None:
         raise AssertionError(
             f"ledger worst case of {worst_case_requests} requests exceeds the API budget"
         )
+
+    # Exercise the boundary with catalogs rather than only matching workflow
+    # source. The current-sized catalog must be complete, while the first
+    # catalog outside the finite budget must fail instead of yielding partial
+    # evidence that could be reported as green.
+    current_catalog_pages = [100] * (observed_catalog // 100) + [observed_catalog % 100]
+    validate_synthetic_artifact_catalog(
+        current_catalog_pages,
+        observed_catalog,
+        policy["maximum_artifact_catalog_pages"],
+    )
+    beyond_budget_total = policy["maximum_artifact_catalog_pages"] * 100 + 1
+    try:
+        validate_synthetic_artifact_catalog(
+            [100] * policy["maximum_artifact_catalog_pages"] + [1],
+            beyond_budget_total,
+            policy["maximum_artifact_catalog_pages"],
+        )
+    except AssertionError as error:
+        if "needs more than" not in str(error) or str(beyond_budget_total) not in str(error):
+            raise AssertionError("catalog truncation error must be actionable") from error
+    else:
+        raise AssertionError("catalog beyond the declared page budget must fail closed")
     for needle, message in (
         (
             "while (( page <= maximum_pages )); do",

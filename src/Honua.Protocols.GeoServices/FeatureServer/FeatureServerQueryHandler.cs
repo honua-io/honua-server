@@ -1179,7 +1179,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
                 if (quantizationTransform is not null && formattedResponse is QueryResponse quantizableResponse)
                 {
-                    formattedResponse = ApplyQuantization(quantizableResponse, quantizationTransform);
+                    formattedResponse = FeatureQuantizer.Apply(quantizableResponse, quantizationTransform);
                 }
 
                 return format.ToLowerInvariant() switch
@@ -2786,7 +2786,7 @@ internal sealed partial class FeatureServerQueryHandler(
     private static object? GeoServicesAttributeValue(object? value)
         => GeoServicesAttributeProjection.ToEsriValue(value);
 
-    private static bool TryParseStatisticsDefinitions(
+    internal static bool TryParseStatisticsDefinitions(
         string outStatisticsJson,
         MetadataV2Resource resource,
         out ImmutableArray<StatisticDefinition> definitions,
@@ -2839,15 +2839,26 @@ internal sealed partial class FeatureServerQueryHandler(
                     return false;
                 }
 
-                if (!fieldNames.Contains(onField))
-                {
-                    error = $"Field '{onField}' does not exist on the layer.";
-                    return false;
-                }
-
                 if (!TryParseStatisticType(statisticTypeStr, out var statisticType))
                 {
                     error = $"Unsupported statisticType: '{statisticTypeStr}'. Supported types: count, sum, min, max, avg, stddev, var.";
+                    return false;
+                }
+
+                // The protocol represents a row count as count on "*". Normalize it to
+                // the resource's object-id field so every provider emits COUNT on a
+                // real column without accepting the wildcard as a general field.
+                // DuckDB and Databricks quote OnStatisticField verbatim, and their
+                // primary key defaults to "id" (or a custom column), so the canonical
+                // name "objectid" is not a column on those layers.
+                if (statisticType == StatisticType.Count && onField == "*")
+                {
+                    onField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+                }
+
+                if (!fieldNames.Contains(onField))
+                {
+                    error = $"Field '{onField}' does not exist on the layer.";
                     return false;
                 }
 
@@ -3223,55 +3234,6 @@ internal sealed partial class FeatureServerQueryHandler(
         var hasMore = scanTruncated || effectiveOffset + take < totalCount;
 
         return QueryResult<Feature>.Create(totalCount, pageItems, hasMore);
-    }
-
-    // Rebuilds the Esri json featureSet with quantized (integer grid, delta-encoded)
-    // geometry coordinates and the matching transform, when quantizationParameters was
-    // requested. The transform lets clients recover world coordinates.
-    private static QueryResponse ApplyQuantization(QueryResponse response, QuantizationTransform transform)
-    {
-        GeoServicesFeature[]? features = response.Features;
-        if (features is { Length: > 0 })
-        {
-            var quantized = new GeoServicesFeature[features.Length];
-            for (var i = 0; i < features.Length; i++)
-            {
-                var feature = features[i];
-                quantized[i] = new GeoServicesFeature
-                {
-                    Attributes = feature.Attributes,
-                    Geometry = feature.Geometry is { } geometry ? FeatureQuantizer.Quantize(geometry, transform) : null,
-                    Centroid = feature.Centroid is { } centroid ? FeatureQuantizer.Quantize(centroid, transform) : null,
-                    IncludeGeometry = feature.IncludeGeometry,
-                };
-            }
-
-            features = quantized;
-        }
-
-        return new QueryResponse
-        {
-            GeometryType = response.GeometryType,
-            SpatialReference = response.SpatialReference,
-            DisplayFieldName = response.DisplayFieldName,
-            Fields = response.Fields,
-            HasZ = response.HasZ,
-            HasM = response.HasM,
-            ObjectIdFieldName = response.ObjectIdFieldName,
-            ObjectIds = response.ObjectIds,
-            Count = response.Count,
-            Extent = response.Extent,
-            UniqueIdField = response.UniqueIdField,
-            GlobalIdFieldName = response.GlobalIdFieldName,
-            Features = features,
-            ExceededTransferLimit = response.ExceededTransferLimit,
-            Transform = new GeoServicesTransform
-            {
-                OriginPosition = transform.OriginPosition,
-                Scale = [transform.ScaleX, transform.ScaleY],
-                Translate = [transform.TranslateX, transform.TranslateY],
-            },
-        };
     }
 
     private static string BuildDistinctKey(Feature feature, string[] outFields)
