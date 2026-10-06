@@ -119,14 +119,17 @@ public sealed class I3sConformanceFixtureTests : IAsyncLifetime
 
         // The root references its two children by global index and carries no mesh.
         var rootNode = nodes[0];
+        rootNode.GetProperty("index").GetInt32().Should().Be(0);
         rootNode.GetProperty("children").EnumerateArray().Select(c => c.GetInt32())
             .Should().BeEquivalentTo([1, 2]);
         rootNode.TryGetProperty("mesh", out _).Should().BeFalse();
 
         // Each content child carries a mesh whose resource id is its global index.
+        nodes[1].GetProperty("index").GetInt32().Should().Be(1);
         nodes[1].GetProperty("mesh").GetProperty("geometry").GetProperty("resource").GetInt32().Should().Be(1);
         nodes[1].GetProperty("parentIndex").GetInt32().Should().Be(0);
         nodes[2].GetProperty("mesh").GetProperty("geometry").GetProperty("resource").GetInt32().Should().Be(2);
+        nodes[2].GetProperty("index").GetInt32().Should().Be(2);
     }
 
     [IntegrationTest]

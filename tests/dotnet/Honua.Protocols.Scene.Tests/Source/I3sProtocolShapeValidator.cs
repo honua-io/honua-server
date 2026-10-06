@@ -138,6 +138,14 @@ internal static class I3sProtocolShapeValidator
         var index = 0;
         foreach (var node in nodes.EnumerateArray())
         {
+            if (!node.TryGetProperty("index", out var nodeIndex) ||
+                nodeIndex.ValueKind != JsonValueKind.Number ||
+                !nodeIndex.TryGetInt32(out var nodeIndexValue) ||
+                nodeIndexValue < 0)
+            {
+                violations.Add($"node[{index}].index must be a non-negative integer global node index.");
+            }
+
             if (!node.TryGetProperty("lodThreshold", out var lod) || lod.ValueKind != JsonValueKind.Number)
             {
                 violations.Add($"node[{index}].lodThreshold must be a number.");

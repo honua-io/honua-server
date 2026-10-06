@@ -131,6 +131,7 @@ public static class I3sNodePageProjector
 
         var node = new I3sNodePageEntry
         {
+            Index = globalIndex,
             // The root selects unconditionally (threshold 0); descendants refine
             // as the source geometric error tightens. I3S expresses finer LODs as
             // larger thresholds, so invert the geometric error (coarse error ->
