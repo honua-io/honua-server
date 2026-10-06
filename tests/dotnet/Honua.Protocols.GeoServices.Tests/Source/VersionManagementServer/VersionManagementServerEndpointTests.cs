@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
@@ -28,6 +29,9 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
     // EndpointRegistry coverage scanner — which matches the literal route template inside each
     // [IntegrationTest] method body — can back every VersionManagementServer endpoint.
     private const string ServiceBase = "/rest/services/" + WebAppFixture.TestServiceId + "/VersionManagementServer";
+
+    // GeoServices version GUIDs are registry-format: braced, upper-case hex.
+    private const string RegistryGuidPattern = "^\\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\\}$";
 
     private readonly WebAppFixture _fixture = new();
 
@@ -85,6 +89,159 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         await BranchVersioningPublicationFixture.AssertVersionManagementSuccessAsync(get, post);
         using var doc = JsonDocument.Parse(await post.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("capabilities").ValueKind.Should().Be(JsonValueKind.Object);
+    }
+
+    /// <summary>
+    /// #5036: the exchange a native client issues to open the feature service as a branch-versioned
+    /// workspace, in order: service info, the DEFAULT version resource named by
+    /// <c>defaultVersionGuid</c> (POSTed, braces stripped, upper case), a read session on DEFAULT,
+    /// then <c>versionInfos</c>. Each step must answer the GeoServices shape, or the client
+    /// reports the workspace as the wrong type before it creates or lists a version.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/startReading")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/stopReading")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versionInfos")]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer/versionInfos")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "versionInfos")]
+    public async Task WorkspaceOpen_DefaultVersionExchange_AnswersEveryStep()
+    {
+        BranchVersioningPublicationFixture.ConfigureManagedPublications(_fixture);
+        const string service = BranchVersioningPublicationFixture.ServiceName;
+        const string sessionId = "{F003FF99-3330-4703-8ECA-5CCD80DFDA30}";
+
+        using var serviceInfo = await PostFormAsync(
+            $"/rest/services/{service}/VersionManagementServer", ("f", "json"));
+        var serviceInfoBody = await serviceInfo.Content.ReadAsStringAsync();
+        serviceInfo.StatusCode.Should().Be(HttpStatusCode.OK, serviceInfoBody);
+        using var serviceInfoDocument = JsonDocument.Parse(serviceInfoBody);
+        serviceInfoDocument.RootElement.TryGetProperty("defaultVersionGuid", out var defaultGuidElement)
+            .Should().BeTrue("the client reads DEFAULT by this GUID before any other version request: {0}", serviceInfoBody);
+        defaultGuidElement.GetString().Should().MatchRegex(RegistryGuidPattern,
+            "a client does not follow a version GUID given in any other form: {0}", serviceInfoBody);
+        Guid.TryParse(defaultGuidElement.GetString(), out var defaultGuid).Should().BeTrue(serviceInfoBody);
+        var clientGuid = defaultGuid.ToString("D").ToUpperInvariant();
+
+        using var defaultInfo = await PostFormAsync(
+            $"/rest/services/{service}/VersionManagementServer/versions/{clientGuid}", ("f", "json"));
+        var defaultInfoBody = await defaultInfo.Content.ReadAsStringAsync();
+        defaultInfo.StatusCode.Should().Be(HttpStatusCode.OK, defaultInfoBody);
+        using var defaultInfoDocument = JsonDocument.Parse(defaultInfoBody);
+        defaultInfoDocument.RootElement.TryGetProperty("error", out _).Should().BeFalse(defaultInfoBody);
+        defaultInfoDocument.RootElement.GetProperty("versionName").GetString().Should().Be("sde.DEFAULT");
+        Guid.Parse(defaultInfoDocument.RootElement.GetProperty("versionGuid").GetString()!).Should().Be(defaultGuid);
+        defaultInfoDocument.RootElement.GetProperty("access").GetString().Should().Be("public");
+
+        foreach (var operation in new[] { "startReading", "stopReading" })
+        {
+            using var session = await PostFormAsync(
+                $"/rest/services/{service}/VersionManagementServer/versions/{clientGuid}/{operation}",
+                ("f", "json"), ("sessionId", sessionId));
+            var sessionBody = await session.Content.ReadAsStringAsync();
+            session.StatusCode.Should().Be(HttpStatusCode.OK, sessionBody);
+            using var sessionDocument = JsonDocument.Parse(sessionBody);
+            sessionDocument.RootElement.TryGetProperty("error", out _).Should().BeFalse("{0}: {1}", operation, sessionBody);
+            sessionDocument.RootElement.GetProperty("success").GetBoolean().Should().BeTrue("{0}: {1}", operation, sessionBody);
+        }
+
+        using var create = await PostFormAsync(
+            $"/rest/services/{service}/VersionManagementServer/create",
+            ("versionName", $"admin.workspace_open_{Guid.NewGuid():N}"), ("accessPermission", "private"), ("f", "json"));
+        var createBody = await create.Content.ReadAsStringAsync();
+        create.StatusCode.Should().Be(HttpStatusCode.OK, createBody);
+        using var createDocument = JsonDocument.Parse(createBody);
+        var created = createDocument.RootElement.GetProperty("versionInfo");
+        created.GetProperty("versionGuid").GetString().Should().MatchRegex(RegistryGuidPattern,
+            "a client reports a create whose versionGuid it cannot parse as a failed create: {0}", createBody);
+        using var postedInfos = await PostFormAsync(
+            $"/rest/services/{service}/VersionManagementServer/versionInfos", ("f", "json"), ("includeHidden", "false"));
+        using var gotInfos = await _fixture.Client.GetAsync(
+            $"/rest/services/{service}/VersionManagementServer/versionInfos?f=json");
+        foreach (var infos in new[] { postedInfos, gotInfos })
+        {
+            var infosBody = await infos.Content.ReadAsStringAsync();
+            infos.StatusCode.Should().Be(HttpStatusCode.OK, infosBody);
+            using var infosDocument = JsonDocument.Parse(infosBody);
+            infosDocument.RootElement.GetProperty("success").GetBoolean().Should().BeTrue(
+                "the versionInfos contract carries a success flag: {0}", infosBody);
+            var versions = infosDocument.RootElement.GetProperty("versions").EnumerateArray().ToArray();
+            versions.Should().NotBeEmpty(infosBody);
+            foreach (var version in versions)
+            {
+                version.GetProperty("creationDate").ValueKind.Should().Be(JsonValueKind.Number,
+                    "versionInfos entries use the contract's date fields: {0}", infosBody);
+                version.GetProperty("modifiedDate").ValueKind.Should().Be(JsonValueKind.Number, infosBody);
+                version.TryGetProperty("creationMoment", out _).Should().BeFalse(infosBody);
+                version.TryGetProperty("modifiedMoment", out _).Should().BeFalse(infosBody);
+            }
+            versions[0].GetProperty("versionName").GetString().Should().Be("sde.DEFAULT", infosBody);
+            Guid.Parse(versions[0].GetProperty("versionGuid").GetString()!).Should().Be(defaultGuid);
+            versions.Select(version => version.GetProperty("versionGuid").GetString())
+                .Should().Contain(created.GetProperty("versionGuid").GetString(), infosBody)
+                .And.OnlyContain(guid => Regex.IsMatch(guid!, RegistryGuidPattern), infosBody);
+        }
+    }
+
+    /// <summary>
+    /// #5036: <c>versionInfos</c> honours the contract's <c>ownerFilter</c> on GET and POST. DEFAULT
+    /// belongs to <c>sde</c>, so it is listed only when the filter is absent or names that owner.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versionInfos")]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer/versionInfos")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "versionInfos")]
+    public async Task VersionInfos_OwnerFilter_ListsOnlyThatOwnersVersions()
+    {
+        BranchVersioningPublicationFixture.ConfigureManagedPublications(_fixture);
+        const string service = BranchVersioningPublicationFixture.ServiceName;
+
+        using var create = await PostFormAsync(
+            $"/rest/services/{service}/VersionManagementServer/create",
+            ("versionName", $"admin.owner_filter_{Guid.NewGuid():N}"), ("accessPermission", "public"), ("f", "json"));
+        var createBody = await create.Content.ReadAsStringAsync();
+        create.StatusCode.Should().Be(HttpStatusCode.OK, createBody);
+        using var createDocument = JsonDocument.Parse(createBody);
+        var created = createDocument.RootElement.GetProperty("versionInfo");
+        var owner = created.GetProperty("owner").GetString()!;
+
+        async Task<string?[]> ListAsync(string? ownerFilter, bool post)
+        {
+            using var response = post
+                ? await PostFormAsync(
+                    $"/rest/services/{service}/VersionManagementServer/versionInfos",
+                    ("f", "json"), ("ownerFilter", ownerFilter ?? string.Empty))
+                : await _fixture.Client.GetAsync(
+                    $"/rest/services/{service}/VersionManagementServer/versionInfos?f=json&ownerFilter={Uri.EscapeDataString(ownerFilter ?? string.Empty)}");
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            using var document = JsonDocument.Parse(body);
+            document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue(body);
+            return [.. document.RootElement.GetProperty("versions").EnumerateArray()
+                .Select(version => version.GetProperty("versionName").GetString())];
+        }
+
+        foreach (var post in new[] { true, false })
+        {
+            var createdName = created.GetProperty("versionName").GetString();
+
+            var unfiltered = await ListAsync(null, post);
+            unfiltered.Should().Contain(["sde.DEFAULT", createdName]);
+
+            var ownersVersions = await ListAsync(owner.ToUpperInvariant(), post);
+            ownersVersions.Should().Contain(createdName).And.NotContain("sde.DEFAULT");
+
+            var defaultOnly = await ListAsync("sde", post);
+            defaultOnly.Should().Equal("sde.DEFAULT");
+
+            var nobody = await ListAsync("nobody_owns_this", post);
+            nobody.Should().BeEmpty();
+        }
     }
 
     [IntegrationTest]

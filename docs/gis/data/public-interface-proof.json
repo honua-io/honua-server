@@ -1958,6 +1958,7 @@
         "VersionManagementServer::serviceInfo",
         "VersionManagementServer::versions",
         "VersionManagementServer::versionInfo",
+        "VersionManagementServer::versionInfos",
         "VersionManagementServer::create",
         "VersionManagementServer::delete",
         "VersionManagementServer::alter",

@@ -19,6 +19,12 @@ public sealed class VersionManagementServiceInfo
     /// <summary>Default version name (always the implicit DEFAULT version).</summary>
     public string DefaultVersionName { get; init; } = "sde.DEFAULT";
 
+    /// <summary>
+    /// GUID of the implicit DEFAULT version. Clients open the versioned workspace by reading this
+    /// version's resource and starting a read session on it before any named version is used.
+    /// </summary>
+    public required string DefaultVersionGuid { get; init; }
+
     /// <summary>Named capability flags advertised for the version-management surface.</summary>
     public VersionManagementCapabilities Capabilities { get; init; } = new();
 }
@@ -110,6 +116,46 @@ public sealed class VersionListResponse
 {
     /// <summary>The known branch versions (DEFAULT is implicit and not listed).</summary>
     public VersionInfo[] Versions { get; init; } = [];
+}
+
+/// <summary>
+/// One version entry of the GeoServices <c>versionInfos</c> operation. Unlike
+/// <see cref="VersionInfo"/>, it uses the contract's field names (<c>creationDate</c>,
+/// <c>modifiedDate</c>); the reconcile, evaluation and ancestor dates are omitted because Honua
+/// tracks branch generations, not those timestamps.
+/// </summary>
+public sealed class VersionInfosEntry
+{
+    /// <summary>Esri-style <c>owner.name</c> version identity.</summary>
+    public required string VersionName { get; init; }
+
+    /// <summary>Stable version identifier (registry-format GUID).</summary>
+    public required string VersionGuid { get; init; }
+
+    /// <summary>Optional human-readable description.</summary>
+    public string? Description { get; init; }
+
+    /// <summary>Epoch-milliseconds the version was created.</summary>
+    public long CreationDate { get; init; }
+
+    /// <summary>Epoch-milliseconds the version was last modified.</summary>
+    public long ModifiedDate { get; init; }
+
+    /// <summary>Access level: <c>private</c>, <c>protected</c>, or <c>public</c>.</summary>
+    public required string Access { get; init; }
+}
+
+/// <summary>
+/// Response for the GeoServices <c>versionInfos</c> operation: DEFAULT first, then the versions
+/// visible to the caller, with the contract's <c>success</c> flag.
+/// </summary>
+public sealed class VersionInfosResponse
+{
+    /// <summary>DEFAULT followed by the visible branch versions.</summary>
+    public VersionInfosEntry[] Versions { get; init; } = [];
+
+    /// <summary>Always true for a successful listing; failures answer with an error document.</summary>
+    public bool Success { get; init; } = true;
 }
 
 /// <summary>

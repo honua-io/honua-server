@@ -16,9 +16,9 @@ Core branch versioning (Pro): named gdb versions, isolated edits, reconcile/post
 | Capability key | `editing.branch-versioning` |
 | Category | Editing |
 | Edition | Pro |
-| Surface maturity | 16 experimental |
-| Registry entries | 16 |
-| Proving tests | 63 |
+| Surface maturity | 19 experimental |
+| Registry entries | 19 |
+| Proving tests | 78 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

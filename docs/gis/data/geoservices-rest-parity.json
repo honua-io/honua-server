@@ -3894,17 +3894,21 @@
             "name": "List versions; version info",
             "status": "implemented",
             "esriPaths": [
+              "/VersionManagementServer/versionInfos",
               "/VersionManagementServer/versions",
               "/VersionManagementServer/versions/{versionGuid}"
             ],
             "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/VersionManagementServer/versionInfos",
               "GET /rest/services/{serviceId}/VersionManagementServer/versions",
-              "GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}"
+              "GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}",
+              "POST /rest/services/{serviceId}/VersionManagementServer/versionInfos",
+              "POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}"
             ],
             "capabilityMaturity": [
               "experimental"
             ],
-            "notes": "Lists and resolves real versions from the version manager, filtered by the access policy (private versions are visible to owner/admin only). A non-visible version returns 404 rather than 403, so existence is not leaked; an invalid GUID returns 400. Providers without versioning return an empty list rather than an error."
+            "notes": "Lists and resolves real versions from the version manager, filtered by the access policy (private versions are visible to owner/admin only). versionInfos (GET or POST) lists DEFAULT first, and version info (GET or POST) answers DEFAULT at its fixed GUID; the Honua-named versions route omits DEFAULT. A non-visible version returns 404 rather than 403, so existence is not leaked; an invalid GUID returns 400. Providers without versioning return an empty list rather than an error."
           },
           {
             "name": "Alter version; delete version",
@@ -3971,7 +3975,7 @@
             "capabilityMaturity": [
               "experimental"
             ],
-            "notes": "GET and POST return the descriptor after service-read, branch-versioning entitlement, and accessible bound-publication capability checks. The descriptor still uses a capability string rather than the Esri capability object and does not expose a durable DEFAULT version GUID; native workspace initialization remains unresolved."
+            "notes": "GET and POST return the descriptor after service-read, branch-versioning entitlement, and accessible bound-publication capability checks. It names DEFAULT by the contract\u0027s fixed defaultVersionGuid, which native clients read, then start a read session on, to open the feature service as a versioned workspace; the sibling MapServer lists VersionManagementServer in supportedExtensions even when a map-only service shares the name."
           },
           {
             "name": "Create version",
@@ -4005,7 +4009,7 @@
             "capabilityMaturity": [
               "experimental"
             ],
-            "notes": "Stateless acknowledgements: Honua holds no Esri edit/read session and issues no session token, because edits land per-request via gdbVersion rather than inside a server-held session. startEditing does resolve the version, return its durable branch generation as moment, and return 409 mid-reconcile/post; stopEditing has no saveEdits semantics (there is nothing to commit or discard). A client that depends on session tokens will not get Esri\u0027s behaviour."
+            "notes": "Stateless acknowledgements: Honua holds no Esri edit/read session and issues no session token, because edits land per-request via gdbVersion rather than inside a server-held session. startEditing does resolve the version, return its durable branch generation as moment, and return 409 mid-reconcile/post. Read sessions follow the read rule (service read access plus version visibility, the same rule as a gdbVersion read), so any reader can open one on DEFAULT or a public or protected version, while another owner\u0027s private version answers 404; edit sessions keep the owner-or-admin rule. stopEditing has no saveEdits semantics (there is nothing to commit or discard). A client that depends on session tokens will not get Esri\u0027s behaviour."
           }
         ],
         "stub": [],
