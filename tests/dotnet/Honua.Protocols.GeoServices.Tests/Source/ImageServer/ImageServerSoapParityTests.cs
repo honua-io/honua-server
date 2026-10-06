@@ -319,7 +319,8 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
             var imageInfo = Element(description.Document, "TileImageInfo");
             Child(imageInfo, "CacheTileFormat").Value.Should().Be(tileInfo.GetProperty("format").GetString());
             Child(imageInfo, "CompressionQuality").Value.Should().Be("0");
-            tileInfo.GetProperty("compressionQuality").ValueKind.Should().Be(JsonValueKind.Null);
+            // ImageServer JSON omits nulls, so an unset compression quality is absent rather than null.
+            tileInfo.TryGetProperty("compressionQuality", out _).Should().BeFalse();
 
             var cacheInfo = await PostSoapAsync(fixture, $"""<GetTileCacheInfo xmlns="{ArcGisNamespace}" />""");
             cacheInfo.Status.Should().Be(HttpStatusCode.OK, cacheInfo.Body);

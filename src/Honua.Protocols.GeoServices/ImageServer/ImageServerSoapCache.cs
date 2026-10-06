@@ -211,7 +211,7 @@ internal static partial class ImageServerSoapEndpoints
                 new XAttribute(xsi + "type", "tns:ArrayOfLODInfo"),
                 tileInfo.Lods.Select(static lod => new XElement(
                     "LODInfo",
-                    new XAttribute(XmlSchemaInstanceNamespace + "type", "tns:LODInfo"),
+                    new XAttribute(XName.Get("type", XmlSchemaInstanceNamespace), "tns:LODInfo"),
                     new XElement("LevelID", lod.Level),
                     new XElement("Resolution", FormatDouble(lod.Resolution)),
                     new XElement("Scale", FormatDouble(lod.Scale))))));
