@@ -149,6 +149,18 @@ def test_candidate_source_mismatch_refused_before_emitting():
         emitter.assert_candidate(REVISION, REVISION, "c"*40)
 
 
+@pytest.mark.parametrize("field,value", [
+    ("repository", "honua-io/another-repository"),
+    ("workflowPath", ".github/workflows/load-soak-nightly.yml"),
+    ("workflowRef", "honua-io/honua-server/.github/workflows/load-soak-nightly.yml@refs/heads/candidate"),
+])
+def test_only_the_approved_candidate_workflow_can_emit_evidence(field, value):
+    source = observations()
+    source["producer"][field] = value
+    with pytest.raises(ValueError, match="approved capacity signer"):
+        emit(source)
+
+
 def test_legacy_aggregate_cannot_be_expanded_into_raw_observations():
     with pytest.raises(ValueError, match="not legacy aggregates"):
         emit({"allRequestCount": 4320000, "p95Ms": 200})

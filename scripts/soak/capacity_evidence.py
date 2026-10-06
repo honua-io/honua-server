@@ -39,8 +39,15 @@ def receipt(lock: dict, lock_hash: str, source: dict, payload: bytes, artifact_u
     if source["lockSha256"] != lock_hash:
         raise ValueError("observations do not bind the supplied lock bytes")
     candidate = source["candidateIdentity"]
-    assert_candidate(candidate["serverRevision"], source["producer"]["sourceRevision"], source["observedRevision"])
-    run_id = source["producer"]["runId"]
+    producer = source["producer"]
+    approved_repository = "honua-io/honua-server"
+    approved_workflow = ".github/workflows/capacity-soak-candidate.yml"
+    if (producer.get("repository") != approved_repository
+            or producer.get("workflowPath") != approved_workflow
+            or not str(producer.get("workflowRef", "")).startswith(f"{approved_repository}/{approved_workflow}@")):
+        raise ValueError("observations were not emitted by the approved capacity signer")
+    assert_candidate(candidate["serverRevision"], producer["sourceRevision"], source["observedRevision"])
+    run_id = producer["runId"]
     if not re.fullmatch(rf"https://github.com/honua-io/honua-server/actions/runs/{run_id}/artifacts/[1-9][0-9]*", artifact_url):
         raise ValueError("raw artifact must belong to the producer Actions run")
     duration = (timestamp(source["window"]["endedAt"]) - timestamp(source["window"]["startedAt"])).total_seconds()
