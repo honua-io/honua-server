@@ -21,7 +21,7 @@ public sealed class Issue5505CountAllStatisticsTests
         ]
     };
 
-    [UnitFact]
+    [UnitTest]
     public void Issue5505_CountOnWildcard_UsesNonNullableObjectIdForRowCount()
     {
         const string json =
