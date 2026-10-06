@@ -193,6 +193,14 @@ class RecordingTransport(httpx.AsyncBaseTransport):
         await self.transport.aclose()
 
 
+def producer_identity(environ) -> dict:
+    """Bind the executing workflow, not the caller: under workflow_call GITHUB_WORKFLOW_REF names the
+    caller, while the attestation's buildSignerURI is the OIDC job_workflow_ref of this workflow."""
+    return dict(repository=environ["GITHUB_REPOSITORY"], workflowPath=".github/workflows/capacity-soak-candidate.yml",
+                workflowRef=environ["CAPACITY_SIGNER_WORKFLOW_REF"], sourceRevision=environ["GITHUB_SHA"],
+                runId=int(environ["GITHUB_RUN_ID"]), runAttempt=int(environ["GITHUB_RUN_ATTEMPT"]), predicateType="https://slsa.dev/provenance/v1")
+
+
 class Collector:
     def __init__(self, args, lock):
         self.args, self.lock = args, lock
@@ -384,9 +392,7 @@ class Collector:
                 except TimeoutError:
                     self.failures.append("collector tasks exceeded the 60-second drain budget")
                 self.capture_gp_errors()
-        producer = dict(repository=os.environ["GITHUB_REPOSITORY"], workflowPath=".github/workflows/capacity-soak-candidate.yml",
-                        workflowRef=os.environ["GITHUB_WORKFLOW_REF"], sourceRevision=os.environ["GITHUB_SHA"],
-                        runId=int(os.environ["GITHUB_RUN_ID"]), runAttempt=int(os.environ["GITHUB_RUN_ATTEMPT"]), predicateType="https://slsa.dev/provenance/v1")
+        producer = producer_identity(os.environ)
         return dict(schema="honua.capacity-observations/v1", lockSha256=digest(self.args.lock.read_bytes()),
                     candidateIdentity=dict(serverRevision=self.args.candidate_sha, imageDigest=self.args.image_digest),
                     observedRevision=self.driver.deployment["observedRevision"], producer=producer,
