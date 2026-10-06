@@ -136,9 +136,11 @@ public sealed class OgcRecordsDepthTests : IClassFixture<OgcRecordsEndpointTests
     [Endpoint("GET /ogc/records/collections/{collectionId}/items")]
     public async Task GetItems_WithLimitOrOffsetOutOfRange_ReturnsBadRequest()
     {
-        var overLimit = await _fixture.Client.GetAsync(
-            $"/ogc/records/collections/{CatalogId}/items?limit=1001");
-        overLimit.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // A limit above the maximum is served at the maximum (OGC API - Features Part 1
+        // §7.15.4, #5510; see RecordsLandingAndLimitTests); a limit below 1 is still invalid.
+        var underLimit = await _fixture.Client.GetAsync(
+            $"/ogc/records/collections/{CatalogId}/items?limit=-1");
+        underLimit.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         var negativeOffset = await _fixture.Client.GetAsync(
             $"/ogc/records/collections/{CatalogId}/items?offset=-1");
