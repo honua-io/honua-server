@@ -5,6 +5,7 @@ using System.Net;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -49,6 +50,8 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
 
     private const string BootstrapKey = "bootstrap";
     private const string ManagedKey = "managed";
+
+    private const string WfsCapabilitiesPath = "/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetCapabilities";
 
     private static readonly string ProtectedQueryPath =
         $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{ProtectedLayerId}/query";
@@ -98,8 +101,9 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
     [Endpoint("GET /sharing/rest/portals/self")]
     public async Task PortalsSelf_ApiKeyPresentedAsToken_DescribesTheKeyUser(string keyKind, string transport)
     {
-        var (key, expectedUser) = await CreateKeyAsync(keyKind, ["admin:*"]);
+        var key = await CreateKeyAsync(keyKind, ["admin:*"]);
         using var client = _fixture.CreateClient();
+        var expectedUser = await PortalSelfUsernameViaXApiKeyAsync(client, key);
 
         using var response = await SendAsync(client, HttpMethod.Get, PortalSelfPath, "f=json", key, transport);
         var body = await response.Content.ReadAsStringAsync();
@@ -109,7 +113,7 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         json.RootElement.TryGetProperty("error", out _).Should().BeFalse("an API key is a valid token: {0}", body);
         var user = json.RootElement.GetProperty("user");
         user.ValueKind.Should().Be(JsonValueKind.Object, body);
-        user.GetProperty("username").GetString().Should().Be(expectedUser);
+        user.GetProperty("username").GetString().Should().Be(expectedUser, "the key describes the user X-API-Key describes");
     }
 
     /// <summary>
@@ -122,7 +126,7 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task ProtectedQuery_ApiKeyPresentedAsToken_AnswersAsXApiKeyDoes(string keyKind, string transport)
     {
-        var (key, _) = await CreateKeyAsync(keyKind, ["admin:*"]);
+        var key = await CreateKeyAsync(keyKind, ["admin:*"]);
         using var client = _fixture.CreateClient();
 
         using var anonymous = await client.GetAsync($"{ProtectedQueryPath}?{CountParameters}");
@@ -138,6 +142,40 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// The <c>token</c> query parameter is also the only credential carrier some clients of
+    /// the OGC services have. A key presented there sees the protected feature types exactly
+    /// as the same key in <c>X-API-Key</c> does, not the anonymous view.
+    /// </summary>
+    [IntegrationTheory]
+    [InlineData(BootstrapKey)]
+    [InlineData(ManagedKey)]
+    [Protocol(TestProtocols.Wfs20)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
+    public async Task WfsCapabilities_ApiKeyInTokenParameter_ListsWhatXApiKeyLists(string keyKind)
+    {
+        var key = await CreateKeyAsync(keyKind, ["admin:*"]);
+        using var client = _fixture.CreateClient();
+
+        var anonymous = await ReadWfsFeatureTypesAsync(client, WfsCapabilitiesPath, apiKeyHeader: null);
+
+        var expected = await ReadWfsFeatureTypesAsync(client, WfsCapabilitiesPath, apiKeyHeader: key);
+        expected.Should().NotBeSubsetOf(
+            anonymous,
+            "X-API-Key must list a protected feature type the anonymous view hides");
+
+        var viaToken = await ReadWfsFeatureTypesAsync(
+            client,
+            $"{WfsCapabilitiesPath}&token={Uri.EscapeDataString(key)}",
+            apiKeyHeader: null);
+
+        viaToken.Should().BeEquivalentTo(
+            expected,
+            "a {0} API key in the token parameter must list what X-API-Key lists",
+            keyKind);
+    }
+
+    /// <summary>
     /// A key presented as a token carries only its own scope: a non-admin key is refused the
     /// admin-only layer with the same status it gets through <c>X-API-Key</c>, and is never
     /// mistaken for an invalid token.
@@ -150,7 +188,7 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task ProtectedQuery_ScopedApiKeyPresentedAsToken_IsNotWidened(string transport)
     {
-        var (key, _) = await CreateKeyAsync(ManagedKey, ["read:unrelated-service"]);
+        var key = await CreateKeyAsync(ManagedKey, ["read:unrelated-service"]);
         using var client = _fixture.CreateClient();
 
         using var viaHeader = new HttpRequestMessage(HttpMethod.Get, $"{ProtectedQueryPath}?{CountParameters}");
@@ -210,17 +248,29 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    private async Task<(string Key, string ExpectedUser)> CreateKeyAsync(string keyKind, IReadOnlyList<string> permissions)
+    private async Task<string> CreateKeyAsync(string keyKind, IReadOnlyList<string> permissions)
     {
         if (keyKind == BootstrapKey)
         {
-            return (AdminPassword, "admin");
+            return AdminPassword;
         }
 
         var store = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
         var created = await store.CreateAsync(ManagedKeyName, permissions,
             DateTimeOffset.UtcNow.AddMinutes(10), "test", CancellationToken.None);
-        return (created.Key, ManagedKeyName);
+        return created.Key;
+    }
+
+    private static async Task<string> PortalSelfUsernameViaXApiKeyAsync(HttpClient client, string key)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{PortalSelfPath}?f=json");
+        request.Headers.Add("X-API-Key", key);
+        using var response = await client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(body);
+        var user = json.RootElement.GetProperty("user");
+        user.ValueKind.Should().Be(JsonValueKind.Object, "X-API-Key must describe the key's user: {0}", body);
+        return user.GetProperty("username").GetString()!;
     }
 
     private static async Task<long> CountViaXApiKeyAsync(HttpClient client, string key)
@@ -299,6 +349,29 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
 
         using var json = JsonDocument.Parse(body);
         return json.RootElement.TryGetProperty("count", out var count) ? count.GetInt64() : null;
+    }
+
+    private static async Task<IReadOnlyCollection<string>> ReadWfsFeatureTypesAsync(
+        HttpClient client,
+        string pathAndQuery,
+        string? apiKeyHeader)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, pathAndQuery);
+        if (apiKeyHeader is not null)
+        {
+            request.Headers.Add("X-API-Key", apiKeyHeader);
+        }
+
+        using var response = await client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+
+        var capabilities = XDocument.Parse(body);
+        return capabilities.Descendants()
+            .Where(element => element.Name.LocalName == "FeatureType")
+            .SelectMany(featureType => featureType.Elements().Where(element => element.Name.LocalName == "Name"))
+            .Select(name => name.Value.Trim())
+            .ToHashSet(StringComparer.Ordinal);
     }
 }
 
