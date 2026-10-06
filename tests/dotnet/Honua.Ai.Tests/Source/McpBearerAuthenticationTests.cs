@@ -13,6 +13,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
@@ -935,6 +936,42 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
         error.GetProperty("data").GetProperty("code").GetString().Should().Be(
             "permission_denied");
         error.GetProperty("data").GetProperty("requiresReauthentication").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task Post_ToolCallAfterSessionApiKeyIsRevoked_EchoesRequestIdInAuthenticationError()
+    {
+        var keyStore = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var issued = await keyStore.CreateAsync(
+            "mcp-revocation-test",
+            ["admin:*"],
+            expiresAt: null,
+            createdBy: "test-operator",
+            CancellationToken.None);
+
+        using var initialize = BuildInitialize(bearer: null, apiKey: issued.Key);
+        using var initializeResponse = await _client.SendAsync(initialize);
+        initializeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var sessionId = initializeResponse.Headers.GetValues("Mcp-Session-Id").Single();
+
+        await keyStore.RevokeAsync(issued.Record.Id, CancellationToken.None);
+
+        using var toolCall = BuildRpc(
+            """{"jsonrpc":"2.0","id":"revoked-key-call","method":"tools/call","params":{"name":"honua_list_capabilities","arguments":{}}}""",
+            sessionId,
+            bearer: null,
+            apiKey: issued.Key);
+        using var response = await _client.SendAsync(toolCall);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        document.RootElement.GetProperty("id").GetString().Should().Be("revoked-key-call",
+            "a JSON-RPC authentication error must resolve the client's pending request");
+        var errorData = document.RootElement.GetProperty("error").GetProperty("data");
+        errorData.GetProperty("code").GetString().Should().Be("permission_denied");
+        errorData.GetProperty("requiresReauthentication").GetBoolean().Should().BeTrue();
     }
 
     // ---- Session matrix: GET/SSE and DELETE cells (#3430) -----------------------
