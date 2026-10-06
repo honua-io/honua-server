@@ -2836,10 +2836,13 @@ internal sealed class GeometryServiceHandler(
     {
         var writer = new WKBWriter();
         var densified = new List<byte[]>(parameters.GeometryJsonStrings.Length);
-        foreach (var geomJson in parameters.GeometryJsonStrings)
+        var geometries = new Geometry[parameters.GeometryJsonStrings.Length];
+        var estimatedRequestVertices = 0d;
+        for (var i = 0; i < parameters.GeometryJsonStrings.Length; i++)
         {
             ct.ThrowIfCancellationRequested();
-            var geometry = ReadGeometry(geomJson);
+            var geometry = ReadGeometry(parameters.GeometryJsonStrings[i]);
+            geometries[i] = geometry;
             // Bound the interpolated output BEFORE densifying. NTS and geography segmentize
             // add roughly (totalLength / maxSegmentLength) coordinates; reject when that would
             // exceed the per-geometry vertex cap so a tiny maxSegmentLength over a large extent
@@ -2848,13 +2851,20 @@ internal sealed class GeometryServiceHandler(
                 ? geometry.Length * spatialContext.MetersPerNativeUnit
                 : geometry.Length;
             var estimatedVertices = lengthInSegmentUnits / parameters.MaxSegmentLength;
+            estimatedRequestVertices += estimatedVertices;
             if (double.IsNaN(estimatedVertices)
-                || estimatedVertices > MaxDensifiedVerticesPerGeometry)
+                || estimatedVertices > MaxDensifiedVerticesPerGeometry
+                || !double.IsFinite(estimatedRequestVertices)
+                || estimatedRequestVertices > MaxDensifiedVerticesPerGeometry)
             {
                 throw new ArgumentException(
-                    "densify would generate too many vertices; maxSegmentLength is too small for the geometry extent.");
+                    "densify would generate too many vertices; maxSegmentLength is too small for the request geometry extent.");
             }
+        }
 
+        foreach (var geometry in geometries)
+        {
+            ct.ThrowIfCancellationRequested();
             if (parameters.Geodesic)
             {
                 var geodesic = await _operationService.SegmentizeGeodesicAsync(

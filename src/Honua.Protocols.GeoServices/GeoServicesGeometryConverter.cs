@@ -18,6 +18,7 @@ namespace Honua.Protocols.GeoServices;
 /// </summary>
 internal static partial class GeoServicesGeometryConverter
 {
+    private const int MaxCurveVertices = 50_000;
     private readonly record struct FastPointGeometry(
         double X,
         double Y,
@@ -160,7 +161,7 @@ internal static partial class GeoServicesGeometryConverter
         // limitation documented on CurveGeometryConverter).
         if (HasTrueCurves(geometry))
         {
-            geometry = DensifyCurves(geometry);
+            geometry = DensifyCurves(geometry, MaxCurveVertices);
         }
 
         if (IsEmptyGeometry(geometry))
