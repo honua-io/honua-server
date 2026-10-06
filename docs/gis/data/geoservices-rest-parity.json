@@ -2570,7 +2570,8 @@
       "knownGaps": [
         "tiles carry only the service\u0027s primary tiled publication, not every layer packed per tile",
         "tilemap availability is grid arithmetic and never consults the tile store",
-        "no sprite or glyph store: sprite and font resources are content-free placeholders",
+        "no sprite store: sprite resources are content-free placeholders",
+        "glyphs come from one bundled sans-serif face substituted for every served fontstack, Basic Latin and Latin-1 only",
         "service metadata hardcodes capabilities/type/exportTilesAllowed and always reports minLOD 0"
       ],
       "evidence": {
@@ -2585,7 +2586,8 @@
         ],
         "tests": [
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileServerEndpointTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileStyleComposerTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileStyleComposerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileEmbeddedAssetsTests.cs"
         ]
       },
       "operations": {
@@ -2602,7 +2604,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Composes a Mapbox GL v8 style document from the layer\u0027s stored MapLibre style through the shared style projection, rewriting source, sprite, and glyph URLs onto this service; falls back to a deterministic default style when the layer has none stored."
+            "notes": "Composes a Mapbox GL v8 style document from the layer\u0027s stored MapLibre style through the shared style projection, rewriting source, sprite, and glyph URLs onto this service (each vector source carries the service URL and the tile template); falls back to a deterministic default style when the layer has none stored."
           }
         ],
         "partial": [
@@ -2620,6 +2622,20 @@
               "implemented"
             ],
             "notes": "Emits a real LOD table and a unioned extent for the resolved service, but capabilities (\u0022TilesOnly\u0022), type, the tiles template, and exportTilesAllowed=false are hardcoded; minLOD is always 0 even though the tile route rejects zooms below the configured minimum; the extent unions per-resource bboxes without reprojecting them while labelling the result with the service SR; and only f=json/pjson are accepted."
+          },
+          {
+            "name": "Font (glyph) resources",
+            "status": "partial",
+            "esriPaths": [
+              "/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "Returns signed-distance-field glyphs for the requested fontstack and range, labelled with the requested fontstack, from one bundled sans-serif face (DejaVu Sans). Any fontstack naming a common sans-serif family is served with that face, so weights and styles are not distinguished; other fontstacks return 404. Only the 0-255 range is bundled; all other ranges return 404."
           },
           {
             "name": "Style sub-resource",
@@ -2668,20 +2684,6 @@
         ],
         "stub": [
           {
-            "name": "Font (glyph) resources",
-            "status": "stub",
-            "esriPaths": [
-              "/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf"
-            ],
-            "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf"
-            ],
-            "capabilityMaturity": [
-              "implemented"
-            ],
-            "notes": "Route exists and returns a spec-shaped glyph PBF containing one fontstack (\u0022Honua Default\u0022) with zero glyphs. No font store backs it: the requested fontstack is ignored and every name yields the same bytes; only the 0-255 range is served and all other ranges return 404."
-          },
-          {
             "name": "Sprite resources",
             "status": "stub",
             "esriPaths": [
@@ -2699,7 +2701,8 @@
         "notImplemented": []
       },
       "knownLimitations": [
-        "Sprite and glyph resources are deliberately scoped-minimal placeholders (#1780): a client that renders symbols or labels from them gets nothing to draw."
+        "Sprite resources are deliberately scoped-minimal placeholders (#1780): a client that renders icons from them gets nothing to draw.",
+        "Labels draw with one bundled sans-serif face for Basic Latin and Latin-1 text only (#5535)."
       ]
     },
     {
