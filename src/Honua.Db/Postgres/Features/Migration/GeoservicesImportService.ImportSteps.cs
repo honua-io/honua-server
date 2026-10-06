@@ -366,7 +366,8 @@ internal sealed partial class GeoservicesImportService
                     featuresProcessed,
                     _connectionProvider.GetConnectionString(),
                     cancellationToken,
-                    supportsAttachments: layerInfo.HasAttachments && request.ImportAttachments && _attachmentStore is not null)
+                    supportsAttachments: layerInfo.HasAttachments && request.ImportAttachments && _attachmentStore is not null,
+                    replacingExistingTarget: replacingExistingTarget)
                     .ConfigureAwait(false);
             }
 
