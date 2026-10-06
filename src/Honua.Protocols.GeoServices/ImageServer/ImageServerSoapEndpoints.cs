@@ -469,7 +469,11 @@ internal static partial class ImageServerSoapEndpoints
             .ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(request.NoData))
         {
-            if (!referenceRaster.HasValue || !IsStoredNoDataOverride(request, referenceRaster.Value))
+            // Prove equivalence for every possible source, including the empty-extent template.
+            // Primary-raster metadata alone cannot establish mosaic or per-band semantics.
+            var rasters = await rasterStore.ListRastersAsync(current.LayerId, cancellationToken).ConfigureAwait(false);
+            if (!referenceRaster.HasValue || !IsStoredNoDataOverride(request, referenceRaster.Value) ||
+                rasters.Length == 0 || !rasters.All(raster => IsStoredNoDataOverride(request, raster)))
             {
                 return CreateSoapFault(
                     "SOAP NoData overrides that differ from the image service NoData are not supported by the canonical raster renderer.",
@@ -706,6 +710,10 @@ internal static partial class ImageServerSoapEndpoints
     {
         if ((!string.Equals(request.NoDataInterpretation, "esriNoDataMatchAny", StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.NoDataInterpretation, "esriNoDataMatchAll", StringComparison.OrdinalIgnoreCase)) ||
+            // BSQ uses an OR of band-validity masks (MatchAll). MatchAny agrees only for one band.
+            (raster.BandCount > 1 && !string.Equals(request.NoDataInterpretation, "esriNoDataMatchAll", StringComparison.OrdinalIgnoreCase)) ||
+            !string.Equals(request.Format, "bsq", StringComparison.OrdinalIgnoreCase) ||
+            !raster.HasUniformNoDataValue ||
             !raster.NoDataValue.HasValue ||
             !string.Equals(raster.PixelType, "8BUI", StringComparison.OrdinalIgnoreCase) ||
             raster.NoDataValue.Value is < byte.MinValue or > byte.MaxValue ||

@@ -93,6 +93,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         command.CommandText = $"""
             SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
                    ST_BandNoDataValue(raster, 1) AS nodata_value,
+                   (SELECT bool_and(ST_BandNoDataValue(raster, band) IS NOT DISTINCT FROM ST_BandNoDataValue(raster, 1))
+                    FROM generate_series(1, ST_NumBands(raster)) band) AS uniform_nodata,
                    ST_UpperLeftX(raster) AS upper_left_x,
                    ST_ScaleX(raster) AS scale_x,
                    ST_SkewX(raster) AS skew_x,
@@ -168,6 +170,8 @@ internal sealed class PostgresRasterStore : IRasterStore
             WITH candidate AS (
                 SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
                        ST_BandNoDataValue(raster, 1) AS nodata_value,
+                   (SELECT bool_and(ST_BandNoDataValue(raster, band) IS NOT DISTINCT FROM ST_BandNoDataValue(raster, 1))
+                    FROM generate_series(1, ST_NumBands(raster)) band) AS uniform_nodata,
                        ST_UpperLeftX(raster) AS upper_left_x,
                        ST_ScaleX(raster) AS scale_x,
                        ST_SkewX(raster) AS skew_x,
@@ -187,7 +191,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             )
             {timestampCte}
             SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
-                   nodata_value, upper_left_x, scale_x, skew_x, upper_left_y, skew_y, scale_y,
+                   nodata_value, uniform_nodata, upper_left_x, scale_x, skew_x, upper_left_y, skew_y, scale_y,
                    xmin, ymin, xmax, ymax, acquisition_date, created_at, updated_at
             FROM candidate
             {timestampWhereClause}
@@ -377,6 +381,8 @@ internal sealed class PostgresRasterStore : IRasterStore
             filtered AS (
                 SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
                        ST_BandNoDataValue(raster, 1) AS nodata_value,
+                   (SELECT bool_and(ST_BandNoDataValue(raster, band) IS NOT DISTINCT FROM ST_BandNoDataValue(raster, 1))
+                    FROM generate_series(1, ST_NumBands(raster)) band) AS uniform_nodata,
                        ST_UpperLeftX(raster) AS upper_left_x,
                        ST_ScaleX(raster) AS scale_x,
                        ST_SkewX(raster) AS skew_x,
@@ -447,7 +453,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         var rowsSql = $"""
             {ctePrefix}
             SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
-                   nodata_value, upper_left_x, scale_x, skew_x, upper_left_y, skew_y, scale_y,
+                   nodata_value, uniform_nodata, upper_left_x, scale_x, skew_x, upper_left_y, skew_y, scale_y,
                    xmin, ymin, xmax, ymax, acquisition_date, created_at, updated_at
             FROM filtered
             ORDER BY effective_acquisition DESC, created_at DESC, id DESC
@@ -3425,6 +3431,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         command.CommandText = $"""
             SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
                    ST_BandNoDataValue(raster, 1) AS nodata_value,
+                   (SELECT bool_and(ST_BandNoDataValue(raster, band) IS NOT DISTINCT FROM ST_BandNoDataValue(raster, 1))
+                    FROM generate_series(1, ST_NumBands(raster)) band) AS uniform_nodata,
                    ST_UpperLeftX(raster) AS upper_left_x,
                    ST_ScaleX(raster) AS scale_x,
                    ST_SkewX(raster) AS skew_x,
@@ -4678,6 +4686,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         command.CommandText = $"""
             SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
                    ST_BandNoDataValue(raster, 1) AS nodata_value,
+                   (SELECT bool_and(ST_BandNoDataValue(raster, band) IS NOT DISTINCT FROM ST_BandNoDataValue(raster, 1))
+                    FROM generate_series(1, ST_NumBands(raster)) band) AS uniform_nodata,
                    ST_UpperLeftX(raster) AS upper_left_x,
                    ST_ScaleX(raster) AS scale_x,
                    ST_SkewX(raster) AS skew_x,
@@ -4932,6 +4942,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             PixelType = reader.GetString(pixelTypeOrd),
             Srid = reader.GetInt32(sridOrd),
             NoDataValue = reader.IsDBNull(noDataOrd) ? null : reader.GetDouble(noDataOrd),
+            HasUniformNoDataValue = reader.GetBoolean(reader.GetOrdinal("uniform_nodata")),
             GeoTransform = geoTransform,
             Extent = new RasterExtent
             {
