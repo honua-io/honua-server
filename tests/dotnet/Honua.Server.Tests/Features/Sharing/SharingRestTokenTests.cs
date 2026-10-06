@@ -4,10 +4,14 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -30,6 +34,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     private const string AdminPassword = WebAppFixture.SharedAdminPassword + "--opaque";
     private const string TokenEndpoint = "/sharing/rest/generateToken";
     private const string SecureRefererA = "https://app.example.com/maps/";
+    private const string ProtectedServiceId = "portal-token-protected";
 
     // The in-process WebApplicationFactory transport leaves Connection.RemoteIpAddress
     // unset, which a real Kestrel deployment always populates. IP-bound token issuance
@@ -41,7 +46,16 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
 
     public SharingRestTokenTests()
     {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddService(
+                ProtectedServiceId,
+                "Protected token service",
+                protocols: [ServiceProtocols.FeatureServer],
+                accessPolicy: new AccessPolicy())
+            .Build();
+
         _fixture = new WebAppFixture()
+            .ReplaceService<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -268,7 +282,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
         using var client = _fixture.CreateClient();
         var token = await IssueTokenAsync(client, ("client", "requestip"));
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"/rest/services/test/FeatureServer?f=json&token={token}");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/rest/services/{ProtectedServiceId}/FeatureServer?f=json&token={token}");
         using var response = await client.SendAsync(request);
 
         // Authenticated (not 401); status is 200/404 depending on the seeded layer.
@@ -282,7 +296,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     {
         using var client = _fixture.CreateClient();
         using var response = await client.GetAsync(
-            "/rest/services/test/FeatureServer?f=json&token=esri-probe-invalid-token");
+            $"/rest/services/{ProtectedServiceId}/FeatureServer?f=json&token=esri-probe-invalid-token");
 
         await response.AssertGeoServicesErrorAsync(498);
     }
@@ -377,7 +391,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
         using var client = _fixture.CreateClient();
         var token = await IssueTokenAsync(client, ("client", "referer"), ("referer", SecureRefererA));
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"/rest/services/test/FeatureServer?f=json&token={token}");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/rest/services/{ProtectedServiceId}/FeatureServer?f=json&token={token}");
         request.Headers.Referrer = new Uri(SecureRefererA);
         using var response = await client.SendAsync(request);
 
@@ -395,7 +409,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
         using var client = _fixture.CreateClient();
         var token = await IssueTokenAsync(client, ("client", "referer"), ("referer", SecureRefererA));
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/rest/services/test/FeatureServer?f=json");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/rest/services/{ProtectedServiceId}/FeatureServer?f=json");
         request.Headers.Referrer = new Uri(SecureRefererA);
         request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {token}");
         using var response = await client.SendAsync(request);
@@ -411,11 +425,77 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
         using var client = _fixture.CreateClient();
         var token = await IssueTokenAsync(client, ("client", "referer"), ("referer", SecureRefererA));
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/rest/services/test/FeatureServer?f=json");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/rest/services/{ProtectedServiceId}/FeatureServer?f=json");
         request.Headers.Referrer = new Uri(SecureRefererA);
         request.Headers.TryAddWithoutValidation("X-Esri-Authorization", $"Bearer {token}");
         using var response = await client.SendAsync(request);
 
+        response.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/generateToken")]
+    public async Task GenerateToken_WithPortalTokenAndServerUrl_ReturnsServerToken()
+    {
+        using var client = _fixture.CreateClient();
+        var portalToken = await IssueTokenAsync(
+            client, ("client", "referer"), ("referer", SecureRefererA));
+
+        using var response = await PostFormAsync(client,
+            ("token", portalToken),
+            ("serverUrl", "https://server.example.com/services"),
+            ("client", "referer"),
+            ("referer", SecureRefererA),
+            ("f", "json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var serverToken = await ReadTokenPayloadAsync(response);
+        serverToken.Token.Should().NotBeNullOrWhiteSpace().And.NotBe(portalToken);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/rest/services/{ProtectedServiceId}/FeatureServer?f=json&token={serverToken.Token}");
+        request.Headers.Referrer = new Uri(SecureRefererA);
+        using var protectedResponse = await client.SendAsync(request);
+        protectedResponse.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/generateToken")]
+    public async Task GenerateToken_WithInvalidPortalToken_Returns498()
+    {
+        using var client = _fixture.CreateClient();
+        using var response = await PostFormAsync(client,
+            ("token", "expired-or-invalid"),
+            ("serverUrl", "https://server.example.com/services"),
+            ("client", "referer"),
+            ("referer", SecureRefererA),
+            ("f", "json"));
+
+        await response.AssertGeoServicesErrorAsync(498);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer")]
+    public async Task IssuedToken_AcceptedViaFormField_Authenticates()
+    {
+        using var client = _fixture.CreateClient();
+        var token = await IssueTokenAsync(client, ("client", "referer"), ("referer", SecureRefererA));
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["token"] = token,
+        });
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/rest/services/{ProtectedServiceId}/FeatureServer")
+        {
+            Content = content,
+        };
+        request.Headers.Referrer = new Uri(SecureRefererA);
+
+        using var response = await client.SendAsync(request);
         response.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
     }
 
