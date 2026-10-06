@@ -2176,10 +2176,10 @@
       "category": "Serve",
       "edition": "Community",
       "status": null,
-      "entryCount": 6,
-      "provingTestCount": 45,
+      "entryCount": 7,
+      "provingTestCount": 48,
       "maturity": {
-        "implemented": 6
+        "implemented": 7
       },
       "noSurface": null,
       "cite": [],

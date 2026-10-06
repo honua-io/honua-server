@@ -7795,6 +7795,22 @@
       "capability": "serve.ogc-api-records"
     },
     {
+      "id": "get-ogc-records-openapi-json",
+      "route": "/ogc/records/openapi.json",
+      "method": "GET",
+      "family": "OGC API Records",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.RecordsLandingAndLimitTests.GetApiDefinition_DescribesRecordsPaths_AndAdvertisesTheEnforcedLimitBounds",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.GlobalControlPlaneEndpoints_AreMarkedTenantIndependent",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.OpenApiDocuments_OidcEnabled_TenantlessValidBearer_ContinuePastTenantResolution"
+      ],
+      "proof_ledger_surface": "ogc-api-records",
+      "maturity": "implemented",
+      "capability": "serve.ogc-api-records"
+    },
+    {
       "id": "get-ogc-services-serviceid-wcs",
       "route": "/ogc/services/{serviceId}/wcs",
       "method": "GET",
