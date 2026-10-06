@@ -831,9 +831,10 @@ public sealed class ExportImageRequest
     // Accepts the Esri ImageServer format tokens the ArcGIS SDKs send. png8/png24/png32
     // and jpgpng are normalised to a concrete encoding by the handler; bmp and gif are
     // accepted for shape but rejected with a clear 400 because the shared raster export
-    // pipeline only emits png/jpeg/tiff containers.
-    [RegularExpression(@"(?i)^(png|png8|png24|png32|jpgpng|jpg|jpeg|tiff|tif|bmp|gif)$",
-        ErrorMessage = "Format must be one of png, png8, png24, png32, jpgpng, jpg, jpeg, tiff, tif, bmp, or gif")]
+    // pipeline only emits png/jpeg/tiff containers. bsq, bip and lerc return the raw
+    // pixel block of the stored samples (#5437).
+    [RegularExpression(@"(?i)^(png|png8|png24|png32|jpgpng|jpg|jpeg|tiff|tif|bmp|gif|bsq|bip|lerc)$",
+        ErrorMessage = "Format must be one of png, png8, png24, png32, jpgpng, jpg, jpeg, tiff, tif, bmp, gif, bsq, bip, or lerc")]
     public string? Format { get; init; } = "png";
 
     [RegularExpression(@"(?i)^(C128|C64|F32|F64|S16|S32|S8|U1|U16|U2|U32|U4|U8|UNKNOWN)$",
@@ -849,8 +850,10 @@ public sealed class ExportImageRequest
     [StringLength(50, ErrorMessage = "Interpolation value is too long")]
     public string? Interpolation { get; init; }
 
-    [RegularExpression(@"(?i)^(none|jpeg|lz77)$",
-        ErrorMessage = "Compression must be one of: None, JPEG, or LZ77")]
+    // LERC is accepted for lerc pixel blocks only (a no-op: the block is lossless LERC);
+    // the handler rejects it for every other format.
+    [RegularExpression(@"(?i)^(none|jpeg|lz77|lerc)$",
+        ErrorMessage = "Compression must be one of: None, JPEG, LZ77, or LERC")]
     public string? Compression { get; init; }
 
     [Range(0, 100, ErrorMessage = "CompressionQuality must be between 0 and 100")]
