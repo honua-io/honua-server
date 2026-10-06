@@ -19,6 +19,27 @@ namespace Honua.Db.Postgres.Tests.Features.Admin;
 
 public sealed class PostgreSqlLayerPublishingServiceSqlTests
 {
+    [Fact]
+    public void Finding_SRV_DB_009_GraphIdsAreUniqueAcrossDatabaseConnections()
+    {
+        var firstConnection = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var secondConnection = Guid.Parse("22222222-2222-2222-2222-222222222222");
+
+        var firstResourceId = PostgreSqlLayerPublishingService.BuildLayerGraphId(
+            "res-layer", 1, firstConnection);
+        var secondResourceId = PostgreSqlLayerPublishingService.BuildLayerGraphId(
+            "res-layer", 1, secondConnection);
+        var firstBindingId = PostgreSqlLayerPublishingService.BuildLayerGraphId(
+            "binding-layer", 1, firstConnection);
+        var secondBindingId = PostgreSqlLayerPublishingService.BuildLayerGraphId(
+            "binding-layer", 1, secondConnection);
+
+        firstResourceId.Should().NotBe(secondResourceId);
+        firstBindingId.Should().NotBe(secondBindingId);
+        firstResourceId.Should().Contain(firstConnection.ToString("D"));
+        secondResourceId.Should().Contain(secondConnection.ToString("D"));
+    }
+
     [Theory]
     [InlineData("committed", true)]
     [InlineData("aborted", false)]

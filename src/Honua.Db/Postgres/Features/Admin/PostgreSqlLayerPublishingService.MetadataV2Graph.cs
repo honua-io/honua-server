@@ -65,10 +65,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
         ValidatePublicationScope(graph, serviceName, publicationScope, requireExistingScopedService);
         var now = DateTimeOffset.UtcNow;
         var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+        var graphLayerKey = BuildLayerGraphId("layer", layerId, request.ConnectionId);
         var service = BuildPublishedService(graph, serviceName, srid, now);
         var resource = BuildPublishedResource(
             request,
             layerId,
+            request.ConnectionId,
             resourcePrimaryKeyColumn,
             resourceGeometryColumn,
             geometryType,
@@ -88,6 +90,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             resource,
             binding,
             layerIdText,
+            graphLayerKey,
             request.LayerName.Trim(),
             MetadataV2PublicationType.EsriFeatureLayer,
             isPrimary: true,
@@ -100,6 +103,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             resource,
             binding,
             layerIdText,
+            graphLayerKey,
             request.LayerName.Trim(),
             MetadataV2PublicationType.StacCollection,
             isPrimary: false,
@@ -2762,6 +2766,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 resource,
                 binding,
                 layerIdText,
+                layerIdText,
                 layerName,
                 MetadataV2PublicationType.EsriFeatureLayer,
                 isPrimary: true,
@@ -3140,6 +3145,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private static MetadataV2Resource BuildPublishedResource(
         LayerPublishRequest request,
         int layerId,
+        Guid? connectionId,
         string primaryKeyColumn,
         string? geometryColumn,
         string geometryType,
@@ -3149,12 +3155,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
         LayerExtentInsert? extent,
         DateTimeOffset now)
     {
-        var bindingId = BuildStorageBindingId(layerId);
+        var bindingId = BuildStorageBindingId(layerId, connectionId);
         return new MetadataV2Resource
         {
             Metadata = new MetadataV2ObjectMetadata
             {
-                Id = BuildResourceId(layerId),
+                Id = BuildResourceId(layerId, connectionId),
                 Name = request.LayerName.Trim(),
                 Title = request.LayerName.Trim(),
                 Description = request.Description,
@@ -3382,8 +3388,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             Metadata = new MetadataV2ObjectMetadata
             {
-                Id = BuildStorageBindingId(layerId),
-                Name = BuildStorageBindingId(layerId),
+                Id = BuildStorageBindingId(layerId, request.ConnectionId),
+                Name = BuildStorageBindingId(layerId, request.ConnectionId),
                 Title = $"{schema}.{table}",
                 CreatedAt = now,
                 UpdatedAt = now
@@ -3420,6 +3426,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         MetadataV2Resource resource,
         MetadataV2StorageBinding binding,
         string layerIdText,
+        string graphLayerKey,
         string layerTitle,
         MetadataV2PublicationType publicationType,
         bool isPrimary,
@@ -3432,7 +3439,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             Metadata = new MetadataV2ObjectMetadata
             {
-                Id = $"{idPrefix}-{service.Metadata.Id}-{layerIdText}",
+                Id = $"{idPrefix}-{service.Metadata.Id}-{graphLayerKey}",
                 Name = layerIdText,
                 Title = layerTitle,
                 CreatedAt = now,
@@ -3704,11 +3711,19 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return (resources, ids);
     }
 
-    private static string BuildResourceId(int layerId)
-        => $"res-layer-{layerId.ToString(CultureInfo.InvariantCulture)}";
+    private static string BuildResourceId(int layerId, Guid? connectionId = null)
+        => BuildLayerGraphId("res-layer", layerId, connectionId);
 
-    private static string BuildStorageBindingId(int layerId)
-        => $"binding-layer-{layerId.ToString(CultureInfo.InvariantCulture)}";
+    private static string BuildStorageBindingId(int layerId, Guid? connectionId = null)
+        => BuildLayerGraphId("binding-layer", layerId, connectionId);
+
+    internal static string BuildLayerGraphId(string prefix, int layerId, Guid? connectionId)
+    {
+        var layerSuffix = layerId.ToString(CultureInfo.InvariantCulture);
+        return connectionId.HasValue
+            ? $"{prefix}-{connectionId.Value:D}-{layerSuffix}"
+            : $"{prefix}-{layerSuffix}";
+    }
 
     private static JsonElement BoolOption(bool value)
         => JsonSerializer.SerializeToElement(value, LayerPublishingStorageOptionJsonContext.Default.Boolean);
