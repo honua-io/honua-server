@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Infrastructure.Helpers;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Api.Tiles;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Certification;
@@ -13,7 +14,7 @@ namespace Honua.Server.Tests.Features.Certification;
 [Trait("Category", "Unit")]
 public sealed class CertificationCriticalRegressionTests
 {
-    [Fact]
+    [UnitTest]
     public void Issue5455_OgcApiFeaturesDeclaresAndAcceptsTokenQueryParameter()
     {
         OgcFeaturesUtilities.AllowedQueryParameters.Metadata.Should().Contain("token");
@@ -34,7 +35,7 @@ public sealed class CertificationCriticalRegressionTests
         scheme.GetProperty("name").GetString().Should().Be("token");
     }
 
-    [Fact]
+    [UnitTest]
     public void Issue5446_DatasetMapTilesDefaultWildcardRequestsToPng()
     {
         var context = new DefaultHttpContext();
@@ -48,7 +49,7 @@ public sealed class CertificationCriticalRegressionTests
             .Should().BeFalse();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("application/json")]
     [InlineData("image/png;q=0, application/vnd.mapbox-vector-tile;q=0")]
     public void Issue5446_DatasetMapTilesDoNotDefaultToPngWhenNoTileFormatIsAcceptable(string accept)
@@ -62,7 +63,7 @@ public sealed class CertificationCriticalRegressionTests
         OgcTilesUtilities.AcceptsVectorTiles(context.Request).Should().BeFalse();
     }
 
-    [Fact]
+    [UnitTest]
     public void Issue5442_StyleDocumentEmitsAbsoluteEndpointUrls()
     {
         using var input = JsonDocument.Parse(
@@ -91,7 +92,7 @@ public sealed class CertificationCriticalRegressionTests
             .GetString().Should().Be("https://public.example.test/tiles/2110/{z}/{x}/{y}.mvt");
     }
 
-    [Fact]
+    [UnitTest]
     public void Issue5442_CanonicalStylesheetContentEmitsAbsoluteEndpointUrls()
     {
         const string stored =
@@ -106,7 +107,7 @@ public sealed class CertificationCriticalRegressionTests
         resolved.RootElement.GetProperty("sprite").GetString().Should().Be("//cdn.example.test/sprites/default");
     }
 
-    [Fact]
+    [UnitTest]
     public void Issue5442_CanonicalStylesheetContentWithoutRelativeUrlsIsReturnedUnchanged()
     {
         const string stored = """{ "version": 8, "sources": {}, "layers": [] }""";
