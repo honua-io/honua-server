@@ -154,6 +154,32 @@ public sealed class OperationSecretKeyRingProtectionTests
         RedisDataProtectionKeyRepository.IsProtectedElement(key).Should().BeFalse();
     }
 
+    // XmlKeyManager.EncryptIfNecessary always wraps the encryptor output as
+    // {http://schemas.asp.net/2015/03/dataProtection}encryptedSecret, nested in the
+    // single descriptor child it later decrypts. An unqualified name comparison
+    // rejects that element and aborts the next startup.
+    [UnitTest]
+    public void IsProtectedElement_WithDataProtectionEncryptedSecret_ReturnsTrue()
+    {
+        XNamespace dataProtection = "http://schemas.asp.net/2015/03/dataProtection";
+        XNamespace cipher = "urn:honua:dataprotection:rsa-aes-gcm:v1";
+        var key = new XElement(
+            "key",
+            new XAttribute("id", "11111111-1111-1111-1111-111111111111"),
+            new XElement(
+                "descriptor",
+                new XElement(
+                    "descriptor",
+                    new XElement("encryption", new XAttribute("algorithm", "AES_256_CBC")),
+                    new XElement("validation", new XAttribute("algorithm", "HMACSHA256")),
+                    new XElement(
+                        dataProtection + "encryptedSecret",
+                        new XAttribute("decryptorType", "Honua.Server.Features.Operations.RsaAesGcmKeyRingDecryptor"),
+                        new XElement(cipher + "key")))));
+
+        RedisDataProtectionKeyRepository.IsProtectedElement(key).Should().BeTrue();
+    }
+
     [UnitTest]
     public void IsProtectedElement_WithRevocationMetadata_ReturnsTrue()
     {
@@ -205,7 +231,11 @@ public sealed class OperationSecretKeyRingProtectionTests
 
         second.Should().Be("approved-secret");
         repository.Elements.Should().ContainSingle();
-        RedisDataProtectionKeyRepository.IsProtectedElement(repository.Elements[0]).Should().BeTrue();
+        var stored = repository.Elements[0];
+        RedisDataProtectionKeyRepository.IsProtectedElement(stored).Should().BeTrue();
+        XNamespace dataProtection = "http://schemas.asp.net/2015/03/dataProtection";
+        stored.Descendants(dataProtection + "encryptedSecret").Should().ContainSingle();
+        stored.Descendants("encryptedSecret").Should().BeEmpty();
     }
 
     private static string Protect(MemoryKeyRepository repository, X509Certificate2 certificate, string value)
