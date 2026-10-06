@@ -459,15 +459,11 @@ internal sealed class StacMappingService
 
     internal static string ResolveItemId(Feature feature, MetadataV2Resource? resource = null)
     {
-        foreach (var key in new[] { "stac_id", "item_id", "id" })
+        var idField = resource is null ? null : StacItemIdWhereBuilder.FindDeclaredPrimaryIdField(resource);
+        if (idField is not null &&
+            TryGetAttribute(feature.Attributes, idField.Name, out var value) &&
+            value is not null)
         {
-            var actualName = resource?.SchemaFields.FirstOrDefault(field =>
-                string.Equals(field.Name, key, StringComparison.OrdinalIgnoreCase))?.Name ?? key;
-            if (!TryGetAttribute(feature.Attributes, actualName, out var value) || value is null)
-            {
-                continue;
-            }
-
             var resolved = Convert.ToString(value, CultureInfo.InvariantCulture);
             if (!string.IsNullOrWhiteSpace(resolved))
             {
