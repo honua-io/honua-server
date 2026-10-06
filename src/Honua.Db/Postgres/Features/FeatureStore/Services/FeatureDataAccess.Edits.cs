@@ -534,6 +534,48 @@ internal sealed partial class FeatureDataAccess
             await lockCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        var current = await ReadFeatureForUpdateAsync(
+            layerId,
+            objectId,
+            connection,
+            transaction,
+            cancellationToken).ConfigureAwait(false);
+        if (!current.HasValue)
+        {
+            if (precondition.ExpectedRowAbsent)
+            {
+                return null;
+            }
+
+            throw new ResourceNotFoundException($"Feature with ID {objectId} not found in layer {layerId}");
+        }
+
+        if (precondition.ExpectedRowAbsent ||
+            !string.Equals(
+                FeatureStateToken.Compute(current.Value),
+                precondition.ExpectedStateToken,
+                StringComparison.Ordinal))
+        {
+            var masked = precondition.MaskedFields.IsDefaultOrEmpty
+                ? null
+                : precondition.MaskedFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var conflictFeature = masked is null ? current.Value : current.Value with
+            {
+                Attributes = current.Value.Attributes.RemoveRange(current.Value.Attributes.Keys.Where(masked.Contains))
+            };
+            throw new FeatureEditPreconditionFailedException(objectId, conflictFeature);
+        }
+
+        return current;
+    }
+
+    private async Task<Feature?> ReadFeatureForUpdateAsync(
+        int layerId,
+        long objectId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(geometryStorageType, new FeatureQuery());
         var sql = $@"
@@ -542,7 +584,6 @@ internal sealed partial class FeatureDataAccess
             WHERE layer_id = $1 AND objectid = $2
             FOR UPDATE";
 
-        Feature current;
         await using (var command = new NpgsqlCommand(sql, connection) { Transaction = transaction })
         {
             ApplyCommandTimeout(command, _queryTimeoutSeconds);
@@ -552,44 +593,20 @@ internal sealed partial class FeatureDataAccess
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                if (precondition.ExpectedRowAbsent)
-                {
-                    return null;
-                }
-
-                throw new ResourceNotFoundException($"Feature with ID {objectId} not found in layer {layerId}");
+                return null;
             }
 
-            current = await ReadFeatureAsync(reader, cancellationToken).ConfigureAwait(false);
+            return await ReadFeatureAsync(reader, cancellationToken).ConfigureAwait(false);
         }
-
-        if (precondition.ExpectedRowAbsent ||
-            !string.Equals(
-                FeatureStateToken.Compute(current),
-                precondition.ExpectedStateToken,
-                StringComparison.Ordinal))
-        {
-            var masked = precondition.MaskedFields.IsDefaultOrEmpty
-                ? null
-                : precondition.MaskedFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var conflictFeature = masked is null ? current : current with
-            {
-                Attributes = current.Attributes.RemoveRange(current.Attributes.Keys.Where(masked.Contains))
-            };
-            throw new FeatureEditPreconditionFailedException(objectId, conflictFeature);
-        }
-
-        return current;
     }
 
-    private static Feature PreserveMaskedAttributes(Feature update, Feature current, ImmutableArray<string> maskedFields)
+    internal static Feature PreserveOmittedAttributes(Feature update, Feature current)
     {
-        if (!update.PreserveOmittedMaskedAttributes || maskedFields.IsDefaultOrEmpty)
+        if (!update.PreserveOmittedMaskedAttributes)
         {
             return update;
         }
 
-        var masked = maskedFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var supplied = update.Attributes.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (!update.ExplicitAttributeRemovals.IsDefaultOrEmpty)
         {
@@ -598,7 +615,7 @@ internal sealed partial class FeatureDataAccess
         var attributes = update.Attributes.ToBuilder();
         foreach (var (name, value) in current.Attributes)
         {
-            if (masked.Contains(name) && !supplied.Contains(name))
+            if (!supplied.Contains(name))
             {
                 attributes[name] = value;
             }
@@ -858,14 +875,20 @@ internal sealed partial class FeatureDataAccess
                             async (conn, tx, ct) =>
                             {
                                 var update = feature;
+                                Feature? current = null;
                                 if (hasPrecondition)
                                 {
                                     // requireTransaction guarantees tx is non-null here.
-                                    var current = await EnsurePreconditionSatisfiedAsync(layerId, feature.Id, precondition, conn, tx!, ct).ConfigureAwait(false);
-                                    if (current.HasValue)
-                                    {
-                                        update = PreserveMaskedAttributes(feature, current.Value, precondition.MaskedFields);
-                                    }
+                                    current = await EnsurePreconditionSatisfiedAsync(layerId, feature.Id, precondition, conn, tx!, ct).ConfigureAwait(false);
+                                }
+                                else if (feature.PreserveOmittedMaskedAttributes)
+                                {
+                                    current = await ReadFeatureForUpdateAsync(layerId, feature.Id, conn, tx!, ct).ConfigureAwait(false);
+                                }
+
+                                if (current.HasValue)
+                                {
+                                    update = PreserveOmittedAttributes(feature, current.Value);
                                 }
 
                                 var u = await UpdateWithConnectionAsync(layerId, update, conn, tx, ct).ConfigureAwait(false);
@@ -873,7 +896,7 @@ internal sealed partial class FeatureDataAccess
                                 return u;
                             },
                             cancellationToken,
-                            requireTransaction: hasPrecondition).ConfigureAwait(false);
+                            requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes).ConfigureAwait(false);
                         if (hasPrecondition)
                         {
                             preconditions![updated.Id] = precondition with { ExpectedStateToken = FeatureStateToken.Compute(updated) };
@@ -1564,14 +1587,20 @@ internal sealed partial class FeatureDataAccess
                     async (conn, tx, ct) =>
                     {
                         var update = feature;
+                        Feature? current = null;
                         if (hasPrecondition)
                         {
                             // requireTransaction guarantees tx is non-null here.
-                            var current = await EnsurePreconditionSatisfiedAsync(layerId, feature.Id, precondition, conn, tx!, ct).ConfigureAwait(false);
-                            if (current.HasValue)
-                            {
-                                update = PreserveMaskedAttributes(feature, current.Value, precondition.MaskedFields);
-                            }
+                            current = await EnsurePreconditionSatisfiedAsync(layerId, feature.Id, precondition, conn, tx!, ct).ConfigureAwait(false);
+                        }
+                        else if (feature.PreserveOmittedMaskedAttributes)
+                        {
+                            current = await ReadFeatureForUpdateAsync(layerId, feature.Id, conn, tx!, ct).ConfigureAwait(false);
+                        }
+
+                        if (current.HasValue)
+                        {
+                            update = PreserveOmittedAttributes(feature, current.Value);
                         }
 
                         var u = await UpdateWithConnectionAsync(layerId, update, conn, tx, ct).ConfigureAwait(false);
@@ -1579,7 +1608,7 @@ internal sealed partial class FeatureDataAccess
                         return u;
                     },
                     cancellationToken,
-                    requireTransaction: hasPrecondition).ConfigureAwait(false);
+                    requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes).ConfigureAwait(false);
                 if (hasPrecondition)
                 {
                     // Later operations on this row in the same batch must observe our

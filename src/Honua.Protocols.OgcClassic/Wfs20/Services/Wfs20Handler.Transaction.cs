@@ -779,12 +779,13 @@ internal sealed partial class Wfs20Handler
             mergedAttributes[name] = value;
         }
 
-        return await CreateTransactionFeatureAsync(
+        var updated = await CreateTransactionFeatureAsync(
             resource,
             existing.Id,
             changes.GeometrySpecified ? changes.Geometry : existing.Geometry,
             mergedAttributes.ToImmutable(),
             cancellationToken).ConfigureAwait(false);
+        return updated with { ReadStateToken = existing.ReadStateToken };
     }
 
 

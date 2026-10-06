@@ -188,6 +188,7 @@ internal sealed class Wfs20EditParameterAdapter(
                 feature.Id,
                 feature.Geometry,
                 feature.Attributes,
-                EditUpdateMode.Merge));
+                EditUpdateMode.Merge,
+                EditConstraints.WithExpectedState(FeatureStateToken.FromReadSnapshot(feature))));
     }
 }

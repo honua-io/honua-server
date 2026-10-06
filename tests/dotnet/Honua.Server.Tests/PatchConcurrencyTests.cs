@@ -25,6 +25,41 @@ namespace Honua.Server.Tests;
 [Collection("Database")]
 public sealed class PatchConcurrencyTests
 {
+    [IntegrationTest]
+    [Protocol(TestProtocols.OgcApiFeatures)]
+    [Operation(Operations.Delete)]
+    [Endpoint("DELETE /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task SRV_OGC_015_Delete_WithMaskedSnapshotAndMatchingIfMatch_Succeeds()
+    {
+        var barrier = new WriteBarrier();
+        barrier.Resume.TrySetResult();
+        var mask = new MutableFieldMask();
+        var fixture = CreateFixture(barrier, mask);
+        await fixture.InitializeAsync();
+        try
+        {
+            var id = await fixture.InsertFeatureAsync(0, "conditional delete");
+            var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+            await fixture.GetService<IFeatureWriter>().UpdateAsync(
+                0,
+                original with { Attributes = original.Attributes.SetItem("population", 12345L) });
+            mask.Fields = ImmutableArray.Create("population");
+
+            using var read = await fixture.Client.GetAsync($"/ogc/features/collections/0/items/{id}");
+            Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+            Assert.NotNull(read.Headers.ETag);
+
+            using var request = new HttpRequestMessage(
+                HttpMethod.Delete,
+                $"/ogc/features/collections/0/items/{id}");
+            request.Headers.TryAddWithoutValidation("If-Match", read.Headers.ETag!.ToString());
+            using var response = await fixture.Client.SendAsync(request);
+
+            Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        }
+        finally { await fixture.DisposeAsync(); }
+    }
+
     [IntegrationTheory]
     [InlineData(true)]
     [InlineData(false)]
