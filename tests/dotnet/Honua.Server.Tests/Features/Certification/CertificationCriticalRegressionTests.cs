@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using FluentAssertions;
 using Honua.Infrastructure.Helpers;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Api.Tiles;

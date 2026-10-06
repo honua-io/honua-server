@@ -4,6 +4,7 @@
 using System.Text.Json;
 using Honua.Core.Features.Styling.Domain;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
