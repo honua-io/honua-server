@@ -139,7 +139,7 @@ public sealed class FeatureServerQueryGapsTests : IClassFixture<WebAppFixture>
     // seeded coordinates.
     [IntegrationTest]
     [Operation(Operations.Query)]
-    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_WithViewModeLowerLeftQuantization_EmitsTransformBeforeFeaturesAndDecodesToSeededPoints()
     {
         const string extent =
