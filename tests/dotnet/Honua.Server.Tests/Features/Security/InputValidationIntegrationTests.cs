@@ -46,6 +46,35 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
+    [IntegrationTest]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task SRV_INF_003_ApplyEdits_WithStructuredPayloadOverGenericLimit_ReachesHandler()
+    {
+        var ring = Enumerable.Range(0, 501).Select(i =>
+        {
+            var angle = -(i % 500) * Math.PI * 2 / 500;
+            return new[] { -122.4 + Math.Cos(angle) / 100, 37.7 + Math.Sin(angle) / 100 };
+        }).ToArray();
+        var adds = JsonSerializer.Serialize(new[]
+        {
+            new { geometry = new { rings = new[] { ring }, spatialReference = new { wkid = 4326 } }, attributes = new { name = "large-edit" } }
+        });
+        Assert.True(adds.Length > 8192);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/rest/services/test/FeatureServer/0/applyEdits")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json", ["adds"] = adds })
+        };
+        request.Headers.Add("X-API-Key", AdminPassword);
+
+        using var response = await _fixture.Client.SendAsync(request);
+        using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        result.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        result.RootElement.GetProperty("addResults")[0].GetProperty("success").GetBoolean().Should().BeTrue();
+    }
+
     [Theory]
     [InlineData("form")]
     [InlineData("json")]

@@ -444,16 +444,17 @@ internal static partial class GeoServicesGeometryConverter
 
         foreach (var hole in holes)
         {
-            var holePoint = factory.CreatePoint(hole.Coordinate);
+            var holePoint = factory.CreatePolygon(hole).InteriorPoint;
             LinearRing? assignedShell = null;
+            var assignedShellArea = double.PositiveInfinity;
 
             foreach (var shell in shells)
             {
                 var shellPolygon = factory.CreatePolygon(shell);
-                if (shellPolygon.Covers(holePoint))
+                if (shellPolygon.Covers(holePoint) && shellPolygon.Area < assignedShellArea)
                 {
                     assignedShell = shell;
-                    break;
+                    assignedShellArea = shellPolygon.Area;
                 }
             }
 
