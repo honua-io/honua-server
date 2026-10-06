@@ -455,9 +455,15 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests : IClassFixture<Geoserv
             .ToArray();
 
         soapEntries.Should().Equal(restEntries);
-        soapEntries.Select(entry => entry.Name).Distinct(StringComparer.Ordinal)
+        // The built-in print service is published beside fixture services. Parity still
+        // requires the two catalogs to match; the fixture name set is the dataset services.
+        const string builtInPrintService = "Utilities/PrintingTools";
+        var datasetEntries = soapEntries
+            .Where(entry => !string.Equals(entry.Name, builtInPrintService, StringComparison.Ordinal))
+            .ToArray();
+        datasetEntries.Select(entry => entry.Name).Distinct(StringComparer.Ordinal)
             .Should().BeEquivalentTo(expectedNames);
-        soapEntries.Select(entry => (entry.Name, entry.Type)).Should().BeEquivalentTo(
+        datasetEntries.Select(entry => (entry.Name, entry.Type)).Should().BeEquivalentTo(
             expectedNames.SelectMany(name => _publishedTypes
                 .Select(type => (name, type))),
             "both catalogs must enumerate every published non-raster service in this fixture");

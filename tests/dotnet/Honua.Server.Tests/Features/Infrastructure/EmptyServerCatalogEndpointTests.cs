@@ -205,11 +205,14 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
 
         // Valid GeoServices directory structure.
         // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        // A fresh server still publishes the built-in Utilities/PrintingTools GPServer.
         root.TryGetProperty("currentVersion", out _).Should().BeFalse();
-        root.GetProperty("services").GetArrayLength().Should().Be(0,
-            "an empty server should advertise zero services");
-        root.GetProperty("folders").GetArrayLength().Should().Be(0,
-            "an empty server should advertise zero folders");
+        var services = root.GetProperty("services").EnumerateArray().ToArray();
+        services.Should().ContainSingle();
+        services[0].GetProperty("name").GetString().Should().Be("Utilities/PrintingTools");
+        services[0].GetProperty("type").GetString().Should().Be("GPServer");
+        root.GetProperty("folders").EnumerateArray().Select(folder => folder.GetString())
+            .Should().Equal("Utilities");
     }
 
     [IntegrationTest]

@@ -135,7 +135,7 @@ internal static class GPServerSoapEndpoints
         }
     }
 
-    private static XElement BuildToolInfo(GPTaskInfoResponse task)
+    internal static XElement BuildToolInfo(GPTaskInfoResponse task)
         => new("GPToolInfo",
             new XElement("Name", task.Name),
             new XElement("DisplayName", task.DisplayName),
