@@ -80,7 +80,7 @@ Every protocol endpoint is a thin adapter over the same canonical query, edit, m
 | DuckDB | Embedded `.duckdb` file | Analytical or reference data without external database infrastructure |
 | SQL Server | `geometry`/`geography` tables | Serve enterprise SQL Server spatial tables as-is |
 | Oracle | `SDO_GEOMETRY` tables | Serve standard Oracle Spatial tables (ArcSDE `ST_Geometry` and versioned tables are refused) |
-| MySQL/MariaDB | User-managed spatial tables (MySQL 8.0.11+ / MariaDB 10.6+) | Serve existing MySQL spatial data |
+| MySQL/MariaDB | User-managed spatial tables (MySQL 8.0.12+ / MariaDB 10.6+) | Serve existing MySQL spatial data |
 
 Read-only providers support query, count, extent, and pagination; they report unsupported capabilities (edits, statistics, native MVT) honestly rather than emulating them. Per-provider details and limits are in the [data source configuration reference](../reference/configuration/data-sources/README.md).
 

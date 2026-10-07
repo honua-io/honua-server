@@ -137,7 +137,7 @@ PostGIS is the primary read/write backend. Additional providers serve data in pl
 | [DuckDB](docs/reference/configuration/data-sources/duckdb.md) | Read-only, embedded — analytics and reference layers, no external database |
 | [SQL Server](docs/reference/configuration/data-sources/sql-server.md) | Read/query-only (`geometry`/`geography` tables) |
 | [Oracle](docs/reference/configuration/data-sources/oracle.md) | Read/query-only (standard `SDO_GEOMETRY`) |
-| [MySQL / MariaDB](docs/reference/configuration/data-sources/mysql-mariadb.md) | Read/query-only (MySQL 8.0.11+, MariaDB 10.6+) |
+| [MySQL / MariaDB](docs/reference/configuration/data-sources/mysql-mariadb.md) | Read/query-only (MySQL 8.0.12+, MariaDB 10.6+) |
 | [Amazon Redshift](docs/reference/configuration/data-sources/redshift.md) | Read/query-only — **Enterprise, experimental**, off by default (native Redshift spatial) |
 | [Snowflake](docs/reference/configuration/data-sources/snowflake.md) | Read/query-only — **Enterprise, experimental**, off by default (`GEOGRAPHY`/`GEOMETRY`) |
 | [Databricks](docs/reference/configuration/data-sources/databricks.md) | Read/query-only — **Enterprise, experimental**, off by default (SQL Warehouse, best-effort) |

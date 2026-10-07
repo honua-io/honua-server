@@ -1171,6 +1171,14 @@ internal sealed partial class FeatureDataAccess
         var layerSrid = await _cacheManager.GetLayerSridAsync(layerId, cancellationToken).ConfigureAwait(false);
         ValidateGeometrySrid(feature.Geometry, layerSrid);
         var geometryValueExpression = _geometryProcessor.GetGeometryWriteExpression(geometryStorageType, "$3", layerSrid);
+        if (geometryStorageType == GeometryStorageType.Geometry && !layerSrid.HasValue)
+        {
+            // ST_AsBinary omits the SRID from a pre-read geometry. When an update reuses that
+            // geometry, retain the stored row's SRID instead of writing SRID 0; expression indexes
+            // may evaluate ST_Transform as part of the UPDATE even though the geometry is unchanged.
+            const string inputGeometry = "ST_GeomFromEWKB($3)";
+            geometryValueExpression = $"ST_SetSRID({inputGeometry}, COALESCE(NULLIF(ST_SRID({inputGeometry}), 0), NULLIF(ST_SRID(geometry), 0), 0))";
+        }
 
         var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(geometryStorageType, new FeatureQuery());
         var sql = $@"

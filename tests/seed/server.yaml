@@ -659,11 +659,26 @@ sql:
           size BIGINT NOT NULL CHECK (size >= 0),
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           storage_path TEXT NOT NULL,
-          keywords TEXT
+          keywords TEXT,
+          attachment_origin TEXT CHECK (attachment_origin IN ('honua', 'geoservices')),
+          import_source TEXT,
+          import_parent_id BIGINT,
+          import_attachment_id BIGINT,
+          import_generation UUID,
+          CONSTRAINT ck_attachment_import_identity CHECK (
+              (import_source IS NULL AND import_parent_id IS NULL AND import_attachment_id IS NULL AND import_generation IS NULL)
+              OR (import_source IS NOT NULL AND import_parent_id IS NOT NULL AND import_attachment_id IS NOT NULL AND import_generation IS NOT NULL)),
+          CONSTRAINT uq_attachment_import_identity UNIQUE (layer_id, import_source, import_parent_id, import_attachment_id)
       );
   - "CREATE INDEX IF NOT EXISTS idx_attachments_feature_layer ON honua.attachments(layer_id, feature_id);"
   - "CREATE INDEX IF NOT EXISTS idx_attachments_created_at ON honua.attachments(created_at);"
   - "CREATE INDEX IF NOT EXISTS idx_attachments_layer_id ON honua.attachments(layer_id);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.import_attachment_cleanup (
+          storage_path TEXT PRIMARY KEY,
+          layer_id INT NOT NULL,
+          feature_id BIGINT NOT NULL
+      );
   - |
       CREATE TABLE IF NOT EXISTS honua.feature_change_outbox (
           outbox_id        uuid        NOT NULL DEFAULT gen_random_uuid(),

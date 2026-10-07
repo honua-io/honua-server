@@ -45,6 +45,9 @@ internal sealed record RestInfoResponse
     [JsonPropertyName("currentVersion")]
     public double CurrentVersion { get; init; } = 10.8;
 
+    [JsonPropertyName("owningSystemUrl")]
+    public required string OwningSystemUrl { get; init; }
+
     [JsonPropertyName("soapUrl")]
     public required string SoapUrl { get; init; }
 

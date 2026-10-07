@@ -80,6 +80,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
             Query = query is { Length: > 0 } ? string.Join('&', query) : string.Empty
         }.Uri;
         using var message = new HttpRequestMessage(_definition.Method, uri);
+        message.Headers.Host = current.Request.Host.Value;
         OperationLineageHeaders.Apply(message, context, _lineageAttestationStore);
         AdminApiKeyRecord? executionCredential = null;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))

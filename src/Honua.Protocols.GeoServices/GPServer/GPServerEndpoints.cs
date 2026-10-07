@@ -376,7 +376,11 @@ internal static partial class GPServerEndpoints
                     "Native workspace controls unavailable");
             }
 
-            var planResult = BuildSubmissionPlan(definition, serviceId, parameters);
+            var planResult = BuildSubmissionPlan(
+                definition,
+                serviceId,
+                parameters,
+                GeoServicesGeometryConverter.ResolveConfiguredCurveVertexBudget(context.RequestServices));
             if (planResult.CapabilityError is not null)
             {
                 return SetSpanErrorAndReturn(
@@ -528,7 +532,11 @@ internal static partial class GPServerEndpoints
                     "Native workspace controls unavailable");
             }
 
-            var planResult = BuildSubmissionPlan(definition, serviceId, parameters);
+            var planResult = BuildSubmissionPlan(
+                definition,
+                serviceId,
+                parameters,
+                GeoServicesGeometryConverter.ResolveConfiguredCurveVertexBudget(context.RequestServices));
             if (planResult.CapabilityError is not null)
             {
                 return SetSpanErrorAndReturn(
@@ -1909,7 +1917,8 @@ internal static partial class GPServerEndpoints
     private static SubmissionPlanResult BuildSubmissionPlan(
         ProcessDefinition definition,
         string serviceId,
-        IReadOnlyDictionary<string, string> rawParameters)
+        IReadOnlyDictionary<string, string> rawParameters,
+        int? maxCurveVertices = null)
     {
         var inputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var parameterPrefix = GPServerParameterNames.GetEncodingPrefix(definition);
@@ -1935,8 +1944,11 @@ internal static partial class GPServerEndpoints
             .Where(parameter => parameter.AcceptsGeoJsonDataUri)
             .Select(parameter => parameter.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var esriResult = GPServerEsriInputTranslation.Translate(inputs, collectionParameters,
-            includeDerivedSrid: definition.Parameters.Any(parameter => parameter.Name.Equals("srid", StringComparison.OrdinalIgnoreCase)));
+        var esriResult = GPServerEsriInputTranslation.Translate(
+            inputs,
+            collectionParameters,
+            includeDerivedSrid: definition.Parameters.Any(parameter => parameter.Name.Equals("srid", StringComparison.OrdinalIgnoreCase)),
+            maxCurveVertices: maxCurveVertices);
         if (esriResult.CapabilityMessage is not null)
         {
             return new SubmissionPlanResult(Plan: null, esriResult.CapabilityMessage, esriResult.InputSpatialReference);
