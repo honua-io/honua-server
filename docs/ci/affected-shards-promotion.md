@@ -289,3 +289,14 @@ and docs-only skips. After that implementation lands, require the exact
 `PR Gate / Affected shards` context through the operator's branch-protection
 change. No allowlist, selection, capacity, timeout or workflow-mode change is
 made by this evidence follow-up.
+
+### Follow-up validation
+
+The eight offline auditor tests and the real affected-shard selector/verdict
+fixture pass. The focused `docs/ci/` link check passes all five targets with
+its rot allowlist restricted to that same directory. An independent consistency
+check matches all 51 unique run/attempt/head/shard identities to the original
+annotations, matches all 15 accepted decisions to their evidence rows, checks
+false/confirmed reds against successful/failed test steps, and reproduces the
+retained audit byte-for-byte as JSON values. No .NET project changes require
+formatting or a solution build.
