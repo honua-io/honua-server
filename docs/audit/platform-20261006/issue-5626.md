@@ -97,3 +97,14 @@ test dependencies compiled successfully before the test project. All 180 focused
 (17 attachment imports, 55 related import/publication cases, 85 shared fidelity/migration safety
 cases, 23 ordinary store cases). Existing test assertions were retained. All changed C# projects
 passed scoped formatting with `--include` and `timeout 20m`; `git diff --check` passed.
+
+Review thread `PRRT_kwDOQqorlc6p9W9x` was re-verified at `97ba4999c` and is a false
+positive. The `Path.Combine` call in
+`GeoservicesImportServiceAttachmentReimportTests.cs:405` receives
+`AppContext.BaseDirectory` followed by the relative literals `Migrations` and
+`125_AddImportedAttachmentIdentity.sql`. Neither later argument is rooted, so
+neither can discard the base directory. `Honua.Postgres.Tests.csproj:33` copies
+that migration to the matching `Migrations/125_AddImportedAttachmentIdentity.sql`
+output location. The test file extends `GeoservicesImportServiceAttachmentImportTests`
+(line 17), which is the class name used for focused verification. No code or
+test assertion was changed for this finding.
