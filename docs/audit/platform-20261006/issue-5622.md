@@ -56,3 +56,6 @@ and layer ID. Catalog membership, declared entry points, the other 97 operation
 implementations and all evidence method bodies are unchanged. Their verdicts and
 shared runtime gaps are retained. The refreshed digest records this source audit;
 the architecture guard and every test assertion remain intact.
+
+Repair validation: `ImportDatasetJobExecutorTests` passed 2/2 in Release with
+no skips, including the operation matrix's staged GeoJSON execution receipt.
