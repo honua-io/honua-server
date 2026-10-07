@@ -1091,7 +1091,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 {
                     MetadataV2FieldType.Integer => "integer",
                     MetadataV2FieldType.BigInteger => "bigint",
-                    MetadataV2FieldType.Float => "real",
+                    // Same cast GetJsonCastType emits for Float: numeric literals are bound
+                    // as double precision, so a physical column must drop the JSONB text
+                    // round trip at that precision rather than the legacy real cast.
+                    MetadataV2FieldType.Float => "double precision",
                     MetadataV2FieldType.Double => "double precision",
                     _ => null
                 };

@@ -63,7 +63,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(CreateReader(resource, attributesColumn: "attributes"), [query, false])!.ToString()!;
 
-        sql.Should().Contain("NULLIF(((\"attributes\" ->> $1::text))::text, '')::bigint");
+        sql.Should().Contain("NULLIF(((\"attributes\" ->> $2::text))::text, '')::bigint");
     }
 
     [Theory]
