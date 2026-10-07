@@ -396,6 +396,8 @@ public sealed class PortalFacadeDiscoveryContractTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("POST /sharing/rest/search")]
+    [Endpoint("GET /sharing/rest/community/users/{username}")]
+    [Endpoint("GET /sharing/rest/content/users/{username}")]
     public async Task Server5548_UserResourcesAndStructuredPostSearch_AreAccepted()
     {
         using var client = _fixture.CreateClient();
