@@ -7,6 +7,8 @@ using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using FluentAssertions;
+using Honua.Core.Configuration;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -134,6 +136,36 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
             </GetCatalogItems>
             """);
         unknownField.Status.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetCatalogItemCount")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetCatalogItems")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task Issue5567_NilOutputSpatialReferenceAndObjectIdValueList_AreAccepted()
+    {
+        var count = await PostSoapAsync(
+            $"""
+            <GetCatalogItemCount xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+              <Name>Catalog</Name>
+              <QueryFilter><WhereClause></WhereClause><OutputSpatialReference xsi:nil="true" /></QueryFilter>
+            </GetCatalogItemCount>
+            """);
+        count.Status.Should().Be(HttpStatusCode.OK, count.Body);
+        IntValue(count.Document, "Result").Should().Be(2);
+
+        var items = await PostSoapAsync(
+            $"""
+            <GetCatalogItems xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+              <Name>Catalog</Name>
+              <QueryFilter><SubFields>OBJECTID,Name</SubFields><WhereClause>(OBJECTID IN (3))</WhereClause>
+                <OutputSpatialReference xsi:nil="true" /></QueryFilter>
+            </GetCatalogItems>
+            """);
+        items.Status.Should().Be(HttpStatusCode.OK, items.Body);
+        items.Document.Descendants().Where(element => element.Name.LocalName == "Value")
+            .Select(element => element.Value).Should().ContainInOrder("3", "Other Raster");
     }
 
     [IntegrationTest]
@@ -276,14 +308,14 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         soapMultidim.Status.Should().Be(HttpStatusCode.OK, soapMultidim.Body);
         var result = soapMultidim.Document.Descendants().Single(element => element.Name.LocalName == "Result");
         result.Attribute(XName.Get("nil", XsiNamespace)).Should().BeNull();
-        var variable = result.Descendants().Single(element => element.Name.LocalName == "Name" && element.Value == "sea_surface_temperature").Parent!;
+        var variable = result.Descendants().Single(element => element.Name.LocalName == "VariableName" && element.Value == "sea_surface_temperature").Parent!;
         Child(variable, "Unit").Value.Should().Be(restVariable.GetProperty("unit").GetString());
         Child(variable, "Description").Value.Should().Be(restVariable.GetProperty("description").GetString());
         foreach (var restDimension in restVariable.GetProperty("dimensions").EnumerateArray())
         {
             var name = restDimension.GetProperty("name").GetString()!;
             var soapDimension = variable.Descendants().Single(element =>
-                element.Name.LocalName == "Name" && element.Value == name && element.Parent != variable).Parent!;
+                element.Name.LocalName == "DimensionName" && element.Value == name && element.Parent != variable).Parent!;
             Child(soapDimension, "DimensionSize").Value.Should().Be(
                 restDimension.GetProperty("dimensionSize").GetInt64().ToString(CultureInfo.InvariantCulture));
             if (restDimension.TryGetProperty("values", out var values))
@@ -294,6 +326,24 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
                 soapValues.Should().Equal(values.EnumerateArray().Select(value => value.GetDouble()));
             }
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetMultidimensionalInfo")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task Issue5640_MultidimensionalInfo_UsesSoapVariableContract()
+    {
+        var response = await PostSoapAsync($"""<GetMultidimensionalInfo xmlns="{ArcGisNamespace}" />""");
+        response.Status.Should().Be(HttpStatusCode.OK, response.Body);
+
+        var variables = Element(response.Document, "Variables");
+        variables.Attribute(XName.Get("type", XsiNamespace))!.Value
+            .Should().Be("tns:ArrayOfMultidimensionalVariable");
+        var variable = Child(variables, "MultidimensionalVariable");
+        Child(variable, "VariableName").Value.Should().Be("sea_surface_temperature");
+        Child(variable, "Dimensions").Elements()
+            .Should().Contain(element => element.Name.LocalName == "MultidimensionalDimension");
     }
 
     [IntegrationTest]
@@ -326,6 +376,35 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         var serviceInfo = await PostSoapAsync($"""<GetServiceInfo xmlns="{ArcGisNamespace}" />""");
         serviceInfo.Status.Should().Be(HttpStatusCode.OK, serviceInfo.Body);
         AssertHistograms(Element(serviceInfo.Document, "Histograms"), expected);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetKeyPropertiesX")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task Issue5639_KeyProperties_UsesArgumentBandArrayAndDataTypeKeyword()
+    {
+        var response = await PostSoapAsync($"""<GetKeyPropertiesX xmlns="{ArcGisNamespace}" />""");
+        response.Status.Should().Be(HttpStatusCode.OK, response.Body);
+
+        var bandValue = response.Document.Descendants().Single(element =>
+            element.Name.LocalName == "Key" && element.Value == "BandProperties").Parent!
+            .Elements().Single(element => element.Name.LocalName == "Value");
+        bandValue.Attribute(XName.Get("type", XsiNamespace))!.Value.Should().Be("tns:ArrayOfArgument");
+        bandValue.Elements().Should().OnlyContain(element =>
+            element.Name.LocalName == "Argument"
+            && element.Attribute(XName.Get("type", XsiNamespace)) != null
+            && element.Attribute(XName.Get("type", XsiNamespace))!.Value == "tns:PropertySet");
+        PropertyText(response.Document, "DataType").Should().Be("Generic");
+
+        var serviceInfo = await PostSoapAsync($"""<GetServiceInfo xmlns="{ArcGisNamespace}" />""");
+        var resultChildren = Element(serviceInfo.Document, "Result").Elements().ToArray();
+        var attributeTableIndex = Array.FindIndex(resultChildren, element => element.Name.LocalName == "HasRasterAttributeTable");
+        var histogramsIndex = Array.FindIndex(resultChildren, element => element.Name.LocalName == "Histograms");
+        var mensurationIndex = Array.FindIndex(resultChildren, element => element.Name.LocalName == "MensurationCapabilities");
+        histogramsIndex.Should().BeGreaterThan(attributeTableIndex);
+        histogramsIndex.Should().BeLessThan(mensurationIndex);
+        Element(serviceInfo.Document, "Histograms").Elements().Should().HaveCount(3);
     }
 
     [IntegrationTest]
@@ -406,6 +485,11 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
             var tileBytes = await restTile.Content.ReadAsByteArrayAsync();
             restTile.StatusCode.Should().Be(HttpStatusCode.OK);
             info.GetProperty("singleFusedMapCache").GetBoolean().Should().BeTrue();
+            info.GetProperty("exportTilesAllowed").GetBoolean().Should().BeTrue();
+            info.GetProperty("maxExportTilesCount").GetInt32().Should().BeGreaterThan(0);
+            info.GetProperty("minLOD").GetInt32().Should().Be(0);
+            info.GetProperty("maxLOD").GetInt32().Should().Be(2);
+            info.GetProperty("capabilities").GetString().Should().Contain("Tiles");
             var tileInfo = info.GetProperty("tileInfo");
 
             var fixedScale = await PostSoapAsync(fixture, $"""<IsFixedScaleImage xmlns="{ArcGisNamespace}" />""");
@@ -417,6 +501,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
             description.Body.Should().NotContain("Unsupported ImageServer operation");
             AssertTileCache(Element(description.Document, "TileCacheInfo"), tileInfo);
             Element(description.Document, "ServiceType").Value.Should().Be("esriCachedMapServiceSingleFused");
+            Element(description.Document, "ClientCacheAllowed").Value.Should().Be("true");
             var imageInfo = Element(description.Document, "TileImageInfo");
             Child(imageInfo, "CacheTileFormat").Value.Should().Be(tileInfo.GetProperty("format").GetString());
             Child(imageInfo, "CompressionQuality").Value.Should().Be("0");
@@ -434,6 +519,67 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
             var imageTile = await PostSoapAsync(fixture, ImageTileRequest());
             imageTile.Status.Should().Be(HttpStatusCode.OK, imageTile.Body);
             Convert.FromBase64String(Element(imageTile.Document, "Result").Value).Should().Equal(tileBytes);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetCacheDescriptionInfo")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task Issue5611_CachedService_AdvertisesTileConsumptionAndExport()
+    {
+        var fixture = await CreateFixtureAsync(enableTileCache: true);
+        try
+        {
+            using var metadata = await fixture.Client.GetAsync($"{ServicePath()}?f=json");
+            var info = await ReadJsonAsync(metadata);
+            info.GetProperty("exportTilesAllowed").GetBoolean().Should().BeTrue();
+            info.GetProperty("capabilities").GetString().Should().Contain("Tiles");
+
+            var description = await PostSoapAsync(fixture, $"""<GetCacheDescriptionInfo xmlns="{ArcGisNamespace}" />""");
+            description.Status.Should().Be(HttpStatusCode.OK, description.Body);
+            Element(description.Document, "ClientCacheAllowed").Value.Should().Be("true");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(true, true, 64, 64)]
+    [InlineData(true, true, 7, 7)]
+    [InlineData(true, true, 0, 1)]
+    [InlineData(true, false, 7, 0)]
+    [InlineData(false, true, 7, 0)]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer")]
+    public async Task TileExportMetadata_MatchesRuntimeConfiguration(
+        bool enableTileCache, bool enableStorage, int configuredLimit, int advertisedLimit)
+    {
+        var fixture = await CreateFixtureAsync(enableTileCache, enableStorage, configuredLimit);
+        try
+        {
+            using var metadata = await fixture.Client.GetAsync($"{ServicePath()}?f=json");
+            var info = await ReadJsonAsync(metadata);
+            info.GetProperty("exportTilesAllowed").GetBoolean().Should().Be(enableTileCache && enableStorage);
+            info.GetProperty("maxExportTilesCount").GetInt32().Should().Be(advertisedLimit);
+            info.GetProperty("singleFusedMapCache").GetBoolean().Should().Be(enableTileCache);
+
+            if (enableTileCache && !enableStorage)
+            {
+                using var tile = await fixture.Client.GetAsync($"{ServicePath()}/tile/0/0/0");
+                tile.StatusCode.Should().Be(HttpStatusCode.OK);
+                using var export = await fixture.Client.GetAsync($"{ServicePath()}/exportTiles?levels=0&exportExtent=-180,-85,180,85&exportExtentSR=4326&f=json");
+                // GeoServices JSON errors use HTTP 200 with the failure code in the envelope.
+                var exportError = await ReadJsonAsync(export);
+                exportError.GetProperty("error").GetProperty("code").GetInt32().Should().Be(503);
+                (await export.Content.ReadAsStringAsync()).Should().Contain("Cloud file storage is not configured.");
+            }
         }
         finally
         {
@@ -687,12 +833,20 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         return document.RootElement.Clone();
     }
 
-    private static async Task<WebAppFixture> CreateFixtureAsync(bool enableTileCache)
+    private static async Task<WebAppFixture> CreateFixtureAsync(
+        bool enableTileCache, bool enableStorage = true, int maxTiles = 64)
     {
         var rasterStore = CreateRasterStore();
         var coverageStore = CreateCoverageStore();
         var fixture = new WebAppFixture().ConfigureServices(services =>
         {
+            services.RemoveAll<ICloudFileStorage>();
+            if (enableStorage)
+            {
+                services.AddSingleton(Substitute.For<ICloudFileStorage>());
+            }
+
+            services.PostConfigure<LimitsOptions>(options => options.Tiles.MaxTilesPerRequest = maxTiles);
             services.RemoveAll<IRasterStore>();
             services.AddSingleton(rasterStore);
             services.RemoveAll<IMultidimensionalCoverageStore>();
