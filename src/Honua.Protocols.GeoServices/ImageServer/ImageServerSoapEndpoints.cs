@@ -476,7 +476,7 @@ internal static partial class ImageServerSoapEndpoints
                 rasters.Length == 0 || !rasters.All(raster => IsStoredNoDataOverride(request, raster)))
             {
                 return CreateSoapFault(
-                    "SOAP NoData overrides that differ from the image service NoData are not supported by the canonical raster renderer.",
+                    "SOAP NoData overrides without proven equivalent stored values and masking semantics are not supported by the canonical raster renderer.",
                     StatusCodes.Status501NotImplemented,
                     requestContext.SoapNamespace);
             }
@@ -708,6 +708,8 @@ internal static partial class ImageServerSoapEndpoints
 
     private static bool IsStoredNoDataOverride(ExportImageRequest request, RasterInfo raster)
     {
+        // Exact equality is intentional: U8 sentinels must be integers in [0, 255].
+        // A tolerance would admit a different stored sentinel before conversion to byte.
         if ((!string.Equals(request.NoDataInterpretation, "esriNoDataMatchAny", StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.NoDataInterpretation, "esriNoDataMatchAll", StringComparison.OrdinalIgnoreCase)) ||
             // BSQ uses an OR of band-validity masks (MatchAll). MatchAny agrees only for one band.
