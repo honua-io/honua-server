@@ -143,7 +143,7 @@ public sealed class CredentialAudit5623Tests
         foreach (var operation in new[] { AuthorizationOperation.Query, AuthorizationOperation.Read, AuthorizationOperation.Metadata, AuthorizationOperation.Export })
         {
             (await AccessPolicyHelpers.RequireServiceAccessAsync(context, service, operation) is null).Should().Be(allowed);
-            (await AccessPolicyHelpers.RequireResourceAccessAsync(context, Resource("roads"), service, operation) is null)
+            (await AccessPolicyHelpers.RequireResourceAccessAsync(context, Resource("roads"), operation, service) is null)
                 .Should().Be(serviceName == "catalog");
         }
         (await AccessPolicyHelpers.RequireServiceAccessAsync(context, service, AuthorizationOperation.Update)).Should().NotBeNull();
