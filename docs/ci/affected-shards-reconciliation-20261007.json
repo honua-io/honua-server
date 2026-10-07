@@ -20,7 +20,18 @@
       "trailing_job_url": null,
       "test_step_conclusion": null,
       "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head."
+      "reason": "No completed same-shard test step on the merge commit or a subsequent full trunk matrix containing it at collection time. The audited and landed heads differ only in documentation; no verdict is inferred from missing evidence.",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37636894444/job/112847717874",
+      "failing_tests": [
+        "ImportFile DefaultOperationalSchema CanDiscoverPublishAndQueryFeatureServer"
+      ],
+      "changed_paths_before_landing": [
+        "docs/audit/platform-20261006/issue-5626.md",
+        "docs/gis/data/feature-catalog.json"
+      ],
+      "comparison_verdict": null,
+      "changed_path_count_before_landing": 2,
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/97ba4999cc28f839c22caebfb756f3ea192a9c85..08245314cd293cf7c774cd591602e986563a6d35"
     },
     {
       "run_id": 37636894444,
@@ -39,7 +50,21 @@
       "trailing_job_url": null,
       "test_step_conclusion": null,
       "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head."
+      "reason": "No completed same-shard test step on the merge commit or a subsequent full trunk matrix containing it at collection time. The audited and landed heads differ only in documentation; no verdict is inferred from missing evidence.",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37636894444/job/112847717068",
+      "failing_tests": [
+        "Upload WithLargeSingleRowGroup ImportsFeatures",
+        "Upload WithGeoParquet ImportsFeaturesToTable",
+        "Upload WithBoundedQueryWriterOutput PreservesRowsAcrossRowGroupBoundaries",
+        "Upload WithNullGeometryRow SkipsAndCountsAsFailure"
+      ],
+      "changed_paths_before_landing": [
+        "docs/audit/platform-20261006/issue-5626.md",
+        "docs/gis/data/feature-catalog.json"
+      ],
+      "comparison_verdict": null,
+      "changed_path_count_before_landing": 2,
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/97ba4999cc28f839c22caebfb756f3ea192a9c85..08245314cd293cf7c774cd591602e986563a6d35"
     },
     {
       "run_id": 37614307268,
@@ -59,7 +84,113 @@
       "test_step_conclusion": "failure",
       "verdict": "confirmed-red",
       "reason": "PR head matches merged PR 5667; the same shard's first completed trailing merge-commit run concluded failure.",
-      "trailing_job_conclusion": "failure"
+      "trailing_job_conclusion": "failure",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37614307268/job/112769082654",
+      "failing_tests": [
+        "GetCandidateFields ReturnsCanonicalFieldsInPrecedenceOrder",
+        "SearchPost WithStringIds FiltersByStacItemId",
+        "SearchGet WithStringIds FiltersByStacItemId",
+        "SearchPost WhenMorePagesExist EmitsConformantPostNextLink",
+        "SearchGet WhenMorePagesExist GetNextLinkIsFollowable",
+        "SearchGet Bbox ReturnsTheItemInsideAndExcludesTheOneOutside",
+        "SearchGet OpenEndedDatetime ExcludesEverythingBeforeTheLowerBound",
+        "SearchGet Collections ExcludesItemsFromOtherCollections",
+        "SearchPost IntersectsPolygon ReturnsTheItemInsideAndExcludesTheOneOutside",
+        "SearchGet Datetime ReturnsTheItemInsideTheIntervalAndExcludesTheOneOutside",
+        "SearchPost IntersectsPoint MatchesOnlyTheItemAtThatPoint",
+        "SearchGet DatetimeInstant MatchesOnlyTheItemAtThatInstant",
+        "SearchGet WithTwoBoundCollections InterleavesGlobalSortAcrossPageBoundaries",
+        "SearchGet WhenRoutedCandidateQueryExceedsSafetyCap ReturnsInternalServerError",
+        "SearchGet WithIdsAndFilterOnExcludedField EvaluatesBeforeResponseProjection",
+        "SearchGet WithIdsAndSortBy AppliesGlobalOrderBeforePagingAndDeduplicatesCandidates",
+        "SearchGet WithIds RoutesCanonicalWhereWithoutSqlFilter",
+        "SearchGet WithoutCollections WhenAggregateCandidatesEqualCap SucceedsAcrossBoundTargets",
+        "GetItem RoutesCanonicalEqualityWhereInPrecedenceOrderWithoutSqlFilter",
+        "SearchGet WithoutCollections WhenAggregateCandidatesExceedCap ReturnsBadRequestWithoutFurtherReads",
+        "SearchGet WhenGraphActivatesAfterAuthorization RoutesAuthorizedSnapshotBinding",
+        "SearchGet With512DistinctIds UsesBoundedOverflowSentinelQuery",
+        "SearchGet WithIdsAndSupportedFilter EvaluatesMatchingAndNonMatchingCandidates",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 2, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 4, returned: 2, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"post\", offset: 4, returned: 2, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"items\", offset: 0, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 3, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"post\", offset: 2, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"items\", offset: 2, returned: 1, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 0, returned: 4, hasNext: True)",
+        "ExactCounts CrossCollectionOffset DoesNotCountThePageCollectionTwice"
+      ],
+      "changed_paths_before_landing": [],
+      "trailing_failing_tests": [
+        "GetCandidateFields ReturnsCanonicalFieldsInPrecedenceOrder",
+        "SearchPost WithStringIds FiltersByStacItemId",
+        "SearchGet WithStringIds FiltersByStacItemId",
+        "SearchPost WhenMorePagesExist EmitsConformantPostNextLink",
+        "SearchGet WhenMorePagesExist GetNextLinkIsFollowable",
+        "SearchGet Bbox ReturnsTheItemInsideAndExcludesTheOneOutside",
+        "SearchGet OpenEndedDatetime ExcludesEverythingBeforeTheLowerBound",
+        "SearchGet Collections ExcludesItemsFromOtherCollections",
+        "SearchPost IntersectsPolygon ReturnsTheItemInsideAndExcludesTheOneOutside",
+        "SearchGet Datetime ReturnsTheItemInsideTheIntervalAndExcludesTheOneOutside",
+        "SearchPost IntersectsPoint MatchesOnlyTheItemAtThatPoint",
+        "SearchGet DatetimeInstant MatchesOnlyTheItemAtThatInstant",
+        "SearchGet WithTwoBoundCollections InterleavesGlobalSortAcrossPageBoundaries",
+        "SearchGet WhenRoutedCandidateQueryExceedsSafetyCap ReturnsInternalServerError",
+        "SearchGet WithIdsAndFilterOnExcludedField EvaluatesBeforeResponseProjection",
+        "SearchGet WithIdsAndSortBy AppliesGlobalOrderBeforePagingAndDeduplicatesCandidates",
+        "SearchGet WithIds RoutesCanonicalWhereWithoutSqlFilter",
+        "SearchGet WithoutCollections WhenAggregateCandidatesEqualCap SucceedsAcrossBoundTargets",
+        "GetItem RoutesCanonicalEqualityWhereInPrecedenceOrderWithoutSqlFilter",
+        "SearchGet WithoutCollections WhenAggregateCandidatesExceedCap ReturnsBadRequestWithoutFurtherReads",
+        "SearchGet WhenGraphActivatesAfterAuthorization RoutesAuthorizedSnapshotBinding",
+        "SearchGet With512DistinctIds UsesBoundedOverflowSentinelQuery",
+        "SearchGet WithIdsAndSupportedFilter EvaluatesMatchingAndNonMatchingCandidates",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 2, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 4, returned: 2, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"post\", offset: 4, returned: 2, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"items\", offset: 0, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 3, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"post\", offset: 2, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"items\", offset: 2, returned: 1, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 0, returned: 4, hasNext: True)",
+        "ExactCounts CrossCollectionOffset DoesNotCountThePageCollectionTwice"
+      ],
+      "matching_failing_tests": [
+        "ExactCounts CrossCollectionOffset DoesNotCountThePageCollectionTwice",
+        "GetCandidateFields ReturnsCanonicalFieldsInPrecedenceOrder",
+        "GetItem RoutesCanonicalEqualityWhereInPrecedenceOrderWithoutSqlFilter",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 0, returned: 4, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 2, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 3, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 4, returned: 2, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"items\", offset: 0, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"items\", offset: 2, returned: 1, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"post\", offset: 2, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"post\", offset: 4, returned: 2, hasNext: False)",
+        "SearchGet Bbox ReturnsTheItemInsideAndExcludesTheOneOutside",
+        "SearchGet Collections ExcludesItemsFromOtherCollections",
+        "SearchGet Datetime ReturnsTheItemInsideTheIntervalAndExcludesTheOneOutside",
+        "SearchGet DatetimeInstant MatchesOnlyTheItemAtThatInstant",
+        "SearchGet OpenEndedDatetime ExcludesEverythingBeforeTheLowerBound",
+        "SearchGet WhenGraphActivatesAfterAuthorization RoutesAuthorizedSnapshotBinding",
+        "SearchGet WhenMorePagesExist GetNextLinkIsFollowable",
+        "SearchGet WhenRoutedCandidateQueryExceedsSafetyCap ReturnsInternalServerError",
+        "SearchGet With512DistinctIds UsesBoundedOverflowSentinelQuery",
+        "SearchGet WithIds RoutesCanonicalWhereWithoutSqlFilter",
+        "SearchGet WithIdsAndFilterOnExcludedField EvaluatesBeforeResponseProjection",
+        "SearchGet WithIdsAndSortBy AppliesGlobalOrderBeforePagingAndDeduplicatesCandidates",
+        "SearchGet WithIdsAndSupportedFilter EvaluatesMatchingAndNonMatchingCandidates",
+        "SearchGet WithStringIds FiltersByStacItemId",
+        "SearchGet WithTwoBoundCollections InterleavesGlobalSortAcrossPageBoundaries",
+        "SearchGet WithoutCollections WhenAggregateCandidatesEqualCap SucceedsAcrossBoundTargets",
+        "SearchGet WithoutCollections WhenAggregateCandidatesExceedCap ReturnsBadRequestWithoutFurtherReads",
+        "SearchPost IntersectsPoint MatchesOnlyTheItemAtThatPoint",
+        "SearchPost IntersectsPolygon ReturnsTheItemInsideAndExcludesTheOneOutside",
+        "SearchPost WhenMorePagesExist EmitsConformantPostNextLink",
+        "SearchPost WithStringIds FiltersByStacItemId"
+      ],
+      "comparison_verdict": "confirmed-red",
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/1c6961b77feed5a2eedd106e4f4ba7851fa7d430..1c6961b77feed5a2eedd106e4f4ba7851fa7d430"
     },
     {
       "run_id": 37614307268,
@@ -79,7 +210,26 @@
       "test_step_conclusion": "failure",
       "verdict": "confirmed-red",
       "reason": "PR head matches merged PR 5667; the same shard's first completed trailing merge-commit run concluded failure.",
-      "trailing_job_conclusion": "failure"
+      "trailing_job_conclusion": "failure",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37614307268/job/112769082479",
+      "failing_tests": [
+        "GetItem ByStringId ReturnsStacItem",
+        "GetItem ByNumericLookingStacId ReturnsStacItemBeforeObjectIdFallback",
+        "GetItem ByStacId PrefersCanonicalStacIdBeyondIdCollisions"
+      ],
+      "changed_paths_before_landing": [],
+      "trailing_failing_tests": [
+        "GetItem ByStringId ReturnsStacItem",
+        "GetItem ByNumericLookingStacId ReturnsStacItemBeforeObjectIdFallback",
+        "GetItem ByStacId PrefersCanonicalStacIdBeyondIdCollisions"
+      ],
+      "matching_failing_tests": [
+        "GetItem ByNumericLookingStacId ReturnsStacItemBeforeObjectIdFallback",
+        "GetItem ByStacId PrefersCanonicalStacIdBeyondIdCollisions",
+        "GetItem ByStringId ReturnsStacItem"
+      ],
+      "comparison_verdict": "confirmed-red",
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/1c6961b77feed5a2eedd106e4f4ba7851fa7d430..1c6961b77feed5a2eedd106e4f4ba7851fa7d430"
     },
     {
       "run_id": 37607358792,
@@ -99,7 +249,20 @@
       "test_step_conclusion": "failure",
       "verdict": "confirmed-red",
       "reason": "Audited head matches the landed PR head; same shard test step failure on the first subsequent completed full trunk matrix containing the merge (git ancestry verified).",
-      "trailing_job_conclusion": "failure"
+      "trailing_job_conclusion": "failure",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37607358792/job/112746357277",
+      "failing_tests": [
+        "KeyPropertiesSoap MatchesRestKeyProperties"
+      ],
+      "changed_paths_before_landing": [],
+      "trailing_failing_tests": [
+        "KeyPropertiesSoap MatchesRestKeyProperties"
+      ],
+      "matching_failing_tests": [
+        "KeyPropertiesSoap MatchesRestKeyProperties"
+      ],
+      "comparison_verdict": "confirmed-red",
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/55e116d2e4044d93b75103cd1636597606d5db8c..55e116d2e4044d93b75103cd1636597606d5db8c"
     },
     {
       "run_id": 37606750322,
@@ -118,7 +281,68 @@
       "trailing_job_url": null,
       "test_step_conclusion": null,
       "verdict": "unresolved",
-      "reason": "PR remains open; no merge commit exists."
+      "reason": "PR remains open; no merge commit exists.",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37606750322/job/112744290089",
+      "failing_tests": [
+        "CancelApply UnknownJobId ReturnsUnspecifiedState",
+        "SpecAuthorization RealTransportMatrix MatchesRestAndStopsDeniedCalls",
+        "Cancel MissingToken Returns400",
+        "PlanSpec UnknownNumericKind RaisesInvalidArgument",
+        "AdminPolicy AllSupportedCompositions RetainPermissionCeiling",
+        "Apply DuplicateNodeIds Returns400WithoutOpeningStream",
+        "PlanSpec Cycle RaisesInvalidArgument",
+        "Plan NullNodesCollection Returns400WithInvalidRequestBody",
+        "ApplySpec WithCommunityLicense RaisesFailedPreconditionBeforeStream",
+        "Plan Cycle Returns400WithDagCycleCode",
+        "PlanSpec VersionSkew RaisesInvalidArgument",
+        "Validate CanonicalSpecObjectWithOutOfRangeNumber ReturnsParseDiagnostic",
+        "PlanSpec DuplicateNodeId RaisesInvalidArgument",
+        "Artifact UnknownHash Returns404WithArtifactNotFound",
+        "ApplySpec BlankNodeId RaisesInvalidArgumentBeforeStream",
+        "Validate WithoutSource Returns400WithInvalidRequestBody",
+        "ApplySpec SingleNodeDocument StreamsTerminalEvents",
+        "Validate TextSpecWithUnknownOperator ReturnsInvalidWithDiagnostic",
+        "ApplySpec UnspecifiedKind RaisesInvalidArgumentBeforeStream",
+        "Apply CommunityEdition RunsDirectlyWithoutGuardrailGate",
+        "ApplySpec FatalDocumentError RaisesInvalidArgumentBeforeStream",
+        "Apply MalformedJson Returns400WithInvalidRequestBody",
+        "PlanSpec BlankNodeId RaisesInvalidArgument",
+        "Apply EnterpriseEdition PassesValidationAndApprovalGates",
+        "CancelApply EmptyJobId ReturnsInvalidArgument",
+        "Plan MissingGrammarVersion Returns400WithVersionSkew",
+        "PlanSpec SingleNodeDocument ReturnsPlanWithContentHash",
+        "Plan BlankNodeId Returns400WithInvalidNodeId",
+        "PlanSpec UnspecifiedKind RaisesInvalidArgument",
+        "Artifact AfterApply ReturnsStoredBytes",
+        "ApplySpec ApplyToken ExposedInInitialMetadataBeforeStreamCompletes",
+        "Apply WithCommunityLicense ReturnsPaymentRequired",
+        "ApplySpec MissingVersionFields RaisesInvalidArgumentBeforeStream",
+        "Apply MissingProcessFamilyVersion Returns400WithoutOpeningStream",
+        "ApplySpec UnknownNumericKind RaisesInvalidArgumentBeforeStream",
+        "Apply ProEditionWithoutEntitlement Returns402",
+        "ApplySpec UnknownNumericCacheMode RaisesInvalidArgumentBeforeStream",
+        "Apply ProEditionWithEntitlement PassesGuardrailGate",
+        "Plan LinearChain ReturnsDagWithContentHashesInTopologicalOrder",
+        "Plan MalformedJson Returns400WithInvalidRequestBody",
+        "Plan NodeWithoutKind Returns400WithUnknownKind",
+        "Plan NumericKindOutOfRange Returns400WithUnknownKind",
+        "Apply NumericCacheModeOutOfRange Returns400WithoutOpeningStream",
+        "Apply LinearChain StreamsSseEvents AndSucceeds",
+        "Apply RerunSameDocument YieldsCachedEventsForEveryNode",
+        "Apply BlankNodeId Returns400WithoutOpeningStream",
+        "Apply NumericKindOutOfRange Returns400WithoutOpeningStream",
+        "Plan NullNodeEntry Returns400WithInvalidNodeId",
+        "Cancel UnknownToken Returns404WithApplyTokenUnknown",
+        "Validate TextSpec ReturnsDiagnosticsAndCanonicalJson",
+        "Apply NullNodeEntry Returns400WithoutOpeningStream",
+        "Apply ReservedDatasetKind StreamsFailedWithSpecKindNotInS1",
+        "Apply Cycle Returns400WithoutOpeningStream",
+        "Apply NodeWithoutKind Returns400WithoutOpeningStream",
+        "Validate CanonicalSpecObject RunsSameValidator",
+        "Apply WithoutEventStreamAccept Returns400"
+      ],
+      "comparison_verdict": null,
+      "head_comparison_url": null
     },
     {
       "run_id": 37600897116,
@@ -137,7 +361,17 @@
       "trailing_job_url": null,
       "test_step_conclusion": null,
       "verdict": "unresolved",
-      "reason": "PR remains open; no merge commit exists."
+      "reason": "PR remains open; no merge commit exists.",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37600897116/job/112725084260",
+      "failing_tests": [
+        "UnRegisterReplica ForAnotherPrincipalsReplica IsDeniedAndLeavesTheReplicaRegistered",
+        "Replicas AreScopedToTheirOwningPrincipal",
+        "CreateReplica WithReturnAttachments IsRejectedRatherThanSilentlyIgnored",
+        "SynchronizeReplica ForAnotherPrincipalsReplica IsDeniedAndAppliesNoEdits",
+        "ExtractChanges ForAnotherPrincipalsReplica IsDeniedAndStillWorksForTheOwner"
+      ],
+      "comparison_verdict": null,
+      "head_comparison_url": null
     },
     {
       "run_id": 37579479538,
@@ -156,7 +390,13 @@
       "trailing_job_url": null,
       "test_step_conclusion": null,
       "verdict": "unresolved",
-      "reason": "PR remains open; no merge commit exists."
+      "reason": "PR remains open; no merge commit exists.",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37579479538/job/112655866506",
+      "failing_tests": [
+        "SRV OGC 015 Delete WithMaskedSnapshotAndMatchingIfMatch Succeeds"
+      ],
+      "comparison_verdict": null,
+      "head_comparison_url": null
     },
     {
       "run_id": 37569461538,
@@ -174,9 +414,119 @@
       "trunk_head_sha": "31617a93b9c6b2934876b1f779d6248f8169465c",
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37620570415/job/112793739557",
       "test_step_conclusion": "failure",
-      "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "failure"
+      "verdict": "confirmed-red",
+      "reason": "The audited PR head was superseded, but the same named failing test(s) remain red in the same shard on the landed revision; no later green is used to classify this red.",
+      "trailing_job_conclusion": "failure",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37569461538/job/112624763638",
+      "failing_tests": [
+        "GetCandidateFields ReturnsCanonicalFieldsInPrecedenceOrder",
+        "SearchPost WithStringIds FiltersByStacItemId",
+        "SearchGet WithStringIds FiltersByStacItemId",
+        "SearchPost WhenMorePagesExist EmitsConformantPostNextLink",
+        "SearchGet WhenMorePagesExist GetNextLinkIsFollowable",
+        "SearchGet Bbox ReturnsTheItemInsideAndExcludesTheOneOutside",
+        "SearchGet OpenEndedDatetime ExcludesEverythingBeforeTheLowerBound",
+        "SearchGet Collections ExcludesItemsFromOtherCollections",
+        "SearchPost IntersectsPolygon ReturnsTheItemInsideAndExcludesTheOneOutside",
+        "SearchGet Datetime ReturnsTheItemInsideTheIntervalAndExcludesTheOneOutside",
+        "SearchPost IntersectsPoint MatchesOnlyTheItemAtThatPoint",
+        "SearchGet DatetimeInstant MatchesOnlyTheItemAtThatInstant",
+        "SearchGet WithTwoBoundCollections InterleavesGlobalSortAcrossPageBoundaries",
+        "SearchGet WhenRoutedCandidateQueryExceedsSafetyCap ReturnsInternalServerError",
+        "SearchGet WithIdsAndFilterOnExcludedField EvaluatesBeforeResponseProjection",
+        "SearchGet WithIdsAndSortBy AppliesGlobalOrderBeforePagingAndDeduplicatesCandidates",
+        "SearchGet WithIds RoutesCanonicalWhereWithoutSqlFilter",
+        "SearchGet WithoutCollections WhenAggregateCandidatesEqualCap SucceedsAcrossBoundTargets",
+        "GetItem RoutesCanonicalEqualityWhereInPrecedenceOrderWithoutSqlFilter",
+        "SearchGet WithoutCollections WhenAggregateCandidatesExceedCap ReturnsBadRequestWithoutFurtherReads",
+        "SearchGet WhenGraphActivatesAfterAuthorization RoutesAuthorizedSnapshotBinding",
+        "SearchGet With512DistinctIds UsesBoundedOverflowSentinelQuery",
+        "SearchGet WithIdsAndSupportedFilter EvaluatesMatchingAndNonMatchingCandidates",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 2, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 4, returned: 2, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"post\", offset: 4, returned: 2, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"items\", offset: 0, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 3, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"post\", offset: 2, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"items\", offset: 2, returned: 1, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 0, returned: 4, hasNext: True)",
+        "ExactCounts CrossCollectionOffset DoesNotCountThePageCollectionTwice"
+      ],
+      "changed_paths_before_landing": [
+        "docs/audit/platform-20261006/issue-5632.md",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Stac/StacItemIdentifierAuditTests.cs"
+      ],
+      "trailing_failing_tests": [
+        "GetCandidateFields ReturnsCanonicalFieldsInPrecedenceOrder",
+        "SearchPost WithStringIds FiltersByStacItemId",
+        "SearchGet WithStringIds FiltersByStacItemId",
+        "SearchPost WhenMorePagesExist EmitsConformantPostNextLink",
+        "SearchGet WhenMorePagesExist GetNextLinkIsFollowable",
+        "SearchGet Bbox ReturnsTheItemInsideAndExcludesTheOneOutside",
+        "SearchGet OpenEndedDatetime ExcludesEverythingBeforeTheLowerBound",
+        "SearchGet Collections ExcludesItemsFromOtherCollections",
+        "SearchPost IntersectsPolygon ReturnsTheItemInsideAndExcludesTheOneOutside",
+        "SearchGet Datetime ReturnsTheItemInsideTheIntervalAndExcludesTheOneOutside",
+        "SearchPost IntersectsPoint MatchesOnlyTheItemAtThatPoint",
+        "SearchGet DatetimeInstant MatchesOnlyTheItemAtThatInstant",
+        "SearchGet WithTwoBoundCollections InterleavesGlobalSortAcrossPageBoundaries",
+        "SearchGet WhenRoutedCandidateQueryExceedsSafetyCap ReturnsInternalServerError",
+        "SearchGet WithIdsAndFilterOnExcludedField EvaluatesBeforeResponseProjection",
+        "SearchGet WithIdsAndSortBy AppliesGlobalOrderBeforePagingAndDeduplicatesCandidates",
+        "SearchGet WithIds RoutesCanonicalWhereWithoutSqlFilter",
+        "SearchGet WithoutCollections WhenAggregateCandidatesEqualCap SucceedsAcrossBoundTargets",
+        "GetItem RoutesCanonicalEqualityWhereInPrecedenceOrderWithoutSqlFilter",
+        "SearchGet WithoutCollections WhenAggregateCandidatesExceedCap ReturnsBadRequestWithoutFurtherReads",
+        "SearchGet WhenGraphActivatesAfterAuthorization RoutesAuthorizedSnapshotBinding",
+        "SearchGet With512DistinctIds UsesBoundedOverflowSentinelQuery",
+        "SearchGet WithIdsAndSupportedFilter EvaluatesMatchingAndNonMatchingCandidates",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 2, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 4, returned: 2, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"post\", offset: 4, returned: 2, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"items\", offset: 0, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 3, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"post\", offset: 2, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"items\", offset: 2, returned: 1, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 0, returned: 4, hasNext: True)",
+        "ExactCounts CrossCollectionOffset DoesNotCountThePageCollectionTwice"
+      ],
+      "matching_failing_tests": [
+        "ExactCounts CrossCollectionOffset DoesNotCountThePageCollectionTwice",
+        "GetCandidateFields ReturnsCanonicalFieldsInPrecedenceOrder",
+        "GetItem RoutesCanonicalEqualityWhereInPrecedenceOrderWithoutSqlFilter",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 0, returned: 4, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 2, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 3, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 4, returned: 2, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"items\", offset: 0, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"items\", offset: 2, returned: 1, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"post\", offset: 2, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"post\", offset: 4, returned: 2, hasNext: False)",
+        "SearchGet Bbox ReturnsTheItemInsideAndExcludesTheOneOutside",
+        "SearchGet Collections ExcludesItemsFromOtherCollections",
+        "SearchGet Datetime ReturnsTheItemInsideTheIntervalAndExcludesTheOneOutside",
+        "SearchGet DatetimeInstant MatchesOnlyTheItemAtThatInstant",
+        "SearchGet OpenEndedDatetime ExcludesEverythingBeforeTheLowerBound",
+        "SearchGet WhenGraphActivatesAfterAuthorization RoutesAuthorizedSnapshotBinding",
+        "SearchGet WhenMorePagesExist GetNextLinkIsFollowable",
+        "SearchGet WhenRoutedCandidateQueryExceedsSafetyCap ReturnsInternalServerError",
+        "SearchGet With512DistinctIds UsesBoundedOverflowSentinelQuery",
+        "SearchGet WithIds RoutesCanonicalWhereWithoutSqlFilter",
+        "SearchGet WithIdsAndFilterOnExcludedField EvaluatesBeforeResponseProjection",
+        "SearchGet WithIdsAndSortBy AppliesGlobalOrderBeforePagingAndDeduplicatesCandidates",
+        "SearchGet WithIdsAndSupportedFilter EvaluatesMatchingAndNonMatchingCandidates",
+        "SearchGet WithStringIds FiltersByStacItemId",
+        "SearchGet WithTwoBoundCollections InterleavesGlobalSortAcrossPageBoundaries",
+        "SearchGet WithoutCollections WhenAggregateCandidatesEqualCap SucceedsAcrossBoundTargets",
+        "SearchGet WithoutCollections WhenAggregateCandidatesExceedCap ReturnsBadRequestWithoutFurtherReads",
+        "SearchPost IntersectsPoint MatchesOnlyTheItemAtThatPoint",
+        "SearchPost IntersectsPolygon ReturnsTheItemInsideAndExcludesTheOneOutside",
+        "SearchPost WhenMorePagesExist EmitsConformantPostNextLink",
+        "SearchPost WithStringIds FiltersByStacItemId"
+      ],
+      "comparison_verdict": "confirmed-red",
+      "changed_path_count_before_landing": 2,
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/b3fd5d7b5478fb79c28bab30b930cfb7b65cd5e3..1c6961b77feed5a2eedd106e4f4ba7851fa7d430"
     },
     {
       "run_id": 37569461538,
@@ -194,9 +544,32 @@
       "trunk_head_sha": "31617a93b9c6b2934876b1f779d6248f8169465c",
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37620570415/job/112793739443",
       "test_step_conclusion": "failure",
-      "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "failure"
+      "verdict": "confirmed-red",
+      "reason": "The audited PR head was superseded, but the same named failing test(s) remain red in the same shard on the landed revision; no later green is used to classify this red.",
+      "trailing_job_conclusion": "failure",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37569461538/job/112624763575",
+      "failing_tests": [
+        "GetItem ByStringId ReturnsStacItem",
+        "GetItem ByNumericLookingStacId ReturnsStacItemBeforeObjectIdFallback",
+        "GetItem ByStacId PrefersCanonicalStacIdBeyondIdCollisions"
+      ],
+      "changed_paths_before_landing": [
+        "docs/audit/platform-20261006/issue-5632.md",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Stac/StacItemIdentifierAuditTests.cs"
+      ],
+      "trailing_failing_tests": [
+        "GetItem ByStringId ReturnsStacItem",
+        "GetItem ByNumericLookingStacId ReturnsStacItemBeforeObjectIdFallback",
+        "GetItem ByStacId PrefersCanonicalStacIdBeyondIdCollisions"
+      ],
+      "matching_failing_tests": [
+        "GetItem ByNumericLookingStacId ReturnsStacItemBeforeObjectIdFallback",
+        "GetItem ByStacId PrefersCanonicalStacIdBeyondIdCollisions",
+        "GetItem ByStringId ReturnsStacItem"
+      ],
+      "comparison_verdict": "confirmed-red",
+      "changed_path_count_before_landing": 2,
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/b3fd5d7b5478fb79c28bab30b930cfb7b65cd5e3..1c6961b77feed5a2eedd106e4f4ba7851fa7d430"
     },
     {
       "run_id": 37568340413,
@@ -215,7 +588,14 @@
       "trailing_job_url": null,
       "test_step_conclusion": null,
       "verdict": "unresolved",
-      "reason": "PR remains open; no merge commit exists."
+      "reason": "PR remains open; no merge commit exists.",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37568340413/job/112621330561",
+      "failing_tests": [
+        "GetTerrainTile WithRegisteredDem ReturnsTerrainRgbPng",
+        "GetTerrainMetadata WithRasterFixture ReturnsTileJsonExtensionsAndCacheHeaders"
+      ],
+      "comparison_verdict": null,
+      "head_comparison_url": null
     },
     {
       "run_id": 37534794436,
@@ -234,7 +614,14 @@
       "trailing_job_url": null,
       "test_step_conclusion": null,
       "verdict": "unresolved",
-      "reason": "PR remains open; no merge commit exists."
+      "reason": "PR remains open; no merge commit exists.",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37534794436/job/112520959342",
+      "failing_tests": [
+        "GetTerrainTile WithRegisteredDem ReturnsTerrainRgbPng",
+        "GetTerrainMetadata WithRasterFixture ReturnsTileJsonExtensionsAndCacheHeaders"
+      ],
+      "comparison_verdict": null,
+      "head_comparison_url": null
     },
     {
       "run_id": 37533561480,
@@ -252,9 +639,122 @@
       "trunk_head_sha": "31617a93b9c6b2934876b1f779d6248f8169465c",
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37620570415/job/112793739557",
       "test_step_conclusion": "failure",
-      "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "failure"
+      "verdict": "confirmed-red",
+      "reason": "The audited PR head was superseded, but the same named failing test(s) remain red in the same shard on the landed revision; no later green is used to classify this red.",
+      "trailing_job_conclusion": "failure",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37533561480/job/112514429338",
+      "failing_tests": [
+        "GetCandidateFields ReturnsCanonicalFieldsInPrecedenceOrder",
+        "SearchPost WithStringIds FiltersByStacItemId",
+        "SearchGet WithStringIds FiltersByStacItemId",
+        "SearchPost WhenMorePagesExist EmitsConformantPostNextLink",
+        "SearchGet WhenMorePagesExist GetNextLinkIsFollowable",
+        "SearchGet Bbox ReturnsTheItemInsideAndExcludesTheOneOutside",
+        "SearchGet OpenEndedDatetime ExcludesEverythingBeforeTheLowerBound",
+        "SearchGet Collections ExcludesItemsFromOtherCollections",
+        "SearchPost IntersectsPolygon ReturnsTheItemInsideAndExcludesTheOneOutside",
+        "SearchGet Datetime ReturnsTheItemInsideTheIntervalAndExcludesTheOneOutside",
+        "SearchPost IntersectsPoint MatchesOnlyTheItemAtThatPoint",
+        "SearchGet DatetimeInstant MatchesOnlyTheItemAtThatInstant",
+        "SearchGet WithTwoBoundCollections InterleavesGlobalSortAcrossPageBoundaries",
+        "SearchGet WhenRoutedCandidateQueryExceedsSafetyCap ReturnsInternalServerError",
+        "SearchGet WithIdsAndFilterOnExcludedField EvaluatesBeforeResponseProjection",
+        "SearchGet WithIdsAndSortBy AppliesGlobalOrderBeforePagingAndDeduplicatesCandidates",
+        "SearchGet WithIds RoutesCanonicalWhereWithoutSqlFilter",
+        "SearchGet WithoutCollections WhenAggregateCandidatesEqualCap SucceedsAcrossBoundTargets",
+        "GetItem RoutesCanonicalEqualityWhereInPrecedenceOrderWithoutSqlFilter",
+        "SearchGet WithoutCollections WhenAggregateCandidatesExceedCap ReturnsBadRequestWithoutFurtherReads",
+        "SearchGet WhenGraphActivatesAfterAuthorization RoutesAuthorizedSnapshotBinding",
+        "SearchGet With512DistinctIds UsesBoundedOverflowSentinelQuery",
+        "SearchGet WithIdsAndSupportedFilter EvaluatesMatchingAndNonMatchingCandidates",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 2, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 4, returned: 2, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"post\", offset: 4, returned: 2, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"items\", offset: 0, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 3, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"post\", offset: 2, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"items\", offset: 2, returned: 1, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 0, returned: 4, hasNext: True)",
+        "ExactCounts CrossCollectionOffset DoesNotCountThePageCollectionTwice"
+      ],
+      "changed_paths_before_landing": [
+        "docs/audit/platform-20261006/issue-5632.md",
+        "src/Honua.Protocols.Stac/ItemEndpoints.cs",
+        "src/Honua.Protocols.Stac/Services/StacBoundItemQueryExecutor.cs",
+        "src/Honua.Protocols.Stac/Services/StacItemIdWhereBuilder.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Stac/StacItemIdentifierAuditTests.cs"
+      ],
+      "trailing_failing_tests": [
+        "GetCandidateFields ReturnsCanonicalFieldsInPrecedenceOrder",
+        "SearchPost WithStringIds FiltersByStacItemId",
+        "SearchGet WithStringIds FiltersByStacItemId",
+        "SearchPost WhenMorePagesExist EmitsConformantPostNextLink",
+        "SearchGet WhenMorePagesExist GetNextLinkIsFollowable",
+        "SearchGet Bbox ReturnsTheItemInsideAndExcludesTheOneOutside",
+        "SearchGet OpenEndedDatetime ExcludesEverythingBeforeTheLowerBound",
+        "SearchGet Collections ExcludesItemsFromOtherCollections",
+        "SearchPost IntersectsPolygon ReturnsTheItemInsideAndExcludesTheOneOutside",
+        "SearchGet Datetime ReturnsTheItemInsideTheIntervalAndExcludesTheOneOutside",
+        "SearchPost IntersectsPoint MatchesOnlyTheItemAtThatPoint",
+        "SearchGet DatetimeInstant MatchesOnlyTheItemAtThatInstant",
+        "SearchGet WithTwoBoundCollections InterleavesGlobalSortAcrossPageBoundaries",
+        "SearchGet WhenRoutedCandidateQueryExceedsSafetyCap ReturnsInternalServerError",
+        "SearchGet WithIdsAndFilterOnExcludedField EvaluatesBeforeResponseProjection",
+        "SearchGet WithIdsAndSortBy AppliesGlobalOrderBeforePagingAndDeduplicatesCandidates",
+        "SearchGet WithIds RoutesCanonicalWhereWithoutSqlFilter",
+        "SearchGet WithoutCollections WhenAggregateCandidatesEqualCap SucceedsAcrossBoundTargets",
+        "GetItem RoutesCanonicalEqualityWhereInPrecedenceOrderWithoutSqlFilter",
+        "SearchGet WithoutCollections WhenAggregateCandidatesExceedCap ReturnsBadRequestWithoutFurtherReads",
+        "SearchGet WhenGraphActivatesAfterAuthorization RoutesAuthorizedSnapshotBinding",
+        "SearchGet With512DistinctIds UsesBoundedOverflowSentinelQuery",
+        "SearchGet WithIdsAndSupportedFilter EvaluatesMatchingAndNonMatchingCandidates",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 2, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 4, returned: 2, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"post\", offset: 4, returned: 2, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"items\", offset: 0, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 3, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"post\", offset: 2, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"items\", offset: 2, returned: 1, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 0, returned: 4, hasNext: True)",
+        "ExactCounts CrossCollectionOffset DoesNotCountThePageCollectionTwice"
+      ],
+      "matching_failing_tests": [
+        "ExactCounts CrossCollectionOffset DoesNotCountThePageCollectionTwice",
+        "GetCandidateFields ReturnsCanonicalFieldsInPrecedenceOrder",
+        "GetItem RoutesCanonicalEqualityWhereInPrecedenceOrderWithoutSqlFilter",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 0, returned: 4, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 2, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 3, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"get\", offset: 4, returned: 2, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"items\", offset: 0, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"items\", offset: 2, returned: 1, hasNext: False)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"post\", offset: 2, returned: 2, hasNext: True)",
+        "OptionalCounts PageAcrossCollectionsWithoutCounting(route: \"post\", offset: 4, returned: 2, hasNext: False)",
+        "SearchGet Bbox ReturnsTheItemInsideAndExcludesTheOneOutside",
+        "SearchGet Collections ExcludesItemsFromOtherCollections",
+        "SearchGet Datetime ReturnsTheItemInsideTheIntervalAndExcludesTheOneOutside",
+        "SearchGet DatetimeInstant MatchesOnlyTheItemAtThatInstant",
+        "SearchGet OpenEndedDatetime ExcludesEverythingBeforeTheLowerBound",
+        "SearchGet WhenGraphActivatesAfterAuthorization RoutesAuthorizedSnapshotBinding",
+        "SearchGet WhenMorePagesExist GetNextLinkIsFollowable",
+        "SearchGet WhenRoutedCandidateQueryExceedsSafetyCap ReturnsInternalServerError",
+        "SearchGet With512DistinctIds UsesBoundedOverflowSentinelQuery",
+        "SearchGet WithIds RoutesCanonicalWhereWithoutSqlFilter",
+        "SearchGet WithIdsAndFilterOnExcludedField EvaluatesBeforeResponseProjection",
+        "SearchGet WithIdsAndSortBy AppliesGlobalOrderBeforePagingAndDeduplicatesCandidates",
+        "SearchGet WithIdsAndSupportedFilter EvaluatesMatchingAndNonMatchingCandidates",
+        "SearchGet WithStringIds FiltersByStacItemId",
+        "SearchGet WithTwoBoundCollections InterleavesGlobalSortAcrossPageBoundaries",
+        "SearchGet WithoutCollections WhenAggregateCandidatesEqualCap SucceedsAcrossBoundTargets",
+        "SearchGet WithoutCollections WhenAggregateCandidatesExceedCap ReturnsBadRequestWithoutFurtherReads",
+        "SearchPost IntersectsPoint MatchesOnlyTheItemAtThatPoint",
+        "SearchPost IntersectsPolygon ReturnsTheItemInsideAndExcludesTheOneOutside",
+        "SearchPost WhenMorePagesExist EmitsConformantPostNextLink",
+        "SearchPost WithStringIds FiltersByStacItemId"
+      ],
+      "comparison_verdict": "confirmed-red",
+      "changed_path_count_before_landing": 5,
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/fbaef1e562f0b49989d8a79b9b72bcecbd7c3560..1c6961b77feed5a2eedd106e4f4ba7851fa7d430"
     },
     {
       "run_id": 37533561480,
@@ -272,9 +772,35 @@
       "trunk_head_sha": "31617a93b9c6b2934876b1f779d6248f8169465c",
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37620570415/job/112793739443",
       "test_step_conclusion": "failure",
-      "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "failure"
+      "verdict": "confirmed-red",
+      "reason": "The audited PR head was superseded, but the same named failing test(s) remain red in the same shard on the landed revision; no later green is used to classify this red.",
+      "trailing_job_conclusion": "failure",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37533561480/job/112514428905",
+      "failing_tests": [
+        "GetItem ByStringId ReturnsStacItem",
+        "GetItem ByNumericLookingStacId ReturnsStacItemBeforeObjectIdFallback",
+        "GetItem ByStacId PrefersCanonicalStacIdBeyondIdCollisions"
+      ],
+      "changed_paths_before_landing": [
+        "docs/audit/platform-20261006/issue-5632.md",
+        "src/Honua.Protocols.Stac/ItemEndpoints.cs",
+        "src/Honua.Protocols.Stac/Services/StacBoundItemQueryExecutor.cs",
+        "src/Honua.Protocols.Stac/Services/StacItemIdWhereBuilder.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Stac/StacItemIdentifierAuditTests.cs"
+      ],
+      "trailing_failing_tests": [
+        "GetItem ByStringId ReturnsStacItem",
+        "GetItem ByNumericLookingStacId ReturnsStacItemBeforeObjectIdFallback",
+        "GetItem ByStacId PrefersCanonicalStacIdBeyondIdCollisions"
+      ],
+      "matching_failing_tests": [
+        "GetItem ByNumericLookingStacId ReturnsStacItemBeforeObjectIdFallback",
+        "GetItem ByStacId PrefersCanonicalStacIdBeyondIdCollisions",
+        "GetItem ByStringId ReturnsStacItem"
+      ],
+      "comparison_verdict": "confirmed-red",
+      "changed_path_count_before_landing": 5,
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/fbaef1e562f0b49989d8a79b9b72bcecbd7c3560..1c6961b77feed5a2eedd106e4f4ba7851fa7d430"
     },
     {
       "run_id": 37529534544,
@@ -293,7 +819,13 @@
       "trailing_job_url": null,
       "test_step_conclusion": null,
       "verdict": "unresolved",
-      "reason": "PR closed without merging; no merge commit exists."
+      "reason": "PR closed without merging; no merge commit exists.",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37529534544/job/112501919899",
+      "failing_tests": [
+        "SRV INF 003 ApplyEdits WithStructuredPayloadOverGenericLimit ReachesHandler"
+      ],
+      "comparison_verdict": null,
+      "head_comparison_url": null
     },
     {
       "run_id": 37529480270,
@@ -312,7 +844,13 @@
       "trailing_job_url": null,
       "test_step_conclusion": null,
       "verdict": "unresolved",
-      "reason": "PR closed without merging; no merge commit exists."
+      "reason": "PR closed without merging; no merge commit exists.",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37529480270/job/112502726265",
+      "failing_tests": [
+        "SRV INF 003 ApplyEdits WithStructuredPayloadOverGenericLimit ReachesHandler"
+      ],
+      "comparison_verdict": null,
+      "head_comparison_url": null
     },
     {
       "run_id": 37529403102,
@@ -331,7 +869,13 @@
       "trailing_job_url": null,
       "test_step_conclusion": null,
       "verdict": "unresolved",
-      "reason": "PR closed without merging; no merge commit exists."
+      "reason": "PR closed without merging; no merge commit exists.",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37529403102/job/112500005369",
+      "failing_tests": [
+        "KeyPropertiesSoap MatchesRestKeyProperties"
+      ],
+      "comparison_verdict": null,
+      "head_comparison_url": null
     },
     {
       "run_id": 37529226693,
@@ -349,9 +893,26 @@
       "trunk_head_sha": "31617a93b9c6b2934876b1f779d6248f8169465c",
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37620570415/job/112793735473",
       "test_step_conclusion": "failure",
-      "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "failure"
+      "verdict": "confirmed-red",
+      "reason": "The audited PR head was superseded, but the same named failing test(s) remain red in the same shard on the landed revision; no later green is used to classify this red.",
+      "trailing_job_conclusion": "failure",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37529226693/job/112497615482",
+      "failing_tests": [
+        "KeyPropertiesSoap MatchesRestKeyProperties"
+      ],
+      "changed_paths_before_landing": [
+        "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerMetadataHandler.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerSoapParityTests.cs"
+      ],
+      "trailing_failing_tests": [
+        "KeyPropertiesSoap MatchesRestKeyProperties"
+      ],
+      "matching_failing_tests": [
+        "KeyPropertiesSoap MatchesRestKeyProperties"
+      ],
+      "comparison_verdict": "confirmed-red",
+      "changed_path_count_before_landing": 2,
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/239c25a093f1a50a7e965ede74ba31eb61d7d2ee..55e116d2e4044d93b75103cd1636597606d5db8c"
     },
     {
       "run_id": 37527864478,
@@ -370,7 +931,15 @@
       "trailing_job_url": null,
       "test_step_conclusion": null,
       "verdict": "unresolved",
-      "reason": "PR remains open; no merge commit exists."
+      "reason": "PR remains open; no merge commit exists.",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37527864478/job/112492855700",
+      "failing_tests": [
+        "SRV INF 003 ApplyEdits WithStructuredPayloadOverGenericLimit ReachesHandler",
+        "RevokedOrExpiredApiKeyPresentedAsToken RemainsInvalidToken",
+        "WfsCapabilities ApiKeyInTokenParameter ListsWhatXApiKeyLists(keyKind: \"managed\")"
+      ],
+      "comparison_verdict": null,
+      "head_comparison_url": null
     },
     {
       "run_id": 37524875849,
@@ -389,7 +958,12 @@
       "trailing_job_url": null,
       "test_step_conclusion": null,
       "verdict": "unresolved",
-      "reason": "PR closed without merging; no merge commit exists."
+      "reason": "PR closed without merging; no merge commit exists.",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37524875849/job/112486536971",
+      "failing_tests": [],
+      "failure_kind": "shard-test-timeout (no named failing test in the retained log)",
+      "comparison_verdict": null,
+      "head_comparison_url": null
     },
     {
       "run_id": 37511936094,
@@ -408,7 +982,15 @@
       "trailing_job_url": null,
       "test_step_conclusion": null,
       "verdict": "unresolved",
-      "reason": "PR remains open; no merge commit exists."
+      "reason": "PR remains open; no merge commit exists.",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37511936094/job/112436524096",
+      "failing_tests": [
+        "Transaction InsertOnlyGrant IsRefusedOverHttpAndMatchingGrantPersists(action: \"Replace\", matchingGrant: \"update\", summaryElement: \"totalReplaced\")",
+        "Transaction InsertOnlyGrant IsRefusedOverHttpAndMatchingGrantPersists(action: \"Update\", matchingGrant: \"update\", summaryElement: \"totalUpdated\")",
+        "Transaction InsertUpdateReplaceDelete RoundTripsEachState"
+      ],
+      "comparison_verdict": null,
+      "head_comparison_url": null
     },
     {
       "run_id": 37511936094,
@@ -427,7 +1009,16 @@
       "trailing_job_url": null,
       "test_step_conclusion": null,
       "verdict": "unresolved",
-      "reason": "PR remains open; no merge commit exists."
+      "reason": "PR remains open; no merge commit exists.",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37511936094/job/112436524051",
+      "failing_tests": [
+        "Wfs Transaction Replace RoundTripsGmlDescriptionAndIdentifierCodeSpace",
+        "Wfs Transaction WithInsertUpdateAndDelete ReturnsTransactionSummary",
+        "Wfs Transaction Replace ReturnsReplaceSummaryAndUpdatesFeature",
+        "Wfs Transaction UpdateGmlNameXPathReference UpdatesStoredQueryResult"
+      ],
+      "comparison_verdict": null,
+      "head_comparison_url": null
     },
     {
       "run_id": 37511936094,
@@ -446,7 +1037,13 @@
       "trailing_job_url": null,
       "test_step_conclusion": null,
       "verdict": "unresolved",
-      "reason": "PR remains open; no merge commit exists."
+      "reason": "PR remains open; no merge commit exists.",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37511936094/job/112436524074",
+      "failing_tests": [
+        "SRV OGC 015 Delete WithMaskedSnapshotAndMatchingIfMatch Succeeds"
+      ],
+      "comparison_verdict": null,
+      "head_comparison_url": null
     },
     {
       "run_id": 37509225979,
@@ -465,7 +1062,68 @@
       "trailing_job_url": null,
       "test_step_conclusion": null,
       "verdict": "unresolved",
-      "reason": "PR remains open; no merge commit exists."
+      "reason": "PR remains open; no merge commit exists.",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37509225979/job/112426208612",
+      "failing_tests": [
+        "Cancel MissingToken Returns400",
+        "CancelApply UnknownJobId ReturnsUnspecifiedState",
+        "SpecAuthorization RealTransportMatrix MatchesRestAndStopsDeniedCalls",
+        "Apply DuplicateNodeIds Returns400WithoutOpeningStream",
+        "PlanSpec UnknownNumericKind RaisesInvalidArgument",
+        "AdminPolicy AllSupportedCompositions RetainPermissionCeiling",
+        "Plan NullNodesCollection Returns400WithInvalidRequestBody",
+        "PlanSpec Cycle RaisesInvalidArgument",
+        "Plan Cycle Returns400WithDagCycleCode",
+        "ApplySpec WithCommunityLicense RaisesFailedPreconditionBeforeStream",
+        "Validate CanonicalSpecObjectWithOutOfRangeNumber ReturnsParseDiagnostic",
+        "PlanSpec VersionSkew RaisesInvalidArgument",
+        "Artifact UnknownHash Returns404WithArtifactNotFound",
+        "PlanSpec DuplicateNodeId RaisesInvalidArgument",
+        "Validate WithoutSource Returns400WithInvalidRequestBody",
+        "ApplySpec BlankNodeId RaisesInvalidArgumentBeforeStream",
+        "Validate TextSpecWithUnknownOperator ReturnsInvalidWithDiagnostic",
+        "ApplySpec SingleNodeDocument StreamsTerminalEvents",
+        "Apply CommunityEdition RunsDirectlyWithoutGuardrailGate",
+        "ApplySpec UnspecifiedKind RaisesInvalidArgumentBeforeStream",
+        "Apply MalformedJson Returns400WithInvalidRequestBody",
+        "ApplySpec FatalDocumentError RaisesInvalidArgumentBeforeStream",
+        "Apply EnterpriseEdition PassesValidationAndApprovalGates",
+        "PlanSpec BlankNodeId RaisesInvalidArgument",
+        "Plan MissingGrammarVersion Returns400WithVersionSkew",
+        "CancelApply EmptyJobId ReturnsInvalidArgument",
+        "Plan BlankNodeId Returns400WithInvalidNodeId",
+        "PlanSpec SingleNodeDocument ReturnsPlanWithContentHash",
+        "Artifact AfterApply ReturnsStoredBytes",
+        "PlanSpec UnspecifiedKind RaisesInvalidArgument",
+        "Apply WithCommunityLicense ReturnsPaymentRequired",
+        "ApplySpec ApplyToken ExposedInInitialMetadataBeforeStreamCompletes",
+        "Apply MissingProcessFamilyVersion Returns400WithoutOpeningStream",
+        "ApplySpec MissingVersionFields RaisesInvalidArgumentBeforeStream",
+        "Apply ProEditionWithoutEntitlement Returns402",
+        "ApplySpec UnknownNumericKind RaisesInvalidArgumentBeforeStream",
+        "Apply ProEditionWithEntitlement PassesGuardrailGate",
+        "ApplySpec UnknownNumericCacheMode RaisesInvalidArgumentBeforeStream",
+        "Plan LinearChain ReturnsDagWithContentHashesInTopologicalOrder",
+        "Plan MalformedJson Returns400WithInvalidRequestBody",
+        "Plan NodeWithoutKind Returns400WithUnknownKind",
+        "Plan NumericKindOutOfRange Returns400WithUnknownKind",
+        "Apply NumericCacheModeOutOfRange Returns400WithoutOpeningStream",
+        "Apply LinearChain StreamsSseEvents AndSucceeds",
+        "Apply RerunSameDocument YieldsCachedEventsForEveryNode",
+        "Apply BlankNodeId Returns400WithoutOpeningStream",
+        "Apply NumericKindOutOfRange Returns400WithoutOpeningStream",
+        "Plan NullNodeEntry Returns400WithInvalidNodeId",
+        "Cancel UnknownToken Returns404WithApplyTokenUnknown",
+        "Validate TextSpec ReturnsDiagnosticsAndCanonicalJson",
+        "Apply NullNodeEntry Returns400WithoutOpeningStream",
+        "Apply ReservedDatasetKind StreamsFailedWithSpecKindNotInS1",
+        "Apply Cycle Returns400WithoutOpeningStream",
+        "Apply NodeWithoutKind Returns400WithoutOpeningStream",
+        "Validate CanonicalSpecObject RunsSameValidator",
+        "Apply WithoutEventStreamAccept Returns400"
+      ],
+      "comparison_verdict": null,
+      "head_comparison_url": null
     },
     {
       "run_id": 37509225979,
@@ -484,7 +1142,13 @@
       "trailing_job_url": null,
       "test_step_conclusion": null,
       "verdict": "unresolved",
-      "reason": "PR remains open; no merge commit exists."
+      "reason": "PR remains open; no merge commit exists.",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37509225979/job/112426208690",
+      "failing_tests": [
+        "Server5548 UserResourcesAndStructuredPostSearch AreAccepted"
+      ],
+      "comparison_verdict": null,
+      "head_comparison_url": null
     },
     {
       "run_id": 37490646062,
@@ -504,7 +1168,14 @@
       "test_step_conclusion": "success",
       "verdict": "false-red",
       "reason": "Audited head matches the landed PR head; same shard test step success on the first subsequent completed full trunk matrix containing the merge (git ancestry verified).",
-      "trailing_job_conclusion": "success"
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37490646062/job/112362613893",
+      "failing_tests": [
+        "WriteOutlastingTheReservationWindow KeepsIt AndAnotherReplicaReplaysTheResult"
+      ],
+      "changed_paths_before_landing": [],
+      "comparison_verdict": "false-red",
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/87ba84298cfe0782a885182fb70ee1463806b8ef..87ba84298cfe0782a885182fb70ee1463806b8ef"
     },
     {
       "run_id": 37452265576,
@@ -518,12 +1189,29 @@
       "merged_at": "2026-10-07T00:55:49Z",
       "landed_head_sha": "7e8bc2b1e9c6e56078a0d5bea9954d144ef2c88f",
       "merge_sha": "85396fa97078c7b587d6911bcf831e28dc3a7d46",
-      "trunk_run_id": null,
-      "trunk_head_sha": null,
-      "trailing_job_url": null,
-      "test_step_conclusion": null,
+      "trunk_run_id": 37558551002,
+      "trunk_head_sha": "6fe7c4313467366e2845b9599bc99698898d64bb",
+      "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37558551002/job/112600580722",
+      "test_step_conclusion": "success",
       "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head."
+      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head. Production, test or harness inputs changed; a green after those changes is not proof of a false red.",
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37452265576/job/112231601598",
+      "failing_tests": [
+        "GetManifest MultiTenancy ReflectsRuntimeLicenseAndAuthentication",
+        "GetManifest RegistryDerived MatchesHandCuratedComposition"
+      ],
+      "changed_paths_before_landing": [
+        "docs/gis/data/capability-matrix.v1.json",
+        "docs/gis/data/feature-catalog.json",
+        "docs/gis/data/operation-capability.v1.json",
+        "docs/okf/capabilities/discovery.capability-manifest.md",
+        "src/Honua.Server/Features/Capabilities/CapabilityManifestService.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Capabilities/CapabilityManifestEndpointTests.cs"
+      ],
+      "comparison_verdict": "false-red",
+      "changed_path_count_before_landing": 6,
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/3575d7810dc1514d1ab95f1224a79f5f1457a22f..7e8bc2b1e9c6e56078a0d5bea9954d144ef2c88f"
     },
     {
       "run_id": 37441285627,
@@ -543,7 +1231,14 @@
       "test_step_conclusion": "success",
       "verdict": "false-red",
       "reason": "PR head matches merged PR 5541; the same shard's first completed trailing merge-commit run concluded success.",
-      "trailing_job_conclusion": "success"
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37441285627/job/112195680581",
+      "failing_tests": [
+        "WriteOutlastingTheReservationWindow KeepsIt AndAnotherReplicaReplaysTheResult"
+      ],
+      "changed_paths_before_landing": [],
+      "comparison_verdict": "false-red",
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/93df0966a466006b5ddcf8c10e307c7a566e5409..93df0966a466006b5ddcf8c10e307c7a566e5409"
     },
     {
       "run_id": 37437067013,
@@ -562,8 +1257,27 @@
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37574175024/job/112639453104",
       "test_step_conclusion": "success",
       "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "success"
+      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head. Production, test or harness inputs changed; a green after those changes is not proof of a false red.",
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37437067013/job/112181614951",
+      "failing_tests": [
+        "GenerateToken WithPortalTokenAndServerUrl ReturnsServerToken"
+      ],
+      "comparison_verdict": "false-red",
+      "changed_path_count_before_landing": 69,
+      "changed_path_examples_before_landing": [
+        "docs/get-started/first-dataset.md",
+        "docs/get-started/linux-packages.md",
+        "docs/get-started/quickstart.md",
+        "docs/get-started/registry-clients.md",
+        "docs/get-started/windows-packages.md",
+        "docs/gis/data/capability-matrix.v1.json",
+        "docs/gis/data/feature-catalog.json",
+        "docs/gis/data/public-interface-proof.json",
+        "docs/guides/secure/authentication.md",
+        "docs/okf/capabilities/admin.control-plane.md"
+      ],
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/f6974805dda6298b41c6d519878a883641574f32..8275aaabe0dbe5d4ca84b0cadf03b0c22a0d45e3"
     },
     {
       "run_id": 37409340963,
@@ -577,12 +1291,30 @@
       "merged_at": "2026-10-07T00:55:49Z",
       "landed_head_sha": "7e8bc2b1e9c6e56078a0d5bea9954d144ef2c88f",
       "merge_sha": "85396fa97078c7b587d6911bcf831e28dc3a7d46",
-      "trunk_run_id": null,
-      "trunk_head_sha": null,
-      "trailing_job_url": null,
-      "test_step_conclusion": null,
+      "trunk_run_id": 37558551002,
+      "trunk_head_sha": "6fe7c4313467366e2845b9599bc99698898d64bb",
+      "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37558551002/job/112600580722",
+      "test_step_conclusion": "success",
       "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head."
+      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head. Production, test or harness inputs changed; a green after those changes is not proof of a false red.",
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37409340963/job/112094241200",
+      "failing_tests": [
+        "GetManifest MultiTenancy ReflectsRuntimeLicenseAndAuthentication",
+        "GetManifest RegistryDerived MatchesHandCuratedComposition"
+      ],
+      "changed_paths_before_landing": [
+        "docs/gis/data/capability-matrix.v1.json",
+        "docs/gis/data/feature-catalog.json",
+        "docs/gis/data/operation-capability.v1.json",
+        "docs/okf/capabilities/discovery.capability-manifest.md",
+        "src/Honua.Server/Features/Capabilities/CapabilityManifestService.cs",
+        "tests/dotnet/Honua.Ai.Tests/Source/CapabilityRegistryConformanceTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Capabilities/CapabilityManifestEndpointTests.cs"
+      ],
+      "comparison_verdict": "false-red",
+      "changed_path_count_before_landing": 7,
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/cf511184af6234a6cd9e3eb012c1a6de36fc254e..7e8bc2b1e9c6e56078a0d5bea9954d144ef2c88f"
     },
     {
       "run_id": 37403007675,
@@ -601,8 +1333,24 @@
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37425638885/job/112158717149",
       "test_step_conclusion": "success",
       "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "success"
+      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head. Production, test or harness inputs changed; a green after those changes is not proof of a false red.",
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37403007675/job/112074440875",
+      "failing_tests": [
+        "MapServer Export WithPaddedGeographicEnvelope ReturnsRequestedImage(usePost: True, bbox: \"{\\\"xmin\\\":-180.00000000000003,\\\"ymin\\\":-121.2,\\\"xm\"\u00b7\u00b7\u00b7)",
+        "MapServer Export WithPaddedGeographicEnvelope ReturnsRequestedImage(usePost: False, bbox: \"-180.00000000000003,-121.2,181.2,120\")",
+        "MapServer Export WithPaddedGeographicEnvelope ReturnsRequestedImage(usePost: False, bbox: \"{\\\"xmin\\\":-180.00000000000003,\\\"ymin\\\":-121.2,\\\"xm\"\u00b7\u00b7\u00b7)",
+        "MapServer Export WithPaddedGeographicEnvelope ReturnsRequestedImage(usePost: True, bbox: \"-180.00000000000003,-121.2,181.2,120\")"
+      ],
+      "changed_paths_before_landing": [
+        "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Export.cs",
+        "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Metadata.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerEndpointTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerExportEndpointTests.cs"
+      ],
+      "comparison_verdict": "false-red",
+      "changed_path_count_before_landing": 4,
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/5c0217e9da53ef064a6342c81eceacaa0e75bc43..cc68194e47c572019b73a526edabc44ce107fc26"
     },
     {
       "run_id": 37298392860,
@@ -622,7 +1370,20 @@
       "test_step_conclusion": "failure",
       "verdict": "confirmed-red",
       "reason": "Audited head matches the landed PR head; same shard test step failure on the first subsequent completed full trunk matrix containing the merge (git ancestry verified).",
-      "trailing_job_conclusion": "failure"
+      "trailing_job_conclusion": "failure",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37298392860/job/111725329337",
+      "failing_tests": [
+        "Features WithLargeTop UsesStreamingResponse"
+      ],
+      "changed_paths_before_landing": [],
+      "trailing_failing_tests": [
+        "Features WithLargeTop UsesStreamingResponse"
+      ],
+      "matching_failing_tests": [
+        "Features WithLargeTop UsesStreamingResponse"
+      ],
+      "comparison_verdict": "confirmed-red",
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/70755d13331e4cdeebb782d57fc62a8747b625f8..70755d13331e4cdeebb782d57fc62a8747b625f8"
     },
     {
       "run_id": 37269071213,
@@ -641,8 +1402,23 @@
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37498211090/job/112432952814",
       "test_step_conclusion": "success",
       "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "success"
+      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head. Production, test or harness inputs changed; a green after those changes is not proof of a false red.",
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37269071213/job/111632133191",
+      "failing_tests": [
+        "ConcurrentReplayOfOneKeyAcrossNodes CreatesOneJobAndChargesOnce"
+      ],
+      "changed_paths_before_landing": [
+        "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingJobDispatcher.cs",
+        "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingJobService.cs",
+        "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingResultPackageFactory.cs",
+        "src/Honua.Jobs/Features/ControlPlane/ExecutionJobSubmissionHelper.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GeoprocessingJobServiceTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GeoprocessingResultPackageFactoryOutputTests.cs"
+      ],
+      "comparison_verdict": "false-red",
+      "changed_path_count_before_landing": 6,
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/de70fd3885143d66d51c5a1fe76069a165553f8b..ddeb2f803bd6c2b41800a58a2daf04f41b36ac24"
     },
     {
       "run_id": 37266203051,
@@ -661,8 +1437,23 @@
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37498211090/job/112432945222",
       "test_step_conclusion": "success",
       "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "success"
+      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head. Production, test or harness inputs changed; a green after those changes is not proof of a false red.",
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37266203051/job/111624867501",
+      "failing_tests": [],
+      "failure_kind": "shard-test-timeout (no named failing test in the retained log)",
+      "changed_paths_before_landing": [
+        "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingJobDispatcher.cs",
+        "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingJobService.cs",
+        "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingResultPackageFactory.cs",
+        "src/Honua.Jobs/Features/ControlPlane/ExecutionJobSubmissionHelper.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ExternalPostgisSinkExecutorTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GeoprocessingJobServiceTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GeoprocessingResultPackageFactoryOutputTests.cs"
+      ],
+      "comparison_verdict": "false-red",
+      "changed_path_count_before_landing": 7,
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/d2fdcdc9a8cc5784a015a6183571f412a46500a2..ddeb2f803bd6c2b41800a58a2daf04f41b36ac24"
     },
     {
       "run_id": 37266203051,
@@ -681,8 +1472,24 @@
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37498211090/job/112432952814",
       "test_step_conclusion": "success",
       "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "success"
+      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head. Production, test or harness inputs changed; a green after those changes is not proof of a false red.",
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37266203051/job/111624867465",
+      "failing_tests": [
+        "ConcurrentReplayOfOneKeyAcrossNodes CreatesOneJobAndChargesOnce"
+      ],
+      "changed_paths_before_landing": [
+        "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingJobDispatcher.cs",
+        "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingJobService.cs",
+        "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingResultPackageFactory.cs",
+        "src/Honua.Jobs/Features/ControlPlane/ExecutionJobSubmissionHelper.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ExternalPostgisSinkExecutorTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GeoprocessingJobServiceTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GeoprocessingResultPackageFactoryOutputTests.cs"
+      ],
+      "comparison_verdict": "false-red",
+      "changed_path_count_before_landing": 7,
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/d2fdcdc9a8cc5784a015a6183571f412a46500a2..ddeb2f803bd6c2b41800a58a2daf04f41b36ac24"
     },
     {
       "run_id": 37240661117,
@@ -701,8 +1508,26 @@
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37250154366/job/111584922723",
       "test_step_conclusion": "success",
       "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "success"
+      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head. Production, test or harness inputs changed; a green after those changes is not proof of a false red.",
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37240661117/job/111548661477",
+      "failing_tests": [
+        "SiteRoot RedirectsToTheServicesDirectory"
+      ],
+      "changed_paths_before_landing": [
+        "src/Honua.Protocols.GeoServices/Catalog/GeoservicesCatalogEndpoints.cs",
+        "src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs",
+        "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Legacy.cs",
+        "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.LegacyTransaction.cs",
+        "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Transaction.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesSiteRootRedirectTests.cs",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/WfsLegacyEndpointsTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/API/EndpointResponseMetadataTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Errors/LegacyWfsTransactionAdapterTests.cs"
+      ],
+      "comparison_verdict": "false-red",
+      "changed_path_count_before_landing": 9,
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/faa5572e76e4f3f66a79103a6c37d3677a59f26f..8a2e6cb7afcc950d37f62a638fa6bf032c050702"
     },
     {
       "run_id": 37227624946,
@@ -721,7 +1546,12 @@
       "trailing_job_url": null,
       "test_step_conclusion": null,
       "verdict": "unresolved",
-      "reason": "PR remains open; no merge commit exists."
+      "reason": "PR remains open; no merge commit exists.",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37227624946/job/111510630837",
+      "failing_tests": [],
+      "failure_kind": "shard-test-timeout (no named failing test in the retained log)",
+      "comparison_verdict": null,
+      "head_comparison_url": null
     },
     {
       "run_id": 37206830900,
@@ -741,7 +1571,14 @@
       "test_step_conclusion": "success",
       "verdict": "false-red",
       "reason": "PR head matches merged PR 5427; the same shard's first completed trailing merge-commit run concluded success.",
-      "trailing_job_conclusion": "success"
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37206830900/job/111449802687",
+      "failing_tests": [
+        "Identify MultiBandRasterAtProjectedPoint ReturnsEsriValueAndLocationSpatialReference"
+      ],
+      "changed_paths_before_landing": [],
+      "comparison_verdict": "false-red",
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/7b9b966ee328ec7d85368019b1e5b55fd264ad90..7b9b966ee328ec7d85368019b1e5b55fd264ad90"
     },
     {
       "run_id": 37198363885,
@@ -760,7 +1597,14 @@
       "trailing_job_url": null,
       "test_step_conclusion": null,
       "verdict": "unresolved",
-      "reason": "PR remains open; no merge commit exists."
+      "reason": "PR remains open; no merge commit exists.",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37198363885/job/111424909273",
+      "failing_tests": [
+        "RoutingJob TenantBoundDurableOwner DeniesOtherTenantEvenForAdministrator(task: \"GenerateServiceAreas\", output: \"Service_Areas\")",
+        "RoutingJob TenantBoundDurableOwner DeniesOtherTenantEvenForAdministrator(task: \"FindRoutes\", output: \"Output_Routes\")"
+      ],
+      "comparison_verdict": null,
+      "head_comparison_url": null
     },
     {
       "run_id": 37137155631,
@@ -779,8 +1623,27 @@
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37250154366/job/111584922723",
       "test_step_conclusion": "success",
       "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "success"
+      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head. Production, test or harness inputs changed; a green after those changes is not proof of a false red.",
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37137155631/job/111244067408",
+      "failing_tests": [
+        "SiteRoot RedirectsToTheServicesDirectory"
+      ],
+      "comparison_verdict": "false-red",
+      "changed_path_count_before_landing": 333,
+      "changed_path_examples_before_landing": [
+        ".env.docker.example",
+        ".env.example",
+        ".github/ci-shards.json",
+        ".github/review-first-promotion.json",
+        ".github/workflows/claude-review.yml",
+        ".github/workflows/cloud-post-apply-validation-nightly.yml",
+        "AGENTS.md",
+        "Dockerfile",
+        "Honua.sln",
+        "certification/gp-operation-matrix.v1.json"
+      ],
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/fac10641b136a2b35c75adbfa136a5a2596c4c91..8a2e6cb7afcc950d37f62a638fa6bf032c050702"
     },
     {
       "run_id": 37128631809,
@@ -799,8 +1662,27 @@
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37250154366/job/111584922723",
       "test_step_conclusion": "success",
       "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "success"
+      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head. Production, test or harness inputs changed; a green after those changes is not proof of a false red.",
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37128631809/job/111219141347",
+      "failing_tests": [
+        "SiteRoot RedirectsToTheServicesDirectory"
+      ],
+      "comparison_verdict": "false-red",
+      "changed_path_count_before_landing": 340,
+      "changed_path_examples_before_landing": [
+        ".env.docker.example",
+        ".env.example",
+        ".github/ci-shards.json",
+        ".github/review-first-promotion.json",
+        ".github/workflows/claude-review.yml",
+        ".github/workflows/cloud-post-apply-validation-nightly.yml",
+        "AGENTS.md",
+        "Dockerfile",
+        "Honua.sln",
+        "certification/gp-operation-matrix.v1.json"
+      ],
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/cbb0fb435f365c494e74a08a96106ade8c23c9dd..8a2e6cb7afcc950d37f62a638fa6bf032c050702"
     },
     {
       "run_id": 37119824849,
@@ -819,8 +1701,27 @@
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37250154366/job/111584922723",
       "test_step_conclusion": "success",
       "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "success"
+      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head. Production, test or harness inputs changed; a green after those changes is not proof of a false red.",
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37119824849/job/111193883927",
+      "failing_tests": [
+        "SiteRoot RedirectsToTheServicesDirectory"
+      ],
+      "comparison_verdict": "false-red",
+      "changed_path_count_before_landing": 342,
+      "changed_path_examples_before_landing": [
+        ".env.docker.example",
+        ".env.example",
+        ".github/ci-shards.json",
+        ".github/review-first-promotion.json",
+        ".github/workflows/claude-review.yml",
+        ".github/workflows/cloud-post-apply-validation-nightly.yml",
+        "AGENTS.md",
+        "Dockerfile",
+        "Honua.sln",
+        "certification/gp-operation-matrix.v1.json"
+      ],
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/3a3247a144ba4a9119c7843aa187f53a4fe4eb95..8a2e6cb7afcc950d37f62a638fa6bf032c050702"
     },
     {
       "run_id": 37118901241,
@@ -839,8 +1740,27 @@
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37133233495/job/111232502829",
       "test_step_conclusion": "success",
       "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "success"
+      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head. Production, test or harness inputs changed; a green after those changes is not proof of a false red.",
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37118901241/job/111192123842",
+      "failing_tests": [
+        "Retry WithFreshKey ReusesCompletedPackageCheckpoint"
+      ],
+      "changed_paths_before_landing": [
+        ".env.docker.example",
+        ".env.example",
+        "docker-compose.yml",
+        "docs/internal/operator/audit-coverage-matrix.md",
+        "src/Honua.Core/Features/AuditLog/AuditChainKeySnapshot.cs",
+        "src/Honua.Db/Postgres/ServiceCollectionExtensions.cs",
+        "src/Honua.Server/Features/Infrastructure/AuditLog/AuditChainVerificationServiceCollectionExtensions.cs",
+        "src/Honua.Server/Features/Infrastructure/AuditLog/ServiceCollectionExtensions.cs",
+        "tests/dotnet/Honua.Db.Postgres.Tests/Features/AuditLog/PostgresAuditLogChainTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/HealthCheck/AuditChainLinkTests.cs"
+      ],
+      "comparison_verdict": "false-red",
+      "changed_path_count_before_landing": 10,
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/56061d9446f22eaafb7660b301c17c1306f1c37d..7238ad2f63386c5b19d4e708ec6a2ba4af8edde4"
     },
     {
       "run_id": 37118682741,
@@ -854,12 +1774,20 @@
       "merged_at": "2026-10-03T13:25:42Z",
       "landed_head_sha": "99dc6bd4bd80544654ba3f17d05e3c175c45c521",
       "merge_sha": "e86978024846dadb16ecb54130a7fd6707a93bf7",
-      "trunk_run_id": null,
-      "trunk_head_sha": null,
-      "trailing_job_url": null,
-      "test_step_conclusion": null,
-      "verdict": "unresolved",
-      "reason": "No completed same-shard test step on the merge commit or a subsequent full trunk matrix containing it."
+      "trunk_run_id": 37128843002,
+      "trunk_head_sha": "0ad3d71ca96bdf5967878891fc6e79a22bb98083",
+      "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37128843002/job/111227990731",
+      "test_step_conclusion": "success",
+      "verdict": "false-red",
+      "reason": "Audited head matches the landed PR head; same shard test step success on the first subsequent completed full trunk matrix containing the merge (git ancestry verified).",
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37118682741/job/111190669240",
+      "failing_tests": [
+        "Retry WithFreshKey ReusesCompletedPackageCheckpoint"
+      ],
+      "changed_paths_before_landing": [],
+      "comparison_verdict": "false-red",
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/99dc6bd4bd80544654ba3f17d05e3c175c45c521..99dc6bd4bd80544654ba3f17d05e3c175c45c521"
     },
     {
       "run_id": 37117187230,
@@ -873,12 +1801,37 @@
       "merged_at": "2026-10-03T13:25:42Z",
       "landed_head_sha": "99dc6bd4bd80544654ba3f17d05e3c175c45c521",
       "merge_sha": "e86978024846dadb16ecb54130a7fd6707a93bf7",
-      "trunk_run_id": null,
-      "trunk_head_sha": null,
-      "trailing_job_url": null,
-      "test_step_conclusion": null,
-      "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head."
+      "trunk_run_id": 37128843002,
+      "trunk_head_sha": "0ad3d71ca96bdf5967878891fc6e79a22bb98083",
+      "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37128843002/job/111227990731",
+      "test_step_conclusion": "success",
+      "verdict": "false-red",
+      "reason": "Audited head and landed head have identical production, shared harness, routing and CI-runner inputs. Only certification documentation changes. The same shard test step success on the trailing matrix.",
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37117187230/job/111186466988",
+      "failing_tests": [
+        "Retry WithFreshKey ReusesCompletedPackageCheckpoint"
+      ],
+      "changed_paths_before_landing": [
+        "certification/gp-operation-matrix.v1.json",
+        "certification/gp-workspace-owner-audit-20261003.md"
+      ],
+      "equivalent_shard_inputs": {
+        "equal_git_objects": {
+          "src": "925b7df329151c2dda25a19fc0996188f704d213",
+          "tests/dotnet/Honua.TestKit": "71c559c7a7c72448297d32608cd4ed7605f8bd06",
+          ".github/ci-shards.json": "f195223505c73aabf309d6d028a61b364978234b",
+          "scripts/ci": "dfe83d63c81046ca9b323e3e8e18d96c200cb3d0"
+        },
+        "changed_paths": [
+          "certification/gp-operation-matrix.v1.json",
+          "certification/gp-workspace-owner-audit-20261003.md"
+        ],
+        "reason": "Only certification documentation changes."
+      },
+      "comparison_verdict": "false-red",
+      "changed_path_count_before_landing": 2,
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/b955930d85efcb251dbd064693cb5ff4fea03d7e..99dc6bd4bd80544654ba3f17d05e3c175c45c521"
     },
     {
       "run_id": 37113635222,
@@ -897,8 +1850,27 @@
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37250154366/job/111584922723",
       "test_step_conclusion": "success",
       "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "success"
+      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head. Production, test or harness inputs changed; a green after those changes is not proof of a false red.",
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37113635222/job/111176276387",
+      "failing_tests": [
+        "SiteRoot RedirectsToTheServicesDirectory"
+      ],
+      "comparison_verdict": "false-red",
+      "changed_path_count_before_landing": 345,
+      "changed_path_examples_before_landing": [
+        ".env.docker.example",
+        ".env.example",
+        ".github/ci-shards.json",
+        ".github/review-first-promotion.json",
+        ".github/workflows/claude-review.yml",
+        ".github/workflows/cloud-post-apply-validation-nightly.yml",
+        "AGENTS.md",
+        "Dockerfile",
+        "Honua.sln",
+        "certification/gp-operation-matrix.v1.json"
+      ],
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/87ea5df64532f17f179b8cc26bfbe58815402eb3..8a2e6cb7afcc950d37f62a638fa6bf032c050702"
     },
     {
       "run_id": 37108636224,
@@ -916,9 +1888,39 @@
       "trunk_head_sha": "f7679d1ee40097c26dbea6afbbc722bc2d501f92",
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37113952240/job/111186076751",
       "test_step_conclusion": "failure",
-      "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "failure"
+      "verdict": "confirmed-red",
+      "reason": "Audited head and landed head have identical production, shared harness, routing and CI-runner inputs. Only Theory -> UnitTheory attributes on two tests outside this shard; PrintingTools is explicitly excluded and the other test belongs to another project. The same shard test step failure on the trailing matrix.",
+      "trailing_job_conclusion": "failure",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37108636224/job/111162349423",
+      "failing_tests": [
+        "Retry WithFreshKey ReusesCompletedPackageCheckpoint"
+      ],
+      "changed_paths_before_landing": [
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Tiles/TileExportJobExecutorTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/PrintingTools/PrintingToolsRequestHandlerTests.cs"
+      ],
+      "trailing_failing_tests": [
+        "Retry WithFreshKey ReusesCompletedPackageCheckpoint"
+      ],
+      "matching_failing_tests": [
+        "Retry WithFreshKey ReusesCompletedPackageCheckpoint"
+      ],
+      "equivalent_shard_inputs": {
+        "equal_git_objects": {
+          "src": "1be712f9a72528bb11830a37603668fc1c0d9ac8",
+          "tests/dotnet/Honua.TestKit": "71c559c7a7c72448297d32608cd4ed7605f8bd06",
+          ".github/ci-shards.json": "f195223505c73aabf309d6d028a61b364978234b",
+          "scripts/ci": "dfe83d63c81046ca9b323e3e8e18d96c200cb3d0"
+        },
+        "changed_paths": [
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Tiles/TileExportJobExecutorTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/PrintingTools/PrintingToolsRequestHandlerTests.cs"
+        ],
+        "reason": "Only Theory -> UnitTheory attributes on two tests outside this shard; PrintingTools is explicitly excluded and the other test belongs to another project."
+      },
+      "comparison_verdict": "confirmed-red",
+      "changed_path_count_before_landing": 2,
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/39a1104798ed7b083354398a9c946fab9ab96d59..c7a3303b94a8437f21660a1b4eb29235f76f01e6"
     },
     {
       "run_id": 36906053194,
@@ -937,8 +1939,27 @@
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37250154366/job/111584922723",
       "test_step_conclusion": "success",
       "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "success"
+      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head. Production, test or harness inputs changed; a green after those changes is not proof of a false red.",
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/36906053194/job/110517130708",
+      "failing_tests": [
+        "SiteRoot RedirectsToTheServicesDirectory"
+      ],
+      "comparison_verdict": "false-red",
+      "changed_path_count_before_landing": 353,
+      "changed_path_examples_before_landing": [
+        ".env.docker.example",
+        ".env.example",
+        ".github/ci-shards.json",
+        ".github/review-first-promotion.json",
+        ".github/workflows/claude-review.yml",
+        ".github/workflows/cloud-post-apply-validation-nightly.yml",
+        "AGENTS.md",
+        "Dockerfile",
+        "Honua.sln",
+        "certification/gp-operation-matrix.v1.json"
+      ],
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/9fa534b3d7ccf6c2ac9eb081c5bcd2c35daf5399..8a2e6cb7afcc950d37f62a638fa6bf032c050702"
     },
     {
       "run_id": 36860325616,
@@ -957,8 +1978,27 @@
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37250154366/job/111584922723",
       "test_step_conclusion": "success",
       "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "success"
+      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head. Production, test or harness inputs changed; a green after those changes is not proof of a false red.",
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/36860325616/job/110362890661",
+      "failing_tests": [
+        "SiteRoot RedirectsToTheServicesDirectory"
+      ],
+      "comparison_verdict": "false-red",
+      "changed_path_count_before_landing": 356,
+      "changed_path_examples_before_landing": [
+        ".env.docker.example",
+        ".env.example",
+        ".github/ci-shards.json",
+        ".github/review-first-promotion.json",
+        ".github/workflows/claude-review.yml",
+        ".github/workflows/cloud-post-apply-validation-nightly.yml",
+        "AGENTS.md",
+        "Dockerfile",
+        "Honua.sln",
+        "certification/gp-operation-matrix.v1.json"
+      ],
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/664ebffa04fe50221ae3913026b62953be654fe3..8a2e6cb7afcc950d37f62a638fa6bf032c050702"
     },
     {
       "run_id": 36847972910,
@@ -977,8 +2017,27 @@
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37250154366/job/111584922723",
       "test_step_conclusion": "success",
       "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "success"
+      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head. Production, test or harness inputs changed; a green after those changes is not proof of a false red.",
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/36847972910/job/110323386502",
+      "failing_tests": [
+        "SiteRoot RedirectsToTheServicesDirectory"
+      ],
+      "comparison_verdict": "false-red",
+      "changed_path_count_before_landing": 359,
+      "changed_path_examples_before_landing": [
+        ".env.docker.example",
+        ".env.example",
+        ".github/ci-shards.json",
+        ".github/review-first-promotion.json",
+        ".github/workflows/claude-review.yml",
+        ".github/workflows/cloud-post-apply-validation-nightly.yml",
+        "AGENTS.md",
+        "Dockerfile",
+        "Honua.sln",
+        "certification/gp-operation-matrix.v1.json"
+      ],
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/f280abf52487a09dde255fb1fa8999fd2ab75a93..8a2e6cb7afcc950d37f62a638fa6bf032c050702"
     },
     {
       "run_id": 36836127400,
@@ -997,8 +2056,33 @@
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37250154366/job/111584922723",
       "test_step_conclusion": "success",
       "verdict": "unresolved",
-      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head.",
-      "trailing_job_conclusion": "success"
+      "reason": "Audited head was superseded before merge; the trailing result tests a later PR revision and cannot classify this head. Production, test or harness inputs changed; a green after those changes is not proof of a false red.",
+      "trailing_job_conclusion": "success",
+      "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/36836127400/job/110284436104",
+      "failing_tests": [
+        "SiteRoot RedirectsToTheServicesDirectory"
+      ],
+      "comparison_verdict": "false-red",
+      "changed_path_count_before_landing": 362,
+      "changed_path_examples_before_landing": [
+        ".env.docker.example",
+        ".env.example",
+        ".github/ci-shards.json",
+        ".github/review-first-promotion.json",
+        ".github/workflows/claude-review.yml",
+        ".github/workflows/cloud-post-apply-validation-nightly.yml",
+        "AGENTS.md",
+        "Dockerfile",
+        "Honua.sln",
+        "certification/gp-operation-matrix.v1.json"
+      ],
+      "head_comparison_url": "https://github.com/honua-io/honua-server/compare/0293989e5d3e163dcec67ae325a1cb307d2f19b0..8a2e6cb7afcc950d37f62a638fa6bf032c050702"
     }
-  ]
+  ],
+  "reconciled_at": "2026-10-07T19:28:00Z",
+  "counts": {
+    "unresolved": 36,
+    "confirmed-red": 10,
+    "false-red": 5
+  }
 }

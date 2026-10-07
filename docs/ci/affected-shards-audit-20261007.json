@@ -1,0 +1,248 @@
+{
+  "contract": "honua.affected-shards-audit/v1",
+  "from": "2026-09-30T16:45:00+00:00",
+  "to": "2026-10-07T16:45:00+00:00",
+  "minimum_samples": 60,
+  "maximum_false_red_rate": 0.02,
+  "counts": {
+    "catalog_runs": 313,
+    "sample_runs": 206,
+    "distinct_sample_heads": 206,
+    "red_runs": 43,
+    "false_red_runs": 5,
+    "unresolved_red_runs": 31,
+    "unresolved_red_shards": 36,
+    "unavailable_runs": 23,
+    "skipped_runs": 83,
+    "pending_runs": 1
+  },
+  "false_red_rate": null,
+  "false_red_rate_lower_bound": 0.024271844660194174,
+  "false_red_rate_upper_bound": 0.17475728155339806,
+  "sample_shortfall": 0,
+  "gates": {
+    "sample_floor": true,
+    "all_runs_completed": false,
+    "all_reds_reconciled": false,
+    "false_red_rate_below_two_percent": false
+  },
+  "promotion_ready": false,
+  "unresolved": [
+    {
+      "run_id": 37636894444,
+      "head_sha": "97ba4999cc28f839c22caebfb756f3ea192a9c85",
+      "shard": "File and Raster Import",
+      "status": "failed"
+    },
+    {
+      "run_id": 37636894444,
+      "head_sha": "97ba4999cc28f839c22caebfb756f3ea192a9c85",
+      "shard": "Cloud and Streaming Import",
+      "status": "failed"
+    },
+    {
+      "run_id": 37606750322,
+      "head_sha": "84b0ab876a8722df0a75f3c3383b4d9d134dbeb8",
+      "shard": "Server Features Spec Printing and Static Maps",
+      "status": "failed"
+    },
+    {
+      "run_id": 37600897116,
+      "head_sha": "8ef9fe1bfadb3471b6954d2b7c76bc41f82d1f56",
+      "shard": "FeatureServer Tiles and Replica",
+      "status": "failed"
+    },
+    {
+      "run_id": 37579479538,
+      "head_sha": "c1e3d3d05abc64fedfc845c41420999af9512506",
+      "shard": "Core Mutation Concurrency",
+      "status": "failed"
+    },
+    {
+      "run_id": 37568340413,
+      "head_sha": "54baaac0185894e6e9bbf1abf5f5ca43789dfa63",
+      "shard": "Elevation and Terrain Analysis",
+      "status": "failed"
+    },
+    {
+      "run_id": 37534794436,
+      "head_sha": "756aa80f0df0f0b956e60dd600fc1966cca1632f",
+      "shard": "Elevation and Terrain Analysis",
+      "status": "failed"
+    },
+    {
+      "run_id": 37529534544,
+      "head_sha": "10dd52636f05726627116ff35c5b64708876a731",
+      "shard": "Security and Authorization",
+      "status": "failed"
+    },
+    {
+      "run_id": 37529480270,
+      "head_sha": "643dffe1fe0c5ab304f5ed72da46d04b42c64d35",
+      "shard": "Security and Authorization",
+      "status": "failed"
+    },
+    {
+      "run_id": 37529403102,
+      "head_sha": "cf0825fe60d99f424f13ce15822727f16961a1cc",
+      "shard": "GeoServices Catalog and ImageServer Support",
+      "status": "failed"
+    },
+    {
+      "run_id": 37527864478,
+      "head_sha": "b3a1b1bd29f46f65bff3fd1e8b62daed331a0d8b",
+      "shard": "Security and Authorization",
+      "status": "failed"
+    },
+    {
+      "run_id": 37524875849,
+      "head_sha": "3761e4866cc61c3f2c0d318658ac3a3a043669d9",
+      "shard": "FeatureServer Tiles and Replica",
+      "status": "timed_out"
+    },
+    {
+      "run_id": 37511936094,
+      "head_sha": "32c8b8ded829b9802458c107177e839acd7b5d2b",
+      "shard": "WFS",
+      "status": "failed"
+    },
+    {
+      "run_id": 37511936094,
+      "head_sha": "32c8b8ded829b9802458c107177e839acd7b5d2b",
+      "shard": "WFS Endpoints",
+      "status": "failed"
+    },
+    {
+      "run_id": 37511936094,
+      "head_sha": "32c8b8ded829b9802458c107177e839acd7b5d2b",
+      "shard": "Core Mutation Concurrency",
+      "status": "failed"
+    },
+    {
+      "run_id": 37509225979,
+      "head_sha": "1027aabe0a8005eeb3c9c0d5a89dfb868965ec26",
+      "shard": "Server Features Spec Printing and Static Maps",
+      "status": "failed"
+    },
+    {
+      "run_id": 37509225979,
+      "head_sha": "1027aabe0a8005eeb3c9c0d5a89dfb868965ec26",
+      "shard": "Server Features Sharing",
+      "status": "failed"
+    },
+    {
+      "run_id": 37452265576,
+      "head_sha": "3575d7810dc1514d1ab95f1224a79f5f1457a22f",
+      "shard": "Server Features Capabilities",
+      "status": "failed"
+    },
+    {
+      "run_id": 37437067013,
+      "head_sha": "f6974805dda6298b41c6d519878a883641574f32",
+      "shard": "Server Features Sharing",
+      "status": "failed"
+    },
+    {
+      "run_id": 37409340963,
+      "head_sha": "cf511184af6234a6cd9e3eb012c1a6de36fc254e",
+      "shard": "Server Features Capabilities",
+      "status": "failed"
+    },
+    {
+      "run_id": 37403007675,
+      "head_sha": "5c0217e9da53ef064a6342c81eceacaa0e75bc43",
+      "shard": "GeoServices MapServer Export",
+      "status": "failed"
+    },
+    {
+      "run_id": 37269071213,
+      "head_sha": "de70fd3885143d66d51c5a1fe76069a165553f8b",
+      "shard": "Operator Eval Harness",
+      "status": "failed"
+    },
+    {
+      "run_id": 37266203051,
+      "head_sha": "d2fdcdc9a8cc5784a015a6183571f412a46500a2",
+      "shard": "Server Features Streaming Endpoints",
+      "status": "timed_out"
+    },
+    {
+      "run_id": 37266203051,
+      "head_sha": "d2fdcdc9a8cc5784a015a6183571f412a46500a2",
+      "shard": "Operator Eval Harness",
+      "status": "failed"
+    },
+    {
+      "run_id": 37240661117,
+      "head_sha": "faa5572e76e4f3f66a79103a6c37d3677a59f26f",
+      "shard": "Caching File Storage Styling and Infrastructure",
+      "status": "failed"
+    },
+    {
+      "run_id": 37227624946,
+      "head_sha": "652365f099be415bf068269376400c7eb3168ae9",
+      "shard": "GeoServices GPServer and NAServer",
+      "status": "timed_out"
+    },
+    {
+      "run_id": 37198363885,
+      "head_sha": "44648b49e8fb3eb3155febb4c5cd0a819c927d17",
+      "shard": "GeoServices GPServer and NAServer",
+      "status": "failed"
+    },
+    {
+      "run_id": 37137155631,
+      "head_sha": "fac10641b136a2b35c75adbfa136a5a2596c4c91",
+      "shard": "Caching File Storage Styling and Infrastructure",
+      "status": "failed"
+    },
+    {
+      "run_id": 37128631809,
+      "head_sha": "cbb0fb435f365c494e74a08a96106ade8c23c9dd",
+      "shard": "Caching File Storage Styling and Infrastructure",
+      "status": "failed"
+    },
+    {
+      "run_id": 37119824849,
+      "head_sha": "3a3247a144ba4a9119c7843aa187f53a4fe4eb95",
+      "shard": "Caching File Storage Styling and Infrastructure",
+      "status": "failed"
+    },
+    {
+      "run_id": 37118901241,
+      "head_sha": "56061d9446f22eaafb7660b301c17c1306f1c37d",
+      "shard": "Server Features Miscellaneous",
+      "status": "failed"
+    },
+    {
+      "run_id": 37113635222,
+      "head_sha": "87ea5df64532f17f179b8cc26bfbe58815402eb3",
+      "shard": "Caching File Storage Styling and Infrastructure",
+      "status": "failed"
+    },
+    {
+      "run_id": 36906053194,
+      "head_sha": "9fa534b3d7ccf6c2ac9eb081c5bcd2c35daf5399",
+      "shard": "Caching File Storage Styling and Infrastructure",
+      "status": "failed"
+    },
+    {
+      "run_id": 36860325616,
+      "head_sha": "664ebffa04fe50221ae3913026b62953be654fe3",
+      "shard": "Caching File Storage Styling and Infrastructure",
+      "status": "failed"
+    },
+    {
+      "run_id": 36847972910,
+      "head_sha": "f280abf52487a09dde255fb1fa8999fd2ab75a93",
+      "shard": "Caching File Storage Styling and Infrastructure",
+      "status": "failed"
+    },
+    {
+      "run_id": 36836127400,
+      "head_sha": "0293989e5d3e163dcec67ae325a1cb307d2f19b0",
+      "shard": "Caching File Storage Styling and Infrastructure",
+      "status": "failed"
+    }
+  ]
+}
