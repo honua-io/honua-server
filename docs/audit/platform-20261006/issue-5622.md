@@ -21,3 +21,5 @@ The P1 review thread remains unresolved under the packet's stop rule.
 
 Validation: project-scoped `dotnet format --include --verify-no-changes` passed
 for the Postgres project and SQL-test file, each within `timeout 20m`.
+The Release test build passed, including the changed Postgres and test projects;
+the effective-storage publish regression passed both managed/source cases (2/2).
