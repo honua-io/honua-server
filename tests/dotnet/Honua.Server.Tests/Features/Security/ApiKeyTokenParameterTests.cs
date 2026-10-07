@@ -252,8 +252,9 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         var body = await response.Content.ReadAsStringAsync();
 
         // GeoServices reports the rejection as HTTP 200 with error.code 400.
+        // The detail quotes are escaped in the raw JSON (\u0027), so match the decoded detail.
         GeoServicesErrorAssertions.AssertGeoServicesError((int)response.StatusCode, body, [400]);
-        body.Should().Contain("SQL injection attempt detected in query parameter 'where'");
+        ErrorDetails(body).Should().Contain("SQL injection attempt detected in query parameter 'where'");
     }
 
     /// <summary>
@@ -270,13 +271,13 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
             $"{ProtectedQueryPath}?f=json&token={Uri.EscapeDataString("<script>alert(1)</script>")}");
         var xssBody = await xss.Content.ReadAsStringAsync();
         GeoServicesErrorAssertions.AssertGeoServicesError((int)xss.StatusCode, xssBody, [400]);
-        xssBody.Should().Contain("XSS attempt detected in query parameter 'token'");
+        ErrorDetails(xssBody).Should().Contain("XSS attempt detected in query parameter 'token'");
 
         using var control = await client.GetAsync(
             $"{ProtectedQueryPath}?f=json&token={Uri.EscapeDataString("hnua_key\u0001value")}");
         var controlBody = await control.Content.ReadAsStringAsync();
         GeoServicesErrorAssertions.AssertGeoServicesError((int)control.StatusCode, controlBody, [400]);
-        controlBody.Should().Contain("Control characters detected in query parameter 'token'");
+        ErrorDetails(controlBody).Should().Contain("Control characters detected in query parameter 'token'");
     }
 
     /// <summary>
@@ -441,6 +442,22 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         {
             return await client.SendAsync(request);
         }
+    }
+
+    private static IEnumerable<string> ErrorDetails(string body)
+    {
+        using var json = JsonDocument.Parse(body);
+        if (!json.RootElement.TryGetProperty("error", out var error) ||
+            !error.TryGetProperty("details", out var details) ||
+            details.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        return details.EnumerateArray()
+            .Where(item => item.ValueKind == JsonValueKind.String)
+            .Select(item => item.GetString()!)
+            .ToArray();
     }
 
     private static int? ReadErrorCode(string body)
