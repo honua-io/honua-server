@@ -10,7 +10,6 @@ using FluentAssertions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Import.Domain;
-using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
@@ -101,10 +100,8 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
             Fields = _idNamePopulationFields, StorageMode = managed ? "managed" : "source", Enabled = true
         });
         _layerId = layer.LayerId;
-        await using var scope = _fixture.Services.CreateAsyncScope();
-        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
         var expectedConnection = managed ? null : _connectionId.ToString("D");
-        var before = await store.GetCurrentAsync();
+        var before = _fixture.GetCurrentV2GraphSnapshot();
         var binding = before.Graph.StorageBindings.Single(item =>
             item.StorageLayerId == layer.LayerId && item.ConnectionId == expectedConnection);
         var route = $"/api/v1/admin/connections/{_connectionId}/layers";
@@ -112,7 +109,7 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         using var disabled = await _client.PutAsync($"{route}/{layer.LayerId}/enabled?serviceName={_serviceName}",
             JsonContent.Create(new LayerEnabledRequest { Enabled = false }, options: _jsonOptions));
         disabled.StatusCode.Should().Be(HttpStatusCode.OK, await disabled.Content.ReadAsStringAsync());
-        var retired = await store.GetCurrentAsync();
+        var retired = _fixture.GetCurrentV2GraphSnapshot();
         retired.Graph.StorageBindings.Single(item => item.Metadata.Id == binding.Metadata.Id).Status.Lifecycle
             .Should().Be(MetadataV2LifecycleStatus.Retired);
         retired.Graph.Resources.Single(item => item.Metadata.Id == binding.ResourceId).Status.Lifecycle
@@ -123,7 +120,7 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         enabled.StatusCode.Should().Be(HttpStatusCode.OK, await enabled.Content.ReadAsStringAsync());
         using var refreshed = await _client.PostAsync($"{route}/extents/refresh?serviceName={_serviceName}", null);
         refreshed.StatusCode.Should().Be(HttpStatusCode.OK, await refreshed.Content.ReadAsStringAsync());
-        var active = await store.GetCurrentAsync();
+        var active = _fixture.GetCurrentV2GraphSnapshot();
         active.Graph.StorageBindings.Single(item => item.Metadata.Id == binding.Metadata.Id).ConnectionId.Should().Be(expectedConnection);
         active.Graph.Resources.Single(item => item.Metadata.Id == binding.ResourceId).Status.Lifecycle
             .Should().Be(MetadataV2LifecycleStatus.Active);
