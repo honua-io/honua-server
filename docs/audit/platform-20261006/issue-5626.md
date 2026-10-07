@@ -88,3 +88,12 @@ format run also passed under `timeout 20m`.
 - Related publication, replacement, reconciliation, fidelity, catalog, failure-message and editing-identity tests passed: 55/55 with no skips, using the final Release assemblies (`dotnet test ... --no-build --no-restore --configuration Release`). This includes all seven publication-service tests.
 
 - Shared fidelity evaluator and migration safety classifier suites passed: 85/85 with no skips. Command: `NUGET_HTTP_CACHE_PATH=/tmp/pr5664-nuget-http-cache dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj --configuration Release -p:BuildProjectReferences=false --filter "FullyQualifiedName~MigrationFidelityEvaluatorTests|FullyQualifiedName~MigrationSafetyClassifierTests"`. The writable cache resolved the host's read-only default cache; package auditing stayed enabled. Final test-helper scoped whitespace verification also passed under `timeout 20m`.
+
+Final ordinary attachment-store regression verification passed: 23/23 with no skips, using
+`dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --no-restore
+--configuration Release -p:BuildProjectReferences=false --filter
+FullyQualifiedName~PostgresAttachmentStoreTests`. Its application/TestKit and four additional
+test dependencies compiled successfully before the test project. All 180 focused cases passed
+(17 attachment imports, 55 related import/publication cases, 85 shared fidelity/migration safety
+cases, 23 ordinary store cases). Existing test assertions were retained. All changed C# projects
+passed scoped formatting with `--include` and `timeout 20m`; `git diff --check` passed.
