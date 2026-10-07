@@ -18,7 +18,7 @@ Search and browse spatiotemporal asset catalogs through the STAC API.
 | Edition | Community |
 | Surface maturity | 12 implemented |
 | Registry entries | 12 |
-| Proving tests | 141 |
+| Proving tests | 143 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
