@@ -195,7 +195,7 @@ def summarize(value, adjudications):
                    "red_runs": len(reds), "false_red_runs": len(false_reds),
                    "unresolved_red_runs": len(unresolved_runs), "unresolved_red_shards": len(unresolved),
                    "unavailable_runs": len(unavailable), "skipped_runs": len(skipped), "pending_runs": len(pending)},
-        "false_red_rate": rate if not unresolved else None,
+        "false_red_rate": rate if not unresolved else None, "false_red_rate_lower_bound": rate,
         "false_red_rate_upper_bound": maximum, "sample_shortfall": max(0, MINIMUM_SAMPLES - count),
         "gates": gates, "promotion_ready": all(gates.values()), "unresolved": unresolved,
     }

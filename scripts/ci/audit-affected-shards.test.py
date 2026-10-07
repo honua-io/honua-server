@@ -61,6 +61,7 @@ class AuditTests(unittest.TestCase):
         runs[0] = run(1, [red()])
         result = audit.summarize(window(runs), [])
         self.assertIsNone(result["false_red_rate"])
+        self.assertEqual(result["false_red_rate_lower_bound"], 0)
         self.assertEqual(result["counts"]["unresolved_red_shards"], 1)
         self.assertFalse(result["promotion_ready"])
         self.assertTrue(audit.summarize(window(runs), [decision(1)])["promotion_ready"])

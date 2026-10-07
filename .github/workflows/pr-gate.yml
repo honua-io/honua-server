@@ -721,7 +721,8 @@ jobs:
   #   not prove a shard passed, and unreconciled reds block promotion. See
   #   docs/ci/affected-shards-promotion.md for collection and reconciliation.
   #   The impact-routing ledger's docs-only/native-image cohorts do not measure
-  #   this lane's false-red rate. Promotion is then TWO audited changes: flip AFFECTED_SHARDS_MODE
+  #   this lane's false-red rate. Promotion is then TWO audited changes: flip
+  #   AFFECTED_SHARDS_MODE
   #   to `enforce` here, and add `PR Gate / Affected shards` to branch
   #   protection. Rollback is the inverse one-line flip. Below 2% is the bar
   #   because this lane costs a bounded fan-out on every product-code PR;

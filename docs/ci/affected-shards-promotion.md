@@ -37,7 +37,7 @@ never partial passing measurements. The complete replay file is the audit's
 source of truth; individual run files are diagnostic checkpoints.
 
 Executed samples are runs with a green shard annotation or at least one red
-shard annotation. Skipped selections, unavailable receipts, failed aggregates,
+shard annotation. Skipped selections, unavailable receipts, aggregates without a shard verdict,
 and unfinished runs are reported separately and do not inflate the floor.
 The denominator is executed **runs**, matching the workflow's promotion rule;
 the number of distinct heads is also reported. Reruns use only the catalog's
@@ -78,7 +78,8 @@ python3 scripts/ci/audit-affected-shards.py \
 ```
 
 Exit status 0 means the measurement satisfies the sample and false-red gates;
-1 means observe more. Unknown reds leave `false_red_rate` null. The upper bound
+1 means observe more. Unknown reds leave `false_red_rate` null. The lower bound
+counts only reconciled false reds. The upper bound
 treats every unresolved red run as false, once per run. This does not classify
 unknown reds. It makes the uncertainty explicit.
 
@@ -96,3 +97,56 @@ runs, paged catalogs and annotations, current attempts, unavailable evidence,
 the 60-sample boundary, the strict 2% boundary, and invalid reconciliations.
 It also runs in `validate-ci-router.sh`. The existing selector/verdict fixture
 remains `python3 scripts/ci/fixtures/validate-affected-shards.py`.
+
+## Measurement on 2026-10-07
+
+The complete window is **2026-09-30 16:45:00 UTC through 2026-10-07 16:45:00
+UTC**, exclusive at the end. The audit collected 313 PR Gate runs:
+
+| Measurement | Result |
+|---|---:|
+| Executed samples / distinct heads | 206 / 206 |
+| Required sample floor / shortfall | 60 / 0 (146 above the floor) |
+| Green runs | 163 |
+| Red runs / red shard verdicts | 43 / 51 |
+| Reconciled false-red runs | 2 |
+| Reconciled confirmed-red runs | 1 (two STAC shards) |
+| Unresolved red runs / shard verdicts | 40 / 47 |
+| Unavailable / skipped / unfinished runs | 23 / 83 / 1 |
+| False-red rate lower / upper bound | 0.97% / 20.39% |
+
+**Decision: keep `report`.** The sample floor passes, but 47 shard verdicts
+still lack a merge-commit reconciliation. The measured range cannot establish
+the required rate **below 2%**. At this denominator, at most four false-red
+runs are allowed; two are already reconciled. Do not describe the upper bound
+as a measured false-red rate. Branch protection stays unchanged.
+
+The [retained observations](affected-shards-observations-20261007.json) include
+only protocol verdict annotations and run identities. The
+[four reconciliations](affected-shards-adjudications-20261007.json) link the
+same-shard trailing jobs for the exact merge commits. Reproduce the decision:
+
+```bash
+python3 scripts/ci/audit-affected-shards.py \
+  --observations docs/ci/affected-shards-observations-20261007.json \
+  --adjudications docs/ci/affected-shards-adjudications-20261007.json \
+  --output /tmp/affected-shards-audit.json
+# Expected exit status: 1 (promotion not ready).
+```
+
+For context, [routing ledger run 37516501121](https://github.com/honua-io/honua-server/actions/runs/37516501121)
+reports 58 native heads, zero docs-only heads, zero integrity failures, and
+2 missing receipts of 404 owed (0.50%, below its 5% budget). Replaying its
+discovery catalogs reproduces all 402 indexed receipts. Replaying eight
+retained daily ledgers gives **8 / 7 consecutive integrity/loss-green days**
+with worst loss 2.52%; the published trend reported only 1 / 7. The latest
+routing cohort still fails its docs-only floor by 20 heads, its serving savings
+cohort by three heads, and its worker reuse cohort by two heads (worker
+avoidance is zero of three). Its native floor is 20, which passes. These
+image-routing results do not resolve the affected-shard false-red gate.
+
+A full historical receipt replay on 2026-10-07 can download 376 of those 402
+archives; the other 26 have expired under their seven-day retention. The
+remaining archives reproduce 56 native heads and the same savings shortfalls,
+but cannot reproduce the original zero-integrity result without the expired
+bytes. Archive expiry after the original audit is not a new emission failure.
