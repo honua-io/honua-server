@@ -215,12 +215,14 @@ internal static partial class GeoServicesGeometryConverter
     }
 
     /// <summary>
-    /// Converts GeoServices geometry to WKB.
+    /// Converts GeoServices geometry to WKB. True curves are densified with
+    /// <paramref name="maxCurveVertices"/>, or <see cref="DefaultMaxCurveVertices"/> when that
+    /// argument is null. Values above <see cref="AbsoluteMaxCurveVertices"/> are clamped to that
+    /// supported maximum.
     /// </summary>
-    /// <param name="maxCurveVertices">
-    /// Vertex budget for true-curve densification. Null uses <see cref="DefaultMaxCurveVertices"/>.
-    /// Values above <see cref="AbsoluteMaxCurveVertices"/> are clamped to that supported maximum.
-    /// </param>
+    /// <param name="geometry">GeoServices geometry to convert.</param>
+    /// <param name="srid">Optional SRID written into the WKB. Falls back to the geometry spatial reference.</param>
+    /// <param name="maxCurveVertices">Vertex budget for true-curve densification.</param>
     public static byte[] ConvertGeoServicesGeometryToWkb(
         GeoServicesGeometry geometry,
         int? srid = null,

@@ -52,6 +52,9 @@ internal static class GPServerEsriInputTranslation
     /// </param>
     /// <param name="featureCollectionParameters">Catalog parameters consuming complete FeatureCollections.</param>
     /// <param name="includeDerivedSrid">Whether the process declares a canonical srid parameter.</param>
+    /// <param name="maxCurveVertices">
+    /// True-curve densification budget. Null uses the converter default.
+    /// </param>
     public static EsriInputTranslationResult Translate(
         IReadOnlyDictionary<string, string> inputs,
         IReadOnlySet<string>? featureCollectionParameters = null,
