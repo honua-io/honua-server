@@ -788,7 +788,7 @@ internal sealed partial class Wfs20Handler
             changes.GeometrySpecified ? changes.Geometry : existing.Geometry,
             mergedAttributes.ToImmutable(),
             cancellationToken).ConfigureAwait(false);
-        return updated with { ReadStateToken = existing.ReadStateToken };
+        return updated with { ReadStateToken = FeatureStateToken.FromReadSnapshot(existing) };
     }
 
 
