@@ -106,10 +106,12 @@ internal static class LayerPublishingEndpoints
     {
         try
         {
-            var connectionString = await ResolveConnectionStringAsync(id, resolver, context.RequestAborted);
+            var connectionId = await ResolveConnectionIdAsync(id, context).ConfigureAwait(false);
+            var connectionString = await resolver.ResolveConnectionStringAsync(connectionId, context.RequestAborted);
             var layers = await publishingService.ListPublishedLayersAsync(
                 connectionString,
                 serviceName ?? "default",
+                connectionId,
                 context.RequestAborted);
 
             return TypedResults.Ok(ApiResponse<IReadOnlyList<PublishedLayerSummary>>.CreateSuccess(layers));
@@ -348,7 +350,8 @@ internal static class LayerPublishingEndpoints
 
         try
         {
-            var connectionString = await ResolveConnectionStringAsync(id, resolver, context.RequestAborted);
+            var connectionId = await ResolveConnectionIdAsync(id, context).ConfigureAwait(false);
+            var connectionString = await resolver.ResolveConnectionStringAsync(connectionId, context.RequestAborted);
             var validationRequest = new TablePublishValidationRequest
             {
                 Schema = request.Schema,
@@ -421,7 +424,8 @@ internal static class LayerPublishingEndpoints
 
         try
         {
-            var connectionString = await ResolveConnectionStringAsync(id, resolver, context.RequestAborted);
+            var connectionId = await ResolveConnectionIdAsync(id, context).ConfigureAwait(false);
+            var connectionString = await resolver.ResolveConnectionStringAsync(connectionId, context.RequestAborted);
             var migrationResult = await migrationRunner.RunMigrationsAsync(
                 connectionString,
                 typeof(Program).Assembly,
@@ -439,6 +443,7 @@ internal static class LayerPublishingEndpoints
             var result = await publishingService.RefreshLayerExtentsAsync(
                 connectionString,
                 serviceName ?? "default",
+                connectionId,
                 context.RequestAborted);
 
             if (result == null)
@@ -507,7 +512,8 @@ internal static class LayerPublishingEndpoints
 
         try
         {
-            var connectionString = await ResolveConnectionStringAsync(id, resolver, context.RequestAborted);
+            var connectionId = await ResolveConnectionIdAsync(id, context).ConfigureAwait(false);
+            var connectionString = await resolver.ResolveConnectionStringAsync(connectionId, context.RequestAborted);
             var migrationResult = await migrationRunner.RunMigrationsAsync(
                 connectionString,
                 typeof(Program).Assembly,
@@ -525,6 +531,7 @@ internal static class LayerPublishingEndpoints
             var result = await publishingService.RefreshMaterializedFeaturesAsync(
                 connectionString,
                 layerId,
+                connectionId,
                 context.RequestAborted);
 
             if (result == null)
@@ -584,7 +591,8 @@ internal static class LayerPublishingEndpoints
     {
         try
         {
-            var connectionString = await ResolveConnectionStringAsync(id, resolver, context.RequestAborted);
+            var connectionId = await ResolveConnectionIdAsync(id, context).ConfigureAwait(false);
+            var connectionString = await resolver.ResolveConnectionStringAsync(connectionId, context.RequestAborted);
             var migrationResult = await migrationRunner.RunMigrationsAsync(
                 connectionString,
                 typeof(Program).Assembly,
@@ -601,6 +609,7 @@ internal static class LayerPublishingEndpoints
                 layerId,
                 serviceName ?? "default",
                 request.Enabled,
+                connectionId,
                 context.RequestAborted);
 
             if (result == null)
@@ -662,7 +671,8 @@ internal static class LayerPublishingEndpoints
     {
         try
         {
-            var connectionString = await ResolveConnectionStringAsync(id, resolver, context.RequestAborted);
+            var connectionId = await ResolveConnectionIdAsync(id, context).ConfigureAwait(false);
+            var connectionString = await resolver.ResolveConnectionStringAsync(connectionId, context.RequestAborted);
             var migrationResult = await migrationRunner.RunMigrationsAsync(
                 connectionString,
                 typeof(Program).Assembly,
@@ -678,6 +688,7 @@ internal static class LayerPublishingEndpoints
                 connectionString,
                 serviceName ?? "default",
                 request.Enabled,
+                connectionId,
                 context.RequestAborted);
 
             var cacheServiceName = !string.IsNullOrWhiteSpace(serviceName)
@@ -722,19 +733,6 @@ internal static class LayerPublishingEndpoints
         {
             return TypedResults.Forbid();
         }
-    }
-
-    private static async Task<string> ResolveConnectionStringAsync(
-        string id,
-        ISecureConnectionResolver resolver,
-        CancellationToken cancellationToken)
-    {
-        if (Guid.TryParse(id, out var connectionId))
-        {
-            return await resolver.ResolveConnectionStringAsync(connectionId, cancellationToken);
-        }
-
-        return await resolver.ResolveConnectionStringAsync(id, cancellationToken);
     }
 
     private static async Task<Guid> ResolveConnectionIdAsync(string id, HttpContext context)

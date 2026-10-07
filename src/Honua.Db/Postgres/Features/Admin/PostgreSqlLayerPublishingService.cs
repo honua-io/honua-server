@@ -97,15 +97,22 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     private readonly Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider? _featureStoreConnections =
         featureStoreConnections;
 
+    public Task<IReadOnlyList<PublishedLayerSummary>> ListPublishedLayersAsync(
+        string connectionString,
+        string serviceName,
+        CancellationToken cancellationToken = default)
+        => ListPublishedLayersAsync(connectionString, serviceName, null, cancellationToken);
+
     public async Task<IReadOnlyList<PublishedLayerSummary>> ListPublishedLayersAsync(
         string connectionString,
         string serviceName,
+        Guid? connectionId,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
         var normalizedService = NormalizeServiceName(serviceName);
-        await ValidateTenantAccessAsync(normalizedService, null, cancellationToken).ConfigureAwait(false);
+        await ValidateTenantAccessAsync(normalizedService, null, null, cancellationToken).ConfigureAwait(false);
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -116,7 +123,10 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 cancellationToken)
             .ConfigureAwait(false);
 
-        return await HydrateSourceGovernanceAsync(layers, normalizedService, cancellationToken).ConfigureAwait(false);
+        var storageScope = await ResolveLayerStorageScopeAsync(connection, null,
+            layers.Select(layer => layer.LayerId).ToHashSet(), connectionId, cancellationToken).ConfigureAwait(false);
+        await ValidateTenantAccessAsync(normalizedService, layers.Select(layer => layer.LayerId).ToHashSet(), storageScope, cancellationToken).ConfigureAwait(false);
+        return await HydrateSourceGovernanceAsync(layers, normalizedService, storageScope, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<List<PublishedLayerSummary>> ReadPublishedLayersAsync(
@@ -523,11 +533,20 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         };
     }
 
+    public Task<PublishedLayerSummary?> LinkExistingLayerToServiceAsync(
+        string connectionString,
+        int layerId,
+        string serviceName,
+        bool enabled,
+        CancellationToken cancellationToken = default)
+        => LinkExistingLayerToServiceAsync(connectionString, layerId, serviceName, enabled, null, cancellationToken);
+
     public async Task<PublishedLayerSummary?> LinkExistingLayerToServiceAsync(
         string connectionString,
         int layerId,
         string serviceName,
         bool enabled,
+        Guid? connectionId,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
@@ -537,7 +556,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
 
         var normalizedService = NormalizeServiceName(serviceName);
-        await ValidateTenantAccessAsync(normalizedService, null, cancellationToken).ConfigureAwait(false);
+        await ValidateTenantAccessAsync(normalizedService, null, null, cancellationToken).ConfigureAwait(false);
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -546,8 +565,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
             .ConfigureAwait(false);
 
+        var storageScope = await ResolveLayerStorageScopeAsync(connection, transaction,
+            new HashSet<int> { layerId }, connectionId, cancellationToken).ConfigureAwait(false);
+        await ValidateTenantAccessAsync(normalizedService, new HashSet<int> { layerId }, storageScope, cancellationToken).ConfigureAwait(false);
+
         var (linkGraph, _) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
-        ValidateLegacyLinkScope(linkGraph, normalizedService, layerId);
+        ValidateLegacyLinkScope(linkGraph, normalizedService, layerId, storageScope);
 
         var layer = await GetLayerSummaryByIdAsync(connection, transaction, layerId, cancellationToken)
             .ConfigureAwait(false);
@@ -576,12 +599,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 metadataMutation = await UpsertLinkedLayerMetadataV2Async(
                         normalizedService,
                         linkedLayer,
-                        cancellationToken)
+                        storageScope, cancellationToken)
                     .ConfigureAwait(false);
                 linkedLayer = HydrateSourceGovernance(
                     linkedLayer,
                     metadataMutation.PersistedGraph,
-                    normalizedService);
+                    normalizedService, storageScope);
             }
 
             await FeatureDataAccess.CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
@@ -725,11 +748,20 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             nonSpatialRowCount);
     }
 
+    public Task<PublishedLayerSummary?> SetLayerEnabledAsync(
+        string connectionString,
+        int layerId,
+        string serviceName,
+        bool enabled,
+        CancellationToken cancellationToken = default)
+        => SetLayerEnabledAsync(connectionString, layerId, serviceName, enabled, null, cancellationToken);
+
     public async Task<PublishedLayerSummary?> SetLayerEnabledAsync(
         string connectionString,
         int layerId,
         string serviceName,
         bool enabled,
+        Guid? connectionId,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
@@ -739,7 +771,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
 
         var normalizedService = NormalizeServiceName(serviceName);
-        await ValidateTenantAccessAsync(normalizedService, null, cancellationToken).ConfigureAwait(false);
+        await ValidateTenantAccessAsync(normalizedService, null, null, cancellationToken).ConfigureAwait(false);
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -747,6 +779,10 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         var transactionId = await PostgresTransactionOutcomeObserver
             .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
             .ConfigureAwait(false);
+
+        var storageScope = await ResolveLayerStorageScopeAsync(connection, transaction,
+            new HashSet<int> { layerId }, connectionId, cancellationToken).ConfigureAwait(false);
+        await ValidateTenantAccessAsync(normalizedService, new HashSet<int> { layerId }, storageScope, cancellationToken).ConfigureAwait(false);
 
         var layer = await GetLayerSummaryAsync(connection, transaction, layerId, normalizedService, cancellationToken);
         if (layer == null)
@@ -756,11 +792,11 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         // Resolve response-only governance before changing transactional state. A graph read failure
         // must not turn a successfully committed enablement change into an apparent request failure.
-        var hydratedLayers = await HydrateSourceGovernanceAsync([layer], normalizedService, cancellationToken)
+        var hydratedLayers = await HydrateSourceGovernanceAsync([layer], normalizedService, storageScope, cancellationToken)
             .ConfigureAwait(false);
         layer = hydratedLayers[0];
 
-        await ValidateTenantAccessAsync(normalizedService, new HashSet<int> { layerId }, cancellationToken).ConfigureAwait(false);
+        await ValidateTenantAccessAsync(normalizedService, new HashSet<int> { layerId }, storageScope, cancellationToken).ConfigureAwait(false);
         await SetLayerEnabledCoreAsync(connection, transaction, layerId, enabled, cancellationToken)
             .ConfigureAwait(false);
         layer = CloneWithEnabled(layer, enabled);
@@ -769,7 +805,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         var metadataMutation = await UpdateLayerLifecycleMetadataV2Async(
                 [layerId],
                 enabled,
-                cancellationToken)
+                storageScope, cancellationToken)
             .ConfigureAwait(false);
         await CommitLayerLifecycleTransactionAsync(
                 transaction,
@@ -781,16 +817,24 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         return layer;
     }
 
+    public Task<IReadOnlyList<PublishedLayerSummary>> SetServiceLayersEnabledAsync(
+        string connectionString,
+        string serviceName,
+        bool enabled,
+        CancellationToken cancellationToken = default)
+        => SetServiceLayersEnabledAsync(connectionString, serviceName, enabled, null, cancellationToken);
+
     public async Task<IReadOnlyList<PublishedLayerSummary>> SetServiceLayersEnabledAsync(
         string connectionString,
         string serviceName,
         bool enabled,
+        Guid? connectionId,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
         var normalizedService = NormalizeServiceName(serviceName);
-        await ValidateTenantAccessAsync(normalizedService, null, cancellationToken).ConfigureAwait(false);
+        await ValidateTenantAccessAsync(normalizedService, null, null, cancellationToken).ConfigureAwait(false);
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -805,7 +849,10 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 cancellationToken)
             .ConfigureAwait(false);
 
-        await ValidateTenantAccessAsync(normalizedService, layerIds.ToHashSet(), cancellationToken).ConfigureAwait(false);
+        var storageScope = await ResolveLayerStorageScopeAsync(connection, transaction,
+            layerIds.ToHashSet(), connectionId, cancellationToken).ConfigureAwait(false);
+
+        await ValidateTenantAccessAsync(normalizedService, layerIds.ToHashSet(), storageScope, cancellationToken).ConfigureAwait(false);
 
         const string updateSql = """
             UPDATE honua.layers
@@ -829,12 +876,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 normalizedService,
                 cancellationToken)
             .ConfigureAwait(false);
-        var hydratedLayers = await HydrateSourceGovernanceAsync(layers, normalizedService, cancellationToken)
+        var hydratedLayers = await HydrateSourceGovernanceAsync(layers, normalizedService, storageScope, cancellationToken)
             .ConfigureAwait(false);
         var metadataMutation = await UpdateLayerLifecycleMetadataV2Async(
                 layerIds.ToHashSet(),
                 enabled,
-                cancellationToken)
+                storageScope, cancellationToken)
             .ConfigureAwait(false);
         await CommitLayerLifecycleTransactionAsync(
                 transaction,
@@ -880,15 +927,22 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
     }
 
+    public Task<LayerExtentRefreshResult?> RefreshLayerExtentsAsync(
+        string connectionString,
+        string serviceName,
+        CancellationToken cancellationToken = default)
+        => RefreshLayerExtentsAsync(connectionString, serviceName, null, cancellationToken);
+
     public async Task<LayerExtentRefreshResult?> RefreshLayerExtentsAsync(
         string connectionString,
         string serviceName,
+        Guid? connectionId,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
         var normalizedService = NormalizeServiceName(serviceName);
-        await ValidateTenantAccessAsync(normalizedService, null, cancellationToken).ConfigureAwait(false);
+        await ValidateTenantAccessAsync(normalizedService, null, null, cancellationToken).ConfigureAwait(false);
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -907,7 +961,10 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 cancellationToken)
             .ConfigureAwait(false);
 
-        await ValidateTenantAccessAsync(normalizedService, layerIds.ToHashSet(), cancellationToken).ConfigureAwait(false);
+        var storageScope = await ResolveLayerStorageScopeAsync(connection, transaction,
+            layerIds.ToHashSet(), connectionId, cancellationToken).ConfigureAwait(false);
+
+        await ValidateTenantAccessAsync(normalizedService, layerIds.ToHashSet(), storageScope, cancellationToken).ConfigureAwait(false);
 
         var layers = new List<LayerExtentRefreshLayerResult>(layerIds.Count);
         var refreshedExtents = new Dictionary<int, LayerExtentInsert?>(layerIds.Count);
@@ -929,14 +986,14 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken)
             .ConfigureAwait(false);
-        await ValidateTenantAccessAsync(normalizedService, layerIds.ToHashSet(), cancellationToken).ConfigureAwait(false);
+        await ValidateTenantAccessAsync(normalizedService, layerIds.ToHashSet(), storageScope, cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
         // Mirror the recomputed extents into the canonical Metadata v2 graph so the
         // FeatureServer / OGC API Features / OData metadata endpoints (which read
         // resource.Spatial.Bbox from the V2 snapshot) receive bounds in each resource CRS.
         // The legacy honua.layers cache remains in WGS84.
-        await SyncRefreshedExtentsIntoV2GraphAsync(refreshedExtents, cancellationToken).ConfigureAwait(false);
+        await SyncRefreshedExtentsIntoV2GraphAsync(refreshedExtents, storageScope, cancellationToken).ConfigureAwait(false);
 
         var layersWithExtent = layers.Count(layer => layer.HasExtent);
         return new LayerExtentRefreshResult

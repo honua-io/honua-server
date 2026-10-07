@@ -22,6 +22,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {
+    private const int MaxFixedBoundaryCount = 1000;
     private static async Task<IResult> HandleQueryBinsGet(
         string serviceId,
         int layerId,
@@ -424,9 +425,21 @@ internal static partial class FeatureServerEndpoints
         var boundaries = ImmutableArray.CreateBuilder<double>();
         foreach (var item in boundariesEl.EnumerateArray())
         {
-            if (!item.TryGetDouble(out var val))
+            if (!item.TryGetDouble(out var val) || !double.IsFinite(val))
             {
-                error = "fixedBoundariesBin.boundaries must contain numeric values.";
+                error = "fixedBoundariesBin.boundaries must contain finite numeric values.";
+                return false;
+            }
+
+            if (boundaries.Count == MaxFixedBoundaryCount)
+            {
+                error = $"fixedBoundariesBin.boundaries cannot contain more than {MaxFixedBoundaryCount} values.";
+                return false;
+            }
+
+            if (boundaries.Count > 0 && val <= boundaries[^1])
+            {
+                error = "fixedBoundariesBin.boundaries must be strictly increasing.";
                 return false;
             }
 

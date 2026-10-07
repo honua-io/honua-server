@@ -18,6 +18,7 @@ namespace Honua.Protocols.Ogc.Api.Records;
 [JsonSerializable(typeof(OgcRecordCollection))]
 [JsonSerializable(typeof(OgcRecordFeatureCollection))]
 [JsonSerializable(typeof(OgcRecordFeature))]
+[JsonSerializable(typeof(OgcRecordGeometry))]
 [JsonSerializable(typeof(OgcRecordProperties))]
 [JsonSerializable(typeof(Link))]
 [JsonSerializable(typeof(ImmutableArray<Link>))]

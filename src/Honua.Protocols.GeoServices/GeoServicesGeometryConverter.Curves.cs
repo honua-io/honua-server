@@ -26,7 +26,7 @@ internal static partial class GeoServicesGeometryConverter
     /// Thrown when a segment object uses an unsupported key or is malformed.
     /// </exception>
     public static GeoServicesGeometry DensifyCurves(GeoServicesGeometry geometry)
-        => DensifyCurves(geometry, int.MaxValue);
+        => DensifyCurves(geometry, DefaultMaxCurveVertices);
 
     /// <summary>Densifies true curves with one output budget shared by every part.</summary>
     public static GeoServicesGeometry DensifyCurves(GeoServicesGeometry geometry, int maxVertices, CancellationToken cancellationToken = default)

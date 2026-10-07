@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Core.Features.Metadata.Caching;
 
@@ -23,6 +24,7 @@ public sealed class CachingMetadataV2GraphProvider : IMetadataV2GraphProvider
     private readonly IMetadataV2GraphProvider _inner;
     private readonly MetadataV2GraphSnapshotCache _cache;
     private readonly string _environment;
+    private readonly Func<CancellationToken, ValueTask<MetadataV2GraphSnapshot>> _loadCurrent;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CachingMetadataV2GraphProvider"/> class.
@@ -40,11 +42,46 @@ public sealed class CachingMetadataV2GraphProvider : IMetadataV2GraphProvider
         _environment = string.IsNullOrWhiteSpace(environment)
             ? throw new ArgumentException("Environment must be set.", nameof(environment))
             : environment;
+        _loadCurrent = _inner.GetCurrentAsync;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="CachingMetadataV2GraphProvider"/> class whose
+    /// cache-miss loads run in a scope owned by the load itself rather than the calling request.
+    /// </summary>
+    /// <remarks>
+    /// A coalesced load outlives any individual caller (a cancelled caller stops waiting, the load
+    /// continues for the other waiters), so it must not use the caller's scoped, disposable
+    /// infrastructure — e.g. a scoped connection provider whose disposal releases its
+    /// query-concurrency slots. Each load creates and disposes its own async scope.
+    /// </remarks>
+    /// <param name="inner">The request-scoped provider (used for revision lookups).</param>
+    /// <param name="cache">The shared per-instance snapshot cache.</param>
+    /// <param name="environment">The metadata environment this provider resolves (the cache key).</param>
+    /// <param name="loadScopeFactory">Creates the scope each cache-miss load runs in.</param>
+    /// <param name="resolveLoader">Resolves the uncached backing provider from the load scope.</param>
+    public CachingMetadataV2GraphProvider(
+        IMetadataV2GraphProvider inner,
+        MetadataV2GraphSnapshotCache cache,
+        string environment,
+        IServiceScopeFactory loadScopeFactory,
+        Func<IServiceProvider, IMetadataV2GraphProvider> resolveLoader)
+        : this(inner, cache, environment)
+    {
+        ArgumentNullException.ThrowIfNull(loadScopeFactory);
+        ArgumentNullException.ThrowIfNull(resolveLoader);
+        _loadCurrent = async cancellationToken =>
+        {
+            await using var scope = loadScopeFactory.CreateAsyncScope();
+            return await resolveLoader(scope.ServiceProvider)
+                .GetCurrentAsync(cancellationToken)
+                .ConfigureAwait(false);
+        };
     }
 
     /// <inheritdoc />
     public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
-        => _cache.GetOrLoadAsync(_environment, _inner.GetCurrentAsync, cancellationToken);
+        => _cache.GetOrLoadAsync(_environment, _loadCurrent, cancellationToken);
 
     /// <inheritdoc />
     public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)

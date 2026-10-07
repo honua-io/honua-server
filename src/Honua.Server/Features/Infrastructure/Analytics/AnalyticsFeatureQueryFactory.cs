@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -14,6 +15,8 @@ using Honua.Infrastructure.Services;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Protocols.SpatialAnalytics.Models;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Infrastructure.Analytics;
@@ -243,7 +246,10 @@ internal static class AnalyticsFeatureQueryFactory
             {
                 var queryParamsForFilter = new QueryParameters { SpatialRel = spatialRel };
                 spatialFilter = GeoServicesSpatialFilterBuilder.BuildSpatialFilter(
-                    queryParamsForFilter, parsedGeometry, inputSrid);
+                    queryParamsForFilter,
+                    parsedGeometry,
+                    inputSrid,
+                    services.GetService<IOptions<LimitsOptions>>()?.Value.Geometry.MaxVerticesPerGeometry);
             }
             catch (ArgumentException ex)
             {

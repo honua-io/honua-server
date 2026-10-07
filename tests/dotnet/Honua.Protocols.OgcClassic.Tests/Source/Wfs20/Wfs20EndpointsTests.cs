@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
@@ -15,6 +16,8 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 using System.Text.Json;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 using Honua.Core.Features.Licensing.Domain;
@@ -1993,6 +1996,14 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     public async Task Wfs_Transaction_Replace_ReturnsReplaceSummaryAndUpdatesFeature()
     {
         var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS Replace Original");
+        var reader = _fixture.GetService<IFeatureReader>();
+        var original = (await reader.GetAsync(WebAppFixture.TestLayerId, featureId))!.Value;
+        await _fixture.GetService<IFeatureWriter>().UpdateAsync(WebAppFixture.TestLayerId,
+            original with
+            {
+                Geometry = new WKBWriter().Write(new Point(-157.8, 21.3) { SRID = 4326 }),
+                Attributes = original.Attributes.SetItem("population", 12345L)
+            });
         var replacementIdentifier = Guid.NewGuid().ToString();
 
         var requestBody = $$"""
@@ -2023,6 +2034,13 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         content.Should().Contain("<wfs:totalReplaced>1</wfs:totalReplaced>");
         content.Should().Contain("<wfs:ReplaceResults>");
         content.Should().Contain($"rid=\"test_layer.{featureId}\"");
+
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT NOT (attributes ? 'population') AND geometry IS NULL FROM features WHERE layer_id = @layerId AND objectid = @objectId";
+        command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+        command.Parameters.AddWithValue("objectId", featureId);
+        (await command.ExecuteScalarAsync()).Should().Be(true);
 
         var queryResponse = await _fixture.Client.GetAsync(
             $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=test_layer.{featureId}");

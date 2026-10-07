@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Admin;
 
@@ -69,27 +70,68 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return existing;
     }
 
-    private async Task ValidateTenantAccessAsync(string? serviceName, IReadOnlySet<int>? layerIds, CancellationToken cancellationToken)
+    // Numeric storage handles belong to one database. Managed rows remain owned by
+    // the server even when a secure connection route was used to reach that database.
+    internal sealed record LayerStorageScope(Guid? ConnectionId, IReadOnlySet<int>? ManagedLayerIds = null);
+
+    private async Task<LayerStorageScope> ResolveLayerStorageScopeAsync(
+        NpgsqlConnection connection, NpgsqlTransaction? transaction, IReadOnlySet<int> layerIds,
+        Guid? connectionId, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT layer_id FROM honua.layers
+            WHERE layer_id = ANY(@layerIds)
+              AND COALESCE(storage_options ->> 'managedStore', 'false') = 'true';
+            """;
+        var managedIds = new HashSet<int>();
+        await using (var command = new NpgsqlCommand(sql, connection, transaction))
+        {
+            command.Parameters.AddWithValue("layerIds", layerIds.ToArray());
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                managedIds.Add(reader.GetInt32(0));
+            }
+        }
+
+        if (managedIds.Count > 0)
+        {
+            await VerifyManagedStoreConnectionAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        }
+
+        return new LayerStorageScope(connectionId, managedIds);
+    }
+
+    private static bool BindingMatchesStorageScope(MetadataV2StorageBinding binding, LayerStorageScope? scope)
+    {
+        var effectiveConnection = binding.StorageLayerId is { } id && scope?.ManagedLayerIds?.Contains(id) == true
+            ? null
+            : scope?.ConnectionId?.ToString("D");
+        return string.Equals(binding.ConnectionId, effectiveConnection, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task ValidateTenantAccessAsync(string? serviceName, IReadOnlySet<int>? layerIds, LayerStorageScope? storageScope, CancellationToken cancellationToken)
     {
         var (graph, _) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
-        ValidateTenantAccess(graph, serviceName, layerIds, _tenantContext?.TenantId);
+        ValidateTenantAccess(graph, serviceName, layerIds, _tenantContext?.TenantId, storageScope);
     }
 
     internal static void ValidateTenantAccess(
-        MetadataV2Graph graph, string? serviceName, IReadOnlySet<int>? layerIds, string? trustedTenant)
+        MetadataV2Graph graph, string? serviceName, IReadOnlySet<int>? layerIds, string? trustedTenant, LayerStorageScope? storageScope = null)
     {
-        if (SelectPublicationMetadata(graph, serviceName, layerIds).Any(metadata =>
+        if (SelectPublicationMetadata(graph, serviceName, layerIds, storageScope).Any(metadata =>
                 !MetadataV2TenantVisibility.IsVisibleToTenant(metadata.Tenant, trustedTenant)))
         {
             throw new LayerPublishingException(LayerPublishingErrorKind.NotFound, "The requested resource was not found.");
         }
     }
 
-    internal static void ValidateLegacyLinkScope(MetadataV2Graph graph, string serviceName, int layerId)
+    internal static void ValidateLegacyLinkScope(MetadataV2Graph graph, string serviceName, int layerId, LayerStorageScope? storageScope = null)
     {
         // The legacy linking contract has no explicit scope intent. Do not expose a scoped
         // source through a new shared service, or attach shared data to a scoped service.
-        if (SelectPublicationMetadata(graph, serviceName, new HashSet<int> { layerId }).Any(metadata =>
+        if (SelectPublicationMetadata(graph, serviceName, null, storageScope)
+            .Concat(SelectPublicationMetadata(graph, null, new HashSet<int> { layerId }, storageScope)).Any(metadata =>
                 metadata.Namespace is not null || !string.IsNullOrWhiteSpace(metadata.Tenant)))
         {
             throw new LayerPublishingException(LayerPublishingErrorKind.Conflict,
@@ -98,19 +140,49 @@ internal sealed partial class PostgreSqlLayerPublishingService
     }
 
     private static IEnumerable<MetadataV2ObjectMetadata> SelectPublicationMetadata(
-        MetadataV2Graph graph, string? serviceName, IReadOnlySet<int>? layerIds)
+        MetadataV2Graph graph, string? serviceName, IReadOnlySet<int>? layerIds, LayerStorageScope? storageScope)
     {
         var services = graph.Services.Where(service => serviceName is not null &&
             (string.Equals(service.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase) ||
              string.Equals(service.Metadata.Id, serviceName, StringComparison.Ordinal))).ToArray();
         var serviceIds = services.Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
         var bindings = graph.StorageBindings.Where(binding => binding.StorageLayerId is { } id &&
-            layerIds?.Contains(id) == true).ToArray();
+            layerIds?.Contains(id) == true &&
+            (storageScope is null ||
+             (storageScope.ConnectionId is null && storageScope.ManagedLayerIds?.Contains(id) != true) ||
+             BindingMatchesStorageScope(binding, storageScope))).ToArray();
+        var bindingIds = bindings.Select(binding => binding.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+        var resourcesById = graph.Resources.ToDictionary(resource => resource.Metadata.Id, StringComparer.Ordinal);
         var resourceIds = bindings.Select(binding => binding.ResourceId).ToHashSet(StringComparer.Ordinal);
+        var bindingsById = graph.StorageBindings.ToDictionary(binding => binding.Metadata.Id, StringComparer.Ordinal);
+        bool SelectLegacyPublication(MetadataV2Publication publication)
+        {
+            if (publication.LayerIndex is not { } id || layerIds?.Contains(id) != true)
+            {
+                return false;
+            }
+
+            var bindingId = publication.StorageBindingId ??
+                (resourcesById.TryGetValue(publication.ResourceId, out var resource) ? resource.PrimaryStorageBindingId : null);
+            if (bindingId is null || !bindingsById.TryGetValue(bindingId, out var binding))
+            {
+                // An unresolvable legacy handle must not bypass its tenant's visibility check.
+                return true;
+            }
+
+            var managedHandle = storageScope?.ManagedLayerIds?.Contains(id) == true;
+            var legacyScope = managedHandle ? new LayerStorageScope(null) : storageScope;
+            return binding.StorageLayerId is null &&
+                (storageScope is null ||
+                 (storageScope.ConnectionId is null && !managedHandle) ||
+                 BindingMatchesStorageScope(binding, legacyScope));
+        }
+
         var publications = graph.Publications.Where(publication =>
-            (publication.ServiceId is not null && serviceIds.Contains(publication.ServiceId)) ||
-            resourceIds.Contains(publication.ResourceId) ||
-            (publication.LayerIndex is { } id && layerIds?.Contains(id) == true)).ToArray();
+            (layerIds is null && publication.ServiceId is not null && serviceIds.Contains(publication.ServiceId)) ||
+            bindingIds.Contains(publication.StorageBindingId ??
+                (resourcesById.TryGetValue(publication.ResourceId, out var resource) ? resource.PrimaryStorageBindingId : null) ?? string.Empty) ||
+            SelectLegacyPublication(publication)).ToArray();
         resourceIds.UnionWith(publications.Select(publication => publication.ResourceId));
         serviceIds.UnionWith(publications.Where(publication => publication.ServiceId is not null)
             .Select(publication => publication.ServiceId!));
