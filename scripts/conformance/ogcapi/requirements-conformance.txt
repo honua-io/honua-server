@@ -34,4 +34,4 @@ starlette==1.6.0
 starlette-testclient==0.4.1
 typing_extensions==4.16.0
 urllib3==2.8.0
-Werkzeug==3.1.8
+Werkzeug==3.1.9
