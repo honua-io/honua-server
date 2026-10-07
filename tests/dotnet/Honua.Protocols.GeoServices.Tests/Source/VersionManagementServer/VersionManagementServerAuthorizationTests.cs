@@ -7,6 +7,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -392,9 +393,60 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         createError.GetProperty("message").GetString().Should().Be(deleteError.GetProperty("message").GetString());
         createError.GetProperty("details")[0].GetString().Should().Be(deleteError.GetProperty("details")[0].GetString());
         await create.AssertGeoServicesErrorAsync(EsriTokenRequired);
+        create.Headers.WwwAuthenticate.Should().NotBeEmpty();
+        create.Headers.WwwAuthenticate.Select(value => value.ToString()).Should()
+            .Equal(delete.Headers.WwwAuthenticate.Select(value => value.ToString()));
 
         var versions = await ListVersionNamesAsync(_ownerToken);
         versions.Should().NotContain("anonymous.private_refused");
+    }
+
+    [IntegrationTheory]
+    [InlineData("", "ApiKey")]
+    [InlineData("?token=", "Bearer")]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]
+    public async Task AnonymousPrivateCreate_WithAnonymousWritePolicy_PreservesAuthenticationChallenge(
+        string query, string expectedScheme)
+    {
+        var owned = await CreateVersionAsync(_ownerToken, "alice.challenge_control", "challenge-control");
+        var guid = owned.GetProperty("versionGuid").GetString()!;
+        using var control = await PostFormAsync(
+            token: null, $"{ServiceBase}/versions/{guid}/delete{query}", ("f", "json"));
+        await control.AssertGeoServicesErrorAsync(EsriTokenRequired);
+        control.Headers.WwwAuthenticate.Should().ContainSingle()
+            .Which.Scheme.Should().Be(expectedScheme);
+
+        _fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, accessPolicy: new AccessPolicy
+        {
+            AllowAnonymous = true,
+            AllowAnonymousWrite = true
+        });
+
+        // A public create proves the anonymous caller clears both service write gates.
+        using var publicCreate = await PostFormAsync(
+            token: null, $"{ServiceBase}/create{query}",
+            ("versionName", "anonymous.public_challenge_control"), ("accessPermission", "public"), ("f", "json"));
+        using var publicDocument = JsonDocument.Parse(await publicCreate.Content.ReadAsByteArrayAsync());
+        publicDocument.RootElement.TryGetProperty("versionInfo", out _).Should().BeTrue();
+
+        using var create = await PostFormAsync(
+            token: null, $"{ServiceBase}/create{query}",
+            ("versionName", "anonymous.private_challenge_refused"), ("accessPermission", "private"), ("f", "json"));
+        await create.AssertGeoServicesErrorAsync(EsriTokenRequired);
+        create.Headers.WwwAuthenticate.Should().ContainSingle()
+            .Which.Scheme.Should().Be(expectedScheme);
+        create.Headers.WwwAuthenticate.Select(value => value.ToString()).Should()
+            .Equal(control.Headers.WwwAuthenticate.Select(value => value.ToString()));
+        using var createDocument = JsonDocument.Parse(await create.Content.ReadAsByteArrayAsync());
+        using var controlDocument = JsonDocument.Parse(await control.Content.ReadAsByteArrayAsync());
+        createDocument.RootElement.GetProperty("error").GetRawText().Should()
+            .Be(controlDocument.RootElement.GetProperty("error").GetRawText());
+
+        var versions = await ListVersionNamesAsync(_ownerToken);
+        versions.Should().Contain("anonymous.public_challenge_control");
+        versions.Should().Contain("alice.challenge_control");
+        versions.Should().NotContain("anonymous.private_challenge_refused");
     }
 
     private static async Task AssertDeniedAsync(HttpResponseMessage response, string operation)
