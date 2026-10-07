@@ -815,7 +815,7 @@ internal sealed class ImageServerWmtsHandler(
         return Results.Content(xml, ContentType, Encoding.UTF8, StatusCodes.Status200OK);
     }
 
-    private static string BuildCapabilitiesXml(
+    internal static string BuildCapabilitiesXml(
         HttpContext context,
         string layerIdentifier,
         long?[]? timeExtent,
@@ -823,13 +823,21 @@ internal sealed class ImageServerWmtsHandler(
     {
         var wmtsBaseUrl = BuildWmtsBaseUrl(context);
         var escapedLayer = EscapeXml(layerIdentifier);
-        var escapedBaseUrl = EscapeXml(wmtsBaseUrl);
+        // The identifier is a literal path segment in the templates; service IDs may
+        // carry URL-reserved characters ('#', '?'), so path-escape before XML-escaping.
+        var escapedLayerSegment = EscapeXml(Uri.EscapeDataString(layerIdentifier));
+        var credentialedBaseUrl = BaseUrlResolver.PreserveToken(context.Request, wmtsBaseUrl);
+        var escapedBaseUrl = EscapeXml(credentialedBaseUrl);
+        var escapedTileBaseUrl = EscapeXml(wmtsBaseUrl);
+        var escapedTokenSuffix = credentialedBaseUrl.Length == wmtsBaseUrl.Length
+            ? string.Empty
+            : EscapeXml(credentialedBaseUrl[wmtsBaseUrl.Length..]);
         var escapedTemplate =
-            $"{escapedBaseUrl}/{{Layer}}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png";
+            $"{escapedTileBaseUrl}/{escapedLayerSegment}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png{escapedTokenSuffix}";
         var escapedJpegTemplate =
-            $"{escapedBaseUrl}/{{Layer}}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.jpg";
+            $"{escapedTileBaseUrl}/{escapedLayerSegment}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.jpg{escapedTokenSuffix}";
         var escapedTiffTemplate =
-            $"{escapedBaseUrl}/{{Layer}}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.tif";
+            $"{escapedTileBaseUrl}/{escapedLayerSegment}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.tif{escapedTokenSuffix}";
 
         var sb = new StringBuilder(8192);
         sb.AppendLine("""<?xml version="1.0" encoding="UTF-8"?>""");
@@ -987,7 +995,9 @@ internal sealed class ImageServerWmtsHandler(
             ? path[..(wmtsIndex + "/WMTS".Length)]
             : path.TrimEnd('/');
 
-        return $"{BaseUrlResolver.GetBaseUrl(context)}{wmtsPath}";
+        // Request.Path is decoded; re-escape it so a service-name segment such as
+        // "imagery#west" stays inside the advertised path.
+        return $"{BaseUrlResolver.GetBaseUrl(context)}{new PathString(wmtsPath).ToUriComponent()}";
     }
 
     private static bool RequireQueryValue(

@@ -924,11 +924,12 @@ internal static class GeoservicesCatalogEndpoints
 
             var capabilities = GeocodeServerCapabilities.ApplyLicense(
                 provider.Capabilities, context.RequestServices.GetRequiredService<ILicenseEntitlementService>());
+            var instanceBase = WithConventionalInstancePath(baseUrl);
             entries.Add(new ServiceDirectoryEntry
             {
                 Name = options.LocatorName,
                 Type = GeocodeServerProtocolName,
-                Url = $"{baseUrl}/rest/services/{Uri.EscapeDataString(options.LocatorName)}/{GeocodeServerProtocolName}",
+                Url = $"{instanceBase}/rest/services/{Uri.EscapeDataString(options.LocatorName)}/{GeocodeServerProtocolName}",
                 SoapCapabilities = GeocodeServerCapabilities.Format(capabilities)
             });
         }
@@ -1063,7 +1064,7 @@ internal static class GeoservicesCatalogEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
         }
 
-        var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
+        var baseUrl = WithConventionalInstancePath(BaseUrlResolver.GetBaseUrl(context).TrimEnd('/'));
         var soapUrl = $"{baseUrl}/services";
 
         // secureSoapUrl must follow the scheme of the SAME resolved public URL that produced
@@ -1073,6 +1074,7 @@ internal static class GeoservicesCatalogEndpoints
         // and left a client that selects the secure field unable to find the SOAP endpoint.
         var response = new RestInfoResponse
         {
+            OwningSystemUrl = baseUrl,
             SoapUrl = soapUrl,
             SecureSoapUrl = IsHttpsBaseUrl(baseUrl, context) ? soapUrl : null,
             AuthInfo = new RestAuthInfo
@@ -1084,6 +1086,37 @@ internal static class GeoservicesCatalogEndpoints
             }
         };
         return Results.Json(response, GeoservicesCatalogJsonContext.Default.RestInfoResponse, contentType: JsonContentType);
+    }
+
+    /// <summary>
+    /// Advertises the conventional GeoServices instance path (<c>/arcgis</c>) on a base that is
+    /// an origin with an empty path. A base that already ends with <c>/arcgis</c> is unchanged,
+    /// and a base that already has any other path is unchanged: the alias only strips a leading
+    /// <c>/arcgis</c>, so a second prefix would not route.
+    /// </summary>
+    private static string WithConventionalInstancePath(string baseUrl)
+    {
+        if (string.IsNullOrEmpty(baseUrl))
+        {
+            return "/arcgis";
+        }
+
+        var trimmed = baseUrl.TrimEnd('/');
+        if (trimmed.EndsWith("/arcgis", StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed;
+        }
+
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var absolute))
+        {
+            var path = absolute.AbsolutePath;
+            if (string.IsNullOrEmpty(path) || path == "/")
+            {
+                return trimmed + "/arcgis";
+            }
+        }
+
+        return trimmed;
     }
 
     /// <summary>

@@ -79,7 +79,8 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
                 size BIGINT NOT NULL CHECK (size >= 0),
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 storage_path TEXT NOT NULL,
-                keywords TEXT
+                keywords TEXT,
+                attachment_origin TEXT
             );
 
             CREATE INDEX idx_attachments_feature_layer ON {_schemaName}.attachments(layer_id, feature_id);

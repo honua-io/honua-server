@@ -196,9 +196,15 @@ public sealed class SharingRestReadTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        // An origin-only base advertises the conventional /arcgis application prefix, and
+        // owningSystemUrl agrees with tokenServicesUrl (docs/gis/ARCGIS_PATH_PREFIX.md).
+        var owningSystemUrl = doc.RootElement.GetProperty("owningSystemUrl").GetString();
+        owningSystemUrl.Should().Be("http://localhost/arcgis");
         var authInfo = doc.RootElement.GetProperty("authInfo");
         authInfo.GetProperty("isTokenBasedSecurity").GetBoolean().Should().BeTrue();
-        authInfo.GetProperty("tokenServicesUrl").GetString().Should().EndWith("/sharing/rest/generateToken");
+        var tokenServicesUrl = authInfo.GetProperty("tokenServicesUrl").GetString();
+        tokenServicesUrl.Should().EndWith("/sharing/rest/generateToken");
+        tokenServicesUrl.Should().StartWith(owningSystemUrl + "/");
     }
 
     [IntegrationTest]

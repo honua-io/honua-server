@@ -219,6 +219,13 @@ internal static partial class SqlServerFeatureQueryBuilder
         // own SQL Server-aware parser whenever it is supplied.
         if (!string.IsNullOrWhiteSpace(query.Where))
         {
+            if (query.SqlFilter is not null)
+            {
+                throw new NotSupportedException(
+                    "SQL Server cannot safely combine canonical Where text with a translated SqlFilter. " +
+                    "Submit the additional constraints through provider-neutral FeatureQuery properties.");
+            }
+
             var parameterized = ParseAndParameterizeWhereClause(query.Where!.Trim(), parameters);
             sb.Append(" AND (").Append(parameterized).Append(')');
             return;

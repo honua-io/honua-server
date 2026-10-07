@@ -183,7 +183,7 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
         }
 
         var nullSafe = $"NULLIF({baseExpression}, '')";
-        if (castType is "timestamptz" or "date" or "time")
+        if (castType is "timestamptz" or "date")
         {
             return BuildEpochAwareTemporalCast(nullSafe, castType);
         }
@@ -1270,7 +1270,9 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
         {
             MetadataV2FieldType.Integer => "integer",
             MetadataV2FieldType.BigInteger => "bigint",
-            MetadataV2FieldType.Float => "real",
+            // Numeric literals are bound as double precision. Compare JSONB single values
+            // at that same precision rather than widening an already-rounded real value.
+            MetadataV2FieldType.Float => "double precision",
             MetadataV2FieldType.Double => "double precision",
             MetadataV2FieldType.Boolean => "boolean",
             MetadataV2FieldType.DateTime => "timestamptz",

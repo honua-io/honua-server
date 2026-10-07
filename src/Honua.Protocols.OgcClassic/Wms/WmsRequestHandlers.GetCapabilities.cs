@@ -388,9 +388,11 @@ internal static partial class WmsRequestHandlers
         var responseVersion = isWms111 ? Wms111Version : Wms13Version;
         var crsElementName = isWms111 ? "SRS" : "CRS";
         var normalizedBaseUrl = baseUrl.TrimEnd('/');
-        var wmsEndpoint = $"{normalizedBaseUrl}/rest/services/{serviceId}/MapServer/WMS";
-        var wmsUrlPrefix = $"{wmsEndpoint}?";
-        var metadataUrl = $"{wmsEndpoint}?SERVICE=WMS&REQUEST=GetCapabilities&VERSION={responseVersion}";
+        var wmsEndpoint = BaseUrlResolver.PreserveToken(
+            context.Request,
+            $"{normalizedBaseUrl}/rest/services/{serviceId}/MapServer/WMS");
+        var wmsUrlPrefix = $"{wmsEndpoint}{(wmsEndpoint.Contains('?') ? '&' : '?')}";
+        var metadataUrl = $"{wmsUrlPrefix}SERVICE=WMS&REQUEST=GetCapabilities&VERSION={responseVersion}";
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
         var serviceTitle = service.Metadata.Title ?? service.Metadata.Name ?? serviceId;

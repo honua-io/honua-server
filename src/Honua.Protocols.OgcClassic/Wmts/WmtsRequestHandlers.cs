@@ -340,6 +340,7 @@ internal static class WmtsRequestHandlers
                 .Where(l => ResourceHasGeometry(l.Resource))
                 .ToArray();
             var xml = await BuildWmtsCapabilitiesAsync(
+                context.Request,
                 svcDef,
                 visibleLayers,
                 serviceId,
@@ -1269,6 +1270,7 @@ internal static class WmtsRequestHandlers
     }
 
     private static async Task<string> BuildWmtsCapabilitiesAsync(
+        HttpRequest request,
         MetadataV2Service service,
         IReadOnlyList<WmtsLayer> visibleLayers,
         string serviceId,
@@ -1291,9 +1293,10 @@ internal static class WmtsRequestHandlers
 
         var normalizedBaseUrl = baseUrl.TrimEnd('/');
         var wmtsEndpoint = $"{normalizedBaseUrl}/rest/services/{serviceId}/MapServer/WMTS";
-        var wmtsKvpUrlPrefix = $"{wmtsEndpoint}?";
-        var wmtsRestUrlPrefix = $"{wmtsEndpoint}/";
-        var serviceMetadataUrl = $"{wmtsEndpoint}/{WmtsVersion}/WMTSCapabilities.xml";
+        var credentialedWmtsEndpoint = BaseUrlResolver.PreserveToken(request, wmtsEndpoint);
+        var wmtsKvpUrlPrefix = $"{credentialedWmtsEndpoint}{(credentialedWmtsEndpoint.Contains('?') ? '&' : '?')}";
+        var wmtsRestUrlPrefix = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/");
+        var serviceMetadataUrl = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{WmtsVersion}/WMTSCapabilities.xml");
         sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
         sb.AppendLine("<Capabilities xmlns=\"http://www.opengis.net/wmts/1.0\"");
         sb.AppendLine("  xmlns:ows=\"http://www.opengis.net/ows/1.1\"");
@@ -1438,10 +1441,10 @@ internal static class WmtsRequestHandlers
                 // WebMapTileServiceImageryProvider, so the advertised template was
                 // unusable even though the route itself is positional and
                 // case-insensitive. Only the advertised name changes here.
-                var tileTemplate = $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png{dimensionTemplateSuffix}";
-                var featureInfoTextTemplate = $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.txt{dimensionTemplateSuffix}";
-                var featureInfoJsonTemplate = $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.json{dimensionTemplateSuffix}";
-                var legendHref = $"{wmtsEndpoint}?SERVICE=WMTS&REQUEST=GetTile&VERSION={WmtsVersion}&LAYER={layerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0{legendDimensionSuffix}";
+                var tileTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png{dimensionTemplateSuffix}");
+                var featureInfoTextTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.txt{dimensionTemplateSuffix}");
+                var featureInfoJsonTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.json{dimensionTemplateSuffix}");
+                var legendHref = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}?SERVICE=WMTS&REQUEST=GetTile&VERSION={WmtsVersion}&LAYER={layerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0{legendDimensionSuffix}");
 
                 sb.AppendLine("    <Layer>");
                 var layerTitle = layer.Resource.Metadata.Title

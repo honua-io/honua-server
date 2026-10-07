@@ -321,7 +321,7 @@ public sealed class FormSubmissionServiceTests
     }
 
     [UnitTest]
-    public async Task SubmitAsync_WhenPostClaimTimeoutOccurs_DeletesClaimAndReturns500WithoutPersistingReplay()
+    public async Task SRV_INF_006_WhenEditOutcomeIsUnknown_PreservesClaimAsTerminalFailure()
     {
         using var requestServices = CreateRequestServices();
         var store = new FakeFormPackageStore();
@@ -339,12 +339,12 @@ public sealed class FormSubmissionServiceTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
         var body = ReadResponseBody(context);
         body.Status.Should().Be("failed");
-        body.Retry!.Retryable.Should().BeTrue();
+        body.Retry!.Retryable.Should().BeFalse();
         body.IdempotentReplay.Should().BeFalse();
 
-        // Claim must be deleted so the same idempotency key can re-execute
-        store.DeleteCalls.Should().Be(1);
-        store.CompleteCalls.Should().Be(0);
+        store.DeleteCalls.Should().Be(0);
+        store.CompleteCalls.Should().Be(1);
+        store.CompletedResponse!.Retry!.Retryable.Should().BeFalse();
     }
 
     [UnitTest]
@@ -365,22 +365,22 @@ public sealed class FormSubmissionServiceTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
         var body = ReadResponseBody(context);
         body.Status.Should().Be("failed");
-        body.Retry!.Retryable.Should().BeTrue();
+        body.Retry!.Retryable.Should().BeFalse();
         body.IdempotentReplay.Should().BeFalse();
 
-        store.DeleteCalls.Should().Be(1);
-        store.CompleteCalls.Should().Be(0);
+        store.DeleteCalls.Should().Be(0);
+        store.CompleteCalls.Should().Be(1);
     }
 
     [UnitTest]
-    public async Task SubmitAsync_WhenTransientFailureClaimDeleteFails_StillReturns500WithoutThrowing()
+    public async Task SubmitAsync_WhenUnknownEditOutcomeCompletionFails_StillReturns500WithoutThrowing()
     {
-        // When DeleteSubmissionAsync itself throws, the service must swallow the error and still
-        // return 500 — the client receives the failure response rather than an unhandled exception.
+        // When terminal persistence itself throws, the service must retain the pending claim and
+        // still return 500 rather than replacing the original failure with an unhandled exception.
         using var requestServices = CreateRequestServices();
         var store = new FakeFormPackageStore
         {
-            DeleteShouldThrow = true
+            CompleteShouldThrow = true
         };
         var writer = new FakeFeatureWriter
         {
@@ -395,8 +395,8 @@ public sealed class FormSubmissionServiceTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
         var body = ReadResponseBody(context);
         body.Status.Should().Be("failed");
-        store.DeleteCalls.Should().Be(1);
-        store.CompleteCalls.Should().Be(0);
+        store.DeleteCalls.Should().Be(0);
+        store.CompleteCalls.Should().Be(1);
     }
 
     [UnitTest]
@@ -781,6 +781,8 @@ public sealed class FormSubmissionServiceTests
 
         public bool CompleteTokenWasCanceled { get; private set; }
 
+        public bool CompleteShouldThrow { get; init; }
+
         public FormSubmissionResponse? CompletedResponse { get; private set; }
 
         public int GetSubmissionByIdempotencyCalls { get; private set; }
@@ -890,6 +892,10 @@ public sealed class FormSubmissionServiceTests
             CancellationToken cancellationToken = default)
         {
             CompleteCalls++;
+            if (CompleteShouldThrow)
+            {
+                throw new InvalidOperationException("Simulated completion failure.");
+            }
             CompleteTokenWasCanceled = cancellationToken.IsCancellationRequested;
             if (CompleteTokenWasCanceled)
             {
