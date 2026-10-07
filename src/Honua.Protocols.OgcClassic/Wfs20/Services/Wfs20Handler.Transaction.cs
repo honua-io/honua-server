@@ -14,6 +14,7 @@ using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -705,6 +706,7 @@ internal sealed partial class Wfs20Handler
             targetIds[0],
             featureElement,
             cancellationToken).ConfigureAwait(false);
+        // Compare the stored target snapshot, rather than the new replacement payload.
         replacement = replacement with { ReadStateToken = FeatureStateToken.FromReadSnapshot(existing.Value) };
         // Replace constructs a fresh feature from the request payload (or null when
         // the body omits geometry), and the operation overwrites the existing row.
