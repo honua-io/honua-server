@@ -26,5 +26,9 @@ synchronization save. The route regression covers UUID and named connection path
 Validation checkpoint: the SQL graph and publication namespace suites passed
 92/92 tests with no skips. Core, PostgreSQL, Server, TestKit, and both changed test projects built
 with zero warnings and errors. All six project-scoped formatting checks passed
-for the changed files under `timeout 20m`. The server route and database
-integration regressions are running.
+for the changed files under `timeout 20m`. The focused server route and database
+integration regressions passed 9/9 tests with no skips: named/UUID connection
+pinning, existing exception mapping, and source/managed disable-one, enable-all,
+and extent persistence. The integration assertions read the fixture's request
+schema partition through its snapshot helper. No existing tests were weakened
+or removed.
