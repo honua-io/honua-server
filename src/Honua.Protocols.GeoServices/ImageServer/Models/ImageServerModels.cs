@@ -145,6 +145,20 @@ public sealed class ImageServerServiceInfo
     [JsonPropertyName("singleFusedMapCache")]
     public bool SingleFusedMapCache { get; init; } = false;
 
+    [JsonPropertyName("exportTilesAllowed")]
+    public bool ExportTilesAllowed { get; init; }
+
+    [JsonPropertyName("maxExportTilesCount")]
+    public int MaxExportTilesCount { get; init; }
+
+    [JsonPropertyName("minLOD")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? MinLod { get; init; }
+
+    [JsonPropertyName("maxLOD")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? MaxLod { get; init; }
+
     // Dynamic (non-fused-cache) services have no tile scheme. Esri omits tileInfo
     // entirely in that case; emitting "tileInfo":null trips the native .NET
     // runtime's strict ImageServer config parser, so omit when unset (#1456).

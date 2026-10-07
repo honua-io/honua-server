@@ -12,30 +12,19 @@ namespace Honua.Protocols.Stac.Services;
 /// </summary>
 internal static class StacItemIdWhereBuilder
 {
-    private static readonly ImmutableArray<string> CanonicalKeys = ["stac_id", "item_id", "id"];
-
     public static ImmutableArray<MetadataV2Field> GetCandidateFields(MetadataV2Resource resource)
     {
-        var fields = ImmutableArray.CreateBuilder<MetadataV2Field>();
-        foreach (var canonicalKey in CanonicalKeys)
-        {
-            var field = resource.SchemaFields.FirstOrDefault(candidate =>
-                string.Equals(candidate.Name, canonicalKey, StringComparison.OrdinalIgnoreCase));
-            if (field is not null)
-            {
-                fields.Add(field);
-            }
-        }
-
-        var primaryIdField = resource.FindPrimaryIdField();
-        if (primaryIdField is not null &&
-            !CanonicalKeys.Any(key => string.Equals(key, primaryIdField.Name, StringComparison.OrdinalIgnoreCase)))
-        {
-            fields.Add(primaryIdField);
-        }
-
-        return fields.ToImmutable();
+        var primaryIdField = FindDeclaredPrimaryIdField(resource);
+        return primaryIdField is null
+            ? []
+            : [primaryIdField];
     }
+
+    internal static MetadataV2Field? FindDeclaredPrimaryIdField(MetadataV2Resource resource)
+        => resource.SchemaFields.FirstOrDefault(field => field.SemanticRoles.Any(role =>
+               string.Equals(role, "id.primary", StringComparison.OrdinalIgnoreCase)))
+           ?? resource.SchemaFields.FirstOrDefault(field =>
+               string.Equals(field.Name, "objectid", StringComparison.OrdinalIgnoreCase));
 
     public static bool TryBuildFieldMatch(
         MetadataV2Field field,

@@ -1057,17 +1057,7 @@ internal static class SearchEndpoints
 
         if (string.Equals(normalized, "id", StringComparison.OrdinalIgnoreCase))
         {
-            foreach (var candidate in new[] { "stac_id", "item_id", "id" })
-            {
-                if (availableFields.TryGetValue(candidate, out var idField))
-                {
-                    fieldName = idField.Name;
-                    fieldType = idField.Type;
-                    return true;
-                }
-            }
-
-            var primaryId = resource.FindPrimaryIdField();
+            var primaryId = StacItemIdWhereBuilder.FindDeclaredPrimaryIdField(resource);
             fieldName = primaryId?.Name ?? "objectid";
             fieldType = primaryId?.Type ?? MetadataV2FieldType.Integer;
             return true;
