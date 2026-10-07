@@ -115,7 +115,8 @@ public sealed class CurveGeometryConverterTests
 
         var action = () => GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(curve);
 
-        action.Should().Throw<ArgumentException>().WithMessage("*vertex limit*");
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("True-curve densification exceeds the remaining budget of 50000 vertices.");
     }
 
 }

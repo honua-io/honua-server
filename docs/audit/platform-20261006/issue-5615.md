@@ -2,6 +2,8 @@
 
 Re-verification was performed against the current worktree. Work stopped after the first three S1 findings were fixed and tested so that the remaining findings would not be changed shallowly.
 
+PR #5652 review adjudication: the densify retention finding was corrected by reparsing one geometry at a time after preflight. The existing curve-budget regression had an extra closing JSON bracket and an exception-message expectation that did not match the guard; both were corrected without changing the asserted exception type or the enforced budget. Native Windows Release builds passed with zero warnings/errors, and the focused `GeometryServiceMeasureAnalysisTests` plus `CurveGeometryConverterTests` run passed 31/31 with no skips. Formatting verification passed for the handler and measure/analysis test changes; final whitespace verification passed for all three changed C# files. The configured curve-limit finding remains unresolved for the security-sensitive budget propagation described below.
+
 | Finding id | Outcome | Evidence |
 |---|---|---|
 | `SRV-DB-003` | fixed | `SRV_DB_003_FixedBoundariesOverLimit_ReturnsValidationError` proves that more than 1,000 boundaries is rejected. `FeatureServerRequestHandlers.Bins.cs:425-446` also rejects non-finite, duplicate, and unsorted values before SQL construction. This changes invalid-request behavior to a protocol validation error. |
