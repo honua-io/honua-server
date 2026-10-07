@@ -108,3 +108,8 @@ that migration to the matching `Migrations/125_AddImportedAttachmentIdentity.sql
 output location. The test file extends `GeoservicesImportServiceAttachmentImportTests`
 (line 17), which is the class name used for focused verification. No code or
 test assertion was changed for this finding.
+
+`sha256sum` on the source migration and
+`tests/dotnet/Honua.Db.Postgres.Tests/bin/Release/net10.0/Migrations/125_AddImportedAttachmentIdentity.sql`
+confirmed the same bytes at the expected test output path:
+`4ab9951daf862db874a7caceb28231c656367bbf581ddb3ca76bd0cc610188a4`.
