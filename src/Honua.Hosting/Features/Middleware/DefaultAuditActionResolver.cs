@@ -45,6 +45,8 @@ namespace Honua.Infrastructure.Middleware;
 internal sealed class DefaultAuditActionResolver : IAuditActionResolver
 {
     private const string AdminRoutePrefix = "/api/v{version:apiversion}/admin";
+    private const string ConsoleRoutePrefix = "/api/v{version:apiversion}/console";
+    private const string EnrichRoutePrefix = "/api/enrich/datasets";
 
     // Mutating HTTP methods. GET/HEAD/OPTIONS/TRACE never imply a state change and
     // are only audited via the failure path (401/403) handled by the middleware.
@@ -74,7 +76,9 @@ internal sealed class DefaultAuditActionResolver : IAuditActionResolver
         // prefix is an administrative action. This keeps "all admin API
         // operations emit audit events" true without per-endpoint wiring.
         if (MutatingMethods.Contains(httpMethod) &&
-            normalizedPattern.StartsWith(AdminRoutePrefix, StringComparison.Ordinal))
+            (normalizedPattern.StartsWith(AdminRoutePrefix, StringComparison.Ordinal)
+             || normalizedPattern.StartsWith(ConsoleRoutePrefix, StringComparison.Ordinal)
+             || normalizedPattern.StartsWith(EnrichRoutePrefix, StringComparison.Ordinal)))
         {
             return new AuditActionDescriptor
             {
