@@ -19,6 +19,25 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 public sealed class PostgresStorageMappedFeatureReaderSqlTests
 {
+    [Fact]
+    public void SRV_DB_005_PagedCallerOrdering_AppendsPrimaryKeyTiebreaker()
+    {
+        var reader = CreateReader(CreateResource());
+        var query = new FeatureQuery
+        {
+            OrderBy = [new OrderByClause("name", ascending: false)],
+            Limit = 25,
+            Offset = 50
+        };
+
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [query, false])!.ToString()!;
+
+        sql.Should().Contain("ORDER BY \"__honua_page_order_0\" DESC, \"__honua_page_order_1\"");
+        sql.Should().Contain("ORDER BY page_source.\"__honua_page_order_0\" DESC, page_source.\"__honua_page_order_1\"");
+    }
+
     [Theory]
     [InlineData(MetadataV2FieldType.Integer)]
     [InlineData(MetadataV2FieldType.BigInteger)]
