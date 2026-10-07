@@ -14,6 +14,7 @@ using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.Shared.Models;
 using Honua.Db.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.Attachments;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -21,7 +22,7 @@ using Moq;
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
 [Collection("Database")]
-public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixture fixture)
+public sealed partial class GeoservicesImportServiceAttachmentImportTests(PostgresFixture fixture)
 {
     [Fact]
     public async Task ImportLayerAsync_WhenLayerAdvertisesAttachments_CopiesAttachmentsIntoStoreAndReportsCounts()
@@ -211,8 +212,17 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
             schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(targetSchema));
     }
 
-    private sealed class RecordingAttachmentStore : IAttachmentStore
+    private sealed class RecordingAttachmentStore : IAttachmentStore, IImportedAttachmentStore
     {
+        public Task<Honua.Core.Features.Attachments.Domain.Attachment> UploadImportedAsync(
+            int layerId, long featureId, string source, long sourceParentId, long sourceAttachmentId,
+            Guid generation, string filename, string contentType, Stream content, string? keywords,
+            CancellationToken cancellationToken)
+            => UploadAsync(layerId, featureId, filename, contentType, content, keywords, cancellationToken);
+
+        public Task<bool> CompleteImportAsync(int layerId, Guid generation, CancellationToken cancellationToken)
+            => Task.FromResult(false);
+
         public List<UploadedAttachment> Uploaded { get; } = [];
         private long _nextId = 1;
 
@@ -377,6 +387,14 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
 
     private sealed class AttachmentFeatureServerHandler(long? failAttachmentId = null) : HttpMessageHandler
     {
+        public long? FailedDownload { get; set; } = failAttachmentId;
+        public bool FailInventory { get; set; }
+        public bool HasAttachments { get; set; } = true;
+        public string? InventoryJson { get; set; }
+        public string? FeaturesJson { get; set; }
+        public int FeatureCount { get; set; } = 2;
+        public string Payload { get; set; } = "binary-payload";
+        public Action? BeforeDownload { get; set; }
         public List<string> AttachmentRequestPaths { get; } = [];
 
         // Ownership of the HttpResponseMessage instances returned below transfers to the HttpClient
@@ -390,14 +408,16 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
             if (pathAndQuery.Contains("/attachments/", StringComparison.Ordinal))
             {
                 AttachmentRequestPaths.Add(pathAndQuery);
-                if (failAttachmentId.HasValue && pathAndQuery.EndsWith($"/{failAttachmentId.Value}", StringComparison.Ordinal))
+                BeforeDownload?.Invoke();
+                cancellationToken.ThrowIfCancellationRequested();
+                if (FailedDownload.HasValue && pathAndQuery.EndsWith($"/{FailedDownload.Value}", StringComparison.Ordinal))
                 {
                     return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.InternalServerError));
                 }
 
                 var resp = new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
                 {
-                    Content = new ByteArrayContent(Encoding.UTF8.GetBytes("binary-payload"))
+                    Content = new ByteArrayContent(Encoding.UTF8.GetBytes(Payload))
                 };
                 resp.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
                 return Task.FromResult<System.Net.Http.HttpResponseMessage>(resp);
@@ -406,6 +426,16 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
             if (pathAndQuery.Contains("/queryAttachments", StringComparison.Ordinal))
             {
                 AttachmentRequestPaths.Add(pathAndQuery);
+                if (FailInventory)
+                {
+                    return Task.FromResult<HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.InternalServerError));
+                }
+
+                if (InventoryJson != null)
+                {
+                    return Task.FromResult(JsonResponse(InventoryJson));
+                }
+
                 return Task.FromResult(JsonResponse("""
                     {
                       "attachmentGroups": [
@@ -425,6 +455,26 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
                       ]
                     }
                     """));
+            }
+
+            if (pathAndQuery.EndsWith("/0?f=json", StringComparison.Ordinal) && !HasAttachments)
+            {
+                return Task.FromResult(JsonResponse("""{"id":0,"name":"Inspections","geometryType":"esriGeometryPoint","maxRecordCount":10,"hasAttachments":false,"fields":[{"name":"OBJECTID","type":"esriFieldTypeOID","nullable":false},{"name":"Name","type":"esriFieldTypeString","nullable":true}]}"""));
+            }
+
+            if (pathAndQuery.Contains("returnCountOnly=true", StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse($"{{\"count\":{FeatureCount}}}"));
+            }
+
+            if (FeaturesJson != null && pathAndQuery.Contains("resultOffset=0&", StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse(FeaturesJson));
+            }
+
+            if (FeaturesJson != null && pathAndQuery.Contains("resultOffset=1&", StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse("""{"features":[],"exceededTransferLimit":false,"spatialReference":{"wkid":4326}}"""));
             }
 
             return pathAndQuery switch

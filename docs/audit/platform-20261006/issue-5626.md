@@ -8,7 +8,7 @@ than changed without its required regression test.
 | Finding id | Outcome | Evidence |
 |---|---|---|
 | `SRV-IMP-001` | already fixed on trunk | `StreamingFileImportService.Streaming.cs` drops the replace staging table whenever `totalImported == 0` before the swap, and `StreamingFileImportService.cs` now treats every `importedCount == 0` result as a failure. Consequently an empty replacement never promotes the staging table. |
-| `SRV-IMP-002` | publication reuse fixed; attachment re-import unresolved | `GeoservicesLayerPublicationServiceTests.SRV_IMP_002_ReimportingPublishedLayer_RefreshesAndReusesExistingPublication` proves that a replacement publish conflict refreshes the canonical feature snapshot and returns the existing layer. Returning that layer allows the existing attachment-copy and reconciliation stages to continue with the source-to-target object-id map instead of reporting that nothing was published. Attachment reconciliation across repeated imports remains open as detailed below. |
+| `SRV-IMP-002` | publication reuse and attachment re-import fixed | `GeoservicesLayerPublicationServiceTests.SRV_IMP_002_ReimportingPublishedLayer_RefreshesAndReusesExistingPublication` proves that a replacement publish conflict refreshes the canonical feature snapshot and returns the existing layer. Returning that layer allows the existing attachment-copy and reconciliation stages to continue with the source-to-target object-id map instead of reporting that nothing was published. Attachment reconciliation now uses persisted source identity and retires the previous imported set only after a complete copy, as detailed below. |
 | `SRV-IMP-008` | not attempted | Re-verified `StreamingFileImportService.Batch.cs`: append batches still use independent transactions (or autocommit when continue-on-error is enabled). An atomic staging/merge design and a reader-failure integration test remain necessary. |
 | `SRV-IMP-011` | not attempted | Re-verified `GeoservicesImportService.ImportSteps.cs`: cancellation at `ImportFailureStage.AfterCommit` still rethrows, while rollback is intentionally a no-op after commit. The background-service terminal-state behavior requires a dedicated cancellation regression test. |
 | `SRV-IMP-012` | already fixed on trunk | `StreamingFileImportService.cs` now checks `importedCount == 0` without conditioning the failure on `failedCount`, so both an empty input and an all-failed/all-skipped input return `No features found in file` rather than success. |
@@ -25,14 +25,30 @@ PR #5664 review re-verification confirmed two follow-up defects in `SRV-IMP-002`
   and catalog lookup. The publication helper now returns its normal publication warning and
   `null` on either failure, while cancellation still propagates. The publication tests cover
   both operations with ordinary exceptions, typed publishing errors, and cancellation.
-- Attachment re-import remains unresolved. `CopyAttachmentsAsync` uploads every advertised
-  attachment again, and `PostgresAttachmentStore.CreateAsync` inserts a fresh row. The
-  attachment schema has no source identity or feature cascade, while snapshot refresh deletes
-  only feature rows. A complete imported-set reconciliation must handle removed/changed parents,
-  stored-file cleanup, failures, and legacy imports without blindly deleting attachments added
-  through Honua. That repair and its regression coverage exceed this adjudication's approximately
-  100-line limit; the attachment review thread deliberately remains open. The publication reuse
-  fix alone does not establish attachment fidelity across repeated imports.
+- Attachment re-import was verified as real and repaired without the prior attempt's size
+  restriction. Migration 125 adds source identity, source parent/attachment IDs and a run
+  generation to attachment metadata, with a database uniqueness constraint. Re-import upserts
+  that identity while preserving the target attachment ID and rebinding the feature ID. After
+  a fully verified inventory/copy, reconciliation removes all unseen imported rows for the
+  publication, including removed parents, upstream attachments and a source that no longer
+  advertises attachments. A failed inventory, copy, metadata write or cancellation retains unseen
+  prior attachments; a complete retry converges without duplicate rows.
+- Retiring an object and queuing storage cleanup occur in the same metadata transaction. The
+  durable queue survives service/process restarts, and failed deletes retry on the next import.
+  Cleanup uses an independent token and checks live metadata references before deleting, so a
+  lost commit acknowledgement cannot trigger deletion of a newly committed object's bytes.
+  Cloud upload and PostgreSQL still do not share a transaction: a process exit immediately
+  after upload, before metadata or compensation is recorded, can leave an unreferenced object
+  for the existing storage orphan reconciliation policy. This does not create duplicate visible
+  attachment rows.
+- Legacy policy: untagged rows are never inferred to be imported from filenames or feature IDs.
+  They remain untouched, including attachments created through Honua. Their presence routes
+  attachment fidelity to NeedsReview on every reconciliation until their ownership is verified.
+  Operators can retain confirmed Honua attachments and accept the explicit ownership review,
+  or remove confirmed obsolete legacy imports through the normal attachment deletion surface.
+  No automatic adoption or bulk deletion of untracked attachments is performed.
+- Attachment stores without source identity reconciliation support do not receive repeated
+  UploadAsync calls; the importer records the unavailable reconciliation as unverified fidelity.
 
 Recovery repair verification: the Release `dotnet test` build compiled `Honua.Postgres`
 and `Honua.Postgres.Tests` successfully; all seven publication-service tests passed with

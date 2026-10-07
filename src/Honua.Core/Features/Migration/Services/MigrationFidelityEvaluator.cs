@@ -113,6 +113,9 @@ public sealed record MigrationFidelityAttachmentInput
     /// </summary>
     public int UnverifiedParents { get; init; }
 
+    /// <summary>True when retained target attachments or failed reconciliation prevent verifying the target set.</summary>
+    public bool TargetUnverified { get; init; }
+
     /// <summary>
     /// True when the source layer advertised attachments but the copy step never ran (disabled by
     /// request, or no attachment store registered).
@@ -378,6 +381,19 @@ public static class MigrationFidelityEvaluator
                 Summary =
                     $"The source advertised {Format(attachments.Advertised)} attachment(s) but only "
                     + $"{Format(attachments.Copied)} reached the target store and none were reported as failures."
+            });
+        }
+
+        if (attachments.TargetUnverified)
+        {
+            differences.Add(new MigrationFidelityDifference
+            {
+                Code = MigrationFidelityDifferenceCodes.AttachmentsUnverified,
+                Severity = MigrationFidelityDifferenceSeverities.Unverified,
+                Subject = "attachments",
+                Expected = "target attachment inventory reconciled against the source",
+                Actual = "target attachment inventory requires review",
+                Summary = "Retained attachments or an incomplete reconciliation prevent verifying the target attachment inventory."
             });
         }
 

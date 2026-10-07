@@ -19,13 +19,14 @@ namespace Honua.Db.Postgres.Features.Attachments;
 /// Marked as internal to prevent exposure of database-specific implementations
 /// outside the Infrastructure layer (Clean Architecture principle).
 /// </remarks>
-internal sealed class PostgresAttachmentStore : IAttachmentStore
+internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImportedAttachmentStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ICloudFileStorage _fileStorage;
     private readonly ILogger<PostgresAttachmentStore> _logger;
     private readonly IAttachmentOrphanLedger? _orphanLedger;
     private readonly string _tableName;
+    private readonly string _importCleanupTableName;
 
     public PostgresAttachmentStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
@@ -39,6 +40,7 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _orphanLedger = orphanLedger;
         _tableName = Infrastructure.SchemaSearchPath.QualifyTable("attachments", schemaName);
+        _importCleanupTableName = Infrastructure.SchemaSearchPath.QualifyTable("import_attachment_cleanup", schemaName);
     }
 
     /// <summary>
