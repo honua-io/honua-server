@@ -59,3 +59,7 @@ the architecture guard and every test assertion remain intact.
 
 Repair validation: `ImportDatasetJobExecutorTests` passed 2/2 in Release with
 no skips, including the operation matrix's staged GeoJSON execution receipt.
+`GeoprocessingOperationEvidenceMatrixTests` passed 4/4, checking the refreshed
+source digest, unchanged evidence bodies, catalog membership and entry points.
+`PostgreSqlLayerPublishingServiceSqlTests` passed 72/72. Both focused runs used
+the Release binaries and reported no skips.
