@@ -1,8 +1,8 @@
 # Issue 5626 audit disposition
 
-Re-verification was performed against the current worktree at `7c422ec`. The fix unit was
-handled in severity order. The two S1 findings were completed before assessing the S2 and S3
-items; remaining applicable lower-severity work is deliberately recorded as not attempted rather
+The original audit re-verification was performed at `7c422ec`. The fix unit was
+handled in severity order. PR #5664 follow-up repairs and final verification are recorded below.
+The two S1 findings were completed before assessing the S2 and S3 items; remaining applicable lower-severity work is deliberately recorded as not attempted rather
 than changed without its required regression test.
 
 | Finding id | Outcome | Evidence |
@@ -43,9 +43,8 @@ PR #5664 review re-verification confirmed two follow-up defects in `SRV-IMP-002`
   attachment rows.
 - New ordinary attachment writes explicitly mark their Honua origin. The migration has no
   origin default, so writes from old binaries remain unknown rather than being misclassified.
-  Honua-authored attachments
-  coexist with the imported set without downgrading fidelity. Legacy policy: pre-migration rows
-  retain unknown ownership and are never inferred to be imported from filenames or feature IDs.
+  Honua-authored attachments coexist with the imported set without downgrading fidelity.
+  Legacy policy: pre-migration rows retain unknown ownership and are never inferred to be imported from filenames or feature IDs.
   They remain untouched, including older attachments created through Honua. A preflight check
   preserves the entire prior attachment set and skips copying when unknown provenance is present,
   so even the first replacement cannot add a fresh set beside legacy copies. Their presence routes
@@ -57,8 +56,8 @@ PR #5664 review re-verification confirmed two follow-up defects in `SRV-IMP-002`
 - Attachment stores without source identity reconciliation support do not receive repeated
   UploadAsync calls; the importer records the unavailable reconciliation as unverified fidelity.
 
-Recovery repair verification: the Release `dotnet test` build compiled `Honua.Postgres`
-and `Honua.Postgres.Tests` successfully; all seven publication-service tests passed with
+Previous conflict-recovery repair verification at `bc1a5e2`: the Release `dotnet test` build
+compiled `Honua.Postgres` and `Honua.Postgres.Tests` successfully; all seven publication-service tests passed with
 no skips. Project-scoped `dotnet format --include`, each wrapped in `timeout 20m`, passed
 for both changed C# files without changes.
 The related replacement, attachment-import, reconciliation-gate, fidelity-gate,
@@ -87,3 +86,5 @@ format run also passed under `timeout 20m`.
 - Focused attachment regression suite passed: 17/17 cases against PostgreSQL, using `dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj --no-restore --configuration Release -p:BuildProjectReferences=false --filter FullyQualifiedName~GeoservicesImportServiceAttachmentImportTests`.
 
 - Related publication, replacement, reconciliation, fidelity, catalog, failure-message and editing-identity tests passed: 55/55 with no skips, using the final Release assemblies (`dotnet test ... --no-build --no-restore --configuration Release`). This includes all seven publication-service tests.
+
+- Shared fidelity evaluator and migration safety classifier suites passed: 85/85 with no skips. Command: `NUGET_HTTP_CACHE_PATH=/tmp/pr5664-nuget-http-cache dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj --configuration Release -p:BuildProjectReferences=false --filter "FullyQualifiedName~MigrationFidelityEvaluatorTests|FullyQualifiedName~MigrationSafetyClassifierTests"`. The writable cache resolved the host's read-only default cache; package auditing stayed enabled. Final test-helper scoped whitespace verification also passed under `timeout 20m`.
