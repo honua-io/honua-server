@@ -38,3 +38,6 @@ Recovery repair verification: the Release `dotnet test` build compiled `Honua.Po
 and `Honua.Postgres.Tests` successfully; all seven publication-service tests passed with
 no skips. Project-scoped `dotnet format --include`, each wrapped in `timeout 20m`, passed
 for both changed C# files without changes.
+The related replacement, attachment-import, reconciliation-gate, fidelity-gate,
+catalog-reconciliation, and import-failure-message suites passed all 43 tests with no skips
+using the Release assemblies and local PostGIS.
