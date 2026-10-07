@@ -15,6 +15,7 @@ using Honua.Infrastructure.Middleware;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -250,7 +251,8 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         using var response = await client.SendAsync(request);
         var body = await response.Content.ReadAsStringAsync();
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
+        // GeoServices reports the rejection as HTTP 200 with error.code 400.
+        GeoServicesErrorAssertions.AssertGeoServicesError((int)response.StatusCode, body, [400]);
         body.Should().Contain("SQL injection attempt detected in query parameter 'where'");
     }
 
@@ -267,13 +269,13 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         using var xss = await client.GetAsync(
             $"{ProtectedQueryPath}?f=json&token={Uri.EscapeDataString("<script>alert(1)</script>")}");
         var xssBody = await xss.Content.ReadAsStringAsync();
-        xss.StatusCode.Should().Be(HttpStatusCode.BadRequest, xssBody);
+        GeoServicesErrorAssertions.AssertGeoServicesError((int)xss.StatusCode, xssBody, [400]);
         xssBody.Should().Contain("XSS attempt detected in query parameter 'token'");
 
         using var control = await client.GetAsync(
             $"{ProtectedQueryPath}?f=json&token={Uri.EscapeDataString("hnua_key\u0001value")}");
         var controlBody = await control.Content.ReadAsStringAsync();
-        control.StatusCode.Should().Be(HttpStatusCode.BadRequest, controlBody);
+        GeoServicesErrorAssertions.AssertGeoServicesError((int)control.StatusCode, controlBody, [400]);
         controlBody.Should().Contain("Control characters detected in query parameter 'token'");
     }
 
