@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Infrastructure.Middleware;
 using Honua.ServiceDefaults;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
@@ -217,7 +218,7 @@ public sealed class RequestTelemetryClassifierTests
         RequestTelemetryClassifier.ResolveOperation(context).Should().Be("wcs.getcoverage");
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("/wfs", "wfs")]
     [InlineData("/ogc/services/test/wms", "wms")]
     [InlineData("/rest/services/test/MapServer/WMTS", "wmts")]

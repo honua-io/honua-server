@@ -3,13 +3,14 @@
 
 using FluentAssertions;
 using Honua.Server.Features.Protocols.Terrain;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Protocols.Terrain;
 
 public sealed class TerrainCacheHeaderTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData("Authorization", "Bearer opaque")]
     [InlineData("X-API-Key", "opaque")]
     [InlineData("X-Esri-Authorization", "Bearer opaque")]
@@ -27,7 +28,7 @@ public sealed class TerrainCacheHeaderTests
             "Authorization, X-API-Key, X-Esri-Authorization, X-Honua-Embed-Key, X-Honua-Token, Cookie");
     }
 
-    [Fact]
+    [UnitTest]
     public void SRV_INF_011_AnonymousRequest_IsPublicWithoutCredentialVary()
     {
         var context = new DefaultHttpContext();

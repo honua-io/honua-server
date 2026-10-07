@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Infrastructure.Middleware;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
 
@@ -39,7 +40,7 @@ public sealed class DefaultAuditActionResolverTests
         _resolver.Resolve(method, route).Should().BeNull();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("PUT", "/api/v{version:apiVersion}/console/content/{id}/share/access")]
     [InlineData("POST", "/api/v{version:apiVersion}/console/content/{id}/share/link")]
     [InlineData("PATCH", "/api/v{version:apiVersion}/console/content/{id}")]

@@ -5,6 +5,7 @@ using System.Diagnostics.Metrics;
 using FluentAssertions;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
@@ -19,7 +20,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 [Collection("HonuaTelemetry")]
 public sealed class GeoServicesErrorTelemetryTests
 {
-    [Fact]
+    [UnitTest]
     public void SRV_INF_014_UnknownPathSegment_UsesBoundedOperationLabel()
     {
         var context = CreateContext("/rest/services/a/b/callerControlledValue");
@@ -33,7 +34,7 @@ public sealed class GeoServicesErrorTelemetryTests
             .Should().BeEmpty();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("/rest/services/Parcels/FeatureServer/0/queryTopFeatures", "querytopfeatures")]
     [InlineData("/rest/services/Parcels/FeatureServer/0/queryDateBins", "querydatebins")]
     [InlineData("/rest/services/Parcels/FeatureServer/0/validateSQL", "validatesql")]
