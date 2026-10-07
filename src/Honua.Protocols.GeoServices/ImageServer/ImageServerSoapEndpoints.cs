@@ -471,9 +471,10 @@ internal static partial class ImageServerSoapEndpoints
         {
             // Prove equivalence for every possible source, including the empty-extent template.
             // Primary-raster metadata alone cannot establish mosaic or per-band semantics.
-            var rasters = await rasterStore.ListRastersAsync(current.LayerId, cancellationToken).ConfigureAwait(false);
-            if (!referenceRaster.HasValue || !IsStoredNoDataOverride(request, referenceRaster.Value) ||
-                rasters.Length == 0 || !rasters.All(raster => IsStoredNoDataOverride(request, raster)))
+            var rasters = referenceRaster.HasValue && IsStoredNoDataOverride(request, referenceRaster.Value)
+                ? await rasterStore.ListRastersAsync(current.LayerId, cancellationToken).ConfigureAwait(false)
+                : Array.Empty<RasterInfo>();
+            if (rasters.Length == 0 || !rasters.All(raster => IsStoredNoDataOverride(request, raster)))
             {
                 return CreateSoapFault(
                     "SOAP NoData overrides without proven equivalent stored values and masking semantics are not supported by the canonical raster renderer.",
