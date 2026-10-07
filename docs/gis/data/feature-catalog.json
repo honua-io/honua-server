@@ -7746,6 +7746,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetItems_WithFilters_ReturnsDeterministicSubsets",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetItems_WithInvalidQuery_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetItems_WithLimitAndOffset_ReturnsPagedLinks",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetRecords_WithMixedCrs_TransformsExtentsBeforeCombining",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.Issue5565_RecordsWithExtent_ReturnBboxPolygonGeometry",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItems_DatetimeIntervalAfterTheRecord_ExcludesIt",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItems_DatetimeIntervalBeforeTheRecord_ExcludesIt",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItems_DatetimeIntervalCoveringTheRecord_ReturnsIt",
@@ -7775,6 +7777,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetItem_WithLayerRecordId_ReturnsRecordLinks",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetItem_WithRetiredProtocolSibling_OmitsInactiveProtocolLink",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetItem_WithUnknownRecordId_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetRecords_WithMixedCrs_TransformsExtentsBeforeCombining",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.Issue5565_RecordsWithExtent_ReturnBboxPolygonGeometry",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItem_ReturnsTheDistinctTitleRatherThanTheName",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.RecordsLandingAndLimitTests.GetItem_ServiceRecord_ListsEachLayerIdOnce"
       ],
@@ -11607,7 +11611,6 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_AdminAndRoleControlsAgreeWithServiceAndLayerHandoffs",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_DeniedDirectory_UsesSoapFaultWithRestStatus",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_UsesSameRbacFilteredEntriesAsRestDirectory",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.Issue5560_MapServerMetadata_AdvertisesTileExportCompatibilityLevel",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Metadata_MapsGovernanceToDocumentInfo",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Metadata_ReturnsServiceInfo",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Metadata_SupportedImageFormatTypes_DoesNotAdvertiseGif",
@@ -12194,6 +12197,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerTileEndpointTests.Tile_HighZoom_ReturnsPngImage",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerTileEndpointTests.Tile_InvalidCoordinates_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerTileEndpointTests.Tile_InvalidServiceId_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerTileEndpointTests.Tile_MasksRemovedAfterCacheLookup_RenderQueryUsesFingerprintedSnapshot",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerTileEndpointTests.Tile_NegativeZoom_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerTileEndpointTests.Tile_ValidCoordinates_ReturnsPngImage",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerTileEndpointTests.Tile_WhenCloudCacheHit_ReturnsStoredTile",
@@ -15675,6 +15679,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Import.GeoServerImportEndpointTests.CancelJob_AfterDequeueBeforeRequestRead_PreservesCancelledWithoutImporting",
+        "Honua.Server.Tests.Import.GeoServerImportEndpointTests.CancelJob_RejectsStaleWorkerProgressAndTerminalWrites",
         "Honua.Server.Tests.Import.GeoServerImportEndpointTests.CancelJob_WithQueuedJob_ReturnsCancelled"
       ],
       "proof_ledger_surface": "control-plane-admin",

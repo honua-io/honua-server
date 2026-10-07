@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1149,
+    "total": 1153,
     "byStatus": {
-      "not-executable": 1135,
+      "not-executable": 1139,
       "unvalidated": 11,
       "passed": 3
     }
@@ -3232,6 +3232,58 @@
       "fence": 2,
       "line": 61,
       "language": "text"
+    },
+    {
+      "id": "18f46af86d83a6d8",
+      "kind": "docs-fence",
+      "path": "docs/ci/affected-shards-promotion.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 3,
+      "line": 75,
+      "language": "bash"
+    },
+    {
+      "id": "40b9062ce8b58e5b",
+      "kind": "docs-fence",
+      "path": "docs/ci/affected-shards-promotion.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 2,
+      "line": 53,
+      "language": "json"
+    },
+    {
+      "id": "67a4c23c257a3bba",
+      "kind": "docs-fence",
+      "path": "docs/ci/affected-shards-promotion.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 4,
+      "line": 133,
+      "language": "bash"
+    },
+    {
+      "id": "9d7ff6386ea77a86",
+      "kind": "docs-fence",
+      "path": "docs/ci/affected-shards-promotion.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 23,
+      "language": "bash"
     },
     {
       "id": "19a5c84fccb3e516",
