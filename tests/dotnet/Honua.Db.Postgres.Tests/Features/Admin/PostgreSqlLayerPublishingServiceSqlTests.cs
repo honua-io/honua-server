@@ -19,6 +19,69 @@ namespace Honua.Db.Postgres.Tests.Features.Admin;
 
 public sealed class PostgreSqlLayerPublishingServiceSqlTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task UpsertPublishedLayerMetadataV2Async_UsesEffectiveStorageConnectionForGraphIdentity(bool managed)
+    {
+        var connectionId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var request = new LayerPublishRequest
+        {
+            Schema = "public", Table = "source", LayerName = "Layer",
+            ConnectionId = connectionId, StorageMode = managed ? LayerStorageMode.Managed : LayerStorageMode.Source
+        };
+        var graphStore = new Mock<IMetadataV2GraphStore>();
+        graphStore.Setup(store => store.GetCurrentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MetadataV2GraphSnapshot(new MetadataV2Graph(), "\"base\"", DateTimeOffset.UtcNow));
+        MetadataV2Graph? saved = null;
+        graphStore.Setup(store => store.SaveAsync(It.IsAny<MetadataV2Graph>(), "\"base\"", It.IsAny<CancellationToken>()))
+            .Returns((MetadataV2Graph graph, string? _, CancellationToken _) =>
+            {
+                saved = graph;
+                return Task.FromResult(new MetadataV2GraphSnapshot(graph, "\"saved\"", DateTimeOffset.UtcNow));
+            });
+        var service = new PostgreSqlLayerPublishingService(Mock.Of<ITableDiscoveryService>(), graphStore.Object,
+            NullLogger<PostgreSqlLayerPublishingService>.Instance);
+        var serviceType = typeof(PostgreSqlLayerPublishingService);
+        var storageType = serviceType.GetNestedType("PublishedLayerStorage", BindingFlags.NonPublic)!;
+        var storage = managed
+            ? storageType.GetMethod("ForManagedStore")!.Invoke(null, ["honua", "honua", 4326])
+            : storageType.GetMethod("ForSourceTable")!.Invoke(null, ["public", "source", "objectid", "geometry", 4326, null]);
+        var fieldType = serviceType.GetNestedType("LayerFieldInsert", BindingFlags.NonPublic)!;
+        var fields = Array.CreateInstance(fieldType, 2);
+        fields.SetValue(Activator.CreateInstance(fieldType,
+            ["objectid", MetadataV2FieldType.Integer, null, false, null, null, null]), 0);
+        fields.SetValue(Activator.CreateInstance(fieldType,
+            ["geometry", MetadataV2FieldType.Geometry, null, true, null, null, null]), 1);
+        var method = serviceType.GetMethod("UpsertPublishedLayerMetadataV2Async", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        await (Task)method.Invoke(service,
+            ["default", request, 1, storage, "objectid", "geometry", "Point", 4326, fields, null,
+                new[] { "Query" }, new PostgreSqlLayerPublishingService.PublicationScope(null, null), false, CancellationToken.None])!;
+
+        saved.Should().NotBeNull();
+        var suffix = managed ? "1" : $"{connectionId:D}-1";
+        var resource = saved!.Resources.Should().ContainSingle().Which;
+        resource.Metadata.Id.Should().Be($"res-layer-{suffix}");
+        resource.PrimaryStorageBindingId.Should().Be($"binding-layer-{suffix}");
+        resource.StorageBindingIds.Should().Equal($"binding-layer-{suffix}");
+        var binding = saved.StorageBindings.Should().ContainSingle().Which;
+        binding.Metadata.Id.Should().Be($"binding-layer-{suffix}");
+        binding.Metadata.Name.Should().Be(binding.Metadata.Id);
+        binding.ResourceId.Should().Be(resource.Metadata.Id);
+        binding.ConnectionId.Should().Be(managed ? null : connectionId.ToString("D"));
+        saved.Publications.Select(publication => publication.Metadata.Id)
+            .Should().BeEquivalentTo($"pub-svc-publish-default-layer-{suffix}", $"pub-stac-svc-publish-default-layer-{suffix}");
+        saved.Publications.Should().AllSatisfy(publication =>
+        {
+            publication.ResourceId.Should().Be(resource.Metadata.Id);
+            publication.StorageBindingId.Should().Be(binding.Metadata.Id);
+            publication.Identifier.Value.Should().Be("1");
+        });
+        saved.Connections.Select(connection => connection.Metadata.Id)
+            .Should().BeEquivalentTo(managed ? [] : new[] { connectionId.ToString("D") });
+    }
+
     [Fact]
     public void Finding_SRV_DB_009_GraphIdsAreUniqueAcrossDatabaseConnections()
     {

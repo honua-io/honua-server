@@ -65,12 +65,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
         ValidatePublicationScope(graph, serviceName, publicationScope, requireExistingScopedService);
         var now = DateTimeOffset.UtcNow;
         var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
-        var graphLayerKey = BuildLayerGraphId("layer", layerId, request.ConnectionId);
+        // Managed storage belongs to the server, even when the source route has a connection ID.
+        var storageConnectionId = storage.IsManagedStore ? null : request.ConnectionId;
+        var graphLayerKey = BuildLayerGraphId("layer", layerId, storageConnectionId);
         var service = BuildPublishedService(graph, serviceName, srid, now);
         var resource = BuildPublishedResource(
             request,
             layerId,
-            request.ConnectionId,
+            storageConnectionId,
             resourcePrimaryKeyColumn,
             resourceGeometryColumn,
             geometryType,
@@ -110,7 +112,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             idPrefix: "pub-stac",
             request.Enabled,
             now);
-        var connection = BuildPublishedConnection(request.ConnectionId, now);
+        var connection = BuildPublishedConnection(storageConnectionId, now);
         if (connection is not null)
         {
             connection = connection with
@@ -3336,7 +3338,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // server connection the writer uses) and the writer's schema qualification, if any.
         // That is what lets the storage-routing guard admit edits and makes every accepted
         // edit readable back (honua-server#4707, #4859).
-        var connectionId = storage.IsManagedStore ? null : request.ConnectionId?.ToString("D");
+        var storageConnectionId = storage.IsManagedStore ? null : request.ConnectionId;
+        var connectionId = storageConnectionId?.ToString("D");
         var options = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         if (!storage.IsManagedStore)
         {
@@ -3388,8 +3391,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             Metadata = new MetadataV2ObjectMetadata
             {
-                Id = BuildStorageBindingId(layerId, request.ConnectionId),
-                Name = BuildStorageBindingId(layerId, request.ConnectionId),
+                Id = BuildStorageBindingId(layerId, storageConnectionId),
+                Name = BuildStorageBindingId(layerId, storageConnectionId),
                 Title = $"{schema}.{table}",
                 CreatedAt = now,
                 UpdatedAt = now
