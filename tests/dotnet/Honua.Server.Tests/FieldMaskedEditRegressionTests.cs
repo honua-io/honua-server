@@ -12,13 +12,14 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Protocols.Ogc.Classic.Wfs20.Services;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests;
 
 public sealed class FieldMaskedEditRegressionTests
 {
-    [Fact]
+    [UnitTest]
     public void SRV_DB_001_PartialUpdate_PreservesEveryOmittedStoredAttribute()
     {
         var stored = Feature.Create(
@@ -41,7 +42,7 @@ public sealed class FieldMaskedEditRegressionTests
         Assert.Equal("preserve me", merged.Attributes["secret"]);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task SRV_OGC_003_WfsUpdate_CarriesProviderReadStateToken()
     {
         var snapshot = Feature.Create(
@@ -65,7 +66,7 @@ public sealed class FieldMaskedEditRegressionTests
         Assert.Equal("provider-full-row-token", constraint!.Value.ExpectedStateToken);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task WfsUpdateAndReplace_PreserveDistinctModesAndSnapshotPreconditions()
     {
         var update = Feature.Create(42, null,
