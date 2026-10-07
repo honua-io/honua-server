@@ -2035,9 +2035,12 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         content.Should().Contain("<wfs:ReplaceResults>");
         content.Should().Contain($"rid=\"test_layer.{featureId}\"");
 
-        var stored = (await reader.GetAsync(WebAppFixture.TestLayerId, featureId))!.Value;
-        stored.Attributes.Should().NotContainKey("population");
-        stored.Geometry.Should().BeNull();
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT NOT (attributes ? 'population') AND geometry IS NULL FROM features WHERE layer_id = @layerId AND objectid = @objectId";
+        command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+        command.Parameters.AddWithValue("objectId", featureId);
+        (await command.ExecuteScalarAsync()).Should().Be(true);
 
         var queryResponse = await _fixture.Client.GetAsync(
             $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=test_layer.{featureId}");
