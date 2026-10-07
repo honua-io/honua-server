@@ -582,11 +582,11 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         try
         {
             var decoded = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(publicToken));
-            // Require that the decoded key is scoped to the temporary-file folder.
-            // Without this check a caller could craft a token for an arbitrary object
-            // key in the storage container and read it via the public /temp/{fileId} endpoint.
-            if (string.IsNullOrWhiteSpace(decoded) ||
-                !decoded.StartsWith(TemporaryFolder + "/", StringComparison.Ordinal))
+            // The public /temp token is the object key itself once the distributed-cache
+            // mapping is gone. Accept only a key the storage providers generate
+            // (optional KeyPrefix/BlobPrefix, then temporary-files/<32-hex><ext>) so a
+            // client cannot retarget the endpoint at another object in the container.
+            if (!IsProviderGeneratedTemporaryObjectKey(decoded))
             {
                 cloudObjectKey = null;
                 return false;
@@ -600,6 +600,78 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
             cloudObjectKey = null;
             return false;
         }
+    }
+
+    private static bool IsProviderGeneratedTemporaryObjectKey(string objectKey)
+    {
+        if (string.IsNullOrWhiteSpace(objectKey) ||
+            objectKey.Contains('%', StringComparison.Ordinal) ||
+            objectKey.Contains('\\', StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var segments = objectKey.Split('/');
+        if (segments.Length < 2 ||
+            !string.Equals(segments[^2], TemporaryFolder, StringComparison.Ordinal) ||
+            !IsProviderGeneratedTemporaryFileName(segments[^1]))
+        {
+            return false;
+        }
+
+        for (var i = 0; i < segments.Length - 1; i++)
+        {
+            if (!IsSafeObjectKeySegment(segments[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsSafeObjectKeySegment(string segment)
+    {
+        return segment.Length > 0 &&
+            segment != "." &&
+            segment != ".." &&
+            !segment.Contains("..", StringComparison.Ordinal);
+    }
+
+    private static bool IsProviderGeneratedTemporaryFileName(string fileName)
+    {
+        const int fileIdLength = 32;
+        if (fileName.Length < fileIdLength || !IsLowerHex(fileName.AsSpan(0, fileIdLength)))
+        {
+            return false;
+        }
+
+        if (fileName.Length == fileIdLength)
+        {
+            return true;
+        }
+
+        return fileName[fileIdLength..] is ".png" or ".jpg" or ".gif" or ".tif" or ".pdf";
+    }
+
+    private static bool IsLowerHex(ReadOnlySpan<char> value)
+    {
+        if (value.Length == 0)
+        {
+            return false;
+        }
+
+        foreach (var character in value)
+        {
+            var isDigit = character is >= '0' and <= '9';
+            var isLowerHexLetter = character is >= 'a' and <= 'f';
+            if (!isDigit && !isLowerHexLetter)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public void Dispose()
