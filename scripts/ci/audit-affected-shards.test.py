@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Offline failure injections for the affected-shard promotion measurement."""
 
-import copy
 import importlib.util
 import tempfile
 import unittest
@@ -121,9 +120,17 @@ class AuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             result = audit.collect(datetime(2026, 10, 7, 16, 45, tzinfo=timezone.utc), Path(directory), api)
             self.assertTrue((Path(directory) / "observations.json").exists())
+            calls.clear()
+            audit.collect(datetime(2026, 10, 7, 16, 45, tzinfo=timezone.utc), Path(directory), api)
+            # Completed, identical attempts resume without refetching jobs.
+            self.assertEqual(len(calls), 2)
+            calls.clear()
+            runs[0]["run_attempt"] = 3
+            with self.assertRaises(AssertionError):
+                audit.collect(datetime(2026, 10, 7, 16, 45, tzinfo=timezone.utc), Path(directory), api)
+            self.assertFalse((Path(directory) / "observations.json").exists())
         self.assertEqual(len(result["runs"]), 105)
         self.assertEqual(audit.summarize(result, [])["counts"]["sample_runs"], 105)
-        self.assertEqual(sum(endpoint.endswith("/runs") for endpoint, _ in calls), 2)
 
     def test_incomplete_catalog_is_not_published_as_complete(self):
         def api(endpoint, parameters):

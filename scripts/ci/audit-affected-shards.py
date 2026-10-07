@@ -12,6 +12,7 @@ import argparse
 import importlib.util
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -39,14 +40,22 @@ def collect(upper: datetime, directory: Path, api=None):
     fetch = api or client.github_page
     lower = upper - timedelta(days=7)
     directory.mkdir(parents=True, exist_ok=True)
+    (directory / "observations.json").unlink(missing_ok=True)
     queries = client.collect(
         f"repos/{REPOSITORY}/actions/workflows/pr-gate.yml/runs",
         int(lower.timestamp()), int(upper.timestamp()) - 1, 1000,
         event="pull_request", fetch=fetch,
     )
     runs = [run for query in queries for page in query for run in page["workflow_runs"]]
-    records = []
-    for run in runs:
+    def read_run(run):
+        checkpoint = directory / f"run-{run['id']}.json"
+        if checkpoint.exists() and run["status"] == "completed":
+            cached = json.loads(checkpoint.read_text())
+            if all(cached.get(field) == run[source] for field, source in (
+                ("run_id", "id"), ("run_attempt", "run_attempt"),
+                ("head_sha", "head_sha"), ("created_at", "created_at"), ("status", "status"),
+            )):
+                return cached
         record = {
             "run_id": run["id"], "run_attempt": run["run_attempt"],
             "head_sha": run["head_sha"], "created_at": run["created_at"],
@@ -89,10 +98,13 @@ def collect(upper: datetime, directory: Path, api=None):
                         raise ValueError("incomplete annotation catalog")
                 else:
                     raise ValueError("annotation catalog exceeds bound")
-        records.append(record)
         # Incremental backup makes an interrupted collection reviewable, but
         # only observations.json below represents a COMPLETE collection.
-        (directory / f"run-{run['id']}.json").write_text(json.dumps(record, indent=2) + "\n")
+        checkpoint.write_text(json.dumps(record, indent=2) + "\n")
+        return record
+    # Four independent, read-only API streams; catalog membership stays fixed.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        records = list(pool.map(read_run, runs))
     value = {
         "contract": "honua.affected-shards-observations/v1",
         "from": lower.isoformat(), "to": upper.isoformat(), "runs": records,
