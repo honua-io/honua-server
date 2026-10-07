@@ -75,3 +75,13 @@ Migration 125 is pinned in `certification/schema-migration-hashes.json`. All 147
 hashes matched their files and the frozen reader baseline was unchanged. An unverified target
 attachment set is a blocking fidelity difference, including retained rows after an unreadable
 source inventory, because the shared evaluator routes only blocking differences to NeedsReview.
+
+Final source verification: the Release build of `Honua.Postgres.csproj` rebuilt the final
+Core fidelity evaluator and PostgreSQL implementation successfully with zero warnings and
+errors. The full application dependency build also succeeded, and the application assembly
+was checked to embed the exact current migration 125 bytes. Final test-project builds reuse
+those application/TestKit dependencies (`BuildProjectReferences=false`) and compile against
+the rebuilt Core/provider assemblies. The ordinary attachment-store fixture's project-scoped
+format run also passed under `timeout 20m`.
+
+- Focused attachment regression suite passed: 17/17 cases against PostgreSQL, using `dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj --no-restore --configuration Release -p:BuildProjectReferences=false --filter FullyQualifiedName~GeoservicesImportServiceAttachmentImportTests`.

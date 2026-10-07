@@ -418,7 +418,7 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
         while (await reader.ReadAsync())
         {
             result.Add(Attachment.Create(reader.GetInt64(0), reader.GetInt64(1), 42, reader.GetString(2),
-                reader.GetString(3), reader.GetInt64(4), reader.GetFieldValue<DateTimeOffset>(5),
+                reader.GetString(3), reader.GetInt64(4), reader.GetDateTime(5),
                 reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7)));
         }
 
