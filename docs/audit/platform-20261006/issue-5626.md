@@ -119,3 +119,10 @@ tests against local PostgreSQL with no skips, including re-import cases that
 read and execute migration 125 through the reported call. Command:
 `dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj --no-build --no-restore --configuration Release --filter FullyQualifiedName~GeoservicesImportServiceAttachmentImportTests`.
 The Release test assembly was rebuilt by the fast pre-PR check before this run.
+
+The fast pre-PR check's affected Release build passed with zero warnings and
+errors. Its first restore encountered the sandbox's read-only default NuGet HTTP
+cache; re-running with `NUGET_HTTP_CACHE_PATH=/tmp/server-adj-5664-nuget-http-cache`
+restored successfully with package auditing enabled. The gate's format step
+dispatches its original included-file list to the four owning projects, each
+under `timeout 20m`, to honor the project-only formatting requirement.
