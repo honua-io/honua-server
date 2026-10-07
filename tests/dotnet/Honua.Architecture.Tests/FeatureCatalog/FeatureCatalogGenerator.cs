@@ -374,6 +374,7 @@ internal static class FeatureCatalogGenerator
     private static string MaturityLabel(CapabilityMaturity maturity)
         => maturity switch
         {
+            CapabilityMaturity.Internal => "internal",
             CapabilityMaturity.Planned => "planned",
             CapabilityMaturity.Deferred => "deferred",
             CapabilityMaturity.Experimental => "experimental",

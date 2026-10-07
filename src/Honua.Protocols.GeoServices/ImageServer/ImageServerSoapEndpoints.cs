@@ -449,11 +449,6 @@ internal static partial class ImageServerSoapEndpoints
                 requestContext.SoapNamespace);
         }
 
-        if (CreateUnsupportedNoDataFault(request, requestContext.SoapNamespace) is { } noDataFault)
-        {
-            return noDataFault;
-        }
-
         var returnType = FindDescendantValue(operation, "ImageReturnType");
         var returnMimeData = string.Equals(returnType, "esriImageReturnMimeData", StringComparison.Ordinal);
         var revalidation = await RevalidateRasterPublicationAsync(
@@ -472,6 +467,26 @@ internal static partial class ImageServerSoapEndpoints
         var referenceRaster = await rasterStore
             .GetPrimaryRasterInfoAsync(current.LayerId, cancellationToken)
             .ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(request.NoData))
+        {
+            // Prove equivalence for every possible source, including the empty-extent template.
+            // Primary-raster metadata alone cannot establish mosaic or per-band semantics.
+            var rasters = referenceRaster.HasValue && IsStoredNoDataOverride(request, referenceRaster.Value)
+                ? await rasterStore.ListRastersAsync(current.LayerId, cancellationToken).ConfigureAwait(false)
+                : Array.Empty<RasterInfo>();
+            if (rasters.Length == 0 || !rasters.All(raster => IsStoredNoDataOverride(request, raster)))
+            {
+                return CreateSoapFault(
+                    "SOAP NoData overrides without proven equivalent stored values and masking semantics are not supported by the canonical raster renderer.",
+                    StatusCodes.Status501NotImplemented,
+                    requestContext.SoapNamespace);
+            }
+
+            // The requested value is already enforced by the canonical renderer from the
+            // raster metadata. Remove the redundant override before shared REST validation.
+            request = CopyWithoutNoData(request);
+        }
+
         request = CopyWithResponseFormat(
             request,
             returnMimeData ? "image" : "json",
@@ -692,6 +707,38 @@ internal static partial class ImageServerSoapEndpoints
                 StatusCodes.Status501NotImplemented,
                 soapNamespace);
 
+    private static bool IsStoredNoDataOverride(ExportImageRequest request, RasterInfo raster)
+    {
+        // Exact equality is intentional: U8 sentinels must be integers in [0, 255].
+        // A tolerance would admit a different stored sentinel before conversion to byte.
+        if ((!string.Equals(request.NoDataInterpretation, "esriNoDataMatchAny", StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(request.NoDataInterpretation, "esriNoDataMatchAll", StringComparison.OrdinalIgnoreCase)) ||
+            // BSQ uses an OR of band-validity masks (MatchAll). MatchAny agrees only for one band.
+            (raster.BandCount > 1 && !string.Equals(request.NoDataInterpretation, "esriNoDataMatchAll", StringComparison.OrdinalIgnoreCase)) ||
+            !string.Equals(request.Format, "bsq", StringComparison.OrdinalIgnoreCase) ||
+            !raster.HasUniformNoDataValue ||
+            !raster.NoDataValue.HasValue ||
+            !string.Equals(raster.PixelType, "8BUI", StringComparison.OrdinalIgnoreCase) ||
+            raster.NoDataValue.Value is < byte.MinValue or > byte.MaxValue ||
+            raster.NoDataValue.Value != Math.Truncate(raster.NoDataValue.Value))
+        {
+            return false;
+        }
+
+        byte[] values;
+        try
+        {
+            values = Convert.FromBase64String(request.NoData!);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        var storedValue = (byte)raster.NoDataValue.Value;
+        return values.Length == raster.BandCount && values.All(value => value == storedValue);
+    }
+
     /// <summary>
     /// Converts the canonical encoded render into Esri GetImage binary layout: unsigned
     /// 8-bit samples in band-interleaved-by-pixel order followed by a packed validity
@@ -835,6 +882,8 @@ internal static partial class ImageServerSoapEndpoints
             Format = format,
             PixelType = NormalizeOptionalValue(FindDescendantValue(description, "PixelType")),
             NoData = NormalizeOptionalValue(FindDescendantValue(description, "NoData")),
+            NoDataInterpretation = NormalizeOptionalValue(FindDescendantValue(description, "NoDataInterpretation"))
+                ?? "esriNoDataMatchAny",
             Interpolation = NormalizeOptionalValue(FindDescendantValue(description, "Interpolation")),
             Compression = NormalizeOptionalValue(FindDescendantValue(description, "Compression")),
             CompressionQuality = TryReadInt(description, "CompressionQuality", out var quality) ? quality : 75,
@@ -846,6 +895,23 @@ internal static partial class ImageServerSoapEndpoints
         };
         return true;
     }
+
+    private static ExportImageRequest CopyWithoutNoData(ExportImageRequest request)
+        => new()
+        {
+            Bbox = request.Bbox,
+            Size = request.Size,
+            ImageSr = request.ImageSr,
+            BboxSr = request.BboxSr,
+            Format = request.Format,
+            PixelType = request.PixelType,
+            Interpolation = request.Interpolation,
+            Compression = request.Compression,
+            CompressionQuality = request.CompressionQuality,
+            BandIds = request.BandIds,
+            MosaicRule = request.MosaicRule,
+            F = request.F
+        };
 
     private static ExportImageRequest CopyWithResponseFormat(
         ExportImageRequest request,

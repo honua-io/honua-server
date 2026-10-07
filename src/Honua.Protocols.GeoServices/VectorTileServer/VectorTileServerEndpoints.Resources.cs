@@ -4,15 +4,15 @@
 // VectorTileServer resources surface (honua-server#1779 styles + honua-server#1780 sprites/glyphs,
 // epic #1776). Implements the Esri-compatible default-style document (root.json) by composing the
 // canonical MapLibre style stored for the service's primary layer into a Mapbox GL v8 document
-// whose vector source is pointed at this service's tile/{z}/{y}/{x}.pbf route
-// (VectorTileStyleComposer). The composed style references sprite/glyphs (pointed at the
+// whose vector source references this service's descriptor (url, #5534) and its
+// tile/{z}/{y}/{x}.pbf route (tiles) (VectorTileStyleComposer). The composed style references sprite/glyphs (pointed at the
 // scoped-minimal resources/sprites and resources/fonts routes below) ONLY when it has symbol
 // layers; otherwise they stay omitted. style sub-resources other than root.json return 404.
 //
-// Sprites/glyphs are scoped-minimal (honua-server#1780): resources/sprites/sprite[.json|.png|
-// @2x.json|@2x.png] serve an empty sprite index / 1x1 transparent PNG, and
-// resources/fonts/{fontstack}/{range}.pbf serves a single minimal glyph stack for the default
-// 0-255 range (other ranges 404). These are deterministic in-process stubs (VectorTileEmbeddedAssets).
+// Sprites are scoped-minimal (honua-server#1780): resources/sprites/sprite[.json|.png|
+// @2x.json|@2x.png] serve an empty sprite index / 1x1 transparent PNG. resources/fonts/
+// {fontstack}/{range}.pbf serves the bundled face's glyphs for the requested fontstack and
+// range, or not-found for an unserved fontstack or range (#5535) (VectorTileEmbeddedAssets).
 
 using System.Diagnostics;
 using Honua.Core.Features.Authorization.Domain;
@@ -48,7 +48,7 @@ internal static partial class VectorTileServerEndpoints
             .WithDisplayName("Get Vector Tile Default Styles")
             .WithName("GetVectorTileDefaultStyles")
             .WithSummary("Get the default vector tile style document (root.json)")
-            .WithDescription("Returns the Mapbox GL v8 style JSON for the service, with the vector source pointed at this service's tile template.")
+            .WithDescription("Returns the Mapbox GL v8 style JSON for the service, with the vector source referencing this service and its tile template.")
             .WithTags("VectorTileServer")
             .AllowAnonymous()
             .Produces(200, contentType: JsonContentType)
@@ -85,7 +85,7 @@ internal static partial class VectorTileServerEndpoints
             .WithDisplayName("Get Vector Tile Glyph Range")
             .WithName("GetVectorTileGlyphRange")
             .WithSummary("Get a vector tile glyph range PBF for a fontstack")
-            .WithDescription("Returns the scoped-minimal Mapbox glyph PBF for the default 0-255 range. Out-of-range or unknown ranges return 404.")
+            .WithDescription("Returns the glyph PBF for the requested fontstack and range from the bundled sans-serif face. Unserved fontstacks and ranges return 404.")
             .WithTags("VectorTileServer")
             .AllowAnonymous()
             .Produces(200, contentType: VectorTileEmbeddedAssets.GlyphPbfContentType)
@@ -180,6 +180,7 @@ internal static partial class VectorTileServerEndpoints
             var tileUrl = BuildTileTemplateUrl(context, service.Metadata.Name);
             var spriteUrl = BuildSpriteBaseUrl(context, service.Metadata.Name);
             var glyphsUrl = BuildGlyphsTemplateUrl(context, service.Metadata.Name);
+            var serviceUrl = BuildServiceUrl(context, service.Metadata.Name);
             var styleJson = VectorTileStyleComposer.Compose(
                 storedMapLibreJson,
                 service.Metadata.Name,
@@ -187,7 +188,8 @@ internal static partial class VectorTileServerEndpoints
                 tileUrl,
                 geometryType,
                 spriteUrl,
-                glyphsUrl);
+                glyphsUrl,
+                serviceUrl);
 
             stopwatch.Stop();
             scope.SetSuccess(1);
@@ -295,6 +297,18 @@ internal static partial class VectorTileServerEndpoints
     }
 
     /// <summary>
+    /// Builds the absolute service descriptor URL, for example
+    /// <c>https://host/rest/services/{name}/VectorTileServer</c>. The style source carries it
+    /// so clients read the service's fullExtent and tile map from the descriptor (#5534).
+    /// </summary>
+    private static string BuildServiceUrl(HttpContext context, string serviceName)
+    {
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
+        var encodedService = Uri.EscapeDataString(serviceName);
+        return $"{baseUrl}/rest/services/{encodedService}/VectorTileServer";
+    }
+
+    /// <summary>
     /// Builds the absolute tile template for the service, for example
     /// <c>https://host/rest/services/{name}/VectorTileServer/tile/{z}/{y}/{x}.pbf</c>.
     /// </summary>
@@ -363,10 +377,10 @@ internal static partial class VectorTileServerEndpoints
     }
 
     /// <summary>
-    /// Serves the scoped-minimal glyph range PBF. Resolves the service (404 for unknown
-    /// services) then returns the minimal glyph stack for the default <c>0-255</c> range; any
-    /// other range 404s. The fontstack is informational — any fontstack resolves to the same
-    /// minimal stack.
+    /// Serves a glyph range PBF. Resolves the service (404 for unknown services) then returns
+    /// the bundled face's glyphs for the range, labelled with the requested fontstack (#5535).
+    /// A fontstack with no served font, or a range that is not bundled, answers not-found —
+    /// never an empty glyph stack.
     /// </summary>
     private static async Task<IResult> HandleGetGlyphRange(HttpContext context, string fontstack, string range)
     {
@@ -376,16 +390,14 @@ internal static partial class VectorTileServerEndpoints
             return serviceError;
         }
 
-        if (string.IsNullOrWhiteSpace(fontstack) || !VectorTileEmbeddedAssets.IsServedRange(range))
+        if (!VectorTileEmbeddedAssets.TryGetGlyphPbf(fontstack, range, out var glyphPbf))
         {
             return StandardErrorHelpers.CreateNotFound(
                 context,
                 $"Glyph range '{range}' is not available for fontstack '{fontstack}'.");
         }
 
-        return Results.Bytes(
-            VectorTileEmbeddedAssets.GetGlyphPbf(),
-            VectorTileEmbeddedAssets.GlyphPbfContentType);
+        return Results.Bytes(glyphPbf, VectorTileEmbeddedAssets.GlyphPbfContentType);
     }
 
     /// <summary>

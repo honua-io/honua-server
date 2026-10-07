@@ -43,6 +43,8 @@ public sealed class ArcGisPathBaseTests : IAsyncLifetime
         _app.UseHonuaHeadRequestGetSemantics();
         _app.MapGet("/rest/info", (HttpContext context) => Results.Text(
             $"{BaseUrlResolver.GetBaseUrl(context)}|{context.Request.Path}|{context.Request.QueryString}"));
+        _app.MapGet("/advertised", (HttpContext context) => Results.Text(
+            BaseUrlResolver.PreserveToken(context.Request, "https://localhost/wfs")));
         _app.MapPost("/services", async (HttpContext context) =>
         {
             using var reader = new StreamReader(context.Request.Body);
@@ -54,6 +56,29 @@ public sealed class ArcGisPathBaseTests : IAsyncLifetime
             .RequireAuthorization();
         await _app.StartAsync();
         _client = _app.GetTestClient();
+    }
+
+    [UnitTest]
+    public async Task Issue5520_AdvertisedUrl_PreservesOnlyRequestToken()
+    {
+        var credentialed = await _client.GetStringAsync("/advertised?token=a%26b&SERVICE=WFS");
+        var anonymous = await _client.GetStringAsync("/advertised?SERVICE=WFS");
+
+        credentialed.Should().Be("https://localhost/wfs?token=a%26b");
+        anonymous.Should().Be("https://localhost/wfs");
+    }
+
+    [UnitTest]
+    public async Task Issue5520_AdvertisedUrl_CollapsesRepeatedIdenticalTokenAndDropsConflicts()
+    {
+        // PortalTokenAuthenticationHandler accepts ?token=abc&token=abc as one credential
+        // and rejects conflicting values; the advertised URL must follow the same rule
+        // rather than StringValues.ToString()'s "abc,abc" join.
+        var repeated = await _client.GetStringAsync("/advertised?token=abc&token=abc");
+        var conflicting = await _client.GetStringAsync("/advertised?token=abc&token=xyz");
+
+        repeated.Should().Be("https://localhost/wfs?token=abc");
+        conflicting.Should().Be("https://localhost/wfs");
     }
 
     public async Task DisposeAsync()

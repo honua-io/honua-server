@@ -398,6 +398,7 @@ internal sealed class InputValidationMiddleware
     // into SQL text, so the SQL-injection heuristic produces false positives that reject valid
     // tokens (e.g. a JWT signature containing "--" → 400 on /sharing/rest/oauth2/introspect).
     // This mirrors the opaque-credential handling for the Authorization / X-API-Key headers.
+    // "token" is also exempt on every route; see IsOpaqueTokenCredentialParameter.
     private static readonly HashSet<string> _oauth2CredentialFields = new(StringComparer.OrdinalIgnoreCase)
     {
         "token",
@@ -411,9 +412,22 @@ internal sealed class InputValidationMiddleware
 
     private static bool ShouldSkipSqlInspection(HttpRequest request, string paramType, string name)
         => IsFeatureEditPayloadField(request, paramType, name)
+           || IsOpaqueTokenCredentialParameter(paramType, name)
            || IsOAuth2CredentialParameter(request, paramType, name)
            || IsGenerateTokenPasswordParameter(request, paramType, name)
            || IsAdminSignalRConnectionId(request, paramType, name);
+
+    private static bool IsOpaqueTokenCredentialParameter(string paramType, string name)
+    {
+        // The token query/form parameter is an opaque credential on every route
+        // (GeoServices, OGC/WFS, portal, OAuth2). Managed API keys are base64url and
+        // may contain "--" or "/*"-like bytes. The verifier looks the value up or
+        // compares it; it is never concatenated into SQL. Skip only the SQL heuristic.
+        // Size, control-character, XSS, command, path, and LDAP checks still run, matching
+        // the reason Authorization and X-API-Key skip SQL inspection.
+        return paramType is "form" or "query"
+            && name.Equals("token", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static bool IsGenerateTokenPasswordParameter(HttpRequest request, string paramType, string name)
     {

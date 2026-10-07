@@ -71,6 +71,36 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/package-drafts/{draftId}/content-versions")]
+    public async Task CreateContentVersion_WithoutBody_SavesVersion()
+    {
+        var createResponse = await PostAsync(
+            "/api/v1/studio/package-drafts",
+            new CreateStudioPackageDraftRequest
+            {
+                PackageKey = "bodyless-version-save",
+                WorkspaceId = "studio",
+                Envelope = BuildEnvelope("1=1"),
+            },
+            StudioApiJsonContext.Default.CreateStudioPackageDraftRequest);
+        var draft = await ReadAsync<StudioPackageDraft>(
+            createResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/v1/studio/package-drafts/{draft.DraftId:D}/content-versions");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var version = await ReadAsync<StudioContentVersion>(
+            response,
+            StudioApiJsonContext.Default.ApiResponseStudioContentVersion);
+        version.ItemId.Should().Be(draft.ItemId);
+        version.ChangeNote.Should().BeNull();
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/studio/package-families")]
     [Endpoint("POST /api/v1/studio/package-drafts")]
     [Endpoint("GET /api/v1/studio/package-drafts/{draftId}")]
