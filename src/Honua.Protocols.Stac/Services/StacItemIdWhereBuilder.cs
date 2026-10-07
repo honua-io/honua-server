@@ -16,7 +16,7 @@ internal static class StacItemIdWhereBuilder
     {
         var primaryIdField = FindDeclaredPrimaryIdField(resource);
         return primaryIdField is null
-            ? [new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger }]
+            ? []
             : [primaryIdField];
     }
 
