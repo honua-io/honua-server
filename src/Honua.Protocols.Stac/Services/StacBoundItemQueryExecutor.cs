@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -37,17 +38,43 @@ internal static class StacBoundItemQueryExecutor
             .ToDictionary(static group => group.Key, static group => group.First().index, StringComparer.Ordinal);
         var candidates = new Dictionary<long, Feature>();
         var candidateLimit = checked(itemIds.Length + 1);
+        var fields = StacItemIdWhereBuilder.GetCandidateFields(resource);
+        var queries = new List<FeatureQuery>();
 
-        foreach (var field in StacItemIdWhereBuilder.GetCandidateFields(resource))
+        foreach (var field in fields)
         {
             if (!StacItemIdWhereBuilder.TryBuildFieldMatch(field, itemIds, out var where))
             {
                 continue;
             }
 
-            var query = baseQuery with
+            queries.Add(baseQuery with
             {
-                Where = StacItemIdWhereBuilder.Combine(baseQuery.Where, where),
+                Where = StacItemIdWhereBuilder.Combine(baseQuery.Where, where)
+            });
+        }
+
+        if (fields.IsEmpty)
+        {
+            // Feature.ObjectId is a provider key, not a synthetic schema column.
+            var objectIds = itemIds
+                .Select(itemId => long.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id)
+                    ? (long?)id : null)
+                .Where(static id => id.HasValue)
+                .Select(static id => id!.Value)
+                .Distinct()
+                .Where(id => baseQuery.ObjectIds is not { IsDefaultOrEmpty: false } existingIds || existingIds.Contains(id))
+                .ToImmutableArray();
+            if (!objectIds.IsEmpty)
+            {
+                queries.Add(baseQuery with { ObjectIds = objectIds });
+            }
+        }
+
+        foreach (var candidateQuery in queries)
+        {
+            var query = candidateQuery with
+            {
                 Offset = null,
                 Limit = candidateLimit,
                 OrderBy = null,
