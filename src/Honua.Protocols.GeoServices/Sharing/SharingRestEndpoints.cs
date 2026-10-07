@@ -10,6 +10,7 @@ using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Portal.Abstractions;
 using Honua.Core.Features.Portal.Domain;
@@ -575,7 +576,9 @@ public static class SharingRestEndpoints
         }
 
         var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
-        var items = projector.ProjectVisibleItems(snapshot, context.User, BaseUrlResolver.GetBaseUrl(context)).Where(item => string.Equals(item.Owner, current, StringComparison.OrdinalIgnoreCase)).ToArray();
+        var unmappedOwnerIds = GetUnmappedOwnerIds(snapshot);
+        var items = projector.ProjectVisibleItems(snapshot, context.User, BaseUrlResolver.GetBaseUrl(context))
+            .Where(item => unmappedOwnerIds.Contains(item.Id) || string.Equals(item.Owner, current, StringComparison.OrdinalIgnoreCase)).ToArray();
         return Results.Json(new ContentUserResponse { Username = current, Items = items }, SharingRestJsonContext.Default.ContentUserResponse, contentType: JsonContentType);
     }
 
@@ -603,7 +606,7 @@ public static class SharingRestEndpoints
         var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         var visible = projector.ProjectVisibleItems(snapshot, context.User, baseUrl);
 
-        var filtered = ApplyQuery(visible, query);
+        var filtered = ApplyQuery(visible, query, GetUnmappedOwnerIds(snapshot));
         var sorted = ApplySort(filtered, parameters);
 
         var total = sorted.Count;
@@ -723,20 +726,25 @@ public static class SharingRestEndpoints
         return (start, num);
     }
 
+    private static HashSet<string> GetUnmappedOwnerIds(MetadataV2GraphSnapshot snapshot)
+        => snapshot.Graph.Services.Where(service => string.IsNullOrWhiteSpace(service.Metadata.Publisher))
+            .Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+
     /// <summary>
     /// Applies a coarse, case-insensitive Portal <c>q</c> filter over the projected
     /// items. Supports the common <c>type:</c>, <c>owner:</c>, and <c>tags:</c>
     /// field qualifiers plus free-text matching against title/snippet/tags; any
     /// other qualifier degrades to free-text so unsupported syntax never errors.
     /// </summary>
-    private static List<PortalItem> ApplyQuery(IReadOnlyList<PortalItem> items, string query)
+    private static List<PortalItem> ApplyQuery(IReadOnlyList<PortalItem> items, string query, HashSet<string> unmappedOwnerIds)
     {
         if (string.IsNullOrWhiteSpace(query) || query.Trim() == "*")
         {
             return items.ToList();
         }
 
-        var terms = Regex.Matches(query, """(?<negative>-)?(?<field>[A-Za-z]+):\s*(?:\((?<group>[^)]*)\)|"(?<quoted>[^"]*)"|(?<value>[^\s()]+))""")
+        const string qualifiedTermPattern = """(?<negative>-)?(?<field>[A-Za-z]+):\s*(?:\((?<group>[^)]*)\)|"(?<quoted>[^"]*)"|(?<value>[^\s()]+))""";
+        var terms = Regex.Matches(query, qualifiedTermPattern)
             .Select(match => new SearchTerm(
                 match.Groups["field"].Value,
                 match.Groups["group"].Success ? match.Groups["group"].Value : match.Groups["quoted"].Success ? match.Groups["quoted"].Value : match.Groups["value"].Value,
@@ -744,10 +752,22 @@ public static class SharingRestEndpoints
             .ToList();
         if (terms.Count == 0)
         {
-            return items.Where(item => FreeTextMatch(item, query.Trim(' ', '"'))).ToList();
+            var unqualifiedTerms = TokenizeQuery(query);
+            return items.Where(item => unqualifiedTerms.All(term => MatchesTerm(item, term))).ToList();
         }
 
-        return items.Where(item => terms.All(term => term.Negative != MatchesQualifiedTerm(item, term.Field, term.Value))).ToList();
+        var freeTextTerms = TokenizeQuery(Regex.Replace(query, qualifiedTermPattern, " "))
+            .Select(term => term.Trim('(', ')'))
+            .Where(term => term.Length > 0 && !string.Equals(term, "AND", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(term, "OR", StringComparison.OrdinalIgnoreCase)).ToList();
+
+        // The projector's fallback owner is a display value, not a username mapping.
+        // Omit owner predicates for unmapped services; visibility was already checked
+        // by the shared RBAC projector, including for user-content listing.
+        return items.Where(item => terms.All(term =>
+                (unmappedOwnerIds.Contains(item.Id) && string.Equals(term.Field, "owner", StringComparison.OrdinalIgnoreCase)) ||
+                term.Negative != MatchesQualifiedTerm(item, term.Field, term.Value)) &&
+            freeTextTerms.All(term => MatchesTerm(item, term))).ToList();
     }
 
     private readonly record struct SearchTerm(string Field, string Value, bool Negative);
@@ -766,7 +786,7 @@ public static class SharingRestEndpoints
             "tags" => item.Tags.Any(tag => string.Equals(tag, candidate, StringComparison.OrdinalIgnoreCase)),
             "id" => string.Equals(item.Id, candidate, StringComparison.OrdinalIgnoreCase),
             "title" => item.Title.Contains(candidate, StringComparison.OrdinalIgnoreCase),
-            _ => true,
+            _ => FreeTextMatch(item, $"{field}:{candidate}"),
         });
     }
 
