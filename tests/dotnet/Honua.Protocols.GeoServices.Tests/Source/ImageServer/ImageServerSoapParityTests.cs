@@ -7,6 +7,8 @@ using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using FluentAssertions;
+using Honua.Core.Configuration;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -548,6 +550,41 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTheory]
+    [InlineData(true, true, 64, 64)]
+    [InlineData(true, true, 7, 7)]
+    [InlineData(true, true, 0, 1)]
+    [InlineData(true, false, 7, 0)]
+    [InlineData(false, true, 7, 0)]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer")]
+    public async Task TileExportMetadata_MatchesRuntimeConfiguration(
+        bool enableTileCache, bool enableStorage, int configuredLimit, int advertisedLimit)
+    {
+        var fixture = await CreateFixtureAsync(enableTileCache, enableStorage, configuredLimit);
+        try
+        {
+            using var metadata = await fixture.Client.GetAsync($"{ServicePath()}?f=json");
+            var info = await ReadJsonAsync(metadata);
+            info.GetProperty("exportTilesAllowed").GetBoolean().Should().Be(enableTileCache && enableStorage);
+            info.GetProperty("maxExportTilesCount").GetInt32().Should().Be(advertisedLimit);
+            info.GetProperty("singleFusedMapCache").GetBoolean().Should().Be(enableTileCache);
+
+            if (enableTileCache && !enableStorage)
+            {
+                using var tile = await fixture.Client.GetAsync($"{ServicePath()}/tile/0/0/0");
+                tile.StatusCode.Should().Be(HttpStatusCode.OK);
+                using var export = await fixture.Client.GetAsync($"{ServicePath()}/exportTiles?levels=0&exportExtent=-180,-85,180,85&exportExtentSR=4326&f=json");
+                export.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+                (await export.Content.ReadAsStringAsync()).Should().Contain("Cloud file storage is not configured.");
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     private static void AssertTileCache(XElement cache, JsonElement tileInfo)
     {
         Child(cache, "TileCols").Value.Should().Be(tileInfo.GetProperty("cols").GetInt32().ToString(CultureInfo.InvariantCulture));
@@ -794,12 +831,20 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         return document.RootElement.Clone();
     }
 
-    private static async Task<WebAppFixture> CreateFixtureAsync(bool enableTileCache)
+    private static async Task<WebAppFixture> CreateFixtureAsync(
+        bool enableTileCache, bool enableStorage = true, int maxTiles = 64)
     {
         var rasterStore = CreateRasterStore();
         var coverageStore = CreateCoverageStore();
         var fixture = new WebAppFixture().ConfigureServices(services =>
         {
+            services.RemoveAll<ICloudFileStorage>();
+            if (enableStorage)
+            {
+                services.AddSingleton(Substitute.For<ICloudFileStorage>());
+            }
+
+            services.PostConfigure<LimitsOptions>(options => options.Tiles.MaxTilesPerRequest = maxTiles);
             services.RemoveAll<IRasterStore>();
             services.AddSingleton(rasterStore);
             services.RemoveAll<IMultidimensionalCoverageStore>();
