@@ -123,6 +123,18 @@ The Release test assembly was rebuilt by the fast pre-PR check before this run.
 The fast pre-PR check's affected Release build passed with zero warnings and
 errors. Its first restore encountered the sandbox's read-only default NuGet HTTP
 cache; re-running with `NUGET_HTTP_CACHE_PATH=/tmp/server-adj-5664-nuget-http-cache`
-restored successfully with package auditing enabled. The gate's format step
-dispatches its original included-file list to the four owning projects, each
-under `timeout 20m`, to honor the project-only formatting requirement.
+restored successfully with package auditing enabled. For this run, the gate's
+original included-file list was dispatched to the four owning projects, each
+under `timeout 20m`, to honor the project-only formatting requirement. All four
+format checks passed without changes.
+
+The fast check passed 5,188 Core, 12 Core security, 23 load, 1,873 PostgreSQL,
+and 68 MCP registry/taxonomy tests with no skips. Its architecture run stopped
+on an inherited feature-catalog drift: the MapServer test from #5638 was missing,
+and two scene proving-test names were stale. `scripts/generate-feature-catalog.sh
+--no-build --no-restore --configuration Release` regenerated those three entries.
+The complete Release architecture suite then passed 359/359 with no skips.
+The catalog crosswalk validator and the remaining local architecture review also
+passed; `git diff --check` passed. The original fast invocation exited at the
+catalog drift; its architecture suite and remaining review were re-run after
+repair rather than repeating the full pipeline.
