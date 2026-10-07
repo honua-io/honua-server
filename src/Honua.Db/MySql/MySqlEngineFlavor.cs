@@ -12,7 +12,7 @@ namespace Honua.Db.MySql;
 public enum MySqlEngineFlavor
 {
     /// <summary>
-    /// Oracle MySQL 8.0.11+. The provider emits the <c>'axis-order=long-lat'</c>
+    /// Oracle MySQL 8.0.12+. The provider emits the <c>'axis-order=long-lat'</c>
     /// option on <c>ST_AsWKB</c> and <c>ST_GeomFromWKB</c> so geographic SRSes
     /// (e.g. EPSG:4326) produce and consume canonical X/Y WKB instead of the
     /// SRS-defined latitude-first order. The option is permitted-but-ignored on

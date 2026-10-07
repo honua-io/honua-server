@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -8,6 +9,12 @@ using Honua.Core.Queries.Filters;
 using Honua.Db.Oracle.Features.FeatureStore.Services;
 
 namespace Honua.Db.Oracle.Tests;
+
+// Audit platform-20261006 outcomes:
+// SRV-DB-008 -> fixed; BuildSelectQuery_SRV_DB_008_WhereAndSqlFilterFailsClosed.
+// SRV-DB-010 -> fixed; BuildSelectQuery_SRV_DB_010_EwkbIsNormalizedAndSridAssigned.
+// SRV-AUTH-008 -> fixed; OracleConnectionDriverTests.BuildConnectionString_SRV_AUTH_008_*.
+// SRV-DB-018 -> fixed; MySqlFeatureQueryBuilderTests.BuildExtentQuery_SRV_DB_018_*.
 
 /// <summary>
 /// Unit tests for the Oracle query builder. Verifies Oracle SQL dialect, identifier
@@ -19,6 +26,11 @@ public class OracleFeatureQueryBuilderTests
     private const int TestLayerId = 7;
 
     private static readonly IReadOnlyList<string> _attributeColumns = ["name", "area", "category"];
+
+    // Positive SRIDs are stamped with the SDO_GEOMETRY constructor. MAKE_2D is 3D-only,
+    // and FROM_WKBGEOMETRY's SRID argument is missing on the supported 12c through 21c floor.
+    private const string StampedWkb4326 =
+        "(SELECT SDO_GEOMETRY(a.geom.SDO_GTYPE, 4326, a.geom.SDO_POINT, a.geom.SDO_ELEM_INFO, a.geom.SDO_ORDINATES) FROM (SELECT SDO_UTIL.FROM_WKBGEOMETRY(:p0) geom FROM DUAL) a)";
 
     private static OracleLayerMapping BuildMapping(
         string? schema = "GIS",
@@ -292,7 +304,8 @@ public class OracleFeatureQueryBuilderTests
 
         var result = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        Assert.Contains("SDO_RELATE(\"SHAPE\", SDO_UTIL.FROM_WKBGEOMETRY(:p0), 'mask=ANYINTERACT') = 'TRUE'", result.Sql, StringComparison.Ordinal);
+        Assert.Contains($"SDO_RELATE(\"SHAPE\", {StampedWkb4326}, 'mask=ANYINTERACT') = 'TRUE'", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("MAKE_2D", result.Sql, StringComparison.Ordinal);
         Assert.Equal(new byte[] { 0x01, 0x02, 0x03 }, result.WhereParameters[0]);
     }
 
@@ -310,7 +323,7 @@ public class OracleFeatureQueryBuilderTests
         // Esri esriSpatialRelWithin = filter geometry within feature geometry. SDO_RELATE masks
         // are operand-order sensitive: SDO_RELATE(A, B, 'mask=INSIDE') means A is inside B, so
         // the filter geometry must be the FIRST operand (#2068).
-        Assert.Contains("SDO_RELATE(SDO_UTIL.FROM_WKBGEOMETRY(:p0), \"SHAPE\", 'mask=INSIDE+COVEREDBY') = 'TRUE'", result.Sql, StringComparison.Ordinal);
+        Assert.Contains($"SDO_RELATE({StampedWkb4326}, \"SHAPE\", 'mask=INSIDE+COVEREDBY') = 'TRUE'", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -327,7 +340,7 @@ public class OracleFeatureQueryBuilderTests
         // Esri esriSpatialRelContains = filter geometry contains feature geometry. SDO_RELATE
         // masks are operand-order sensitive, so the filter geometry must be the FIRST operand:
         // SDO_RELATE(filter, feature, 'mask=CONTAINS') (#2068).
-        Assert.Contains("SDO_RELATE(SDO_UTIL.FROM_WKBGEOMETRY(:p0), \"SHAPE\", 'mask=CONTAINS+COVERS') = 'TRUE'", result.Sql, StringComparison.Ordinal);
+        Assert.Contains($"SDO_RELATE({StampedWkb4326}, \"SHAPE\", 'mask=CONTAINS+COVERS') = 'TRUE'", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -341,7 +354,7 @@ public class OracleFeatureQueryBuilderTests
 
         var result = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        Assert.Contains("NOT (SDO_RELATE(\"SHAPE\", SDO_UTIL.FROM_WKBGEOMETRY(:p0), 'mask=ANYINTERACT') = 'TRUE')", result.Sql, StringComparison.Ordinal);
+        Assert.Contains($"NOT (SDO_RELATE(\"SHAPE\", {StampedWkb4326}, 'mask=ANYINTERACT') = 'TRUE')", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -355,7 +368,7 @@ public class OracleFeatureQueryBuilderTests
 
         var result = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        Assert.Contains("SDO_RELATE(SDO_GEOM.SDO_MBR(\"SHAPE\"), SDO_UTIL.FROM_WKBGEOMETRY(:p0), 'mask=ANYINTERACT') = 'TRUE'", result.Sql, StringComparison.Ordinal);
+        Assert.Contains($"SDO_RELATE(SDO_GEOM.SDO_MBR(\"SHAPE\"), {StampedWkb4326}, 'mask=ANYINTERACT') = 'TRUE'", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -405,10 +418,8 @@ public class OracleFeatureQueryBuilderTests
     }
 
     [Fact]
-    public void BuildSelectQuery_SqlFilterIgnoredWhenWherePresent_UsesOracleParser()
+    public void BuildSelectQuery_SRV_DB_008_WhereAndSqlFilterFailsClosed()
     {
-        // Canonical Where wins over SqlFilter — the docs promise the provider re-parses
-        // Where with its own Oracle parser and ignores any Postgres-styled SqlFilter.
         var mapping = BuildMapping();
         var query = new FeatureQuery
         {
@@ -416,12 +427,35 @@ public class OracleFeatureQueryBuilderTests
             SqlFilter = new SqlFragment("\"attributes\" ->> 'name' = @p0", new object?[] { "ShouldNotAppear" })
         };
 
-        var result = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
+        var exception = Assert.Throws<NotSupportedException>(
+            () => OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
 
-        Assert.Contains("\"name\" = :p0", result.Sql, StringComparison.Ordinal);
-        Assert.DoesNotContain("attributes", result.Sql, StringComparison.Ordinal);
-        Assert.Single(result.WhereParameters);
-        Assert.Equal("Alpha", result.WhereParameters[0]);
+        Assert.Contains("cannot safely combine", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_SRV_DB_010_EwkbIsNormalizedAndSridAssigned()
+    {
+        // Little-endian EWKB Point(12.5, 41.9), with the SRID flag and embedded EPSG:4326.
+        var ewkb = new byte[25];
+        ewkb[0] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(ewkb.AsSpan(1), 0x20000001);
+        BinaryPrimitives.WriteInt32LittleEndian(ewkb.AsSpan(5), 4326);
+        BinaryPrimitives.WriteInt64LittleEndian(ewkb.AsSpan(9), BitConverter.DoubleToInt64Bits(12.5));
+        BinaryPrimitives.WriteInt64LittleEndian(ewkb.AsSpan(17), BitConverter.DoubleToInt64Bits(41.9));
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(ewkb, SpatialRelationship.Intersects, srid: 4326)
+        };
+
+        var result = OracleFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns);
+
+        var normalized = Assert.IsType<byte[]>(Assert.Single(result.WhereParameters));
+        Assert.Equal(21, normalized.Length);
+        Assert.Equal(1U, BinaryPrimitives.ReadUInt32LittleEndian(normalized.AsSpan(1)));
+        Assert.Contains(StampedWkb4326, result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("MAKE_2D", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("FROM_WKBGEOMETRY(:p0,", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]

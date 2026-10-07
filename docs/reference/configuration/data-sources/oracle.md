@@ -182,10 +182,15 @@ stable for the lifetime of a deployment. The connecting user must have SELECT on
 | `Disjoint` | `NOT (SDO_RELATE(geom, SDO_UTIL.FROM_WKBGEOMETRY(:p), 'mask=ANYINTERACT') = 'TRUE')` |
 | `Crosses`, `Touches`, `Overlaps`, `Equals`, `WithinDistance`, `BeyondDistance`, `NearestNeighbor` | Not supported in this slice — request a follow-up if needed. |
 
-Filter geometries are constructed in-database with `SDO_UTIL.FROM_WKBGEOMETRY(:p)`. The
-spatial filter's SRID is not injected; Oracle uses the SRID stored in the geometry-column
-metadata and spatial index. `SDO_RELATE` requires a spatial index on the geometry column —
-configure one in Oracle before publishing the layer.
+Filter geometries are constructed in-database with `SDO_UTIL.FROM_WKBGEOMETRY(:p)`.
+The table above shows the relationship mask. When the filter or layer SRID is a positive
+integer, the second geometry argument is that WKB wrapped in the `SDO_GEOMETRY`
+constructor `(SDO_GTYPE, SRID, SDO_POINT, SDO_ELEM_INFO, SDO_ORDINATES)` so the filter
+carries an explicit SRID. `SDO_CS.MAKE_2D` is not used: Oracle defines it for geometries
+with more than two dimensions, and this slice rejects Z/M filters. The two-argument
+`FROM_WKBGEOMETRY(blob, srid)` form is not used either: that argument is absent on
+Oracle 12c, 18c, and 21c, which this provider supports. `SDO_RELATE` requires a spatial
+index on the geometry column — configure one in Oracle before publishing the layer.
 
 `GetExtentAsync` uses `SDO_AGGR_MBR` to compute a layer-wide MBR and reads the
 `SDO_ORDINATES` varray (`(minX, minY, maxX, maxY)`) directly.

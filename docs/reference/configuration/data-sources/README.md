@@ -15,7 +15,7 @@ Honua serves data from one primary provider (PostgreSQL/PostGIS by default) plus
 | [DuckDB](duckdb.md) | Read-only (primary) | `DataSource__Provider=duckdb` | Embedded single-file database for analytical and reference layers; no external infrastructure. |
 | [SQL Server](sql-server.md) | Read/query only (additional) | Layer connection resolves to `sqlserver`/`mssql` | `geometry`/`geography` tables; no edits, native MVT, encoded exports, or statistics. |
 | [Oracle](oracle.md) | Read/query only (additional) | Layer connection resolves to `oracle`/`oracledb` | Standard `SDO_GEOMETRY` only; ArcSDE `ST_Geometry` and versioned tables are refused. Not Native AOT compatible. |
-| [MySQL/MariaDB](mysql-mariadb.md) | Read/query only (primary) | `DataSource__Provider=mysql` | MySQL 8.0.11+ / MariaDB 10.6+; no edits, statistics, encoded exports, streaming GeoJSON, KNN, temporal filters, or cross-SRID transforms. |
+| [MySQL/MariaDB](mysql-mariadb.md) | Read/query only (primary) | `DataSource__Provider=mysql` | MySQL 8.0.12+ / MariaDB 10.6+; no edits, statistics, encoded exports, streaming GeoJSON, KNN, temporal filters, or cross-SRID transforms. |
 | [Amazon Redshift](redshift.md) | Read/query only (additional) | Layer connection resolves to `redshift` | Native `GEOMETRY`/`GEOGRAPHY` (not PostGIS) over the PostgreSQL wire protocol via Npgsql; no edits, native MVT, encoded exports, statistics, distance/KNN, or temporal filters. |
 | [Snowflake](snowflake.md) | Read/query only (additional) | Layer connection resolves to `snowflake`/`snowflakedb` | Native `GEOGRAPHY`/`GEOMETRY` tables; no edits, statistics, native MVT/encoded exports, distance/KNN, temporal filters, or cross-SRID transforms. Not Native AOT compatible. |
 | [Databricks](databricks.md) | Read/query only (additional, best-effort) | Layer connection resolves to `databricks`/`databrickssql`/`dbsql` | HTTP read-through over the SQL Statement Execution REST API against a SQL Warehouse; no native driver. Statistics are supported; edits and native encoded exports are not. Spatial functions depend on the DBSQL/runtime. |
@@ -64,7 +64,7 @@ CI uses `postgis/postgis` Docker images as version-level proxies for managed-ser
 | --- | --- |
 | SQL Server | See [SQL Server provider](sql-server.md#supported-versions). |
 | Oracle | See [Oracle provider](oracle.md). |
-| MySQL/MariaDB | MySQL 8.0.11+, MariaDB 10.6+ — see [MySQL/MariaDB provider](mysql-mariadb.md). |
+| MySQL/MariaDB | MySQL 8.0.12+, MariaDB 10.6+ — see [MySQL/MariaDB provider](mysql-mariadb.md). |
 | Amazon Redshift | PostgreSQL-wire-compatible; native Redshift spatial layer — see [Amazon Redshift provider](redshift.md). |
 | Snowflake | See [Snowflake provider](snowflake.md). |
 | DuckDB | Embedded; bundled with the server — see [DuckDB provider](duckdb.md). |

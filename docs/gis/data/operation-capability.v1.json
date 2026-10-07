@@ -3834,7 +3834,7 @@
       "operationId": "listTenants",
       "capability": "admin.multi-tenancy",
       "family": "Admin API",
-      "maturity": "preview",
+      "maturity": "internal",
       "catalogEntryId": "get-api-v1-admin-tenants"
     },
     {
@@ -3844,7 +3844,7 @@
       "operationId": "createTenant",
       "capability": "admin.multi-tenancy",
       "family": "Admin API",
-      "maturity": "preview",
+      "maturity": "internal",
       "catalogEntryId": "post-api-v1-admin-tenants"
     },
     {
@@ -3854,7 +3854,7 @@
       "operationId": "exportTenantUsage",
       "capability": "admin.multi-tenancy",
       "family": "Admin API",
-      "maturity": "preview",
+      "maturity": "internal",
       "catalogEntryId": "get-api-v1-admin-tenants-usage"
     },
     {
@@ -3864,7 +3864,7 @@
       "operationId": "deleteTenant",
       "capability": "admin.multi-tenancy",
       "family": "Admin API",
-      "maturity": "preview",
+      "maturity": "internal",
       "catalogEntryId": "delete-api-v1-admin-tenants-tenantid"
     },
     {
@@ -3874,7 +3874,7 @@
       "operationId": "getTenant",
       "capability": "admin.multi-tenancy",
       "family": "Admin API",
-      "maturity": "preview",
+      "maturity": "internal",
       "catalogEntryId": "get-api-v1-admin-tenants-tenantid"
     },
     {
@@ -3884,7 +3884,7 @@
       "operationId": "resumeTenant",
       "capability": "admin.multi-tenancy",
       "family": "Admin API",
-      "maturity": "preview",
+      "maturity": "internal",
       "catalogEntryId": "post-api-v1-admin-tenants-tenantid-resume"
     },
     {
@@ -3894,7 +3894,7 @@
       "operationId": "suspendTenant",
       "capability": "admin.multi-tenancy",
       "family": "Admin API",
-      "maturity": "preview",
+      "maturity": "internal",
       "catalogEntryId": "post-api-v1-admin-tenants-tenantid-suspend"
     },
     {

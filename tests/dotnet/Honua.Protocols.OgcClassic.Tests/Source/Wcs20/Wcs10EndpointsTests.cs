@@ -293,7 +293,7 @@ public sealed class Wcs10EndpointsTests : IAsyncLifetime
     [Operation(Operations.Metadata)]
     [InterfaceOperation(TestProtocols.Wcs10, "GetCoverage")]
     [Endpoint("GET /ogc/services/{serviceId}/wcs")]
-    public async Task Wcs10_GetCoverage_HonoursAdvertisedBandAxisSelection()
+    public async Task HonuaServer5447_Wcs10GetCoverage_BindsAdvertisedBandAxisSelection()
     {
         _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<RasterInfo?>(CreateRasterInfo() with { BandCount = 2 }));
@@ -303,7 +303,7 @@ public sealed class Wcs10EndpointsTests : IAsyncLifetime
 
         foreach (var (parameter, expected) in new[]
         {
-            ("&bands=2", new[] { 2 }),
+            ("&bands=1", new[] { 1 }),
             ("&BANDS=2,1", new[] { 2, 1 }),
         })
         {

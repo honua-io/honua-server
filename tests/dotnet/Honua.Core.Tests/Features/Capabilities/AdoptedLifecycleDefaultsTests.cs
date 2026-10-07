@@ -20,7 +20,7 @@ public sealed class AdoptedLifecycleDefaultsTests
         { "scene.pointcloud-ingest", CapabilityMaturity.Experimental },
         { "alerts.geofence", CapabilityMaturity.Preview },
         { "sync.offline", CapabilityMaturity.Preview },
-        { "admin.multi-tenancy", CapabilityMaturity.Preview },
+        { "admin.multi-tenancy", CapabilityMaturity.Internal },
     };
 
     [Theory]

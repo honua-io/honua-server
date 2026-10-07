@@ -8,7 +8,7 @@ would leave that upgrade failing with no guidance.
 
 ## Correction
 
-This section applies only to explicitly labelled **Preview/trial** environments in 2026.1. GA is single-tenant; no production multi-tenant deployment or customer production data is permitted. The isolation correction retains full security severity. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
+This section applies only to Honua's internal demo infrastructure at demo.honua.io, the sole multi-tenant deployment. Multi-tenancy is not offered for customer deployment and carries no availability, performance, or support claim. The isolation correction retains full security severity. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
 
 Schema routing remains opt-in (`MultiTenancy:SchemaRouting:Enabled`, default
 `false`). When enabled, tenant IDs are now matched exactly. Default derivation
@@ -71,4 +71,3 @@ stop traffic and restore the previous names and matching configuration together.
 Do not restore the vulnerable normalization behavior as an isolation workaround.
 Single-tenant deployments and the explicitly excluded `public` tenant retain
 their configured default schema behavior.
-

@@ -553,27 +553,91 @@ public sealed class GrpcApplyEditsDistributedIdempotencyTests(RedisFixture redis
     public async Task WriteOutlastingTheReservationWindow_KeepsIt_AndAnotherReplicaReplaysTheResult()
     {
         var reservationWindow = TimeSpan.FromSeconds(1);
+        var clock = new GrpcIdempotencyTestClock();
+        var connectionA = await ConnectAsync();
+        var redisA = new GrpcIdempotencyClockedRedis(connectionA, clock);
+        var redisB = new GrpcIdempotencyClockedRedis(await ConnectAsync(), clock);
         var firstWriterStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowCommit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var storeA = Store(redisA.Connection, reservationWindow, clock);
+        using var storeB = Store(redisB.Connection, reservationWindow, clock);
         var replicaA = new GrpcApplyEditsIdempotencyTests.ServiceHarness(
-            Store(await ConnectAsync(), reservationWindow),
+            storeA,
             beforeCommit: async cancellationToken =>
             {
                 firstWriterStarted.TrySetResult();
-                await Task.Delay(reservationWindow * 4, cancellationToken);
+                await allowCommit.Task.WaitAsync(cancellationToken);
             });
-        var replicaB = new GrpcApplyEditsIdempotencyTests.ServiceHarness(Store(await ConnectAsync(), reservationWindow));
+        var replicaB = new GrpcApplyEditsIdempotencyTests.ServiceHarness(storeB);
         var user = GrpcApplyEditsIdempotencyTests.Subject("editor", issuer: "https://issuer-a.example");
 
         var first = replicaA.Service.ApplyEdits(
             GrpcApplyEditsIdempotencyTests.AddRequest(), replicaA.Context(user, tenantId: null));
         await firstWriterStarted.Task.WaitAsync(TimeSpan.FromSeconds(30));
-        var retry = await replicaB.Service.ApplyEdits(
+        await clock.WaitForDelayAsync(reservationWindow / 6);
+        var originalToken = await connectionA.GetDatabase().StringGetAsync(redisA.Key);
+        var retryTask = replicaB.Service.ApplyEdits(
             GrpcApplyEditsIdempotencyTests.AddRequest(), replicaB.Context(user, tenantId: null));
+        await clock.WaitForDelayAsync(GrpcApplyEditsIdempotencyStore.PendingPollInterval);
+
+        // Four complete reservation windows pass while the write is gated. Each step
+        // waits for the real renewal script to finish before advancing the shared clock.
+        for (var step = 0; step < 16; step++)
+        {
+            clock.Advance(reservationWindow / 4);
+            await clock.WaitForDelayAsync(reservationWindow / 6);
+            (await redisA.RemainingLifetimeAsync()).Should().Be(reservationWindow);
+            (await connectionA.GetDatabase().StringGetAsync(redisA.Key)).Should().Be(originalToken);
+            retryTask.IsCompleted.Should().BeFalse("the other replica must wait for the live writer");
+            replicaA.WriteCount.Should().Be(0);
+            replicaB.WriteCount.Should().Be(0);
+        }
+
+        allowCommit.SetResult();
         var original = await first.WaitAsync(TimeSpan.FromSeconds(30));
+        var retry = await clock.CompletePollingAsync(retryTask, GrpcApplyEditsIdempotencyStore.PendingPollInterval);
 
         replicaA.WriteCount.Should().Be(1);
         replicaB.WriteCount.Should().Be(0, "the reservation was renewed for as long as the first write ran");
         retry.AddResults[0].ObjectId.Should().Be(original.AddResults[0].ObjectId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task RenewalAfterExpiry_DoesNotReviveTheReservation_OrCommitTheFirstWrite()
+    {
+        var reservationWindow = TimeSpan.FromSeconds(1);
+        var clock = new GrpcIdempotencyTestClock();
+        var redisA = new GrpcIdempotencyClockedRedis(await ConnectAsync(), clock);
+        var redisB = new GrpcIdempotencyClockedRedis(await ConnectAsync(), clock);
+        var firstWriterStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowCommit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var storeA = Store(redisA.Connection, reservationWindow, clock);
+        using var storeB = Store(redisB.Connection, reservationWindow, clock);
+        var replicaA = new GrpcApplyEditsIdempotencyTests.ServiceHarness(
+            storeA,
+            beforeCommit: async cancellationToken =>
+            {
+                firstWriterStarted.TrySetResult();
+                await allowCommit.Task.WaitAsync(cancellationToken);
+            });
+        var replicaB = new GrpcApplyEditsIdempotencyTests.ServiceHarness(storeB);
+        var user = GrpcApplyEditsIdempotencyTests.Subject("editor", issuer: "https://issuer-a.example");
+
+        var first = replicaA.Service.ApplyEdits(
+            GrpcApplyEditsIdempotencyTests.AddRequest(), replicaA.Context(user, tenantId: null));
+        await firstWriterStarted.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        await clock.WaitForDelayAsync(reservationWindow / 6);
+
+        // A scheduler pause spanning the entire lease must still cancel the old writer.
+        clock.Advance(reservationWindow);
+        var firstOutcome = async () => await first.WaitAsync(TimeSpan.FromSeconds(30));
+        (await firstOutcome.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.Aborted);
+        await replicaB.Service.ApplyEdits(
+            GrpcApplyEditsIdempotencyTests.AddRequest(), replicaB.Context(user, tenantId: null));
+
+        replicaA.WriteCount.Should().Be(0);
+        replicaB.WriteCount.Should().Be(1);
     }
 
     [IntegrationTest]
@@ -642,13 +706,15 @@ public sealed class GrpcApplyEditsDistributedIdempotencyTests(RedisFixture redis
         otherReplicaRetry.AddResults[0].ObjectId.Should().Be(original.AddResults[0].ObjectId);
     }
 
-    private static GrpcApplyEditsIdempotencyStore Store(IConnectionMultiplexer connection, TimeSpan reservationWindow)
+    private static GrpcApplyEditsIdempotencyStore Store(
+        IConnectionMultiplexer connection, TimeSpan reservationWindow, TimeProvider? timeProvider = null)
         => new(
             connection,
             logger: null,
             reservationWindow,
             GrpcApplyEditsIdempotencyStore.DefaultResponseWindow,
-            GrpcApplyEditsIdempotencyStore.DefaultLocalResponseBudgetBytes);
+            GrpcApplyEditsIdempotencyStore.DefaultLocalResponseBudgetBytes,
+            timeProvider: timeProvider);
 
     private async Task<IConnectionMultiplexer> ConnectAsync()
     {

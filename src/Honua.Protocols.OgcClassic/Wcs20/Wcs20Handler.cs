@@ -64,6 +64,7 @@ internal sealed partial class Wcs20Handler
         Wcs20Utilities.Parameters.Interpolation,
         Wcs20Utilities.Parameters.DateTime,
         Wcs20Utilities.Parameters.Time,
+        "token",
     };
 
     private static readonly HashSet<string> _explicitlyUnsupportedGetCoverageParameters = new(StringComparer.OrdinalIgnoreCase)
@@ -1023,7 +1024,7 @@ internal sealed partial class Wcs20Handler
         return null;
     }
 
-    private static IResult? ValidateGetCoverageParameters(IQueryCollection query)
+    internal static IResult? ValidateGetCoverageParameters(IQueryCollection query)
     {
         foreach (var parameter in query.Keys)
         {
@@ -2987,7 +2988,7 @@ internal sealed partial class Wcs20Handler
     {
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var path = context.Request.Path.HasValue ? context.Request.Path.Value : string.Empty;
-        return string.Concat(baseUrl, path);
+        return BaseUrlResolver.PreserveToken(context.Request, string.Concat(baseUrl, path));
     }
 
     private static string CreateEpsgUri(int srid)

@@ -48,6 +48,14 @@ internal sealed class AccessPolicyEvaluator : IAccessPolicyEvaluator
     {
         var requiresWrite = IsWriteScope(scope);
 
+        // Resource-less/coarse evaluation cannot prove that a scoped API key's grant
+        // matches a target. Fail closed; resource-aware callers authorize matching
+        // grants before reaching this fallback.
+        if (LayerScopedWriteKey.IsScopeGovernedPrincipal(principal))
+        {
+            return AccessDecision.Forbidden("API key permission does not grant access to this resource.");
+        }
+
         var layerDecision = EvaluateSinglePolicy(principal, layerPolicy, requiresWrite);
         var serviceDecision = EvaluateSinglePolicy(principal, servicePolicy, requiresWrite);
 

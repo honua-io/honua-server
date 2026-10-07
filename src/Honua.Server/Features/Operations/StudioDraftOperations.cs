@@ -146,6 +146,7 @@ internal sealed record StudioSaveVersionPayload
 
 internal sealed record StudioPublicationRequestPayload
 {
+    public Guid RequestId { get; init; }
     public required Guid ItemId { get; init; }
     public required Guid VersionId { get; init; }
     public required string ContentHash { get; init; }
@@ -515,7 +516,9 @@ internal sealed class StudioCreatePublicationRequestExecutor(
         // StudioPublicationPointerConflictException when a draft was saved in between.
         var publication = await Lifecycle.CreatePublicationRequestAsync(payload.ItemId, payload.VersionId,
                 expectedCurrentVersionId: payload.VersionId, payload.Intent,
-                payload.WarningAcknowledgement, payload.ActorId, cancellationToken)
+                payload.WarningAcknowledgement, payload.ActorId,
+                payload.RequestId == Guid.Empty ? Guid.NewGuid() : payload.RequestId,
+                cancellationToken)
             .ConfigureAwait(false)
             ?? throw new KeyNotFoundException($"Studio content version '{payload.VersionId:D}' was not found.");
         if (publication.Status == StudioPublicationRequestStatus.Rejected)
@@ -530,6 +533,7 @@ internal sealed class StudioCreatePublicationRequestExecutor(
     {
         var resources = new Dictionary<string, string>(StringComparer.Ordinal)
         {
+            ["requestId"] = result.RequestId.ToString("D"),
             ["publicationId"] = result.RequestId.ToString("D"),
             ["itemId"] = result.ItemId.ToString("D"),
             ["versionId"] = result.VersionId.ToString("D"),
@@ -670,10 +674,18 @@ internal sealed class StudioDraftMutationRuntime(
     public Task<StudioDraftMutationReceipt<StudioPublicationRequest>> CreatePublicationRequestAsync(
         Guid itemId, Guid versionId, string contentHash, StudioPublicationIntent? intent,
         string? warningAcknowledgement, string? actorId,
-        StudioDraftMutationContext context, CancellationToken cancellationToken = default) => InvokeAsync(
+        StudioDraftMutationContext context, CancellationToken cancellationToken = default)
+    {
+        // A retry of a lost 202 folds onto the proposal the first invocation already sealed.
+        // The dispatcher does not adopt this payload, so the id in the 202 has to be that
+        // sealed id. Deriving it from the scoped idempotency key makes both invocations
+        // agree; without a key each call is its own operation and keeps a fresh id.
+        var requestId = PublicationRequestId(context);
+        return InvokeAsync(
             StudioDraftOperations.CreatePublicationRequest,
             new StudioPublicationRequestPayload
             {
+                RequestId = requestId,
                 ItemId = itemId,
                 VersionId = versionId,
                 ContentHash = contentHash,
@@ -684,7 +696,15 @@ internal sealed class StudioDraftMutationRuntime(
             StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload,
             StudioDraftOperationJsonContext.Default.StudioPublicationRequest,
             PublicationStep(context),
-            cancellationToken);
+            cancellationToken,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["requestId"] = requestId.ToString("D"),
+                ["publicationId"] = requestId.ToString("D"),
+                ["itemId"] = itemId.ToString("D"),
+                ["versionId"] = versionId.ToString("D"),
+            });
+    }
 
     public Task<StudioDraftMutationReceipt<StudioPackageDraft>> ReopenVersionAsync(
         Guid itemId, Guid versionId, string? actorId, StudioDraftMutationContext context,
@@ -739,7 +759,8 @@ internal sealed class StudioDraftMutationRuntime(
         JsonTypeInfo<TPayload> payloadType,
         JsonTypeInfo<TResult> resultType,
         StudioDraftMutationContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? pendingResourceIds = null)
     {
         var request = new OperationRequest
         {
@@ -775,6 +796,10 @@ internal sealed class StudioDraftMutationRuntime(
 
         var durable = await instanceStore.GetAsync(handle.OperationInstanceId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("The Studio mutation envelope was not durably readable after routing.");
+        if (durable.Status == OperationHandleStatus.RequiresApproval && pendingResourceIds is not null)
+        {
+            durable = durable with { ResourceIds = pendingResourceIds };
+        }
         TResult? value = default;
         if (durable.Status == OperationHandleStatus.Completed
             && durable.Result?.Details.TryGetValue(StudioDraftOperations.ResultParameter, out var serialized) == true)
@@ -783,6 +808,20 @@ internal sealed class StudioDraftMutationRuntime(
         }
 
         return new StudioDraftMutationReceipt<TResult> { Operation = durable, Value = value };
+    }
+
+    private static Guid PublicationRequestId(StudioDraftMutationContext context)
+    {
+        var scoped = ScopeIdempotencyKey(context);
+        if (scoped is null)
+        {
+            return Guid.NewGuid();
+        }
+
+        var material = Encoding.UTF8.GetBytes(
+            $"{StudioDraftOperations.CreatePublicationRequest}:{scoped}");
+        var hash = SHA256.HashData(material);
+        return new Guid(hash.AsSpan(0, 16));
     }
 
     private static string? ScopeIdempotencyKey(StudioDraftMutationContext context)

@@ -126,7 +126,7 @@ internal static class AccessPolicyHelpers
             return StandardErrorHelpers.CreateForbidden(context, MetadataV2RelationshipEditPolicy.ReadOnlyReason);
         }
 
-        return RequireAccess(context, resource.AccessPolicy, service?.AccessPolicy, scope);
+        return CreateAccessDeniedResult(context, EvaluateResourceAccess(context, resource, service, scope));
     }
 
     /// <summary>
@@ -219,6 +219,12 @@ internal static class AccessPolicyHelpers
         }
 
         var serviceName = service.Metadata.Name;
+        var scopedKeyDecision = EvaluateScopedKeyAccess(context.User, serviceName, null, operation);
+        if (scopedKeyDecision is { } decision)
+        {
+            return CreateAccessDeniedResult(context, decision);
+        }
+
         if (!string.IsNullOrWhiteSpace(serviceName))
         {
             var grantDecision = await EvaluateGrantAsync(
@@ -324,6 +330,12 @@ internal static class AccessPolicyHelpers
         }
 
         var serviceName = service?.Metadata.Name;
+        var scopedKeyDecision = EvaluateScopedKeyAccess(principal, serviceName, resource.Metadata.Name, operation);
+        if (scopedKeyDecision is { } decision)
+        {
+            return decision;
+        }
+
         if (!string.IsNullOrWhiteSpace(serviceName))
         {
             var grantDecision = await EvaluateGrantCoreAsync(
@@ -380,6 +392,28 @@ internal static class AccessPolicyHelpers
         AuthorizationOperation.Admin => AccessScope.Write,
         _ => AccessScope.Read,
     };
+
+    // Scoped API-key grants must be checked against the target before any coarse
+    // policy or role grant can authorize the request. A missing target fails closed.
+    private static AccessDecision? EvaluateScopedKeyAccess(
+        ClaimsPrincipal principal, string? serviceName, string? layerName, AuthorizationOperation operation)
+    {
+        if (!LayerScopedWriteKey.IsScopeGovernedPrincipal(principal))
+        {
+            return null;
+        }
+
+        var allowed = operation is AuthorizationOperation.Query or AuthorizationOperation.Read
+            or AuthorizationOperation.Metadata or AuthorizationOperation.Export
+            ? LayerScopedWriteKey.AllowsRead(principal, serviceName, layerName)
+            : operation is AuthorizationOperation.Insert or AuthorizationOperation.Update or AuthorizationOperation.Delete
+              && LayerScopedWriteKey.IsScopedWritePrincipal(principal)
+              && LayerScopedWriteKey.AllowsWrite(principal, serviceName, layerName);
+
+        return allowed
+            ? AccessDecision.Allowed()
+            : AccessDecision.Forbidden("API key permission does not grant access to this resource.");
+    }
 
     /// <summary>
     /// Consults the per-operation permission resolver for the supplied
@@ -493,7 +527,10 @@ internal static class AccessPolicyHelpers
             return StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
         }
 
-        return RequireAccess(context, null, service.AccessPolicy, scope);
+        var scopedKeyDecision = EvaluateScopedKeyAccess(context.User, service.Metadata.Name, null, DefaultOperationForScope(scope));
+        return scopedKeyDecision is { } decision
+            ? CreateAccessDeniedResult(context, decision)
+            : RequireAccess(context, null, service.AccessPolicy, scope);
     }
 
     public static bool IsResourceAccessible(
@@ -529,7 +566,13 @@ internal static class AccessPolicyHelpers
             return AccessDecision.Forbidden(TenantScopeDeniedReason);
         }
 
-        return EvaluateAccess(context, resource.AccessPolicy, service?.AccessPolicy, scope);
+        if (scope == AccessScope.Write && MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource))
+        {
+            return AccessDecision.Forbidden(MetadataV2RelationshipEditPolicy.ReadOnlyReason);
+        }
+
+        return EvaluateScopedKeyAccess(context.User, service?.Metadata.Name, resource.Metadata.Name, DefaultOperationForScope(scope))
+            ?? EvaluateAccess(context, resource.AccessPolicy, service?.AccessPolicy, scope);
     }
 
     /// <summary>

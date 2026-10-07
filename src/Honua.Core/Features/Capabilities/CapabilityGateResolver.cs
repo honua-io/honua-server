@@ -61,14 +61,14 @@ public static class CapabilityGateResolver
             return new CapabilityResolution(false, CapabilityReasonCodes.NotImplemented);
         }
 
-        if (descriptor.Maturity is CapabilityMaturity.Experimental or CapabilityMaturity.Preview)
+        if (descriptor.Maturity is CapabilityMaturity.Internal or CapabilityMaturity.Experimental or CapabilityMaturity.Preview)
         {
             if (descriptor.RequiresOptIn && !context.ExperimentalFlags.IsExperimentalEnabled(descriptor.Id))
             {
                 return new CapabilityResolution(false, CapabilityReasonCodes.ExperimentalDisabled);
             }
 
-            // Preview or Experimental capability: entitlement/edition still applies on top,
+            // Non-public or pre-release capability: entitlement/edition still applies on top,
             // so an unlicensed edition fails on edition rather than being masked by the flag.
             if (descriptor.MinimumEdition is { } minimumEdition && context.Edition < minimumEdition)
             {

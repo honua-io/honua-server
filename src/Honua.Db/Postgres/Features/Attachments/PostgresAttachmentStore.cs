@@ -19,13 +19,14 @@ namespace Honua.Db.Postgres.Features.Attachments;
 /// Marked as internal to prevent exposure of database-specific implementations
 /// outside the Infrastructure layer (Clean Architecture principle).
 /// </remarks>
-internal sealed class PostgresAttachmentStore : IAttachmentStore
+internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImportedAttachmentStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ICloudFileStorage _fileStorage;
     private readonly ILogger<PostgresAttachmentStore> _logger;
     private readonly IAttachmentOrphanLedger? _orphanLedger;
     private readonly string _tableName;
+    private readonly string _importCleanupTableName;
 
     public PostgresAttachmentStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
@@ -39,6 +40,7 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _orphanLedger = orphanLedger;
         _tableName = Infrastructure.SchemaSearchPath.QualifyTable("attachments", schemaName);
+        _importCleanupTableName = Infrastructure.SchemaSearchPath.QualifyTable("import_attachment_cleanup", schemaName);
     }
 
     /// <summary>
@@ -125,8 +127,8 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
     public async Task<Attachment> CreateAsync(int layerId, long featureId, Attachment attachment, CancellationToken cancellationToken = default)
     {
         var sql = $@"
-            INSERT INTO {_tableName} (feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO {_tableName} (feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords, attachment_origin)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'honua')
             RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords";
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
