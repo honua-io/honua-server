@@ -123,11 +123,14 @@ internal sealed partial class Wcs20Handler
             new XElement(Wcs10 + "fees", "NONE"),
             new XElement(Wcs10 + "accessConstraints", "NONE"));
 
-    private static XElement BuildWcs10Capability(string endpoint)
+    internal static XElement BuildWcs10Capability(string endpoint)
     {
         // 1.0 wants the request URL ready for parameter appending, so it carries the
-        // trailing '?' by convention.
-        var href = endpoint.Contains('?', StringComparison.Ordinal) ? endpoint : endpoint + "?";
+        // trailing '?' by convention, or a trailing '&' when a query (the request's
+        // token) is already present.
+        var href = !endpoint.Contains('?', StringComparison.Ordinal)
+            ? endpoint + "?"
+            : endpoint.EndsWith('?') || endpoint.EndsWith('&') ? endpoint : endpoint + "&";
 
         return new XElement(Wcs10 + "Capability",
             new XElement(Wcs10 + "Request",

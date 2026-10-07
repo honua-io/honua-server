@@ -208,5 +208,23 @@ class PreviewLifecycleEvidenceTests(unittest.TestCase):
         self.assert_preview_evidence("serve.ogc-api-coverages")
 
 
+class InternalLifecycleEvidenceTests(unittest.TestCase):
+    def test_issue_5406_multi_tenancy_is_internal_and_excluded_from_public_counts(self):
+        matrix = json.loads((ROOT / "docs/gis/data/capability-matrix.v1.json").read_text())
+        capability = next(
+            row for row in matrix["capabilities"] if row["key"] == "admin.multi-tenancy"
+        )
+        self.assertGreater(capability["entryCount"], 0)
+        self.assertEqual({"internal": capability["entryCount"]}, capability["maturity"])
+        self.assertEqual("internal", capability["status"])
+
+        catalog = json.loads((ROOT / "docs/gis/data/feature-catalog.json").read_text())
+        entries = [
+            row for row in catalog["entries"] if row.get("capability") == "admin.multi-tenancy"
+        ]
+        self.assertTrue(entries)
+        self.assertTrue(all(row["maturity"] == "internal" for row in entries))
+
+
 if __name__ == "__main__":
     unittest.main()

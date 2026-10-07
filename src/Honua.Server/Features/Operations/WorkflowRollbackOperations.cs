@@ -7,7 +7,11 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.WorkflowPackages.Domain;
+using Honua.Infrastructure.MultiTenancy;
+using Honua.Server.Features.Admin;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Operations;
 
@@ -95,8 +99,9 @@ internal static class WorkflowRollbackOperations
             && string.Equals(errorKind, "conflict", StringComparison.Ordinal);
 }
 
-internal abstract class WorkflowRollbackOperationExecutor(TimeProvider clock) : IOperationExecutor
+internal abstract class WorkflowRollbackOperationExecutor(IServiceProvider services, TimeProvider clock) : IOperationExecutor
 {
+    protected IServiceProvider Services { get; } = services;
     protected TimeProvider Clock { get; } = clock;
     public abstract string OperationId { get; }
 
@@ -113,6 +118,17 @@ internal abstract class WorkflowRollbackOperationExecutor(TimeProvider clock) : 
         CancellationToken cancellationToken = default)
     {
         var targetId = Required(request, WorkflowRollbackOperations.TargetOperationId);
+
+        // Deploy targets and coordinated releases are platform resources. Every submission
+        // surface (the REST wrappers, /api/v1/operations/{id}/submit, MCP and approval replay)
+        // reaches this executor, so the platform authority boundary is enforced here rather
+        // than only in the hand-authored REST handlers (#5625).
+        if (Services.GetService<IHttpContextAccessor>()?.HttpContext?.User is { } principal &&
+            !PlatformDeployAuthority.IsAuthorized(principal, Services.GetService<IOptions<TenantContextOptions>>()?.Value))
+        {
+            return CreatePlatformAuthorityDeniedHandle(context, targetId);
+        }
+
         WorkflowOperationRecord? result = null;
         string? errorKind = null;
         string? failureReason = null;
@@ -179,6 +195,32 @@ internal abstract class WorkflowRollbackOperationExecutor(TimeProvider clock) : 
             EvidenceRefs = handle.EvidenceRefs,
         });
 
+    private OperationHandle CreatePlatformAuthorityDeniedHandle(OperationPolicyContext context, string targetId)
+    {
+        var now = Clock.GetUtcNow();
+        return new OperationHandle
+        {
+            OperationInstanceId = context.OperationInstanceId
+                ?? throw new InvalidOperationException("Workflow rollback requires a canonical operation instance."),
+            OperationId = OperationId,
+            CorrelationId = context.CorrelationId
+                ?? throw new InvalidOperationException("Workflow rollback requires a canonical correlation identity."),
+            Status = OperationHandleStatus.Denied,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Reason = PlatformDeployAuthority.DenialMessage,
+            ResourceIds = new Dictionary<string, string>(StringComparer.Ordinal),
+            Result = new OperationResultSummary
+            {
+                Summary = $"Rollback of workflow operation '{targetId}' was denied.",
+                Details = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["errorKind"] = PlatformDeployAuthority.DenialCode,
+                },
+            },
+        };
+    }
+
     protected abstract Task<WorkflowOperationRecord?> RollbackAsync(
         OperationRequest request,
         OperationPolicyContext context,
@@ -201,7 +243,7 @@ internal abstract class WorkflowRollbackOperationExecutor(TimeProvider clock) : 
 
 internal sealed class DeployRollbackOperationExecutor(
     IServiceProvider services,
-    TimeProvider clock) : WorkflowRollbackOperationExecutor(clock)
+    TimeProvider clock) : WorkflowRollbackOperationExecutor(services, clock)
 {
     public override string OperationId => WorkflowRollbackOperations.Deploy;
 
@@ -217,7 +259,7 @@ internal sealed class DeployRollbackOperationExecutor(
         string targetOperationId,
         CancellationToken cancellationToken)
     {
-        return await services.GetRequiredService<DeployWorkflowService>().RequestRollbackAsync(
+        return await Services.GetRequiredService<DeployWorkflowService>().RequestRollbackAsync(
             targetOperationId,
             context.PrincipalId,
             Optional(request, WorkflowRollbackOperations.Reason),
@@ -236,7 +278,7 @@ internal sealed class DeployRollbackOperationExecutor(
 
 internal sealed class CoordinatedReleaseRollbackOperationExecutor(
     IServiceProvider services,
-    TimeProvider clock) : WorkflowRollbackOperationExecutor(clock)
+    TimeProvider clock) : WorkflowRollbackOperationExecutor(services, clock)
 {
     public override string OperationId => WorkflowRollbackOperations.CoordinatedRelease;
 
@@ -244,7 +286,7 @@ internal sealed class CoordinatedReleaseRollbackOperationExecutor(
         OperationRequest request,
         OperationPolicyContext context,
         string targetOperationId,
-        CancellationToken cancellationToken) => services.GetRequiredService<CoordinatedReleaseControlService>().RequestRollbackAsync(
+        CancellationToken cancellationToken) => Services.GetRequiredService<CoordinatedReleaseControlService>().RequestRollbackAsync(
             targetOperationId,
             context.PrincipalId,
             Optional(request, WorkflowRollbackOperations.Reason),

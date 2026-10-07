@@ -1,0 +1,140 @@
+# Issue 5626 audit disposition
+
+The original audit re-verification was performed at `7c422ec`. The fix unit was
+handled in severity order. PR #5664 follow-up repairs and final verification are recorded below.
+The two S1 findings were completed before assessing the S2 and S3 items; remaining applicable lower-severity work is deliberately recorded as not attempted rather
+than changed without its required regression test.
+
+| Finding id | Outcome | Evidence |
+|---|---|---|
+| `SRV-IMP-001` | already fixed on trunk | `StreamingFileImportService.Streaming.cs` drops the replace staging table whenever `totalImported == 0` before the swap, and `StreamingFileImportService.cs` now treats every `importedCount == 0` result as a failure. Consequently an empty replacement never promotes the staging table. |
+| `SRV-IMP-002` | publication reuse and attachment re-import fixed | `GeoservicesLayerPublicationServiceTests.SRV_IMP_002_ReimportingPublishedLayer_RefreshesAndReusesExistingPublication` proves that a replacement publish conflict refreshes the canonical feature snapshot and returns the existing layer. Returning that layer allows the existing attachment-copy and reconciliation stages to continue with the source-to-target object-id map instead of reporting that nothing was published. Attachment reconciliation now uses persisted source identity and retires the previous imported set only after a complete copy, as detailed below. |
+| `SRV-IMP-008` | not attempted | Re-verified `StreamingFileImportService.Batch.cs`: append batches still use independent transactions (or autocommit when continue-on-error is enabled). An atomic staging/merge design and a reader-failure integration test remain necessary. |
+| `SRV-IMP-011` | not attempted | Re-verified `GeoservicesImportService.ImportSteps.cs`: cancellation at `ImportFailureStage.AfterCommit` still rethrows, while rollback is intentionally a no-op after commit. The background-service terminal-state behavior requires a dedicated cancellation regression test. |
+| `SRV-IMP-012` | already fixed on trunk | `StreamingFileImportService.cs` now checks `importedCount == 0` without conditioning the failure on `failedCount`, so both an empty input and an all-failed/all-skipped input return `No features found in file` rather than success. |
+| `SRV-IMP-013` | not attempted | Re-verified `UniversalImportJobService.cs`: snapshot refresh and final receipt writes still use the caller cancellation token after `ImportFileAsync` can have committed. A deterministic post-commit cancellation test is required before changing this path. |
+| `SRV-IMP-016` | not attempted | Re-verified `GeoservicesImportService.ImportSteps.cs` and `MigrationFidelityEvaluator.cs`: source population snapshots are now evaluated independently of publication, but unconverted geometry ids are still supplied only to published-layer reconciliation. An unpublished geometry-loss regression test is still needed. |
+| `SRV-IMP-017` | not attempted | Re-verified `GeoservicesImportService.BuildCreateTableSql`: non-OID/non-geometry source fields are still sanitized without reserving `objectid` or `geom`. A single field-name mapping shared by DDL, inserts, publication metadata, and reconciliation is required; no shallow DDL-only rename was made. |
+| `SRV-IMP-S3-LOCK` | not attempted | Re-verified `StreamingFileImportService.Streaming.cs`: the per-target advisory lock is still acquired only for replace mode. This low-severity concurrency item was deferred until the higher-severity findings are completed. |
+| `SRV-IMP-S3-CANCEL-METRIC` | not attempted | Re-verified `StreamingFileImportService.cs`: `OperationCanceledException` is rethrown without setting the metric/log status to `cancelled`. This low-severity item was deferred. |
+| `SRV-IMP-S3-PHYSICAL-NAME` | not attempted | Re-verified `ImportEndpoints.cs`: the synchronous refresh still recomputes the physical table name instead of preferring `ImportResult.PhysicalTableName`. This low-severity item was deferred. |
+
+PR #5664 review re-verification confirmed two follow-up defects in `SRV-IMP-002`:
+
+- Replacement conflict recovery must contain non-cancellation failures from snapshot refresh
+  and catalog lookup. The publication helper now returns its normal publication warning and
+  `null` on either failure, while cancellation still propagates. The publication tests cover
+  both operations with ordinary exceptions, typed publishing errors, and cancellation.
+- Attachment re-import was verified as real and repaired without the prior attempt's size
+  restriction. Migration 125 adds source identity, source parent/attachment IDs and a run
+  generation to attachment metadata, with a database uniqueness constraint. Re-import upserts
+  that identity while preserving the target attachment ID and rebinding the feature ID. After
+  a fully verified inventory/copy, reconciliation removes all unseen imported rows for the
+  publication, including removed parents, upstream attachments and a source that no longer
+  advertises attachments. A failed inventory, copy, metadata write or cancellation retains unseen
+  prior attachments; a complete retry converges without duplicate rows.
+- Retiring an object and queuing storage cleanup occur in the same metadata transaction. The
+  durable queue survives service/process restarts, and failed deletes retry on the next import.
+  Cleanup uses an independent token and checks live metadata references before deleting, so a
+  lost commit acknowledgement cannot trigger deletion of a newly committed object's bytes.
+  Cloud upload and PostgreSQL still do not share a transaction: a process exit immediately
+  after upload, before metadata or compensation is recorded, can leave an unreferenced object
+  for the existing storage orphan reconciliation policy. This does not create duplicate visible
+  attachment rows.
+- New ordinary attachment writes explicitly mark their Honua origin. The migration has no
+  origin default, so writes from old binaries remain unknown rather than being misclassified.
+  Honua-authored attachments coexist with the imported set without downgrading fidelity.
+  Legacy policy: pre-migration rows retain unknown ownership and are never inferred to be imported from filenames or feature IDs.
+  They remain untouched, including older attachments created through Honua. A preflight check
+  preserves the entire prior attachment set and skips copying when unknown provenance is present,
+  so even the first replacement cannot add a fresh set beside legacy copies. Their presence routes
+  attachment fidelity to NeedsReview until ownership is verified. Preflight query failures likewise
+  retain the prior set and require review.
+  Operators can retain confirmed Honua attachments and accept the explicit ownership review,
+  or remove confirmed obsolete legacy imports through the normal attachment deletion surface.
+  No automatic adoption or bulk deletion of untracked attachments is performed.
+- Attachment stores without source identity reconciliation support do not receive repeated
+  UploadAsync calls; the importer records the unavailable reconciliation as unverified fidelity.
+
+Previous conflict-recovery repair verification at `bc1a5e2`: the Release `dotnet test` build
+compiled `Honua.Postgres` and `Honua.Postgres.Tests` successfully; all seven publication-service tests passed with
+no skips. Project-scoped `dotnet format --include`, each wrapped in `timeout 20m`, passed
+for both changed C# files without changes.
+The related replacement, attachment-import, reconciliation-gate, fidelity-gate,
+catalog-reconciliation, and import-failure-message suites passed all 43 tests with no skips
+using the Release assemblies and local PostGIS.
+
+Attachment repair format verification: project-scoped `dotnet format --no-restore --include`,
+each wrapped in `timeout 20m`, passed for the Core fidelity evaluator, the PostgreSQL
+attachment/import implementation, and both attachment-import test files. Core and PostgreSQL
+needed no formatting changes; the test formatter normalized object initializer layout. No
+solution-wide formatting was run.
+
+Migration 125 is pinned in `certification/schema-migration-hashes.json`. All 147 migration
+hashes matched their files and the frozen reader baseline was unchanged. An unverified target
+attachment set is a blocking fidelity difference, including retained rows after an unreadable
+source inventory, because the shared evaluator routes only blocking differences to NeedsReview.
+
+Final source verification: the Release build of `Honua.Postgres.csproj` rebuilt the final
+Core fidelity evaluator and PostgreSQL implementation successfully with zero warnings and
+errors. The full application dependency build also succeeded, and the application assembly
+was checked to embed the exact current migration 125 bytes. Final test-project builds reuse
+those application/TestKit dependencies (`BuildProjectReferences=false`) and compile against
+the rebuilt Core/provider assemblies. The ordinary attachment-store fixture's project-scoped
+format run also passed under `timeout 20m`.
+
+- Focused attachment regression suite passed: 17/17 cases against PostgreSQL, using `dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj --no-restore --configuration Release -p:BuildProjectReferences=false --filter FullyQualifiedName~GeoservicesImportServiceAttachmentImportTests`.
+
+- Related publication, replacement, reconciliation, fidelity, catalog, failure-message and editing-identity tests passed: 55/55 with no skips, using the final Release assemblies (`dotnet test ... --no-build --no-restore --configuration Release`). This includes all seven publication-service tests.
+
+- Shared fidelity evaluator and migration safety classifier suites passed: 85/85 with no skips. Command: `NUGET_HTTP_CACHE_PATH=/tmp/pr5664-nuget-http-cache dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj --configuration Release -p:BuildProjectReferences=false --filter "FullyQualifiedName~MigrationFidelityEvaluatorTests|FullyQualifiedName~MigrationSafetyClassifierTests"`. The writable cache resolved the host's read-only default cache; package auditing stayed enabled. Final test-helper scoped whitespace verification also passed under `timeout 20m`.
+
+Final ordinary attachment-store regression verification passed: 23/23 with no skips, using
+`dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --no-restore
+--configuration Release -p:BuildProjectReferences=false --filter
+FullyQualifiedName~PostgresAttachmentStoreTests`. Its application/TestKit and four additional
+test dependencies compiled successfully before the test project. All 180 focused cases passed
+(17 attachment imports, 55 related import/publication cases, 85 shared fidelity/migration safety
+cases, 23 ordinary store cases). Existing test assertions were retained. All changed C# projects
+passed scoped formatting with `--include` and `timeout 20m`; `git diff --check` passed.
+
+Review thread `PRRT_kwDOQqorlc6p9W9x` was re-verified at `97ba4999c` and is a false
+positive. The `Path.Combine` call in
+`GeoservicesImportServiceAttachmentReimportTests.cs:405` receives
+`AppContext.BaseDirectory` followed by the relative literals `Migrations` and
+`125_AddImportedAttachmentIdentity.sql`. Neither later argument is rooted, so
+neither can discard the base directory. `Honua.Postgres.Tests.csproj:33` copies
+that migration to the matching `Migrations/125_AddImportedAttachmentIdentity.sql`
+output location. The test file extends `GeoservicesImportServiceAttachmentImportTests`
+(line 17), which is the class name used for focused verification. No code or
+test assertion was changed for this finding.
+
+`sha256sum` on the source migration and
+`tests/dotnet/Honua.Db.Postgres.Tests/bin/Release/net10.0/Migrations/125_AddImportedAttachmentIdentity.sql`
+confirmed the same bytes at the expected test output path:
+`4ab9951daf862db874a7caceb28231c656367bbf581ddb3ca76bd0cc610188a4`.
+
+Focused re-verification for the path finding passed all 17 attachment-import
+tests against local PostgreSQL with no skips, including re-import cases that
+read and execute migration 125 through the reported call. Command:
+`dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj --no-build --no-restore --configuration Release --filter FullyQualifiedName~GeoservicesImportServiceAttachmentImportTests`.
+The Release test assembly was rebuilt by the fast pre-PR check before this run.
+
+The fast pre-PR check's affected Release build passed with zero warnings and
+errors. Its first restore encountered the sandbox's read-only default NuGet HTTP
+cache; re-running with `NUGET_HTTP_CACHE_PATH=/tmp/server-adj-5664-nuget-http-cache`
+restored successfully with package auditing enabled. For this run, the gate's
+original included-file list was dispatched to the four owning projects, each
+under `timeout 20m`, to honor the project-only formatting requirement. All four
+format checks passed without changes.
+
+The fast check passed 5,188 Core, 12 Core security, 23 load, 1,873 PostgreSQL,
+and 68 MCP registry/taxonomy tests with no skips. Its architecture run stopped
+on an inherited feature-catalog drift: the MapServer test from #5638 was missing,
+and two scene proving-test names were stale. `scripts/generate-feature-catalog.sh
+--no-build --no-restore --configuration Release` regenerated those three entries.
+The complete Release architecture suite then passed 359/359 with no skips.
+The catalog crosswalk validator and the remaining local architecture review also
+passed; `git diff --check` passed. The original fast invocation exited at the
+catalog drift; its architecture suite and remaining review were re-run after
+repair rather than repeating the full pipeline.

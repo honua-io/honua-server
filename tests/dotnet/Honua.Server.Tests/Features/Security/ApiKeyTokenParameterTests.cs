@@ -15,6 +15,7 @@ using Honua.Infrastructure.Middleware;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -50,6 +51,16 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
 
     private const string BootstrapKey = "bootstrap";
     private const string ManagedKey = "managed";
+
+    // Fixed managed-format credentials. Issuance is "hnua_" plus base64url, and base64url
+    // can contain "--". "/*" is the other SQL-comment alternative the same heuristic flags.
+    // Both must be accepted as ?token= on every route; a freshly generated key only fails
+    // when it happens to contain one of those sequences.
+    private const string ManagedKeyWithSqlLineComment =
+        "hnua_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA--credential";
+
+    private const string ManagedKeyWithSqlBlockComment =
+        "hnua_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/*credential";
 
     private const string WfsCapabilitiesPath = "/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetCapabilities";
 
@@ -176,6 +187,100 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// A managed key is opaque base64url and may contain the SQL-comment bytes the input
+    /// filter flags. Presented as <c>?token=</c> it must still be the same credential on WFS
+    /// GetCapabilities and on a GeoServices query, including the form transport.
+    /// </summary>
+    [IntegrationTheory]
+    [InlineData(ManagedKeyWithSqlLineComment)]
+    [InlineData(ManagedKeyWithSqlBlockComment)]
+    [Protocol(TestProtocols.Wfs20)]
+    [Endpoint("GET /wfs")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
+    public async Task TokenParameter_FixedManagedKeyWithSqlCommentBytes_IsAccepted(string key)
+    {
+        RegisterFixedManagedKey(key);
+        using var client = _fixture.CreateClient();
+
+        var anonymous = await ReadWfsFeatureTypesAsync(client, WfsCapabilitiesPath, apiKeyHeader: null);
+        var expectedTypes = await ReadWfsFeatureTypesAsync(client, WfsCapabilitiesPath, apiKeyHeader: key);
+        expectedTypes.Should().NotBeSubsetOf(
+            anonymous,
+            "X-API-Key must list a protected feature type the anonymous view hides");
+
+        var viaToken = await ReadWfsFeatureTypesAsync(
+            client,
+            $"{WfsCapabilitiesPath}&token={Uri.EscapeDataString(key)}",
+            apiKeyHeader: null);
+        viaToken.Should().BeEquivalentTo(
+            expectedTypes,
+            "a managed key containing SQL-comment bytes must not be rejected as injection: {0}",
+            key);
+
+        var expectedCount = await CountViaXApiKeyAsync(client, key);
+        foreach (var transport in new[] { QueryTransport, FormTransport })
+        {
+            using var response = await SendAsync(client, HttpMethod.Get, ProtectedQueryPath, CountParameters, key, transport);
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            body.Should().NotContain("SQL injection attempt detected");
+            ReadCountFromBody(response.StatusCode, body).Should().Be(
+                expectedCount,
+                "a managed key presented via {0} must read what X-API-Key reads",
+                transport);
+        }
+    }
+
+    /// <summary>
+    /// Exempting <c>token</c> from the SQL heuristic must not exempt <c>where</c>. A comment
+    /// token outside a quoted literal is still rejected.
+    /// </summary>
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task WhereParameter_WithSqlCommentOutsideLiteral_IsStillRejected()
+    {
+        using var client = _fixture.CreateClient();
+        var where = Uri.EscapeDataString("1=1 -- drop");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"{ProtectedQueryPath}?where={where}&f=json");
+        request.Headers.Add("X-API-Key", AdminPassword);
+
+        using var response = await client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        // GeoServices reports the rejection as HTTP 200 with error.code 400.
+        // The detail quotes are escaped in the raw JSON (\u0027), so match the decoded detail.
+        GeoServicesErrorAssertions.AssertGeoServicesError((int)response.StatusCode, body, [400]);
+        ErrorDetails(body).Should().Contain("SQL injection attempt detected in query parameter 'where'");
+    }
+
+    /// <summary>
+    /// The token exemption skips only the SQL heuristic. An XSS payload in <c>token</c> is
+    /// still rejected, and so is a control character.
+    /// </summary>
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task TokenParameter_NonSqlChecks_StillRejectXssAndControlCharacters()
+    {
+        using var client = _fixture.CreateClient();
+
+        using var xss = await client.GetAsync(
+            $"{ProtectedQueryPath}?f=json&token={Uri.EscapeDataString("<script>alert(1)</script>")}");
+        var xssBody = await xss.Content.ReadAsStringAsync();
+        GeoServicesErrorAssertions.AssertGeoServicesError((int)xss.StatusCode, xssBody, [400]);
+        ErrorDetails(xssBody).Should().Contain("XSS attempt detected in query parameter 'token'");
+
+        using var control = await client.GetAsync(
+            $"{ProtectedQueryPath}?f=json&token={Uri.EscapeDataString("hnua_key\u0001value")}");
+        var controlBody = await control.Content.ReadAsStringAsync();
+        GeoServicesErrorAssertions.AssertGeoServicesError((int)control.StatusCode, controlBody, [400]);
+        ErrorDetails(controlBody).Should().Contain("Control characters detected in query parameter 'token'");
+    }
+
+    /// <summary>
     /// A key presented as a token carries only its own scope: a non-admin key is refused the
     /// admin-only layer with the same status it gets through <c>X-API-Key</c>, and is never
     /// mistaken for an invalid token.
@@ -261,6 +366,23 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         return created.Key;
     }
 
+    private void RegisterFixedManagedKey(string keyMaterial)
+    {
+        var store = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        if (store is not InMemoryAdminApiKeyStore memory)
+        {
+            throw new InvalidOperationException(
+                $"Fixed managed keys are registered on the in-memory store, but the host resolved {store.GetType().FullName}.");
+        }
+
+        memory.RegisterKnownMaterial(
+            keyMaterial,
+            name: "fixed-managed-key",
+            permissions: ["admin:*"],
+            expiresAt: DateTimeOffset.UtcNow.AddMinutes(10),
+            createdBy: "test");
+    }
+
     private static async Task<string> PortalSelfUsernameViaXApiKeyAsync(HttpClient client, string key)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, $"{PortalSelfPath}?f=json");
@@ -322,6 +444,22 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         }
     }
 
+    private static string[] ErrorDetails(string body)
+    {
+        using var json = JsonDocument.Parse(body);
+        if (!json.RootElement.TryGetProperty("error", out var error) ||
+            !error.TryGetProperty("details", out var details) ||
+            details.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        return details.EnumerateArray()
+            .Where(item => item.ValueKind == JsonValueKind.String)
+            .Select(item => item.GetString()!)
+            .ToArray();
+    }
+
     private static int? ReadErrorCode(string body)
     {
         try
@@ -342,7 +480,12 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
     private static async Task<long?> ReadCountAsync(HttpResponseMessage response)
     {
         var body = await response.Content.ReadAsStringAsync();
-        if (response.StatusCode != HttpStatusCode.OK)
+        return ReadCountFromBody(response.StatusCode, body);
+    }
+
+    private static long? ReadCountFromBody(HttpStatusCode statusCode, string body)
+    {
+        if (statusCode != HttpStatusCode.OK)
         {
             return null;
         }

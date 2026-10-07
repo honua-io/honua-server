@@ -10,6 +10,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
@@ -117,6 +118,14 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             request, layer, context.GetHttpContext().RequestServices, context.CancellationToken).ConfigureAwait(false);
         var query = queryContext.Query;
         var pkField = layer.ObjectIdFieldName;
+        var readOperation = request.ReturnCountOnly
+            ? FeatureProviderReadOperation.Count
+            : request.ReturnExtentOnly
+                ? FeatureProviderReadOperation.Extent
+                : FeatureProviderReadOperation.Query;
+        var reader = await ResolveReaderAsync(
+                layer, readOperation, context.GetHttpContext().RequestServices, context.CancellationToken)
+            .ConfigureAwait(false);
 
         var response = new Proto.QueryFeaturesResponse
         {
@@ -128,7 +137,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         // Count-only query
         if (request.ReturnCountOnly)
         {
-            response.Count = await _featureReader.CountAsync(
+            response.Count = await reader.CountAsync(
                 layer.StorageLayerId, query, context.CancellationToken).ConfigureAwait(false);
             return response;
         }
@@ -136,7 +145,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         // IDs-only query
         if (request.ReturnIdsOnly)
         {
-            var objectIds = await _featureReader.QueryObjectIdsAsync(
+            var objectIds = await reader.QueryObjectIdsAsync(
                 layer.StorageLayerId, query, context.CancellationToken).ConfigureAwait(false);
             response.ObjectIds.AddRange(objectIds);
             return response;
@@ -145,7 +154,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         // Extent-only query
         if (request.ReturnExtentOnly)
         {
-            var extent = await _featureReader.GetExtentAsync(
+            var extent = await reader.GetExtentAsync(
                 layer.StorageLayerId, query, context.CancellationToken).ConfigureAwait(false);
             if (extent.HasValue)
             {
@@ -160,7 +169,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             response.Fields.Add(GrpcConversionHelpers.ToProtoField(field));
         }
 
-        var result = await _featureReader.QueryAsync(
+        var result = await reader.QueryAsync(
             layer.StorageLayerId, query, context.CancellationToken).ConfigureAwait(false);
 
         foreach (var feature in result.Items)
@@ -188,14 +197,28 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
         await EnsureReadAccessAsync(context, layer.Service, layer.Resource).ConfigureAwait(false);
         var queryContext = await CreateQueryContextAsync(
-            request, layer, context.GetHttpContext().RequestServices, context.CancellationToken).ConfigureAwait(false);
+            request, layer, context.GetHttpContext().RequestServices, context.CancellationToken, streaming: true).ConfigureAwait(false);
         var query = queryContext.Query;
         var pkField = layer.ObjectIdFieldName;
+        var requestServices = context.GetHttpContext().RequestServices;
+        var resolvedReader = await ResolveReaderAsync(
+                layer, FeatureProviderReadOperation.Query, requestServices, context.CancellationToken)
+            .ConfigureAwait(false);
+        var streamingStore = requestServices.GetService<FeatureProviderQueryRouter>() is null
+            && requestServices.GetService<IMetadataV2GraphProvider>() is null
+            ? _streamingFeatureStore
+            : resolvedReader as IStreamingFeatureStore;
+        if (streamingStore is null)
+        {
+            throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                "The layer's feature provider does not support streaming queries."));
+        }
 
         var isFirstPage = true;
         var batch = new List<Proto.Feature>(_streamBatchSize);
 
-        await using var enumerator = _streamingFeatureStore
+        await using var enumerator = streamingStore
             .StreamFeaturesAsync(layer.StorageLayerId, query, context.CancellationToken)
             .GetAsyncEnumerator(context.CancellationToken);
 
@@ -258,6 +281,20 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         var layer = await ValidateGrpcLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
+
+        var metadataGraphProvider = context.GetHttpContext().RequestServices.GetService<IMetadataV2GraphProvider>();
+        if (metadataGraphProvider is not null)
+        {
+            var snapshot = await metadataGraphProvider.GetCurrentAsync(context.CancellationToken).ConfigureAwait(false);
+            var storageBinding = snapshot.ResolveStorageBinding(layer.Publication)
+                ?? throw new RpcException(new Status(StatusCode.FailedPrecondition, "The layer has no resolvable storage binding."));
+            if (!FeatureStorageMapping.FromMetadata(layer.Resource, storageBinding).SupportsManagedWrites)
+            {
+                throw new RpcException(new Status(
+                    StatusCode.FailedPrecondition,
+                    "The layer's storage binding does not support managed writes."));
+            }
+        }
 
         // gRPC ApplyEdits is an open-protocol edit surface and remains Community (#1591).
         // Validation, authz, eventing, and telemetry still run through the shared edit pipeline.
@@ -374,6 +411,32 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     private static RpcException IdempotencyReservationLost() => new(new Status(
         StatusCode.Aborted,
         "The edit lost its idempotency reservation before it completed; retry with the same idempotency key."));
+
+    // The router and graph provider are resolved per request, as the FeatureServer handlers
+    // do, so the service stays within the architecture collaborator ceiling.
+    private async Task<IFeatureReader> ResolveReaderAsync(
+        GrpcLayerContext layer,
+        FeatureProviderReadOperation operation,
+        IServiceProvider requestServices,
+        CancellationToken cancellationToken)
+    {
+        var providerQueryRouter = requestServices.GetService<FeatureProviderQueryRouter>();
+        var metadataGraphProvider = requestServices.GetService<IMetadataV2GraphProvider>();
+        if (providerQueryRouter is null || metadataGraphProvider is null)
+        {
+            return _featureReader;
+        }
+
+        var snapshot = await metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        return await providerQueryRouter.ResolveReaderAsync(
+            snapshot,
+            layer.Service,
+            layer.Resource,
+            layer.Publication,
+            layer.StorageLayerId,
+            operation,
+            cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Pre-reads every update and delete target through the RLS-enforced

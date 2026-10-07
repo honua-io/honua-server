@@ -1002,13 +1002,14 @@ internal static class StudioPackageEndpoints
 
     private static async Task<IResult> HandleCreateContentVersion(
         Guid draftId,
-        SaveStudioContentVersionRequest request,
+        SaveStudioContentVersionRequest? request,
         [FromServices] IStudioPackageLifecycleService service,
         [FromServices] IStudioDraftMutationRuntime mutationRuntime,
         [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
+        request ??= new SaveStudioContentVersionRequest();
         if (!TryValidateRequest(request, out var validationError))
         {
             return BadRequest(context, validationError);

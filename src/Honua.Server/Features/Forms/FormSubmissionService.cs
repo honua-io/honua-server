@@ -153,6 +153,9 @@ internal sealed class FormSubmissionService
                 requestHash).ConfigureAwait(false);
         }
 
+        var editMayHaveCommitted = false;
+        FeatureEditResult? committedEditResult = null;
+        long? committedTargetFeatureId = null;
         try
         {
             var validation = await _validator.ValidateSubmissionAsync(packageVersion, request, postClaimToken)
@@ -212,8 +215,14 @@ internal sealed class FormSubmissionService
 
             var optimized = _editProcessor.OptimizeEdit(editRequest, targetMetadata.Resource);
             var batch = _editProcessor.ToFeatureEditBatch(optimized, targetMetadata.Resource);
+            // From this point onward the writer may have committed even when it throws (for
+            // example, when the commit acknowledgement is lost). Never release the idempotency
+            // claim after crossing this boundary.
+            editMayHaveCommitted = true;
             var editResult = await _featureWriter.ApplyEditsAsync(storageLayerId, batch, postClaimToken).ConfigureAwait(false);
+            committedEditResult = editResult;
             var targetFeatureId = ResolveTargetFeatureId(request, editResult);
+            committedTargetFeatureId = targetFeatureId;
             var attachmentOutcomes = ShouldUploadAttachments(request, editResult)
                 ? await UploadAttachmentsAsync(context, packageVersion, request, parseResult.Files, storageLayerId, targetFeatureId, submissionId, postClaimToken)
                     .ConfigureAwait(false)
@@ -261,12 +270,10 @@ internal sealed class FormSubmissionService
         catch (OperationCanceledException ex)
         {
             FormSubmissionLog.SubmissionFailed(_logger, ex, packageVersion.FormId, packageVersion.Version, submissionId);
-            // Transient timeout: delete the idempotency claim so the same key can re-execute.
-            // Do NOT persist a terminal failed record; replaying it would block the client forever.
-            await DeleteSubmissionForRetryAsync(submissionId).ConfigureAwait(false);
+            var timeoutResponse = BuildFailedResponse(submissionId, packageVersion, request, "The server could not complete the submission before the post-claim timeout.", editMayHaveCommitted, committedEditResult, committedTargetFeatureId);
+            await PreserveOrReleaseClaimAsync(submissionId, timeoutResponse, editMayHaveCommitted).ConfigureAwait(false);
             await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Failure, $"{{\"version\":{packageVersion.Version},\"timeout\":true}}", CancellationToken.None)
                 .ConfigureAwait(false);
-            var timeoutResponse = BuildFailedResponse(submissionId, packageVersion, request, "The server could not complete the submission before the post-claim timeout.");
             return Results.Json(timeoutResponse, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status500InternalServerError);
         }
         // Intentional catch-all request-handling boundary: this is the form
@@ -275,12 +282,10 @@ internal sealed class FormSubmissionService
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FormSubmissionLog.SubmissionFailed(_logger, ex, packageVersion.FormId, packageVersion.Version, submissionId);
-            // Transient server error: delete the idempotency claim so the same key can re-execute.
-            // Do NOT persist a terminal failed record; replaying it would block the client forever.
-            await DeleteSubmissionForRetryAsync(submissionId).ConfigureAwait(false);
+            var errorResponse = BuildFailedResponse(submissionId, packageVersion, request, "The server could not complete the submission.", editMayHaveCommitted, committedEditResult, committedTargetFeatureId);
+            await PreserveOrReleaseClaimAsync(submissionId, errorResponse, editMayHaveCommitted).ConfigureAwait(false);
             await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Failure, $"{{\"version\":{packageVersion.Version}}}", CancellationToken.None)
                 .ConfigureAwait(false);
-            var errorResponse = BuildFailedResponse(submissionId, packageVersion, request, "The server could not complete the submission.");
             return Results.Json(errorResponse, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status500InternalServerError);
         }
     }
@@ -410,6 +415,29 @@ internal sealed class FormSubmissionService
             // Best-effort: if the delete fails the claim remains and the client will get a 409
             // on next retry, which is better than a permanently cached "failed" replay.
             FormSubmissionLog.SubmissionClaimDeleteFailed(_logger, ex, submissionId);
+        }
+    }
+
+    private async Task PreserveOrReleaseClaimAsync(
+        Guid submissionId,
+        FormSubmissionResponse response,
+        bool editMayHaveCommitted)
+    {
+        if (!editMayHaveCommitted)
+        {
+            await DeleteSubmissionForRetryAsync(submissionId).ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            await CompleteSubmissionAsync(submissionId, response, "failed").ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // The original pending claim is deliberately retained if terminal persistence fails.
+            // A retry must not risk applying the edit a second time.
+            FormSubmissionLog.SubmissionFailed(_logger, ex, response.FormId, response.FormVersion, submissionId);
         }
     }
 
@@ -909,7 +937,10 @@ internal sealed class FormSubmissionService
         Guid submissionId,
         FormPackageVersion packageVersion,
         FormSubmissionRequest request,
-        string retryReason)
+        string retryReason,
+        bool editMayHaveCommitted = false,
+        FeatureEditResult? editResult = null,
+        long? targetFeatureId = null)
         => new()
         {
             SubmissionId = submissionId,
@@ -917,16 +948,23 @@ internal sealed class FormSubmissionService
             FormId = packageVersion.FormId,
             FormVersion = packageVersion.Version,
             Operation = request.Operation,
-            TargetFeatureId = request.TargetFeatureId,
+            TargetFeatureId = targetFeatureId ?? request.TargetFeatureId,
             EditOutcome = new FormEditOutcome
             {
                 Succeeded = false,
-                Error = "Submission could not be applied."
+                Created = editResult?.CreatedCount ?? 0,
+                Updated = editResult?.UpdatedCount ?? 0,
+                Deleted = editResult?.DeletedCount ?? 0,
+                Error = editMayHaveCommitted
+                    ? "The feature edit outcome may have committed; the submission will not be re-executed."
+                    : "Submission could not be applied."
             },
             Retry = new FormSubmissionRetryGuidance
             {
-                Retryable = true,
-                Reason = retryReason
+                Retryable = !editMayHaveCommitted,
+                Reason = editMayHaveCommitted
+                    ? "The feature edit may have committed. Reuse this idempotency key to retrieve the terminal result; do not create a new submission."
+                    : retryReason
             }
         };
 

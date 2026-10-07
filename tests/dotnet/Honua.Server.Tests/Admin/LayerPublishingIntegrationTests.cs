@@ -1495,6 +1495,62 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ApplyEdits, Operations.Query)]
+    [Protocol(TestProtocols.Admin, TestProtocols.FeatureServer)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task HonuaServer5407_ApplyEditsAttributeOnlyUpdateOnManagedLayerPreservesGeometry()
+    {
+        await UseServerFeatureStoreConnectionAsync();
+        var publishedLayer = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName,
+            Enabled = true,
+            StorageMode = "managed",
+            Capabilities = ["Query", "Create", "Update", "Delete"]
+        });
+        _layerId = publishedLayer.LayerId;
+
+        var queryPath = $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true";
+        using var beforeResponse = await _client.GetAsync(queryPath);
+        beforeResponse.Be200Ok();
+        using var before = JsonDocument.Parse(await beforeResponse.Content.ReadAsStringAsync());
+        var original = before.RootElement.GetProperty("features").EnumerateArray().Single();
+        var objectId = original.GetProperty("attributes").GetProperty("objectid").GetInt64();
+        var originalGeometry = original.GetProperty("geometry").GetRawText();
+
+        using var edits = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["updates"] = $"[{{\"attributes\":{{\"objectid\":{objectId},\"population\":5407}}}}]"
+        });
+        using var updateResponse = await _client.PostAsync(
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/applyEdits", edits);
+        updateResponse.Be200Ok();
+        var updatePayload = await updateResponse.Content.ReadAsStringAsync();
+        using (var update = JsonDocument.Parse(updatePayload))
+        {
+            update.RootElement.GetProperty("updateResults").EnumerateArray().Single()
+                .GetProperty("success").GetBoolean().Should().BeTrue($"response: {updatePayload}");
+        }
+
+        using var afterResponse = await _client.GetAsync(queryPath);
+        afterResponse.Be200Ok();
+        using var after = JsonDocument.Parse(await afterResponse.Content.ReadAsStringAsync());
+        var updated = after.RootElement.GetProperty("features").EnumerateArray().Single();
+        updated.GetProperty("attributes").GetProperty("population").GetDouble().Should().Be(5407d);
+        updated.GetProperty("geometry").GetRawText().Should().Be(originalGeometry);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     public async Task PublishLayer_UnserviceableEditableRequests_AreRejectedBeforePublishing()
