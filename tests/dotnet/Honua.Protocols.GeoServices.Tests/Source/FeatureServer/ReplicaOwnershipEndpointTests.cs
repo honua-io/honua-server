@@ -29,13 +29,17 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 /// between the handler gate and a real authenticated identity was unverified end to end.
 /// </para>
 /// <para>
-/// Both principals here are scoped write API keys: they authenticate (so this is genuinely
+/// Both principals here are scoped API keys: they authenticate (so this is genuinely
 /// cross-principal denial, not the anonymous 401 the rest of the replica suite covers) and carry
-/// identical <c>write:</c> authority over the same service, so the only thing separating them is
-/// replica ownership. Denial is expected as <c>404</c> rather than <c>403</c> — the handlers
-/// deliberately mask a replica the caller does not own — and each case additionally proves the
-/// replica still works for its real owner, so a masked 404 cannot be confused with a replica that
-/// was destroyed or never created.
+/// identical <c>read:</c> and <c>write:</c> authority over the same service, so the only thing
+/// separating them is replica ownership. <c>createReplica</c> returns the replica's features, so
+/// a write-only key is forbidden (see
+/// <c>CreateReplica_WithWriteOnlyLayerRole_IsForbiddenBecauseTheResponseCarriesData</c>); these
+/// keys can query and edit, and still are not administrators. Denial is expected as a masked
+/// not-found rather than an ownership acknowledgement — the handlers deliberately hide a replica
+/// the caller does not own — and each case additionally proves the replica still works for its
+/// real owner, so a masked denial cannot be confused with a replica that was destroyed or never
+/// created.
 /// </para>
 /// </remarks>
 [Collection("Database")]
@@ -233,12 +237,13 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
 
     private async Task<HttpClient> CreateScopedWriteClientAsync(string keyName)
     {
-        // A key whose only grant is write:{service} authenticates as a non-admin principal whose
+        // read:{service} plus write:{service} authenticates as a non-admin principal whose
         // identity name is the key name, which is what ResolveReplicaOwner stamps as the owner.
+        // createReplica's response carries feature data, so the Query gate refuses a write-only key.
         var apiKeyStore = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
         var key = await apiKeyStore.CreateAsync(
             keyName,
-            [$"write:{WebAppFixture.TestServiceId}"],
+            [$"read:{WebAppFixture.TestServiceId}", $"write:{WebAppFixture.TestServiceId}"],
             null,
             null,
             CancellationToken.None);
@@ -252,12 +257,15 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
             JsonBody(new { replicaName, layers = "0", syncModel = "perReplica", f = "json" }));
 
+        var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK,
-            "createReplica must succeed for a scoped write principal: {0}",
-            await response.Content.ReadAsStringAsync());
+            "createReplica must succeed for a scoped read+write principal: {0}",
+            body);
 
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        return document.RootElement.GetProperty("replicaID").GetString()!;
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.TryGetProperty("replicaID", out var replicaId).Should().BeTrue(
+            "createReplica must return replicaID rather than an error envelope: {0}", body);
+        return replicaId.GetString()!;
     }
 
     private static async Task<string[]> ListReplicaIdsAsync(HttpClient client)
