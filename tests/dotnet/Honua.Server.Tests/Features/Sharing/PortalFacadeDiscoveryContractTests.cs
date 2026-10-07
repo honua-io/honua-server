@@ -92,6 +92,13 @@ public sealed class PortalFacadeDiscoveryContractTests : IAsyncLifetime
                 accessPolicy: new AccessPolicy { AllowedRoles = ["portal-admin"] })
             .Build();
 
+        graph = graph with
+        {
+            Services = graph.Services.Select(service => service.Metadata.Id == OrgServiceId
+                ? service with { Metadata = service.Metadata with { Publisher = "gis-team", Description = "status:deprecated" } }
+                : service).ToArray(),
+        };
+
         _fixture = new WebAppFixture()
             .ReplaceService<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
             .ConfigureWebHost(builder =>
@@ -406,6 +413,8 @@ public sealed class PortalFacadeDiscoveryContractTests : IAsyncLifetime
         using var contentDocument = JsonDocument.Parse(await content.Content.ReadAsStringAsync());
         contentDocument.RootElement.GetProperty("folders").ValueKind.Should().Be(JsonValueKind.Array);
         contentDocument.RootElement.GetProperty("items").ValueKind.Should().Be(JsonValueKind.Array);
+        contentDocument.RootElement.GetProperty("items").EnumerateArray()
+            .Select(item => item.GetProperty("id").GetString()).Should().Equal(PublicServiceId);
 
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -422,5 +431,31 @@ public sealed class PortalFacadeDiscoveryContractTests : IAsyncLifetime
         search.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await ReadSearchAsync(search);
         payload.Results.Should().Contain(item => item.Id == PublicServiceId);
+    }
+
+    [IntegrationTheory]
+    [InlineData("Basemap type:\"Feature Service\"", true, false)]
+    [InlineData("\"Public Basemap\" AND type:\"Feature Service\"", true, false)]
+    [InlineData("missing type:\"Feature Service\"", false, false)]
+    [InlineData("Public Basemap", true, false)]
+    [InlineData("status:deprecated", false, true)]
+    [InlineData("-status:deprecated", true, false)]
+    [InlineData("type:\"Feature Service\" status:deprecated", false, true)]
+    [InlineData("owner:admin", true, false)]
+    [InlineData("owner:gis-team", true, true)]
+    [InlineData("-owner:gis-team", true, false)]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/search")]
+    public async Task Search_Clauses_FilterVisibleItems(string query, bool includesPublic, bool includesOrg)
+    {
+        using var client = _fixture.CreateClient();
+        var token = await IssueAdminTokenAsync(client);
+        using var response = await client.GetAsync($"/sharing/rest/search?f=json&token={token}&q={Uri.EscapeDataString(query)}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadSearchAsync(response);
+        payload.Results.Any(item => item.Id == PublicServiceId).Should().Be(includesPublic);
+        payload.Results.Any(item => item.Id == OrgServiceId).Should().Be(includesOrg);
+        payload.Results.Should().NotContain(item => item.Id == PrivateServiceId);
     }
 }
