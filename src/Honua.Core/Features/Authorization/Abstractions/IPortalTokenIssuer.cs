@@ -42,6 +42,30 @@ public interface IPortalTokenIssuer
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Exchanges a token presented on the current request for a new token bound to a new
+    /// client binding: the federated <c>generateToken</c> exchange, where a client trades its
+    /// portal token for one scoped to a server (#5491).
+    /// </summary>
+    /// <remarks>
+    /// The presented token is the credential that authenticates the exchange, so it must be
+    /// usable from the current request exactly as <see cref="ValidateAsync"/> requires:
+    /// active, bound to <see cref="PortalTokenExchangeRequest.PresentedBinding"/>, and still
+    /// backed by the credential it was minted from. The new token is a derivation of the
+    /// presented one, not a fresh issuance: it carries the same principal, tenant, roles,
+    /// claims-mapping provenance and backing-credential source, and never outlives the
+    /// presented token. The same backing-credential and claims-mapping checks continue to apply.
+    /// </remarks>
+    /// <param name="request">The presented token, the request's binding and the new binding.</param>
+    /// <param name="cancellationToken">Token used to abort the exchange.</param>
+    /// <returns>
+    /// The new token, or <see langword="null"/> when the presented token is not usable from
+    /// this request.
+    /// </returns>
+    Task<PortalTokenExchange?> ExchangeAsync(
+        PortalTokenExchangeRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Resolves an active token reference for RFC 7662 introspection (#1890),
     /// <em>without</em> the referer/IP binding check that
     /// <see cref="ValidateAsync"/> applies. Introspection is a trusted,
@@ -151,6 +175,35 @@ public sealed record PortalTokenIssueRequest(
     IReadOnlyList<string>? RolesWithoutClaimsMapping = null,
     bool IsClientCredentials = false,
     PortalCredentialSource? Source = null);
+
+/// <summary>
+/// Inputs for exchanging a presented portal token for a token bound to a new client binding.
+/// </summary>
+/// <param name="Token">The presented token.</param>
+/// <param name="PresentedBinding">Binding observed on the request that presents the token.</param>
+/// <param name="ClientType">Whether the new token binds to a referer or an IP address.</param>
+/// <param name="BindingValue">Referer URL or client IP address the new token binds to.</param>
+/// <param name="ExpiresAt">
+/// Requested absolute expiry of the new token. The issuer clamps it to the presented token's
+/// own expiry.
+/// </param>
+public sealed record PortalTokenExchangeRequest(
+    string Token,
+    PortalTokenBinding PresentedBinding,
+    PortalTokenClientType ClientType,
+    string BindingValue,
+    DateTimeOffset ExpiresAt);
+
+/// <summary>
+/// Result of a portal token exchange.
+/// </summary>
+/// <param name="Issuance">The new token and its expiry.</param>
+/// <param name="PrincipalId">Principal the presented token, and so the new token, belongs to.</param>
+/// <param name="TenantId">Tenant the new token is scoped to, when present.</param>
+public sealed record PortalTokenExchange(
+    PortalTokenIssuance Issuance,
+    string PrincipalId,
+    string? TenantId);
 
 /// <summary>
 /// Token issuance result.

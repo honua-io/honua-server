@@ -1073,6 +1073,7 @@ internal static class GeoservicesCatalogEndpoints
         // and left a client that selects the secure field unable to find the SOAP endpoint.
         var response = new RestInfoResponse
         {
+            OwningSystemUrl = baseUrl,
             SoapUrl = soapUrl,
             SecureSoapUrl = IsHttpsBaseUrl(baseUrl, context) ? soapUrl : null,
             AuthInfo = new RestAuthInfo
