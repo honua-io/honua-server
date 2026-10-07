@@ -88,3 +88,8 @@ script omits that preparation. Its canonical generation step passed locally.
 Generated projections remain the post-merge workflow's responsibility per
 `scripts/ci/report-generated-file-drift.sh`. Local architecture review found
 no blocking issues.
+After canonical regeneration, `FeatureCatalogDriftTests` passed 9/9 in
+Release with no skips. The local script's raw result remains a catalog-drift
+failure; the unchanged drift guard passes with the same preparation used by
+PR Gate. Generated projections were restored after validation and excluded
+from this repair.
