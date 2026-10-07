@@ -424,10 +424,10 @@ internal static partial class FeatureServerEndpoints
         }
 
         // The response carries the replica data (#4018), so a role-based write credential still
-        // needs Query access on every selected layer. A scope-governed key is different: its
-        // grant is the per-layer check, and a write grant on each requested layer authorizes
-        // the replica payload. EvaluateScopedKeyAccess's null-resource rule is not involved;
-        // this evaluation names every layer.
+        // needs Query access on every selected layer. A scope-governed key is admitted by a write
+        // grant on each requested layer, which lets it register the replica; the feature payload
+        // is attached later only when that key also has a read grant. EvaluateScopedKeyAccess's
+        // null-resource rule is not involved; this evaluation names every layer.
         var queryAccess = await ResolveReplicaLayerAccessAsync(
             context,
             service,
@@ -510,27 +510,37 @@ internal static partial class FeatureServerEndpoints
         // (every current row as an add), bounded per layer by Limits:Replica:MaxChangesPerLayer. A larger
         // scope is not rejected: the replica cursor is set to the generation the data reached and the
         // remainder arrives through synchronizeReplica downloads (#4019).
+        // A write grant admits registration only. Feature attributes and geometries require a read grant
+        // on every requested layer (#4018, LayerScopedWriteKey); a write-only key gets the replica id
+        // and an empty layer payload, including for syncModel=none.
         ReplicaDelivery? delivery;
-        IResult? deliveryError;
-        try
+        IResult? deliveryError = null;
+        if (!ReplicaFeaturePayloadPermitted(context, service, createLayers))
         {
-            (delivery, deliveryError) = await AssembleReplicaDeliveryAsync(
-                context,
-                recipientReplicaId: null,
-                sinceGeneration: 0,
-                dataGeneration,
-                createLayers,
-                scope,
-                ReplicaChangeSelection.All,
-                returnIdsOnly: false,
-                cancellationToken);
+            delivery = EmptyReplicaDelivery(createLayers, dataGeneration);
         }
-        catch (Exception) when (registered is not null)
+        else
         {
-            // The registration is committed but this request fails before returning its replica ID, so
-            // the caller could never unregister it: remove it instead of leaving an orphan.
-            await replicaStore.RemoveAsync(registered.ReplicaId, CancellationToken.None).ConfigureAwait(false);
-            throw;
+            try
+            {
+                (delivery, deliveryError) = await AssembleReplicaDeliveryAsync(
+                    context,
+                    recipientReplicaId: null,
+                    sinceGeneration: 0,
+                    dataGeneration,
+                    createLayers,
+                    scope,
+                    ReplicaChangeSelection.All,
+                    returnIdsOnly: false,
+                    cancellationToken);
+            }
+            catch (Exception) when (registered is not null)
+            {
+                // The registration is committed but this request fails before returning its replica ID, so
+                // the caller could never unregister it: remove it instead of leaving an orphan.
+                await replicaStore.RemoveAsync(registered.ReplicaId, CancellationToken.None).ConfigureAwait(false);
+                throw;
+            }
         }
 
         if (deliveryError is not null || delivery!.ExceededTransferLimit && registered is null)
@@ -711,16 +721,21 @@ internal static partial class FeatureServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Invalid serverGen parameter", [windowError!]);
         }
 
-        var (extract, extractError) = await DeliverExtractWindowAsync(
-            context,
-            replicaId,
-            replicaLayers,
-            sinceByLayer,
-            throughGeneration,
-            DeserializeReplicaScope(replica.ScopeDefinition),
-            selection,
-            returnIdsOnly,
-            cancellationToken);
+        // Replica-bound extractChanges is the owner's change window. A write grant admits the
+        // call so ownership can be distinguished from a missing replica; the rows themselves
+        // stay behind a read grant.
+        (ReplicaExtractResult? extract, IResult? extractError) = ReplicaFeaturePayloadPermitted(context, service, replicaLayers)
+            ? await DeliverExtractWindowAsync(
+                context,
+                replicaId,
+                replicaLayers,
+                sinceByLayer,
+                throughGeneration,
+                DeserializeReplicaScope(replica.ScopeDefinition),
+                selection,
+                returnIdsOnly,
+                cancellationToken).ConfigureAwait(false)
+            : (EmptyReplicaExtract(replicaLayers, sinceByLayer, throughGeneration), null);
         if (extractError is not null)
         {
             return extractError;
@@ -1128,8 +1143,9 @@ internal static partial class FeatureServerEndpoints
         var isDownloadDirection = string.Equals(syncDirection, "download", StringComparison.OrdinalIgnoreCase)
             || string.Equals(syncDirection, "bidirectional", StringComparison.OrdinalIgnoreCase);
 
-        // A download returns feature data, so it needs Query access on every replica layer, as extractChanges
-        // and createReplica do; write access alone must not read the layers (#4018).
+        // A download returns feature data, so a role-based caller needs Query access on every replica
+        // layer. A scope-governed write grant admits the download call and does not include the rows;
+        // write access alone must not read the layers (#4018).
         if (isDownloadDirection)
         {
             var queryAccess = await ResolveReplicaLayerAccessAsync(
@@ -1503,44 +1519,58 @@ internal static partial class FeatureServerEndpoints
         var downloadExceededTransferLimit = false;
         if (isDownloadDirection)
         {
-            // The download lower bound is the generation the client already holds (replicaServerGen,
-            // from its preceding extractChanges/createReplica) when supplied, otherwise the replica's
-            // recorded last-sync generation. The upper bound is always the current (post-upload)
-            // generation so the delta window is (downloadSinceGen, currentGen] — covering every
-            // server-side change including edits committed by other clients during the upload window
-            // (BH5-015). A previous cap at preUploadGen permanently excluded those concurrent edits,
-            // because the cursor was then advanced to uploadServerGen (BH2-012), making them
-            // undeliverable to this replica forever. The change tracker excludes this replica's own
-            // committed edits before collapsing the remaining per-object history.
-            var downloadSinceGen = acknowledgedServerGen is { } acknowledged
-                ? Math.Min(acknowledged, currentGen)
-                : replica.LastSyncGeneration;
-
-            // A backlog larger than Limits:Replica:MaxChangesPerLayer is delivered in consecutive
-            // generation windows: the cursor advances to the generation this delivery reached and the
-            // response sets exceededTransferLimit, so a busy replica always makes progress instead of
-            // failing every download (#4019).
-            var (delivery, deltaError) = await AssembleReplicaDeliveryAsync(
-                context,
-                replicaId,
-                downloadSinceGen,
-                currentGen,
-                replicaLayers,
-                DeserializeReplicaScope(replica.ScopeDefinition),
-                ReplicaChangeSelection.All,
-                returnIdsOnly: false,
-                cancellationToken);
-            if (deltaError is not null)
+            if (!ReplicaFeaturePayloadPermitted(context, service, replicaLayers))
             {
-                return deltaError;
+                // Do not advance the download cursor over rows this key cannot receive. A later
+                // read grant on the same replica can still see them.
+                downloadEdits = [.. replicaLayers.Select(layer => EmptyReplicaLayerDelivery(layer, ReplicaLayerScope.Whole).Changes)];
+                downloadThroughGen = replica.LastSyncGeneration;
+                downloadExceededTransferLimit = false;
+                downloadLayerServerGens = BuildLayerServerGens(
+                    replicaLayers.Select(static layer => layer.PublicLayerId),
+                    replica.LastSyncGeneration);
             }
+            else
+            {
+                // The download lower bound is the generation the client already holds (replicaServerGen,
+                // from its preceding extractChanges/createReplica) when supplied, otherwise the replica's
+                // recorded last-sync generation. The upper bound is always the current (post-upload)
+                // generation so the delta window is (downloadSinceGen, currentGen] — covering every
+                // server-side change including edits committed by other clients during the upload window
+                // (BH5-015). A previous cap at preUploadGen permanently excluded those concurrent edits,
+                // because the cursor was then advanced to uploadServerGen (BH2-012), making them
+                // undeliverable to this replica forever. The change tracker excludes this replica's own
+                // committed edits before collapsing the remaining per-object history.
+                var downloadSinceGen = acknowledgedServerGen is { } acknowledged
+                    ? Math.Min(acknowledged, currentGen)
+                    : replica.LastSyncGeneration;
 
-            downloadEdits = delivery!.LegacyLayerChanges;
-            downloadThroughGen = delivery.ThroughGeneration;
-            downloadExceededTransferLimit = delivery.ExceededTransferLimit;
-            downloadLayerServerGens = BuildLayerServerGens(
-                replicaLayers.Select(static layer => layer.PublicLayerId),
-                delivery.ThroughGeneration);
+                // A backlog larger than Limits:Replica:MaxChangesPerLayer is delivered in consecutive
+                // generation windows: the cursor advances to the generation this delivery reached and the
+                // response sets exceededTransferLimit, so a busy replica always makes progress instead of
+                // failing every download (#4019).
+                var (delivery, deltaError) = await AssembleReplicaDeliveryAsync(
+                    context,
+                    replicaId,
+                    downloadSinceGen,
+                    currentGen,
+                    replicaLayers,
+                    DeserializeReplicaScope(replica.ScopeDefinition),
+                    ReplicaChangeSelection.All,
+                    returnIdsOnly: false,
+                    cancellationToken);
+                if (deltaError is not null)
+                {
+                    return deltaError;
+                }
+
+                downloadEdits = delivery!.LegacyLayerChanges;
+                downloadThroughGen = delivery.ThroughGeneration;
+                downloadExceededTransferLimit = delivery.ExceededTransferLimit;
+                downloadLayerServerGens = BuildLayerServerGens(
+                    replicaLayers.Select(static layer => layer.PublicLayerId),
+                    delivery.ThroughGeneration);
+            }
         }
 
         var updated = replica with
@@ -2397,11 +2427,12 @@ internal static partial class FeatureServerEndpoints
     private static readonly AuthorizationOperation[] _replicaWriteOperations =
         [AuthorizationOperation.Update, AuthorizationOperation.Insert, AuthorizationOperation.Delete];
 
-    // Replica reads for a scope-governed key. Query keeps a read: grant authoritative.
-    // Update/Insert/Delete let a write: grant on the same named layer authorize the replica
-    // payload (createReplica, sync download, replica-bound extractChanges, replica info and
-    // list). Role principals never see this list, so a write-only role is still refused when
-    // the layer's Query policy excludes it (#4018).
+    // Replica lifecycle reads for a scope-governed key. Query keeps a read: grant authoritative.
+    // Update/Insert/Delete let a write: grant on the same named layer admit the operation
+    // (createReplica, sync download, replica-bound extractChanges, replica info and list).
+    // That admission does not attach feature attributes or geometries; see
+    // ReplicaFeaturePayloadPermitted. Role principals never see this list, so a write-only
+    // role is still refused when the layer's Query policy excludes it (#4018).
     private static readonly AuthorizationOperation[] _replicaReadOrScopedWriteOperations =
         [AuthorizationOperation.Query, AuthorizationOperation.Update, AuthorizationOperation.Insert, AuthorizationOperation.Delete];
 
@@ -2411,10 +2442,10 @@ internal static partial class FeatureServerEndpoints
     /// as the coarse access policy. A write scope admits any mutating grant (update, insert or
     /// delete), matching the replica write gates that run around this resolution.
     /// When <paramref name="scopedWriteGrantSatisfiesRead"/> is set on a read, a scope-governed
-    /// principal is authorized per layer: a read grant or a write grant on that layer's name allows
-    /// the replica read. Callers that name no layer keep the null-resource denial. Unbound
-    /// <c>extractChanges</c> leaves the flag false so a write key cannot use the change feed as a
-    /// general query.
+    /// principal is admitted per layer by a read grant or a write grant on that layer's name.
+    /// Callers that name no layer keep the null-resource denial. Unbound <c>extractChanges</c>
+    /// leaves the flag false so a write key cannot use the change feed as a general query.
+    /// Feature payloads are a separate decision: a write grant never supplies them.
     /// </summary>
     private static Task<ResourceAccessSet> ResolveReplicaLayerAccessAsync(
         HttpContext context,
@@ -2438,6 +2469,32 @@ internal static partial class FeatureServerEndpoints
             service,
             operations,
             cancellationToken);
+    }
+
+    /// <summary>
+    /// Whether this caller may receive replica feature attributes, geometries, and object ids.
+    /// Scope-governed keys need a read grant on every layer in the response. Everyone else has
+    /// already passed the Query policy that guards the payload (#4018).
+    /// </summary>
+    private static bool ReplicaFeaturePayloadPermitted(
+        HttpContext context,
+        MetadataV2Service service,
+        IEnumerable<ReplicaLayerV2> layers)
+    {
+        var principal = context.User;
+        if (principal is null)
+        {
+            return false;
+        }
+
+        if (!LayerScopedWriteKey.IsScopeGovernedPrincipal(principal))
+        {
+            return true;
+        }
+
+        var serviceName = service.Metadata.Name;
+        return layers.All(layer =>
+            LayerScopedWriteKey.AllowsRead(principal, serviceName, layer.Resource.Metadata.Name));
     }
 
     private static bool TryResolveReplicaLayerIdsV2(

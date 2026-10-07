@@ -236,6 +236,70 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
         document.RootElement.GetProperty("replicaID").GetString().Should().NotBeNullOrWhiteSpace();
     }
 
+    /// <summary>
+    /// A <c>write:</c> grant admits replica registration and the owner's follow-up calls. It does
+    /// not admit feature attributes or geometries, including the <c>syncModel=none</c> snapshot
+    /// (<c>LayerScopedWriteKey</c>, #4018).
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.CreateReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_WithWriteOnlyKey_OmitsFeatureAttributesAndGeometries()
+    {
+        var registered = await _alice.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
+            JsonBody(new { replicaName = "WriteOnlyPayload", layers = "0", syncModel = "perReplica", f = "json" }));
+        registered.StatusCode.Should().Be(HttpStatusCode.OK);
+        var registeredBody = await registered.Content.ReadAsStringAsync();
+        AssertNoFeaturePayload(registeredBody);
+        using (var document = JsonDocument.Parse(registeredBody))
+        {
+            document.RootElement.GetProperty("replicaID").GetString().Should().NotBeNullOrWhiteSpace();
+        }
+
+        var snapshot = await _alice.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
+            JsonBody(new { replicaName = "WriteOnlySnapshot", layers = "0", syncModel = "none", f = "json" }));
+        snapshot.StatusCode.Should().Be(HttpStatusCode.OK);
+        AssertNoFeaturePayload(await snapshot.Content.ReadAsStringAsync());
+
+        var replicaId = await CreateReplicaAsync(_alice, "WriteOnlyExtract");
+        var extracted = await _alice.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
+            JsonBody(new { replicaID = replicaId, f = "json" }));
+        extracted.StatusCode.Should().Be(HttpStatusCode.OK);
+        AssertNoFeaturePayload(await extracted.Content.ReadAsStringAsync());
+    }
+
+    private static void AssertNoFeaturePayload(string body)
+    {
+        using var document = JsonDocument.Parse(body);
+        WalkForFeaturePayload(document.RootElement);
+    }
+
+    private static void WalkForFeaturePayload(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                element.TryGetProperty("attributes", out _).Should().BeFalse("a write-only key must not receive feature attributes");
+                element.TryGetProperty("geometry", out _).Should().BeFalse("a write-only key must not receive feature geometries");
+                foreach (var property in element.EnumerateObject())
+                {
+                    WalkForFeaturePayload(property.Value);
+                }
+
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    WalkForFeaturePayload(item);
+                }
+
+                break;
+        }
+    }
+
     private static StringContent JsonBody(object payload)
         => new(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
