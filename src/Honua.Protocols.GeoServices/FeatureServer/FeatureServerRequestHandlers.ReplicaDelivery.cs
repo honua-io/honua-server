@@ -643,30 +643,6 @@ internal static partial class FeatureServerEndpoints
         }, [], []);
 
     /// <summary>
-    /// A replica registration or snapshot envelope with no feature rows. Used when a scope-governed
-    /// write key may own the replica and may not read its layers.
-    /// </summary>
-    private static ReplicaDelivery EmptyReplicaDelivery(ReplicaLayerV2[] layers, long throughGeneration)
-        => new(
-            [.. layers.Select(layer => EmptyReplicaLayerDelivery(layer, ReplicaLayerScope.Whole))],
-            throughGeneration,
-            false);
-
-    /// <summary>
-    /// An extractChanges envelope with no feature rows and no object ids. The generation window is
-    /// reported so the caller can tell the replica exists; the cursor is not moved by this result.
-    /// </summary>
-    private static ReplicaExtractResult EmptyReplicaExtract(
-        ReplicaLayerV2[] layers,
-        IReadOnlyDictionary<int, long> sinceByLayer,
-        long throughGeneration)
-        => new(
-            [.. layers.Select(layer => EmptyReplicaLayerDelivery(layer, ReplicaLayerScope.Whole))],
-            layers.ToDictionary(layer => layer.PublicLayerId, _ => throughGeneration),
-            sinceByLayer.Values.DefaultIfEmpty(throughGeneration).Min(),
-            false);
-
-    /// <summary>
     /// Projects storage object ids onto the protocol-facing ids clients hold (#4017): the change log's
     /// <see cref="FeatureChange.PublicObjectId"/> where the layer's primary id differs from the storage
     /// identity, otherwise the storage id itself.

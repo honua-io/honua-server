@@ -332,6 +332,15 @@
         "OGC API Maps Basic and Conformance",
         "OGC API Maps Rendering and Records"
       ]
+    },
+    {
+      "name": "FeatureServer Tiles and Replica capacity partition",
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj",
+      "filter": "(FullyQualifiedName~MvtTile|FullyQualifiedName~Replica)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests",
+      "children": [
+        "FeatureServer MVT Tiles",
+        "FeatureServer Replica"
+      ]
     }
   ],
   "shards": [
@@ -579,27 +588,58 @@
       ]
     },
     {
-      "name": "FeatureServer Tiles and Replica",
-      "shard_name": "FeatureServer Tiles and Replica",
-      "dispatch_rank": 14.3,
-      "artifact_suffix": "featureserver-tiles-replica",
-      "log_name": "server-tests-featureserver-tiles-replica",
+      "name": "FeatureServer MVT Tiles",
+      "shard_name": "FeatureServer MVT Tiles",
+      "dispatch_rank": 14.31,
+      "artifact_suffix": "featureserver-mvt-tiles",
+      "log_name": "server-tests-featureserver-mvt-tiles",
       "timeout_minutes": 32,
       "test_timeout_minutes": 22,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "ADR-0037 finer-sharding: carved from FeatureServer Endpoints Query Services and Replication. Selects MvtTile* and Replica* endpoint classes; excludes the replica-STORE/replication classes which belong to FeatureServer Replication. Complementary with the FeatureServer Endpoints Query Services and Replication catch-all (which excludes MvtTile and Replica).",
-      "filter": "(FullyQualifiedName~MvtTile|FullyQualifiedName~Replica)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests",
+      "_comment": "Capacity split of FeatureServer Tiles and Replica along the MvtTile | Replica filter boundary. Measured on the passing retry of run 37435142851 (TRX class spans): MVT classes occupy 2.8m of the 20.2m whole. Budgets unchanged. The MVT and Replica filters exclude each other, so a name containing both substrings matches neither child and must be assigned explicitly. Coverage currently finds no such class.",
+      "filter": "FullyQualifiedName~MvtTile&FullyQualifiedName!~Replica&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests",
       "paths": [
         "src/Honua.Protocols.GeoServices/FeatureServer/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileEndpointTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileErrorHandlingTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileTemporalEndpointTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileCacheTtlTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileDecodeTests.cs",
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    {
+      "name": "FeatureServer Replica",
+      "shard_name": "FeatureServer Replica",
+      "dispatch_rank": 14.32,
+      "artifact_suffix": "featureserver-replica",
+      "log_name": "server-tests-featureserver-replica",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "Capacity split of FeatureServer Tiles and Replica along the MvtTile | Replica filter boundary. Measured on the passing retry of run 37435142851 (TRX class spans, serial): replica classes occupy 17.3m of the 20.2m whole, under the unchanged 22m test budget. Excludes the replica-store and replication classes that belong to FeatureServer Endpoints Query Services and Replication.",
+      "filter": "FullyQualifiedName~Replica&FullyQualifiedName!~MvtTile&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests",
+      "paths": [
+        "src/Honua.Protocols.GeoServices/FeatureServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerAccessFilteringTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicaDeliveryWindowTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicaDownloadContractTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicaEsriParityTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicaSyncTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicaUploadEditLimitTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MobileOfflineDemoFixtureReplicationTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/ReplicaConflictReviewEndpointTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/ReplicaManagementEndpointTests.cs",
-        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MobileOfflineDemoFixtureReplicationTests.cs",
-        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicaSyncTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/ReplicaOwnershipEndpointTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/FeatureServerReplicaClientStateSerializerTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/FeatureServerReplicaServerStateCapturerTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/ReplicaUploadIdempotencyStoreTests.cs",
         "src/Honua.Core/Features/Validation/",
         "src/Honua.Hosting/Features/Services/"
       ],

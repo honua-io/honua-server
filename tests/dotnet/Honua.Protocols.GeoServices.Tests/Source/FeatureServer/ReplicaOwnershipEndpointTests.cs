@@ -29,13 +29,17 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 /// between the handler gate and a real authenticated identity was unverified end to end.
 /// </para>
 /// <para>
-/// Both principals here are scoped write API keys: they authenticate (so this is genuinely
+/// Both principals here are scoped API keys: they authenticate (so this is genuinely
 /// cross-principal denial, not the anonymous 401 the rest of the replica suite covers) and carry
-/// identical <c>write:</c> authority over the same service, so the only thing separating them is
-/// replica ownership. Denial is expected as <c>404</c> rather than <c>403</c> — the handlers
-/// deliberately mask a replica the caller does not own — and each case additionally proves the
-/// replica still works for its real owner, so a masked 404 cannot be confused with a replica that
-/// was destroyed or never created.
+/// identical <c>read:</c> and <c>write:</c> authority over the same service, so the only thing
+/// separating them is replica ownership. <c>createReplica</c> returns the replica's features, so
+/// a write-only key is forbidden (see
+/// <c>CreateReplica_WithWriteOnlyLayerRole_IsForbiddenBecauseTheResponseCarriesData</c>); these
+/// keys can query and edit, and still are not administrators. Denial is expected as a masked
+/// not-found rather than an ownership acknowledgement — the handlers deliberately hide a replica
+/// the caller does not own — and each case additionally proves the replica still works for its
+/// real owner, so a masked denial cannot be confused with a replica that was destroyed or never
+/// created.
 /// </para>
 /// </remarks>
 [Collection("Database")]
@@ -209,95 +213,63 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// A key granted only layer 0 (<c>write:test/Test Layer</c>, the seeded name of layer id 0)
-    /// may create a replica of that layer and must be denied <c>layers=0,1</c>. The denial is
-    /// the per-layer grant check, not a service-level null-resource rejection.
+    /// A key granted only layer 0 (<c>read:</c> and <c>write:test/Test Layer</c>, the seeded name
+    /// of layer id 0) may create a replica of that layer and must be denied <c>layers=0,1</c>.
+    /// The denial is the per-layer grant check, not a service-level null-resource rejection.
+    /// The read grant is required because <c>createReplica</c> returns feature data (#4018, #5689).
     /// </summary>
     [IntegrationTest]
     [Operation(Operations.CreateReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     public async Task CreateReplica_WithKeyScopedToLayer0_IsDeniedForLayersOutsideTheGrant()
     {
-        var layer0Grant = $"write:{WebAppFixture.TestServiceId}/Test Layer";
-        using var layer0 = await CreateScopedWriteClientAsync("replica-layer0-only", layer0Grant);
+        var serviceId = WebAppFixture.TestServiceId;
+        using var layer0 = await CreateScopedClientAsync(
+            "replica-layer0-only",
+            [$"read:{serviceId}/Test Layer", $"write:{serviceId}/Test Layer"]);
 
         var denied = await layer0.PostAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
+            $"/rest/services/{serviceId}/FeatureServer/createReplica",
             JsonBody(new { replicaName = "Layer0And1", layers = "0,1", syncModel = "perReplica", f = "json" }));
         await denied.AssertGeoServicesErrorAsync(403);
 
         var allowed = await layer0.PostAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
+            $"/rest/services/{serviceId}/FeatureServer/createReplica",
             JsonBody(new { replicaName = "Layer0Only", layers = "0", syncModel = "perReplica", f = "json" }));
+        var allowedBody = await allowed.Content.ReadAsStringAsync();
         allowed.StatusCode.Should().Be(HttpStatusCode.OK,
             "a key scoped to layer 0 must still create a replica of that layer: {0}",
-            await allowed.Content.ReadAsStringAsync());
-        using var document = JsonDocument.Parse(await allowed.Content.ReadAsStringAsync());
+            allowedBody);
+        using var document = JsonDocument.Parse(allowedBody);
         document.RootElement.GetProperty("replicaID").GetString().Should().NotBeNullOrWhiteSpace();
+        document.RootElement.GetProperty("layers").EnumerateArray().Should().Contain(layer =>
+            layer.GetProperty("features").GetArrayLength() > 0,
+            "a read grant on the layer includes the replica payload");
     }
 
     /// <summary>
-    /// A <c>write:</c> grant admits replica registration and the owner's follow-up calls. It does
-    /// not admit feature attributes or geometries, including the <c>syncModel=none</c> snapshot
-    /// (<c>LayerScopedWriteKey</c>, #4018).
+    /// A write-only scoped key is not a replica reader. <c>createReplica</c> returns feature
+    /// attributes and geometries, including <c>syncModel=none</c>, so the call is forbidden
+    /// (#4018, #5689).
     /// </summary>
     [IntegrationTest]
     [Operation(Operations.CreateReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
-    public async Task CreateReplica_WithWriteOnlyKey_OmitsFeatureAttributesAndGeometries()
+    public async Task CreateReplica_WithWriteOnlyScopedKey_IsDeniedBecauseTheResponseCarriesData()
     {
-        var registered = await _alice.PostAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
-            JsonBody(new { replicaName = "WriteOnlyPayload", layers = "0", syncModel = "perReplica", f = "json" }));
-        registered.StatusCode.Should().Be(HttpStatusCode.OK);
-        var registeredBody = await registered.Content.ReadAsStringAsync();
-        AssertNoFeaturePayload(registeredBody);
-        using (var document = JsonDocument.Parse(registeredBody))
-        {
-            document.RootElement.GetProperty("replicaID").GetString().Should().NotBeNullOrWhiteSpace();
-        }
+        using var writeOnly = await CreateScopedClientAsync(
+            "replica-write-only",
+            [$"write:{WebAppFixture.TestServiceId}"]);
 
-        var snapshot = await _alice.PostAsync(
+        var denied = await writeOnly.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
+            JsonBody(new { replicaName = "WriteOnly", layers = "0", syncModel = "perReplica", f = "json" }));
+        await denied.AssertGeoServicesErrorAsync(403);
+
+        var snapshot = await writeOnly.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
             JsonBody(new { replicaName = "WriteOnlySnapshot", layers = "0", syncModel = "none", f = "json" }));
-        snapshot.StatusCode.Should().Be(HttpStatusCode.OK);
-        AssertNoFeaturePayload(await snapshot.Content.ReadAsStringAsync());
-
-        var replicaId = await CreateReplicaAsync(_alice, "WriteOnlyExtract");
-        var extracted = await _alice.PostAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
-            JsonBody(new { replicaID = replicaId, f = "json" }));
-        extracted.StatusCode.Should().Be(HttpStatusCode.OK);
-        AssertNoFeaturePayload(await extracted.Content.ReadAsStringAsync());
-    }
-
-    private static void AssertNoFeaturePayload(string body)
-    {
-        using var document = JsonDocument.Parse(body);
-        WalkForFeaturePayload(document.RootElement);
-    }
-
-    private static void WalkForFeaturePayload(JsonElement element)
-    {
-        switch (element.ValueKind)
-        {
-            case JsonValueKind.Object:
-                element.TryGetProperty("attributes", out _).Should().BeFalse("a write-only key must not receive feature attributes");
-                element.TryGetProperty("geometry", out _).Should().BeFalse("a write-only key must not receive feature geometries");
-                foreach (var property in element.EnumerateObject())
-                {
-                    WalkForFeaturePayload(property.Value);
-                }
-
-                break;
-            case JsonValueKind.Array:
-                foreach (var item in element.EnumerateArray())
-                {
-                    WalkForFeaturePayload(item);
-                }
-
-                break;
-        }
+        await snapshot.AssertGeoServicesErrorAsync(403);
     }
 
     private static StringContent JsonBody(object payload)
@@ -324,16 +296,19 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
     }
 
     private Task<HttpClient> CreateScopedWriteClientAsync(string keyName)
-        => CreateScopedWriteClientAsync(keyName, $"write:{WebAppFixture.TestServiceId}");
+        => CreateScopedClientAsync(
+            keyName,
+            [$"read:{WebAppFixture.TestServiceId}", $"write:{WebAppFixture.TestServiceId}"]);
 
-    private async Task<HttpClient> CreateScopedWriteClientAsync(string keyName, string grant)
+    private async Task<HttpClient> CreateScopedClientAsync(string keyName, string[] grants)
     {
-        // A key whose only grant is a write: permission authenticates as a non-admin principal
-        // whose identity name is the key name, which is what ResolveReplicaOwner stamps as the owner.
+        // read and write grants authenticate as a non-admin principal whose identity name is the
+        // key name, which is what ResolveReplicaOwner stamps as the owner. createReplica's
+        // response carries feature data, so the Query gate refuses a write-only key (#5689).
         var apiKeyStore = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
         var key = await apiKeyStore.CreateAsync(
             keyName,
-            [grant],
+            grants,
             null,
             null,
             CancellationToken.None);
@@ -347,12 +322,15 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
             JsonBody(new { replicaName, layers = "0", syncModel = "perReplica", f = "json" }));
 
+        var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK,
-            "createReplica must succeed for a scoped write principal: {0}",
-            await response.Content.ReadAsStringAsync());
+            "createReplica must succeed for a scoped read+write principal: {0}",
+            body);
 
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        return document.RootElement.GetProperty("replicaID").GetString()!;
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.TryGetProperty("replicaID", out var replicaId).Should().BeTrue(
+            "createReplica must return replicaID rather than an error envelope: {0}", body);
+        return replicaId.GetString()!;
     }
 
     private static async Task<string[]> ListReplicaIdsAsync(HttpClient client)
