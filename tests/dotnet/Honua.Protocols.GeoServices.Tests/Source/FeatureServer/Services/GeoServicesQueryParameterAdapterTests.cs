@@ -4,9 +4,12 @@
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
@@ -41,5 +44,52 @@ public sealed class GeoServicesQueryParameterAdapterTests
         var query = result.Query!.Value;
         query.Limit.Should().Be(10000,
             "the page must match the layer's advertised maxRecordCount when the caller omits resultRecordCount");
+    }
+
+    [Fact]
+    public async Task ConvertAsync_TrueCurve_HonorsConfiguredVertexBudget()
+    {
+        const string fullSweepArc = "{\"a\":[[1,0],[0,0],0,0]}";
+        var curve = GeoServicesGeometryConverter.ParseCurveGeometry(
+            $"{{\"curvePaths\":[[[1,0],{string.Join(',', Enumerable.Repeat(fullSweepArc, 500))}]]}}");
+        var request = new GeoServicesQueryRequest
+        {
+            Parameters = new QueryParameters { F = "json" },
+            ParsedGeometry = curve,
+            QueryLimits = new QueryLimits
+            {
+                MaxRecordCount = 1000,
+                DefaultRecordCount = 100
+            }
+        };
+        var resource = new MetadataV2Resource
+        {
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger }
+            ]
+        };
+
+        var admitted = new GeoServicesQueryParameterAdapter(
+            NullLogger<GeoServicesQueryParameterAdapter>.Instance,
+            Options.Create(new LimitsOptions
+            {
+                Geometry = new GeometryLimits { MaxVerticesPerGeometry = 100_000 }
+            }));
+        var admittedResult = await admitted.ConvertAsync(request, resource);
+
+        admittedResult.IsSuccess.Should().BeTrue();
+        var geometry = new WKBReader().Read(admittedResult.Query!.Value.SpatialFilter!.Value.Geometry);
+        geometry.NumPoints.Should().BeGreaterThan(50_000);
+
+        var capped = new GeoServicesQueryParameterAdapter(
+            NullLogger<GeoServicesQueryParameterAdapter>.Instance,
+            Options.Create(new LimitsOptions
+            {
+                Geometry = new GeometryLimits { MaxVerticesPerGeometry = 50_000 }
+            }));
+        var cappedResult = await capped.ConvertAsync(request, resource);
+
+        cappedResult.IsSuccess.Should().BeFalse();
     }
 }

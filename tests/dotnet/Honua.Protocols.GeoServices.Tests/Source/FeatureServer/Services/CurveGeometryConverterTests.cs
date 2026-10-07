@@ -3,9 +3,12 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Configuration;
+using Honua.Infrastructure.Services;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -21,6 +24,14 @@ public sealed class CurveGeometryConverterTests
     private static Geometry ReadGeometry(byte[] wkb) => new WKBReader().Read(wkb);
 
     private static GeoServicesGeometry ParseCurve(string json) => GeoServicesGeometryConverter.ParseCurveGeometry(json);
+
+    private static string FullSweepCurveJson(int arcCount)
+    {
+        const string fullSweepArc = "{\"a\":[[1,0],[0,0],0,0]}";
+        return $"{{\"curvePaths\":[[[1,0],{string.Join(',', Enumerable.Repeat(fullSweepArc, arcCount))}]]}}";
+    }
+
+    private static GeoServicesGeometry FullSweepCurve(int arcCount) => ParseCurve(FullSweepCurveJson(arcCount));
 
     [UnitTest]
     public void Densify_CurveRings_ConvertsToWkbPolygon()
@@ -110,10 +121,88 @@ public sealed class CurveGeometryConverterTests
     [UnitTest]
     public void SRV_GS_003_TrueCurveConversion_EnforcesVertexBudget()
     {
-        const string fullSweepArc = "{\"a\":[[1,0],[0,0],0,0]}";
-        var curve = ParseCurve($"{{\"curvePaths\":[[[1,0],{string.Join(',', Enumerable.Repeat(fullSweepArc, 500))}]]}}");
+        var action = () => GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(FullSweepCurve(500));
 
-        var action = () => GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(curve);
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("True-curve densification exceeds the remaining budget of 50000 vertices.");
+    }
+
+    [UnitTest]
+    public void SRV_GS_003_TrueCurveConversion_HonorsConfiguredVertexBudget()
+    {
+        var curve = FullSweepCurve(500);
+
+        var wkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(curve, maxCurveVertices: 100_000);
+
+        ReadGeometry(wkb).NumPoints.Should().BeGreaterThan(50_000);
+    }
+
+    [UnitTest]
+    public void SRV_GS_003_TrueCurveConversion_HonorsTighterConfiguredBudget()
+    {
+        var action = () => GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(
+            FullSweepCurve(500),
+            maxCurveVertices: 10_000);
+
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("True-curve densification exceeds the remaining budget of 10000 vertices.");
+    }
+
+    [UnitTest]
+    public void SRV_GS_003_TrueCurveConversion_ClampsBudgetToSupportedMaximum()
+    {
+        GeoServicesGeometryConverter.ResolveCurveVertexBudget(null).Should().Be(50_000);
+        GeoServicesGeometryConverter.ResolveCurveVertexBudget(100_000).Should().Be(100_000);
+        GeoServicesGeometryConverter.ResolveCurveVertexBudget(1_000_000).Should().Be(100_000);
+        GeoServicesGeometryConverter.ResolveEditCurveVertexBudget(100_000, 100_000).Should().Be(100_000);
+        GeoServicesGeometryConverter.ResolveEditCurveVertexBudget(100_000, 40_000).Should().Be(40_000);
+
+        var action = () => GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(
+            FullSweepCurve(1_000),
+            maxCurveVertices: 1_000_000);
+
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("True-curve densification exceeds the remaining budget of 100000 vertices.");
+    }
+
+    [UnitTest]
+    public void GeometryConverter_TrueCurve_UsesConfiguredGeometryLimit()
+    {
+        var json = FullSweepCurveJson(500);
+        var admitted = new GeometryConverter(Options.Create(new LimitsOptions
+        {
+            Geometry = new GeometryLimits { MaxVerticesPerGeometry = 100_000 }
+        }));
+
+        var wkb = admitted.ConvertGeoServicesJsonToWkb(json);
+
+        ReadGeometry(wkb).NumPoints.Should().BeGreaterThan(50_000);
+
+        var capped = new GeometryConverter(Options.Create(new LimitsOptions
+        {
+            Geometry = new GeometryLimits { MaxVerticesPerGeometry = 50_000 }
+        }));
+        var action = () => capped.ConvertGeoServicesJsonToWkb(json);
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("True-curve densification exceeds the remaining budget of 50000 vertices.");
+    }
+
+    [UnitTest]
+    public void BuildSpatialFilter_TrueCurve_UsesCallerVertexBudget()
+    {
+        var curve = FullSweepCurve(500);
+        var admitted = GeoServicesSpatialFilterBuilder.BuildSpatialFilter(
+            new QueryParameters(),
+            curve,
+            inputSrid: null,
+            maxCurveVertices: 100_000);
+
+        ReadGeometry(admitted.Geometry).NumPoints.Should().BeGreaterThan(50_000);
+
+        var action = () => GeoServicesSpatialFilterBuilder.BuildSpatialFilter(
+            new QueryParameters(),
+            curve,
+            inputSrid: null);
 
         action.Should().Throw<ArgumentException>()
             .WithMessage("True-curve densification exceeds the remaining budget of 50000 vertices.");

@@ -425,7 +425,10 @@ internal static partial class FeatureServerEndpoints
                     InSr = inSr
                 };
                 var spatialFilter = GeoServicesSpatialFilterBuilder.BuildSpatialFilter(
-                    deleteQueryParams, parsedGeometry, inputSrid);
+                    deleteQueryParams,
+                    parsedGeometry,
+                    inputSrid,
+                    limits.Geometry.MaxVerticesPerGeometry);
                 query = query with { SpatialFilter = spatialFilter };
             }
         }
