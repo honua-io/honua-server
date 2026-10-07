@@ -420,9 +420,9 @@ internal static partial class ImageServerSoapEndpoints
             extras.StartTimeFieldName,
             extras.EndTimeFieldName,
             extras.TimeExtent,
-            new XElement("HasRasterAttributeTable", false),
             extras.Histograms,
             new XElement("MensurationCapabilities", "Basic"),
+            new XElement("HasRasterAttributeTable", false),
             new XElement("MinScale", 0),
             new XElement("MaxScale", 0));
 
