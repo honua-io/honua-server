@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Protocols.Stac;
 
 public sealed class StacItemIdentifierAuditTests
 {
-    [Fact]
+    [UnitTest]
     public void SRV_OGC_005_NonUniqueConventionNamedFieldFallsBackToFeatureIdentifier()
     {
         var resource = new MetadataV2Resource
@@ -51,7 +51,7 @@ public sealed class StacItemIdentifierAuditTests
             field => Assert.Equal("objectid", field.Name));
     }
 
-    [Fact]
+    [UnitTest]
     public void SRV_OGC_018_IdFilterUsesTheIdentifierSerializedByStac()
     {
         var resource = CreateResource();
@@ -66,7 +66,7 @@ public sealed class StacItemIdentifierAuditTests
         Assert.Equal("stac_id", Assert.IsType<PropertyReference>(rewritten.Left).PropertyName);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("42", true)]
     [InlineData("not-a-number", false)]
     public async Task BoundLookup_UnannotatedSchema_UsesObjectIdsWithoutInventingAField(string itemId, bool matches)
