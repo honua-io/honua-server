@@ -496,7 +496,9 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
             $"/rest/services/{ProtectedServiceId}/FeatureServer?f=json&token={serverToken.Token}");
         request.Headers.Referrer = new Uri(SecureRefererA);
         using var protectedResponse = await client.SendAsync(request);
-        protectedResponse.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+        protectedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var protectedDocument = JsonDocument.Parse(await protectedResponse.Content.ReadAsStringAsync());
+        protectedDocument.RootElement.TryGetProperty("error", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
