@@ -13,6 +13,18 @@ namespace Honua.Protocols.GeoServices.VersionManagementServer;
 internal static class VersionAccessPolicy
 {
     /// <summary>
+    /// Returns whether a caller may create a version with the requested access level.
+    /// Private versions require an authenticated, named owner; public and protected
+    /// versions retain the service's existing anonymous-versioning behavior.
+    /// </summary>
+    internal static bool CanCreateVersion(
+        VersionAccess access,
+        string? callerName,
+        bool isAuthenticated)
+        => access != VersionAccess.Private
+           || (isAuthenticated && !string.IsNullOrWhiteSpace(callerName));
+
+    /// <summary>
     /// Returns <see langword="true"/> when the caller identified by <paramref name="callerName"/>
     /// is permitted to see a version in list/info responses.
     /// </summary>
