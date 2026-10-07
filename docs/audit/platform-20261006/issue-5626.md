@@ -85,3 +85,5 @@ the rebuilt Core/provider assemblies. The ordinary attachment-store fixture's pr
 format run also passed under `timeout 20m`.
 
 - Focused attachment regression suite passed: 17/17 cases against PostgreSQL, using `dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj --no-restore --configuration Release -p:BuildProjectReferences=false --filter FullyQualifiedName~GeoservicesImportServiceAttachmentImportTests`.
+
+- Related publication, replacement, reconciliation, fidelity, catalog, failure-message and editing-identity tests passed: 55/55 with no skips, using the final Release assemblies (`dotnet test ... --no-build --no-restore --configuration Release`). This includes all seven publication-service tests.
