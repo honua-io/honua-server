@@ -41,8 +41,10 @@ PR #5664 review re-verification confirmed two follow-up defects in `SRV-IMP-002`
   after upload, before metadata or compensation is recorded, can leave an unreferenced object
   for the existing storage orphan reconciliation policy. This does not create duplicate visible
   attachment rows.
-- Legacy policy: untagged rows are never inferred to be imported from filenames or feature IDs.
-  They remain untouched, including attachments created through Honua. Their presence routes
+- New ordinary attachment writes are marked as Honua-authored by the database default and
+  coexist with the imported set without downgrading fidelity. Legacy policy: pre-migration rows
+  retain unknown ownership and are never inferred to be imported from filenames or feature IDs.
+  They remain untouched, including older attachments created through Honua. Their presence routes
   attachment fidelity to NeedsReview on every reconciliation until their ownership is verified.
   Operators can retain confirmed Honua attachments and accept the explicit ownership review,
   or remove confirmed obsolete legacy imports through the normal attachment deletion surface.
@@ -57,3 +59,8 @@ for both changed C# files without changes.
 The related replacement, attachment-import, reconciliation-gate, fidelity-gate,
 catalog-reconciliation, and import-failure-message suites passed all 43 tests with no skips
 using the Release assemblies and local PostGIS.
+
+Attachment repair format verification: project-scoped `dotnet format --no-restore --include`,
+each wrapped in `timeout 20m`, passed without changes for the Core fidelity evaluator, the
+PostgreSQL attachment/import implementation, and both attachment-import test files. No
+solution-wide formatting was run.

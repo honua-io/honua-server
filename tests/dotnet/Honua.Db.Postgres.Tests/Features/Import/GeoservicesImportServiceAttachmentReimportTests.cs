@@ -220,8 +220,10 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
         }
     }
 
-    [Fact]
-    public async Task ImportLayerAsync_LegacyOrHonuaAttachments_PreservesUntrackedRowsAndRequiresOwnershipReview()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ImportLayerAsync_HonuaAndLegacyAttachments_PreservesRowsAndReviewsUnknownProvenance(bool legacy)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync("AttachmentLegacy");
         try
@@ -233,6 +235,14 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
             (await service.ImportLayerAsync(ReimportRequest(schema))).Success.Should().BeTrue();
             using var bytes = new MemoryStream(Encoding.UTF8.GetBytes("manual"));
             var manual = await store.UploadAsync(42, 1, "photo1.jpg", "image/jpeg", bytes);
+            if (legacy)
+            {
+                await using var legacyConnection = await fixture.DataSource.OpenConnectionAsync();
+                await using var markLegacy = new NpgsqlCommand($"UPDATE {schema}.attachments SET attachment_origin = NULL WHERE id = $1", legacyConnection);
+                markLegacy.Parameters.AddWithValue(manual.Id);
+                await markLegacy.ExecuteNonQueryAsync();
+            }
+
             // A queued file that still has a live reference must survive cleanup (including
             // compensation after a lost commit acknowledgement).
             await using (var connection = await fixture.DataSource.OpenConnectionAsync())
@@ -247,10 +257,18 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
             for (var attempt = 0; attempt < 2; attempt++)
             {
                 var result = await service.ImportLayerAsync(ReimportRequest(schema));
-                result.Success.Should().BeFalse();
-                result.NeedsReview.Should().BeTrue();
-                result.Warnings.Should().Contain(w => w.Contains("Untracked attachments", StringComparison.Ordinal));
-                result.FidelityDifferences.Should().Contain(d => d.Actual == "target attachment inventory requires review");
+                result.Success.Should().Be(!legacy);
+                result.NeedsReview.Should().Be(legacy);
+                if (legacy)
+                {
+                    result.Warnings.Should().Contain(w => w.Contains("Untracked attachments", StringComparison.Ordinal));
+                    result.FidelityDifferences.Should().Contain(d => d.Actual == "target attachment inventory requires review");
+                }
+                else
+                {
+                    result.FidelityDifferences.Should().NotContain(d => d.Code == MigrationFidelityDifferenceCodes.AttachmentsUnverified);
+                }
+
                 result.FidelityDifferences.Should().NotContain(d => d.Actual != null && d.Actual.Contains("unreadable attachment inventory", StringComparison.Ordinal));
                 (await ReadStoredAsync(schema)).Should().ContainSingle().Which.Should().Be(manual);
                 storage.Files.Keys.Should().Equal(manual.StoragePath);
@@ -348,9 +366,16 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
     private static GeoservicesImportRequest ReimportRequest(string schema) => new()
     {
         ServiceUrl = "https://example.com/arcgis/rest/services/Inspections/FeatureServer",
-        LayerId = 0, TableName = "attachment_reimport", TargetSchema = schema, TargetSrid = 4326,
-        BatchSize = 10, RequestTimeoutSeconds = 5, MaxRetries = 0, AutoPublish = true,
-        ServiceName = "default", OverwriteExisting = true
+        LayerId = 0,
+        TableName = "attachment_reimport",
+        TargetSchema = schema,
+        TargetSrid = 4326,
+        BatchSize = 10,
+        RequestTimeoutSeconds = 5,
+        MaxRetries = 0,
+        AutoPublish = true,
+        ServiceName = "default",
+        OverwriteExisting = true
     };
 
     private async Task<PostgresAttachmentStore> CreatePersistentStoreAsync(string schema, ImportStorage storage)
@@ -364,7 +389,7 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
             """, connection);
         await create.ExecuteNonQueryAsync();
         var migration = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", "125_AddImportedAttachmentIdentity.sql"));
-        await using var migrate = new NpgsqlCommand(migration.Replace("honua.", $"{schema}.", StringComparison.Ordinal), connection);
+        await using var migrate = new NpgsqlCommand(migration.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal), connection);
         await migrate.ExecuteNonQueryAsync();
         return new PostgresAttachmentStore(new FixtureConnectionProvider(fixture), storage.Mock.Object,
             NullLogger<PostgresAttachmentStore>.Instance, schema);
@@ -411,9 +436,13 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
                     Files[path] = buffer.ToArray();
                     return UploadResult.CreateSuccess(new CloudFile
                     {
-                        FileId = path, StoragePath = path, FileName = request.FileName,
-                        ContentType = request.ContentType, SizeBytes = InvalidSize ? -1 : buffer.Length,
-                        UploadedAt = DateTimeOffset.UtcNow, Provider = CloudStorageProvider.Local
+                        FileId = path,
+                        StoragePath = path,
+                        FileName = request.FileName,
+                        ContentType = request.ContentType,
+                        SizeBytes = InvalidSize ? -1 : buffer.Length,
+                        UploadedAt = DateTimeOffset.UtcNow,
+                        Provider = CloudStorageProvider.Local
                     });
                 });
             Mock.Setup(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))

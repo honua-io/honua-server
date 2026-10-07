@@ -4,6 +4,7 @@
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -60,9 +61,9 @@ internal sealed partial class PostgresAttachmentStore
 
             await using (var upsert = new NpgsqlCommand($"""
                 INSERT INTO {_tableName}
-                    (layer_id, feature_id, filename, content_type, size, storage_path, keywords,
+                    (layer_id, feature_id, filename, content_type, size, storage_path, keywords, attachment_origin,
                      import_source, import_parent_id, import_attachment_id, import_generation)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, 'geoservices', $8, $9, $10, $11)
                 ON CONFLICT (layer_id, import_source, import_parent_id, import_attachment_id) DO UPDATE
                 SET feature_id = EXCLUDED.feature_id, filename = EXCLUDED.filename,
                     content_type = EXCLUDED.content_type, size = EXCLUDED.size,
@@ -91,7 +92,7 @@ internal sealed partial class PostgresAttachmentStore
                 result = ReadAttachment(reader);
             }
 
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -151,13 +152,13 @@ internal sealed partial class PostgresAttachmentStore
         }
 
         bool hasUntracked;
-        await using (var legacy = new NpgsqlCommand($"SELECT EXISTS (SELECT 1 FROM {_tableName} WHERE layer_id = $1 AND import_source IS NULL)", connection, transaction))
+        await using (var legacy = new NpgsqlCommand($"SELECT EXISTS (SELECT 1 FROM {_tableName} WHERE layer_id = $1 AND import_source IS NULL AND attachment_origin IS NULL)", connection, transaction))
         {
             legacy.Parameters.AddWithValue(layerId);
             hasUntracked = await legacy.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is true;
         }
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         await DrainImportCleanupAsync(layerId).ConfigureAwait(false);
         return hasUntracked;
     }
