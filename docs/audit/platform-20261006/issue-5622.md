@@ -32,3 +32,27 @@ pinning, existing exception mapping, and source/managed disable-one, enable-all,
 and extent persistence. The integration assertions read the fixture's request
 schema partition through its snapshot helper. No existing tests were weakened
 or removed.
+
+PR Gate run `37638172859` rejected head
+`e9d5c711fc5d231e5fd7c2ba5594889d246ff16b` for whitespace in the two new
+publishing test fixtures and a stale operation-matrix source digest. The digest
+matched base `7c422ec37e6bc647ecae7bc231e71b0d88979fbf` exactly; this was
+PR-local evidence drift, not trunk or runner breakage.
+
+The bounded operation-matrix re-audit covers `import.dataset`. Only
+`ImportDatasetJobExecutor.cs` changed within the catalog source roots: its XML
+reference disambiguates the existing overload, and extent refresh now receives
+the same parsed connection UUID that publication already uses. Named references
+retain their existing null ownership on both calls. Import, flattening,
+progress, provenance, cancellation and best-effort refresh error handling are
+unchanged. The provider refresh still recomputes SQL layer/service extents and
+now synchronizes graph bounds through connection-qualified physical storage
+bindings, including the verified managed-store exception.
+
+The existing `ExecuteAsync_StagedGeoJson_ImportsFlattensRefreshesAndRecordsProvenance`
+receipt still executes production import/publishing services against PostGIS and
+asserts the published table, layer extent and decoded provenance feature count
+and layer ID. Catalog membership, declared entry points, the other 97 operation
+implementations and all evidence method bodies are unchanged. Their verdicts and
+shared runtime gaps are retained. The refreshed digest records this source audit;
+the architecture guard and every test assertion remain intact.

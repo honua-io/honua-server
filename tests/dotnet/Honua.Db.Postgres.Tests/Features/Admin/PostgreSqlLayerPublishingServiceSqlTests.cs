@@ -208,13 +208,17 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         {
             Metadata = new() { Id = PostgreSqlLayerPublishingService.BuildLayerGraphId("binding-layer", 1, owner) },
             ResourceId = PostgreSqlLayerPublishingService.BuildLayerGraphId("res-layer", 1, owner),
-            ConnectionId = owner?.ToString("D"), StorageLayerId = 1, Status = active
+            ConnectionId = owner?.ToString("D"),
+            StorageLayerId = 1,
+            Status = active
         }).ToArray();
         var resources = bindings.Select(binding => new MetadataV2Resource
         {
             Metadata = new() { Id = binding.ResourceId, Tenant = binding.ConnectionId == secondConnection.ToString("D") ? "foreign" : null },
-            StorageBindingIds = [binding.Metadata.Id], PrimaryStorageBindingId = binding.Metadata.Id,
-            Spatial = new() { Bbox = new() { West = -1, South = -2, East = 1, North = 2 } }, Status = active
+            StorageBindingIds = [binding.Metadata.Id],
+            PrimaryStorageBindingId = binding.Metadata.Id,
+            Spatial = new() { Bbox = new() { West = -1, South = -2, East = 1, North = 2 } },
+            Status = active
         }).ToArray();
         // Route indexes intentionally differ from the physical handle to exercise authored publications.
         var publications = bindings.SelectMany((binding, index) => new[]
@@ -227,8 +231,10 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         var services = bindings.Select((_, index) => new MetadataV2Service
         {
             Metadata = new() { Id = $"service-{index}", Name = $"service-{index}" },
-            ServiceType = MetadataV2ServiceType.EsriFeatureService, Protocols = [ServiceProtocols.FeatureServer],
-            PublicationIds = [$"pub-{index}", $"stac-{index}"], Status = active
+            ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            Protocols = [ServiceProtocols.FeatureServer],
+            PublicationIds = [$"pub-{index}", $"stac-{index}"],
+            Status = active
         }).ToArray();
         var scope = new PostgreSqlLayerPublishingService.LayerStorageScope(firstConnection, managed ? new HashSet<int> { 1 } : null);
         return (new MetadataV2Graph { Services = services, Resources = resources, StorageBindings = bindings, Publications = publications },

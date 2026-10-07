@@ -95,9 +95,17 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         await UseServerFeatureStoreConnectionAsync();
         var layer = await PublishLayerAsync(new PublishLayerRequest
         {
-            Schema = _schema, Table = _tableName, LayerName = "Scoped mutation", ServiceName = _serviceName,
-            GeometryColumn = "geom", GeometryType = "Point", Srid = 4326, PrimaryKey = "id",
-            Fields = _idNamePopulationFields, StorageMode = managed ? "managed" : "source", Enabled = true
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = "Scoped mutation",
+            ServiceName = _serviceName,
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            StorageMode = managed ? "managed" : "source",
+            Enabled = true
         });
         _layerId = layer.LayerId;
         var expectedConnection = managed ? null : _connectionId.ToString("D");
