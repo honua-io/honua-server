@@ -145,14 +145,23 @@ public sealed class StacItemIdentifierEndpointAuditTests : IAsyncLifetime
 
         var feature = Feature.Create(42, null, attributes);
         var reader = Substitute.For<IFeatureReader>();
+        Exception? queryFailure = null;
         reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
                 var query = call.ArgAt<FeatureQuery>(1);
                 if (primaryField is null)
                 {
-                    Assert.True(string.IsNullOrEmpty(query.Where));
-                    Assert.Equal([42L], query.ObjectIds!.Value);
+                    try
+                    {
+                        Assert.True(string.IsNullOrEmpty(query.Where));
+                        Assert.Equal(new[] { 42L }, query.ObjectIds!.Value.ToArray());
+                    }
+                    catch (Exception ex)
+                    {
+                        queryFailure = ex;
+                        throw;
+                    }
                 }
 
                 return QueryResult<Feature>.Create(1, [feature], false);
@@ -194,7 +203,8 @@ public sealed class StacItemIdentifierEndpointAuditTests : IAsyncLifetime
         Assert.Equal(itemId, mapped.Id);
         var self = mapped.Links!.Value.Single(link => link.Rel == "self");
         var response = await fixture.Client.GetAsync(new Uri(self.Href).PathAndQuery);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(response.StatusCode == HttpStatusCode.OK,
+            queryFailure?.ToString() ?? await response.Content.ReadAsStringAsync());
         using var item = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(itemId, item.RootElement.GetProperty("id").GetString());
 
