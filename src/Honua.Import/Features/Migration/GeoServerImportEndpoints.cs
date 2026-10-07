@@ -508,7 +508,26 @@ internal static partial class GeoServerImportEndpoints
                 CurrentPhase = "Cancellation requested"
             };
 
-            await jobManager.ProgressStore.SetProgressAsync(jobId, cancelledProgress, TimeSpan.FromHours(24), cancellationToken);
+            var transition = await jobManager.TryTransitionAsync(jobId, cancelledProgress,
+                ((IOperationProgress)progress).Status, cancellationToken).ConfigureAwait(false);
+            while (transition.Outcome == ProgressCompareAndSetOutcome.StatusMismatch &&
+                transition.CurrentProgress is GeoServerImportProgress current && IsActiveStatus(current.Status))
+            {
+                cancelledProgress = current with
+                {
+                    Status = GeoServerImportStatus.Cancelled,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    CurrentPhase = "Cancellation requested"
+                };
+                transition = await jobManager.TryTransitionAsync(jobId, cancelledProgress,
+                    ((IOperationProgress)current).Status, cancellationToken).ConfigureAwait(false);
+            }
+            if (transition.Outcome != ProgressCompareAndSetOutcome.Updated)
+            {
+                await AdminResponseWriter.WriteErrorAsync(context,
+                    "GeoServer import job is no longer active", StatusCodes.Status409Conflict);
+                return;
+            }
             await jobManager.RequestStore.DeleteProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
 
             Log.ImportJobCancelled(GetLogger(context), jobId);
