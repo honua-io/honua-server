@@ -12,6 +12,14 @@ namespace Honua.Db.Postgres.Features.Attachments;
 
 internal sealed partial class PostgresAttachmentStore
 {
+    public async Task<bool> HasLegacyAttachmentsAsync(int layerId, CancellationToken cancellationToken)
+    {
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand($"SELECT EXISTS (SELECT 1 FROM {_tableName} WHERE layer_id = $1 AND import_source IS NULL AND attachment_origin IS NULL)", connection);
+        command.Parameters.AddWithValue(layerId);
+        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is true;
+    }
+
     public async Task<Attachment> UploadImportedAsync(
         int layerId, long featureId, string source, long sourceParentId, long sourceAttachmentId,
         Guid generation, string filename, string contentType, Stream content, string? keywords,

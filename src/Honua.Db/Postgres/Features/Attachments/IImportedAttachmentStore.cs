@@ -8,6 +8,9 @@ namespace Honua.Db.Postgres.Features.Attachments;
 /// <summary>Persists source identity separately from attachments created through Honua.</summary>
 internal interface IImportedAttachmentStore
 {
+    /// <summary>Detects legacy rows whose ownership must be reviewed before copying another set.</summary>
+    Task<bool> HasLegacyAttachmentsAsync(int layerId, CancellationToken cancellationToken);
+
     Task<Attachment> UploadImportedAsync(
         int layerId, long featureId, string source, long sourceParentId, long sourceAttachmentId,
         Guid generation, string filename, string contentType, Stream content, string? keywords,

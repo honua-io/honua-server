@@ -44,8 +44,11 @@ PR #5664 review re-verification confirmed two follow-up defects in `SRV-IMP-002`
 - New ordinary attachment writes are marked as Honua-authored by the database default and
   coexist with the imported set without downgrading fidelity. Legacy policy: pre-migration rows
   retain unknown ownership and are never inferred to be imported from filenames or feature IDs.
-  They remain untouched, including older attachments created through Honua. Their presence routes
-  attachment fidelity to NeedsReview on every reconciliation until their ownership is verified.
+  They remain untouched, including older attachments created through Honua. A preflight check
+  preserves the entire prior attachment set and skips copying when unknown provenance is present,
+  so even the first replacement cannot add a fresh set beside legacy copies. Their presence routes
+  attachment fidelity to NeedsReview until ownership is verified. Preflight query failures likewise
+  retain the prior set and require review.
   Operators can retain confirmed Honua attachments and accept the explicit ownership review,
   or remove confirmed obsolete legacy imports through the normal attachment deletion surface.
   No automatic adoption or bulk deletion of untracked attachments is performed.
@@ -61,6 +64,12 @@ catalog-reconciliation, and import-failure-message suites passed all 43 tests wi
 using the Release assemblies and local PostGIS.
 
 Attachment repair format verification: project-scoped `dotnet format --no-restore --include`,
-each wrapped in `timeout 20m`, passed without changes for the Core fidelity evaluator, the
-PostgreSQL attachment/import implementation, and both attachment-import test files. No
+each wrapped in `timeout 20m`, passed for the Core fidelity evaluator, the PostgreSQL
+attachment/import implementation, and both attachment-import test files. Core and PostgreSQL
+needed no formatting changes; the test formatter normalized object initializer layout. No
 solution-wide formatting was run.
+
+Migration 125 is pinned in `certification/schema-migration-hashes.json`. All 147 migration
+hashes matched their files and the frozen reader baseline was unchanged. An unverified target
+attachment set is a blocking fidelity difference, including retained rows after an unreadable
+source inventory, because the shared evaluator routes only blocking differences to NeedsReview.

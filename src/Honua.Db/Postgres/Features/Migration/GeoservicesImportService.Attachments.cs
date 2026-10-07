@@ -36,6 +36,27 @@ internal sealed partial class GeoservicesImportService
         {
             warnings.Add("The attachment store does not support source identity reconciliation; attachment copying was skipped.");
         }
+        else
+        {
+            try
+            {
+                if (await importedStore.HasLegacyAttachmentsAsync(publishedLayerId, cancellationToken).ConfigureAwait(false))
+                {
+                    warnings.Add("Untracked attachments were preserved. Review legacy attachment ownership before copying another imported set.");
+                    return new AttachmentCopyOutcome { TargetUnverified = true };
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Log.AttachmentQueryBatchFailed(_logger, request.LayerId, objectIdMap.Count, ex);
+                warnings.Add("Attachment ownership could not be verified; copying was skipped to preserve the existing set.");
+                return new AttachmentCopyOutcome { TargetUnverified = true };
+            }
+        }
 
         var generation = Guid.NewGuid();
         // Credentials are deliberately excluded; source identity survives token rotation.
@@ -244,6 +265,10 @@ internal sealed partial class GeoservicesImportService
                 warnings.Add("Imported attachment reconciliation failed; prior attachments may remain and fidelity requires review.");
             }
         }
+
+        // Source inventory failures also leave the retained target set unverified. The
+        // target discrepancy blocks completion even when the source check alone is unverified.
+        targetUnverified |= unverifiedParents > 0;
 
         Log.AttachmentCopyCompleted(_logger, request.LayerId, attachmentsCopied, failedAttachments);
 

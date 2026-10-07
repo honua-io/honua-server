@@ -389,7 +389,7 @@ public static class MigrationFidelityEvaluator
             differences.Add(new MigrationFidelityDifference
             {
                 Code = MigrationFidelityDifferenceCodes.AttachmentsUnverified,
-                Severity = MigrationFidelityDifferenceSeverities.Unverified,
+                Severity = MigrationFidelityDifferenceSeverities.Blocking,
                 Subject = "attachments",
                 Expected = "target attachment inventory reconciled against the source",
                 Actual = "target attachment inventory requires review",

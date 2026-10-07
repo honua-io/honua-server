@@ -214,6 +214,9 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests(Postgr
 
     private sealed class RecordingAttachmentStore : IAttachmentStore, IImportedAttachmentStore
     {
+        public Task<bool> HasLegacyAttachmentsAsync(int layerId, CancellationToken cancellationToken)
+            => Task.FromResult(false);
+
         public Task<Honua.Core.Features.Attachments.Domain.Attachment> UploadImportedAsync(
             int layerId, long featureId, string source, long sourceParentId, long sourceAttachmentId,
             Guid generation, string filename, string contentType, Stream content, string? keywords,

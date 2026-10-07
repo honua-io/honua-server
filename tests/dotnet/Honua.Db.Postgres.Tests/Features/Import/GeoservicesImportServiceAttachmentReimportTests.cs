@@ -245,14 +245,17 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
 
             // A queued file that still has a live reference must survive cleanup (including
             // compensation after a lost commit acknowledgement).
-            await using (var connection = await fixture.DataSource.OpenConnectionAsync())
-            await using (var queue = new NpgsqlCommand($"INSERT INTO {schema}.import_attachment_cleanup VALUES ($1, 42, 1)", connection))
+            if (!legacy)
             {
+                await using var connection = await fixture.DataSource.OpenConnectionAsync();
+                await using var queue = new NpgsqlCommand($"INSERT INTO {schema}.import_attachment_cleanup VALUES ($1, 42, 1)", connection);
                 queue.Parameters.AddWithValue(manual.StoragePath);
                 await queue.ExecuteNonQueryAsync();
             }
 
-            handler.InventoryJson = """{"attachmentGroups":[]}""";
+            var before = await ReadStoredAsync(schema);
+            handler.AttachmentRequestPaths.Clear();
+            handler.InventoryJson = legacy ? null : """{"attachmentGroups":[]}""";
 
             for (var attempt = 0; attempt < 2; attempt++)
             {
@@ -270,8 +273,19 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
                 }
 
                 result.FidelityDifferences.Should().NotContain(d => d.Actual != null && d.Actual.Contains("unreadable attachment inventory", StringComparison.Ordinal));
-                (await ReadStoredAsync(schema)).Should().ContainSingle().Which.Should().Be(manual);
-                storage.Files.Keys.Should().Equal(manual.StoragePath);
+                if (legacy)
+                {
+                    result.AttachmentCount.Should().Be(0);
+                    (await ReadStoredAsync(schema)).Should().BeEquivalentTo(before);
+                    storage.Files.Keys.Should().BeEquivalentTo(before.Select(a => a.StoragePath));
+                    handler.AttachmentRequestPaths.Should().BeEmpty("ownership must be known before copying another set");
+                }
+                else
+                {
+                    (await ReadStoredAsync(schema)).Should().ContainSingle().Which.Should().Be(manual);
+                    storage.Files.Keys.Should().Equal(manual.StoragePath);
+                }
+
                 (await PendingCleanupAsync(schema)).Should().Be(0);
             }
         }
