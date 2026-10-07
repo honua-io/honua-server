@@ -2836,13 +2836,11 @@ internal sealed class GeometryServiceHandler(
     {
         var writer = new WKBWriter();
         var densified = new List<byte[]>(parameters.GeometryJsonStrings.Length);
-        var geometries = new Geometry[parameters.GeometryJsonStrings.Length];
         var estimatedRequestVertices = 0d;
         for (var i = 0; i < parameters.GeometryJsonStrings.Length; i++)
         {
             ct.ThrowIfCancellationRequested();
             var geometry = ReadGeometry(parameters.GeometryJsonStrings[i]);
-            geometries[i] = geometry;
             // Bound the interpolated output BEFORE densifying. NTS and geography segmentize
             // add roughly (totalLength / maxSegmentLength) coordinates; reject when that would
             // exceed the per-geometry vertex cap so a tiny maxSegmentLength over a large extent
@@ -2862,9 +2860,12 @@ internal sealed class GeometryServiceHandler(
             }
         }
 
-        foreach (var geometry in geometries)
+        // Reparse one geometry at a time after the whole request passes preflight.
+        // Retaining every expanded NTS geometry here multiplies peak request memory.
+        foreach (var geometryJson in parameters.GeometryJsonStrings)
         {
             ct.ThrowIfCancellationRequested();
+            var geometry = ReadGeometry(geometryJson);
             if (parameters.Geodesic)
             {
                 var geodesic = await _operationService.SegmentizeGeodesicAsync(
