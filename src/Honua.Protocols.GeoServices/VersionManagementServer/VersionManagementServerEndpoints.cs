@@ -7,6 +7,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Capabilities;
@@ -410,7 +411,7 @@ public static class VersionManagementServerEndpoints
                 context.User?.Identity?.Name,
                 context.User?.Identity?.IsAuthenticated == true))
         {
-            return StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage);
+            return AccessPolicyHelpers.CreateAccessDeniedResult(context, AccessDecision.RequiresAuth())!;
         }
 
         var description = GeoServicesRequestValueHelpers.GetValueString(values!, "description");
