@@ -57,7 +57,8 @@ internal sealed class OgcCoveragesHandler
             "scaleSize",
             "scale-axes",
             "datetime",
-            "subset");
+            "subset",
+            "token");
 
     private static readonly string[] SupportedCoverageMediaTypes = [GeoTiffContentType, PngContentType];
     private static readonly ImmutableArray<string> DefaultCoverageCrsIdentifiers =

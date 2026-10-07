@@ -809,9 +809,14 @@ internal static partial class FeatureServerEndpoints
         var responseStatusCode = hasPartialFailure
             ? StatusCodes.Status207MultiStatus
             : StatusCodes.Status200OK;
-        return Results.Json(results, FeatureServerJsonContext.Default.ServiceLayerEditResultArray,
-            statusCode: responseStatusCode, contentType: "application/json");
+        return CreateServiceApplyEditsResult(results, responseStatusCode);
     }
+
+    internal static IResult CreateServiceApplyEditsResult(
+        ServiceLayerEditResult[] results,
+        int statusCode = StatusCodes.Status200OK)
+        => Results.Json(results, FeatureServerJsonContext.Default.ServiceLayerEditResultArray,
+            statusCode: statusCode, contentType: "application/json");
 
     /// <summary>
     /// Builds per-slot add failure entries for a layer whose applyEdits call returned a

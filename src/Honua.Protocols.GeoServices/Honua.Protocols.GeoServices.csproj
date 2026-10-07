@@ -38,6 +38,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Bundled VectorTileServer glyph ranges (#5535); see VectorTileServer/Resources/Glyphs. -->
+    <EmbeddedResource Include="VectorTileServer/Resources/Glyphs/*.pbf"
+                      LogicalName="Honua.Protocols.GeoServices.VectorTileServer.Glyphs.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Honua.Server" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.GeoServices.Tests" />

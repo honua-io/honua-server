@@ -19,6 +19,35 @@ public class PostgresSqlFilterTranslatorTests
         _resource = CreateResource();
     }
 
+    [Fact]
+    public void SRV_DB_017_TimePropertyUsesDirectTimeCast()
+    {
+        var translator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
+
+        var result = translator.Translate(
+            new BinaryExpression(new PropertyReference("event_time"), BinaryOperator.Equal,
+                new Literal(new TimeOnly(8, 0), LiteralType.Text)), _resource);
+
+        result.Sql.Should().Contain("::time = @p0");
+        result.Sql.Should().NotContain("::timestamptz");
+    }
+
+    [Fact]
+    public void SRV_DB_021_FloatPropertyComparesAtDoublePrecision()
+    {
+        var resource = CreateResource() with
+        {
+            SchemaFields = [.. CreateResource().SchemaFields, Field("ratio", MetadataV2FieldType.Float)],
+        };
+
+        var result = new PostgresSqlFilterTranslator(useJsonAttributes: true).Translate(
+            new BinaryExpression(new PropertyReference("ratio"), BinaryOperator.Equal,
+                new Literal(0.1d, LiteralType.Number)), resource);
+
+        result.Sql.Should().Contain("::double precision = @p0");
+        result.Sql.Should().NotContain("::real");
+    }
+
     [Theory]
     [InlineData("name", MetadataV2FieldType.String)]
     [InlineData("id", MetadataV2FieldType.String)]

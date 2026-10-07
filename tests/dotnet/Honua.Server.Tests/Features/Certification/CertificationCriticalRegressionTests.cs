@@ -15,6 +15,16 @@ namespace Honua.Server.Tests.Features.Certification;
 public sealed class CertificationCriticalRegressionTests
 {
     [UnitTest]
+    public void Issue5566_OgcApiTilesDeclaresAndAcceptsTokenQueryParameter()
+    {
+        OgcTilesUtilities.AllowedQueryParameters.Metadata.Should().Contain("token");
+        OgcTilesUtilities.AllowedQueryParameters.DatasetTilesetMetadata.Should().Contain("token");
+        OgcTilesUtilities.AllowedQueryParameters.OpenApi.Should().Contain("token");
+        OgcTilesUtilities.AllowedQueryParameters.Tiles.Should().Contain("token");
+        OgcTilesUtilities.AllowedQueryParameters.DatasetTiles.Should().Contain("token");
+    }
+
+    [UnitTest]
     public void Issue5455_OgcApiFeaturesDeclaresAndAcceptsTokenQueryParameter()
     {
         OgcFeaturesUtilities.AllowedQueryParameters.Metadata.Should().Contain("token");

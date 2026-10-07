@@ -223,11 +223,10 @@ public class SqlServerFeatureQueryBuilderTests
     }
 
     [Fact]
-    public void BuildSelectQuery_WherePresentWithSqlFilter_PrefersWhereParser()
+    public void BuildSelectQuery_SRV_DB_008_WhereAndSqlFilterFailsClosed()
     {
-        // FeatureServer always populates Where alongside the translated SqlFilter; the only
-        // registered ISqlFilterTranslator emits Postgres syntax, so SqlServer must re-parse the
-        // canonical Where text instead of pasting the Postgres-styled fragment into T-SQL.
+        // SqlFilter can contain additional object-id or temporal constraints that are not in
+        // Where. Ignoring it would silently broaden the query, so the provider must fail closed.
         var mapping = BuildMapping();
         var postgresStyledFragment = new SqlFragment(
             "(attributes->>'name') = @p0",
@@ -238,12 +237,10 @@ public class SqlServerFeatureQueryBuilderTests
             SqlFilter = postgresStyledFragment
         };
 
-        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
+        var exception = Assert.Throws<NotSupportedException>(
+            () => SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
 
-        Assert.Contains("[name] = @p0", result.Sql, StringComparison.Ordinal);
-        Assert.DoesNotContain("attributes->>'name'", result.Sql, StringComparison.Ordinal);
-        Assert.Single(result.WhereParameters);
-        Assert.Equal("Alpha", result.WhereParameters[0]);
+        Assert.Contains("cannot safely combine", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
