@@ -72,6 +72,73 @@ public sealed class ImageServerRawPixelExportTests
         });
     }
 
+    [IntegrationTheory]
+    [InlineData("esriImageReturnURL")]
+    [InlineData("esriImageReturnMimeData")]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task HonuaServer5559_SoapExportImage_ServiceNoDataOverride_ReturnsFixturePixelBlock(
+        string returnType)
+    {
+        await RunWithFixtureRasterAsync(async fixture =>
+        {
+            using var response = await PostSoapAsync(fixture, BuildSoapExportImage(
+                XMin,
+                YMin,
+                XMax,
+                YMax,
+                Size,
+                Size,
+                "RSP_NearestNeighbor",
+                returnType,
+                "esriNoDataMatchAll"));
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            var result = XDocument.Parse(body).Descendants().Single(element => element.Name.LocalName == "Result");
+
+            var block = await ReadSoapImageAsync(fixture, result, returnType);
+            AssertBsqBlockMatchesFixture(block, 0, 0, Size, Size);
+            var maskOffset = Size * Size * BandCount;
+            var noDataPixelIndex = (NoDataRow * Size) + NoDataColumn;
+            (block[maskOffset + (noDataPixelIndex / 8)] & (0x80 >> (noDataPixelIndex % 8)))
+                .Should().Be(0, "the stored NoData pixel remains masked");
+        });
+    }
+
+    [IntegrationTheory]
+    [InlineData("esriNoDataMatchAny", "partial")]
+    [InlineData("esriNoDataMatchAll", "different-band")]
+    [InlineData("esriNoDataMatchAll", "missing-band")]
+    [InlineData("esriNoDataMatchAll", "mosaic")]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task SoapExportImage_UnprovenNoDataOverride_ReturnsNotImplemented(string interpretation, string scenario)
+    {
+        await RunWithFixtureRasterAsync(async fixture =>
+        {
+            await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema!);
+            await using var command = connection.CreateCommand();
+            command.CommandText = scenario switch
+            {
+                "partial" => "UPDATE honua.raster_data SET raster = ST_SetValue(raster, 2, @x, @y, 7) WHERE layer_id = @layerId",
+                "different-band" => "UPDATE honua.raster_data SET raster = ST_SetBandNoDataValue(raster, 2, 255) WHERE layer_id = @layerId",
+                "missing-band" => "UPDATE honua.raster_data SET raster = ST_SetBandNoDataValue(raster, 2, NULL) WHERE layer_id = @layerId",
+                _ => "INSERT INTO honua.raster_data (layer_id, name, raster, acquisition_date, created_at) SELECT layer_id, 'different-nodata', ST_SetBandNoDataValue(ST_SetBandNoDataValue(ST_SetBandNoDataValue(raster, 1, 255), 2, 255), 3, 255), acquisition_date - interval '1 day', created_at FROM honua.raster_data WHERE layer_id = @layerId"
+            };
+            command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+            command.Parameters.AddWithValue("x", NoDataColumn + 1);
+            command.Parameters.AddWithValue("y", NoDataRow + 1);
+            (await command.ExecuteNonQueryAsync()).Should().Be(1);
+            using var response = await PostSoapAsync(fixture, BuildSoapExportImage(
+                XMin, YMin, XMax, YMax, Size, Size, "RSP_NearestNeighbor", "esriImageReturnMimeData", interpretation));
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, body);
+            XDocument.Parse(body).Descendants().Should().Contain(element => element.Name.LocalName == "Fault");
+        });
+    }
+
     [IntegrationTest]
     [Operation(Operations.Export)]
     [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
@@ -473,10 +540,12 @@ public sealed class ImageServerRawPixelExportTests
         int width,
         int height,
         string interpolation,
-        string returnType)
+        string returnType,
+        string? noDataInterpretation = null)
         => FormattableString.Invariant($"""
             <ExportImage xmlns="http://www.esri.com/schemas/ArcGIS/10.8"
-                         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+                         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                         xmlns:xsd="http://www.w3.org/2001/XMLSchema">
               <ImageDescription xsi:type="GeoImageDescription">
                 <Compression>None</Compression>
                 <Extent xsi:type="EnvelopeN">
@@ -487,6 +556,7 @@ public sealed class ImageServerRawPixelExportTests
                 <Interpolation>{interpolation}</Interpolation>
                 <MosaicRule xsi:type="MosaicRule"><MosaicMethod>esriMosaicNone</MosaicMethod></MosaicRule>
                 <PixelType>U8</PixelType>
+                {(noDataInterpretation is null ? string.Empty : $"<NoData xsi:type=\"xsd:base64Binary\">AAAA</NoData><NoDataInterpretation>{noDataInterpretation}</NoDataInterpretation>")}
                 <Width>{width}</Width>
               </ImageDescription>
               <ImageType xsi:type="ImageType">
