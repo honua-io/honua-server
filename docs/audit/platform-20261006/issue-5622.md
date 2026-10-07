@@ -18,3 +18,6 @@ P1 is confirmed at `BuildLayerEnabledMetadataV2Graph` and
 route connection UUID. `SelectPublicationMetadata` also uses numeric selectors for
 tenant checks, so a partial builder-only change would leave the contract inconsistent.
 The P1 review thread remains unresolved under the packet's stop rule.
+
+Validation: project-scoped `dotnet format --include --verify-no-changes` passed
+for the Postgres project and SQL-test file, each within `timeout 20m`.

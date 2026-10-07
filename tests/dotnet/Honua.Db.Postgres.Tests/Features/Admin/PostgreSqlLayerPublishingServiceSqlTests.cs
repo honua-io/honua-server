@@ -27,8 +27,11 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         var connectionId = Guid.Parse("11111111-1111-1111-1111-111111111111");
         var request = new LayerPublishRequest
         {
-            Schema = "public", Table = "source", LayerName = "Layer",
-            ConnectionId = connectionId, StorageMode = managed ? LayerStorageMode.Managed : LayerStorageMode.Source
+            Schema = "public",
+            Table = "source",
+            LayerName = "Layer",
+            ConnectionId = connectionId,
+            StorageMode = managed ? LayerStorageMode.Managed : LayerStorageMode.Source
         };
         var graphStore = new Mock<IMetadataV2GraphStore>();
         graphStore.Setup(store => store.GetCurrentAsync(It.IsAny<CancellationToken>()))
