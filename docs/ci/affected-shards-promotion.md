@@ -39,6 +39,8 @@ source of truth; individual run files are diagnostic checkpoints.
 Executed samples are runs with a green shard annotation or at least one red
 shard annotation. Skipped selections, unavailable receipts, aggregates without a shard verdict,
 and unfinished runs are reported separately and do not inflate the floor.
+Every run in the window must be completed before promotion can pass; queued
+and in-progress runs block it even when the executed-sample floor is met.
 The denominator is executed **runs**, matching the workflow's promotion rule;
 the number of distinct heads is also reported. Reruns use only the catalog's
 current attempt. Multiple red shards in one run count as one red run.
@@ -77,7 +79,7 @@ python3 scripts/ci/audit-affected-shards.py \
   --output /tmp/affected-shards-audit.json
 ```
 
-Exit status 0 means the measurement satisfies the sample and false-red gates;
+Exit status 0 means the measurement satisfies the completion, sample and false-red gates;
 1 means observe more. Unknown reds leave `false_red_rate` null. The lower bound
 counts only reconciled false reds. The upper bound
 treats every unresolved red run as false, once per run. This does not classify
@@ -94,7 +96,8 @@ minimums to 20 each; the 60 executed-sample floor applies to this shard audit.
 
 `python3 scripts/ci/audit-affected-shards.test.py` covers collection beyond 20
 runs, paged catalogs and annotations, current attempts, unavailable evidence,
-the 60-sample boundary, the strict 2% boundary, and invalid reconciliations.
+the 60-sample boundary, unfinished runs above that floor, the strict 2% boundary,
+and invalid reconciliations.
 It also runs in `validate-ci-router.sh`. The existing selector/verdict fixture
 remains `python3 scripts/ci/fixtures/validate-affected-shards.py`.
 
@@ -116,7 +119,8 @@ UTC**, exclusive at the end. The audit collected 313 PR Gate runs:
 | False-red rate lower / upper bound | 0.97% / 20.39% |
 
 **Decision: keep `report`.** The sample floor passes, but 47 shard verdicts
-still lack a merge-commit reconciliation. The measured range cannot establish
+still lack a merge-commit reconciliation and one run is unfinished. Both block
+promotion. The measured range cannot establish
 the required rate **below 2%**. At this denominator, at most four false-red
 runs are allowed; two are already reconciled. Do not describe the upper bound
 as a measured false-red rate. Branch protection stays unchanged.

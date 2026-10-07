@@ -184,6 +184,7 @@ def summarize(value, adjudications):
     maximum = len(set(false_reds) | unresolved_runs) / count if count else None
     gates = {
         "sample_floor": count >= MINIMUM_SAMPLES,
+        "all_runs_completed": not pending,
         "all_reds_reconciled": not unresolved,
         "false_red_rate_below_two_percent": rate is not None and not unresolved and rate < MAXIMUM_FALSE_RED_RATE,
     }

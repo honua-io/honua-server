@@ -54,7 +54,30 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(result["counts"]["pending_runs"], 1)
         self.assertFalse(result["promotion_ready"])
         runs.append(run(60))
+        self.assertFalse(audit.summarize(window(runs), [])["promotion_ready"])
+        pending["status"] = "completed"
         self.assertTrue(audit.summarize(window(runs), [])["promotion_ready"])
+
+    def test_pending_window_runs_block_promotion_after_sample_floor(self):
+        greens = [run(index) for index in range(1, 61)]
+        for status in ("queued", "in_progress"):
+            with self.subTest(status=status):
+                unfinished = [{**run(index, []), "status": status,
+                               "aggregate_conclusion": None} for index in (61, 62)]
+                runs = greens + unfinished
+                result = audit.summarize(window(runs), [])
+                self.assertEqual(result["counts"]["sample_runs"], 60)
+                self.assertEqual(result["counts"]["pending_runs"], 2)
+                self.assertTrue(result["gates"]["sample_floor"])
+                self.assertFalse(result["gates"]["all_runs_completed"])
+                self.assertFalse(result["promotion_ready"])
+                self.assertTrue(audit.summarize(window(greens + [run(61), run(62)]), [])[
+                    "promotion_ready"])
+                result = audit.summarize(window(greens + [run(61, [red()]), run(62, [red()])]),
+                                         [decision(index, verdict="false-red") for index in (61, 62)])
+                self.assertTrue(result["gates"]["all_runs_completed"])
+                self.assertGreater(result["false_red_rate"], .02)
+                self.assertFalse(result["promotion_ready"])
 
     def test_report_only_success_does_not_adjudicate_a_red(self):
         runs = [run(index) for index in range(1, 61)]
