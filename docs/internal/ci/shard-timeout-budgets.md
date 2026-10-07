@@ -1228,3 +1228,14 @@ Neither budget was raised. The two filters exclude each other, so a name that
 contains both substrings matches neither child and must be assigned explicitly.
 Coverage currently finds no such class. The replica-store and replication
 classes stay on `FeatureServer Endpoints Query Services and Replication`.
+
+## 2026-10-07: capacity exhaustion during the server drain
+
+Trunk run [37694901734](https://github.com/honua-io/honua-server/actions/runs/37694901734) at `03e8e6e6c` exhausted two inner test budgets while still producing passing test output:
+
+| Shard | Passing test log entries before timeout | Last output before timeout | Previous inner / outer | New inner / outer |
+|---|---:|---:|---:|---:|
+| Security and Authorization | 214 | 3 seconds | 30 / 40 min | 60 / 70 min |
+| WFS | 207 | 1 second | 40 / 50 min | 70 / 80 min |
+
+These observations are censored durations, not measured p90 completion times. The bounded increases restore room to obtain a complete run; they do not establish the 70% utilization target. Test selection and every assertion remain enabled, and each outer job retains the required ten-minute overhead. Reassess headroom from the completed branch verification and subsequent timing receipts; persistent growth requires fixture or shard-capacity work rather than unbounded timeout increases.
