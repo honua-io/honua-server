@@ -19,7 +19,7 @@ Honua connects in place to existing databases. PostGIS is the full read/write ba
 | DuckDB | Read/query only | `DataSource:Provider=duckdb` + `DuckDB` config section | Embedded single file; layers declared in config; good for GeoParquet/analytical and air-gapped serving. See [DuckDB](../../reference/configuration/data-sources/duckdb.md). |
 | SQL Server | Read/query only | `SqlServer` config section alongside the primary backend | `geometry`/`geography` tables, SQL Server 2016+/Azure SQL. No edits, statistics, or native MVT. See [SQL Server](../../reference/configuration/data-sources/sql-server.md). |
 | Oracle | Read/query only | Oracle provider config alongside the primary backend | Standard `SDO_GEOMETRY` tables (12c+). ArcSDE `ST_Geometry` and versioned tables are detected and refused. See [Oracle](../../reference/configuration/data-sources/oracle.md). |
-| MySQL / MariaDB | Read/query only | MySQL provider config alongside the primary backend | MySQL 8.0.11+ / MariaDB 10.6+. No edits, statistics, temporal filters, KNN, or cross-SRID transforms. See [MySQL/MariaDB](../../reference/configuration/data-sources/mysql-mariadb.md). |
+| MySQL / MariaDB | Read/query only | MySQL provider config alongside the primary backend | MySQL 8.0.12+ / MariaDB 10.6+. No edits, statistics, temporal filters, KNN, or cross-SRID transforms. See [MySQL/MariaDB](../../reference/configuration/data-sources/mysql-mariadb.md). |
 
 For the read-only providers, follow the linked reference page to configure the provider section and restart the server — the rest of this guide covers the PostGIS admin-API path.
 

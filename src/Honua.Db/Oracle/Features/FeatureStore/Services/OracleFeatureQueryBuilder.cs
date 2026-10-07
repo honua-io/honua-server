@@ -372,10 +372,9 @@ internal static partial class OracleFeatureQueryBuilder
 
         var filter = query.SpatialFilter.Value;
 
-        // Reject cross-SRID filters: SDO_UTIL.FROM_WKBGEOMETRY has no SRID injection point here
-        // and Oracle would silently treat the filter coordinates as if they were in the layer CRS,
-        // producing wrong (usually empty or ORA-13xxx) results. Requiring matching SRIDs is
-        // consistent with the MySQL provider (which throws) and safer than silent misinterpretation.
+        // Reject cross-SRID filters. This slice does not reproject, and comparing a filter in
+        // one CRS with a layer in another returns wrong (usually empty or ORA-13xxx) results.
+        // Requiring matching SRIDs matches the MySQL provider.
         if (filter.Srid.HasValue && mapping.Srid.HasValue && filter.Srid.Value != mapping.Srid.Value)
         {
             throw new NotSupportedException(
@@ -397,12 +396,8 @@ internal static partial class OracleFeatureQueryBuilder
         // FROM_WKBGEOMETRY accepts OGC WKB, not EWKB. Strip the embedded SRID and assign the
         // validated layer/filter SRID explicitly so SDO_RELATE never compares an SRID-null
         // geometry with an indexed geometry in a known coordinate system.
-        var filterExpr = $"SDO_UTIL.FROM_WKBGEOMETRY({wkbParam})";
         var srid = filter.Srid ?? mapping.Srid;
-        if (srid is > 0)
-        {
-            filterExpr = $"SDO_CS.MAKE_2D({filterExpr}, {srid.Value.ToString(CultureInfo.InvariantCulture)})";
-        }
+        var filterExpr = BuildFilterGeometryExpression(wkbParam, srid);
 
         var clause = filter.SpatialRelationship switch
         {
@@ -427,6 +422,24 @@ internal static partial class OracleFeatureQueryBuilder
         };
 
         sb.Append(" AND ").Append(clause);
+    }
+
+    private static string BuildFilterGeometryExpression(string wkbParam, int? srid)
+    {
+        var fromWkb = $"SDO_UTIL.FROM_WKBGEOMETRY({wkbParam})";
+        if (srid is not > 0)
+        {
+            return fromWkb;
+        }
+
+        // MAKE_2D requires a geometry with more than two dimensions; this WKB is 2D.
+        // FROM_WKBGEOMETRY(blob, srid) is 19.25+/26ai only and is missing on 12c through 21c,
+        // which this provider supports. Stamp the SRID with the SDO_GEOMETRY constructor.
+        // The subquery does not reference the outer row, so Oracle evaluates it once.
+        var sridLiteral = srid.Value.ToString(CultureInfo.InvariantCulture);
+        return "(SELECT SDO_GEOMETRY(a.geom.SDO_GTYPE, " + sridLiteral
+            + ", a.geom.SDO_POINT, a.geom.SDO_ELEM_INFO, a.geom.SDO_ORDINATES) FROM (SELECT "
+            + fromWkb + " geom FROM DUAL) a)";
     }
 
     private static void AppendOrderByClause(StringBuilder sb, FeatureQuery query, Func<string, string> resolveColumnName)

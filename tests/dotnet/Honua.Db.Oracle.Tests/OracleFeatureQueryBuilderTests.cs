@@ -27,6 +27,11 @@ public class OracleFeatureQueryBuilderTests
 
     private static readonly IReadOnlyList<string> _attributeColumns = ["name", "area", "category"];
 
+    // Positive SRIDs are stamped with the SDO_GEOMETRY constructor. MAKE_2D is 3D-only,
+    // and FROM_WKBGEOMETRY's SRID argument is missing on the supported 12c through 21c floor.
+    private const string StampedWkb4326 =
+        "(SELECT SDO_GEOMETRY(a.geom.SDO_GTYPE, 4326, a.geom.SDO_POINT, a.geom.SDO_ELEM_INFO, a.geom.SDO_ORDINATES) FROM (SELECT SDO_UTIL.FROM_WKBGEOMETRY(:p0) geom FROM DUAL) a)";
+
     private static OracleLayerMapping BuildMapping(
         string? schema = "GIS",
         int? srid = 4326,
@@ -299,7 +304,8 @@ public class OracleFeatureQueryBuilderTests
 
         var result = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        Assert.Contains("SDO_RELATE(\"SHAPE\", SDO_UTIL.FROM_WKBGEOMETRY(:p0), 'mask=ANYINTERACT') = 'TRUE'", result.Sql, StringComparison.Ordinal);
+        Assert.Contains($"SDO_RELATE(\"SHAPE\", {StampedWkb4326}, 'mask=ANYINTERACT') = 'TRUE'", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("MAKE_2D", result.Sql, StringComparison.Ordinal);
         Assert.Equal(new byte[] { 0x01, 0x02, 0x03 }, result.WhereParameters[0]);
     }
 
@@ -317,7 +323,7 @@ public class OracleFeatureQueryBuilderTests
         // Esri esriSpatialRelWithin = filter geometry within feature geometry. SDO_RELATE masks
         // are operand-order sensitive: SDO_RELATE(A, B, 'mask=INSIDE') means A is inside B, so
         // the filter geometry must be the FIRST operand (#2068).
-        Assert.Contains("SDO_RELATE(SDO_UTIL.FROM_WKBGEOMETRY(:p0), \"SHAPE\", 'mask=INSIDE+COVEREDBY') = 'TRUE'", result.Sql, StringComparison.Ordinal);
+        Assert.Contains($"SDO_RELATE({StampedWkb4326}, \"SHAPE\", 'mask=INSIDE+COVEREDBY') = 'TRUE'", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -334,7 +340,7 @@ public class OracleFeatureQueryBuilderTests
         // Esri esriSpatialRelContains = filter geometry contains feature geometry. SDO_RELATE
         // masks are operand-order sensitive, so the filter geometry must be the FIRST operand:
         // SDO_RELATE(filter, feature, 'mask=CONTAINS') (#2068).
-        Assert.Contains("SDO_RELATE(SDO_UTIL.FROM_WKBGEOMETRY(:p0), \"SHAPE\", 'mask=CONTAINS+COVERS') = 'TRUE'", result.Sql, StringComparison.Ordinal);
+        Assert.Contains($"SDO_RELATE({StampedWkb4326}, \"SHAPE\", 'mask=CONTAINS+COVERS') = 'TRUE'", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -348,7 +354,7 @@ public class OracleFeatureQueryBuilderTests
 
         var result = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        Assert.Contains("NOT (SDO_RELATE(\"SHAPE\", SDO_UTIL.FROM_WKBGEOMETRY(:p0), 'mask=ANYINTERACT') = 'TRUE')", result.Sql, StringComparison.Ordinal);
+        Assert.Contains($"NOT (SDO_RELATE(\"SHAPE\", {StampedWkb4326}, 'mask=ANYINTERACT') = 'TRUE')", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -362,7 +368,7 @@ public class OracleFeatureQueryBuilderTests
 
         var result = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        Assert.Contains("SDO_RELATE(SDO_GEOM.SDO_MBR(\"SHAPE\"), SDO_UTIL.FROM_WKBGEOMETRY(:p0), 'mask=ANYINTERACT') = 'TRUE'", result.Sql, StringComparison.Ordinal);
+        Assert.Contains($"SDO_RELATE(SDO_GEOM.SDO_MBR(\"SHAPE\"), {StampedWkb4326}, 'mask=ANYINTERACT') = 'TRUE'", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -447,7 +453,9 @@ public class OracleFeatureQueryBuilderTests
         var normalized = Assert.IsType<byte[]>(Assert.Single(result.WhereParameters));
         Assert.Equal(21, normalized.Length);
         Assert.Equal(1U, BinaryPrimitives.ReadUInt32LittleEndian(normalized.AsSpan(1)));
-        Assert.Contains("SDO_CS.MAKE_2D(SDO_UTIL.FROM_WKBGEOMETRY(:p0), 4326)", result.Sql, StringComparison.Ordinal);
+        Assert.Contains(StampedWkb4326, result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("MAKE_2D", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("FROM_WKBGEOMETRY(:p0,", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]

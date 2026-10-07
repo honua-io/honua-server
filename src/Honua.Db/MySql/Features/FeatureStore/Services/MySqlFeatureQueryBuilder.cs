@@ -14,7 +14,7 @@ namespace Honua.Db.MySql.Features.FeatureStore.Services;
 
 /// <summary>
 /// Builds parameterized SQL for the MySQL/MariaDB read-only feature provider.
-/// Targets MySQL 8.0.11+ and MariaDB 10.6+; spatial functions are limited to
+/// Targets MySQL 8.0.12+ and MariaDB 10.6+; spatial functions are limited to
 /// the operations both engines share (no <c>ST_Transform</c>, no native MVT, no KNN).
 /// </summary>
 internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
@@ -99,7 +99,7 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         var parameters = new List<object>();
         var paramIndex = 0;
 
-        // Extent SQL must work on both MySQL 8.0.11+ and MariaDB 10.6+. Two engine
+        // Extent SQL must work on both MySQL 8.0.12+ and MariaDB 10.6+. Two engine
         // divergences shape the strategy:
         //   * MariaDB only supports the 1-arg ST_SRID(geom). The 2-arg setter is MySQL-only,
         //     so we cannot retag geometries to Cartesian inline.
@@ -117,8 +117,11 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         // layer or use a PostGIS-backed layer.
         //
         // MySQL's EPSG:4326 SRS is latitude-first, so ST_X/ST_Y would invert the protocol's
-        // canonical longitude/latitude extent. Its semantic accessors keep the extent aligned
-        // with the axis-normalized WKB read path. MariaDB does not provide these accessors.
+        // canonical longitude/latitude extent. ST_Longitude/ST_Latitude keep the extent aligned
+        // with the axis-normalized WKB read path. Those accessors were added in 8.0.12, which
+        // is this provider's floor: the same release redefined ST_X/ST_Y to follow SRS axis
+        // order (bugs 27125600 / 88503), so swapping them is not a correct 8.0.11 substitute.
+        // MariaDB does not provide these accessors.
         var pointX = _engineFlavor == MySqlEngineFlavor.Mysql && mapping.Srid == 4326
             ? $"ST_Longitude({mapping.QuotedGeometryColumn})"
             : $"ST_X({mapping.QuotedGeometryColumn})";
