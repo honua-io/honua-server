@@ -13,9 +13,8 @@ ALTER TABLE $HonuaSchema$.attachments
         OR (import_source IS NOT NULL AND import_parent_id IS NOT NULL AND import_attachment_id IS NOT NULL AND import_generation IS NOT NULL)),
     ADD CONSTRAINT uq_attachment_import_identity UNIQUE (layer_id, import_source, import_parent_id, import_attachment_id);
 
--- Set the default separately so existing rows stay unknown while subsequent ordinary
--- UploadAsync/CreateAsync writes are recognized as Honua-authored without guessing legacy ownership.
-ALTER TABLE $HonuaSchema$.attachments ALTER COLUMN attachment_origin SET DEFAULT 'honua';
+-- Origin has no default: old binaries and legacy writers remain unknown. New Honua
+-- attachment writes mark their origin explicitly; import writes mark GeoServices provenance.
 
 -- Retired objects are queued in the same transaction that retires their metadata. Retry
 -- cleanup on the next import even if the process exits after commit or storage is unavailable.

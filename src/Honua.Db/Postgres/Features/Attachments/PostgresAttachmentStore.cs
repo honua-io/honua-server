@@ -127,8 +127,8 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
     public async Task<Attachment> CreateAsync(int layerId, long featureId, Attachment attachment, CancellationToken cancellationToken = default)
     {
         var sql = $@"
-            INSERT INTO {_tableName} (feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO {_tableName} (feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords, attachment_origin)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'honua')
             RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords";
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);

@@ -41,7 +41,9 @@ PR #5664 review re-verification confirmed two follow-up defects in `SRV-IMP-002`
   after upload, before metadata or compensation is recorded, can leave an unreferenced object
   for the existing storage orphan reconciliation policy. This does not create duplicate visible
   attachment rows.
-- New ordinary attachment writes are marked as Honua-authored by the database default and
+- New ordinary attachment writes explicitly mark their Honua origin. The migration has no
+  origin default, so writes from old binaries remain unknown rather than being misclassified.
+  Honua-authored attachments
   coexist with the imported set without downgrading fidelity. Legacy policy: pre-migration rows
   retain unknown ownership and are never inferred to be imported from filenames or feature IDs.
   They remain untouched, including older attachments created through Honua. A preflight check
