@@ -23,4 +23,8 @@ publication uses a different layer index.
 New regressions cover equal numeric handles on two source connections plus managed
 storage, isolated disable/re-enable and linking, tenant checks, and the actual extent
 synchronization save. The route regression covers UUID and named connection paths.
-Validation results are recorded after the focused runs finish.
+Validation checkpoint: the SQL graph and publication namespace suites passed
+92/92 tests with no skips. Core, PostgreSQL, Server, and TestKit builds completed
+with zero warnings and errors. Scoped formatting checks passed for the changed
+Core, PostgreSQL, Geoprocessing, Server, and PostgreSQL test files. The server
+route and database integration regressions remain in validation.
