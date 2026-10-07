@@ -18,3 +18,18 @@ than changed without its required regression test.
 | `SRV-IMP-S3-LOCK` | not attempted | Re-verified `StreamingFileImportService.Streaming.cs`: the per-target advisory lock is still acquired only for replace mode. This low-severity concurrency item was deferred until the higher-severity findings are completed. |
 | `SRV-IMP-S3-CANCEL-METRIC` | not attempted | Re-verified `StreamingFileImportService.cs`: `OperationCanceledException` is rethrown without setting the metric/log status to `cancelled`. This low-severity item was deferred. |
 | `SRV-IMP-S3-PHYSICAL-NAME` | not attempted | Re-verified `ImportEndpoints.cs`: the synchronous refresh still recomputes the physical table name instead of preferring `ImportResult.PhysicalTableName`. This low-severity item was deferred. |
+
+PR #5664 review re-verification confirmed two follow-up defects in `SRV-IMP-002`:
+
+- Replacement conflict recovery must contain non-cancellation failures from snapshot refresh
+  and catalog lookup. The publication helper now returns its normal publication warning and
+  `null` on either failure, while cancellation still propagates. The publication tests cover
+  both operations with ordinary exceptions, typed publishing errors, and cancellation.
+- Attachment re-import remains unresolved. `CopyAttachmentsAsync` uploads every advertised
+  attachment again, and `PostgresAttachmentStore.CreateAsync` inserts a fresh row. The
+  attachment schema has no source identity or feature cascade, while snapshot refresh deletes
+  only feature rows. A complete imported-set reconciliation must handle removed/changed parents,
+  stored-file cleanup, failures, and legacy imports without blindly deleting attachments added
+  through Honua. That repair and its regression coverage exceed this adjudication's approximately
+  100-line limit; the attachment review thread deliberately remains open. The publication reuse
+  fix alone does not establish attachment fidelity across repeated imports.

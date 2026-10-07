@@ -13,6 +13,78 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 
 public sealed class GeoservicesLayerPublicationServiceTests
 {
+    [Theory]
+    [InlineData(false, 0)]
+    [InlineData(true, 0)]
+    [InlineData(false, 1)]
+    [InlineData(true, 1)]
+    [InlineData(false, 2)]
+    [InlineData(true, 2)]
+    public async Task TryPublishImportedLayerAsync_ConflictRecoveryFails_WarnsUnlessCancelled(
+        bool failListing, int failureKind)
+    {
+        Exception failure = failureKind switch
+        {
+            1 => new LayerPublishingException(LayerPublishingErrorKind.Validation, "Recovery failed."),
+            2 => new OperationCanceledException(),
+            _ => new InvalidOperationException("Recovery failed.")
+        };
+        var publishing = new Mock<ILayerPublishingService>(MockBehavior.Strict);
+        publishing.Setup(service => service.PublishLayerAsync(
+                "Host=unused", It.IsAny<LayerPublishRequest>(), CancellationToken.None))
+            .ThrowsAsync(new LayerPublishingException(LayerPublishingErrorKind.Conflict, "Already published.", 27));
+        var refresh = publishing.Setup(service => service.RefreshMaterializedFeaturesForSourceTableAsync(
+            "Host=unused", "honua_data", "parcels", CancellationToken.None));
+        if (failListing)
+        {
+            refresh.ReturnsAsync([]);
+            publishing.Setup(service => service.ListPublishedLayersAsync(
+                    "Host=unused", "planning", CancellationToken.None))
+                .ThrowsAsync(failure);
+        }
+        else
+        {
+            refresh.ThrowsAsync(failure);
+        }
+
+        var sut = new GeoservicesLayerPublicationService(
+            NullLogger<GeoservicesLayerPublicationService>.Instance, publishing.Object);
+        var warnings = new List<string>();
+        var act = () => sut.TryPublishImportedLayerAsync(
+            new GeoservicesImportRequest
+            {
+                ServiceUrl = "https://example.com/rest/services/Planning/FeatureServer",
+                LayerId = 0,
+                TableName = "parcels",
+                ServiceName = "planning",
+                AutoPublish = true,
+                OverwriteExisting = true
+            },
+            "honua_data",
+            new GeoservicesLayerInfo { Id = 0, Name = "Parcels", Fields = [] },
+            warnings, null, "job-1", DateTimeOffset.UtcNow, 2,
+            "Host=unused", CancellationToken.None, replacingExistingTarget: true);
+
+        if (failureKind == 2)
+        {
+            (await act.Should().ThrowAsync<OperationCanceledException>()).Which.Should().BeSameAs(failure);
+            warnings.Should().BeEmpty();
+        }
+        else
+        {
+            (await act()).Should().BeNull();
+            warnings.Should().ContainSingle().Which.Should().Be(
+                "AutoPublish was requested, but publishing did not complete.");
+        }
+
+        publishing.VerifyAll();
+        if (!failListing)
+        {
+            publishing.Verify(service => service.ListPublishedLayersAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+    }
+
     [Fact]
     public async Task SRV_IMP_002_ReimportingPublishedLayer_RefreshesAndReusesExistingPublication()
     {
