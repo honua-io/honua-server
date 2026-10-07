@@ -6,6 +6,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.FileStorage;
 using Honua.Infrastructure.Services;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Caching.Distributed;
@@ -27,7 +28,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         Path.GetTempPath(),
         $"honua-temp-tests-{Guid.NewGuid():N}");
 
-    [Fact]
+    [UnitTest]
     public async Task SRV_AUTH_003_RejectsEncodedTemporaryObjectKeyWithParentTraversal()
     {
         var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AzureBlob);
@@ -50,7 +51,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
             "a client-chosen traversal key must be rejected before it reaches the storage provider");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task SRV_AUTH_003_PrefixedProviderTemporaryKeyRemainsReadableAfterCacheEviction()
     {
         var doubledPrefixKey = CloudStoragePath.BuildObjectKey(
@@ -102,7 +103,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         await AssertReadableAfterCacheEvictionAsync(service, distributedCache, extensionlessKey, [9, 8, 7], "application/octet-stream");
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("temporary-files/exports/0123456789abcdef0123456789abcdef.png")]
     [InlineData("temporary-files/%2e%2e/exports/0123456789abcdef0123456789abcdef.png")]
     [InlineData("temporary-files/../temporary-files/0123456789abcdef0123456789abcdef.png")]
