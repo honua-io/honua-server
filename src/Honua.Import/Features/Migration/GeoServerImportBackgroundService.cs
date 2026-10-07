@@ -115,6 +115,12 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
                     ((IOperationProgress)progress).Status, stoppingToken).ConfigureAwait(false);
                 if (transition.Outcome != ProgressCompareAndSetOutcome.Updated)
                 {
+                    if (transition.CurrentProgress?.Status == OperationStatus.Cancelled)
+                    {
+                        await _jobManager.RequestStore.DeleteProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
+                        Log.JobCancelled(_logger, jobId, stopwatch.Elapsed.TotalSeconds);
+                    }
+
                     return;
                 }
                 progress = claimed;

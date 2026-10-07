@@ -446,7 +446,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             // Drive exactly the dequeue -> first-read boundary without scheduler delays.
             processing = ProcessDequeuedJobAsync(fixture, jobId);
             await snapshotRead.Task.WaitAsync(TimeSpan.FromSeconds(20));
-            var cancel = await fixture.Client.PostAsync(string.Format(cancelPath, jobId), null);
+            var cancel = await fixture.Client.PostAsync(cancelPath.Replace("{0}", jobId, StringComparison.Ordinal), null);
             cancel.StatusCode.Should().Be(HttpStatusCode.OK);
             releaseRead.SetResult();
             await processing.WaitAsync(TimeSpan.FromSeconds(20));
