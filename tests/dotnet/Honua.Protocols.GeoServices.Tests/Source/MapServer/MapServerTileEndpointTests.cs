@@ -82,7 +82,11 @@ public sealed class MapServerTileEndpointTests : IClassFixture<WebAppFixture>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         masks.Should().BeEmpty("the policy changed between fingerprinting and rendering");
         queries.Should().NotBeEmpty();
-        queries.Should().AllSatisfy(query => query.EnforcedMaskedFields.Should().Equal("classification"));
+        queries.Should().AllSatisfy(query =>
+        {
+            query.EnforcedMaskedFields.Should().NotBeNull();
+            query.EnforcedMaskedFields!.Value.Should().Equal("classification");
+        });
     }
 
     [UnitTest]

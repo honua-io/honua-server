@@ -19,7 +19,8 @@ public sealed class MapServerRasterPagingTests
     public async Task QueryAllRasterFeaturePagesAsync_MoreThanConfiguredPageSize_ReadsEveryFeatureInStableOrder()
     {
         const int pageSize = 10_000;
-        var feature = Feature.Create(1, geometry: null, ImmutableDictionary<string, object?>.Empty);
+        var feature = Feature.Create(1, geometry: null, ImmutableDictionary<string, object?>.Empty
+            .Add("Secret", "hidden").Add("visible", "public"));
         var firstPage = ImmutableArray.CreateRange(Enumerable.Repeat(feature, pageSize));
         var finalPage = ImmutableArray.Create(feature);
         var reader = Substitute.For<IFeatureReader, IPagedFeatureReader>();
@@ -34,6 +35,7 @@ public sealed class MapServerRasterPagingTests
         var query = new FeatureQuery
         {
             Limit = pageSize,
+            EnforcedMaskedFields = ["secret"],
             OrderBy = [new OrderByClause("objectid")]
         };
 
@@ -45,6 +47,11 @@ public sealed class MapServerRasterPagingTests
                            CancellationToken.None))
         {
             total += page.Length;
+            page.Should().AllSatisfy(item =>
+            {
+                item.Attributes.Should().NotContainKey("Secret");
+                item.Attributes["visible"].Should().Be("public");
+            });
         }
 
         total.Should().Be(10_001);
@@ -61,7 +68,8 @@ public sealed class MapServerRasterPagingTests
     public async Task QueryAllRasterFeaturePagesAsync_NonPagedReader_KeepsEachReadBounded()
     {
         const int pageSize = 2;
-        var feature = Feature.Create(1, geometry: null, ImmutableDictionary<string, object?>.Empty);
+        var feature = Feature.Create(1, geometry: null, ImmutableDictionary<string, object?>.Empty
+            .Add("Secret", "hidden").Add("visible", "public"));
         var reader = Substitute.For<IFeatureReader>();
         reader.QueryAsync(17, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(call => call.ArgAt<FeatureQuery>(1).Offset switch
@@ -73,6 +81,7 @@ public sealed class MapServerRasterPagingTests
         var query = new FeatureQuery
         {
             Limit = pageSize,
+            EnforcedMaskedFields = ["secret"],
             OrderBy = [new OrderByClause("objectid")]
         };
 
@@ -84,6 +93,11 @@ public sealed class MapServerRasterPagingTests
                            CancellationToken.None))
         {
             total += page.Length;
+            page.Should().AllSatisfy(item =>
+            {
+                item.Attributes.Should().NotContainKey("Secret");
+                item.Attributes["visible"].Should().Be("public");
+            });
         }
 
         total.Should().Be(3);
