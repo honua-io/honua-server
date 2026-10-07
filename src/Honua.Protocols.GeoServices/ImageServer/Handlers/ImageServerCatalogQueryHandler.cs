@@ -73,7 +73,11 @@ internal sealed class ImageServerCatalogQueryHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
-            if (!TryParseQuery(values, out var query, out var parseError))
+            if (!TryParseQuery(
+                    values,
+                    GeoServicesGeometryConverter.ResolveConfiguredCurveVertexBudget(context.RequestServices),
+                    out var query,
+                    out var parseError))
             {
                 ImageServerLog.InvalidCatalogQueryParameters(_logger, layerId, parseError ?? "Invalid query parameter.");
                 return StandardErrorHelpers.CreateBadRequest(
@@ -200,6 +204,7 @@ internal sealed class ImageServerCatalogQueryHandler
 
     private static bool TryParseQuery(
         IReadOnlyDictionary<string, StringValues> values,
+        int maxCurveVertices,
         out ImageServerCatalogQuery query,
         out string? error)
     {
@@ -240,7 +245,7 @@ internal sealed class ImageServerCatalogQueryHandler
             return false;
         }
 
-        if (!TryParseSpatialFilter(values, out var spatialFilter, out error))
+        if (!TryParseSpatialFilter(values, maxCurveVertices, out var spatialFilter, out error))
         {
             return false;
         }
@@ -321,6 +326,7 @@ internal sealed class ImageServerCatalogQueryHandler
     /// </summary>
     private static bool TryParseSpatialFilter(
         IReadOnlyDictionary<string, StringValues> values,
+        int maxCurveVertices,
         out ImageServerCatalogSpatialFilter? spatialFilter,
         out string? error)
     {
@@ -379,7 +385,7 @@ internal sealed class ImageServerCatalogQueryHandler
         if (relation != RasterCatalogSpatialRelation.EnvelopeIntersects &&
             !IsEnvelopeShaped(normalizedGeometry))
         {
-            if (!TryConvertGeometryToWkb(normalizedGeometry, filterSrid, out exactGeometry, out var wkbError))
+            if (!TryConvertGeometryToWkb(normalizedGeometry, filterSrid, maxCurveVertices, out exactGeometry, out var wkbError))
             {
                 error = wkbError;
                 return false;
@@ -440,6 +446,7 @@ internal sealed class ImageServerCatalogQueryHandler
     private static bool TryConvertGeometryToWkb(
         string geometryJson,
         int? filterSrid,
+        int maxCurveVertices,
         out byte[]? wkb,
         out string? error)
     {
@@ -465,7 +472,7 @@ internal sealed class ImageServerCatalogQueryHandler
 
         try
         {
-            wkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(geometry, filterSrid);
+            wkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(geometry, filterSrid, maxCurveVertices);
             return true;
         }
         catch (ArgumentException)

@@ -27,6 +27,10 @@
       "why": "Superseded pages kept for history. Publishing them as concepts would put retired claims back into the graph."
     },
     {
+      "path": "docs/audit",
+      "why": "Dated security-audit dispositions. Evidence of a review pass, not product documentation."
+    },
+    {
       "path": "docs/gis",
       "why": "Capability data and client-certification evidence. The JSON under docs/gis/data is the generated spine other gates read; the markdown beside it is evidence, not prose documentation."
     },

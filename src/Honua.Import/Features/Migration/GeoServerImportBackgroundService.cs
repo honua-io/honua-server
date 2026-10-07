@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Import.Abstractions;
@@ -101,6 +102,25 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
                 return;
             }
 
+            if (progress != null)
+            {
+                // Claim execution before reading the request. A queued cancellation that
+                // wins this transition prevents the import from being invoked at all.
+                var claimed = progress with
+                {
+                    Status = GeoServerImportStatus.Discovering,
+                    CurrentPhase = "Starting import"
+                };
+                var transition = await _jobManager.TryTransitionAsync(jobId, claimed,
+                    ((IOperationProgress)progress).Status, stoppingToken).ConfigureAwait(false);
+                if (transition.Outcome != ProgressCompareAndSetOutcome.Updated)
+                {
+                    return;
+                }
+                progress = claimed;
+                progressController.Seed(progress);
+            }
+
             request = await _jobManager.RequestStore.GetProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
             if (request == null)
             {
@@ -167,7 +187,14 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
             request = await ResolveSecretReferencesAsync(request, scope.ServiceProvider, jobCancellation.Token).ConfigureAwait(false);
             var importService = scope.ServiceProvider.GetRequiredService<IGeoServerImportService>();
             var progressReporter = new Progress<GeoServerImportProgress>(p =>
-                _ = progressController.TryReportProgressAsync(p, _logger, Log.ProgressUpdateFailed, CancellationToken.None));
+            {
+                // Queued belongs to admission and recovery. An import's initial
+                // report must not make already-claimed execution appear queued again.
+                if (p.Status != GeoServerImportStatus.Queued)
+                {
+                    _ = progressController.TryReportProgressAsync(p, _logger, Log.ProgressUpdateFailed, CancellationToken.None);
+                }
+            });
 
             var result = await importService.ImportConfigurationAsync(request, progressReporter, jobCancellation.Token).ConfigureAwait(false);
 

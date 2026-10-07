@@ -8,6 +8,7 @@ using System.Data.Common;
 using System.Runtime.CompilerServices;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -145,7 +146,8 @@ internal static class RasterMapRenderingPipeline
         MetadataV2GeometryType GeometryType,
         VerticalSelection? VerticalSelection = null,
         string? StableOrderField = null,
-        MetadataV2FieldType? StableOrderFieldType = null);
+        MetadataV2FieldType? StableOrderFieldType = null,
+        ImmutableArray<string>? EnforcedMaskedFields = null);
 
     internal static RenderLayerDescriptor CreateRenderLayerDescriptorFromV2(
         int layerId,
@@ -372,6 +374,8 @@ internal static class RasterMapRenderingPipeline
                     : null,
                 stableOrderField: layer.StableOrderField,
                 stableOrderFieldType: layer.StableOrderFieldType);
+            featureQuery = featureQuery with { EnforcedMaskedFields = layer.EnforcedMaskedFields };
+            FeatureQuerySecurity.Validate(featureQuery);
 
             var renderedPointCount = await TryRenderAllRasterPointPagesAsync(
                 canvas,
@@ -1423,7 +1427,7 @@ internal static class RasterMapRenderingPipeline
                     yield break;
                 }
 
-                yield return result.Items;
+                yield return ApplyRasterFieldMasks(query, result.Items);
                 if (result.Items.Length < pageSize)
                 {
                     yield break;
@@ -1444,7 +1448,7 @@ internal static class RasterMapRenderingPipeline
                 yield break;
             }
 
-            yield return page.Items;
+            yield return ApplyRasterFieldMasks(query, page.Items);
             if (!page.HasMoreResults)
             {
                 yield break;
@@ -1452,6 +1456,23 @@ internal static class RasterMapRenderingPipeline
 
             offset = checked(offset + page.Items.Length);
         }
+    }
+
+    private static ImmutableArray<Feature> ApplyRasterFieldMasks(FeatureQuery query, ImmutableArray<Feature> features)
+    {
+        if (query.EnforcedMaskedFields is not { IsDefaultOrEmpty: false } fields)
+        {
+            return features;
+        }
+
+        // Keep the render snapshot authoritative even if a provider rechecks live policy
+        // or cannot enforce query-carried masks after that policy has been removed.
+        var masks = fields.Where(static field => !string.IsNullOrWhiteSpace(field))
+            .Select(static field => field.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return features.Select(feature => feature with
+        {
+            Attributes = feature.Attributes.RemoveRange(feature.Attributes.Keys.Where(masks.Contains))
+        }).ToImmutableArray();
     }
 
     private static void RenderProjectedCirclePoints(

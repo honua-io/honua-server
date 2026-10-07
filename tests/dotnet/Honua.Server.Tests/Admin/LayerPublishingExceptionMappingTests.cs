@@ -5,6 +5,8 @@ using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Admin.Abstractions;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -22,6 +24,42 @@ namespace Honua.Server.Tests.Admin;
 [Protocol(TestProtocols.Admin)]
 public sealed class LayerPublishingExceptionMappingTests
 {
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /api/v1/admin/connections/{id}/layers")]
+    public async Task ListLayers_PinsRouteConnectionAndCarriesItToGraphScope(bool byName)
+    {
+        var connectionId = Guid.NewGuid();
+        var registry = Substitute.For<ISecureConnectionRegistry>();
+        registry.GetConnectionByNameAsync("catalog", Arg.Any<CancellationToken>())
+            .Returns(new DataConnection { ConnectionId = connectionId, Name = "catalog" });
+        var resolver = Substitute.For<ISecureConnectionResolver>();
+        resolver.ResolveConnectionStringAsync(connectionId, Arg.Any<CancellationToken>()).Returns("resolved-connection");
+        var publisher = Substitute.For<ILayerPublishingService>();
+        publisher.ListPublishedLayersAsync("resolved-connection", "default", connectionId, Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<PublishedLayerSummary>());
+        var fixture = new WebAppFixture()
+            .ReplaceService<ISecureConnectionRegistry>(registry)
+            .ReplaceService<ISecureConnectionResolver>(resolver)
+            .ReplaceService<ILayerPublishingService>(publisher);
+        await fixture.InitializeAsync();
+        try
+        {
+            var routeId = byName ? "catalog" : connectionId.ToString("D");
+            var response = await fixture.CreateAdminClient().GetAsync($"/api/v1/admin/connections/{routeId}/layers");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            await publisher.Received(1).ListPublishedLayersAsync("resolved-connection", "default", connectionId, Arg.Any<CancellationToken>());
+            await resolver.Received(1).ResolveConnectionStringAsync(connectionId, Arg.Any<CancellationToken>());
+            await resolver.DidNotReceive().ResolveConnectionStringAsync("catalog", Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]

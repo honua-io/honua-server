@@ -18,7 +18,7 @@ Import layers from GeoServer REST API.
 | Edition | Enterprise |
 | Surface maturity | 5 implemented |
 | Registry entries | 5 |
-| Proving tests | 16 |
+| Proving tests | 18 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
