@@ -113,3 +113,9 @@ test assertion was changed for this finding.
 `tests/dotnet/Honua.Db.Postgres.Tests/bin/Release/net10.0/Migrations/125_AddImportedAttachmentIdentity.sql`
 confirmed the same bytes at the expected test output path:
 `4ab9951daf862db874a7caceb28231c656367bbf581ddb3ca76bd0cc610188a4`.
+
+Focused re-verification for the path finding passed all 17 attachment-import
+tests against local PostgreSQL with no skips, including re-import cases that
+read and execute migration 125 through the reported call. Command:
+`dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj --no-build --no-restore --configuration Release --filter FullyQualifiedName~GeoservicesImportServiceAttachmentImportTests`.
+The Release test assembly was rebuilt by the fast pre-PR check before this run.
