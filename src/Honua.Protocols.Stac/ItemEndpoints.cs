@@ -315,7 +315,6 @@ internal static class ItemEndpoints
                     readerResolution.Reader,
                     readerResolution.StorageLayerId,
                     resourceSrid,
-                    resource,
                     itemId,
                     cancellationToken);
                 if (feature is null && hasNumericItemId)
@@ -341,7 +340,7 @@ internal static class ItemEndpoints
 
             if (feature is { } resolvedFeature &&
                 !string.Equals(
-                    StacMappingService.ResolveItemId(resolvedFeature, resource),
+                    StacMappingService.ResolveItemId(resolvedFeature),
                     itemId,
                     StringComparison.Ordinal))
             {
@@ -395,28 +394,23 @@ internal static class ItemEndpoints
         IFeatureReader featureReader,
         int layerId,
         int layerSrid,
-        MetadataV2Resource resource,
         string itemId,
         CancellationToken cancellationToken)
     {
-        var idField = StacItemIdWhereBuilder.FindDeclaredPrimaryIdField(resource);
-        if (idField is null)
-        {
-            return null;
-        }
-
         // Limit the id scan to a small upper-bound so that non-unique id columns (or providers
         // that ignore SqlFilter) cannot produce an unbounded result set followed by N+1 per-id
         // feature fetches on a public read endpoint.
         var query = new FeatureQuery
         {
             SqlFilter = new SqlFragment(
-                "attributes->>@p0 = @p1",
-                [idField.Name, itemId]),
+                "attributes->>'stac_id' = @p0 OR attributes->>'item_id' = @p0 OR attributes->>'id' = @p0",
+                [itemId]),
             Limit = 50
         };
 
         var objectIds = await featureReader.QueryObjectIdsAsync(layerId, query, cancellationToken);
+        Feature? bestMatch = null;
+        var bestRank = int.MaxValue;
 
         foreach (var objectId in objectIds)
         {
@@ -426,13 +420,25 @@ internal static class ItemEndpoints
                 layerSrid,
                 objectId,
                 cancellationToken);
-            if (MatchesCanonicalItemId(feature, resource, itemId))
+            var matchRank = GetCanonicalItemMatchRank(feature, itemId);
+            if (!matchRank.HasValue)
             {
-                return feature;
+                continue;
+            }
+
+            if (matchRank.Value < bestRank)
+            {
+                bestMatch = feature;
+                bestRank = matchRank.Value;
+
+                if (bestRank == 0)
+                {
+                    break;
+                }
             }
         }
 
-        return null;
+        return bestMatch;
     }
 
     private static async Task<Feature?> TryGetBoundFeatureByCanonicalItemIdAsync(
@@ -487,10 +493,37 @@ internal static class ItemEndpoints
         return null;
     }
 
-    private static bool MatchesCanonicalItemId(Feature? feature, MetadataV2Resource resource, string itemId)
-        => feature is { } resolvedFeature &&
-            string.Equals(
-                StacMappingService.ResolveItemId(resolvedFeature, resource),
+    private static int? GetCanonicalItemMatchRank(Feature? feature, string itemId)
+    {
+        if (feature is not { } resolvedFeature ||
+            !string.Equals(
+                StacMappingService.ResolveItemId(resolvedFeature),
                 itemId,
-                StringComparison.Ordinal);
+                StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var attributes = resolvedFeature.Attributes;
+
+        var keys = ImmutableArray.Create("stac_id", "item_id", "id");
+        for (var index = 0; index < keys.Length; index++)
+        {
+            var key = keys[index];
+            if (!attributes.TryGetValue(key, out var value) || value is null)
+            {
+                continue;
+            }
+
+            if (string.Equals(
+                    Convert.ToString(value, CultureInfo.InvariantCulture),
+                    itemId,
+                    StringComparison.Ordinal))
+            {
+                return index;
+            }
+        }
+
+        return null;
+    }
 }
