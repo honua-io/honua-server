@@ -475,8 +475,7 @@ internal sealed class InputValidationMiddleware
     private static readonly HashSet<string> _geoServicesQueryPayloadFields = new(StringComparer.OrdinalIgnoreCase)
     {
         "objectIds",
-        "outFields",
-        "where"
+        "outFields"
     };
 
     private static bool IsGeoServicesProtocolPayloadField(HttpRequest request, string paramType, string name)

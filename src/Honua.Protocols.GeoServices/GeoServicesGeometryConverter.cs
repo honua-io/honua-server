@@ -397,6 +397,27 @@ internal static partial class GeoServicesGeometryConverter
         return coords;
     }
 
+    private static LinearRing? FindSmallestCoveringShell(
+        List<LinearRing> shells,
+        GeometryFactory factory,
+        Func<Polygon, bool> covers)
+    {
+        LinearRing? smallestShell = null;
+        var smallestArea = double.PositiveInfinity;
+
+        foreach (var shell in shells)
+        {
+            var shellPolygon = factory.CreatePolygon(shell);
+            if (shellPolygon.Area < smallestArea && covers(shellPolygon))
+            {
+                smallestShell = shell;
+                smallestArea = shellPolygon.Area;
+            }
+        }
+
+        return smallestShell;
+    }
+
     private static Geometry CreatePolygonalGeometry(double[][][] rings, GeometryFactory factory, bool? hasZ, bool? hasM)
     {
         var shells = new List<LinearRing>();
@@ -444,18 +465,18 @@ internal static partial class GeoServicesGeometryConverter
 
         foreach (var hole in holes)
         {
-            var holePoint = factory.CreatePolygon(hole).InteriorPoint;
-            LinearRing? assignedShell = null;
-            var assignedShellArea = double.PositiveInfinity;
+            // Assign the hole to the smallest shell that covers the whole hole ring. Testing a single
+            // interior point is not enough: with concentric rings that point can also fall inside a
+            // nested island shell that is smaller than the hole itself.
+            var holePolygon = factory.CreatePolygon(hole);
+            var assignedShell = FindSmallestCoveringShell(shells, factory, shellPolygon => shellPolygon.Covers(holePolygon));
 
-            foreach (var shell in shells)
+            // Slightly malformed input (a hole that crosses its shell boundary) is not covered by any
+            // shell; fall back to the smallest shell that covers the hole's interior point.
+            if (assignedShell == null)
             {
-                var shellPolygon = factory.CreatePolygon(shell);
-                if (shellPolygon.Covers(holePoint) && shellPolygon.Area < assignedShellArea)
-                {
-                    assignedShell = shell;
-                    assignedShellArea = shellPolygon.Area;
-                }
+                var holePoint = holePolygon.InteriorPoint;
+                assignedShell = FindSmallestCoveringShell(shells, factory, shellPolygon => shellPolygon.Covers(holePoint));
             }
 
             if (assignedShell == null)
