@@ -365,6 +365,38 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         versions.Should().Contain("alice.anon_target");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]
+    public async Task AnonymousPrivateCreate_MatchesProtectedOperationAuthenticationError_AndWritesNothing()
+    {
+        var owned = await CreateVersionAsync(_ownerToken, "alice.auth_shape", "auth-shape-control");
+        var guid = owned.GetProperty("versionGuid").GetString()!;
+
+        using var create = await PostFormAsync(
+            token: null,
+            $"{ServiceBase}/create",
+            ("versionName", "anonymous.private_refused"),
+            ("accessPermission", "private"),
+            ("f", "json"));
+        using var delete = await PostFormAsync(
+            token: null,
+            $"{ServiceBase}/versions/{guid}/delete",
+            ("f", "json"));
+
+        using var createDocument = JsonDocument.Parse(await create.Content.ReadAsByteArrayAsync());
+        using var deleteDocument = JsonDocument.Parse(await delete.Content.ReadAsByteArrayAsync());
+        var createError = createDocument.RootElement.GetProperty("error");
+        var deleteError = deleteDocument.RootElement.GetProperty("error");
+        createError.GetProperty("code").GetInt32().Should().Be(deleteError.GetProperty("code").GetInt32());
+        createError.GetProperty("message").GetString().Should().Be(deleteError.GetProperty("message").GetString());
+        createError.GetProperty("details")[0].GetString().Should().Be(deleteError.GetProperty("details")[0].GetString());
+        await create.AssertGeoServicesErrorAsync(EsriTokenRequired);
+
+        var versions = await ListVersionNamesAsync(_ownerToken);
+        versions.Should().NotContain("anonymous.private_refused");
+    }
+
     private static async Task AssertDeniedAsync(HttpResponseMessage response, string operation)
     {
         var body = await response.Content.ReadAsStringAsync();

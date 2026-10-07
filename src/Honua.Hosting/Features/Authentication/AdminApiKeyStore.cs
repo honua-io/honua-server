@@ -219,6 +219,46 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
         return normalized.Length == 0 ? ["admin:*"] : normalized;
     }
 
+    /// <summary>
+    /// Stores caller-supplied key material. Tests use this to present a fixed credential
+    /// whose bytes trip content heuristics (for example "--" or "/*"). Issuance stays on
+    /// <see cref="CreateAsync"/>.
+    /// </summary>
+    internal AdminApiKeyCreateResult RegisterKnownMaterial(
+        string keyMaterial,
+        string name,
+        IReadOnlyList<string> permissions,
+        DateTimeOffset? expiresAt,
+        string? createdBy)
+    {
+        if (string.IsNullOrWhiteSpace(keyMaterial))
+        {
+            throw new ArgumentException("Key material is required.", nameof(keyMaterial));
+        }
+
+        var now = _timeProvider.GetUtcNow();
+        var record = new AdminApiKeyRecord(
+            Guid.NewGuid(),
+            name,
+            CreateDisplayPrefix(keyMaterial),
+            HashKey(keyMaterial),
+            NormalizePermissions(permissions),
+            now,
+            now,
+            expiresAt,
+            LastUsedAt: null,
+            RotatedAt: null,
+            RevokedAt: null,
+            createdBy);
+
+        if (!_keys.TryAdd(record.Id, record))
+        {
+            throw new InvalidOperationException("Generated duplicate admin API key identifier.");
+        }
+
+        return new AdminApiKeyCreateResult(record, keyMaterial);
+    }
+
     internal static string GenerateForDurableStore() => GenerateKeyMaterial();
 
     private static string GenerateKeyMaterial()

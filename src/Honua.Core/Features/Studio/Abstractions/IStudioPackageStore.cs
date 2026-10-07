@@ -311,6 +311,19 @@ public interface IStudioPackageLifecycleService
         string? actorId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Creates a publication request with a caller-allocated polling identifier.</summary>
+    Task<StudioPublicationRequest?> CreatePublicationRequestAsync(
+        Guid itemId,
+        Guid versionId,
+        Guid? expectedCurrentVersionId,
+        StudioPublicationIntent? intent,
+        string? warningAcknowledgement,
+        string? actorId,
+        Guid publicationRequestId,
+        CancellationToken cancellationToken = default)
+        => CreatePublicationRequestAsync(
+            itemId, versionId, expectedCurrentVersionId, intent, warningAcknowledgement, actorId, cancellationToken);
+
     /// <summary>Gets one persisted publication request for an immutable version.</summary>
     Task<StudioPublicationRequest?> GetPublicationRequestAsync(
         Guid itemId,

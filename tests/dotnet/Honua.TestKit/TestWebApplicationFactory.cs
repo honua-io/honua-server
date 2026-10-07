@@ -6,6 +6,8 @@ using System.Text;
 using System.Collections.Concurrent;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.AuditLog;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -105,6 +107,8 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.AddSingleton<IDatabaseConnectionStringBuilder, TestDatabaseConnectionStringBuilder>();
             services.AddSingleton<ILeaderElectionStrategy, NoOpLeaderElectionStrategy>();
             services.AddScoped<IAlertAdminStore, NullAlertAdminStore>();
+            services.RemoveAll<IAuditLog>();
+            services.AddSingleton<IAuditLog>(NullAuditLog.Instance);
             services.AddScoped<ISqlFilterTranslator, AllowAllSqlFilterTranslator>();
         });
         builder.ConfigureAppConfiguration((context, configBuilder) =>

@@ -89,7 +89,7 @@ public sealed class StudioDraftOperationRuntimeTests
             });
         lifecycle.CreatePublicationRequestAsync(
                 itemId, versionId, versionId, Arg.Any<StudioPublicationIntent?>(), Arg.Any<string?>(),
-                Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<string?>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(new StudioPublicationRequest
             {
                 RequestId = Guid.NewGuid(),
@@ -299,7 +299,16 @@ public sealed class StudioDraftOperationRuntimeTests
 
         proposal.Operation.Status.Should().Be(OperationHandleStatus.RequiresApproval);
         proposal.Operation.ProposalId.Should().Be("proposal-studio");
+        proposal.Operation.ResourceIds.Should().ContainKey("requestId");
+        Guid.TryParse(proposal.Operation.ResourceIds["requestId"], out var publicationRequestId)
+            .Should().BeTrue();
         bridge.Request!.OperationId.Should().Be(StudioDraftOperations.CreatePublicationRequest);
+        var proposalJson = bridge.Request.Parameters[StudioDraftOperations.PayloadParameter];
+        proposalJson.Should().NotBeNull();
+        var proposalPayload = JsonSerializer.Deserialize(
+            proposalJson!,
+            StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload);
+        proposalPayload!.RequestId.Should().Be(publicationRequestId);
         (await store.GetPointersAsync(saved.ItemId))!.PublishedVersionId.Should().BeNull(
             "a proposal must never move the published pointer before a separate principal approves it");
 
@@ -431,6 +440,85 @@ public sealed class StudioDraftOperationRuntimeTests
         published.Value!.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
         bridge.Request.Should().BeNull("an admin publication must not open an approval proposal");
         (await store.GetPointersAsync(saved.ItemId))!.PublishedVersionId.Should().Be(saved.VersionId);
+    }
+
+    [UnitTest]
+    public async Task PublicationRequest_IdempotentRetry_AdvertisesTheSealedRequestId()
+    {
+        // A lost 202 is retried with the same Idempotency-Key. The dispatcher returns the
+        // already-sealed proposal and does not adopt the retry payload, so the retry's
+        // ResourceIds must name the request id approval will persist.
+        var store = new InMemoryStudioPackageStore();
+        var lifecycle = BuildLifecycle(store);
+        var saved = await SaveFirstVersionAsync(lifecycle);
+        var policy = new CanonicalOperationPolicyDecisionPoint(
+            Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions()),
+            new Honua.Core.Features.Guardrails.DefaultGuardrailLadder(
+                new Honua.Infrastructure.Licensing.DisabledLicenseService(),
+                Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Guardrails.GuardrailLadderOptions())));
+        var bridge = new DurableApprovalBridge();
+        var instances = new VolatileOperationInstanceStore();
+        var runtime = new StudioDraftMutationRuntime(
+            new OperationDispatcher(
+                new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+                [PublicationExecutor(lifecycle)],
+                policy,
+                TimeProvider.System,
+                approvalBridge: bridge,
+                instanceStore: instances,
+                auditLog: new VolatileOperationAuditLog()),
+            instances);
+        var intent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" };
+        var context = new StudioDraftMutationContext
+        {
+            PrincipalId = "studio-author",
+            TenantId = "tenant-a",
+            CorrelationId = "corr-publish-retry",
+            IdempotencyKey = "publish-lost-202",
+        };
+
+        var first = await runtime.CreatePublicationRequestAsync(
+            saved.ItemId, saved.VersionId, saved.ContentHash, intent, null, "studio-author", context);
+        var retry = await runtime.CreatePublicationRequestAsync(
+            saved.ItemId, saved.VersionId, saved.ContentHash, intent, null, "studio-author",
+            context with { CorrelationId = "corr-publish-retry-2" });
+
+        first.Operation.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        retry.Operation.OperationInstanceId.Should().Be(first.Operation.OperationInstanceId);
+        retry.Operation.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        bridge.ProposalCount.Should().Be(1, "the retry must not seal a second proposal");
+        var advertised = first.Operation.ResourceIds["requestId"];
+        retry.Operation.ResourceIds["requestId"].Should().Be(advertised);
+        retry.Operation.ResourceIds["publicationId"].Should().Be(advertised);
+        Guid.TryParse(advertised, out var publicationRequestId).Should().BeTrue();
+
+        var descriptor = StudioDraftOperations.BuildDescriptors()
+            .Single(candidate => candidate.OperationId == StudioDraftOperations.CreatePublicationRequest);
+        var mapper = new StudioDraftApprovalRequestMapper(StudioDraftOperations.CreatePublicationRequest);
+        var sealedRequest = mapper.Map(
+            descriptor,
+            bridge.Request!,
+            bridge.Context!,
+            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+        var replay = mapper.MapReplay(sealedRequest);
+        var sealedPayload = JsonSerializer.Deserialize(
+            replay.Request.Parameters[StudioDraftOperations.PayloadParameter]!,
+            StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload);
+        sealedPayload!.RequestId.Should().Be(publicationRequestId);
+
+        var actuated = await PublicationExecutor(lifecycle).SubmitAsync(replay.Request, Context("approve-sealed"));
+        actuated.Status.Should().Be(OperationHandleStatus.Completed);
+        actuated.ResourceIds["requestId"].Should().Be(advertised);
+        (await lifecycle.GetPublicationRequestAsync(saved.ItemId, saved.VersionId, publicationRequestId))!
+            .RequestId.Should().Be(publicationRequestId);
+        (await lifecycle.GetPublicationRequestAsync(saved.ItemId, saved.VersionId, Guid.NewGuid()))
+            .Should().BeNull();
+
+        var other = await runtime.CreatePublicationRequestAsync(
+            saved.ItemId, saved.VersionId, saved.ContentHash, intent, null, "studio-author",
+            context with { IdempotencyKey = "publish-other", CorrelationId = "corr-publish-other" });
+        other.Operation.ResourceIds["requestId"].Should().NotBe(advertised);
+        bridge.ProposalCount.Should().Be(2);
     }
 
     private static string InvalidIntentPayload(StudioContentVersion version) => JsonSerializer.Serialize(
@@ -929,6 +1017,7 @@ public sealed class StudioDraftOperationRuntimeTests
     {
         public OperationRequest? Request { get; private set; }
         public OperationPolicyContext? Context { get; private set; }
+        public int ProposalCount { get; private set; }
 
         public Task<OperationApprovalBridgeResult> CreateProposalAsync(
             IOperationDescriptor descriptor,
@@ -937,6 +1026,7 @@ public sealed class StudioDraftOperationRuntimeTests
             PolicyDecision decision,
             CancellationToken cancellationToken = default)
         {
+            ProposalCount++;
             Request = request;
             Context = context;
             return Task.FromResult(new OperationApprovalBridgeResult

@@ -253,7 +253,7 @@ public sealed class CapabilityKeyDriftTests
 
         tenantEntries.Should().HaveCount(7, "the complete tenant administration route family is lifecycle-pinned");
         tenantEntries.Should().OnlyContain(
-            entry => entry.Capability == "admin.multi-tenancy" && entry.Maturity == "preview",
+            entry => entry.Capability == "admin.multi-tenancy" && entry.Maturity == "internal",
             "tenant administration may never be emitted as a GA-shaped control-plane surface; "
             + "it exists only as the internal admin.multi-tenancy surface");
 
@@ -264,8 +264,8 @@ public sealed class CapabilityKeyDriftTests
             .Single(capability => capability.GetProperty("key").GetString() == "admin.multi-tenancy");
         tenancy.GetProperty("status").GetString().Should().Be("internal");
         tenancy.GetProperty("entryCount").GetInt32().Should().Be(tenantEntries.Length);
-        tenancy.GetProperty("maturity").GetProperty("preview").GetInt32().Should().Be(tenantEntries.Length);
-        tenancy.GetProperty("maturity").EnumerateObject().Should().OnlyContain(tier => tier.Name == "preview",
+        tenancy.GetProperty("maturity").GetProperty("internal").GetInt32().Should().Be(tenantEntries.Length);
+        tenancy.GetProperty("maturity").EnumerateObject().Should().OnlyContain(tier => tier.Name == "internal",
             "a future GA-shaped tenancy claim in the generated matrix must fail the build");
 
         var published = Path.Combine(ArchitectureTestHelpers.ResolveRepositoryRoot(),

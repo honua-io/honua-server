@@ -253,7 +253,7 @@ public static class SharingRestEndpoints
             return entitlementFailure;
         }
 
-        var (username, password, clientType, refererInput, expirationMinutes, _, formatValid) =
+        var (username, password, portalToken, serverUrl, clientType, refererInput, expirationMinutes, _, formatValid) =
             await ReadParametersAsync(context).ConfigureAwait(false);
 
         // Detect whether credentials arrived via query string (GET or non-form POST). This is
@@ -290,7 +290,27 @@ public static class SharingRestEndpoints
             PortalTokenLog.CredentialsFromQueryString(logger);
         }
 
-        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
+        // Federated exchange (#5491): a client signed in to the portal trades its portal token
+        // for one scoped to this server by presenting the token with the server's URL in place
+        // of a username and password.
+        var exchangeRequested = !string.IsNullOrWhiteSpace(portalToken) || !string.IsNullOrWhiteSpace(serverUrl);
+        if (exchangeRequested)
+        {
+            if (string.IsNullOrWhiteSpace(portalToken) || string.IsNullOrWhiteSpace(serverUrl))
+            {
+                PortalTokenLog.TokenIssuanceRejected(logger, "incomplete token exchange");
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Both 'token' and 'serverUrl' are required for token exchange.");
+            }
+
+            if (!Uri.TryCreate(serverUrl, UriKind.Absolute, out _))
+            {
+                PortalTokenLog.TokenIssuanceRejected(logger, "invalid server url");
+                return StandardErrorHelpers.CreateBadRequest(context, "A valid absolute 'serverUrl' is required.");
+            }
+        }
+        else if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
         {
             PortalTokenLog.TokenIssuanceRejected(logger, "missing credentials");
             return StandardErrorHelpers.CreateBadRequest(
@@ -309,6 +329,39 @@ public static class SharingRestEndpoints
                     : "Client IP could not be determined for an 'ip' binding.");
         }
 
+        var ttlMinutes = ResolveExpirationMinutes(expirationMinutes, settings);
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(ttlMinutes);
+
+        if (exchangeRequested)
+        {
+            // The presented token is the credential here, so the issuer checks it against this
+            // request's binding exactly as the authentication handler would, and derives the new
+            // token from the stored token rather than from a fresh credential check.
+            var exchange = await tokenIssuer.ExchangeAsync(
+                new PortalTokenExchangeRequest(
+                    Token: portalToken!,
+                    PresentedBinding: new PortalTokenBinding(
+                        Referer: context.Request.Headers.Referer.FirstOrDefault(),
+                        ClientIp: context.Connection.RemoteIpAddress?.ToString()),
+                    ClientType: clientType,
+                    BindingValue: binding,
+                    ExpiresAt: expiresAt),
+                context.RequestAborted).ConfigureAwait(false);
+            if (exchange is null)
+            {
+                PortalTokenLog.TokenIssuanceRejected(logger, "invalid token");
+                context.Items[PortalTokenAuthenticationExtensions.AuthenticationFailureKey] = true;
+                return StandardErrorHelpers.CreateInvalidToken(context);
+            }
+
+            return CreateGenerateTokenResponse(
+                logger,
+                exchange.PrincipalId,
+                exchange.TenantId,
+                clientType,
+                exchange.Issuance);
+        }
+
         var verified = await credentialVerifier
             .VerifyAsync(username!, password!, context.RequestAborted)
             .ConfigureAwait(false);
@@ -319,9 +372,6 @@ public static class SharingRestEndpoints
                 context,
                 "Unable to generate token.");
         }
-
-        var ttlMinutes = ResolveExpirationMinutes(expirationMinutes, settings);
-        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(ttlMinutes);
 
         var issuance = await tokenIssuer.IssueAsync(
             new PortalTokenIssueRequest(
@@ -348,13 +398,28 @@ public static class SharingRestEndpoints
                 Source: verified.Source),
             context.RequestAborted).ConfigureAwait(false);
 
+        return CreateGenerateTokenResponse(
+            logger,
+            verified.PrincipalId,
+            verified.TenantId ?? tenantContext.TenantId,
+            clientType,
+            issuance);
+    }
+
+    private static IResult CreateGenerateTokenResponse(
+        ILogger<SharingRestLog> logger,
+        string principalId,
+        string? tenantId,
+        PortalTokenClientType clientType,
+        PortalTokenIssuance issuance)
+    {
         if (logger.IsEnabled(LogLevel.Information))
         {
 #pragma warning disable CA1873 // LogValueRedactor.Hash / ToString only invoked inside the IsEnabled gate above
             PortalTokenLog.TokenIssued(
                 logger,
-                LogValueRedactor.Hash(verified.PrincipalId),
-                LogValueRedactor.Hash(verified.TenantId ?? tenantContext.TenantId ?? string.Empty),
+                LogValueRedactor.Hash(principalId),
+                LogValueRedactor.Hash(tenantId ?? string.Empty),
                 clientType.ToString(),
                 issuance.ExpiresAt);
 #pragma warning restore CA1873
@@ -787,6 +852,8 @@ public static class SharingRestEndpoints
     {
         string? username;
         string? password;
+        string? portalToken;
+        string? serverUrl;
         string? clientRaw;
         string? refererInput;
         string? expirationRaw;
@@ -797,6 +864,8 @@ public static class SharingRestEndpoints
             var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
             username = ReadFirst(form["username"]);
             password = ReadFirst(form["password"]);
+            portalToken = ReadFirst(form["token"]);
+            serverUrl = ReadFirst(form["serverUrl"]);
             clientRaw = ReadFirst(form["client"]);
             refererInput = ReadFirst(form["referer"]);
             expirationRaw = ReadFirst(form["expiration"]);
@@ -806,6 +875,8 @@ public static class SharingRestEndpoints
         {
             username = ReadFirst(context.Request.Query["username"]);
             password = ReadFirst(context.Request.Query["password"]);
+            portalToken = ReadFirst(context.Request.Query["token"]);
+            serverUrl = ReadFirst(context.Request.Query["serverUrl"]);
             clientRaw = ReadFirst(context.Request.Query["client"]);
             refererInput = ReadFirst(context.Request.Query["referer"]);
             expirationRaw = ReadFirst(context.Request.Query["expiration"]);
@@ -828,6 +899,8 @@ public static class SharingRestEndpoints
         return new GenerateTokenInputs(
             username,
             password,
+            portalToken,
+            serverUrl,
             clientType,
             refererInput,
             expirationMinutes,
@@ -918,6 +991,8 @@ public static class SharingRestEndpoints
     private readonly record struct GenerateTokenInputs(
         string? Username,
         string? Password,
+        string? PortalToken,
+        string? ServerUrl,
         PortalTokenClientType ClientType,
         string? RefererInput,
         int? ExpirationMinutes,

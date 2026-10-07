@@ -82,7 +82,8 @@ internal sealed partial class GeoservicesLayerPublicationService
         int featuresProcessed,
         string connectionString,
         CancellationToken cancellationToken,
-        bool supportsAttachments = false)
+        bool supportsAttachments = false,
+        bool replacingExistingTarget = false)
     {
         if (_layerPublishingService == null)
         {
@@ -159,6 +160,51 @@ internal sealed partial class GeoservicesLayerPublicationService
                 .ConfigureAwait(false);
 
             return published;
+        }
+        catch (LayerPublishingException ex) when (
+            replacingExistingTarget &&
+            ex.ErrorKind == LayerPublishingErrorKind.Conflict &&
+            ex.LayerId is not null)
+        {
+            try
+            {
+                // Replacing a table does not create a new publication. Reuse the existing layer and
+                // rebuild its canonical feature snapshot so tile reads observe the committed table.
+                // Returning the existing summary also lets attachment copy and reconciliation continue.
+                await _layerPublishingService.RefreshMaterializedFeaturesForSourceTableAsync(
+                        connectionString,
+                        targetSchema,
+                        request.TableName,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                var existingLayers = await _layerPublishingService.ListPublishedLayersAsync(
+                        connectionString,
+                        request.ServiceName,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                var existingLayer = existingLayers.FirstOrDefault(layer => layer.LayerId == ex.LayerId.Value);
+                if (existingLayer is not null)
+                {
+                    await TryAttachLayerStyleAsync(
+                            existingLayer,
+                            layerInfo,
+                            request,
+                            warnings,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    return existingLayer;
+                }
+
+                warnings.Add("The existing published layer was refreshed, but its catalog entry could not be resolved.");
+                return null;
+            }
+            catch (Exception recoveryException) when (recoveryException is not OperationCanceledException)
+            {
+                Log.AutoPublishFailed(_logger, request.TableName, request.ServiceName!, recoveryException);
+                warnings.Add("AutoPublish was requested, but publishing did not complete.");
+                return null;
+            }
         }
         catch (LayerPublishingException)
         {
