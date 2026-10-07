@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -164,6 +165,9 @@ internal sealed class ImageServerMetadataHandler
             var tileMetadataOptions = context.RequestServices
                 .GetRequiredService<IOptions<ImageServerTileMetadataOptions>>().Value;
             var advertiseTileCache = tileMetadataOptions.Enabled;
+            var exportTilesAllowed = advertiseTileCache
+                && context.RequestServices.GetService<ICloudFileStorage>() is not null;
+            var tileLimits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles;
             var tileInfo = advertiseTileCache
                 ? ImageServerTileInfoBuilder.Build(tileMetadataOptions.MaxLevel)
                 : null;
@@ -215,8 +219,8 @@ internal sealed class ImageServerMetadataHandler
                 MaxImageWidth = MaxImageWidth,
                 MaxRecordCount = MaxRecordCount,
                 SingleFusedMapCache = advertiseTileCache,
-                ExportTilesAllowed = advertiseTileCache,
-                MaxExportTilesCount = advertiseTileCache ? 100000 : 0,
+                ExportTilesAllowed = exportTilesAllowed,
+                MaxExportTilesCount = exportTilesAllowed ? Math.Max(1, tileLimits.MaxTilesPerRequest) : 0,
                 MinLod = advertiseTileCache ? 0 : null,
                 MaxLod = advertiseTileCache ? tileMetadataOptions.MaxLevel : null,
                 CacheType = null,

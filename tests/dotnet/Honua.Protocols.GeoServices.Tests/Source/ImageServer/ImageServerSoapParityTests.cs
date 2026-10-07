@@ -575,7 +575,9 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
                 using var tile = await fixture.Client.GetAsync($"{ServicePath()}/tile/0/0/0");
                 tile.StatusCode.Should().Be(HttpStatusCode.OK);
                 using var export = await fixture.Client.GetAsync($"{ServicePath()}/exportTiles?levels=0&exportExtent=-180,-85,180,85&exportExtentSR=4326&f=json");
-                export.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+                // GeoServices JSON errors use HTTP 200 with the failure code in the envelope.
+                var exportError = await ReadJsonAsync(export);
+                exportError.GetProperty("error").GetProperty("code").GetInt32().Should().Be(503);
                 (await export.Content.ReadAsStringAsync()).Should().Contain("Cloud file storage is not configured.");
             }
         }
