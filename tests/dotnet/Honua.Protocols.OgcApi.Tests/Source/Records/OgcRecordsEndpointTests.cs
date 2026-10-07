@@ -308,8 +308,13 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
                         ? new MetadataV2SpatialReference { Srid = srid }
                         : MetadataV2SpatialReference.Wgs84,
                     Bbox = snapshot.ResolveStorageLayerId(resource) == WebAppFixture.TestLayerId
-                        ? new MetadataV2Bbox { West = 1113194.9079327357, South = 2273030.926987689,
-                            East = 3339584.723798207, North = 4865942.279503175 }
+                        ? new MetadataV2Bbox
+                        {
+                            West = 1113194.9079327357,
+                            South = 2273030.926987689,
+                            East = 3339584.723798207,
+                            North = 4865942.279503175
+                        }
                         : new MetadataV2Bbox { West = -1, South = -2, East = 1, North = 2 }
                 }
             }).ToArray()
