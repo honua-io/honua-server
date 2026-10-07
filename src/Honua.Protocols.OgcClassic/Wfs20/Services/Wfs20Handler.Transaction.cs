@@ -705,6 +705,7 @@ internal sealed partial class Wfs20Handler
             targetIds[0],
             featureElement,
             cancellationToken).ConfigureAwait(false);
+        replacement = replacement with { ReadStateToken = FeatureStateToken.FromReadSnapshot(existing.Value) };
         // Replace constructs a fresh feature from the request payload (or null when
         // the body omits geometry), and the operation overwrites the existing row.
         // Mark the change when either side has geometry so a body-less Replace that
@@ -1804,7 +1805,7 @@ internal sealed partial class Wfs20Handler
             // post-merge feature WKB (which BuildTransactionUpdatedFeatureAsync preserves
             // when the request omits geometry).
             var operations = prepared.Operations
-                .Select(static operation => operation.EditOperation)
+                .Select(static operation => operation.AdapterOperation)
                 .ToImmutableArray();
             var requestGeometryChangedFlags = prepared.Operations
                 .Select(static operation => operation.RequestGeometryChanged)
@@ -1877,7 +1878,7 @@ internal sealed partial class Wfs20Handler
                     layerGroup.Key,
                     resource,
                     operations
-                        .Select(static operation => operation.EditOperation)
+                        .Select(static operation => operation.AdapterOperation)
                         .ToImmutableArray(),
                     operations
                         .Select(static operation => operation.RequestGeometryChanged)
@@ -2030,7 +2031,7 @@ internal sealed partial class Wfs20Handler
         HttpContext context,
         int layerId,
         MetadataV2Resource resource,
-        ImmutableArray<FeatureEditOperation> operations,
+        ImmutableArray<Wfs20EditOperation> operations,
         ImmutableArray<bool> requestGeometryChangedFlags,
         bool rollbackOnFailure,
         CancellationToken cancellationToken,
@@ -2061,7 +2062,9 @@ internal sealed partial class Wfs20Handler
         // existing row). Reading editBatch.Operations[i].Feature.Geometry would over-
         // report attribute-only Updates because BuildTransactionUpdatedFeatureAsync
         // preserves the existing WKB when changes.GeometrySpecified is false.
-        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(operations, requestGeometryChangedFlags);
+        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(
+            operations.Select(static operation => operation.Operation).ToImmutableArray(),
+            requestGeometryChangedFlags);
         var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
             context,
             layerId,
@@ -2489,6 +2492,10 @@ internal sealed partial class Wfs20Handler
         Feature? MutationFeature,
         Feature? DeleteSnapshot)
     {
+        public Wfs20EditOperation AdapterOperation => new(
+            EditOperation,
+            ActionKind == TransactionActionKind.Replace ? EditUpdateMode.Replace : EditUpdateMode.Merge);
+
         /// <summary>
         /// True when the originating request body explicitly specified a geometry. For
         /// Insert/Replace this is always true (the request must carry the feature payload);
