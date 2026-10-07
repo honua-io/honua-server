@@ -24,7 +24,7 @@ New regressions cover equal numeric handles on two source connections plus manag
 storage, isolated disable/re-enable and linking, tenant checks, and the actual extent
 synchronization save. The route regression covers UUID and named connection paths.
 Validation checkpoint: the SQL graph and publication namespace suites passed
-92/92 tests with no skips. Core, PostgreSQL, Server, and TestKit builds completed
-with zero warnings and errors. Scoped formatting checks passed for the changed
-Core, PostgreSQL, Geoprocessing, Server, and PostgreSQL test files. The server
-route and database integration regressions remain in validation.
+92/92 tests with no skips. Core, PostgreSQL, Server, TestKit, and both changed test projects built
+with zero warnings and errors. All six project-scoped formatting checks passed
+for the changed files under `timeout 20m`. The server route and database
+integration regressions are running.
