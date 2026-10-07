@@ -62,7 +62,7 @@
       "entryCount": 7,
       "provingTestCount": 12,
       "maturity": {
-        "preview": 7
+        "internal": 7
       },
       "noSurface": null,
       "cite": [],
@@ -712,7 +712,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 43,
+      "provingTestCount": 44,
       "maturity": {
         "implemented": 2
       },

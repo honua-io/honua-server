@@ -599,7 +599,7 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "preview",
+      "maturity": "internal",
       "capability": "admin.multi-tenancy"
     },
     {
@@ -4276,7 +4276,7 @@
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "preview",
+      "maturity": "internal",
       "capability": "admin.multi-tenancy"
     },
     {
@@ -4290,7 +4290,7 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantUsage_ReturnsBillingUsageEnvelope"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "preview",
+      "maturity": "internal",
       "capability": "admin.multi-tenancy"
     },
     {
@@ -4304,7 +4304,7 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "preview",
+      "maturity": "internal",
       "capability": "admin.multi-tenancy"
     },
     {
@@ -4597,6 +4597,7 @@
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_FileExportDirections_AdvertisesOnlyThreeImplementedWriters",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_FilePluginWriters_UsesLicensedEnabledDiscovery",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_FileReadersWithoutImportService_ReportMissingDependency",
+        "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_InternalMultiTenancyWithoutOptIn_IsUnavailable",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_LegacyProjection_MarksDisabledPreviewsUnavailable",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_LifecycleOnlyPreviews_RemainAvailableWithoutOptIn",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_MultiTenancyWithoutSchemaRouting_IsDisabledByConfiguration",
@@ -17354,7 +17355,7 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "preview",
+      "maturity": "internal",
       "capability": "admin.multi-tenancy"
     },
     {
@@ -17368,7 +17369,7 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "preview",
+      "maturity": "internal",
       "capability": "admin.multi-tenancy"
     },
     {
@@ -17382,7 +17383,7 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "preview",
+      "maturity": "internal",
       "capability": "admin.multi-tenancy"
     },
     {
