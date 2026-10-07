@@ -7,6 +7,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Validation;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -59,6 +60,83 @@ public sealed class CredentialAudit5623Tests
         (await AccessPolicyHelpers.EvaluateResourceAccessAsync(
             context, Resource("parcels"), Service("catalog"), AuthorizationOperation.Query))
             .IsAllowed.Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData("admin:read", AdminApiKeyPermission.ScopedAdminRole)]
+    [InlineData("admin:approve", AdminApiKeyPermission.ScopedAdminRole)]
+    [InlineData("admin:operation:deploy", AdminApiKeyPermission.ApprovedOperationRole)]
+    [InlineData("ops:read", LayerScopedWriteKey.ScopedKeyRole)]
+    public async Task ScopedAdministrativeKeys_DoNotGrantResourceAccess(string permission, string role)
+    {
+        await using var services = new ServiceCollection()
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>().BuildServiceProvider();
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = ScopedKey(permission, role, "admin-api-key")
+        };
+        var service = Service("private-service");
+        var resource = Resource("sensitive-layer");
+        AccessPolicyHelpers.EvaluateAccess(context, null, null).IsAllowed.Should().BeFalse();
+        AccessPolicyHelpers.RequireResourceAccess(context, resource, service).Should().NotBeNull();
+        AccessPolicyHelpers.RequireServiceAccess(context, service).Should().NotBeNull();
+        foreach (var operation in new[] { AuthorizationOperation.Query, AuthorizationOperation.Metadata, AuthorizationOperation.Export })
+        {
+            (await AccessPolicyHelpers.EvaluateResourceAccessAsync(context, resource, service, operation))
+                .IsAllowed.Should().BeFalse();
+            (await AccessPolicyHelpers.RequireServiceAccessAsync(context, service, operation)).Should().NotBeNull();
+        }
+    }
+
+    [UnitTheory]
+    [InlineData("read:catalog/roads", "catalog", "roads", AccessScope.Read, true)]
+    [InlineData("read:catalog/roads", "catalog", "parcels", AccessScope.Read, false)]
+    [InlineData("read:catalog/roads", "other", "roads", AccessScope.Read, false)]
+    [InlineData("read:catalog/roads", "catalog", "roads", AccessScope.Write, false)]
+    [InlineData("read:catalog", "catalog", "roads", AccessScope.Read, true)]
+    [InlineData("write:catalog/roads", "catalog", "roads", AccessScope.Write, true)]
+    public async Task ScopedGrants_AgreeAcrossResourceAccessPaths(
+        string permission, string serviceName, string layerName, AccessScope scope, bool allowed)
+    {
+        await using var services = new ServiceCollection()
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>().BuildServiceProvider();
+        var writeKey = permission.StartsWith("write:", StringComparison.Ordinal);
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = ScopedKey(permission, writeKey ? LayerScopedWriteKey.Role : LayerScopedWriteKey.ScopedKeyRole,
+                writeKey ? LayerScopedWriteKey.AuthType : "admin-api-key")
+        };
+        var service = Service(serviceName);
+        var resource = Resource(layerName);
+        AccessPolicyHelpers.EvaluateResourceAccess(context, resource, service, scope).IsAllowed.Should().Be(allowed);
+        (AccessPolicyHelpers.RequireResourceAccess(context, resource, service, scope) is null).Should().Be(allowed);
+        (await AccessPolicyHelpers.RequireResourceAccessAsync(context, resource, service, scope) is null).Should().Be(allowed);
+    }
+
+    [UnitTheory]
+    [InlineData("read:catalog", "catalog", true)]
+    [InlineData("read:catalog", "other", false)]
+    [InlineData("read:catalog/roads", "catalog", false)]
+    public async Task ScopedReadGrants_ServiceAccessRequiresServiceWideGrant(string permission, string serviceName, bool allowed)
+    {
+        await using var services = new ServiceCollection()
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>().BuildServiceProvider();
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = ScopedKey(permission, LayerScopedWriteKey.ScopedKeyRole, "admin-api-key")
+        };
+        var service = Service(serviceName);
+        (AccessPolicyHelpers.RequireServiceAccess(context, service) is null).Should().Be(allowed);
+        foreach (var operation in new[] { AuthorizationOperation.Query, AuthorizationOperation.Read, AuthorizationOperation.Metadata, AuthorizationOperation.Export })
+        {
+            (await AccessPolicyHelpers.RequireServiceAccessAsync(context, service, operation) is null).Should().Be(allowed);
+            (await AccessPolicyHelpers.RequireResourceAccessAsync(context, Resource("roads"), service, operation) is null)
+                .Should().Be(serviceName == "catalog");
+        }
+        (await AccessPolicyHelpers.RequireServiceAccessAsync(context, service, AuthorizationOperation.Update)).Should().NotBeNull();
     }
 
     private static ClaimsPrincipal ScopedKey(string permission, string role, string authType) => new(
