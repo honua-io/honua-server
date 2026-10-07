@@ -286,6 +286,74 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
         AssertGeometryMatchesBbox(item.RootElement);
     }
 
+    [IntegrationTheory]
+    [InlineData(3857)]
+    [InlineData(0)]
+    [InlineData(null)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /ogc/records/collections/{collectionId}/items")]
+    [Endpoint("GET /ogc/records/collections/{collectionId}/items/{recordId}")]
+    public async Task GetRecords_WithMixedCrs_TransformsExtentsBeforeCombining(int? srid)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var provider = _fixture.GetService<TestMetadataV2GraphProvider>()!;
+        var graph = snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Resources = snapshot.Graph.Resources.Select(resource => resource with
+            {
+                Spatial = (resource.Spatial ?? new MetadataV2ResourceSpatial()) with
+                {
+                    SpatialReference = snapshot.ResolveStorageLayerId(resource) == WebAppFixture.TestLayerId
+                        ? new MetadataV2SpatialReference { Srid = srid }
+                        : MetadataV2SpatialReference.Wgs84,
+                    Bbox = snapshot.ResolveStorageLayerId(resource) == WebAppFixture.TestLayerId
+                        ? new MetadataV2Bbox { West = 1113194.9079327357, South = 2273030.926987689,
+                            East = 3339584.723798207, North = 4865942.279503175 }
+                        : new MetadataV2Bbox { West = -1, South = -2, East = 1, North = 2 }
+                }
+            }).ToArray()
+        };
+        try
+        {
+            provider.SetGraph(graph, schema: _fixture.CurrentSchema);
+            foreach (var id in new[] { $"layer:{WebAppFixture.TestLayerId}", "service:test" })
+            {
+                var response = await _fixture.Client.GetAsync(
+                    $"/ogc/records/collections/{CatalogId}/items/{Uri.EscapeDataString(id)}");
+                await AssertOkAsync(response);
+                using var json = await ReadJsonAsync(response);
+                if (srid != 3857 && id.StartsWith("layer:", StringComparison.Ordinal))
+                {
+                    json.RootElement.GetProperty("geometry").ValueKind.Should().Be(JsonValueKind.Null);
+                    json.RootElement.TryGetProperty("bbox", out _).Should().BeFalse();
+                    continue;
+                }
+                AssertGeometryMatchesBbox(json.RootElement);
+                var expected = id.StartsWith("layer:", StringComparison.Ordinal) ? new[] { 10d, 20, 30, 40 }
+                    : srid == 3857 ? new[] { -1d, -2, 30, 40 } : new[] { -1d, -2, 1, 2 };
+                var actual = json.RootElement.GetProperty("bbox").EnumerateArray().Select(v => v.GetDouble()).ToArray();
+                for (var i = 0; i < expected.Length; i++)
+                {
+                    actual[i].Should().BeApproximately(expected[i], 0.000001);
+                }
+            }
+            var filtered = await GetRecordIdsAsync("bbox=15,25,16,26");
+            if (srid == 3857)
+            {
+                filtered.Should().Contain(["service:test", $"layer:{WebAppFixture.TestLayerId}"]);
+            }
+            else
+            {
+                filtered.Should().BeEmpty();
+            }
+        }
+        finally
+        {
+            provider.SetGraph(snapshot.Graph, schema: _fixture.CurrentSchema);
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.Pagination)]
     [Endpoint("GET /ogc/records/collections/{collectionId}/items")]
