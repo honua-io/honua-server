@@ -66,6 +66,38 @@ public sealed class StacItemIdentifierAuditTests
         Assert.Equal("stac_id", Assert.IsType<PropertyReference>(rewritten.Left).PropertyName);
     }
 
+    [Theory]
+    [InlineData("42", true)]
+    [InlineData("not-a-number", false)]
+    public async Task BoundLookup_UnannotatedSchema_UsesObjectIdsWithoutInventingAField(string itemId, bool matches)
+    {
+        var resource = CreateResource() with
+        {
+            SchemaFields = [new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.BigInteger }]
+        };
+        var feature = Feature.Create(42, null, ImmutableDictionary<string, object?>.Empty.Add("id", 0));
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, [feature]));
+
+        var result = await StacBoundItemQueryExecutor.QueryAsync(
+            reader, 7, resource, new FeatureQuery { Where = "name = 'keep'" }, [itemId], null, CancellationToken.None);
+
+        Assert.Empty(StacItemIdWhereBuilder.GetCandidateFields(resource));
+        if (matches)
+        {
+            Assert.Equal(feature, Assert.Single(result));
+            await reader.Received(1).QueryAsync(7, Arg.Is<FeatureQuery>(query =>
+                query.Where == "name = 'keep'" && query.ObjectIds.HasValue &&
+                query.ObjectIds.Value.SequenceEqual(new long[] { 42 })), Arg.Any<CancellationToken>());
+        }
+        else
+        {
+            Assert.Empty(result);
+            await reader.DidNotReceiveWithAnyArgs().QueryAsync(default, default!, default);
+        }
+    }
+
     private static MetadataV2Resource CreateResource() => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "res-items", Name = "items" },
