@@ -340,11 +340,12 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                 RecordJobMetrics(status, state.Format, state.FileSize, featureCount, failedFeatures, stopwatch.Elapsed);
             }
 
-            // Stop publishing the source before disposing it so every observer either sees a
-            // live source or no source, including when stream cleanup below fails.
+            // Unpublish first, then release the source with a using scoped to this block,
+            // before stream cleanup. A Dispose call after that cleanup is skipped when cleanup
+            // throws, and a disposed source must not stay visible to observers.
             if (_cancellationTokens.TryRemove(jobId, out var cts))
             {
-                cts.Dispose();
+                using var _ = cts;
             }
 
             if (stream != null)
