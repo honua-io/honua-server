@@ -73,3 +73,18 @@ stack is host shutdown, not a publishing assertion. The licensing service is
 unchanged by this PR and has the same blob on this head and `origin/trunk`:
 `7feffc7e38da7aee1defdf9f7fa3b21004b3dbaf`. No licensing or fixture code was
 patched to work around this teardown failure.
+The full publishing/exception-mapping class run finished 79/81 with no skips;
+the second failure was the same teardown exception in
+`ValidateTableForPublish_WithTextPrimaryKey_ReturnsStructuredError`. Both cases
+passed an isolated Release rerun (2/2, no skips).
+
+`scripts/ci/pre-pr-check.sh --fast` selected a 45-project build closure and
+passed Core 5188/5188, security 12/12, LoadTests 23/23, PostgreSQL 1863/1863,
+and AI governance 68/68. Architecture finished 358/359: only the generated
+feature-catalog drift guard failed, reflecting added proving-test names. The
+original PR Gate log explicitly runs `regenerate-generated-files.sh` before
+architecture tests and treats generated drift as advisory; the local pre-PR
+script omits that preparation. Its canonical generation step passed locally.
+Generated projections remain the post-merge workflow's responsibility per
+`scripts/ci/report-generated-file-drift.sh`. Local architecture review found
+no blocking issues.
