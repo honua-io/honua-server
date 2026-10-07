@@ -17,12 +17,14 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Server.Tests.Features.Infrastructure.Monitoring;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -178,6 +180,79 @@ public sealed class DeployControlPlatformAuthorityTests
 
     public static TheoryData<string, string> CoordinatedReleaseDeniedCases =>
         Cross(CoordinatedReleaseHandlers, [TenantAdmin, ApprovedTenantCredential]);
+
+    public static TheoryData<string, string> CanonicalRollbackDeniedCases => Cross(
+        [WorkflowRollbackOperations.Deploy, WorkflowRollbackOperations.CoordinatedRelease],
+        [TenantAdmin, ApprovedTenantCredential]);
+
+    // /api/v1/operations/{id}/submit, MCP and approval replay reach the rollback executors
+    // without the REST wrappers' platform check, so the executor must enforce it (#5625).
+    [Theory]
+    [MemberData(nameof(CanonicalRollbackDeniedCases))]
+    public async Task CanonicalRollbackExecutor_TenantBoundAdmin_IsDeniedBeforeWorkflowAccess(
+        string operationId, string scenario)
+    {
+        var store = Substitute.For<IWorkflowOperationStore>();
+        var executor = RollbackExecutor(operationId, scenario, store);
+
+        var handle = await executor.SubmitAsync(RollbackRequest(operationId), RollbackContext());
+
+        handle.Status.Should().Be(OperationHandleStatus.Denied);
+        handle.Reason.Should().Be(PlatformDeployAuthority.DenialMessage);
+        handle.Result!.Details["errorKind"].Should().Be(PlatformDeployAuthority.DenialCode);
+        store.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(PlatformAdmin)]
+    [InlineData(SingleTenant)]
+    [InlineData(UnboundAdmin)]
+    public async Task CanonicalRollbackExecutor_PlatformAdminUnboundAdminOrSingleTenant_ReachesDeployWorkflow(
+        string scenario)
+    {
+        var store = Substitute.For<IWorkflowOperationStore>();
+        var executor = RollbackExecutor(WorkflowRollbackOperations.Deploy, scenario, store);
+
+        var handle = await executor.SubmitAsync(
+            RollbackRequest(WorkflowRollbackOperations.Deploy), RollbackContext());
+
+        handle.Status.Should().NotBe(OperationHandleStatus.Denied);
+        store.ReceivedCalls().Should().NotBeEmpty("an authorized caller must reach the deploy workflow");
+    }
+
+    private static Honua.Core.Features.Operations.Abstractions.IOperationExecutor RollbackExecutor(
+        string operationId, string scenario, IWorkflowOperationStore store)
+    {
+        var services = new ServiceCollection()
+            .AddSingleton<IHttpContextAccessor>(new HttpContextAccessor
+            {
+                HttpContext = new DefaultHttpContext { User = Principal(scenario) },
+            })
+            .AddSingleton(Options.Create(TenantOptions(scenario)))
+            .AddSingleton(DeployService(Substitute.For<IDeployTargetRegistry>(), store))
+            .BuildServiceProvider();
+        return operationId == WorkflowRollbackOperations.Deploy
+            ? new DeployRollbackOperationExecutor(services, TimeProvider.System)
+            : new CoordinatedReleaseRollbackOperationExecutor(services, TimeProvider.System);
+    }
+
+    private static OperationRequest RollbackRequest(string operationId) => new()
+    {
+        OperationId = operationId,
+        Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [WorkflowRollbackOperations.TargetOperationId] = "release-1",
+            [WorkflowRollbackOperations.ApprovedDataAffecting] = "false",
+            [WorkflowRollbackOperations.ApprovedRequiresApproval] = "false",
+        },
+    };
+
+    private static OperationPolicyContext RollbackContext() => new()
+    {
+        OperationInstanceId = "instance-1",
+        CorrelationId = "correlation-1",
+        PrincipalId = "ops-agent",
+    };
 
     [Theory]
     [MemberData(nameof(AllowedRestCases))]

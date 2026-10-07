@@ -7,7 +7,7 @@ without speculative changes so that later fix units can begin with a failing tes
 
 | Finding id | Outcome | Evidence |
 |---|---|---|
-| `SRV-INF-004` | fixed | `SRV_INF_004_CoordinatedRelease_TenantBoundAdmin_IsDeniedBeforeControlPlaneAccess` covers create, get/reconcile, approve, and rollback. Each handler now invokes `PlatformDeployAuthority.Deny` before reading or mutating control-plane state. |
+| `SRV-INF-004` | fixed | `SRV_INF_004_CoordinatedRelease_TenantBoundAdmin_IsDeniedBeforeControlPlaneAccess` covers create, get/reconcile, approve, and rollback. Each handler now invokes `PlatformDeployAuthority.Deny` before reading or mutating control-plane state. The published `control-plane.deploy.rollback` and `control-plane.coordinated-release.rollback` operations enforce the same rule in the shared `WorkflowRollbackOperationExecutor`, so `/api/v1/operations/{id}/submit`, MCP and approval replay cannot bypass it (`CanonicalRollbackExecutor_TenantBoundAdmin_IsDeniedBeforeWorkflowAccess`). |
 | `SRV-INF-015` | fixed | `SRV_INF_015_AdminApiLoopback_PreservesPublicHostHeader` proves that the internal request preserves the authenticated request's public `Host` header. This changes the loopback request metadata but not the public wire format. |
 | `SRV-AUTH-013` | not attempted | Re-verified in `NetworkTopologyRebuildSubmissionService.SubmitAsync`: `CreateAttemptAsync` still precedes `jobStore.TryCreateAsync`, and this fix unit prioritized the platform-admin boundary. |
 | `SRV-GP-002` | not attempted | Re-verified in `GeoprocessingJobDispatcher.EnsureAdmittedAsync`: `PrincipalId` is still populated from `principal.Identity?.Name`. |
