@@ -131,7 +131,7 @@ internal sealed partial class PortalTokenIssuer(
         // Derive from the stored record, not from a reduced view of it: the persisted roles,
         // their claims-mapping provenance and fallback, the tenant's provenance and the backing
         // credential all carry over, so the new token is revalidated on every restore exactly as
-        // the presented one is and stops when it would stop (#5491 review).
+        // the presented one is for backing-credential and entitlement changes (#5491 review).
         var expiresAt = request.ExpiresAt < presented.ExpiresAt ? request.ExpiresAt : presented.ExpiresAt;
         var token = CreateTokenValue();
         var record = new PortalTokenRecord

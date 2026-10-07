@@ -53,7 +53,7 @@ public interface IPortalTokenIssuer
     /// backed by the credential it was minted from. The new token is a derivation of the
     /// presented one, not a fresh issuance: it carries the same principal, tenant, roles,
     /// claims-mapping provenance and backing-credential source, and never outlives the
-    /// presented token, so anything that would stop the presented token stops it too.
+    /// presented token. The same backing-credential and claims-mapping checks continue to apply.
     /// </remarks>
     /// <param name="request">The presented token, the request's binding and the new binding.</param>
     /// <param name="cancellationToken">Token used to abort the exchange.</param>
