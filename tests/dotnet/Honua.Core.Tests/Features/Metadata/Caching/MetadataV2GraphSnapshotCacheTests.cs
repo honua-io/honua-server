@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Metadata.Caching;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Tests.Features.Metadata.Caching;
@@ -157,6 +158,45 @@ public sealed class MetadataV2GraphSnapshotCacheTests
     }
 
     [Fact]
+    public async Task SRV_INF_013_SharedLoad_RunsInOwnScope_SurvivingInitiatingRequestScope()
+    {
+        var gate = new LoadGate();
+        var services = new ServiceCollection();
+        services.AddSingleton(gate);
+        services.AddScoped<ScopedLoader>();
+        await using var root = services.BuildServiceProvider();
+        var cache = NewCache(ttlSeconds: 60, out _);
+        using var leadingCancellation = new CancellationTokenSource();
+
+        var requestScope = root.CreateAsyncScope();
+        var requestLoader = requestScope.ServiceProvider.GetRequiredService<ScopedLoader>();
+        var leadingProvider = new CachingMetadataV2GraphProvider(
+            requestLoader,
+            cache,
+            Environment,
+            root.GetRequiredService<IServiceScopeFactory>(),
+            static scope => scope.GetRequiredService<ScopedLoader>());
+
+        var leading = leadingProvider.GetCurrentAsync(leadingCancellation.Token).AsTask();
+        await gate.Started.Task;
+        var waiting = cache.GetOrLoadAsync(Environment, _ => throw new InvalidOperationException("must coalesce"));
+
+        // The initiating request gives up and its scope is torn down while the load is in flight.
+        leadingCancellation.Cancel();
+        Func<Task> awaitLeading = async () => await leading;
+        await awaitLeading.Should().ThrowAsync<OperationCanceledException>();
+        await requestScope.DisposeAsync();
+        requestLoader.Disposed.Should().BeTrue();
+
+        gate.Release.TrySetResult();
+
+        (await waiting).Revision.Should().Be(1, "the surviving load must not depend on the disposed request scope");
+        requestLoader.Calls.Should().Be(0, "the shared load must not run on the initiating request's scoped services");
+        gate.LoaderDisposedDuringLoad.Should().BeFalse();
+        gate.LoaderDisposedAfterLoad.Task.IsCompleted.Should().BeTrue("the load-owned scope is disposed once the load finishes");
+    }
+
+    [Fact]
     public async Task GetCurrentAsync_WhenLoadThrows_DoesNotCacheFailure()
     {
         var provider = new CountingProvider(SnapshotWithRevision(1)) { ThrowOnce = true };
@@ -226,6 +266,60 @@ public sealed class MetadataV2GraphSnapshotCacheTests
 
         public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
             => new((MetadataV2GraphSnapshot?)null);
+    }
+
+    private sealed class LoadGate
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource LoaderDisposedAfterLoad { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool LoaderDisposedDuringLoad { get; set; }
+    }
+
+    private sealed class ScopedLoader(LoadGate gate)
+        : Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider, IDisposable
+    {
+        private int _calls;
+        private bool _loading;
+
+        public int Calls => Volatile.Read(ref _calls);
+
+        public bool Disposed { get; private set; }
+
+        public async ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _calls);
+            _loading = true;
+            gate.Started.TrySetResult();
+            await gate.Release.Task.ConfigureAwait(false);
+            if (Disposed)
+            {
+                gate.LoaderDisposedDuringLoad = true;
+                throw new ObjectDisposedException(nameof(ScopedLoader));
+            }
+
+            _loading = false;
+            return SnapshotWithRevision(1);
+        }
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
+            => new((MetadataV2GraphSnapshot?)null);
+
+        public void Dispose()
+        {
+            Disposed = true;
+            if (_loading)
+            {
+                gate.LoaderDisposedDuringLoad = true;
+            }
+            else if (Calls > 0)
+            {
+                gate.LoaderDisposedAfterLoad.TrySetResult();
+            }
+        }
     }
 
     /// <summary>Manually advanced monotonic clock for deterministic TTL tests.</summary>

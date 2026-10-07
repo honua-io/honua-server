@@ -12,6 +12,9 @@ public sealed class TerrainCacheHeaderTests
     [Theory]
     [InlineData("Authorization", "Bearer opaque")]
     [InlineData("X-API-Key", "opaque")]
+    [InlineData("X-Esri-Authorization", "Bearer opaque")]
+    [InlineData("X-Honua-Embed-Key", "opaque")]
+    [InlineData("X-Honua-Token", "opaque")]
     public void SRV_INF_011_CredentialedRequest_IsPrivateAndVariesByCredentials(string name, string value)
     {
         var context = new DefaultHttpContext();
@@ -20,6 +23,18 @@ public sealed class TerrainCacheHeaderTests
         TerrainEndpoints.SetCacheHeader(context, 300);
 
         context.Response.Headers.CacheControl.ToString().Should().Be("private, max-age=300");
-        context.Response.Headers.Vary.ToString().Should().Be("Authorization, X-API-Key");
+        context.Response.Headers.Vary.ToString().Should().Be(
+            "Authorization, X-API-Key, X-Esri-Authorization, X-Honua-Embed-Key, X-Honua-Token, Cookie");
+    }
+
+    [Fact]
+    public void SRV_INF_011_AnonymousRequest_IsPublicWithoutCredentialVary()
+    {
+        var context = new DefaultHttpContext();
+
+        TerrainEndpoints.SetCacheHeader(context, 300);
+
+        context.Response.Headers.CacheControl.ToString().Should().Be("public, max-age=300");
+        context.Response.Headers.Vary.ToString().Should().BeEmpty();
     }
 }

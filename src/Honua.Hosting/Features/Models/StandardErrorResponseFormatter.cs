@@ -660,14 +660,39 @@ internal static class StandardErrorResponseFormatter
             return "unknown";
         }
 
+        // Closed set: the last segment is caller-controlled (service and layer names), so only
+        // known operation terminals become labels; everything else collapses to "unknown".
         var last = segments[^1];
-        return last.ToLowerInvariant() switch
-        {
-            "query" or "addfeatures" or "updatefeatures" or "deletefeatures" or "applyedits"
-                or "calculate" or "queryrelatedrecords" or "queryattachments" or "export"
-                or "exportimage" or "identify" or "find" or "generate" or "solve"
-                or "submitjob" or "execute" or "cancel" => last.ToLowerInvariant(),
-            _ => "unknown"
-        };
+        return GeoServicesOperations.Contains(last) ? last.ToLowerInvariant() : "unknown";
     }
+
+    /// <summary>
+    /// Fixed GeoServices REST operation terminals across Feature/Map/Image/GP/NA/Geocode/
+    /// VectorTile servers that are safe to emit as the bounded <c>operation</c> metric label.
+    /// </summary>
+    private static readonly HashSet<string> GeoServicesOperations = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // FeatureServer / layer
+        "query", "queryTopFeatures", "queryDateBins", "queryBins", "queryRelatedRecords",
+        "queryAttachments", "queryDomains", "queryContingentValues", "queryAnalytic",
+        "addFeatures", "updateFeatures", "deleteFeatures", "applyEdits", "calculate", "append",
+        "validateSQL", "generateRenderer", "addAttachment", "updateAttachment", "deleteAttachments",
+        "createReplica", "synchronizeReplica", "unRegisterReplica", "extractChanges",
+        "uploadAssets", "queryAssets", "cleanupAssets", "hasAssets",
+
+        // MapServer
+        "export", "identify", "find", "legend", "queryLegends", "generateKml", "exportTiles",
+        "estimateExportTilesSize", "htmlPopup", "dynamicLayer", "allLayersAndTables", "tilemap",
+
+        // ImageServer
+        "exportImage", "getSamples", "measure", "computeHistograms", "computeStatisticsHistograms",
+        "computeClassStatistics", "computePixelLocation", "computeTiePoints", "calculateVolume",
+        "queryBoundary", "rasterAttributeTable", "keyProperties", "rasterFunctionInfos",
+        "multidimensionalInfo", "imageSupportData", "histograms", "statistics", "download",
+
+        // GPServer / NAServer / GeocodeServer / generic
+        "submitJob", "execute", "cancel", "solve", "solveClosestFacility", "solveServiceArea",
+        "findAddressCandidates", "geocodeAddresses", "reverseGeocode", "suggest",
+        "generate", "generateToken",
+    };
 }
