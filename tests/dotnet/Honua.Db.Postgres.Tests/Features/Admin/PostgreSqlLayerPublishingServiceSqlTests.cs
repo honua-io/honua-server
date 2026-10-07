@@ -85,6 +85,137 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             .Should().BeEquivalentTo(managed ? [] : new[] { connectionId.ToString("D") });
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void QualifiedLayerMutation_ChangesOnlyTheOwningBindingAndItsPublications(bool managed)
+    {
+        var (graph, scope, targetResourceId) = CreateCollidingStorageGraph(managed);
+        var updated = PostgreSqlLayerPublishingService.BuildLayerEnabledMetadataV2Graph(
+            graph, [1], false, DateTimeOffset.UtcNow, scope);
+
+        updated.StorageBindings.Single(binding => binding.ResourceId == targetResourceId).Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Retired);
+        updated.Resources.Single(resource => resource.Metadata.Id == targetResourceId).Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Retired);
+        updated.Publications.Where(publication => publication.ResourceId == targetResourceId)
+            .Should().AllSatisfy(publication => publication.Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Retired));
+        updated.StorageBindings.Where(binding => binding.ResourceId != targetResourceId)
+            .Should().BeEquivalentTo(graph.StorageBindings.Where(binding => binding.ResourceId != targetResourceId));
+        updated.Resources.Where(resource => resource.Metadata.Id != targetResourceId)
+            .Should().BeEquivalentTo(graph.Resources.Where(resource => resource.Metadata.Id != targetResourceId));
+        updated.Publications.Where(publication => publication.ResourceId != targetResourceId)
+            .Should().BeEquivalentTo(graph.Publications.Where(publication => publication.ResourceId != targetResourceId));
+
+        var reenabled = PostgreSqlLayerPublishingService.BuildLayerEnabledMetadataV2Graph(
+            updated, [1], true, DateTimeOffset.UtcNow, scope);
+        reenabled.Resources.Single(resource => resource.Metadata.Id == targetResourceId).Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Active);
+        reenabled.Resources.Where(resource => resource.Metadata.Id != targetResourceId)
+            .Should().BeEquivalentTo(graph.Resources.Where(resource => resource.Metadata.Id != targetResourceId));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void QualifiedTenantAndLinkSelection_IgnoresForeignConnectionWithEqualLayerNumber(bool managed)
+    {
+        var (graph, scope, targetResourceId) = CreateCollidingStorageGraph(managed);
+        var access = () => PostgreSqlLayerPublishingService.ValidateTenantAccess(graph, null, new HashSet<int> { 1 }, null, scope);
+        access.Should().NotThrow();
+        var foreignAccess = () => PostgreSqlLayerPublishingService.ValidateTenantAccess(graph, null, new HashSet<int> { 1 }, null,
+            new PostgreSqlLayerPublishingService.LayerStorageScope(Guid.Parse("22222222-2222-2222-2222-222222222222")));
+        foreignAccess.Should().Throw<LayerPublishingException>().Which.ErrorKind.Should().Be(LayerPublishingErrorKind.NotFound);
+
+        var linked = PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
+            graph, "linked", 1, "Layer", 4326, DateTimeOffset.UtcNow, false, scope);
+        var publication = linked.Publications.Should().ContainSingle(item =>
+            item.ServiceId == "svc-publish-linked").Which;
+        publication.ResourceId.Should().Be(targetResourceId);
+        publication.StorageBindingId.Should().Be(graph.Resources.Single(resource => resource.Metadata.Id == targetResourceId).PrimaryStorageBindingId);
+        publication.Identifier.Value.Should().Be("1");
+        publication.LayerIndex.Should().Be(1);
+        linked.Resources.Where(resource => resource.Metadata.Id != targetResourceId)
+            .Should().BeEquivalentTo(graph.Resources.Where(resource => resource.Metadata.Id != targetResourceId));
+        linked.Publications.Where(item => item.ResourceId != targetResourceId)
+            .Should().BeEquivalentTo(graph.Publications.Where(item => item.ResourceId != targetResourceId));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task QualifiedExtentRefresh_UsesStorageHandleAndPersistsOnlyOwningResource(bool managed)
+    {
+        var (graph, scope, targetResourceId) = CreateCollidingStorageGraph(managed);
+        var graphStore = new Mock<IMetadataV2GraphStore>();
+        graphStore.Setup(store => store.GetCurrentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MetadataV2GraphSnapshot(graph, "\"base\"", DateTimeOffset.UtcNow));
+        MetadataV2Graph? saved = null;
+        graphStore.Setup(store => store.SaveAsync(It.IsAny<MetadataV2Graph>(), "\"base\"", It.IsAny<CancellationToken>()))
+            .Returns((MetadataV2Graph updated, string? _, CancellationToken _) =>
+            {
+                saved = updated;
+                return Task.FromResult(new MetadataV2GraphSnapshot(updated, "\"saved\"", DateTimeOffset.UtcNow));
+            });
+        var service = new PostgreSqlLayerPublishingService(Mock.Of<ITableDiscoveryService>(), graphStore.Object,
+            NullLogger<PostgreSqlLayerPublishingService>.Instance);
+        var type = typeof(PostgreSqlLayerPublishingService);
+        var extentType = type.GetNestedType("LayerExtentInsert", BindingFlags.NonPublic)!;
+        var extent = Activator.CreateInstance(extentType, [10d, 20d, 30d, 40d, 4326]);
+        var extents = (System.Collections.IDictionary)Activator.CreateInstance(typeof(Dictionary<,>).MakeGenericType(typeof(int), extentType))!;
+        extents.Add(1, extent);
+        var method = type.GetMethod("SyncRefreshedExtentsIntoV2GraphAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        await (Task)method.Invoke(service, [extents, scope, CancellationToken.None])!;
+
+        saved.Should().NotBeNull();
+        saved!.Resources.Single(resource => resource.Metadata.Id == targetResourceId).Spatial!.Bbox
+            .Should().BeEquivalentTo(new MetadataV2Bbox { West = 10, South = 20, East = 30, North = 40 });
+        saved.Resources.Where(resource => resource.Metadata.Id != targetResourceId)
+            .Should().BeEquivalentTo(graph.Resources.Where(resource => resource.Metadata.Id != targetResourceId));
+        saved.Publications.Should().BeEquivalentTo(graph.Publications);
+        saved.StorageBindings.Should().BeEquivalentTo(graph.StorageBindings);
+        graphStore.Verify(store => store.SaveAsync(It.IsAny<MetadataV2Graph>(), "\"base\"", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private static (MetadataV2Graph Graph, PostgreSqlLayerPublishingService.LayerStorageScope Scope, string TargetResourceId)
+        CreateCollidingStorageGraph(bool managed)
+    {
+        var firstConnection = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var secondConnection = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active, State = MetadataV2OperationalState.Ready };
+        Guid?[] owners = [firstConnection, secondConnection, null];
+        var bindings = owners.Select(owner => new MetadataV2StorageBinding
+        {
+            Metadata = new() { Id = PostgreSqlLayerPublishingService.BuildLayerGraphId("binding-layer", 1, owner) },
+            ResourceId = PostgreSqlLayerPublishingService.BuildLayerGraphId("res-layer", 1, owner),
+            ConnectionId = owner?.ToString("D"), StorageLayerId = 1, Status = active
+        }).ToArray();
+        var resources = bindings.Select(binding => new MetadataV2Resource
+        {
+            Metadata = new() { Id = binding.ResourceId, Tenant = binding.ConnectionId == secondConnection.ToString("D") ? "foreign" : null },
+            StorageBindingIds = [binding.Metadata.Id], PrimaryStorageBindingId = binding.Metadata.Id,
+            Spatial = new() { Bbox = new() { West = -1, South = -2, East = 1, North = 2 } }, Status = active
+        }).ToArray();
+        // Route indexes intentionally differ from the physical handle to exercise authored publications.
+        var publications = bindings.SelectMany((binding, index) => new[]
+        {
+            CreatePublication($"pub-{index}", $"service-{index}", binding.ResourceId, binding.Metadata.Id, 90 + index,
+                MetadataV2PublicationType.EsriFeatureLayer) with { Status = active },
+            CreatePublication($"stac-{index}", $"service-{index}", binding.ResourceId, binding.Metadata.Id, 1,
+                MetadataV2PublicationType.StacCollection) with { Status = active }
+        }).ToArray();
+        var services = bindings.Select((_, index) => new MetadataV2Service
+        {
+            Metadata = new() { Id = $"service-{index}", Name = $"service-{index}" },
+            ServiceType = MetadataV2ServiceType.EsriFeatureService, Protocols = [ServiceProtocols.FeatureServer],
+            PublicationIds = [$"pub-{index}", $"stac-{index}"], Status = active
+        }).ToArray();
+        var scope = new PostgreSqlLayerPublishingService.LayerStorageScope(firstConnection, managed ? new HashSet<int> { 1 } : null);
+        return (new MetadataV2Graph { Services = services, Resources = resources, StorageBindings = bindings, Publications = publications },
+            scope, bindings[managed ? 2 : 0].ResourceId);
+    }
+
     [Fact]
     public void Finding_SRV_DB_009_GraphIdsAreUniqueAcrossDatabaseConnections()
     {

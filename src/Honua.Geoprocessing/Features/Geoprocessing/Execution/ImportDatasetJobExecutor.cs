@@ -362,7 +362,8 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         try
         {
             await publishingService
-                .RefreshLayerExtentsAsync(connectionString, serviceName, cancellationToken)
+                .RefreshLayerExtentsAsync(connectionString, serviceName,
+                    Guid.TryParse(request.ConnectionRef, out var refreshConnectionId) ? refreshConnectionId : null, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

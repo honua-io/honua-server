@@ -200,7 +200,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private async Task<MetadataV2GraphMutation> UpsertLinkedLayerMetadataV2Async(
         string serviceName,
         PublishedLayerSummary layer,
-        CancellationToken cancellationToken)
+        LayerStorageScope storageScope, CancellationToken cancellationToken)
     {
         var (graph, expectedEtag) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
         var updatedGraph = BuildLinkedLayerMetadataV2Graph(
@@ -210,7 +210,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             layer.LayerName,
             layer.Srid,
             DateTimeOffset.UtcNow,
-            layer.Enabled);
+            layer.Enabled, storageScope);
 
         var validation = MetadataV2GraphValidator.Validate(updatedGraph);
         if (!validation.IsValid)
@@ -230,7 +230,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private async Task<MetadataV2GraphMutation?> UpdateLayerLifecycleMetadataV2Async(
         HashSet<int> layerIds,
         bool enabled,
-        CancellationToken cancellationToken)
+        LayerStorageScope storageScope, CancellationToken cancellationToken)
     {
         if (layerIds.Count == 0)
         {
@@ -238,12 +238,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         var (graph, expectedEtag) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
-        ValidateTenantAccess(graph, serviceName: null, layerIds, _tenantContext?.TenantId);
+        ValidateTenantAccess(graph, serviceName: null, layerIds, _tenantContext?.TenantId, storageScope);
         var updatedGraph = BuildLayerEnabledMetadataV2Graph(
             graph,
             layerIds,
             enabled,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow, storageScope);
         if (ReferenceEquals(updatedGraph, graph))
         {
             return null;
@@ -2680,13 +2680,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string layerName,
         int srid,
         DateTimeOffset now,
-        bool enabled = true)
+        bool enabled = true, LayerStorageScope? storageScope = null)
     {
-        ValidateLegacyLinkScope(graph, serviceName, layerId);
+        ValidateLegacyLinkScope(graph, serviceName, layerId, storageScope);
         var storageLayerBindings = graph.StorageBindings
-            .Where(candidate => candidate.StorageLayerId == layerId)
+            .Where(candidate => candidate.StorageLayerId == layerId && BindingMatchesStorageScope(candidate, storageScope))
             .ToArray();
-        var canonicalBindingId = BuildStorageBindingId(layerId);
+        var canonicalBindingId = BuildStorageBindingId(layerId,
+            storageScope?.ManagedLayerIds?.Contains(layerId) == true ? null : storageScope?.ConnectionId);
         var binding = storageLayerBindings.FirstOrDefault(candidate =>
             string.Equals(candidate.Metadata.Id, canonicalBindingId, StringComparison.Ordinal));
         if (binding is null && storageLayerBindings.Length > 1)
@@ -2768,7 +2769,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 resource,
                 binding,
                 layerIdText,
-                layerIdText,
+                BuildLayerGraphId("layer", layerId, storageScope?.ManagedLayerIds?.Contains(layerId) == true ? null : storageScope?.ConnectionId),
                 layerName,
                 MetadataV2PublicationType.EsriFeatureLayer,
                 isPrimary: true,
@@ -2815,10 +2816,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
         MetadataV2Graph graph,
         HashSet<int> layerIds,
         bool enabled,
-        DateTimeOffset now)
+        DateTimeOffset now, LayerStorageScope? storageScope = null)
     {
         var affectedBindingIds = graph.StorageBindings
-            .Where(binding => binding.StorageLayerId is { } storageLayerId && layerIds.Contains(storageLayerId))
+            .Where(binding => binding.StorageLayerId is { } storageLayerId && layerIds.Contains(storageLayerId) && BindingMatchesStorageScope(binding, storageScope))
             .Select(binding => binding.Metadata.Id)
             .ToHashSet(StringComparer.Ordinal);
         if (affectedBindingIds.Count == 0)
@@ -3019,7 +3020,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
     private async Task SyncRefreshedExtentsIntoV2GraphAsync(
         Dictionary<int, LayerExtentInsert?> refreshedExtents,
-        CancellationToken cancellationToken)
+        LayerStorageScope storageScope, CancellationToken cancellationToken)
     {
         if (refreshedExtents.Count == 0)
         {
@@ -3049,23 +3050,18 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         var graph = snapshot.Graph;
 
-        ValidateTenantAccess(graph, serviceName: null, refreshedExtents.Keys.ToHashSet(), _tenantContext?.TenantId);
+        ValidateTenantAccess(graph, serviceName: null, refreshedExtents.Keys.ToHashSet(), _tenantContext?.TenantId, storageScope);
 
-        // Map layer_id -> resource ids (a layer may be published into multiple services).
+        // Extents follow the physical storage handle, not a protocol's route index.
         var affectedResourceIds = new HashSet<string>(StringComparer.Ordinal);
         var extentByResourceId = new Dictionary<string, LayerExtentInsert?>(StringComparer.Ordinal);
-        var publicationIndex = 0;
-        while (publicationIndex < graph.Publications.Count)
+        foreach (var binding in graph.StorageBindings.Where(binding => BindingMatchesStorageScope(binding, storageScope)))
         {
-            var publication = graph.Publications[publicationIndex];
-            if (publication.LayerIndex is { } layerIndex &&
-                refreshedExtents.TryGetValue(layerIndex, out var extent) &&
-                affectedResourceIds.Add(publication.ResourceId))
+            if (binding.StorageLayerId is { } layerId && refreshedExtents.TryGetValue(layerId, out var extent))
             {
-                extentByResourceId[publication.ResourceId] = extent;
+                affectedResourceIds.Add(binding.ResourceId);
+                extentByResourceId[binding.ResourceId] = extent;
             }
-
-            publicationIndex++;
         }
         if (affectedResourceIds.Count == 0)
         {

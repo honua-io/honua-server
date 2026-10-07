@@ -22,14 +22,21 @@ namespace Honua.Db.Postgres.Features.Admin;
 internal sealed partial class PostgreSqlLayerPublishingService
 {
     /// <inheritdoc/>
+    public Task<MaterializedFeatureRefreshResult?> RefreshMaterializedFeaturesAsync(
+        string connectionString,
+        int layerId,
+        CancellationToken cancellationToken = default)
+        => RefreshMaterializedFeaturesAsync(connectionString, layerId, null, cancellationToken);
+
     public async Task<MaterializedFeatureRefreshResult?> RefreshMaterializedFeaturesAsync(
         string connectionString,
         int layerId,
+        Guid? connectionId,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
-        await ValidateTenantAccessAsync(null, new HashSet<int> { layerId }, cancellationToken).ConfigureAwait(false);
+        await ValidateTenantAccessAsync(null, new HashSet<int> { layerId }, new LayerStorageScope(connectionId), cancellationToken).ConfigureAwait(false);
 
         var metadata = await ResolveMaterializeRefreshMetadataByIdAsync(
                 connectionString,
@@ -51,15 +58,23 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 $"Layer {layerId.ToString(CultureInfo.InvariantCulture)} keeps its features in the managed feature store and has no source table to refresh from.");
         }
 
-        return await RebuildLayerSnapshotAsync(connectionString, metadata, cancellationToken)
+        return await RebuildLayerSnapshotAsync(connectionString, metadata, connectionId, cancellationToken)
             .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
+    public Task<IReadOnlyList<MaterializedFeatureRefreshResult>> RefreshMaterializedFeaturesForSourceTableAsync(
+        string connectionString,
+        string? schema,
+        string table,
+        CancellationToken cancellationToken = default)
+        => RefreshMaterializedFeaturesForSourceTableAsync(connectionString, schema, table, null, cancellationToken);
+
     public async Task<IReadOnlyList<MaterializedFeatureRefreshResult>> RefreshMaterializedFeaturesForSourceTableAsync(
         string connectionString,
         string? schema,
         string table,
+        Guid? connectionId,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
@@ -76,13 +91,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return [];
         }
 
-        await ValidateTenantAccessAsync(null, layerMetadata.Select(metadata => metadata.LayerId).ToHashSet(), cancellationToken)
+        await ValidateTenantAccessAsync(null, layerMetadata.Select(metadata => metadata.LayerId).ToHashSet(), new LayerStorageScope(connectionId), cancellationToken)
             .ConfigureAwait(false);
 
         var results = new List<MaterializedFeatureRefreshResult>(layerMetadata.Count);
         foreach (var metadata in layerMetadata)
         {
-            var result = await RebuildLayerSnapshotAsync(connectionString, metadata, cancellationToken)
+            var result = await RebuildLayerSnapshotAsync(connectionString, metadata, connectionId, cancellationToken)
                 .ConfigureAwait(false);
             if (result != null)
             {
@@ -96,9 +111,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private async Task<MaterializedFeatureRefreshResult?> RebuildLayerSnapshotAsync(
         string connectionString,
         MaterializeRefreshMetadata metadata,
-        CancellationToken cancellationToken)
+        Guid? connectionId, CancellationToken cancellationToken)
     {
-        await ValidateTenantAccessAsync(null, new HashSet<int> { metadata.LayerId }, cancellationToken).ConfigureAwait(false);
+        await ValidateTenantAccessAsync(null, new HashSet<int> { metadata.LayerId }, new LayerStorageScope(connectionId), cancellationToken).ConfigureAwait(false);
         // Re-introspect the live source table so the rebuilt snapshot picks up any source
         // schema changes and so the projected attributes match what the layer published.
         var tableInfo = await ResolveTableInfoAsync(
@@ -139,7 +154,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 cancellationToken)
             .ConfigureAwait(false);
 
-        await ValidateTenantAccessAsync(null, new HashSet<int> { metadata.LayerId }, cancellationToken).ConfigureAwait(false);
+        await ValidateTenantAccessAsync(null, new HashSet<int> { metadata.LayerId }, new LayerStorageScope(connectionId), cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
         Log.LayerSnapshotRefreshed(_logger, metadata.LayerId, materializedCount);

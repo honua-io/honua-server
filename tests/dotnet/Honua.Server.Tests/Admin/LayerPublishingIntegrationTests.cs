@@ -82,6 +82,54 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{layerId}/enabled")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/enabled")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers/extents/refresh")]
+    public async Task QualifiedLayerMutations_ThroughConnectionRoute_PreserveEffectiveStorageOwnership(bool managed)
+    {
+        await UseServerFeatureStoreConnectionAsync();
+        var layer = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema, Table = _tableName, LayerName = "Scoped mutation", ServiceName = _serviceName,
+            GeometryColumn = "geom", GeometryType = "Point", Srid = 4326, PrimaryKey = "id",
+            Fields = _idNamePopulationFields, StorageMode = managed ? "managed" : "source", Enabled = true
+        });
+        _layerId = layer.LayerId;
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
+        var expectedConnection = managed ? null : _connectionId.ToString("D");
+        var before = await store.GetCurrentAsync();
+        var binding = before.Graph.StorageBindings.Single(item =>
+            item.StorageLayerId == layer.LayerId && item.ConnectionId == expectedConnection);
+        var route = $"/api/v1/admin/connections/{_connectionId}/layers";
+
+        using var disabled = await _client.PutAsync($"{route}/{layer.LayerId}/enabled?serviceName={_serviceName}",
+            JsonContent.Create(new LayerEnabledRequest { Enabled = false }, options: _jsonOptions));
+        disabled.StatusCode.Should().Be(HttpStatusCode.OK, await disabled.Content.ReadAsStringAsync());
+        var retired = await store.GetCurrentAsync();
+        retired.Graph.StorageBindings.Single(item => item.Metadata.Id == binding.Metadata.Id).Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Retired);
+        retired.Graph.Resources.Single(item => item.Metadata.Id == binding.ResourceId).Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Retired);
+
+        using var enabled = await _client.PutAsync($"{route}/enabled?serviceName={_serviceName}",
+            JsonContent.Create(new LayerEnabledRequest { Enabled = true }, options: _jsonOptions));
+        enabled.StatusCode.Should().Be(HttpStatusCode.OK, await enabled.Content.ReadAsStringAsync());
+        using var refreshed = await _client.PostAsync($"{route}/extents/refresh?serviceName={_serviceName}", null);
+        refreshed.StatusCode.Should().Be(HttpStatusCode.OK, await refreshed.Content.ReadAsStringAsync());
+        var active = await store.GetCurrentAsync();
+        active.Graph.StorageBindings.Single(item => item.Metadata.Id == binding.Metadata.Id).ConnectionId.Should().Be(expectedConnection);
+        active.Graph.Resources.Single(item => item.Metadata.Id == binding.ResourceId).Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Active);
+        active.Graph.Resources.Single(item => item.Metadata.Id == binding.ResourceId).Spatial!.Bbox.Should().NotBeNull();
+    }
+
     [IntegrationTest]
     [Operation(Operations.Import)]
     [Operation(Operations.Create)]
