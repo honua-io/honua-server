@@ -30,6 +30,39 @@ public sealed class VersionAccessPolicyTests
         ModifiedAt = DateTimeOffset.UtcNow,
     };
 
+    // ---- Create policy --------------------------------------------------------------------
+
+    [UnitTest]
+    public void CanCreateVersion_AnonymousPrivate_IsDenied()
+    {
+        VersionAccessPolicy.CanCreateVersion(
+                VersionAccess.Private, callerName: null, isAuthenticated: false)
+            .Should().BeFalse("a private version must have a real owner");
+
+        VersionAccessPolicy.CanCreateVersion(
+                VersionAccess.Private, callerName: "admin", isAuthenticated: false)
+            .Should().BeFalse("the fallback owner does not make an anonymous caller authenticated");
+    }
+
+    [UnitTest]
+    public void CanCreateVersion_AnonymousPublicOrProtected_IsAllowed()
+    {
+        VersionAccessPolicy.CanCreateVersion(
+                VersionAccess.Public, callerName: null, isAuthenticated: false)
+            .Should().BeTrue();
+        VersionAccessPolicy.CanCreateVersion(
+                VersionAccess.Protected, callerName: null, isAuthenticated: false)
+            .Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void CanCreateVersion_AuthenticatedPrivate_IsAllowed()
+    {
+        VersionAccessPolicy.CanCreateVersion(
+                VersionAccess.Private, callerName: "alice", isAuthenticated: true)
+            .Should().BeTrue();
+    }
+
     // ---- IsVersionVisible — Public / Protected visibility ----------------------------------
 
     [UnitTest]

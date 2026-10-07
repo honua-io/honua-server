@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -36,7 +35,7 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
     private const byte PendingMarker = 0xFF;
     private const byte ReceiptMarker = 0x01;
     private const int LocalEntryOverheadBytes = 256;
-    private static readonly TimeSpan PendingPollInterval = TimeSpan.FromMilliseconds(50);
+    internal static readonly TimeSpan PendingPollInterval = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan MaxPublishInterval = TimeSpan.FromMilliseconds(250);
 
     // Reserve KEYS[1] for the caller's token, or return whatever holds it.
@@ -67,6 +66,7 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
 
     private readonly IDatabase? _redis;
     private readonly ILogger _logger;
+    private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _responseWindow;
     private readonly TimeSpan _reservationWindow;
     private readonly TimeSpan _renewInterval;
@@ -102,8 +102,10 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
         TimeSpan reservationWindow,
         TimeSpan responseWindow,
         long localResponseBudgetBytes,
-        int maxUnpublishedResults = DefaultMaxUnpublishedResults)
+        int maxUnpublishedResults = DefaultMaxUnpublishedResults,
+        TimeProvider? timeProvider = null)
     {
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _redis = multiplexer?.GetDatabase();
         _logger = logger ?? NullLogger.Instance;
         _reservationWindow = reservationWindow;
@@ -199,7 +201,7 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
             RandomNumberGenerator.Fill(token.AsSpan(1));
             while (true)
             {
-                var sentAt = Stopwatch.GetTimestamp();
+                var sentAt = _timeProvider.GetTimestamp();
                 var held = (byte[]?)await _redis.ScriptEvaluateAsync(
                     AcquireScript,
                     new RedisKey[] { redisKey },
@@ -219,7 +221,7 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
                     return new Lease(this, scope, gate, Proto.ApplyEditsResponse.Parser.ParseFrom(held, 1, held.Length - 1), reservation: null);
                 }
 
-                await Task.Delay(PendingPollInterval, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(PendingPollInterval, _timeProvider, cancellationToken).ConfigureAwait(false);
             }
         }
         catch
@@ -320,7 +322,7 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
                 return;
             }
 
-            if (_unpublished.TryAdd(scope, new UnpublishedResult(key, token, receipt, Stopwatch.GetTimestamp())))
+            if (_unpublished.TryAdd(scope, new UnpublishedResult(key, token, receipt, _timeProvider.GetTimestamp())))
             {
                 _unpublishedBytes += receipt.Length;
             }
@@ -338,10 +340,10 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
         {
             while (!_shutdown.IsCancellationRequested)
             {
-                await Task.Delay(_publishInterval, _shutdown).ConfigureAwait(false);
+                await Task.Delay(_publishInterval, _timeProvider, _shutdown).ConfigureAwait(false);
                 foreach (var (scope, pending) in _unpublished)
                 {
-                    if (Stopwatch.GetElapsedTime(pending.QueuedAt) >= _responseWindow)
+                    if (_timeProvider.GetElapsedTime(pending.QueuedAt) >= _responseWindow)
                     {
                         RemoveUnpublished(scope, pending);
                         continue;
@@ -594,15 +596,15 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
             _stop.Dispose();
         }
 
-        private static long ToTimestampTicks(TimeSpan duration)
-            => (long)(duration.TotalSeconds * Stopwatch.Frequency);
+        private long ToTimestampTicks(TimeSpan duration)
+            => (long)(duration.TotalSeconds * _store._timeProvider.TimestampFrequency);
 
         private TimeSpan RemainingOwnership()
-            => Stopwatch.GetElapsedTime(Stopwatch.GetTimestamp(), Volatile.Read(ref _ownedUntil));
+            => _store._timeProvider.GetElapsedTime(_store._timeProvider.GetTimestamp(), Volatile.Read(ref _ownedUntil));
 
         private async Task<bool> RenewAsync()
         {
-            var sentAt = Stopwatch.GetTimestamp();
+            var sentAt = _store._timeProvider.GetTimestamp();
             var renewed = (long)await _store._redis!.ScriptEvaluateAsync(
                 RenewScript,
                 new RedisKey[] { Key },
@@ -630,7 +632,7 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
 
                 try
                 {
-                    await Task.Delay(remaining < _store._renewInterval ? remaining : _store._renewInterval, _stop.Token)
+                    await Task.Delay(remaining < _store._renewInterval ? remaining : _store._renewInterval, _store._timeProvider, _stop.Token)
                         .ConfigureAwait(false);
                     if (!await RenewAsync().ConfigureAwait(false))
                     {

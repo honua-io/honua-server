@@ -743,7 +743,7 @@ public class MySqlFeatureQueryBuilderTests
     }
 
     [Fact]
-    public void BuildExtentQuery_PointLayer_UsesDirectStXY()
+    public void BuildExtentQuery_SRV_DB_018_MySql4326PointUsesLongitudeLatitude()
     {
         var pointMapping = new MySqlLayerMapping
         {
@@ -760,10 +760,34 @@ public class MySqlFeatureQueryBuilderTests
 
         var result = builder.BuildExtentQuery(99, new FeatureQuery());
 
-        Assert.Contains("MIN(ST_X(`loc`))", result.Sql, StringComparison.Ordinal);
-        Assert.Contains("MAX(ST_Y(`loc`))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MIN(ST_Longitude(`loc`))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MAX(ST_Latitude(`loc`))", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ST_X(`loc`)", result.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("ST_SRID(`loc`, 0)", result.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("ST_Envelope", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildExtentQuery_SRV_DB_018_MariaDb4326PointKeepsStoredAxisAccessors()
+    {
+        var mapping = new MySqlLayerMapping
+        {
+            LayerId = 100,
+            TableName = "stations",
+            GeometryColumn = "loc",
+            PrimaryKeyColumn = "id",
+            Srid = 4326,
+            AttributeColumns = ["name"],
+            GeometryType = GeometryType.Point
+        };
+        var builder = new MySqlFeatureQueryBuilder(
+            new MySqlLayerMappingRegistry([mapping]), MySqlEngineFlavor.MariaDb);
+
+        var result = builder.BuildExtentQuery(100, new FeatureQuery());
+
+        Assert.Contains("MIN(ST_X(`loc`))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MAX(ST_Y(`loc`))", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ST_Longitude", result.Sql, StringComparison.Ordinal);
     }
 
     [Theory]

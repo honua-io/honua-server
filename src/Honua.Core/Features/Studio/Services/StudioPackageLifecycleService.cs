@@ -472,6 +472,20 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         string? warningAcknowledgement,
         string? actorId,
         CancellationToken cancellationToken = default)
+        => await CreatePublicationRequestAsync(
+            itemId, versionId, expectedCurrentVersionId, intent, warningAcknowledgement, actorId,
+            Guid.NewGuid(), cancellationToken).ConfigureAwait(false);
+
+    /// <inheritdoc />
+    public async Task<StudioPublicationRequest?> CreatePublicationRequestAsync(
+        Guid itemId,
+        Guid versionId,
+        Guid? expectedCurrentVersionId,
+        StudioPublicationIntent? intent,
+        string? warningAcknowledgement,
+        string? actorId,
+        Guid publicationRequestId,
+        CancellationToken cancellationToken = default)
     {
         using var activity = ActivitySource.StartActivity("studio.package.publish-request.create");
         activity?.SetTag("studio.item.id", itemId.ToString("D"));
@@ -501,7 +515,7 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             : StudioPublicationRequestStatus.Accepted;
         var request = new StudioPublicationRequest
         {
-            RequestId = Guid.NewGuid(),
+            RequestId = publicationRequestId,
             ItemId = itemId,
             VersionId = versionId,
             Intent = intent ?? version.Envelope.PublicationIntent,

@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Oracle.ManagedDataAccess.Client;
 using ConnectionHealthStatus = Honua.Core.Features.Security.Domain.ConnectionHealthStatus;
+using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 
 namespace Honua.Db.Oracle.Features.Security;
 
@@ -34,13 +35,26 @@ internal sealed partial class OracleConnectionDriver : IConnectionDriver
 
         // Oracle addresses a service name / SID rather than a database; the console surfaces the "database"
         // field as "Service name" for this provider. Easy Connect syntax: host:port/service.
+        var useTls = target.SslMode is CoreSslMode.Require or CoreSslMode.VerifyCa or CoreSslMode.VerifyFull;
+        var dataSource = useTls
+            ? BuildTcpsDescriptor(target, target.SslMode == CoreSslMode.VerifyFull)
+            : $"{target.Host}:{target.Port.ToString(CultureInfo.InvariantCulture)}/{target.Database}";
+
         return new OracleConnectionStringBuilder
         {
             UserID = target.Username,
             Password = target.Password,
-            DataSource = $"{target.Host}:{target.Port.ToString(CultureInfo.InvariantCulture)}/{target.Database}",
+            DataSource = dataSource,
             ConnectionTimeout = 5
         }.ConnectionString;
+    }
+
+    private static string BuildTcpsDescriptor(ConnectionTarget target, bool verifyServerIdentity)
+    {
+        var dnMatch = verifyServerIdentity ? "YES" : "NO";
+        return string.Create(CultureInfo.InvariantCulture,
+            $"(DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST={target.Host})(PORT={target.Port}))" +
+            $"(CONNECT_DATA=(SERVICE_NAME={target.Database}))(SECURITY=(SSL_SERVER_DN_MATCH={dnMatch})))");
     }
 
     public async Task<ConnectionHealthStatus> TestConnectionAsync(

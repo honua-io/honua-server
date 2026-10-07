@@ -1078,19 +1078,8 @@ public static class Fes20Parser
             }
         }
 
-        // Try to infer type from value
-        if (bool.TryParse(value, out var boolValue))
-            return new Literal(boolValue, LiteralType.Boolean);
-
-        if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
-            return new Literal(intValue, LiteralType.Number);
-
-        if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue))
-            return new Literal(doubleValue, LiteralType.Number);
-
-        if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dateValue))
-            return new Literal(dateValue, LiteralType.DateTime);
-
+        // An untyped FES literal takes its type from the property schema during
+        // normalization. Preserve its lexical form here (including leading zeroes).
         return new Literal(value, LiteralType.Text);
     }
 

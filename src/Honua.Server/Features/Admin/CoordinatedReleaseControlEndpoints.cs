@@ -68,6 +68,11 @@ internal static class CoordinatedReleaseControlEndpoints
         [FromServices] CoordinatedReleaseControlService controlService,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         if (string.IsNullOrWhiteSpace(request.PackageId) ||
             string.IsNullOrWhiteSpace(request.TargetEnvironment) ||
             string.IsNullOrWhiteSpace(request.ContainerTargetId) ||
@@ -159,6 +164,11 @@ internal static class CoordinatedReleaseControlEndpoints
         [FromServices] ICoordinatedReleaseReconciler reconciler,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         if (string.IsNullOrWhiteSpace(packageId))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -206,6 +216,11 @@ internal static class CoordinatedReleaseControlEndpoints
         [FromServices] CoordinatedReleaseControlService controlService,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         if (!TryParseGate(gate, out var gateStep))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -251,6 +266,11 @@ internal static class CoordinatedReleaseControlEndpoints
         [FromServices] IOperationInvoker operationInvoker,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         var requestedBy = ResolveRequestedBy(context);
         var handle = await operationInvoker.SubmitAsync(
                 new OperationRequest
