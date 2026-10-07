@@ -63,3 +63,13 @@ no skips, including the operation matrix's staged GeoJSON execution receipt.
 source digest, unchanged evidence bodies, catalog membership and entry points.
 `PostgreSqlLayerPublishingServiceSqlTests` passed 72/72. Both focused runs used
 the Release binaries and reported no skips.
+The affected Release build passed with zero warnings/errors, and all six
+project-scoped format checks passed under `timeout 20m` with `--include`.
+
+The additional publishing integration run reported a `TaskCanceledException`
+in `FileBackedLicenseService.StopAsync` line 72 during fixture disposal for
+`PublishLayer_FeatureServerQuery_ReadsSourceBackedPostGisTable`. Its failure
+stack is host shutdown, not a publishing assertion. The licensing service is
+unchanged by this PR and has the same blob on this head and `origin/trunk`:
+`7feffc7e38da7aee1defdf9f7fa3b21004b3dbaf`. No licensing or fixture code was
+patched to work around this teardown failure.
