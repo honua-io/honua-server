@@ -33,3 +33,8 @@ PR #5664 review re-verification confirmed two follow-up defects in `SRV-IMP-002`
   through Honua. That repair and its regression coverage exceed this adjudication's approximately
   100-line limit; the attachment review thread deliberately remains open. The publication reuse
   fix alone does not establish attachment fidelity across repeated imports.
+
+Recovery repair verification: the Release `dotnet test` build compiled `Honua.Postgres`
+and `Honua.Postgres.Tests` successfully; all seven publication-service tests passed with
+no skips. Project-scoped `dotnet format --include`, each wrapped in `timeout 20m`, passed
+for both changed C# files without changes.
