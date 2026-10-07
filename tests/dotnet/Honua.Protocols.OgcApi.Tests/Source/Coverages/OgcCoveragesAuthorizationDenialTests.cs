@@ -40,6 +40,37 @@ public sealed class OgcCoveragesAuthorizationDenialTests
     private const string EntitledRole = "catalog-reader";
     private const string Referer = "https://ogcapi-authorization-proof.example/";
 
+    [IntegrationTest]
+    [Protocol(TestProtocols.OgcApiCoverages)]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /ogc/tiles/tiles")]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
+    public async Task Issue5566_OgcApiTilesAndCoveragesAcceptTokenQueryAuthentication()
+    {
+        var exportQueries = new List<RasterQuery>();
+        var raster = CoverageDepthRasterStore.CreateRasterInfo(901, width: 64, height: 64, pixelSize: 0.003125);
+        var rasterStore = CoverageDepthRasterStore.Create(raster, exportQueries, emptyDataForSingleBand: null);
+
+        await using var fixture = CreateFixture().ReplaceService(rasterStore);
+        await fixture.InitializeAsync();
+        fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = [EntitledRole] });
+
+        var token = await IssueAsync(fixture, "query-token-reader", EntitledRole);
+        var encodedToken = Uri.EscapeDataString(token);
+        using var client = fixture.CreateClient();
+        client.DefaultRequestHeaders.Referrer = new Uri(Referer);
+
+        using var tiles = await client.GetAsync($"/ogc/tiles/tiles?token={encodedToken}");
+        tiles.StatusCode.Should().Be(HttpStatusCode.OK, await tiles.Content.ReadAsStringAsync());
+
+        using var coverage = await client.GetAsync(
+            $"/ogc/coverages/collections/{WebAppFixture.TestLayerId}/coverage?token={encodedToken}");
+        coverage.StatusCode.Should().Be(HttpStatusCode.OK, await coverage.Content.ReadAsStringAsync());
+        exportQueries.Should().ContainSingle("the query credential authorizes the coverage read");
+    }
+
     /// <summary>
     /// Coverages <c>/coverage</c> returns raster bytes. The denial is asserted both on the
     /// response and on the raster store: a denied request must never reach an export query.
