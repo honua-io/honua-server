@@ -444,7 +444,7 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
         }
     }
 
-    private static IEnumerable<string> ErrorDetails(string body)
+    private static string[] ErrorDetails(string body)
     {
         using var json = JsonDocument.Parse(body);
         if (!json.RootElement.TryGetProperty("error", out var error) ||
