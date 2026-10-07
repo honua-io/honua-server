@@ -175,12 +175,13 @@ internal static partial class FeatureServerEndpoints
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
         var serviceLayers = ResolveServiceReplicaLayersV2(service, snapshot);
-        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
+        var access = await ResolveReplicaLayerAccessAsync(
             context,
-            serviceLayers.Select(layer => layer.Resource),
             service,
-            AuthorizationOperation.Query,
-            cancellationToken).ConfigureAwait(false);
+            snapshot,
+            AccessScope.Read,
+            cancellationToken,
+            scopedWriteGrantSatisfiesRead: true).ConfigureAwait(false);
         var accessError = access.RequireAny(serviceLayers.Select(layer => layer.Resource));
         if (accessError != null)
         {
@@ -269,7 +270,13 @@ internal static partial class FeatureServerEndpoints
         }
 
         var replica = ToReplicaState(replicaRecord);
-        var replicaAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
+        var replicaAccess = await ResolveReplicaLayerAccessAsync(
+            context,
+            service,
+            snapshot,
+            AccessScope.Read,
+            cancellationToken,
+            scopedWriteGrantSatisfiesRead: true).ConfigureAwait(false);
         if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, replicaAccess, out var replicaLayers, out var replicaLayerError))
         {
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
@@ -416,10 +423,18 @@ internal static partial class FeatureServerEndpoints
             return createRbacError;
         }
 
-        // The response carries the replica data (#4018), so write access alone is not enough: every
-        // selected layer also needs Query access, the gate extractChanges applies. A write-only credential
-        // must not bulk-read a layer it may not query.
-        var queryAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
+        // The response carries the replica data (#4018), so a role-based write credential still
+        // needs Query access on every selected layer. A scope-governed key is different: its
+        // grant is the per-layer check, and a write grant on each requested layer authorizes
+        // the replica payload. EvaluateScopedKeyAccess's null-resource rule is not involved;
+        // this evaluation names every layer.
+        var queryAccess = await ResolveReplicaLayerAccessAsync(
+            context,
+            service,
+            snapshot,
+            AccessScope.Read,
+            cancellationToken,
+            scopedWriteGrantSatisfiesRead: true).ConfigureAwait(false);
         foreach (var layer in createLayers)
         {
             var queryAccessError = queryAccess.RequireAccess(layer.Resource);
@@ -640,7 +655,13 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        var replicaAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
+        var replicaAccess = await ResolveReplicaLayerAccessAsync(
+            context,
+            service,
+            snapshot,
+            AccessScope.Read,
+            cancellationToken,
+            scopedWriteGrantSatisfiesRead: true).ConfigureAwait(false);
 
         if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, replicaAccess, out var replicaLayers, out var replicaLayerError))
         {
@@ -1111,7 +1132,13 @@ internal static partial class FeatureServerEndpoints
         // and createReplica do; write access alone must not read the layers (#4018).
         if (isDownloadDirection)
         {
-            var queryAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
+            var queryAccess = await ResolveReplicaLayerAccessAsync(
+                context,
+                service,
+                snapshot,
+                AccessScope.Read,
+                cancellationToken,
+                scopedWriteGrantSatisfiesRead: true).ConfigureAwait(false);
             foreach (var layer in replicaLayers)
             {
                 var queryAccessError = queryAccess.RequireAccess(layer.Resource);
@@ -2370,24 +2397,48 @@ internal static partial class FeatureServerEndpoints
     private static readonly AuthorizationOperation[] _replicaWriteOperations =
         [AuthorizationOperation.Update, AuthorizationOperation.Insert, AuthorizationOperation.Delete];
 
+    // Replica reads for a scope-governed key. Query keeps a read: grant authoritative.
+    // Update/Insert/Delete let a write: grant on the same named layer authorize the replica
+    // payload (createReplica, sync download, replica-bound extractChanges, replica info and
+    // list). Role principals never see this list, so a write-only role is still refused when
+    // the layer's Query policy excludes it (#4018).
+    private static readonly AuthorizationOperation[] _replicaReadOrScopedWriteOperations =
+        [AuthorizationOperation.Query, AuthorizationOperation.Update, AuthorizationOperation.Insert, AuthorizationOperation.Delete];
+
     /// <summary>
     /// Resolves the canonical per-operation access decisions (#4783) for every replica-eligible layer
     /// of the service, so the synchronous replica layer resolution applies permission grants as well
     /// as the coarse access policy. A write scope admits any mutating grant (update, insert or
     /// delete), matching the replica write gates that run around this resolution.
+    /// When <paramref name="scopedWriteGrantSatisfiesRead"/> is set on a read, a scope-governed
+    /// principal is authorized per layer: a read grant or a write grant on that layer's name allows
+    /// the replica read. Callers that name no layer keep the null-resource denial. Unbound
+    /// <c>extractChanges</c> leaves the flag false so a write key cannot use the change feed as a
+    /// general query.
     /// </summary>
     private static Task<ResourceAccessSet> ResolveReplicaLayerAccessAsync(
         HttpContext context,
         MetadataV2Service service,
         MetadataV2GraphSnapshot snapshot,
         AccessScope scope,
-        CancellationToken cancellationToken)
-        => AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
+        CancellationToken cancellationToken,
+        bool scopedWriteGrantSatisfiesRead = false)
+    {
+        var operations = scope == AccessScope.Write ? _replicaWriteOperations : _replicaReadOperations;
+        if (scopedWriteGrantSatisfiesRead
+            && scope == AccessScope.Read
+            && LayerScopedWriteKey.IsScopeGovernedPrincipal(context.User))
+        {
+            operations = _replicaReadOrScopedWriteOperations;
+        }
+
+        return AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
             ResolveServiceReplicaLayersV2(service, snapshot).Select(layer => layer.Resource),
             service,
-            scope == AccessScope.Write ? _replicaWriteOperations : _replicaReadOperations,
+            operations,
             cancellationToken);
+    }
 
     private static bool TryResolveReplicaLayerIdsV2(
         HttpContext context,

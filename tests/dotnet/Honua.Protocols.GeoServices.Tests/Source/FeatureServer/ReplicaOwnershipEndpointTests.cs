@@ -208,6 +208,34 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
         accepted.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    /// <summary>
+    /// A key granted only layer 0 (<c>write:test/Test Layer</c>, the seeded name of layer id 0)
+    /// may create a replica of that layer and must be denied <c>layers=0,1</c>. The denial is
+    /// the per-layer grant check, not a service-level null-resource rejection.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.CreateReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_WithKeyScopedToLayer0_IsDeniedForLayersOutsideTheGrant()
+    {
+        var layer0Grant = $"write:{WebAppFixture.TestServiceId}/Test Layer";
+        using var layer0 = await CreateScopedWriteClientAsync("replica-layer0-only", layer0Grant);
+
+        var denied = await layer0.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
+            JsonBody(new { replicaName = "Layer0And1", layers = "0,1", syncModel = "perReplica", f = "json" }));
+        await denied.AssertGeoServicesErrorAsync(403);
+
+        var allowed = await layer0.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
+            JsonBody(new { replicaName = "Layer0Only", layers = "0", syncModel = "perReplica", f = "json" }));
+        allowed.StatusCode.Should().Be(HttpStatusCode.OK,
+            "a key scoped to layer 0 must still create a replica of that layer: {0}",
+            await allowed.Content.ReadAsStringAsync());
+        using var document = JsonDocument.Parse(await allowed.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("replicaID").GetString().Should().NotBeNullOrWhiteSpace();
+    }
+
     private static StringContent JsonBody(object payload)
         => new(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
@@ -231,14 +259,17 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
             "the denial is masked as not-found for replica {0} rather than acknowledged", replicaId);
     }
 
-    private async Task<HttpClient> CreateScopedWriteClientAsync(string keyName)
+    private Task<HttpClient> CreateScopedWriteClientAsync(string keyName)
+        => CreateScopedWriteClientAsync(keyName, $"write:{WebAppFixture.TestServiceId}");
+
+    private async Task<HttpClient> CreateScopedWriteClientAsync(string keyName, string grant)
     {
-        // A key whose only grant is write:{service} authenticates as a non-admin principal whose
-        // identity name is the key name, which is what ResolveReplicaOwner stamps as the owner.
+        // A key whose only grant is a write: permission authenticates as a non-admin principal
+        // whose identity name is the key name, which is what ResolveReplicaOwner stamps as the owner.
         var apiKeyStore = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
         var key = await apiKeyStore.CreateAsync(
             keyName,
-            [$"write:{WebAppFixture.TestServiceId}"],
+            [grant],
             null,
             null,
             CancellationToken.None);
