@@ -35,6 +35,8 @@ internal sealed class GrpcIdempotencyTestClock : TimeProvider
     /// <summary>Waits for the continuation to finish renewing and schedule its next delay.</summary>
     public async Task WaitForDelayAsync(TimeSpan delay, CancellationToken cancellationToken = default)
     {
+        // Task.Delay truncates its TimeSpan to whole milliseconds before CreateTimer.
+        delay = TimeSpan.FromMilliseconds((long)delay.TotalMilliseconds);
         var channel = _scheduled.GetOrAdd(delay, _ => Channel.CreateUnbounded<DelayTimer>());
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(30));
