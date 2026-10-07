@@ -453,8 +453,8 @@ internal static partial class ImageServerSoapEndpoints
                 new XElement("Key", "BandProperties"),
                 new XElement(
                     "Value",
-                    new XAttribute(xsi + "type", "tns:ArrayOfArgument"),
-                    properties.BandProperties.Select(BuildBandPropertyArgument))),
+                    new XAttribute(xsi + "type", "tns:ArrayOfPropertySet"),
+                    properties.BandProperties.Select(BuildBandPropertySet))),
         };
         AddDoubleProperty(items, "LowCellSize", properties.LowCellSize, xsi);
         AddDoubleProperty(items, "HighCellSize", properties.HighCellSize, xsi);
@@ -463,7 +463,7 @@ internal static partial class ImageServerSoapEndpoints
         items.Add(BuildProperty("BandDefinitionKeyword", properties.BandDefinitionKeyword, "xsd:string", xsi));
         if (properties.DataType is not null)
         {
-            items.Add(BuildProperty("DataType", "Generic", "xsd:string", xsi));
+            items.Add(BuildProperty("DataType", properties.DataType, "xsd:string", xsi));
         }
 
         items.Add(BuildProperty("BandCount", properties.BandCount.ToString(CultureInfo.InvariantCulture), "xsd:int", xsi));
@@ -478,11 +478,11 @@ internal static partial class ImageServerSoapEndpoints
                 items));
     }
 
-    private static XElement BuildBandPropertyArgument(BandProperty band)
+    private static XElement BuildBandPropertySet(BandProperty band)
     {
         XNamespace xsi = XmlSchemaInstanceNamespace;
         return new XElement(
-            "Argument",
+            "PropertySet",
             new XAttribute(xsi + "type", "tns:PropertySet"),
             new XElement(
                 "PropertyArray",
@@ -526,20 +526,16 @@ internal static partial class ImageServerSoapEndpoints
             new XAttribute(xsi + "type", "tns:MultidimensionalInfo"),
             new XElement(
                 "Variables",
-                new XAttribute(xsi + "type", "tns:ArrayOfMultidimensionalVariable"),
                 (info?.Variables ?? []).Select(variable => new XElement(
-                    "MultidimensionalVariable",
-                    new XAttribute(xsi + "type", "tns:MultidimensionalVariable"),
-                    new XElement("VariableName", variable.Name),
+                    "Variable",
+                    new XElement("Name", variable.Name),
                     variable.Description is null ? null : new XElement("Description", variable.Description),
                     variable.Unit is null ? null : new XElement("Unit", variable.Unit),
                     new XElement(
                         "Dimensions",
-                        new XAttribute(xsi + "type", "tns:ArrayOfMultidimensionalDimension"),
                         variable.Dimensions.Select(dimension => new XElement(
-                            "MultidimensionalDimension",
-                            new XAttribute(xsi + "type", "tns:MultidimensionalDimension"),
-                            new XElement("DimensionName", dimension.Name),
+                            "Dimension",
+                            new XElement("Name", dimension.Name),
                             dimension.Unit is null ? null : new XElement("Unit", dimension.Unit),
                             dimension.Extent is null ? null : BuildDoubleArray("Extent", dimension.Extent),
                             dimension.Values is null ? null : BuildDoubleArray("Values", dimension.Values),

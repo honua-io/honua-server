@@ -55,7 +55,7 @@ internal static partial class ImageServerSoapEndpoints
                 new XElement(
                     "CacheControlInfo",
                     new XAttribute(xsi + "type", "tns:CacheControlInfo"),
-                    new XElement("ClientCacheAllowed", true)),
+                    new XElement("ClientCachingAllowed", true)),
                 new XElement("ServiceType", "esriCachedMapServiceSingleFused"));
         }
 

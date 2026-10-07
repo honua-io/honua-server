@@ -191,12 +191,7 @@ internal sealed class Cql2FilterProcessor(
         MetadataV2Resource resource,
         string? collectionId)
     {
-        // The serialized STAC id is backed only by a field explicitly declared as the
-        // primary identifier. Convention-named fields are not necessarily unique.
-        var idField = resource.SchemaFields.FirstOrDefault(field => field.SemanticRoles.Any(role =>
-                          string.Equals(role, "id.primary", StringComparison.OrdinalIgnoreCase)))
-                      ?? resource.SchemaFields.FirstOrDefault(field =>
-                          string.Equals(field.Name, "objectid", StringComparison.OrdinalIgnoreCase));
+        var idField = resource.FindPrimaryIdField();
         var idFieldName = idField?.Name ?? "objectid";
         var idFieldIsNumeric = idField?.Type is MetadataV2FieldType.Integer
             or MetadataV2FieldType.BigInteger
