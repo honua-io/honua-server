@@ -17,6 +17,13 @@ mapped self links for bound and unbound custom identifiers and exercises the una
 fallback through item GET and ids search. `BoundLookup_UnannotatedSchema_UsesObjectIdsWithoutInventingAField`
 covers preserved filters and nonnumeric ids without an unrestricted provider query.
 
+Windows-native review verification: the original runtime failed 7 of the 9 focused identifier
+regressions; the fixed runtime passes all 9. Release builds pass with zero warnings and errors,
+all 72 MySQL query-builder tests pass, and changed-file whitespace verification passes.
+The related STAC identifier/page-reader/provider-routing suites report 9 passes and 12 failures
+in tests expecting convention-field precedence. The helper precedence failure was reproduced
+against the original PR runtime (2 passes, 1 failure); these existing tests were not modified.
+
 | Finding id | Outcome | Evidence |
 |---|---|---|
 | `SRV-OGC-005` | fixed | `SRV_OGC_005_NonUniqueConventionNamedFieldFallsBackToFeatureIdentifier` verifies that a non-unique convention-named `id` attribute is neither emitted nor queried as the item identifier. `StacMappingService.ResolveItemId` and `StacItemIdWhereBuilder.GetCandidateFields` now use only the declared primary identifier. |
