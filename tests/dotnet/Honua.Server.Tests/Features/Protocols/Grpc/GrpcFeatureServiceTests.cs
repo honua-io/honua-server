@@ -172,14 +172,17 @@ public sealed class GrpcFeatureServiceTests
             new FeatureMutationEventService(_featureChangeEventPublisher, outboxCapabilityProvider: _outboxCapabilityProvider),
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions()),
-            router,
-            graphProvider,
             NullLogger<HonuaFeatureService>.Instance,
             new GrpcApplyEditsIdempotencyStore());
+        void AddRouting(IServiceCollection services)
+        {
+            services.AddSingleton(router);
+            services.AddSingleton(graphProvider);
+        }
 
         var response = await sut.QueryFeatures(
             new Proto.QueryFeaturesRequest { ServiceId = "source", LayerId = 0 },
-            CreateCallContext());
+            CreateCallContext(user: null, tenantId: null, resolverGrants: null, AddRouting));
 
         response.Features.Should().ContainSingle();
         await routedReader.Received(1).QueryAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
@@ -187,7 +190,7 @@ public sealed class GrpcFeatureServiceTests
 
         var edit = async () => await sut.ApplyEdits(
             new Proto.ApplyEditsRequest { ServiceId = "source", LayerId = 0 },
-            CreateCallContext());
+            CreateCallContext(user: null, tenantId: null, resolverGrants: null, AddRouting));
         var exception = await edit.Should().ThrowAsync<RpcException>();
         exception.Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
         _featureWriter.ReceivedCalls()
@@ -1826,7 +1829,8 @@ public sealed class GrpcFeatureServiceTests
     private static TestServerCallContext CreateCallContext(
         ClaimsPrincipal? user,
         string? tenantId,
-        PermissionGrant[]? resolverGrants)
+        PermissionGrant[]? resolverGrants,
+        Action<IServiceCollection>? configureServices = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
@@ -1857,6 +1861,7 @@ public sealed class GrpcFeatureServiceTests
                 new PermissionResolver(sp.GetRequiredService<IRoleStore>()));
         }
 
+        configureServices?.Invoke(services);
         var serviceProvider = services.BuildServiceProvider();
 
         var httpContext = new DefaultHttpContext

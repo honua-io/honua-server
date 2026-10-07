@@ -43,8 +43,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     private readonly IFeatureReader _featureReader;
     private readonly IFeatureWriter _featureWriter;
     private readonly IStreamingFeatureStore _streamingFeatureStore;
-    private readonly FeatureProviderQueryRouter? _providerQueryRouter;
-    private readonly IMetadataV2GraphProvider? _metadataGraphProvider;
     private readonly ICommonQueryValidator _queryValidator;
     private readonly SpatialReferenceResolver _spatialReferenceResolver;
     private readonly FeatureMutationEventService _mutationEventService;
@@ -75,8 +73,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             new FeatureMutationEventService(featureChangeEventPublisher),
             limitsOptions,
             grpcOptions,
-            providerQueryRouter: null,
-            metadataGraphProvider: null,
             logger,
             idempotencyStore)
     {
@@ -93,8 +89,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         FeatureMutationEventService mutationEventService,
         IOptions<LimitsOptions> limitsOptions,
         IOptions<GrpcOptions> grpcOptions,
-        FeatureProviderQueryRouter? providerQueryRouter,
-        IMetadataV2GraphProvider? metadataGraphProvider,
         ILogger<HonuaFeatureService> logger,
         GrpcApplyEditsIdempotencyStore idempotencyStore)
     {
@@ -102,8 +96,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         _featureReader = featureReader;
         _featureWriter = featureWriter;
         _streamingFeatureStore = streamingFeatureStore;
-        _providerQueryRouter = providerQueryRouter;
-        _metadataGraphProvider = metadataGraphProvider;
         _queryValidator = queryValidator;
         _spatialReferenceResolver = spatialReferenceResolver;
         _mutationEventService = mutationEventService;
@@ -111,35 +103,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         _streamBatchSize = Math.Max(grpcOptions?.Value?.StreamBatchSize ?? 1000, 1);
         _logger = logger;
         _idempotencyStore = idempotencyStore;
-    }
-
-    internal HonuaFeatureService(
-        IResourceValidator resourceValidator,
-        IFeatureReader featureReader,
-        IFeatureWriter featureWriter,
-        IStreamingFeatureStore streamingFeatureStore,
-        ICommonQueryValidator queryValidator,
-        SpatialReferenceResolver spatialReferenceResolver,
-        FeatureMutationEventService mutationEventService,
-        IOptions<LimitsOptions> limitsOptions,
-        IOptions<GrpcOptions> grpcOptions,
-        ILogger<HonuaFeatureService> logger,
-        GrpcApplyEditsIdempotencyStore idempotencyStore)
-        : this(
-            resourceValidator,
-            featureReader,
-            featureWriter,
-            streamingFeatureStore,
-            queryValidator,
-            spatialReferenceResolver,
-            mutationEventService,
-            limitsOptions,
-            grpcOptions,
-            providerQueryRouter: null,
-            metadataGraphProvider: null,
-            logger,
-            idempotencyStore)
-    {
     }
 
     public override async Task<Proto.QueryFeaturesResponse> QueryFeatures(
@@ -160,7 +123,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             : request.ReturnExtentOnly
                 ? FeatureProviderReadOperation.Extent
                 : FeatureProviderReadOperation.Query;
-        var reader = await ResolveReaderAsync(layer, readOperation, context.CancellationToken)
+        var reader = await ResolveReaderAsync(
+                layer, readOperation, context.GetHttpContext().RequestServices, context.CancellationToken)
             .ConfigureAwait(false);
 
         var response = new Proto.QueryFeaturesResponse
@@ -236,9 +200,12 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             request, layer, context.GetHttpContext().RequestServices, context.CancellationToken, streaming: true).ConfigureAwait(false);
         var query = queryContext.Query;
         var pkField = layer.ObjectIdFieldName;
-        var resolvedReader = await ResolveReaderAsync(layer, FeatureProviderReadOperation.Query, context.CancellationToken)
+        var requestServices = context.GetHttpContext().RequestServices;
+        var resolvedReader = await ResolveReaderAsync(
+                layer, FeatureProviderReadOperation.Query, requestServices, context.CancellationToken)
             .ConfigureAwait(false);
-        var streamingStore = _providerQueryRouter is null && _metadataGraphProvider is null
+        var streamingStore = requestServices.GetService<FeatureProviderQueryRouter>() is null
+            && requestServices.GetService<IMetadataV2GraphProvider>() is null
             ? _streamingFeatureStore
             : resolvedReader as IStreamingFeatureStore;
         if (streamingStore is null)
@@ -315,9 +282,10 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         var layer = await ValidateGrpcLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
 
-        if (_metadataGraphProvider is not null)
+        var metadataGraphProvider = context.GetHttpContext().RequestServices.GetService<IMetadataV2GraphProvider>();
+        if (metadataGraphProvider is not null)
         {
-            var snapshot = await _metadataGraphProvider.GetCurrentAsync(context.CancellationToken).ConfigureAwait(false);
+            var snapshot = await metadataGraphProvider.GetCurrentAsync(context.CancellationToken).ConfigureAwait(false);
             var storageBinding = snapshot.ResolveStorageBinding(layer.Publication)
                 ?? throw new RpcException(new Status(StatusCode.FailedPrecondition, "The layer has no resolvable storage binding."));
             if (!FeatureStorageMapping.FromMetadata(layer.Resource, storageBinding).SupportsManagedWrites)
@@ -444,18 +412,23 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         StatusCode.Aborted,
         "The edit lost its idempotency reservation before it completed; retry with the same idempotency key."));
 
+    // The router and graph provider are resolved per request, as the FeatureServer handlers
+    // do, so the service stays within the architecture collaborator ceiling.
     private async Task<IFeatureReader> ResolveReaderAsync(
         GrpcLayerContext layer,
         FeatureProviderReadOperation operation,
+        IServiceProvider requestServices,
         CancellationToken cancellationToken)
     {
-        if (_providerQueryRouter is null || _metadataGraphProvider is null)
+        var providerQueryRouter = requestServices.GetService<FeatureProviderQueryRouter>();
+        var metadataGraphProvider = requestServices.GetService<IMetadataV2GraphProvider>();
+        if (providerQueryRouter is null || metadataGraphProvider is null)
         {
             return _featureReader;
         }
 
-        var snapshot = await _metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        return await _providerQueryRouter.ResolveReaderAsync(
+        var snapshot = await metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        return await providerQueryRouter.ResolveReaderAsync(
             snapshot,
             layer.Service,
             layer.Resource,
