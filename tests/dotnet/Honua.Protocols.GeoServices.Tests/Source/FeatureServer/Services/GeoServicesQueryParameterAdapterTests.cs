@@ -7,6 +7,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.IO;
@@ -46,7 +47,7 @@ public sealed class GeoServicesQueryParameterAdapterTests
             "the page must match the layer's advertised maxRecordCount when the caller omits resultRecordCount");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task ConvertAsync_TrueCurve_HonorsConfiguredVertexBudget()
     {
         const string fullSweepArc = "{\"a\":[[1,0],[0,0],0,0]}";
