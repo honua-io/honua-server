@@ -799,12 +799,13 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.API|FullyQualifiedName~Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests|FullyQualifiedName~Honua.Server.Tests.Comprehensive.TestQualityValidationTests",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.API|FullyQualifiedName~Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests|FullyQualifiedName~Honua.Server.Tests.Comprehensive.TestQualityValidationTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Stac.StacItemIdentifier",
       "_paths_comment": "#2693: the exact ImageServer endpoint-registry fragment is bounded protocol registration; pair its ImageServer owner with this API-governance projection without widening other EndpointRegistry fragments.",
       "paths": [
         "src/Honua.Protocols.Stac/",
         "src/Honua.Server/EndpointRegistry.ImageServer.cs",
         "tests/dotnet/Honua.Server.Tests/Features/API/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Stac/StacItemIdentifierAuditTests.cs",
         "src/Honua.Core/Features/Validation/",
         "tests/dotnet/Honua.Server.Tests/Comprehensive/ApiSurfaceComplianceTests.cs",
         "tests/dotnet/Honua.Server.Tests/Comprehensive/TestQualityValidationTests.cs"
