@@ -417,8 +417,6 @@ internal static class ItemEndpoints
         };
 
         var objectIds = await featureReader.QueryObjectIdsAsync(layerId, query, cancellationToken);
-        Feature? bestMatch = null;
-        var bestRank = int.MaxValue;
 
         foreach (var objectId in objectIds)
         {
@@ -428,25 +426,13 @@ internal static class ItemEndpoints
                 layerSrid,
                 objectId,
                 cancellationToken);
-            var matchRank = GetCanonicalItemMatchRank(feature, resource, itemId);
-            if (!matchRank.HasValue)
+            if (MatchesCanonicalItemId(feature, resource, itemId))
             {
-                continue;
-            }
-
-            if (matchRank.Value < bestRank)
-            {
-                bestMatch = feature;
-                bestRank = matchRank.Value;
-
-                if (bestRank == 0)
-                {
-                    break;
-                }
+                return feature;
             }
         }
 
-        return bestMatch;
+        return null;
     }
 
     private static async Task<Feature?> TryGetBoundFeatureByCanonicalItemIdAsync(
@@ -501,17 +487,10 @@ internal static class ItemEndpoints
         return null;
     }
 
-    private static int? GetCanonicalItemMatchRank(Feature? feature, MetadataV2Resource resource, string itemId)
-    {
-        if (feature is not { } resolvedFeature ||
-            !string.Equals(
+    private static bool MatchesCanonicalItemId(Feature? feature, MetadataV2Resource resource, string itemId)
+        => feature is { } resolvedFeature &&
+            string.Equals(
                 StacMappingService.ResolveItemId(resolvedFeature, resource),
                 itemId,
-                StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        return 0;
-    }
+                StringComparison.Ordinal);
 }

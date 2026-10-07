@@ -6,6 +6,17 @@ selected field is explicitly declared with the `id.primary` semantic role. Other
 provider feature identifier is emitted and used for lookup. This prevents non-unique ordinary
 attributes from becoming STAC item identifiers while keeping explicitly configured identifiers.
 
+PR #5667 review adjudication confirmed two lookup regressions. Single-item lookup now passes
+the resource into both candidate matching and final identifier validation, and the unbound
+attribute query uses the declared primary field (including names outside the old conventions).
+For storage-bound resources with no declared primary identifier or `objectid` schema field,
+lookup and `ids` search now use canonical `FeatureQuery.ObjectIds`, allowing each provider to
+map its physical key without inventing an `objectid` column. Existing filters, candidate limits,
+and duplicate-identifier checks are retained. `StacItemIdentifierEndpointAuditTests` follows
+mapped self links for bound and unbound custom identifiers and exercises the unannotated-key
+fallback through item GET and ids search. `BoundLookup_UnannotatedSchema_UsesObjectIdsWithoutInventingAField`
+covers preserved filters and nonnumeric ids without an unrestricted provider query.
+
 | Finding id | Outcome | Evidence |
 |---|---|---|
 | `SRV-OGC-005` | fixed | `SRV_OGC_005_NonUniqueConventionNamedFieldFallsBackToFeatureIdentifier` verifies that a non-unique convention-named `id` attribute is neither emitted nor queried as the item identifier. `StacMappingService.ResolveItemId` and `StacItemIdWhereBuilder.GetCandidateFields` now use only the declared primary identifier. |

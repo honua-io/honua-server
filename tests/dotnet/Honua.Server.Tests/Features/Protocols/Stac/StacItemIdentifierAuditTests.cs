@@ -192,7 +192,7 @@ public sealed class StacItemIdentifierEndpointAuditTests : IAsyncLifetime
 
         var mapped = StacMappingService.MapFeatureToItem(feature, resource, publication, 0, "http://localhost");
         Assert.Equal(itemId, mapped.Id);
-        var self = mapped.Links.Single(link => link.Rel == "self");
+        var self = mapped.Links!.Value.Single(link => link.Rel == "self");
         var response = await fixture.Client.GetAsync(new Uri(self.Href).PathAndQuery);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var item = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
