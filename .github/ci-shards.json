@@ -241,7 +241,7 @@
     },
     {
       "name": "Core and API Governance capacity rebalance",
-      "filter": "((FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Cog&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests&FullyQualifiedName!~FeatureServerEndpointTests&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~OgcFeaturesEndpointTests&FullyQualifiedName!~LimitsEnforcementTests)|((FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.Contract.)|(FullyQualifiedName~Honua.Server.Tests.Performance.)|(FullyQualifiedName~Honua.Server.Tests.Comprehensive.)))|(FullyQualifiedName~FeatureServerEndpointTests)|(FullyQualifiedName~AttachmentEndpointTests|FullyQualifiedName~PostgresAttachmentStoreTests|FullyQualifiedName~QueryRelatedRecordsEndpointTests|FullyQualifiedName~OgcFeaturesEndpointTests|FullyQualifiedName~LimitsEnforcementTests)|(FullyQualifiedName~Honua.Server.Tests.Features.API)|(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Stac.StacItemIdentifier)",
+      "filter": "((FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Cog&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests&FullyQualifiedName!~FeatureServerEndpointTests&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~OgcFeaturesEndpointTests&FullyQualifiedName!~LimitsEnforcementTests)|((FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.Contract.)|(FullyQualifiedName~Honua.Server.Tests.Performance.)|(FullyQualifiedName~Honua.Server.Tests.Comprehensive.)))|(FullyQualifiedName~FeatureServerEndpointTests)|(FullyQualifiedName~AttachmentEndpointTests|FullyQualifiedName~PostgresAttachmentStoreTests|FullyQualifiedName~QueryRelatedRecordsEndpointTests|FullyQualifiedName~OgcFeaturesEndpointTests|FullyQualifiedName~LimitsEnforcementTests)|(FullyQualifiedName~Honua.Server.Tests.Features.API)",
       "children": [
         "Core and Cloud Contracts",
         "Core Endpoints",
@@ -799,13 +799,12 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.API|FullyQualifiedName~Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests|FullyQualifiedName~Honua.Server.Tests.Comprehensive.TestQualityValidationTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Stac.StacItemIdentifier",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.API|FullyQualifiedName~Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests|FullyQualifiedName~Honua.Server.Tests.Comprehensive.TestQualityValidationTests",
       "_paths_comment": "#2693: the exact ImageServer endpoint-registry fragment is bounded protocol registration; pair its ImageServer owner with this API-governance projection without widening other EndpointRegistry fragments.",
       "paths": [
         "src/Honua.Protocols.Stac/",
         "src/Honua.Server/EndpointRegistry.ImageServer.cs",
         "tests/dotnet/Honua.Server.Tests/Features/API/",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Stac/StacItemIdentifierAuditTests.cs",
         "src/Honua.Core/Features/Validation/",
         "tests/dotnet/Honua.Server.Tests/Comprehensive/ApiSurfaceComplianceTests.cs",
         "tests/dotnet/Honua.Server.Tests/Comprehensive/TestQualityValidationTests.cs"
