@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Db.Oracle.Features.FeatureStore.Services;
@@ -316,6 +317,13 @@ internal static partial class OracleFeatureQueryBuilder
         // Where is rejected up front rather than masked as an opaque ORA-* failure.
         if (!string.IsNullOrWhiteSpace(query.Where))
         {
+            if (query.SqlFilter is not null)
+            {
+                throw new NotSupportedException(
+                    "Oracle cannot safely combine canonical Where text with a translated SqlFilter. " +
+                    "Submit the additional constraints through provider-neutral FeatureQuery properties.");
+            }
+
             var parameterized = ParseAndParameterizeWhereClause(query.Where!.Trim(), parameters, resolveColumnName);
             sb.Append(" AND (").Append(parameterized).Append(')');
             return;
@@ -364,10 +372,9 @@ internal static partial class OracleFeatureQueryBuilder
 
         var filter = query.SpatialFilter.Value;
 
-        // Reject cross-SRID filters: SDO_UTIL.FROM_WKBGEOMETRY has no SRID injection point here
-        // and Oracle would silently treat the filter coordinates as if they were in the layer CRS,
-        // producing wrong (usually empty or ORA-13xxx) results. Requiring matching SRIDs is
-        // consistent with the MySQL provider (which throws) and safer than silent misinterpretation.
+        // Reject cross-SRID filters. This slice does not reproject, and comparing a filter in
+        // one CRS with a layer in another returns wrong (usually empty or ORA-13xxx) results.
+        // Requiring matching SRIDs matches the MySQL provider.
         if (filter.Srid.HasValue && mapping.Srid.HasValue && filter.Srid.Value != mapping.Srid.Value)
         {
             throw new NotSupportedException(
@@ -376,13 +383,21 @@ internal static partial class OracleFeatureQueryBuilder
                 "Reproject the filter geometry to the layer CRS before querying.");
         }
 
+        if (WkbSridNormalizer.HasZOrMOrdinates(filter.Geometry))
+        {
+            throw new NotSupportedException(
+                "Oracle spatial filters with Z or M ordinates are not supported; submit a two-dimensional geometry.");
+        }
+
         var geomCol = mapping.QuotedGeometryColumn!;
         var wkbParam = ":p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
-        parameters.Add(filter.Geometry);
+        parameters.Add(WkbSridNormalizer.RemoveEmbeddedSrid(filter.Geometry));
 
-        // SDO_UTIL.FROM_WKBGEOMETRY produces a 2D SDO_GEOMETRY; Oracle applies the SRID from
-        // the spatial index/metadata. Both SRIDs are either matching or unspecified at this point.
-        var filterExpr = $"SDO_UTIL.FROM_WKBGEOMETRY({wkbParam})";
+        // FROM_WKBGEOMETRY accepts OGC WKB, not EWKB. Strip the embedded SRID and assign the
+        // validated layer/filter SRID explicitly so SDO_RELATE never compares an SRID-null
+        // geometry with an indexed geometry in a known coordinate system.
+        var srid = filter.Srid ?? mapping.Srid;
+        var filterExpr = BuildFilterGeometryExpression(wkbParam, srid);
 
         var clause = filter.SpatialRelationship switch
         {
@@ -407,6 +422,24 @@ internal static partial class OracleFeatureQueryBuilder
         };
 
         sb.Append(" AND ").Append(clause);
+    }
+
+    private static string BuildFilterGeometryExpression(string wkbParam, int? srid)
+    {
+        var fromWkb = $"SDO_UTIL.FROM_WKBGEOMETRY({wkbParam})";
+        if (srid is not > 0)
+        {
+            return fromWkb;
+        }
+
+        // MAKE_2D requires a geometry with more than two dimensions; this WKB is 2D.
+        // FROM_WKBGEOMETRY(blob, srid) is 19.25+/26ai only and is missing on 12c through 21c,
+        // which this provider supports. Stamp the SRID with the SDO_GEOMETRY constructor.
+        // The subquery does not reference the outer row, so Oracle evaluates it once.
+        var sridLiteral = srid.Value.ToString(CultureInfo.InvariantCulture);
+        return "(SELECT SDO_GEOMETRY(a.geom.SDO_GTYPE, " + sridLiteral
+            + ", a.geom.SDO_POINT, a.geom.SDO_ELEM_INFO, a.geom.SDO_ORDINATES) FROM (SELECT "
+            + fromWkb + " geom FROM DUAL) a)";
     }
 
     private static void AppendOrderByClause(StringBuilder sb, FeatureQuery query, Func<string, string> resolveColumnName)
