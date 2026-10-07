@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -19,7 +20,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// </summary>
 public sealed class CoordinatedReleaseReconcilerTests
 {
-    [Fact]
+    [UnitTest]
     public async Task SRV_INF_016_ApproveGate_DuringRollback_IsRejectedWithoutChangingState()
     {
         var store = new InMemoryWorkflowOperationStore();
