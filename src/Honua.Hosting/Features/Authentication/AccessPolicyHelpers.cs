@@ -406,7 +406,8 @@ internal static class AccessPolicyHelpers
         var allowed = operation is AuthorizationOperation.Query or AuthorizationOperation.Read
             or AuthorizationOperation.Metadata or AuthorizationOperation.Export
             ? LayerScopedWriteKey.AllowsRead(principal, serviceName, layerName)
-            : LayerScopedWriteKey.IsScopedWritePrincipal(principal)
+            : operation is AuthorizationOperation.Insert or AuthorizationOperation.Update or AuthorizationOperation.Delete
+              && LayerScopedWriteKey.IsScopedWritePrincipal(principal)
               && LayerScopedWriteKey.AllowsWrite(principal, serviceName, layerName);
 
         return allowed

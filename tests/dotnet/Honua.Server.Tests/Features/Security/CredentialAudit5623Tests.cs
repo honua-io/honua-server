@@ -99,6 +99,7 @@ public sealed class CredentialAudit5623Tests
     [InlineData("read:catalog/roads", "catalog", "roads", AccessScope.Write, false)]
     [InlineData("read:catalog", "catalog", "roads", AccessScope.Read, true)]
     [InlineData("write:catalog/roads", "catalog", "roads", AccessScope.Write, true)]
+    [InlineData("write:catalog", "catalog", "roads", AccessScope.Write, true)]
     public async Task ScopedGrants_AgreeAcrossResourceAccessPaths(
         string permission, string serviceName, string layerName, AccessScope scope, bool allowed)
     {
@@ -116,6 +117,12 @@ public sealed class CredentialAudit5623Tests
         AccessPolicyHelpers.EvaluateResourceAccess(context, resource, service, scope).IsAllowed.Should().Be(allowed);
         (AccessPolicyHelpers.RequireResourceAccess(context, resource, service, scope) is null).Should().Be(allowed);
         (await AccessPolicyHelpers.RequireResourceAccessAsync(context, resource, service, scope) is null).Should().Be(allowed);
+        foreach (var operation in new[] { AuthorizationOperation.Admin, AuthorizationOperation.Approve })
+        {
+            (await AccessPolicyHelpers.EvaluateResourceAccessAsync(context, resource, service, operation))
+                .IsAllowed.Should().BeFalse();
+            (await AccessPolicyHelpers.RequireServiceAccessAsync(context, service, operation)).Should().NotBeNull();
+        }
     }
 
     [UnitTheory]
