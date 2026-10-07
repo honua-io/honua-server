@@ -29,6 +29,10 @@ PR Gate run `37569461538` failed in job `112624567388` on
 The three isolated methods in `StacItemIdentifierAuditTests` used plain xUnit attributes,
 so tier-filtered gates could not discover them. They now use `UnitTest` and `UnitTheory`
 to participate in `Tier=Fast`; assertions, runtime behavior, and the guard baseline are unchanged.
+Windows-native gate-fix verification: the Release architecture-test project and its host/test
+dependencies build with warnings as errors (zero warnings/errors). All nine focused identifier
+cases pass, including the four isolated cases selected by `Tier=Fast`, and all 13
+`TierTraitEnforcementTests` pass. Neither focused run skips any cases.
 
 | Finding id | Outcome | Evidence |
 |---|---|---|
