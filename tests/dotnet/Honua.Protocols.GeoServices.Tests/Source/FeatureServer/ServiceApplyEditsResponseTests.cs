@@ -7,6 +7,7 @@ using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -15,7 +16,8 @@ public sealed class ServiceApplyEditsResponseTests
     [UnitTest]
     public async Task Issue5490_ServiceApplyEditsResponse_IsTheBarePerLayerArray()
     {
-        var context = new DefaultHttpContext();
+        await using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
         context.Response.Body = new MemoryStream();
         var result = FeatureServerEndpoints.CreateServiceApplyEditsResult(
         [

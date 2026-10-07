@@ -46,8 +46,11 @@ public sealed class CompositeRelationshipMetadataTests
         response.DestinationKeyField.Should().Be("child_key");
     }
 
-    [UnitTest]
-    public void Issue5493_RelationshipResponse_UsesProtocolRolesAndTheCurrentSidesKeyField()
+    [UnitTheory]
+    [InlineData("origin", "destination")]
+    [InlineData("esriRelRoleOrigin", "esriRelRoleDestination")]
+    public void Issue5493_RelationshipResponse_UsesProtocolRolesAndTheCurrentSidesKeyField(
+        string originRole, string destinationRole)
     {
         var origin = new MetadataV2Resource
         {
@@ -58,7 +61,7 @@ public sealed class CompositeRelationshipMetadataTests
                 {
                     Id = "related",
                     RelatedResourceId = "destination",
-                    Role = "origin",
+                    Role = originRole,
                     OriginField = "origin_id",
                     DestinationField = "origin_fk"
                 }
@@ -73,9 +76,9 @@ public sealed class CompositeRelationshipMetadataTests
                 {
                     Id = "related",
                     RelatedResourceId = "origin",
-                    Role = "destination",
-                    OriginField = "origin_id",
-                    DestinationField = "origin_fk"
+                    Role = destinationRole,
+                    OriginField = "origin_fk",
+                    DestinationField = "origin_id"
                 }
             ]
         };
@@ -88,11 +91,15 @@ public sealed class CompositeRelationshipMetadataTests
             .Should().ContainSingle().Subject;
         originResponse.Role.Should().Be("esriRelRoleOrigin");
         originResponse.KeyField.Should().Be("origin_id");
+        originResponse.OriginKeyField.Should().Be("origin_id");
+        originResponse.DestinationKeyField.Should().Be("origin_fk");
 
         var destinationResponse = FeatureServerEndpoints.BuildRelationshipResponseV2(destination, snapshot)
             .Should().ContainSingle().Subject;
         destinationResponse.Role.Should().Be("esriRelRoleDestination");
         destinationResponse.KeyField.Should().Be("origin_fk");
+        destinationResponse.OriginKeyField.Should().Be("origin_fk");
+        destinationResponse.DestinationKeyField.Should().Be("origin_id");
     }
 
     [UnitTest]
