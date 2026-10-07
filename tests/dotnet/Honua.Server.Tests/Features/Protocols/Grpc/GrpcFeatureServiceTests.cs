@@ -190,8 +190,9 @@ public sealed class GrpcFeatureServiceTests
             CreateCallContext());
         var exception = await edit.Should().ThrowAsync<RpcException>();
         exception.Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
-        await _featureWriter.DidNotReceive().ApplyEditsAsync(
-            Arg.Any<int>(), Arg.Any<FeatureEditBatch>(), Arg.Any<CancellationToken>());
+        _featureWriter.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync));
     }
 
     [Theory]
