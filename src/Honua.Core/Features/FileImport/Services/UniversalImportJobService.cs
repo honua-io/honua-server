@@ -37,7 +37,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
     private readonly ILogger<UniversalImportJobService> _logger;
     private readonly ConcurrentDictionary<string, ImportJobState> _jobs = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellationTokens = new();
-    private bool _disposed;
+    private int _disposed;
 
     public UniversalImportJobService(
         IServiceScopeFactory scopeFactory,
@@ -161,6 +161,21 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 {
                     await request.FileStream.CopyToAsync(tempStream, cancellationToken);
                 }
+
+                var backgroundStream = new FileStream(tempFilePath, new FileStreamOptions
+                {
+                    Mode = FileMode.Open,
+                    Access = FileAccess.Read,
+                    Share = FileShare.Read,
+                    BufferSize = 64 * 1024,
+                    Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+                });
+
+                backgroundRequest = request with
+                {
+                    FileStream = backgroundStream,
+                    CloudFileId = null
+                };
             }
             catch
             {
@@ -169,26 +184,13 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 // GetActiveJobsAsync for the full TTL with no job behind it.
                 TryDeleteTempFile(tempFilePath);
                 _jobs.TryRemove(jobId, out _);
-                _cancellationTokens.TryRemove(jobId, out _);
-                cts.Dispose();
+                if (_cancellationTokens.TryRemove(jobId, out var registeredCts))
+                {
+                    registeredCts.Dispose();
+                }
                 await TryMarkProgressFailedAsync(jobId);
                 throw;
             }
-
-            var backgroundStream = new FileStream(tempFilePath, new FileStreamOptions
-            {
-                Mode = FileMode.Open,
-                Access = FileAccess.Read,
-                Share = FileShare.Read,
-                BufferSize = 64 * 1024,
-                Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-            });
-
-            backgroundRequest = request with
-            {
-                FileStream = backgroundStream,
-                CloudFileId = null
-            };
         }
 
         // Start background processing
@@ -400,16 +402,20 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 RecordJobMetrics(status, state.Format, state.FileSize, featureCount, failedFeatures, stopwatch.Elapsed);
             }
 
+            // Unpublish first, then release the source with a using scoped to this block,
+            // before stream cleanup. A Dispose call after that cleanup is skipped when cleanup
+            // throws, and a disposed source must not stay visible to observers.
+            if (_cancellationTokens.TryRemove(jobId, out var cts))
+            {
+                using var _ = cts;
+            }
+
             if (stream != null)
             {
                 await stream.DisposeAsync();
             }
 
             TryDeleteTempFile(tempFilePath);
-            if (_cancellationTokens.TryRemove(jobId, out var cts))
-            {
-                using var _ = cts;
-            }
 
             _jobs.TryRemove(jobId, out _);
         }
@@ -525,19 +531,29 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
 
     public void Dispose()
     {
-        if (_disposed)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        foreach (var cts in _cancellationTokens.Values)
+        foreach (var entry in _cancellationTokens)
         {
-            cts.Cancel();
+            if (!_cancellationTokens.TryRemove(entry.Key, out var cts))
+            {
+                continue;
+            }
+
+            try
+            {
+                cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // A stale source must not prevent the remaining jobs from being torn down.
+            }
+
             cts.Dispose();
         }
 
-        _cancellationTokens.Clear();
         _jobs.Clear();
-
-        _disposed = true;
     }
 
     private static partial class UniversalImportJobLog

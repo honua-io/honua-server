@@ -308,11 +308,15 @@ internal static class ServiceCollectionExtensions
 
         // The read surface is the cached path; the write surface (IMetadataV2GraphStore) stays the
         // raw store so read-modify-write publish paths always load a fresh persisted snapshot.
+        // Cache-miss loads are shared across callers and outlive a cancelled initiator, so they
+        // resolve the store from their own scope instead of the initiating request's.
         services.AddScoped<IMetadataV2GraphProvider>(serviceProvider =>
             new CachingMetadataV2GraphProvider(
                 serviceProvider.GetRequiredService<IMetadataV2GraphStore>(),
                 serviceProvider.GetRequiredService<MetadataV2GraphSnapshotCache>(),
-                metadataEnvironment));
+                metadataEnvironment,
+                serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                static loadScope => loadScope.GetRequiredService<IMetadataV2GraphStore>()));
         // Legacy V1 catalog -> Metadata v2 graph projector (honua-server#2081). Lets compat
         // seeding paths (cloud-demo reset/startup) project freshly-seeded legacy services
         // into the active graph store so the v2 read paths resolve them.

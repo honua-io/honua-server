@@ -405,6 +405,14 @@ public static class VersionManagementServerEndpoints
         // a version attributed to another principal (#4036).
         var owner = ResolveOwner(context);
         var access = ParseAccess(GeoServicesRequestValueHelpers.GetValueString(values!, "accessPermission"));
+        if (!VersionAccessPolicy.CanCreateVersion(
+                access,
+                context.User?.Identity?.Name,
+                context.User?.Identity?.IsAuthenticated == true))
+        {
+            return StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage);
+        }
+
         var description = GeoServicesRequestValueHelpers.GetValueString(values!, "description");
 
         var request = new CreateVersionRequest(versionName, owner, access, ParentVersion: null, Description: description);

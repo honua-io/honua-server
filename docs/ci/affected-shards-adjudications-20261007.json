@@ -1,0 +1,42 @@
+[
+  {
+    "run_id": 37206830900,
+    "run_attempt": 1,
+    "head_sha": "7b9b966ee328ec7d85368019b1e5b55fd264ad90",
+    "shard": "GeoServices Catalog and ImageServer Support",
+    "verdict": "false-red",
+    "merge_sha": "65516277659ce829a349a074e32921098067f6af",
+    "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37208750036/job/111471386771",
+    "reason": "PR head matches merged PR 5427; the same shard's first completed trailing merge-commit run concluded success."
+  },
+  {
+    "run_id": 37441285627,
+    "run_attempt": 1,
+    "head_sha": "93df0966a466006b5ddcf8c10e307c7a566e5409",
+    "shard": "gRPC Protocol and Scene",
+    "verdict": "false-red",
+    "merge_sha": "9b346159de741162aef6764addb55f183e2f3ce9",
+    "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37453204047/job/112239141376",
+    "reason": "PR head matches merged PR 5541; the same shard's first completed trailing merge-commit run concluded success."
+  },
+  {
+    "run_id": 37614307268,
+    "run_attempt": 1,
+    "head_sha": "1c6961b77feed5a2eedd106e4f4ba7851fa7d430",
+    "shard": "STAC Protocol",
+    "verdict": "confirmed-red",
+    "merge_sha": "31617a93b9c6b2934876b1f779d6248f8169465c",
+    "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37620570415/job/112793739557",
+    "reason": "PR head matches merged PR 5667; the same shard's first completed trailing merge-commit run concluded failure."
+  },
+  {
+    "run_id": 37614307268,
+    "run_attempt": 1,
+    "head_sha": "1c6961b77feed5a2eedd106e4f4ba7851fa7d430",
+    "shard": "STAC Items and Collections",
+    "verdict": "confirmed-red",
+    "merge_sha": "31617a93b9c6b2934876b1f779d6248f8169465c",
+    "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37620570415/job/112793739443",
+    "reason": "PR head matches merged PR 5667; the same shard's first completed trailing merge-commit run concluded failure."
+  }
+]

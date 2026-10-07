@@ -59,4 +59,16 @@ public sealed class PostgresAuditLogTruncationTests
 
         PostgresAuditLog.Truncate(value, 256).Should().Be(value);
     }
+
+    [Fact]
+    public void SRV_DB_013_Truncate_DoesNotSplitSurrogatePairAtBoundary()
+    {
+        var value = new string('a', 254) + "😀" + "b";
+
+        var result = PostgresAuditLog.Truncate(value, 256);
+
+        result.Should().Be(new string('a', 254) + Ellipsis);
+        result.Should().NotContain(char.ConvertFromUtf32(0xFFFD));
+        result.Any(char.IsSurrogate).Should().BeFalse();
+    }
 }

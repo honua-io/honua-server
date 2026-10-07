@@ -11,6 +11,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Infrastructure.Validation;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
@@ -38,7 +39,8 @@ internal readonly record struct GeoServicesQueryRequest
 /// Converts validated GeoServices query inputs into the shared unified query model.
 /// </summary>
 internal sealed class GeoServicesQueryParameterAdapter(
-    ILogger<GeoServicesQueryParameterAdapter> logger) : IQueryParameterAdapter<GeoServicesQueryRequest>
+    ILogger<GeoServicesQueryParameterAdapter> logger,
+    IOptions<LimitsOptions>? limitsOptions = null) : IQueryParameterAdapter<GeoServicesQueryRequest>
 {
     private readonly ILogger<GeoServicesQueryParameterAdapter> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
@@ -63,7 +65,12 @@ internal sealed class GeoServicesQueryParameterAdapter(
             var hasObjectIdRequest = queryParams.ObjectIds is { Length: > 0 };
             var hasObjectIds = request.UseObjectIdsFastPath && hasObjectIdRequest;
             var outFields = ResolveOutFields(queryParams, resource);
-            var spatialFilter = ResolveSpatialFilter(queryParams, request.ParsedGeometry, request.InputSrid);
+            var spatialFilter = ResolveSpatialFilter(
+                queryParams,
+                request.ParsedGeometry,
+                request.InputSrid,
+                GeoServicesGeometryConverter.ResolveCurveVertexBudget(
+                    limitsOptions?.Value.Geometry.MaxVerticesPerGeometry));
             // When outStatistics is present the response columns are the declared statistic
             // aliases plus the groupByFieldsForStatistics columns, not the layer's source
             // fields, so validating orderByFields against the layer schema here would reject
@@ -184,7 +191,8 @@ internal sealed class GeoServicesQueryParameterAdapter(
     private static SpatialFilter? ResolveSpatialFilter(
         QueryParameters queryParams,
         GeoServicesGeometry? parsedGeometry,
-        int? inputSrid)
+        int? inputSrid,
+        int maxCurveVertices)
     {
         if (parsedGeometry == null && !queryParams.NearestCount.HasValue)
         {
@@ -199,6 +207,7 @@ internal sealed class GeoServicesQueryParameterAdapter(
         return GeoServicesSpatialFilterBuilder.BuildSpatialFilter(
             queryParams,
             parsedGeometry!,
-            inputSrid);
+            inputSrid,
+            maxCurveVertices);
     }
 }

@@ -213,7 +213,13 @@ internal sealed class PostgresAuditLog : IAuditLog
 
         // Keep room for a single-character marker so the truncation is visible
         // to forensic readers without breaking the column width contract.
-        return string.Concat(value.AsSpan(0, max - TruncationMarker.Length), TruncationMarker);
+        var contentLength = max - TruncationMarker.Length;
+        if (contentLength > 0 && char.IsHighSurrogate(value[contentLength - 1]))
+        {
+            contentLength--;
+        }
+
+        return string.Concat(value.AsSpan(0, contentLength), TruncationMarker);
     }
 }
 

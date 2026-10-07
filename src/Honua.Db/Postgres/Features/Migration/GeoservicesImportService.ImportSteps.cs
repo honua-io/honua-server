@@ -366,7 +366,8 @@ internal sealed partial class GeoservicesImportService
                     featuresProcessed,
                     _connectionProvider.GetConnectionString(),
                     cancellationToken,
-                    supportsAttachments: layerInfo.HasAttachments && request.ImportAttachments && _attachmentStore is not null)
+                    supportsAttachments: layerInfo.HasAttachments && request.ImportAttachments && _attachmentStore is not null,
+                    replacingExistingTarget: replacingExistingTarget)
                     .ConfigureAwait(false);
             }
 
@@ -375,11 +376,10 @@ internal sealed partial class GeoservicesImportService
             MigrationFidelityAttachmentInput? attachmentFidelity = null;
             var attachmentCount = 0;
             var failedAttachments = 0;
-            if (layerInfo.HasAttachments
+            if ((layerInfo.HasAttachments || replacingExistingTarget)
                 && request.ImportAttachments
                 && publishedLayer != null
-                && _attachmentStore != null
-                && objectIdMap.Count > 0)
+                && _attachmentStore != null)
             {
                 var attachmentOutcome = await CopyAttachmentsAsync(
                     request,
@@ -400,7 +400,8 @@ internal sealed partial class GeoservicesImportService
                     Advertised = attachmentOutcome.Advertised,
                     Copied = attachmentOutcome.Copied,
                     Failed = attachmentOutcome.Failed,
-                    UnverifiedParents = attachmentOutcome.UnverifiedParents
+                    UnverifiedParents = attachmentOutcome.UnverifiedParents,
+                    TargetUnverified = attachmentOutcome.TargetUnverified
                 };
             }
             else if (layerInfo.HasAttachments && request.ImportAttachments && _attachmentStore == null)

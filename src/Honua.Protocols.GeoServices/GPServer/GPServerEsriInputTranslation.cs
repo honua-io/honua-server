@@ -52,10 +52,14 @@ internal static class GPServerEsriInputTranslation
     /// </param>
     /// <param name="featureCollectionParameters">Catalog parameters consuming complete FeatureCollections.</param>
     /// <param name="includeDerivedSrid">Whether the process declares a canonical srid parameter.</param>
+    /// <param name="maxCurveVertices">
+    /// True-curve densification budget. Null uses the converter default.
+    /// </param>
     public static EsriInputTranslationResult Translate(
         IReadOnlyDictionary<string, string> inputs,
         IReadOnlySet<string>? featureCollectionParameters = null,
-        bool includeDerivedSrid = true)
+        bool includeDerivedSrid = true,
+        int? maxCurveVertices = null)
     {
         ArgumentNullException.ThrowIfNull(inputs);
 
@@ -106,7 +110,7 @@ internal static class GPServerEsriInputTranslation
                 {
                     if (featureCollectionParameters?.Contains(key) == true)
                     {
-                        if (!TryConvertFeatureSet(root, out var collection, out var collectionSrid, out var collectionError))
+                        if (!TryConvertFeatureSet(root, maxCurveVertices, out var collection, out var collectionSrid, out var collectionError))
                         {
                             return new EsriInputTranslationResult(translated, false,
                                 $"Input '{key}': {collectionError}", inputSpatialReference);
@@ -166,7 +170,7 @@ internal static class GPServerEsriInputTranslation
                         { Translated = false };
                     }
 
-                    if (!TryConvertEsriGeometry(featureGeometry, setSr, out var wkbBase64, out var sr, out var convertError))
+                    if (!TryConvertEsriGeometry(featureGeometry, setSr, maxCurveVertices, out var wkbBase64, out var sr, out var convertError))
                     {
                         return new EsriInputTranslationResult(
                             translated,
@@ -185,7 +189,7 @@ internal static class GPServerEsriInputTranslation
                 // Bare esriGeometry JSON: point/polyline/polygon/multipoint/envelope.
                 if (IsEsriGeometryShape(root))
                 {
-                    if (!TryConvertEsriGeometry(root, parentSpatialReference: null, out var wkbBase64, out var sr, out var convertError))
+                    if (!TryConvertEsriGeometry(root, parentSpatialReference: null, maxCurveVertices, out var wkbBase64, out var sr, out var convertError))
                     {
                         return new EsriInputTranslationResult(
                             translated,
@@ -223,7 +227,7 @@ internal static class GPServerEsriInputTranslation
     }
 
     private static bool TryConvertFeatureSet(
-        JsonElement root, out string value, out int? srid, out string? error)
+        JsonElement root, int? maxCurveVertices, out string value, out int? srid, out string? error)
     {
         value = string.Empty;
         srid = ReadSpatialReference(root);
@@ -270,7 +274,7 @@ internal static class GPServerEsriInputTranslation
                 }
                 else
                 {
-                    if (!TryConvertEsriGeometry(InheritDimensions(geometry, root), srid, out var encoded, out var geometrySrid, out error))
+                    if (!TryConvertEsriGeometry(InheritDimensions(geometry, root), srid, maxCurveVertices, out var encoded, out var geometrySrid, out error))
                     {
                         return false;
                     }
@@ -357,6 +361,7 @@ internal static class GPServerEsriInputTranslation
     private static bool TryConvertEsriGeometry(
         JsonElement geometryElement,
         int? parentSpatialReference,
+        int? maxCurveVertices,
         out string wkbBase64,
         out int? spatialReference,
         out string? error)
@@ -395,7 +400,7 @@ internal static class GPServerEsriInputTranslation
 
         try
         {
-            var wkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(geometry, srid);
+            var wkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(geometry, srid, maxCurveVertices);
             wkbBase64 = Convert.ToBase64String(wkb);
             spatialReference = srid;
             return true;

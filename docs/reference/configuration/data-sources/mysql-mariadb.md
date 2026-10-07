@@ -1,11 +1,11 @@
 ---
 type: reference
 title: "MySQL/MariaDB provider"
-description: "Honua supports MySQL 8.0.11+ and MariaDB 10.6+ as a read-only spatial feature provider."
+description: "Honua supports MySQL 8.0.12+ and MariaDB 10.6+ as a read-only spatial feature provider."
 ---
 # MySQL/MariaDB provider
 
-Honua supports MySQL 8.0.11+ and MariaDB 10.6+ as a **read-only** spatial feature
+Honua supports MySQL 8.0.12+ and MariaDB 10.6+ as a **read-only** spatial feature
 provider. This is a thin slice intended for serving spatial data that already
 lives in MySQL/MariaDB tables.
 
@@ -50,7 +50,7 @@ WHERE-field, and `Category=MySql` integration-test conventions.
 
 | Engine | Minimum Version | Notes |
 |--------|-----------------|-------|
-| MySQL  | 8.0.11          | Required for `ST_Distance_Sphere`, SRID-aware spatial functions |
+| MySQL  | 8.0.12          | `ST_Distance_Sphere` and SRID-aware functions need 8.0.11. EPSG:4326 point extents use `ST_Longitude`/`ST_Latitude`, added in 8.0.12. That release also redefined `ST_X`/`ST_Y` to follow SRS axis order, so 8.0.11 is not a safe floor. |
 | MariaDB | 10.6 LTS       | Spatial parity with MySQL 8.0 lineage |
 
 MySQL 5.7 is **not** supported; spatial function semantics changed
@@ -207,7 +207,7 @@ at startup:
 
 | `EngineFlavor` | Apply when                  | WKB I/O behaviour                                                                                                              |
 |----------------|----------------------------|-------------------------------------------------------------------------------------------------------------------------------|
-| `Mysql`        | Oracle MySQL 8.0.11+        | The provider emits `'axis-order=long-lat'` on `ST_AsWKB` and `ST_GeomFromWKB` so geographic SRSes (e.g. EPSG:4326) produce and consume canonical X/Y WKB regardless of the SRS-defined axis order. The option is permitted-but-ignored on projected SRSes (e.g. EPSG:3857). |
+| `Mysql`        | Oracle MySQL 8.0.12+        | The provider emits `'axis-order=long-lat'` on `ST_AsWKB` and `ST_GeomFromWKB` so geographic SRSes (e.g. EPSG:4326) produce and consume canonical X/Y WKB regardless of the SRS-defined axis order. The option is permitted-but-ignored on projected SRSes (e.g. EPSG:3857). |
 | `MariaDb`      | MariaDB 10.6+               | The provider uses the 2-argument `ST_GeomFromWKB(wkb, srid)` form. MariaDB does not support the third axis-order argument and does not enforce SRS-based axis order, so WKB-natural X/Y already matches the canonical Honua contract. |
 
 **Symptom of a wrong flavor.** With `EngineFlavor=MariaDb` against MySQL 8 (or
@@ -396,7 +396,7 @@ manually.
 - **Google Cloud SQL for MySQL** — supported. Enable Private IP and use the
   Cloud SQL Auth Proxy for IAM-based authentication.
 - **PlanetScale (Vitess)** — best-effort. PlanetScale's spatial support
-  depends on the underlying MySQL major version; confirm 8.0.11+ before
+  depends on the underlying MySQL major version; confirm 8.0.12+ before
   enabling.
 
 In all hosted environments, prefer secret-backed configuration for

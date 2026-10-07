@@ -254,10 +254,15 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
             using var document = await ReadDocumentAsync(response);
-            foreach (var id in new[] { "admin.multi-tenancy", "realtime.feature-streams", "serve.sensorthings" })
+            foreach (var (id, lifecycle) in new[]
+                     {
+                         ("admin.multi-tenancy", "internal"),
+                         ("realtime.feature-streams", "preview"),
+                         ("serve.sensorthings", "preview"),
+                     })
             {
                 var capability = GetCapability(document.RootElement, id);
-                capability.GetProperty("lifecycle").GetString().Should().Be("preview");
+                capability.GetProperty("lifecycle").GetString().Should().Be(lifecycle);
                 capability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
                 capability.GetProperty("available").GetBoolean().Should().BeFalse();
                 capability.GetProperty("reasonCode").GetString().Should().Be("disabled-by-configuration");
@@ -314,7 +319,7 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                 using var anonymousResponse = await anonymousClient.GetAsync("/api/v1/capabilities/manifest");
                 using var anonymousDocument = await ReadDocumentAsync(anonymousResponse);
                 var anonymousCapability = GetCapability(anonymousDocument.RootElement, "admin.multi-tenancy");
-                anonymousCapability.GetProperty("lifecycle").GetString().Should().Be("preview");
+                anonymousCapability.GetProperty("lifecycle").GetString().Should().Be("internal");
                 anonymousCapability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
                 anonymousCapability.GetProperty("available").GetBoolean().Should().BeFalse();
                 anonymousCapability.GetProperty("reasonCode").GetString().Should().Be("insufficient-policy");
@@ -326,14 +331,45 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                 using var adminDocument = await ReadDocumentAsync(adminResponse);
                 var adminCapability = GetCapability(adminDocument.RootElement, "admin.multi-tenancy");
                 adminCapability.GetProperty("available").GetBoolean().Should().BeTrue();
-                adminCapability.GetProperty("lifecycle").GetString().Should().Be("preview",
-                    "opting into a trial must never promote tenancy to GA");
+                adminCapability.GetProperty("lifecycle").GetString().Should().Be("internal",
+                    "opting in must never promote internal tenancy to a product lifecycle");
                 adminCapability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
             }
             finally
             {
                 await fixture.DisposeAsync();
             }
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(false, "disabled-by-configuration")]
+    [InlineData(true, "experimental-disabled")]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_InternalMultiTenancyWithoutOptIn_IsUnavailable(bool fromRegistry, string reasonCode)
+    {
+        var fixture = CreateManifestFixture(
+            edition: HonuaEdition.Enterprise,
+            manifestFromRegistry: fromRegistry,
+            experimentalGlobalEnabled: false,
+            tenantSchemaRoutingEnabled: true);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+            using var document = await ReadDocumentAsync(response);
+            var capability = GetCapability(document.RootElement, "admin.multi-tenancy");
+            capability.GetProperty("lifecycle").GetString().Should().Be("internal");
+            capability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
+            capability.GetProperty("available").GetBoolean().Should().BeFalse(
+                "an Internal capability stays default-off even in Enterprise with schema routing");
+            capability.GetProperty("reasonCode").GetString().Should().Be(reasonCode);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
         }
     }
 

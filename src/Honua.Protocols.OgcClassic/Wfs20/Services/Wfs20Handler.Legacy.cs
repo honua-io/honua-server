@@ -46,7 +46,7 @@ internal sealed partial class Wfs20Handler
 
         var descriptors = await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false);
         var featureTypes = await BuildFeatureTypesAsync(descriptors, cancellationToken).ConfigureAwait(false);
-        var wfsUrl = $"{baseUrl.TrimEnd('/')}/wfs";
+        var wfsUrl = BaseUrlResolver.PreserveToken(context.Request, $"{baseUrl.TrimEnd('/')}/wfs");
 
         return IsWfs10(version)
             ? BuildWfs10Capabilities(wfsUrl, featureTypes)

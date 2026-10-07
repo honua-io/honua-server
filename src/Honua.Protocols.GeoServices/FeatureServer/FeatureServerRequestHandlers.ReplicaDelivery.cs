@@ -415,7 +415,8 @@ internal static partial class FeatureServerEndpoints
                     spatialFilter = GeoServicesSpatialFilterBuilder.BuildSpatialFilter(
                         new QueryParameters { Geometry = scope.Geometry, GeometryType = scope.GeometryType },
                         parsedGeometry,
-                        scope.InputSrid ?? layer.Resource.ReadSrid());
+                        scope.InputSrid ?? layer.Resource.ReadSrid(),
+                        GeoServicesGeometryConverter.ResolveConfiguredCurveVertexBudget(context.RequestServices));
                 }
                 catch (ArgumentException)
                 {

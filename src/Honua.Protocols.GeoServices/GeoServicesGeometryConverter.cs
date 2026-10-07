@@ -3,9 +3,12 @@
 
 using System.Buffers.Binary;
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Infrastructure.Services;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NetTopologySuite;
 using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
@@ -18,6 +21,20 @@ namespace Honua.Protocols.GeoServices;
 /// </summary>
 internal static partial class GeoServicesGeometryConverter
 {
+    /// <summary>
+    /// Curve-expansion budget used when a caller has no configured limit. Matches the
+    /// <see cref="GeometryLimits.MaxVerticesPerGeometry"/> property default.
+    /// </summary>
+    internal const int DefaultMaxCurveVertices = 50_000;
+
+    /// <summary>
+    /// Highest curve-expansion budget conversion will allocate. This is the inclusive upper
+    /// bound of <see cref="GeometryLimits.MaxVerticesPerGeometry"/> (<c>[Range(1, 100000)]</c>).
+    /// A configured value inside that range is honored; a larger request is clamped here so a
+    /// caller cannot pass <see cref="int.MaxValue"/> and reintroduce unbounded densification.
+    /// </summary>
+    internal const int AbsoluteMaxCurveVertices = 100_000;
+
     private readonly record struct FastPointGeometry(
         double X,
         double Y,
@@ -148,19 +165,79 @@ internal static partial class GeoServicesGeometryConverter
     }
 
     /// <summary>
-    /// Converts GeoServices geometry to WKB.
+    /// Curve-expansion budget for query filters, GeometryServer, GPServer, and ImageServer.
+    /// Uses <see cref="GeometryLimits.MaxVerticesPerGeometry"/>, the same knob query admission
+    /// passes to <see cref="GeoServicesQueryGeometryMetadata"/>. Null or non-positive configuration
+    /// stays at <see cref="DefaultMaxCurveVertices"/>.
     /// </summary>
-    public static byte[] ConvertGeoServicesGeometryToWkb(GeoServicesGeometry geometry, int? srid = null)
+    internal static int ResolveCurveVertexBudget(int? configuredVertices)
+    {
+        if (configuredVertices is null or <= 0)
+        {
+            return DefaultMaxCurveVertices;
+        }
+
+        return Math.Min(configuredVertices.Value, AbsoluteMaxCurveVertices);
+    }
+
+    /// <summary>
+    /// Curve-expansion budget for stored edits. GeometryValidator rejects WKB above the
+    /// stricter of <see cref="GeometryLimits.MaxVerticesPerGeometry"/> and
+    /// <see cref="GeometryValidationOptions.MaxVertices"/>, so conversion stops at that same
+    /// minimum instead of allocating vertices the edit will discard.
+    /// </summary>
+    internal static int ResolveEditCurveVertexBudget(int? geometryMaxVertices, int? validationMaxVertices)
+    {
+        var geometryBudget = ResolveCurveVertexBudget(geometryMaxVertices);
+        if (validationMaxVertices is null or <= 0)
+        {
+            return geometryBudget;
+        }
+
+        return Math.Min(geometryBudget, validationMaxVertices.Value);
+    }
+
+    internal static int ResolveConfiguredCurveVertexBudget(IServiceProvider? services)
+        => ResolveCurveVertexBudget(
+            services?.GetService<IOptions<LimitsOptions>>()?.Value.Geometry.MaxVerticesPerGeometry);
+
+    internal static int ResolveConfiguredEditCurveVertexBudget(IServiceProvider? services)
+    {
+        var limits = services?.GetService<IOptions<LimitsOptions>>()?.Value;
+        if (limits is null)
+        {
+            return DefaultMaxCurveVertices;
+        }
+
+        return ResolveEditCurveVertexBudget(
+            limits.Geometry.MaxVerticesPerGeometry,
+            limits.Validation.MaxVertices);
+    }
+
+    /// <summary>
+    /// Converts GeoServices geometry to WKB. True curves are densified with
+    /// <paramref name="maxCurveVertices"/>, or <see cref="DefaultMaxCurveVertices"/> when that
+    /// argument is null. Values above <see cref="AbsoluteMaxCurveVertices"/> are clamped to that
+    /// supported maximum.
+    /// </summary>
+    /// <param name="geometry">GeoServices geometry to convert.</param>
+    /// <param name="srid">Optional SRID written into the WKB. Falls back to the geometry spatial reference.</param>
+    /// <param name="maxCurveVertices">Vertex budget for true-curve densification.</param>
+    public static byte[] ConvertGeoServicesGeometryToWkb(
+        GeoServicesGeometry geometry,
+        int? srid = null,
+        int? maxCurveVertices = null)
     {
         ArgumentNullException.ThrowIfNull(geometry);
 
         // True curves (curvePaths/curveRings) are densified into linear paths/rings up front so the
         // rest of the pipeline only ever deals with linear geometry. NTS/WKB cannot represent a true
         // curve, so densification is the storage representation (#1877 Part A; storage-linearization
-        // limitation documented on CurveGeometryConverter).
+        // limitation documented on CurveGeometryConverter). The budget is the caller-supplied
+        // configured limit, not a second hard-coded cap below that limit.
         if (HasTrueCurves(geometry))
         {
-            geometry = DensifyCurves(geometry);
+            geometry = DensifyCurves(geometry, ResolveCurveVertexBudget(maxCurveVertices));
         }
 
         if (IsEmptyGeometry(geometry))

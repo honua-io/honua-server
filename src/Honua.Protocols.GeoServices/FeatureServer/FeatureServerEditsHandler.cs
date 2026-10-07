@@ -1712,7 +1712,11 @@ internal sealed class FeatureServerEditsHandler(
             // alias of it, so store the geometry tagged with the layer's canonical SRID.
             try
             {
-                geometry = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(feature.Geometry, layerSrid);
+                geometry = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(
+                    feature.Geometry,
+                    layerSrid,
+                    GeoServicesGeometryConverter.ResolveConfiguredEditCurveVertexBudget(
+                        _httpContextAccessor.HttpContext?.RequestServices));
             }
             catch (ArgumentException ex)
             {

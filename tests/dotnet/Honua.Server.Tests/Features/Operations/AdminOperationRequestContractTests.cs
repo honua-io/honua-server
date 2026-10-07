@@ -62,6 +62,32 @@ public sealed class AdminOperationRequestContractTests
         capture.Uri.AbsolutePath.Should().EndWith("/layers/1/enabled");
     }
 
+    [Fact]
+    public async Task SRV_INF_015_AdminApiLoopback_PreservesPublicHostHeader()
+    {
+        using var capture = new CaptureHandler();
+        using var client = new HttpClient(capture);
+        var factory = Substitute.For<IHttpClientFactory>();
+        factory.CreateClient(AdminApiOperationExecutor.HttpClientName).Returns(client);
+        var executor = new AdminApiOperationExecutor(
+            AdminApiOperationCatalog.Definitions.Single(d => d.OperationId == "admin.layer.set-enabled"),
+            factory, Context(), new InMemoryAdminApiKeyStore(TimeProvider.System), TimeProvider.System,
+            new OperationLineageAttestationStore(TimeProvider.System));
+
+        await executor.SubmitAsync(new OperationRequest
+        {
+            OperationId = executor.OperationId,
+            ConnectionId = "11111111-1111-1111-1111-111111111111",
+            Parameters = new Dictionary<string, string?>
+            {
+                ["layerId"] = "1",
+                ["enabled"] = "true"
+            }
+        }, new OperationPolicyContext());
+
+        capture.Host.Should().Be("localhost:8080");
+    }
+
     [Theory]
     [InlineData("2026")]
     [InlineData("true")]
@@ -330,10 +356,12 @@ public sealed class AdminOperationRequestContractTests
     {
         public Uri? Uri { get; private set; }
         public string? Body { get; private set; }
+        public string? Host { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Uri = request.RequestUri;
+            Host = request.Headers.Host;
             Body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
         }

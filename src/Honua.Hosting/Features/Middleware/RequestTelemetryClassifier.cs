@@ -1048,7 +1048,7 @@ internal static class RequestTelemetryClassifier
             return prefix;
         }
 
-        return prefix + "." + request.Trim().ToLowerInvariant();
+        return ResolveBoundedOgcOperation(prefix, request);
     }
 
     private static string ResolveStacOperation(string path, string method)
@@ -1107,7 +1107,21 @@ internal static class RequestTelemetryClassifier
             return prefix;
         }
 
-        return prefix + "." + request.Trim().ToLowerInvariant();
+        return ResolveBoundedOgcOperation(prefix, request);
+    }
+
+    private static string ResolveBoundedOgcOperation(string prefix, string request)
+    {
+        var operation = request.Trim().ToUpperInvariant();
+        var supported = prefix switch
+        {
+            "wfs" => operation is "GETCAPABILITIES" or "DESCRIBEFEATURETYPE" or "GETFEATURE" or "GETPROPERTYVALUE" or "TRANSACTION" or "LOCKFEATURE" or "LISTSTOREDQUERIES" or "DESCRIBESTOREDQUERIES" or "CREATESTOREDQUERY" or "DROPSTOREDQUERY",
+            "wms" => operation is "GETCAPABILITIES" or "GETMAP" or "GETFEATUREINFO" or "GETLEGENDGRAPHIC",
+            "wmts" => operation is "GETCAPABILITIES" or "GETTILE" or "GETFEATUREINFO",
+            "wcs" => operation is "GETCAPABILITIES" or "DESCRIBECOVERAGE" or "GETCOVERAGE",
+            _ => false
+        };
+        return supported ? prefix + "." + operation.ToLowerInvariant() : prefix + ".unsupported";
     }
 
     private static bool HasQueryOption(HttpContext context, string key)

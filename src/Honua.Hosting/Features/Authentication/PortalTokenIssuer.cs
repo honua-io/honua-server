@@ -100,60 +100,66 @@ internal sealed partial class PortalTokenIssuer(
         PortalTokenBinding binding,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(binding);
-
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            return null;
-        }
-
-        var record = await GetAsync(
-            TokenKeyPrefix,
-            token,
-            PortalTokenJsonContext.Default.PortalTokenRecord,
-            cancellationToken).ConfigureAwait(false);
-
+        var record = await RestoreBoundRecordAsync(token, binding, cancellationToken).ConfigureAwait(false);
         if (record is null)
         {
             return null;
         }
 
-        if (!BindingMatches(record, binding))
-        {
-            var requestBindingValue = record.ClientType switch
-            {
-                PortalTokenClientType.Referer => binding.Referer,
-                PortalTokenClientType.Ip => binding.ClientIp,
-                _ => null,
-            };
-            PortalTokenLog.BindingMismatch(
-                _logger,
-                record.ClientType.ToString(),
-                LogValueRedactor.Hash(token),
-                !string.IsNullOrWhiteSpace(requestBindingValue),
-                LogValueRedactor.Hash(record.BindingValue),
-                LogValueRedactor.Hash(NormalizeBindingValue(record.ClientType, requestBindingValue ?? string.Empty)));
-            return null;
-        }
-
-        if (!ClaimsMappingTenantAllowed(record))
-        {
-            // The tenant itself can no longer be validated, so the token is refused rather than
-            // degraded. Dropping just the tenant would re-evaluate the caller against whatever
-            // scope an absent tenant resolves to, which is not reliably narrower than the one
-            // it was issued for (honua-server#2997 review).
-            PortalTokenLog.ClaimsMappingTenantNoLongerEntitled(_logger, LogValueRedactor.Hash(token));
-            return null;
-        }
-
-        if (!await SourceCredentialStillValidAsync(record, cancellationToken).ConfigureAwait(false))
-        {
-            PortalTokenLog.SourceCredentialNoLongerValid(_logger, LogValueRedactor.Hash(token));
-            return null;
-        }
-
         var principal = ProjectPrincipal(record, ResolveRoles(record));
         return new PortalTokenValidation(principal, record.ExpiresAt);
+    }
+
+    /// <inheritdoc />
+    public async Task<PortalTokenExchange?> ExchangeAsync(
+        PortalTokenExchangeRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        // The presented token authenticates the exchange, so it passes exactly the checks a
+        // request presenting it anywhere else passes, binding included (#5491 review).
+        var presented = await RestoreBoundRecordAsync(
+            request.Token,
+            request.PresentedBinding,
+            cancellationToken).ConfigureAwait(false);
+        if (presented is null)
+        {
+            return null;
+        }
+
+        // Derive from the stored record, not from a reduced view of it: the persisted roles,
+        // their claims-mapping provenance and fallback, the tenant's provenance and the backing
+        // credential all carry over, so the new token is revalidated on every restore exactly as
+        // the presented one is for backing-credential and entitlement changes (#5491 review).
+        var expiresAt = request.ExpiresAt < presented.ExpiresAt ? request.ExpiresAt : presented.ExpiresAt;
+        var token = CreateTokenValue();
+        var record = new PortalTokenRecord
+        {
+            PrincipalId = presented.PrincipalId,
+            DisplayName = presented.DisplayName,
+            TenantId = presented.TenantId,
+            Roles = presented.Roles,
+            RolesRequireClaimsMappingEntitlement = presented.RolesRequireClaimsMappingEntitlement,
+            RolesWithoutClaimsMapping = presented.RolesWithoutClaimsMapping,
+            TenantRequiresClaimsMappingEntitlement = presented.TenantRequiresClaimsMappingEntitlement,
+            ClientType = request.ClientType,
+            BindingValue = NormalizeBindingValue(request.ClientType, request.BindingValue),
+            ExpiresAt = expiresAt,
+            Source = presented.Source,
+        };
+
+        await SetAsync(
+            TokenKeyPrefix + token,
+            record,
+            expiresAt,
+            PortalTokenJsonContext.Default.PortalTokenRecord,
+            cancellationToken).ConfigureAwait(false);
+
+        return new PortalTokenExchange(
+            new PortalTokenIssuance(token, expiresAt),
+            presented.PrincipalId,
+            presented.TenantId);
     }
 
     /// <inheritdoc />
@@ -213,6 +219,71 @@ internal sealed partial class PortalTokenIssuer(
         // request-path validator and introspection both resolve to this entry, so a
         // revoked token is rejected on the very next request across every replica.
         await RemoveAsync(TokenKeyPrefix + tokenReference, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Loads the stored record for <paramref name="token"/> when it may be honoured on a request
+    /// observed with <paramref name="binding"/>: active, bound to that request, its tenant still
+    /// entitled and its backing credential still live. Otherwise <see langword="null"/>.
+    /// </summary>
+    private async Task<PortalTokenRecord?> RestoreBoundRecordAsync(
+        string token,
+        PortalTokenBinding binding,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return null;
+        }
+
+        var record = await GetAsync(
+            TokenKeyPrefix,
+            token,
+            PortalTokenJsonContext.Default.PortalTokenRecord,
+            cancellationToken).ConfigureAwait(false);
+
+        if (record is null)
+        {
+            return null;
+        }
+
+        if (!BindingMatches(record, binding))
+        {
+            var requestBindingValue = record.ClientType switch
+            {
+                PortalTokenClientType.Referer => binding.Referer,
+                PortalTokenClientType.Ip => binding.ClientIp,
+                _ => null,
+            };
+            PortalTokenLog.BindingMismatch(
+                _logger,
+                record.ClientType.ToString(),
+                LogValueRedactor.Hash(token),
+                !string.IsNullOrWhiteSpace(requestBindingValue),
+                LogValueRedactor.Hash(record.BindingValue),
+                LogValueRedactor.Hash(NormalizeBindingValue(record.ClientType, requestBindingValue ?? string.Empty)));
+            return null;
+        }
+
+        if (!ClaimsMappingTenantAllowed(record))
+        {
+            // The tenant itself can no longer be validated, so the token is refused rather than
+            // degraded. Dropping just the tenant would re-evaluate the caller against whatever
+            // scope an absent tenant resolves to, which is not reliably narrower than the one
+            // it was issued for (honua-server#2997 review).
+            PortalTokenLog.ClaimsMappingTenantNoLongerEntitled(_logger, LogValueRedactor.Hash(token));
+            return null;
+        }
+
+        if (!await SourceCredentialStillValidAsync(record, cancellationToken).ConfigureAwait(false))
+        {
+            PortalTokenLog.SourceCredentialNoLongerValid(_logger, LogValueRedactor.Hash(token));
+            return null;
+        }
+
+        return record;
     }
 
     private static string CreateTokenValue()

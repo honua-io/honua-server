@@ -111,9 +111,6 @@ internal static partial class MapServerEndpoints
                 .Where(layer => IsTileLayerVisibleAtScale(layer.Resource, z))
                 .Where(layer => access.IsAccessible(layer.Resource))
                 .ToArray();
-            var renderLayers = renderResources
-                .Select(BuildTileRenderDescriptor)
-                .ToArray();
             var maxFeatures = service.Settings?.MaxFeaturesPerLayer ?? MaxFeaturesPerLayer;
             var serviceSrid = ResolveTileServiceSrid(service, publishedLayers);
             var storage = context.RequestServices.GetService<ICloudFileStorage>();
@@ -128,6 +125,13 @@ internal static partial class MapServerEndpoints
                 rlsFilterSource,
                 renderResources,
                 cancellationToken).ConfigureAwait(false);
+            // Field masks can change style filters and symbol values just as RLS changes
+            // rendered geometry. Partition cached PNGs by both effective policies.
+            var fieldMaskSource = context.RequestServices.GetService<IFieldMaskSource>();
+            var (fieldMaskFingerprint, renderLayers) = await ResolveTileFieldMaskSnapshotAsync(
+                fieldMaskSource,
+                renderResources,
+                cancellationToken).ConfigureAwait(false);
             var tileCacheKey = BuildMapServerTileCacheKey(
                 storageOptions,
                 snapshot,
@@ -137,6 +141,7 @@ internal static partial class MapServerEndpoints
                 serviceSrid,
                 maxFeatures,
                 rlsFingerprint,
+                fieldMaskFingerprint,
                 z,
                 y,
                 x);
@@ -321,6 +326,47 @@ internal static partial class MapServerEndpoints
         return GeoServicesCloudTileCache.Hash(string.Join('|', parts));
     }
 
+    internal static async Task<string> BuildTileFieldMaskFingerprintAsync(
+        IFieldMaskSource? fieldMaskSource,
+        TileLayerDescriptor[] renderResources,
+        CancellationToken cancellationToken)
+        => (await ResolveTileFieldMaskSnapshotAsync(fieldMaskSource, renderResources, cancellationToken)
+            .ConfigureAwait(false)).Fingerprint;
+
+    private static async Task<(string Fingerprint, RenderLayerDescriptor[] RenderLayers)> ResolveTileFieldMaskSnapshotAsync(
+        IFieldMaskSource? fieldMaskSource,
+        TileLayerDescriptor[] renderResources,
+        CancellationToken cancellationToken)
+    {
+        var renderLayers = new List<RenderLayerDescriptor>(renderResources.Length);
+        foreach (var layer in renderResources)
+        {
+            var fields = fieldMaskSource is null
+                ? ImmutableArray<string>.Empty
+                : await fieldMaskSource.ResolveAsync(layer.Resource, cancellationToken).ConfigureAwait(false);
+            // Pin even an empty set: the provider must not resolve a newer policy while
+            // rendering or paging bytes that will be cached under this snapshot's key.
+            renderLayers.Add(BuildTileRenderDescriptor(layer) with { EnforcedMaskedFields = fields });
+        }
+
+        var parts = new List<string>(renderResources.Length);
+        foreach (var layer in renderLayers.OrderBy(static layer => layer.LayerId))
+        {
+            var normalized = layer.EnforcedMaskedFields!.Value
+                .Where(static field => !string.IsNullOrWhiteSpace(field))
+                .Select(static field => field.Trim())
+                .OrderBy(static field => field, StringComparer.Ordinal)
+                .ToArray();
+            // Length prefixes keep literal commas, pipes and colons inside field names
+            // distinct from boundaries between fields and layers.
+            var encoded = string.Concat(normalized.Select(static field =>
+                $"{field.Length.ToString(CultureInfo.InvariantCulture)}:{field}"));
+            parts.Add($"{layer.LayerId.ToString(CultureInfo.InvariantCulture)}:{normalized.Length.ToString(CultureInfo.InvariantCulture)}:{encoded}");
+        }
+
+        return (GeoServicesCloudTileCache.Hash(string.Join('|', parts)), [.. renderLayers]);
+    }
+
     private static string BuildMapServerTileCacheKey(
         CloudStorageOptions? storageOptions,
         MetadataV2GraphSnapshot snapshot,
@@ -330,6 +376,7 @@ internal static partial class MapServerEndpoints
         int serviceSrid,
         int maxFeatures,
         string rlsFingerprint,
+        string fieldMaskFingerprint,
         int z,
         int y,
         int x)
@@ -350,7 +397,8 @@ internal static partial class MapServerEndpoints
             serviceSrid.ToString(CultureInfo.InvariantCulture),
             maxFeatures.ToString(CultureInfo.InvariantCulture),
             renderLayerKey,
-            rlsFingerprint));
+            rlsFingerprint,
+            fieldMaskFingerprint));
 
         return GeoServicesCloudTileCache.BuildObjectKey(
             storageOptions,

@@ -46,6 +46,62 @@ public sealed class CompositeRelationshipMetadataTests
         response.DestinationKeyField.Should().Be("child_key");
     }
 
+    [UnitTheory]
+    [InlineData("origin", "destination")]
+    [InlineData("esriRelRoleOrigin", "esriRelRoleDestination")]
+    public void Issue5493_RelationshipResponse_UsesProtocolRolesAndTheCurrentSidesKeyField(
+        string originRole, string destinationRole)
+    {
+        var origin = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "origin" },
+            Relationships =
+            [
+                new MetadataV2Relationship
+                {
+                    Id = "related",
+                    RelatedResourceId = "destination",
+                    Role = originRole,
+                    OriginField = "origin_id",
+                    DestinationField = "origin_fk"
+                }
+            ]
+        };
+        var destination = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "destination" },
+            Relationships =
+            [
+                new MetadataV2Relationship
+                {
+                    Id = "related",
+                    RelatedResourceId = "origin",
+                    Role = destinationRole,
+                    OriginField = "origin_fk",
+                    DestinationField = "origin_id"
+                }
+            ]
+        };
+        var snapshot = new MetadataV2GraphSnapshot(
+            new MetadataV2Graph { Resources = [origin, destination] },
+            "test",
+            DateTimeOffset.UnixEpoch);
+
+        var originResponse = FeatureServerEndpoints.BuildRelationshipResponseV2(origin, snapshot)
+            .Should().ContainSingle().Subject;
+        originResponse.Role.Should().Be("esriRelRoleOrigin");
+        originResponse.KeyField.Should().Be("origin_id");
+        originResponse.OriginKeyField.Should().Be("origin_id");
+        originResponse.DestinationKeyField.Should().Be("origin_fk");
+
+        var destinationResponse = FeatureServerEndpoints.BuildRelationshipResponseV2(destination, snapshot)
+            .Should().ContainSingle().Subject;
+        destinationResponse.Role.Should().Be("esriRelRoleDestination");
+        destinationResponse.KeyField.Should().Be("origin_fk");
+        destinationResponse.OriginKeyField.Should().Be("origin_fk");
+        destinationResponse.DestinationKeyField.Should().Be("origin_id");
+    }
+
     [UnitTest]
     public void CompositePublication_DoesNotAdvertiseEditsButOtherResourcesStillCan()
     {

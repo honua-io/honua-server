@@ -451,6 +451,70 @@ public sealed class GeometryServiceMeasureAnalysisTests : IClassFixture<WebAppFi
     [IntegrationTest]
     [Operation(Operations.Densify)]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/densify")]
+    public async Task SRV_GS_002_Densify_CumulativeRequestVertexBudget_Returns400WithoutOom()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolyline",
+                "geometries": [
+                    {"paths": [[[0,0],[9000000,0]]]},
+                    {"paths": [[[0,0],[9000000,0]]]}
+                ]
+            },
+            "sr": "3857",
+            "maxSegmentLength": 1.0
+        }
+        """;
+
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/densify",
+            requestContent);
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Densify)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/densify")]
+    public async Task Densify_MultiplePolylines_PreservesOutputOrderAfterPreflight()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolyline",
+                "geometries": [
+                    {"paths": [[[0,0],[10,0]]]},
+                    {"paths": [[[20,0],[40,0]]]}
+                ]
+            },
+            "sr": "3857",
+            "maxSegmentLength": 5.0
+        }
+        """;
+
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/densify", requestContent);
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        result!.Geometries.Should().HaveCount(2);
+        var firstPath = result.Geometries![0].GetProperty("paths")[0];
+        var secondPath = result.Geometries[1].GetProperty("paths")[0];
+        firstPath[0][0].GetDouble().Should().Be(0);
+        firstPath[firstPath.GetArrayLength() - 1][0].GetDouble().Should().Be(10);
+        secondPath[0][0].GetDouble().Should().Be(20);
+        secondPath[secondPath.GetArrayLength() - 1][0].GetDouble().Should().Be(40);
+        firstPath.GetArrayLength().Should().BeGreaterThan(2);
+        secondPath.GetArrayLength().Should().BeGreaterThan(2);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Densify)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/densify")]
     public async Task Densify_ReasonableMaxSegmentLengthOverLargeExtent_StillSucceeds()
     {
         // The cap must not reject legitimate densify requests: a 2,000,000-unit segment at

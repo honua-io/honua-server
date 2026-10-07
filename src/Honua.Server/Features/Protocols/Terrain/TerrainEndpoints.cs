@@ -16,6 +16,7 @@ using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using Microsoft.Net.Http.Headers;
 
 namespace Honua.Server.Features.Protocols.Terrain;
 
@@ -285,6 +286,30 @@ internal static class TerrainEndpoints
             _ => StandardErrorHelpers.CreateBadRequest(context, exception.Message)
         };
 
-    private static void SetCacheHeader(HttpContext context, int cacheMaxAge)
-        => context.Response.Headers["Cache-Control"] = $"public, max-age={Math.Max(0, cacheMaxAge)}";
+    // Every request header that can select the caller's principal (mirrors the output-cache
+    // bypass set), plus Cookie for the admin session. A private response must vary on all of them
+    // so a user-agent cache never replays one caller's tile after the credential changes.
+    private static readonly string[] CredentialHeaders =
+    [
+        HeaderNames.Authorization,
+        "X-API-Key",
+        "X-Esri-Authorization",
+        "X-Honua-Embed-Key",
+        "X-Honua-Token",
+    ];
+
+    private static readonly string CredentialVary =
+        string.Join(", ", CredentialHeaders.Append(HeaderNames.Cookie));
+
+    internal static void SetCacheHeader(HttpContext context, int cacheMaxAge)
+    {
+        var credentialed = context.User.Identity?.IsAuthenticated == true
+            || CredentialHeaders.Any(context.Request.Headers.ContainsKey);
+        context.Response.Headers[HeaderNames.CacheControl] =
+            $"{(credentialed ? "private" : "public")}, max-age={Math.Max(0, cacheMaxAge)}";
+        if (credentialed)
+        {
+            context.Response.Headers[HeaderNames.Vary] = CredentialVary;
+        }
+    }
 }

@@ -12,6 +12,7 @@ using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.PackageReview.Abstractions;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Studio.Drafts;
@@ -141,10 +142,10 @@ public sealed class CapabilityRegistryConformanceTests
                     $"lifecycle-only Preview capability '{descriptor.Id}' is already served");
                 resolution.ReasonCode.Should().BeNull();
             }
-            else if (descriptor.Maturity is CapabilityMaturity.Experimental or CapabilityMaturity.Preview)
+            else if (descriptor.Maturity is CapabilityMaturity.Internal or CapabilityMaturity.Experimental or CapabilityMaturity.Preview)
             {
                 descriptor.RequiresOptIn.Should().BeTrue(
-                    "all other Preview and Experimental capabilities retain their opt-in gate");
+                    "Internal and all other Preview and Experimental capabilities retain their opt-in gate");
                 // Since the #2346 T10 flip, experimental capabilities resolve disabled in the
                 // default context (no experimental flags set) with the dedicated reason code.
                 resolution.Enabled.Should().BeFalse(
@@ -162,6 +163,39 @@ public sealed class CapabilityRegistryConformanceTests
         var unknown = Registry.Resolve("does.not.exist", context);
         unknown.Enabled.Should().BeFalse();
         unknown.ReasonCode.Should().Be(CapabilityRegistry.NotRegisteredReasonCode);
+    }
+
+    [UnitTest]
+    public void InternalMultiTenancy_RetainsOptInAndEditionGates()
+    {
+        const string capabilityId = "admin.multi-tenancy";
+        var descriptor = Registry.Find(capabilityId)!;
+        descriptor.Maturity.Should().Be(CapabilityMaturity.Internal);
+        descriptor.RequiresOptIn.Should().BeTrue();
+        descriptor.MinimumEdition.Should().Be(HonuaEdition.Enterprise);
+
+        var context = new CapabilityGateContext { Edition = HonuaEdition.Enterprise };
+        var disabled = Registry.Resolve(capabilityId, context);
+        disabled.Enabled.Should().BeFalse("the Internal relabel preserves default-off behavior even in Enterprise");
+        disabled.ReasonCode.Should().Be(CapabilityReasonCodes.ExperimentalDisabled);
+
+        var flags = new CapabilityFlagOptions();
+        flags.Capabilities[capabilityId] = new ExperimentalCapabilityFlag { Enabled = true };
+        var unlicensed = Registry.Resolve(capabilityId, new CapabilityGateContext
+        {
+            ExperimentalFlags = flags,
+            Edition = HonuaEdition.Community,
+        });
+        unlicensed.Enabled.Should().BeFalse("opting in does not bypass the edition gate");
+        unlicensed.ReasonCode.Should().Be(CapabilityReasonCodes.LicenseRequired);
+
+        var enabled = Registry.Resolve(capabilityId, new CapabilityGateContext
+        {
+            ExperimentalFlags = flags,
+            Edition = HonuaEdition.Enterprise,
+        });
+        enabled.Enabled.Should().BeTrue("the internal deployment retains its canonical opt-in");
+        enabled.ReasonCode.Should().BeNull();
     }
 
     [UnitTest]

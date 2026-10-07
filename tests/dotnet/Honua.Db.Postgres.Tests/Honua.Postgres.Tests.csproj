@@ -30,6 +30,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="../../../src/Honua.Server/Migrations/125_AddImportedAttachmentIdentity.sql" Link="Migrations/125_AddImportedAttachmentIdentity.sql" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\seed\demo-stac-imagery-v1.sql" Link="Seed\demo-stac-imagery-v1.sql">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
