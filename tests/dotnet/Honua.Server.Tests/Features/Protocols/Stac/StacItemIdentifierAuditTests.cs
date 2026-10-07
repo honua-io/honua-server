@@ -115,6 +115,9 @@ public sealed class StacItemIdentifierAuditTests
     };
 }
 
+/// <summary>
+/// Regression coverage for STAC self links and provider-key item identifiers.
+/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Stac)]
 public sealed class StacItemIdentifierEndpointAuditTests : IAsyncLifetime
