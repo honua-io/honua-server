@@ -340,6 +340,24 @@ public static class FilterExpressionNormalizer
             return literal;
         }
 
+        // Untyped FES literals (and CQL2 string literals) arrive as Text so a string
+        // field keeps their lexical form; a numeric field takes their numeric value.
+        if (literal.Type == LiteralType.Text && literal.Value is string text)
+        {
+            if (long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer))
+            {
+                return integer is >= int.MinValue and <= int.MaxValue
+                    ? new Literal((int)integer, LiteralType.Number)
+                    : new Literal(integer, LiteralType.Number);
+            }
+
+            if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var real) &&
+                double.IsFinite(real))
+            {
+                return new Literal(real, LiteralType.Number);
+            }
+        }
+
         throw new ArgumentException($"Field '{propertyName}' expects a numeric value.");
     }
 

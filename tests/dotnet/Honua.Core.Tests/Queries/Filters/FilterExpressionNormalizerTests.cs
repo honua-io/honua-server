@@ -41,6 +41,53 @@ public sealed class FilterExpressionNormalizerTests
             .Should().BeOfType<Literal>().Subject.Value.Should().Be(new TimeOnly(8, 0));
     }
 
+    [UnitTheory]
+    [InlineData(MetadataV2FieldType.Integer, "1000", 1000)]
+    [InlineData(MetadataV2FieldType.BigInteger, "5000000000", 5000000000L)]
+    [InlineData(MetadataV2FieldType.Float, "12.5", 12.5d)]
+    [InlineData(MetadataV2FieldType.Double, "-3", -3)]
+    public void SRV_DB_007_NumericFieldCoercesUntypedFesLiteral(MetadataV2FieldType type, string lexical, object expected)
+    {
+        var expression = Fes20Parser.ParseFilter(
+            $"<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:PropertyIsGreaterThan><fes:ValueReference>pop</fes:ValueReference><fes:Literal>{lexical}</fes:Literal></fes:PropertyIsGreaterThan></fes:Filter>");
+
+        var normalized = FilterExpressionNormalizer.Normalize(expression, ResourceWithField("pop", type));
+
+        var literal = normalized.Should().BeOfType<BinaryExpression>().Subject.Right
+            .Should().BeOfType<Literal>().Subject;
+        literal.Type.Should().Be(LiteralType.Number);
+        literal.Value.Should().Be(expected);
+    }
+
+    [UnitTest]
+    public void SRV_DB_007_NumericFieldRejectsNonNumericText()
+    {
+        var expression = new BinaryExpression(
+            new PropertyReference("pop"), BinaryOperator.Equal, new Literal("abc", LiteralType.Text));
+
+        var act = () => FilterExpressionNormalizer.Normalize(
+            expression, ResourceWithField("pop", MetadataV2FieldType.Integer));
+
+        act.Should().Throw<ArgumentException>().WithMessage("*expects a numeric value*");
+    }
+
+    [UnitTheory]
+    [InlineData(MetadataV2FieldType.Uuid, "3F2504E0-4F89-11D3-9A0C-0305E82C3301", "\"3f2504e0-4f89-11d3-9a0c-0305e82c3301\"")]
+    [InlineData(MetadataV2FieldType.Time, "08:00:00", "\"08:00:00\"")]
+    public void SRV_DB_017_NormalizedUuidAndTimeLiteralsStillMatchInMemory(MetadataV2FieldType type, string lexical, string json)
+    {
+        var expression = new BinaryExpression(
+            new PropertyReference("f"), BinaryOperator.Equal, new Literal(lexical, LiteralType.Text));
+
+        var normalized = FilterExpressionNormalizer.Normalize(expression, ResourceWithField("f", type));
+
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        InMemoryFilterEvaluator.Evaluate(
+            normalized,
+            new Dictionary<string, System.Text.Json.JsonElement> { ["f"] = document.RootElement })
+            .Should().BeTrue();
+    }
+
     private static MetadataV2Resource ResourceWithField(string name, MetadataV2FieldType type)
         => new()
         {
