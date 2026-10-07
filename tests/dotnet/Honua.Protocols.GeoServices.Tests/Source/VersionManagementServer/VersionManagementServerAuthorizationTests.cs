@@ -403,6 +403,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
 
     [IntegrationTheory]
     [InlineData("", "ApiKey")]
+    // An empty portal token leaves the caller anonymous but selects a Bearer challenge.
     [InlineData("?token=", "Bearer")]
     [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]
