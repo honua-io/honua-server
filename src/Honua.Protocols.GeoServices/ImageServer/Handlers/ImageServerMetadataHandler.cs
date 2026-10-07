@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using System.Globalization;
-using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -165,9 +164,6 @@ internal sealed class ImageServerMetadataHandler
             var tileMetadataOptions = context.RequestServices
                 .GetRequiredService<IOptions<ImageServerTileMetadataOptions>>().Value;
             var advertiseTileCache = tileMetadataOptions.Enabled;
-            var exportTilesAllowed = advertiseTileCache
-                && context.RequestServices.GetService<ICloudFileStorage>() is not null;
-            var tileLimits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles;
             var tileInfo = advertiseTileCache
                 ? ImageServerTileInfoBuilder.Build(tileMetadataOptions.MaxLevel)
                 : null;
@@ -211,18 +207,12 @@ internal sealed class ImageServerMetadataHandler
                 MaxValues = statistics.Select(s => s.MaxValue ?? 0).ToArray(),
                 MeanValues = statistics.Select(s => s.MeanValue ?? 0).ToArray(),
                 StdvValues = statistics.Select(s => s.StandardDeviation ?? 0).ToArray(),
-                Capabilities = advertiseTileCache
-                    ? "Catalog,Image,Metadata,Mensuration,Pixels,Statistics,Tiles"
-                    : "Catalog,Image,Metadata,Mensuration,Pixels,Statistics",
+                Capabilities = "Catalog,Image,Metadata,Mensuration,Pixels,Statistics",
                 MensurationCapabilities = "Basic",
                 MaxImageHeight = MaxImageHeight,
                 MaxImageWidth = MaxImageWidth,
                 MaxRecordCount = MaxRecordCount,
                 SingleFusedMapCache = advertiseTileCache,
-                ExportTilesAllowed = exportTilesAllowed,
-                MaxExportTilesCount = exportTilesAllowed ? Math.Max(1, tileLimits.MaxTilesPerRequest) : 0,
-                MinLod = advertiseTileCache ? 0 : null,
-                MaxLod = advertiseTileCache ? tileMetadataOptions.MaxLevel : null,
                 CacheType = null,
                 TileInfo = tileInfo,
                 HasHistograms = true,
