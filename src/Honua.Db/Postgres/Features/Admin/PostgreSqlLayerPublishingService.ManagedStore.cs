@@ -235,7 +235,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     /// <exception cref="LayerPublishingException">The connections resolve different tables.</exception>
     private async Task VerifyManagedStoreConnectionAsync(
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
+        NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
         if (_featureStoreConnections is null)

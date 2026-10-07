@@ -11,7 +11,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private async Task<IReadOnlyList<PublishedLayerSummary>> HydrateSourceGovernanceAsync(
         List<PublishedLayerSummary> layers,
         string serviceName,
-        CancellationToken cancellationToken)
+        LayerStorageScope? storageScope, CancellationToken cancellationToken)
     {
         if (layers.Count == 0)
         {
@@ -19,7 +19,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         var (graph, _) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
-        var metadataByLayerId = IndexSourceGovernanceByStorageLayer(graph, serviceName);
+        var metadataByLayerId = IndexSourceGovernanceByStorageLayer(graph, serviceName, storageScope);
         return layers
             .Select(layer => metadataByLayerId.TryGetValue(layer.LayerId, out var metadata)
                 ? HydrateSourceGovernance(layer, metadata)
@@ -30,9 +30,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
     internal static PublishedLayerSummary HydrateSourceGovernance(
         PublishedLayerSummary layer,
         MetadataV2Graph graph,
-        string serviceName)
+        string serviceName, LayerStorageScope? storageScope = null)
     {
-        var metadataByLayerId = IndexSourceGovernanceByStorageLayer(graph, serviceName);
+        var metadataByLayerId = IndexSourceGovernanceByStorageLayer(graph, serviceName, storageScope);
         return metadataByLayerId.TryGetValue(layer.LayerId, out var metadata)
             ? HydrateSourceGovernance(layer, metadata)
             : layer;
@@ -40,7 +40,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
     internal static IReadOnlyDictionary<int, MetadataV2ObjectMetadata> IndexSourceGovernanceByStorageLayer(
         MetadataV2Graph graph,
-        string serviceName)
+        string serviceName, LayerStorageScope? storageScope = null)
     {
         var service = ResolveUniquePublishedFeatureService(graph, serviceName, layerId: null);
         if (service is null)
@@ -65,7 +65,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             var resource = snapshot.ResolveResource(publication);
             var binding = snapshot.ResolveStorageBinding(publication);
-            if (resource is null || binding?.StorageLayerId is not { } layerId)
+            if (resource is null || binding?.StorageLayerId is not { } layerId || !BindingMatchesStorageScope(binding, storageScope))
             {
                 continue;
             }
@@ -82,14 +82,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private async Task<PublishedLayerSummary?> HydrateSourceGovernanceAsync(
         PublishedLayerSummary? layer,
         string serviceName,
-        CancellationToken cancellationToken)
+        LayerStorageScope? storageScope, CancellationToken cancellationToken)
     {
         if (layer is null)
         {
             return null;
         }
 
-        var hydrated = await HydrateSourceGovernanceAsync([layer], serviceName, cancellationToken).ConfigureAwait(false);
+        var hydrated = await HydrateSourceGovernanceAsync([layer], serviceName, storageScope, cancellationToken).ConfigureAwait(false);
         return hydrated[0];
     }
 
