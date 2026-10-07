@@ -411,7 +411,12 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
     public async Task AnonymousPrivateCreate_WithAnonymousWritePolicy_PreservesAuthenticationChallenge(
         string query, string expectedScheme)
     {
-        var owned = await CreateVersionAsync(_ownerToken, "alice.challenge_control", "challenge-control");
+        // The shared version manager outlives individual theory cases.
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var ownedName = $"alice.challenge_control_{suffix}";
+        var publicName = $"anonymous.public_challenge_{suffix}";
+        var refusedName = $"anonymous.private_challenge_{suffix}";
+        var owned = await CreateVersionAsync(_ownerToken, ownedName, "challenge-control");
         var guid = owned.GetProperty("versionGuid").GetString()!;
         using var control = await PostFormAsync(
             token: null, $"{ServiceBase}/versions/{guid}/delete{query}", ("f", "json"));
@@ -428,13 +433,13 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         // A public create proves the anonymous caller clears both service write gates.
         using var publicCreate = await PostFormAsync(
             token: null, $"{ServiceBase}/create{query}",
-            ("versionName", "anonymous.public_challenge_control"), ("accessPermission", "public"), ("f", "json"));
+            ("versionName", publicName), ("accessPermission", "public"), ("f", "json"));
         using var publicDocument = JsonDocument.Parse(await publicCreate.Content.ReadAsByteArrayAsync());
         publicDocument.RootElement.TryGetProperty("versionInfo", out _).Should().BeTrue();
 
         using var create = await PostFormAsync(
             token: null, $"{ServiceBase}/create{query}",
-            ("versionName", "anonymous.private_challenge_refused"), ("accessPermission", "private"), ("f", "json"));
+            ("versionName", refusedName), ("accessPermission", "private"), ("f", "json"));
         await create.AssertGeoServicesErrorAsync(EsriTokenRequired);
         create.Headers.WwwAuthenticate.Should().ContainSingle()
             .Which.Scheme.Should().Be(expectedScheme);
@@ -462,9 +467,9 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         }
 
         var versions = await ListVersionNamesAsync(_ownerToken);
-        versions.Should().Contain("anonymous.public_challenge_control");
-        versions.Should().Contain("alice.challenge_control");
-        versions.Should().NotContain("anonymous.private_challenge_refused");
+        versions.Should().Contain(publicName);
+        versions.Should().Contain(ownedName);
+        versions.Should().NotContain(refusedName);
 
         // Admin visibility also catches an orphan private version owned by the anonymous fallback.
         using var adminClient = _fixture.CreateAdminClient();
@@ -473,7 +478,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         using var adminDocument = JsonDocument.Parse(await adminList.Content.ReadAsByteArrayAsync());
         adminDocument.RootElement.GetProperty("versions").EnumerateArray()
             .Select(version => version.GetProperty("versionName").GetString()).Should()
-            .NotContain("anonymous.private_challenge_refused");
+            .NotContain(refusedName);
     }
 
     private static async Task AssertDeniedAsync(HttpResponseMessage response, string operation)
