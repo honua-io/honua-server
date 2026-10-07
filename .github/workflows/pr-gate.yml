@@ -716,7 +716,12 @@ jobs:
   #   difference from ci.yml::server-tests. Measure it by collecting the
   #   annotations from this context across the window and reconciling each red
   #   against the same shard's result in the trailing matrix for the merge
-  #   commit. Promotion is then TWO audited changes: flip AFFECTED_SHARDS_MODE
+  #   commit. Collect the COMPLETE window with scripts/ci/audit-affected-shards.py
+  #   (60 executed samples minimum); skipped/successful report-only shells do
+  #   not prove a shard passed, and unreconciled reds block promotion. See
+  #   docs/ci/affected-shards-promotion.md for collection and reconciliation.
+  #   The impact-routing ledger's docs-only/native-image cohorts do not measure
+  #   this lane's false-red rate. Promotion is then TWO audited changes: flip AFFECTED_SHARDS_MODE
   #   to `enforce` here, and add `PR Gate / Affected shards` to branch
   #   protection. Rollback is the inverse one-line flip. Below 2% is the bar
   #   because this lane costs a bounded fan-out on every product-code PR;
