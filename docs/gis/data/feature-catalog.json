@@ -15670,6 +15670,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Import.GeoServerImportEndpointTests.CancelJob_AfterDequeueBeforeRequestRead_PreservesCancelledWithoutImporting",
+        "Honua.Server.Tests.Import.GeoServerImportEndpointTests.CancelJob_RejectsStaleWorkerProgressAndTerminalWrites",
         "Honua.Server.Tests.Import.GeoServerImportEndpointTests.CancelJob_WithQueuedJob_ReturnsCancelled"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -16903,7 +16905,8 @@
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenRemoteDurableJobAlreadySucceeded_Returns409AndBridgesProgress",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenRemoteQueuedNeverSubmitted_CancelsLocallyWithoutCallingBackend",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenRemoteQueuedNeverSubmitted_CasFailure_Returns409",
-        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenRemoteQueuedRetryAwaitingResubmission_CancelsLocallyWithoutCallingBackend"
+        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenRemoteQueuedRetryAwaitingResubmission_CancelsLocallyWithoutCallingBackend",
+        "Honua.Server.Tests.Import.GeoServerImportEndpointTests.CancelJob_AfterDequeueBeforeRequestRead_PreservesCancelledWithoutImporting"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
