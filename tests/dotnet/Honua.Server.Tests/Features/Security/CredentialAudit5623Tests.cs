@@ -87,6 +87,9 @@ public sealed class CredentialAudit5623Tests
                 .IsAllowed.Should().BeFalse();
             (await AccessPolicyHelpers.RequireServiceAccessAsync(context, service, operation)).Should().NotBeNull();
         }
+        ((ClaimsIdentity)context.User.Identity!).AddClaim(new Claim("permission", "read:private-service/sensitive-layer"));
+        AccessPolicyHelpers.RequireResourceAccess(context, resource, service).Should().BeNull();
+        (await AccessPolicyHelpers.RequireResourceAccessAsync(context, resource, service)).Should().BeNull();
     }
 
     [UnitTheory]
