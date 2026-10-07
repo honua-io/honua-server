@@ -178,7 +178,9 @@ internal static class LayerScopedWriteKey
     /// </summary>
     public static bool IsScopeGovernedPrincipal(ClaimsPrincipal? principal)
         => principal is not null &&
-           (IsScopedWritePrincipal(principal) || principal.IsInRole(ScopedKeyRole));
+           (IsScopedWritePrincipal(principal) || principal.IsInRole(ScopedKeyRole)
+            || principal.IsInRole(AdminApiKeyPermission.ScopedAdminRole)
+            || principal.IsInRole(AdminApiKeyPermission.ApprovedOperationRole));
 
     /// <summary>
     /// Determines whether a scoped API key has a read grant for a resource.
