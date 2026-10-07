@@ -147,14 +147,42 @@ internal sealed partial class PostgreSqlLayerPublishingService
              string.Equals(service.Metadata.Id, serviceName, StringComparison.Ordinal))).ToArray();
         var serviceIds = services.Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
         var bindings = graph.StorageBindings.Where(binding => binding.StorageLayerId is { } id &&
-            layerIds?.Contains(id) == true && BindingMatchesStorageScope(binding, storageScope)).ToArray();
+            layerIds?.Contains(id) == true &&
+            (storageScope is null ||
+             (storageScope.ConnectionId is null && storageScope.ManagedLayerIds?.Contains(id) != true) ||
+             BindingMatchesStorageScope(binding, storageScope))).ToArray();
         var bindingIds = bindings.Select(binding => binding.Metadata.Id).ToHashSet(StringComparer.Ordinal);
         var resourcesById = graph.Resources.ToDictionary(resource => resource.Metadata.Id, StringComparer.Ordinal);
         var resourceIds = bindings.Select(binding => binding.ResourceId).ToHashSet(StringComparer.Ordinal);
+        var bindingsById = graph.StorageBindings.ToDictionary(binding => binding.Metadata.Id, StringComparer.Ordinal);
+        bool SelectLegacyPublication(MetadataV2Publication publication)
+        {
+            if (publication.LayerIndex is not { } id || layerIds?.Contains(id) != true)
+            {
+                return false;
+            }
+
+            var bindingId = publication.StorageBindingId ??
+                (resourcesById.TryGetValue(publication.ResourceId, out var resource) ? resource.PrimaryStorageBindingId : null);
+            if (bindingId is null || !bindingsById.TryGetValue(bindingId, out var binding))
+            {
+                // An unresolvable legacy handle must not bypass its tenant's visibility check.
+                return true;
+            }
+
+            var managedHandle = storageScope?.ManagedLayerIds?.Contains(id) == true;
+            var legacyScope = managedHandle ? new LayerStorageScope(null) : storageScope;
+            return binding.StorageLayerId is null &&
+                (storageScope is null ||
+                 (storageScope.ConnectionId is null && !managedHandle) ||
+                 BindingMatchesStorageScope(binding, legacyScope));
+        }
+
         var publications = graph.Publications.Where(publication =>
             (layerIds is null && publication.ServiceId is not null && serviceIds.Contains(publication.ServiceId)) ||
             bindingIds.Contains(publication.StorageBindingId ??
-                (resourcesById.TryGetValue(publication.ResourceId, out var resource) ? resource.PrimaryStorageBindingId : null) ?? string.Empty)).ToArray();
+                (resourcesById.TryGetValue(publication.ResourceId, out var resource) ? resource.PrimaryStorageBindingId : null) ?? string.Empty) ||
+            SelectLegacyPublication(publication)).ToArray();
         resourceIds.UnionWith(publications.Select(publication => publication.ResourceId));
         serviceIds.UnionWith(publications.Where(publication => publication.ServiceId is not null)
             .Select(publication => publication.ServiceId!));

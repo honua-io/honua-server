@@ -36,8 +36,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
-        await ValidateTenantAccessAsync(null, new HashSet<int> { layerId }, new LayerStorageScope(connectionId), cancellationToken).ConfigureAwait(false);
-
         var metadata = await ResolveMaterializeRefreshMetadataByIdAsync(
                 connectionString,
                 layerId,
@@ -47,6 +45,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             return null;
         }
+
+        var storageScope = new LayerStorageScope(connectionId,
+            metadata.IsManagedStore ? new HashSet<int> { layerId } : null);
+        await ValidateTenantAccessAsync(null, new HashSet<int> { layerId }, storageScope, cancellationToken).ConfigureAwait(false);
 
         if (metadata.IsManagedStore)
         {

@@ -38,7 +38,7 @@ namespace Honua.Geoprocessing.Execution;
 ///     table and materializes the typed layer schema; the same call rebuilds the MVT materialization (#1628).</description></item>
 ///   <item><description><b>tile</b> — when a raster layer is supplied,
 ///     <see cref="IRasterImportService.ImportAsync"/> loads the raster, computes statistics, and pre-generates tiles/overviews (#1625).</description></item>
-///   <item><description><b>extent + MVT refresh</b> — <see cref="ILayerPublishingService.RefreshLayerExtentsAsync"/>
+///   <item><description><b>extent + MVT refresh</b> — <see cref="ILayerPublishingService.RefreshLayerExtentsAsync(string,string,CancellationToken)"/>
 ///     recomputes the layer and service extents from the now-typed source.</description></item>
 ///   <item><description><b>provenance</b> — a structured provenance record is appended to the execution log and
 ///     published as a JSON data-URI artifact (source, table, layer, counts, timings).</description></item>

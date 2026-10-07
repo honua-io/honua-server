@@ -14,7 +14,8 @@ PR #5665 review adjudication: both P1 and P2 are real and repaired. P2 derives
 publish identities from effective storage ownership. P1 carries the same ownership
 through subsequent mutations and authorization. Named admin routes pin one connection
 UUID for both credential resolution and graph scope. Existing service overloads remain
-available for server-storage callers. Lifecycle changes still reach all publications
+available for server-storage callers; tenant checks without an explicit connection
+retain their conservative legacy behavior. Lifecycle changes still reach all publications
 of the selected binding, and shared-resource lifecycle still derives from its bindings.
 Extent synchronization follows physical storage handles even when an authored protocol
 publication uses a different layer index.

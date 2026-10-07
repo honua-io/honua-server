@@ -126,6 +126,8 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         var foreignAccess = () => PostgreSqlLayerPublishingService.ValidateTenantAccess(graph, null, new HashSet<int> { 1 }, null,
             new PostgreSqlLayerPublishingService.LayerStorageScope(Guid.Parse("22222222-2222-2222-2222-222222222222")));
         foreignAccess.Should().Throw<LayerPublishingException>().Which.ErrorKind.Should().Be(LayerPublishingErrorKind.NotFound);
+        var unqualifiedAccess = () => PostgreSqlLayerPublishingService.ValidateTenantAccess(graph, null, new HashSet<int> { 1 }, null);
+        unqualifiedAccess.Should().Throw<LayerPublishingException>().Which.ErrorKind.Should().Be(LayerPublishingErrorKind.NotFound);
 
         var linked = PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
             graph, "linked", 1, "Layer", 4326, DateTimeOffset.UtcNow, false, scope);
@@ -139,6 +141,23 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             .Should().BeEquivalentTo(graph.Resources.Where(resource => resource.Metadata.Id != targetResourceId));
         linked.Publications.Where(item => item.ResourceId != targetResourceId)
             .Should().BeEquivalentTo(graph.Publications.Where(item => item.ResourceId != targetResourceId));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void QualifiedTenantSelection_WithLegacyPublicationHandle_PreservesVisibilityChecks(bool managed)
+    {
+        var (graph, scope, _) = CreateCollidingStorageGraph(managed);
+        graph = graph with
+        {
+            StorageBindings = graph.StorageBindings.Select(binding => binding with { StorageLayerId = null }).ToArray()
+        };
+        var access = () => PostgreSqlLayerPublishingService.ValidateTenantAccess(graph, null, new HashSet<int> { 1 }, null, scope);
+        access.Should().NotThrow();
+        var foreignAccess = () => PostgreSqlLayerPublishingService.ValidateTenantAccess(graph, null, new HashSet<int> { 1 }, null,
+            new PostgreSqlLayerPublishingService.LayerStorageScope(Guid.Parse("22222222-2222-2222-2222-222222222222")));
+        foreignAccess.Should().Throw<LayerPublishingException>().Which.ErrorKind.Should().Be(LayerPublishingErrorKind.NotFound);
     }
 
     [Theory]
