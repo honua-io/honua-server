@@ -93,7 +93,7 @@ public sealed class FieldMaskedEditRegressionTests
         Assert.Equal(EditUpdateMode.Merge, operations[0].Feature!.Value.UpdateMode);
         Assert.Equal(EditUpdateMode.Replace, operations[1].Feature!.Value.UpdateMode);
         var processor = new EditProcessor(NullLogger<EditProcessor>.Instance);
-        var batch = processor.ToFeatureEditBatch(converted.EditRequest.Value, new MetadataV2Resource());
+        var batch = processor.ToFeatureEditBatch(converted.EditRequest!.Value, new MetadataV2Resource());
         Assert.True(batch.Operations[0].Feature!.Value.PreserveOmittedMaskedAttributes);
         Assert.False(batch.Operations[1].Feature!.Value.PreserveOmittedMaskedAttributes);
         Assert.Equal("update-snapshot-token", batch.Preconditions.Single(p => p.ObjectId == 42).ExpectedStateToken);
