@@ -63,8 +63,10 @@ internal sealed class GrpcIdempotencyTestClock : TimeProvider
                 {
                     await scheduled;
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (stop.IsCancellationRequested)
                 {
+                    // The response won the race; cancel the unused delay and observe its cancellation.
+                    break;
                 }
 
                 break;
@@ -187,7 +189,7 @@ internal sealed class GrpcIdempotencyClockedRedis
 
     public async Task<TimeSpan> RemainingLifetimeAsync()
     {
-        var expiry = (long)await _database.StringGetAsync(Key.ToString() + ExpirySuffix);
+        var expiry = (long)await _database.StringGetAsync(Key.Append(ExpirySuffix));
         return TimeSpan.FromMilliseconds(expiry - (_clock.GetTimestamp() / TimeSpan.TicksPerMillisecond));
     }
 }
