@@ -381,7 +381,7 @@ which is why both the run count and exact observed span are recorded.
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
-| `generated-files-on-trunk.yml` | Regenerate Generated Files on Trunk | `push` (trunk) | Regenerates the six repository-state projections, validates authored inputs against them, then — never writing trunk directly — commits any diff as `github-actions[bot]` on a fixed automation branch and opens or refreshes a PR from it into trunk, landing through the ordinary PR Gate + Review Gate + per-PR lander path. No diff means no commit or PR activity. See [inventory and dry run](generated-files-on-trunk.md). |
+| `generated-files-on-trunk.yml` | Regenerate Generated Files on Trunk | `schedule` (nightly 10:30 UTC), `workflow_dispatch` | Regenerates the six repository-state projections, validates authored inputs against them, then — never writing trunk directly — commits any diff as `github-actions[bot]` on a fixed automation branch and opens or refreshes a PR from it into trunk, landing through the ordinary PR Gate + Review Gate + per-PR lander path. No diff means no commit or PR activity. See [inventory and dry run](generated-files-on-trunk.md). |
 | `trunk-sanity.yml` | Trunk Sanity | `push` (trunk), `workflow_dispatch` | Cheap post-merge restore/build only; heavy CI does not run on merge-to-trunk pushes. |
 | `label-sync.yml` | Capability Label Sync | `push` (trunk), `workflow_dispatch` | Creates/updates `cap/<category>` labels from the canonical category list; never deletes or renames (#2896). |
 | `reusable-sdk-pr-gate.yml` | SDK PR Gate | `workflow_call` | Reusable gate consumed by `honua-sdk-js`, `honua-sdk-dotnet`, and `honua-sdk-python`. |
