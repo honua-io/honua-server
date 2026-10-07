@@ -2,6 +2,18 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using System.Security.Claims;
+using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Styling.Abstractions;
+using Honua.Infrastructure.Authentication;
+using Honua.Protocols.Ogc.Api.Maps.Models;
+using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.Ogc.Api.Maps.Handlers;
@@ -24,6 +36,40 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
 [Protocol(TestProtocols.OgcApiMaps)]
 public class OgcMapsRenderingHandlerTests
 {
+    [UnitTheory]
+    [InlineData("read:catalog/roads", true)]
+    [InlineData("read:catalog", true)]
+    [InlineData("read:catalog/parcels", false)]
+    [InlineData("admin:read", false)]
+    public async Task DatasetMap_ScopedKey_RendersOnlyItsGrantedLayer(string permission, bool allowed)
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("resource", "roads", MetadataV2ResourceType.FeatureDataset)
+            .AddStorageBinding("binding", "resource", "roads", storageLayerId: 1)
+            .AddService("service", "catalog", protocols: ["OGC-API-Maps"])
+            .AddPublication("publication", "service", "resource", layerIndex: 1)
+            .BuildProvider();
+        var renderer = Substitute.For<IRasterMapRenderer>();
+        renderer.RenderDatasetMapAsync(Arg.Any<int[]>(), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult { Data = [1], ContentType = "image/png", Width = 1, Height = 1 });
+        using var services = new ServiceCollection().AddLogging()
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>().BuildServiceProvider();
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.Role, permission == "admin:read" ? AdminApiKeyPermission.ScopedAdminRole : LayerScopedWriteKey.ScopedKeyRole),
+                 new Claim("permission", permission)], "ApiKey"))
+        };
+        var handler = new OgcMapsRenderingHandler(graph, renderer, Substitute.For<IOgcStyleProjection>(),
+            NullLogger<OgcMapsRenderingHandler>.Instance);
+
+        await handler.RenderDatasetMapAsync([], new OgcMapRequest { Bbox = "-158,20,-156,22", Width = 1, Height = 1 }, context);
+
+        await renderer.Received(allowed ? 1 : 0).RenderDatasetMapAsync(
+            Arg.Is<int[]>(layers => layers.SequenceEqual(new[] { 1 })), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>());
+    }
+
     [UnitTest]
     public void IsStyleAssociatedWithResource_DoesNotTreatMatchingResourceNameAsAssociation()
     {
