@@ -148,9 +148,9 @@ public sealed class TemporaryFileServiceTests : IDisposable
             : token + Path.GetExtension(objectKey);
         var retrieved = await service.GetTemporaryFileAsync(publicFileName);
 
-        retrieved.Should().NotBeNull();
-        retrieved!.Value.data.Should().Equal(expected);
-        retrieved.Value.contentType.Should().Be(expectedContentType);
+        var file = Assert.NotNull(retrieved);
+        file.data.Should().Equal(expected);
+        file.contentType.Should().Be(expectedContentType);
     }
 
     [Fact]
