@@ -1823,6 +1823,14 @@ echo "Checking shard filter/test-class coverage in both directions..."
   `# Honua.Protocols.GeoServices.Tests.Source.* namespace root instead of the` \
   `# Honua.Server.Tests.Features.Protocols.GeoServices.* root every filter used.` \
   --assert-owner \
+    "Honua.Protocols.GeoServices.Tests.Source.FeatureServer.GeoServicesGeometryConverterAuditTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "FeatureServer Endpoints Query Services and Replication" \
+  --assert-route \
+    "Honua.Protocols.GeoServices.Tests.Source.FeatureServer.GeoServicesGeometryConverterAuditTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "FeatureServer Endpoints Query Services and Replication" \
+  --assert-owner \
     "Honua.Protocols.GeoServices.Tests.Source.FeatureServer.Services.FeatureQuantizerTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
     "FeatureServer Endpoints Query Services and Replication" \
