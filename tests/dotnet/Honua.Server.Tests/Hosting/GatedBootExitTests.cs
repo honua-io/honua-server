@@ -46,6 +46,14 @@ public sealed class GatedBootExitTests
         "ConnectionStrings__Redis"
     ];
 
+    private static readonly string[] RequiredRuntimeFiles =
+    [
+        "Honua.Server.dll",
+        "Honua.Server.runtimeconfig.json",
+        "Honua.Server.deps.json",
+        "appsettings.json"
+    ];
+
     [IntegrationTest]
     [Operation(Operations.ContractTesting)]
     public async Task RefusedContractMigration_ExitsWithRefusalCodeAndWritesNoCrashDump()
@@ -171,9 +179,7 @@ public sealed class GatedBootExitTests
         await command.ExecuteNonQueryAsync();
     }
 
-    [Theory]
-    [Trait("Category", "Unit")]
-    [Trait("Tier", "Fast")]
+    [UnitTheory]
     [InlineData("Honua.Server.dll")]
     [InlineData("Honua.Server.runtimeconfig.json")]
     [InlineData("Honua.Server.deps.json")]
@@ -198,14 +204,6 @@ public sealed class GatedBootExitTests
             Directory.Delete(runtimeDirectory, recursive: true);
         }
     }
-
-    private static readonly string[] RequiredRuntimeFiles =
-    [
-        "Honua.Server.dll",
-        "Honua.Server.runtimeconfig.json",
-        "Honua.Server.deps.json",
-        "appsettings.json"
-    ];
 
     private static string LocateServerAssembly(string runtimeDirectory)
     {
