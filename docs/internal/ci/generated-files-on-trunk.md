@@ -185,7 +185,11 @@ Their existing lightweight admission contracts and exact-head Review Gate
 requirements stay intact. The building-block conformance job completes without
 building or running validators. The normalization producer completes without
 repeating generation, and its trusted consumer independently proves the same
-exemption before skipping envelope validation and mutation. The repository-managed `codeql.yml` source/workflow path filter excludes every
+exemption before skipping envelope validation and mutation. Before executing
+base policy, that consumer verifies the canonical trunk repository/ref and proves
+the producer event-time base is an ancestor of its immutable trusted trunk
+checkout. It then uses that frozen base for the comparison, preserving valid
+producer proof if trunk advances between production and consumption. The repository-managed `codeql.yml` source/workflow path filter excludes every
 canonical generated output. GitHub's separate dynamic Code Quality service
 (`dynamic/github-code-quality/codeql`) is outside that workflow: cancelled run
 [37817472021](https://github.com/honua-io/honua-server/actions/runs/37817472021)

@@ -277,6 +277,69 @@ class WorkflowCompletion(unittest.TestCase):
                                  env=dict(os.environ, BUILD_AND_TEST_RESULT=result, FORMAT_RESULT='success', CI_ROUTER_RESULT='success'))
             self.assertEqual(run.returncode, expected)
 
+    def test_consumer_retargeting_and_trunk_advancement_use_trusted_frozen_policy(self):
+        import yaml
+        doc = yaml.safe_load((ROOT / '.github/workflows/normalize-derived-artifacts-consumer.yml').read_text())
+        script = next(s for s in doc['jobs']['validate']['steps'] if s.get('id') == 'artifact')['with']['script']
+        block = script[script.index('const sameRepository ='):script.index('if (sameRepository && !eventBaseSha)')]
+        # Execute the actual workflow JS trust boundary with mocked Git/REST.
+        # The adversarial retarget case must never reach git show or Python.
+        harness = r'''
+        const input = JSON.parse(process.argv[1]);
+        const calls = [], outputs = {}, files = {};
+        const pr = input.pr;
+        const eventAssociated = [{base: {sha: 'a'.repeat(40)}}];
+        const context = {repo: {owner: 'honua-io', repo: 'honua-server'}};
+        const path = require('path');
+        const fs = {writeFileSync: (name, value) => { files[path.basename(name)] = value.toString(); }};
+        const core = {setOutput: (name, value) => {outputs[name] = value;}, notice: () => {}};
+        const cp = {execFileSync: (command, args) => {
+          calls.push([command, args]);
+          if (command === 'python3') return Buffer.from('generated_only=true\n');
+          if (args[0] === 'rev-parse') return Buffer.from('b'.repeat(40));
+          if (args[0] === 'show') return Buffer.from('trusted policy');
+          return Buffer.from('');
+        }};
+        const github = {rest: {repos: {compareCommitsWithBasehead: async request => {
+          calls.push(['compare', request.basehead]);
+          return {data: {base_commit: {sha: 'a'.repeat(40)},
+                        merge_base_commit: {sha: (input.trusted ? 'a' : 'c').repeat(40)},
+                        status: input.trusted ? 'ahead' : 'diverged'}};
+        }}}};
+        const nativeRequire = require;
+        const mockedRequire = name => name === 'child_process' ? cp : nativeRequire(name);
+        const run = new (Object.getPrototypeOf(async function(){}).constructor)(
+          'require', 'pr', 'eventAssociated', 'context', 'path', 'fs', 'core', 'github', input.block);
+        run(mockedRequire, pr, eventAssociated, context, path, fs, core, github).then(() => {
+          console.log(JSON.stringify({calls, outputs, files}));
+        }).catch(error => { console.error(error); process.exit(1); });
+        '''
+        repository = dict(full_name=POLICY.REPOSITORY)
+        pr = dict(base=dict(ref='trunk', sha='b'*40, repo=repository),
+                  head=dict(sha='d'*40, repo=repository))
+        for case in ('trunk_advanced', 'retargeted', 'foreign_base', 'untrusted_history'):
+            with self.subTest(case=case):
+                candidate = copy.deepcopy(pr)
+                if case == 'retargeted': candidate['base']['ref'] = 'candidate-controlled'
+                if case == 'foreign_base': candidate['base']['repo']['full_name'] = 'attacker/fork'
+                input_data = dict(pr=candidate, trusted=case != 'untrusted_history', block=block)
+                result = subprocess.run(['node', '-e', harness, json.dumps(input_data)],
+                                        capture_output=True, text=True, env=dict(os.environ, RUNNER_TEMP='/tmp/mock-consumer'))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                actual = json.loads(result.stdout)
+                executed = [call for call in actual['calls'] if call[0] == 'python3']
+                policy_reads = [call for call in actual['calls'] if call[0] == 'git' and call[1][0] == 'show']
+                if case == 'trunk_advanced':
+                    self.assertEqual(actual['outputs'], {'generated_only': 'true'})
+                    self.assertEqual(len(executed), 1)
+                    self.assertEqual(policy_reads[0][1][1], 'a'*40+':scripts/ci/generated-output-diff.py')
+                    event = json.loads(actual['files']['generated-output-event.json'])
+                    self.assertEqual(event['pull_request']['base']['sha'], 'a'*40)
+                else:
+                    self.assertFalse(executed)
+                    self.assertFalse(policy_reads)
+                    self.assertEqual(actual['outputs'], {})
+
     def test_producer_records_identity_after_validation_and_publication(self):
         text = (ROOT / '.github/workflows/generated-files-on-trunk.yml').read_text()
         self.assertLess(text.index('Validate authored inputs'), text.index('publish-generated-files.sh'))
