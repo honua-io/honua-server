@@ -1,0 +1,186 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
+using Honua.Protocols.Ogc.Api.Features;
+using Microsoft.Extensions.DependencyInjection;
+using System.Net;
+using System.Text.Json;
+using System.Xml.Linq;
+
+namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
+
+/// <summary>
+/// Provides an isolated database-backed application with publisher-hidden fields.
+/// </summary>
+public sealed class OgcFeaturesHiddenFieldTestsFixture : IAsyncLifetime
+{
+    public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+
+    public async Task InitializeAsync()
+    {
+        await App.InitializeAsync();
+        App.UpdateV2ResourceSchemaField(0, new MetadataV2Field
+        {
+            Name = "category",
+            Type = MetadataV2FieldType.String,
+            Hidden = true
+        });
+        App.UpdateV2ResourceSchemaField(0, new MetadataV2Field
+        {
+            Name = "created_at",
+            Type = MetadataV2FieldType.DateTime,
+            Hidden = true
+        });
+    }
+
+    public Task DisposeAsync() => App.DisposeAsync();
+
+}
+
+/// <summary>
+/// Verifies publisher-hidden fields are omitted while supported protocol behavior is preserved.
+/// </summary>
+[Collection("Database")]
+[Protocol(TestProtocols.OgcApiFeatures)]
+[Operation(Operations.Query)]
+public sealed class OgcFeaturesHiddenFieldTests : IClassFixture<OgcFeaturesHiddenFieldTestsFixture>
+{
+    private readonly WebAppFixture _fixture;
+
+    public OgcFeaturesHiddenFieldTests(OgcFeaturesHiddenFieldTestsFixture fixture)
+    {
+        _fixture = fixture.App;
+    }
+
+    [IntegrationTheory]
+    [InlineData("items?f=gml&limit=1")]
+    [InlineData("items/1?f=gml")]
+    [InlineData("items?f=csv&limit=1")]
+    [InlineData("items/1?f=csv")]
+    [InlineData("items?limit=1")]
+    [InlineData("items/1")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task Output_OmitsHiddenFields(string suffix)
+    {
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/0/{suffix}");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        body.Should().Contain("Test Feature");
+        body.Should().NotContain("category");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/queryables")]
+    public async Task Queryables_OmitsHiddenFields()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/features/collections/0/queryables");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var properties = json.RootElement.GetProperty("properties");
+        properties.TryGetProperty("name", out _).Should().BeTrue();
+        properties.TryGetProperty("category", out _).Should().BeFalse();
+    }
+
+    [IntegrationTheory]
+    [InlineData("properties=category")]
+    [InlineData("sortby=category")]
+    [InlineData("sortby=created_at")]
+    [InlineData("sortby=-CREATED_AT")]
+    [InlineData("category=test")]
+    [InlineData("filter=category%20%3D%20%27test%27")]
+    [InlineData("filter-lang=cql2-json&filter=%7B%22op%22%3A%22%3D%22%2C%22args%22%3A%5B%7B%22property%22%3A%22category%22%7D%2C%22test%22%5D%7D")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task Query_RejectsHiddenFields(string query)
+    {
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/0/items?{query}");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GmlStream_OmitsHiddenFields()
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO features (objectid, layer_id, attributes)
+            SELECT i, 0, jsonb_build_object('name', 'Visible stream row', 'category', 'hidden-stream-value')
+            FROM generate_series(1001, 1300) AS i;
+            """;
+        await command.ExecuteNonQueryAsync();
+        var response = await _fixture.Client.GetAsync("/ogc/features/collections/0/items?f=gml&limit=300");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        var document = XDocument.Parse(body);
+        document.Root!.Attribute("numberReturned")!.Value.Should().Be("300");
+        document.Descendants().Count(e => e.Name.LocalName == "member").Should().Be(300);
+        body.Should().Contain("Visible stream row");
+        body.Should().NotContain("category").And.NotContain("hidden-stream-value");
+    }
+}
+
+/// <summary>
+/// Provides an isolated database-backed application with publisher-hidden fields.
+/// </summary>
+public sealed class OgcFeaturesHiddenFieldTestsRawFixture : IAsyncLifetime
+{
+    public WebAppFixture App { get; } = new WebAppFixture()
+        .WithTestLicense(HonuaEdition.Pro)
+        .ConfigureServices(services => services.Configure<OgcFeaturesOptions>(options =>
+        {
+            options.NumberMatchedPolicy = OgcFeaturesNumberMatchedPolicy.OmitWhenExpensive;
+            options.IncludeFeatureLinks = false;
+        }));
+
+    public async Task InitializeAsync()
+    {
+        await App.InitializeAsync();
+        App.UpdateV2ResourceSchemaField(0, new MetadataV2Field
+        {
+            Name = "category",
+            Type = MetadataV2FieldType.String,
+            Hidden = true
+        });
+    }
+
+    public Task DisposeAsync() => App.DisposeAsync();
+
+}
+
+/// <summary>
+/// Verifies publisher-hidden fields are omitted while supported protocol behavior is preserved.
+/// </summary>
+[Collection("Database")]
+[Protocol(TestProtocols.OgcApiFeatures)]
+[Operation(Operations.Query)]
+public sealed class OgcFeaturesHiddenFieldTestsRaw : IClassFixture<OgcFeaturesHiddenFieldTestsRawFixture>
+{
+    private readonly WebAppFixture _fixture;
+
+    public OgcFeaturesHiddenFieldTestsRaw(OgcFeaturesHiddenFieldTestsRawFixture fixture)
+    {
+        _fixture = fixture.App;
+    }
+
+    [IntegrationTheory]
+    [InlineData("limit=1")]
+    [InlineData("limit=1&bbox=-122.6,37.4,-122.4,37.6")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task RawOutput_OmitsHiddenFields(string query)
+    {
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/0/items?{query}");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        body.Should().Contain("Test Feature");
+        body.Should().NotContain("category");
+    }
+}
