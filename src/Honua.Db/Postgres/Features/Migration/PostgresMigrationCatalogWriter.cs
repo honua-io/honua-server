@@ -30,10 +30,14 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
     private static readonly string[] _defaultCapabilities = ["Query", "Extract"];
 
     private readonly ILogger<PostgresMigrationCatalogWriter> _logger;
+    private readonly IReadOnlyList<string> _metadataSchemas;
 
-    public PostgresMigrationCatalogWriter(ILogger<PostgresMigrationCatalogWriter> logger)
+    public PostgresMigrationCatalogWriter(
+        ILogger<PostgresMigrationCatalogWriter> logger,
+        PostgresSchemaConfiguration? schemaConfiguration = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _metadataSchemas = schemaConfiguration?.MetadataSchemas ?? [PostgresSchemaConfiguration.DefaultMetadataSchema];
     }
 
     public async Task<MigrationCatalogWriteOutcome> EnsureCatalogServiceAsync(
@@ -149,6 +153,13 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
             !IsSafeIdentifier(request.TargetTable))
         {
             throw new ArgumentException("Identifiers must be ASCII letter/digit/underscore only.", nameof(request));
+        }
+
+        // Neither side of a feature copy may be the metadata schema or a system schema (SEC-23).
+        if (ImportTargetSchemaPolicy.IsReserved(request.SourceSchema, _metadataSchemas) ||
+            ImportTargetSchemaPolicy.IsReserved(request.TargetSchema, _metadataSchemas))
+        {
+            throw new ArgumentException(ImportTargetSchemaPolicy.ReservedSchemaMessage, nameof(request));
         }
 
         await using var connection = new NpgsqlConnection(connectionString);

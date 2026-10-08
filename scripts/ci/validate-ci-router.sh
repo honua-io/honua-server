@@ -39,6 +39,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   HONUA_PR_GATE_IMPACT_PYTHON="${PYTHON_BIN}" scripts/ci/validate-pr-gate-impact.sh
   "${PYTHON_BIN}" scripts/ci/audit-impact-routing-evidence.test.py
   "${PYTHON_BIN}" scripts/ci/collect-impact-routing-runs.test.py
+  "${PYTHON_BIN}" scripts/ci/audit-affected-shards.test.py
 else
   echo "⚠️  Skipping PR Gate impact observation validation (no working Python 3)."
 fi
@@ -325,6 +326,10 @@ assert_exact_shards \
   "headroom-split-cloud-streaming-import" \
   "tests/dotnet/Honua.Server.Tests/Import/StreamingImportTests.cs" \
   '["Cloud and Streaming Import","File and Raster Import"]'
+assert_exact_shards \
+  "geometry-audit-test-only-owner" \
+  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/GeoServicesGeometryConverterAuditTests.cs" \
+  '["FeatureServer Endpoints Query Services and Replication"]'
 assert_exact_shards \
   "headroom-split-geoservices-imageserver" \
   "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs" \
@@ -1821,6 +1826,10 @@ echo "Checking shard filter/test-class coverage in both directions..."
   `# Honua.Protocols.GeoServices.Tests assembly: two classes use the` \
   `# Honua.Protocols.GeoServices.Tests.Source.* namespace root instead of the` \
   `# Honua.Server.Tests.Features.Protocols.GeoServices.* root every filter used.` \
+  --assert-owner \
+    "Honua.Protocols.GeoServices.Tests.Source.FeatureServer.GeoServicesGeometryConverterAuditTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "FeatureServer Endpoints Query Services and Replication" \
   --assert-owner \
     "Honua.Protocols.GeoServices.Tests.Source.FeatureServer.Services.FeatureQuantizerTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \

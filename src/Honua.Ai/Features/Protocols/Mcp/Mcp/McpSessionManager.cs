@@ -110,6 +110,7 @@ internal sealed class McpSessionManager
     private readonly object _capacityGate = new();
 
     private readonly int _maxSessions;
+    private readonly int _maxAnonymousSessions;
     private readonly TimeSpan _idleTimeout;
     private readonly McpSessionEvictionPolicy _evictionPolicy;
     private readonly TimeProvider _timeProvider;
@@ -118,15 +119,18 @@ internal sealed class McpSessionManager
     /// Creates a session manager with the supplied lifecycle bounds. The
     /// parameterless defaults match <see cref="McpOptions"/> so unit tests and
     /// isolated compositions get a sane, memory-bounded registry without wiring
-    /// configuration.
+    /// configuration. <paramref name="maxAnonymousSessions"/> bounds the anonymous
+    /// pool inside <paramref name="maxSessions"/> (SEC-18) and is clamped to it.
     /// </summary>
     public McpSessionManager(
         int maxSessions = 10_000,
         TimeSpan? idleTimeout = null,
         McpSessionEvictionPolicy evictionPolicy = McpSessionEvictionPolicy.EvictLeastRecentlyUsed,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        int maxAnonymousSessions = 1_000)
     {
         _maxSessions = maxSessions > 0 ? maxSessions : 1;
+        _maxAnonymousSessions = Math.Clamp(maxAnonymousSessions, 1, _maxSessions);
         var idle = idleTimeout ?? TimeSpan.FromMinutes(30);
         _idleTimeout = idle > TimeSpan.Zero ? idle : TimeSpan.FromMinutes(30);
         _evictionPolicy = evictionPolicy;
@@ -151,10 +155,14 @@ internal sealed class McpSessionManager
     /// (use <see cref="AnonymousPrincipalKey"/> for an anonymous caller). Enforces
     /// the idle TTL and the maximum-session cap: expired sessions are swept first,
     /// then — if still at capacity — the configured
-    /// <see cref="McpSessionEvictionPolicy"/> is applied. Returns <c>false</c> with
-    /// an empty <paramref name="sessionId"/> only when the cap is reached and the
-    /// policy is <see cref="McpSessionEvictionPolicy.RejectNew"/>. Invoked when the
-    /// server accepts an <c>initialize</c> request in stateful mode.
+    /// <see cref="McpSessionEvictionPolicy"/> is applied. Anonymous sessions form a
+    /// separate pool bounded by the anonymous cap (SEC-18): an anonymous session
+    /// only ever evicts another anonymous session, and an authenticated session at
+    /// capacity evicts anonymous sessions before authenticated ones. Returns
+    /// <c>false</c> with an empty <paramref name="sessionId"/> when the cap is
+    /// reached and the policy is <see cref="McpSessionEvictionPolicy.RejectNew"/>,
+    /// or when an anonymous session would have to evict an authenticated one.
+    /// Invoked when the server accepts an <c>initialize</c> request in stateful mode.
     /// </summary>
     public bool TryCreateSession(string? principalKey, out string sessionId) =>
         TryCreateSession(principalKey, elicitationSupported: false, out sessionId);
@@ -189,7 +197,15 @@ internal sealed class McpSessionManager
         {
             SweepExpired(now);
 
-            if (_sessions.Count >= _maxSessions)
+            var key = principalKey ?? AnonymousPrincipalKey;
+            var anonymous = IsAnonymous(key);
+            var excess = _sessions.Count - _maxSessions + 1;
+            if (anonymous)
+            {
+                excess = Math.Max(excess, _sessions.Values.Count(static s => s.IsAnonymous) - _maxAnonymousSessions + 1);
+            }
+
+            if (excess > 0)
             {
                 if (_evictionPolicy == McpSessionEvictionPolicy.RejectNew)
                 {
@@ -197,12 +213,20 @@ internal sealed class McpSessionManager
                     return false;
                 }
 
-                EvictLeastRecentlyUsed(_sessions.Count - _maxSessions + 1);
+                EvictLeastRecentlyUsed(excess, anonymousOnly: anonymous);
+
+                // Only reachable for an anonymous session when the table holds too few
+                // anonymous sessions to make room: it never displaces an authenticated one.
+                if (_sessions.Count >= _maxSessions)
+                {
+                    sessionId = string.Empty;
+                    return false;
+                }
             }
 
             var id = GenerateSessionId();
             _sessions[id] = new McpSession(
-                principalKey ?? AnonymousPrincipalKey,
+                key,
                 now,
                 elicitationSupported,
                 workflowView);
@@ -430,12 +454,17 @@ internal sealed class McpSessionManager
         }
     }
 
+    private static bool IsAnonymous(string principalKey) =>
+        string.Equals(principalKey, AnonymousPrincipalKey, StringComparison.Ordinal);
+
     /// <summary>
-    /// Evicts the <paramref name="count"/> least-recently-used sessions. Called
-    /// under <see cref="_capacityGate"/> after an expiry sweep left the table at
+    /// Evicts the <paramref name="count"/> least-recently-used sessions, taking
+    /// anonymous sessions before authenticated ones and only anonymous sessions
+    /// when <paramref name="anonymousOnly"/> is set. Called under
+    /// <see cref="_capacityGate"/> after an expiry sweep left the table at
     /// capacity, so an <c>initialize</c> can still be admitted.
     /// </summary>
-    private void EvictLeastRecentlyUsed(int count)
+    private void EvictLeastRecentlyUsed(int count, bool anonymousOnly)
     {
         if (count <= 0)
         {
@@ -443,7 +472,9 @@ internal sealed class McpSessionManager
         }
 
         var victims = _sessions
-            .OrderBy(pair => pair.Value.LastAccessUtc)
+            .Where(pair => !anonymousOnly || pair.Value.IsAnonymous)
+            .OrderByDescending(pair => pair.Value.IsAnonymous)
+            .ThenBy(pair => pair.Value.LastAccessUtc)
             .Take(count)
             .Select(pair => pair.Key)
             .ToArray();
@@ -480,6 +511,9 @@ internal sealed class McpSessionManager
         /// (<see cref="AnonymousPrincipalKey"/> for an anonymous session).
         /// </summary>
         public string PrincipalKey { get; }
+
+        /// <summary>Whether the session belongs to the anonymous pool (SEC-18).</summary>
+        public bool IsAnonymous => McpSessionManager.IsAnonymous(PrincipalKey);
 
         /// <summary>
         /// Whether the client advertised the MCP elicitation capability at

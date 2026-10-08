@@ -77,6 +77,7 @@ def args() -> Namespace:
         fixture_revision="fixture-v1",
         evidence_uri="https://example.test/evidence",
         evidence_digest="sha256:" + "c" * 64,
+        base_url="http://localhost:8094",
     )
 
 
@@ -105,6 +106,87 @@ class CanonicalArtifactEvidenceTests(unittest.TestCase):
         self.assertFalse(normalized[0]["honua_in_loop"])
         self.assertEqual("third-party-fixture", normalized[0]["artifact_producer"])
         self.assertIsNone(normalized[0]["evidence_receipt"])
+
+    def test_verified_derived_zarr_still_requires_original_metadata_and_transfer_budgets(self):
+        def row():
+            result = MODULE._observation("zarr", "array-read", "zarr", "zarr", "2026-08-21T00:00:00Z", args())
+            result["observed_metadata"] = dict(MODULE.FORMAT_BUDGET_PROFILES["zarr"]["expected_metadata"])
+            result["observed_transfer"] = {"requests": 12, "range_requests": 0,
+                                           "full_object_downloads": 12, "transferred_bytes": 4096}
+            result["derived_output_binding"] = {
+                "source_sha": args().source_sha, "image_digest": args().image_digest,
+                "receipt_sha256": "d" * 64, "worker_image": "localhost:5000/cng-zarr-worker@sha256:" + "e" * 64,
+                "qualification": False, "job_id": "job42", "coverage_id": 7,
+                "registration_id": 8, "root_path": "derived-zarr/42-1/canonical.zarr"}
+            return result
+
+        passed = MODULE._normalize_observations([row()], args())[0]
+        self.assertEqual("pass", passed["result"])
+        self.assertEqual("honua", passed["artifact_producer"])
+        for section, key, value in [("observed_metadata", "chunks", [4, 8, 16]),
+                                    ("observed_metadata", "zarr_format", 3),
+                                    ("observed_transfer", "full_object_downloads", 17)]:
+            changed = row()
+            changed[section][key] = value
+            with self.subTest(key=key):
+                normalized = MODULE._normalize_observations([changed], args())[0]
+                self.assertNotEqual("pass", normalized["result"])
+                self.assertFalse(normalized["budget_results"]["met"])
+        unmeasured = row()
+        del unmeasured["observed_transfer"]
+        normalized = MODULE._normalize_observations([unmeasured], args())[0]
+        self.assertNotEqual("pass", normalized["result"])
+        self.assertFalse(normalized["budget_results"]["met"])
+        changed = row()
+        changed["operation"], changed["canonical_client"] = "multidimensional-subset", "xarray"
+        self.assertNotEqual("honua", MODULE._normalize_observations([changed], args())[0]["artifact_producer"])
+
+    def test_fsspec_requires_its_own_completed_read_and_unchanged_budgets(self):
+        row = MODULE._observation("zarr", "store-read", "fsspec", "fsspec-zarr", "2026-08-21T00:00:00Z", args())
+        row.update(executed=True,
+                   observed_metadata=dict(MODULE.FORMAT_BUDGET_PROFILES["zarr"]["expected_metadata"]),
+                   observed_transfer={"requests": 12, "range_requests": 0,
+                                      "full_object_downloads": 12, "transferred_bytes": 2704},
+                   derived_output_binding={"source_sha": args().source_sha, "image_digest": args().image_digest,
+                                           "receipt_sha256": "d" * 64,
+                                           "worker_image": "localhost:5000/cng-zarr-worker@sha256:" + "e" * 64,
+                                           "qualification": False, "job_id": "job42", "coverage_id": 7,
+                                           "registration_id": 8, "root_path": "derived-zarr/42-1/canonical.zarr"},
+                   fsspec_execution={"client": "fsspec.implementations.http.HTTPFileSystem", "completed": True,
+                                     "values_checked": 128,
+                                     "verified_facets": ["positive", "metadata", "range-efficiency"]})
+        normalized = MODULE._normalize_observations([copy.deepcopy(row)], args())[0]
+        self.assertEqual("pass", normalized["result"])
+        self.assertEqual({"positive", "metadata", "range-efficiency"}, set(normalized["facet_results"]))
+        for mutation in ("unexecuted", "binding", "not_completed", "values", "facets", "bytes", "objects", "transfer"):
+            changed = copy.deepcopy(row)
+            if mutation == "unexecuted":
+                changed["executed"] = False
+            elif mutation == "binding":
+                del changed["derived_output_binding"]
+            elif mutation == "not_completed":
+                changed["fsspec_execution"]["completed"] = False
+            elif mutation == "values":
+                changed["fsspec_execution"]["values_checked"] = 0
+            elif mutation == "facets":
+                changed["fsspec_execution"]["verified_facets"].append("crs-axis")
+            elif mutation == "bytes":
+                changed["observed_transfer"]["transferred_bytes"] = 33_554_433
+            elif mutation == "objects":
+                changed["observed_transfer"]["full_object_downloads"] = 17
+            else:
+                del changed["observed_transfer"]
+            with self.subTest(mutation=mutation):
+                rejected = MODULE._normalize_observations([changed], args())[0]
+                self.assertNotEqual("pass", rejected["result"])
+                self.assertIsNone(rejected["facet_results"])
+        for client, operation in (("xarray", "multidimensional-subset"), ("Dask", "distributed-array-compute")):
+            changed = copy.deepcopy(row)
+            changed.update(canonical_client=client, operation=operation,
+                           client_version=MODULE.GOVERNED_ASSIGNMENTS[("zarr", operation, client)].version)
+            rejected = MODULE._normalize_observations([changed], args())[0]
+            self.assertNotEqual("pass", rejected["result"])
+            self.assertFalse(rejected["honua_in_loop"])
 
     def test_honua_transcoded_cog_passes_with_a_real_evidence_digest(self):
         """#4398: `honua.cog.tif` is produced by CogMetadataExtractor +
@@ -860,6 +942,98 @@ class GeoParquetConsumerMetadataTests(unittest.TestCase):
                 self.assertEqual(6, by_client[client]["observed_metadata"]["feature_count"])
                 self.assertEqual("WKB",
                                  by_client[client]["observed_metadata"]["geometry_encoding"])
+
+
+class FlatGeobufConsumerMetadataTests(unittest.TestCase):
+    def _frame(self, rows=6):
+        frame = _FakeFrame(rows=rows, crs="EPSG:4326")
+        frame.geometry.geom_type = ["Point"] * rows
+        return frame
+
+    def _gdal(self):
+        return {"layers": [{"featureCount": 6, "geometryFields": [{
+            "type": "Point", "extent": [-122.4194, 0, 179.5, 86],
+            "coordinateSystem": {"projjson": {"id": {"authority": "EPSG", "code": 4326}}},
+        }]}]}
+
+    def test_each_reader_reports_its_own_metadata_and_changed_values_fail(self):
+        expected = {
+            "geometry_type": "Point", "feature_count": 6, "crs": "EPSG:4326",
+            "bounds": [-122.4194, 0, 179.5, 86],
+        }
+        for client, lane, observed in (
+            ("GeoPandas", "geopandas-flatgeobuf", MODULE._flatgeobuf_frame_metadata(self._frame())),
+            ("GDAL", "gdal-flatgeobuf", MODULE._gdal_flatgeobuf_metadata(self._gdal())),
+        ):
+            with self.subTest(client=client):
+                self.assertEqual(expected, observed)
+                row = MODULE._observation("flatgeobuf", "feature-read", client, lane,
+                                          "2026-09-25T00:00:00Z", args())
+                row["observed_metadata"] = observed
+                assignment = MODULE.GOVERNED_ASSIGNMENTS[("flatgeobuf", "feature-read", client)]
+                self.assertEqual([], MODULE._evaluate_budget(row, assignment))
+                row["observed_metadata"] = dict(observed, feature_count=5)
+                self.assertTrue(MODULE._evaluate_budget(row, assignment))
+
+    def test_missing_gdal_crs_is_not_filled_from_oracle(self):
+        info = self._gdal()
+        info["layers"][0]["geometryFields"][0].pop("coordinateSystem")
+        self.assertNotIn("crs", MODULE._gdal_flatgeobuf_metadata(info))
+        with self.assertRaises(ValueError):
+            MODULE._gdal_flatgeobuf_metadata({"layers": []})
+
+    def test_mixed_geometry_cannot_report_homogeneous_point(self):
+        frame = self._frame()
+        frame.geometry.geom_type[0] = "LineString"
+        self.assertEqual("LineString,Point", MODULE._flatgeobuf_frame_metadata(frame)["geometry_type"])
+
+    def test_pmtiles_enum_numeric_and_unknown_values(self):
+        from enum import Enum
+
+        class TileType(Enum):
+            MVT = 1
+            PNG = 2
+            JPEG = 3
+
+        for raw, expected in ((TileType.MVT, "mvt"), (TileType.PNG, "png"),
+                              (TileType.JPEG, "jpeg"), (1, "mvt"), (4, "webp"),
+                              ("MVT", "mvt"), (88, "88")):
+            with self.subTest(raw=raw):
+                self.assertEqual(expected, MODULE._pmtiles_tile_type(raw))
+
+    def test_javascript_metadata_survives_collection_without_invented_transfer(self):
+        from unittest import mock
+        import subprocess
+
+        payload = [{
+            "surface": "flatgeobuf", "operation": "feature-read", "canonical_client": "flatgeobuf-js",
+            "client_version": "4.4.0", "lane": "node-flatgeobuf", "result": "pass",
+            "observed_metadata": {"feature_count": 5, "crs": "EPSG:3857"},
+        }]
+        with mock.patch.object(MODULE, "_run", return_value=subprocess.CompletedProcess([], 0, json.dumps(payload), "")):
+            rows = MODULE.validate_javascript(Path("artifacts"), args())
+        self.assertEqual(payload[0]["observed_metadata"], rows[0]["observed_metadata"])
+        self.assertNotIn("observed_transfer", rows[0])
+
+    def test_javascript_whole_object_response_survives_collection_and_fails_unchanged_budget(self):
+        from unittest import mock
+        import subprocess
+
+        payload = [{
+            "surface": "pmtiles", "operation": "browser-archive-read", "canonical_client": "PMTiles-browser-viewer",
+            "client_version": "4.5.0", "lane": "node-pmtiles", "result": "pass",
+            "observed_metadata": dict(MODULE.FORMAT_BUDGET_PROFILES["pmtiles-range"]["expected_metadata"]),
+            "observed_transfer": {"requests": 1, "range_requests": 1, "full_object_downloads": 1, "transferred_bytes": 1107},
+            "serving_source": {"provider_environment": "localstack", "publication_api_proven": False},
+            "http_responses": [{"status": 206, "bytes": 1107, "content_range": "bytes 0-1106/1107"}],
+        }]
+        with mock.patch.object(MODULE, "_run", return_value=subprocess.CompletedProcess([], 0, json.dumps(payload), "")):
+            rows = MODULE.validate_javascript(Path("artifacts"), args())
+        for key in ("observed_transfer", "serving_source", "http_responses"):
+            self.assertEqual(payload[0][key], rows[0][key])
+        normalized = MODULE._normalize_observations(rows, args())
+        self.assertEqual("skip", normalized[0]["result"])
+        self.assertFalse(normalized[0]["budget_results"]["met"])
 
 
 if __name__ == "__main__":

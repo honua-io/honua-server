@@ -52,18 +52,20 @@ internal static class FilterExpressionHelpers
             UnaryExpression unary => new UnaryExpression(
                 unary.Operator,
                 NormalizeFilterPropertyReferences(unary.Operand, resource, protocolFieldResolver)),
-            // 'with' preserves protocol-scoped flags (SpatialPredicate.Geodesic) that a
-            // positional reconstruction would silently reset to their defaults.
+            // 'with' preserves protocol-scoped flags (SpatialPredicate.Geodesic,
+            // SpatialDistancePredicate.DistanceInMeters) that a positional reconstruction would
+            // silently reset to their defaults.
             SpatialPredicate spatial => spatial with
             {
                 Left = NormalizeFilterPropertyReferences(spatial.Left, resource, protocolFieldResolver),
                 Right = NormalizeFilterPropertyReferences(spatial.Right, resource, protocolFieldResolver)
             },
-            SpatialDistancePredicate distance => new SpatialDistancePredicate(
-                distance.Operator,
-                NormalizeFilterPropertyReferences(distance.Left, resource, protocolFieldResolver),
-                NormalizeFilterPropertyReferences(distance.Right, resource, protocolFieldResolver),
-                NormalizeFilterPropertyReferences(distance.Distance, resource, protocolFieldResolver)),
+            SpatialDistancePredicate distance => distance with
+            {
+                Left = NormalizeFilterPropertyReferences(distance.Left, resource, protocolFieldResolver),
+                Right = NormalizeFilterPropertyReferences(distance.Right, resource, protocolFieldResolver),
+                Distance = NormalizeFilterPropertyReferences(distance.Distance, resource, protocolFieldResolver)
+            },
             TemporalPredicate temporal => new TemporalPredicate(
                 temporal.Operator,
                 NormalizeFilterPropertyReferences(temporal.Left, resource, protocolFieldResolver),

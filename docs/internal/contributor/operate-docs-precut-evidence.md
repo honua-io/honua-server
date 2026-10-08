@@ -172,8 +172,49 @@ before boot and removed its containers and network afterwards.
   draft IDs.
 
 This is accepted-pin evidence for observation, metadata service staging and
-server API approval. It does not exercise a deployment actuator, a deployment
-source outage, the installed CLI/DevOps client, Console or a placement.
+server API approval on `548b7a5` only. It does not exercise a deployment
+actuator, a deployment source outage, the installed CLI/DevOps client, Console
+or a placement. It is not evidence for a later manifest pin.
+
+## September 26 publication and current pin
+
+Read on 2026-09-26 from honua-release trunk `7165e7f67937318a0c53a7292df7730961cf13c2`.
+`platform-manifest.yaml` pins honua-server
+`87966c3f7b6c840ffc4d4da0b451714ab717b18a`, image
+`ghcr.io/honua-io/honua-server@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a`
+(`nightly-87966c3`). That commit contains `886206527cc97bad1bbaa5fa6358910ebc45e9c0`,
+[#4840](https://github.com/honua-io/honua-server/pull/4939) (`dddbd49c0`) and
+[#4842](https://github.com/honua-io/honua-server/pull/4943) (`a8b89457b`). The
+September 14 statement that those two fixes count only after a re-pin is
+superseded for source presence. No installed harness was re-executed on
+`87966c3` for this record, so the September 15 receipts stay bound to
+`548b7a5`.
+
+[honua-site#275](https://github.com/honua-io/honua-site/pull/275) merged on
+2026-09-25 as `3417237a320a87e22d695599dcc2c256452103e0`. Current honua-site
+trunk `operations.html` links
+`https://docs.honua.io/guides/operate/scenario` and
+`https://docs.honua.io/guides/operate/metrics`. The paragraph keeps the bounded
+loop, says incomplete evidence stops proposals, and says rollback needs
+demonstrated backend support. It also says broader performance optimization
+and hosted-model operation are outside the scenario, and that exact-candidate
+execution receipts are still required. Publication does not widen the claim
+and does not assert a receipt for `87966c3`.
+
+A fixed-string search of pin `87966c3` and trunk `b817f60d8` found `src/` hits
+for `/api/v1/operate/status`, the admin observability ops-health, findings and
+events routes, `/api/v1/admin/deploy/plan`, `proposals/{id}/approve`,
+`honua_ops_health`, `honua_ops_findings`, `honua_operate_events`,
+`honua_supported_operation_kinds`, `honua_propose_finding`,
+`honua://ops/health` and `honua://proposals/`. `honua_propose_operation` had no
+`src/` hit on either revision. The Admin CLI names are not in this repository;
+the earlier syntax receipt was not repeated.
+
+Still unmet on the current pin: replaying the installed observation, staging
+and approval harnesses; a joined finding, proposal, typed deployment actuator
+and observation-window transcript; and installed CLI/DevOps plus Local Docker
+and ECS-small placement replay. Those are not waived by the site merge or by
+source ancestry.
 
 ## Acceptance disposition
 
@@ -183,16 +224,17 @@ source outage, the installed CLI/DevOps client, Console or a placement.
 | Freshness, completeness, backend identity and coverage | Documented source envelopes and failure behavior. #3475's executed Windows outage receipt is linked below. The deployment adapter fixtures cover stale, partial, unavailable, unverified and not-configured envelopes; live deployment-source collection remains a distinct evidence obligation. |
 | Generic model proposal-only boundary and negative authorization | Source references below; #3411, #3430, #3431 and #3474 are closed as checked September 5. Their old open-blocker claims were removed. |
 | One joined deployment actuator receipt and convergence window | **Unmet.** The approval receipt below exercises a real Studio draft operation; it does not prove deployment convergence or recovery. |
-| Exact Local Docker and ECS-small route/tool/CLI/rollback replay | **Partly met.** On the accepted `548b7a5` pin, the REST routes, MCP tools, status contract, installed service staging/recovery and server API approval pass in isolated Docker. The installed CLI/DevOps client, the ECS-small placement and deployment rollback have not been replayed on it. Missing final release-lock manufacture does not release this criterion. |
-| GitBook/docs validation | Local link/anchor, example-surface, OKF bundle, generated capability concepts and `llms.txt` checks pass. Checker regressions (24 links, example surfaces, 17 OKF, 2 Windows package verification) and `scripts/ci/pre-pr-check.sh` pass. The pre-PR selector uses the documentation-only shell/governance path; no managed build is required. Hosted GitBook preview is separately reported by the PR checks. |
-| honua-site #185 links without broadening claims | [Site PR #275](https://github.com/honua-io/honua-site/pull/275) contains both `guides/operate/scenario` and `guides/operate/metrics` links in `operations.html`, verified at `012f8acbbc8aeb427d7326e5f9cc0f6204d5dbcc`. It remains open at that head on September 15; publication is not claimed. |
+| Exact Local Docker and ECS-small route/tool/CLI/rollback replay | **Partly met.** The September 15 receipts pass observation, service staging/recovery and server API approval on `548b7a5`. Named REST routes and MCP tools are present in source at the current pin `87966c3` and at trunk `b817f60d8`. The installed harnesses were not replayed on `87966c3`. The installed CLI/DevOps client, the ECS-small placement and deployment rollback have not been replayed on either pin. |
+| GitBook/docs validation | On 2026-09-26, `python3 scripts/ci/check-doc-links.py` passed (2499 relative targets, 12 allowlisted warnings, 13 code-referenced anchors). `check-doc-links.test.py` passed 26 tests. `check-doc-example-surfaces.py` and `check-okf-bundle.py` passed (263 concepts). `generate-llms-txt.py --check` and `generate-capability-concepts.py --check` were current. `scripts/ci/pre-pr-check.sh` took the CI-shell-only path and passed. Hosted GitBook preview is reported by the PR checks, not by this local run. |
+| honua-site #185 links without broadening claims | **Met for publication.** [Site PR #275](https://github.com/honua-io/honua-site/pull/275) merged as `3417237a320a87e22d695599dcc2c256452103e0` on 2026-09-25. See [September 26 publication and current pin](#september-26-publication-and-current-pin). The live paragraph does not add #3300, EKS, Azure or hosted-model operation as prerequisites, and it still says exact-candidate receipts are required. |
 
 The release promise is the bounded terminal Operate journey in the 2026.1
 quality contract, extended by [protected rollout #319](https://github.com/honua-io/honua-release/issues/319):
 checked changes, contained failures and verified recovery. This disposition preserves
 the must-fix-before-cut ruling. The September 12 ruling requires the manifest-pinned
 image even before final cut; the older candidate-absence release is superseded.
-Missing deployment-path evidence and site publication remain unmet.
+Site publication is met. The joined deployment transcript and a replay on the
+current pin `87966c3` remain unmet.
 
 ## Authorization and freshness proof map
 
@@ -234,12 +276,15 @@ observed prior revision and protection policy.
 
 ## Candidate receipt requirements
 
-Since September 15 the accepted manifest pins server revision
+On September 15 the accepted manifest pinned server revision
 `548b7a5263da5a3f2381eb43f232687cdf92b0bf` and image
 `ghcr.io/honua-io/honua-server@sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1`.
-Remaining receipts must use this identity, not a source build or a proposed
-re-pin. The September 12 receipts below used the previous pin, `7ba4226`
-(`sha256:dd50cd81…`).
+Receipts in the subsections below use that identity, not a source build.
+The September 12 receipts used the previous pin, `7ba4226`
+(`sha256:dd50cd81…`). The accepted pin on September 26 is `87966c3`
+(`sha256:069f196b…`); see
+[September 26 publication and current pin](#september-26-publication-and-current-pin).
+Do not treat the September 15 receipts as evidence for that later digest.
 
 ### Executed approval slice
 
@@ -280,11 +325,12 @@ On `548b7a5` the deployment finding producer still builds store completeness fro
 registration through `OpsFindingsService.BuildStoreSource`. The
 [#4840](https://github.com/honua-io/honua-server/issues/4840) fix derives it from
 real store reads and proves backend loss and partial reads against Redis; it
-counts on the manifest only after a re-pin. The
+counted on the manifest only after a re-pin. The
 [#4842](https://github.com/honua-io/honua-server/issues/4842) platform-authority
-binding for deploy proposal creation also counts only after a re-pin.
-Those, accepted-pin replay of the authorization negatives and the joined
-deployment/placement transcript remain unmet, not waived.
+binding for deploy proposal creation had the same limit. Both commits are
+ancestors of accepted pin `87966c3`, so source presence is no longer waiting
+on a re-pin. Installed replay of the authorization negatives and the joined
+deployment/placement transcript were not run on that pin and remain unmet.
 
 Retain exact release lock/hash, image digest/architecture, package hashes,
 deployment target/backend, finding/source observation window, proposal ID,

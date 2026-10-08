@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Startup;
@@ -160,6 +161,14 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
         factory.Services.GetRequiredService<MigrationState>().Status
             .Should().Be(MigrationLifecycleStatus.Succeeded,
                 "this integration host must execute real startup migrations, not the seed-only bypass");
+        // A host without the provider composition still starts and only fails on the first
+        // read, as a GeoServices 500 envelope; name the missing composition here instead.
+        using (var scope = factory.Services.CreateScope())
+        {
+            scope.ServiceProvider.GetService<IMetadataV2GraphProvider>().Should().NotBeNull(
+                "the certified image registers the Postgres provider composition the FeatureServer read path resolves");
+        }
+
         client.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
 
         // --- test_service/0 serves exactly the ten client-compat-v1 records --------------------
@@ -317,6 +326,11 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
                 // journal reconciliation, independently of the hand-mirrored server.yaml fixture.
                 builder.UseSetting("HONUA_SKIP_MIGRATIONS", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+                // The certified image registers the production provider composition
+                // (InfrastructureCompositionRoot). A Test host skips it unless it opts in, and
+                // this host has no WebAppFixture wiring to stand in for it, so opt in explicitly
+                // rather than depend on the factory's environment default (#4640).
+                builder.UseSetting("HONUA_REGISTER_TEST_INFRASTRUCTURE", "true");
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(
                         WebAppFixturePostgresWiringMixin.BuildAppConfigurationDictionary(

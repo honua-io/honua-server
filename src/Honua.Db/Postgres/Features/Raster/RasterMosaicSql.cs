@@ -28,7 +28,7 @@ internal static class RasterMosaicSql
     /// Ordering applied to the LAST/FIRST union so a single raster wins each contested pixel.
     /// </param>
     /// <param name="attributeSort">
-    /// Optional non-date attribute ordering for an <c>esriMosaicByAttribute</c> mosaic. Used only
+    /// Optional non-date attribute ordering for an <c>esriMosaicAttribute</c> mosaic. Used only
     /// when <paramref name="ordering"/> is <see cref="RasterMosaicOrdering.Attribute"/>; names the
     /// allowlisted catalog column and direction that resolve a contested pixel.
     /// </param>
@@ -197,7 +197,7 @@ internal static class RasterMosaicSql
     // LAST union). 'id ASC' is always appended as a unique tiebreaker for determinism.
     private static string OrderByClause(RasterMosaicOrdering ordering, RasterMosaicAttributeSort? attributeSort) => ordering switch
     {
-        // esriMosaicByAttribute over a non-date attribute: the raster with the winning attribute
+        // esriMosaicAttribute over a non-date attribute: the raster with the winning attribute
         // value must sort LAST. Esri's default sort is descending (the highest value wins), so an
         // ascending request sorts the lowest value last (DESC) while a descending request sorts
         // the highest value last (ASC). The column is a strictly allowlisted physical column name

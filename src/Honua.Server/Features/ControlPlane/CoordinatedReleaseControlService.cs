@@ -118,6 +118,12 @@ internal sealed partial class CoordinatedReleaseControlService(
             return null;
         }
 
+        if (operation.Status != WorkflowOperationStatus.AwaitingApproval ||
+            operation.CoordinatedRelease.CurrentStep != gate)
+        {
+            throw new InvalidOperationException("The coordinated release is not awaiting approval at the requested gate.");
+        }
+
         var context = operation.CoordinatedRelease;
         var updatedContext = gate switch
         {
@@ -140,7 +146,11 @@ internal sealed partial class CoordinatedReleaseControlService(
             CoordinatedRelease = updatedContext
         };
 
-        await _workflowStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!await _workflowStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("The coordinated release changed while the gate was being approved.");
+        }
+
         return updated;
     }
 

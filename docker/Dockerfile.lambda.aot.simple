@@ -35,7 +35,7 @@ COPY src/Honua.Server/*.csproj src/Honua.Server/
 COPY src/Honua.Db/DuckDB/*.csproj src/Honua.Db/DuckDB/
 COPY src/Honua.Db/SqlServer/*.csproj src/Honua.Db/SqlServer/
 COPY src/Honua.Db/MySql/*.csproj src/Honua.Db/MySql/
-COPY src/Honua.ArcGisRest/*.csproj src/Honua.ArcGisRest/
+COPY src/Honua.GeoServicesRest/*.csproj src/Honua.GeoServicesRest/
 COPY src/Honua.Db/Oracle/*.csproj src/Honua.Db/Oracle/
 COPY src/Honua.Hosting/*.csproj src/Honua.Hosting/
 COPY src/Honua.Jobs/*.csproj src/Honua.Jobs/

@@ -227,7 +227,7 @@ public static class Fes20Parser
             "ResourceId" => ParseResourceId(element),
 
             // Property and literal elements
-            "ValueReference" => new PropertyReference(element.Value.Trim()),
+            "ValueReference" => ParseValueReference(element),
             "Literal" => ParseLiteral(element),
 
             _ => throw Fes20ParseException.Reportable($"Unsupported filter operator '{DescribeElementName(element.Name)}'.")
@@ -424,7 +424,7 @@ public static class Fes20Parser
                 throw Fes20ParseException.Reportable("First child of BBOX must be ValueReference when specified.");
             }
 
-            property = new PropertyReference(propertyRef.Value.Trim());
+            property = ParseValueReference(propertyRef);
         }
 
         var geometry = ParseGeometry(envelope, defaultSrid);
@@ -451,7 +451,7 @@ public static class Fes20Parser
             throw Fes20ParseException.Reportable($"First child of {DescribeElementName(element.Name)} must be ValueReference");
         }
 
-        var property = new PropertyReference(propertyRef.Value.Trim());
+        var property = ParseValueReference(propertyRef);
         var geometry = ParseGeometry(geometryElement, defaultSrid);
 
         return new SpatialPredicate(op, property, geometry);
@@ -482,14 +482,10 @@ public static class Fes20Parser
             throw Fes20ParseException.Reportable("Third child of DWithin must be Distance");
         }
 
-        var property = new PropertyReference(propertyRef.Value.Trim());
+        var property = ParseValueReference(propertyRef);
         var geometry = ParseGeometry(geometryElement, defaultSrid);
 
-        return new SpatialDistancePredicate(
-            SpatialOperator.DWithin,
-            property,
-            geometry,
-            ParseDistanceLiteral(distance));
+        return CreateDistancePredicate(SpatialOperator.DWithin, property, geometry, distance);
     }
 
     /// <summary>
@@ -517,14 +513,10 @@ public static class Fes20Parser
             throw Fes20ParseException.Reportable("Third child of Beyond must be Distance");
         }
 
-        var property = new PropertyReference(propertyRef.Value.Trim());
+        var property = ParseValueReference(propertyRef);
         var geometry = ParseGeometry(geometryElement, defaultSrid);
 
-        return new SpatialDistancePredicate(
-            SpatialOperator.Beyond,
-            property,
-            geometry,
-            ParseDistanceLiteral(distance));
+        return CreateDistancePredicate(SpatialOperator.Beyond, property, geometry, distance);
     }
 
     /// <summary>
@@ -543,7 +535,7 @@ public static class Fes20Parser
             throw Fes20ParseException.Reportable($"First child of {DescribeElementName(element.Name)} must be ValueReference");
         }
 
-        var property = new PropertyReference(children[0].Value.Trim());
+        var property = ParseValueReference(children[0]);
         var temporalOperand = ParseTemporalOperand(children[1]);
 
         var op = MapTemporalOperator(element.Name.LocalName);
@@ -591,11 +583,21 @@ public static class Fes20Parser
             throw Fes20ParseException.Reportable("ResourceId element must have a 'rid' attribute");
         }
 
+        EnsureWithinGuard(() => FilterParserGuard.EnsureStringLiteralLength(rid.Length, "ResourceId rid"));
+
         // Convert to property equality: id = 'rid'
         return new BinaryExpression(
             new PropertyReference("id"),
             BinaryOperator.Equal,
             new Literal(rid, LiteralType.Text));
+    }
+
+    // Every property reference passes the shared identifier limit, whichever operator carries it.
+    private static PropertyReference ParseValueReference(XElement element)
+    {
+        var name = element.Value.Trim();
+        EnsureWithinGuard(() => FilterParserGuard.EnsureIdentifierLength(name.Length, "ValueReference"));
+        return new PropertyReference(name);
     }
 
     /// <summary>
@@ -604,6 +606,7 @@ public static class Fes20Parser
     private static Literal ParseLiteral(XElement element)
     {
         var value = element.Value;
+        EnsureWithinGuard(() => FilterParserGuard.EnsureStringLiteralLength(value.Length, "Literal"));
         var type = element.Attribute("type")?.Value;
 
         return InferLiteralType(value, type);
@@ -865,9 +868,8 @@ public static class Fes20Parser
     {
         var pos = element.Descendants()
             .FirstOrDefault(candidate => candidate.Name.NamespaceName == GmlNamespace &&
-                                         candidate.Name.LocalName == "pos")
-            ?.Value;
-        if (string.IsNullOrWhiteSpace(pos))
+                                         candidate.Name.LocalName == "pos");
+        if (pos is null || string.IsNullOrWhiteSpace(pos.Value))
         {
             throw Fes20ParseException.Reportable($"{DescribeElementName(element.Name)} must contain a gml:pos element.");
         }
@@ -879,9 +881,8 @@ public static class Fes20Parser
     {
         var posList = element.Descendants()
             .FirstOrDefault(candidate => candidate.Name.NamespaceName == GmlNamespace &&
-                                         candidate.Name.LocalName == "posList")
-            ?.Value;
-        if (!string.IsNullOrWhiteSpace(posList))
+                                         candidate.Name.LocalName == "posList");
+        if (posList is not null && !string.IsNullOrWhiteSpace(posList.Value))
         {
             return ParsePosList(posList, axisOrder);
         }
@@ -889,7 +890,7 @@ public static class Fes20Parser
         var positions = element.Descendants()
             .Where(candidate => candidate.Name.NamespaceName == GmlNamespace &&
                                 candidate.Name.LocalName == "pos")
-            .Select(candidate => ParseCoordinate(candidate.Value, axisOrder))
+            .Select(candidate => ParseCoordinate(candidate, axisOrder))
             .ToArray();
         if (positions.Length == 0)
         {
@@ -908,46 +909,59 @@ public static class Fes20Parser
         return positions;
     }
 
-    private static Coordinate[] ParsePosList(string rawPosList, AxisOrder axisOrder)
+    private static Coordinate[] ParsePosList(XElement posListElement, AxisOrder axisOrder)
     {
-        var values = rawPosList
+        // A 3D posList holds (x, y, z) triples. Reading it in pairs would regroup the ordinates
+        // into different horizontal positions (#5463), so step by the declared dimension and keep
+        // the two horizontal ordinates of each position.
+        var dimension = ResolveSrsDimension(posListElement) ?? 2;
+        var values = posListElement.Value
             .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (values.Length < 2 || values.Length % 2 != 0)
+        if (values.Length < dimension || values.Length % dimension != 0)
         {
-            throw Fes20ParseException.Reportable("gml:posList must contain an even number of ordinates.");
+            throw Fes20ParseException.Reportable(dimension == 2
+                ? "gml:posList must contain an even number of ordinates."
+                : $"gml:posList ordinate count must be a multiple of srsDimension ({dimension}).");
         }
 
         try
         {
-            FilterParserGeometryGuard.EnsureCoordinateCount(values.Length / 2, "FES geometry literal");
+            FilterParserGeometryGuard.EnsureCoordinateCount(values.Length / dimension, "FES geometry literal");
         }
         catch (ArgumentException ex)
         {
             throw Fes20ParseException.Reportable(ex.Message, ex);
         }
 
-        var coordinates = new Coordinate[values.Length / 2];
-        for (var i = 0; i < values.Length; i += 2)
+        if (values.Any(value => !double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out _)))
         {
-            if (!double.TryParse(values[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var first) ||
-                !double.TryParse(values[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out var second))
-            {
-                throw Fes20ParseException.Reportable("gml:posList contains invalid numeric ordinates.");
-            }
+            throw Fes20ParseException.Reportable("gml:posList contains invalid numeric ordinates.");
+        }
 
-            coordinates[i / 2] = CreateCoordinate(first, second, axisOrder);
+        var coordinates = new Coordinate[values.Length / dimension];
+        for (var i = 0; i < values.Length; i += dimension)
+        {
+            var first = double.Parse(values[i], NumberStyles.Float, CultureInfo.InvariantCulture);
+            var second = double.Parse(values[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture);
+            coordinates[i / dimension] = CreateCoordinate(first, second, axisOrder);
         }
 
         return coordinates;
     }
 
-    private static Coordinate ParseCoordinate(string rawPosition, AxisOrder axisOrder)
+    private static Coordinate ParseCoordinate(XElement posElement, AxisOrder axisOrder)
     {
-        var ordinates = rawPosition
+        var ordinates = posElement.Value
             .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (ordinates.Length < 2)
         {
             throw Fes20ParseException.Reportable("Coordinate position must contain at least two ordinates.");
+        }
+
+        if (ResolveSrsDimension(posElement) is { } dimension && ordinates.Length != dimension)
+        {
+            throw Fes20ParseException.Reportable(
+                $"gml:pos must contain exactly srsDimension ({dimension}) ordinates.");
         }
 
         if (!double.TryParse(ordinates[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var first) ||
@@ -964,6 +978,30 @@ public static class Fes20Parser
         }
 
         return CreateCoordinate(first, second, axisOrder);
+    }
+
+    /// <summary>
+    /// Resolves the GML <c>srsDimension</c> in effect for a <c>gml:pos</c>/<c>gml:posList</c>: the
+    /// nearest declaration on the element or an enclosing geometry, or null when none is given (2D).
+    /// Only 2D and 3D positions are supported; their first two ordinates are the horizontal axes.
+    /// </summary>
+    private static int? ResolveSrsDimension(XElement coordinateElement)
+    {
+        var attribute = coordinateElement.AncestorsAndSelf()
+            .Select(candidate => candidate.Attribute("srsDimension"))
+            .FirstOrDefault(candidate => candidate is not null);
+        if (attribute is null)
+        {
+            return null;
+        }
+
+        if (!int.TryParse(attribute.Value.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var dimension) ||
+            dimension is < 2 or > 3)
+        {
+            throw Fes20ParseException.Reportable("srsDimension must be 2 or 3; other coordinate dimensions are not supported.");
+        }
+
+        return dimension;
     }
 
     private static Coordinate CreateCoordinate(double first, double second, AxisOrder axisOrder)
@@ -1040,19 +1078,8 @@ public static class Fes20Parser
             }
         }
 
-        // Try to infer type from value
-        if (bool.TryParse(value, out var boolValue))
-            return new Literal(boolValue, LiteralType.Boolean);
-
-        if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
-            return new Literal(intValue, LiteralType.Number);
-
-        if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue))
-            return new Literal(doubleValue, LiteralType.Number);
-
-        if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dateValue))
-            return new Literal(dateValue, LiteralType.DateTime);
-
+        // An untyped FES literal takes its type from the property schema during
+        // normalization. Preserve its lexical form here (including leading zeroes).
         return new Literal(value, LiteralType.Text);
     }
 
@@ -1125,6 +1152,18 @@ public static class Fes20Parser
 
         return builder.ToString();
     }
+
+    private static SpatialDistancePredicate CreateDistancePredicate(
+        SpatialOperator spatialOperator,
+        FilterExpression property,
+        FilterExpression geometry,
+        XElement distanceElement)
+        => new(spatialOperator, property, geometry, ParseDistanceLiteral(distanceElement))
+        {
+            // A uom-qualified distance is metres from here on; translators convert it to a
+            // projected layer's native unit (#5462). A bare value keeps its native reading.
+            DistanceInMeters = !string.IsNullOrEmpty(distanceElement.Attribute("uom")?.Value)
+        };
 
     private static Literal ParseDistanceLiteral(XElement distanceElement)
     {

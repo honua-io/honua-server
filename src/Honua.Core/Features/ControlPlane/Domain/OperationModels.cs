@@ -410,6 +410,18 @@ public sealed record OperationAuditInfo
     /// </summary>
     public string? CorrelationId { get; init; }
 
+    /// <summary>
+    /// W3C <c>traceparent</c> of the span that submitted the operation. Persisted with the durable
+    /// record so the worker that later executes it — possibly on another node or after a restart —
+    /// can link its execution span back to the submission trace (honua-server#5474).
+    /// </summary>
+    public string? TraceParent { get; init; }
+
+    /// <summary>
+    /// W3C <c>tracestate</c> accompanying <see cref="TraceParent"/>, when the submission carried one.
+    /// </summary>
+    public string? TraceState { get; init; }
+
     /// <summary>Approved proposal identity explicitly joined to this operation.</summary>
     public string? ProposalId { get; init; }
 
@@ -1342,6 +1354,12 @@ public sealed record ExecutionJobRecord
     /// through the execution context.
     /// </summary>
     public IReadOnlyList<string> ArtifactReferences { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Receipts for already committed sink effects, also exposed in artifact references.
+    /// These survive operator cancellation and distinguish committed work from fenced output.
+    /// </summary>
+    public IReadOnlyList<string> CommittedEffectReferences { get; init; } = Array.Empty<string>();
 
     /// <summary>
     /// Normalized execution-admission cost weight pinned at submit time for jobs whose exact-key spec

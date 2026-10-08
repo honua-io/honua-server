@@ -31,6 +31,7 @@ namespace Honua.Infrastructure.Authentication;
 /// </remarks>
 internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFilterSource
 {
+    private readonly IServiceProvider? _backgroundServices;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IRlsPolicyStore _policyStore;
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -44,8 +45,10 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         IMetadataV2GraphProvider graphProvider,
         IFilterExpressionService filterExpressionService,
         IOptions<RbacOptions> rbacOptions,
-        ILogger<RowLevelSecurityFilterSource> logger)
+        ILogger<RowLevelSecurityFilterSource> logger,
+        IServiceProvider? backgroundServices = null)
     {
+        _backgroundServices = backgroundServices;
         _httpContextAccessor = httpContextAccessor;
         _policyStore = policyStore;
         _graphProvider = graphProvider;
@@ -92,7 +95,7 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         var roles = RbacRoleClaims.Enumerate(
             principal,
             _rbacOptions,
-            _httpContextAccessor.HttpContext?.RequestServices);
+            _httpContextAccessor.HttpContext?.RequestServices ?? _backgroundServices);
 
         var layerName = resource.Metadata.Name;
         if (string.IsNullOrWhiteSpace(layerName))
@@ -124,10 +127,13 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         // would otherwise be returned once per candidate service.
         var byId = new Dictionary<Guid, RlsPolicy>();
 
-        // Always evaluate with the wildcard service so "*"-service policies apply
-        // even when the resource has no resolvable publication (e.g. direct layer-id
-        // access), plus each concrete service name the resource is published under.
-        var lookupServices = new HashSet<string>(serviceNames, StringComparer.OrdinalIgnoreCase) { "*" };
+        // Every concrete-service lookup already includes wildcard-service policies.
+        // A separate wildcard lookup is only needed without a resolvable publication.
+        var lookupServices = new HashSet<string>(serviceNames, StringComparer.OrdinalIgnoreCase);
+        if (lookupServices.Count == 0)
+        {
+            lookupServices.Add("*");
+        }
 
         foreach (var service in lookupServices)
         {
@@ -149,25 +155,12 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
     {
         try
         {
-            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var index = snapshot.Index;
-            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var publication in index.PublicationsById.Values)
-            {
-                if (!string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                if (index.ServicesById.TryGetValue(publication.ServiceId, out var service) &&
-                    !string.IsNullOrWhiteSpace(service.Metadata.Name))
-                {
-                    names.Add(service.Metadata.Name);
-                }
-            }
-
-            return names;
+            cancellationToken.ThrowIfCancellationRequested();
+            var snapshot = ValidatedMetadataSnapshot.Find(_httpContextAccessor.HttpContext, resource)
+                ?? await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            return snapshot.Index.ServiceNamesByResource.TryGetValue(resource.Metadata.Id, out var names)
+                ? names
+                : Array.Empty<string>();
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

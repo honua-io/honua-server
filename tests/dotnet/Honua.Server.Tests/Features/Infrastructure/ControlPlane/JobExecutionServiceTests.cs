@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics.Metrics;
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -23,6 +25,36 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Collection("ControlPlaneTransitionTelemetry")]
 public sealed class JobExecutionServiceTests
 {
+    [UnitTest]
+    public async Task ProcessJob_OrdinaryCompletionAfterEarlierCommittedEffect_HonoursCancellationAndReturnsOnlyReceipt()
+    {
+        var durable = CreateProvisioningJob();
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { durable = call.Arg<ExecutionJobRecord>(); return true; });
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var context = call.Arg<IJobExecutionContext>();
+                await context.RecordCommittedEffectAsync("earlier-committed-receipt");
+                durable = durable with { CancellationRequestedAt = DateTimeOffset.UtcNow };
+                Assert.False(await context.TryPublishArtifactAsync("ordinary-later-output"));
+                return JobExecutionResult.Succeeded();
+            });
+        using var service = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor],
+            new ExecutionJobCancellationTokens(), [], null, NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, durable.OperationId, durable.ClaimedBy!);
+
+        Assert.Equal(ExecutionJobStatus.Cancelled, durable.Status);
+        Assert.Equal("Cancelled after committed effects", durable.CurrentPhase);
+        Assert.Equal(new[] { "earlier-committed-receipt" }, durable.ArtifactReferences);
+        Assert.Contains(durable.Warnings, warning => warning.Contains("committed", StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -102,6 +134,52 @@ public sealed class JobExecutionServiceTests
             Environment.SetEnvironmentVariable(ExecutionQualificationBarrier.ExecutorModeEnvironmentVariable, previousMode);
             root.Delete(recursive: true);
         }
+    }
+
+    [Theory]
+    [InlineData(ExecutionJobKind.TileExport, true, false)]
+    [InlineData(ExecutionJobKind.TileExport, true, true)]
+    [InlineData(ExecutionJobKind.TileExport, false, false)]
+    [InlineData(ExecutionJobKind.Geoprocessing, true, false)]
+    [InlineData(ExecutionJobKind.Geoprocessing, true, true)]
+    [InlineData(ExecutionJobKind.Geoprocessing, false, false)]
+    [Trait("Tier", "Fast")]
+    public async Task ProcessJob_ExecutorReceivesSubmitterScope_AndRestoresAmbientScope(
+        ExecutionJobKind kind, bool captured, bool throwDuringExecution)
+    {
+        var submitter = captured
+            ? new JobSecurityContext("user-1", "tenant-1", [new JobSecurityClaim("role", "reader")])
+            : null;
+        var job = CreateProvisioningJob() with
+        {
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = submitter }
+        };
+        job = job with { Spec = job.Spec with { Kind = kind } };
+        var store = Substitute.For<IExecutionJobStore>().WithTrySet();
+        store.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(_ => job);
+        JobSecurityScopeState? observed = null;
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(kind);
+        executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                await Task.Yield();
+                observed = JobSecurityScope.Current;
+                if (throwDuringExecution)
+                    throw new InvalidOperationException("Test execution failed.");
+                return JobExecutionResult.Succeeded();
+            });
+        var outer = new JobSecurityContext("outer", null, []);
+        using var outerScope = JobSecurityScope.Begin(outer);
+        using var service = new JobExecutionService(
+            Substitute.For<IJobQueue>(), store, [executor], new ExecutionJobCancellationTokens(),
+            [], null, NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, job.OperationId, job.ClaimedBy!);
+
+        Assert.NotNull(observed);
+        Assert.Same(submitter, observed.Submitter);
+        Assert.Same(outer, JobSecurityScope.Current!.Submitter);
     }
 
     private static ExecutionJobRecord CreateProvisioningJob(

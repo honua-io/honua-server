@@ -28,7 +28,7 @@ internal static class GeoServicesTemplateMapper
     /// <param name="subtypes">The canonical subtype set, or <see langword="null"/>.</param>
     /// <param name="geometryType">The layer's GeoServices geometry type (e.g. <c>esriGeometryPoint</c>),
     /// used to pick the editing drawing tool.</param>
-    public static GeoServicesLayerType[]? MapTypes(MetadataV2Subtypes? subtypes, string geometryType)
+    public static GeoServicesLayerType[]? MapTypes(MetadataV2Subtypes? subtypes, string? geometryType)
     {
         if (subtypes is null || subtypes.Subtypes.Count == 0)
         {
@@ -102,7 +102,7 @@ internal static class GeoServicesTemplateMapper
     /// Picks the Esri editing drawing tool for a geometry type. Mirrors the ArcGIS default
     /// of a point/line/polygon tool per the layer's geometry; falls back to the point tool.
     /// </summary>
-    private static string ResolveDrawingTool(string geometryType)
+    private static string ResolveDrawingTool(string? geometryType)
         => geometryType switch
         {
             "esriGeometryPolyline" => "esriFeatureEditToolLine",

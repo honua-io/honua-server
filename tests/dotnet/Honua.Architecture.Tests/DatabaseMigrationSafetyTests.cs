@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Migrations;
@@ -11,6 +14,160 @@ namespace Honua.Architecture.Tests;
 [Trait("Category", "Architecture")]
 public sealed class DatabaseMigrationSafetyTests
 {
+    [ArchitectureTest]
+    public void MigrationScripts_AfterReaderBaseline_MustRemainExpandOnly()
+    {
+        var root = FindProjectRoot(Directory.GetCurrentDirectory());
+        var baselineJson = File.ReadAllText(Path.Combine(root, "certification", "schema-reader-baseline.json"));
+        MigrationHash(baselineJson).Should().Be("4534DC4F439A70DCE9A50F2DA0C82EDBB1F0A551BC9BFE1E4AE44EF6F2B8A33B",
+            "the reader baseline is frozen at 977a1c630; new migrations belong in the ongoing ledger, not this review record");
+        var baseline = JsonSerializer.Deserialize<Dictionary<string, string>>(baselineJson)!;
+        var scripts = EnumerateMigrationFiles().ToDictionary(
+            path => Path.GetRelativePath(root, path).Replace('\\', '/'), File.ReadAllText);
+        var hashes = JsonSerializer.Deserialize<Dictionary<string, string>>(
+            File.ReadAllText(Path.Combine(root, "certification", "schema-migration-hashes.json")))!;
+        RollingUpgradeViolations(scripts, baseline, hashes).Should().BeEmpty(
+            "the supported rolling update retains the previous reader's schema; a review annotation does not permit a contraction");
+    }
+
+    [Theory]
+    [InlineData("ALTER TABLE honua.layers DROP COLUMN name;")]
+    [InlineData("-- honua:compatibility-review reason=reviewed\nALTER TABLE honua.layers DROP COLUMN name;")]
+    [InlineData("ALTER TABLE honua.layers ALTER COLUMN name SET NOT NULL;")]
+    [InlineData("DROP VIEW honua.layer_summary;")]
+    [InlineData("DROP TYPE honua.layer_kind;")]
+    [InlineData("DROP MATERIALIZED VIEW honua.cached_layers;")]
+    [InlineData("DROP FUNCTION honua.read_layer(integer);")]
+    [InlineData("DROP TRIGGER track_changes ON honua.features;")]
+    [InlineData("DROP POLICY tenant_scope ON honua.features;")]
+    [InlineData("ALTER VIEW honua.layer_summary RENAME TO renamed;")]
+    [InlineData("DROP INDEX honua.layer_name_idx;")]
+    [InlineData("DROP EXTENSION postgis CASCADE;")]
+    [InlineData("ALTER TABLE honua.features DROP legacy_name;")]
+    [InlineData("TRUNCATE honua.features;")]
+    public void ExpandOnlyGate_SeededContractMigration_IsRejectedEvenWhenReviewed(string sql)
+    {
+        RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = sql }, new Dictionary<string, string>(),
+            new Dictionary<string, string> { ["new.sql"] = MigrationHash(sql) })
+            .Should().ContainSingle().Which.Should().Contain("new.sql");
+    }
+
+    [Fact]
+    public void ExpandOnlyGate_AdditiveMigration_IsAccepted()
+    {
+        const string sql = "ALTER TABLE honua.layers ADD COLUMN note text;";
+        RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = sql },
+            new Dictionary<string, string>(), new Dictionary<string, string> { ["new.sql"] = MigrationHash(sql) })
+            .Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExpandOnlyGate_ChangedOrDeletedBaselineMigration_IsRejected(bool deleted)
+    {
+        const string original = "CREATE TABLE fixture (id integer);";
+        var baseline = new Dictionary<string, string>
+        {
+            ["001.sql"] = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(original)))
+        };
+        var proposed = new Dictionary<string, string>();
+        if (!deleted)
+        {
+            proposed["001.sql"] = "CREATE TABLE fixture (id text);";
+        }
+
+        RollingUpgradeViolations(proposed, baseline).Should().ContainSingle()
+            .Which.Should().Contain("001.sql");
+    }
+
+    [Fact]
+    public void ExpandOnlyGate_UnpinnedAdditiveMigration_IsRejected()
+    {
+        RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = "CREATE TABLE future (id integer);" },
+            new Dictionary<string, string>()).Should().ContainSingle().Which.Should().Contain("hash-pinned");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExpandOnlyGate_MigrationAddedAfterReaderBaseline_CannotBeChangedOrDeleted(bool deleted)
+    {
+        const string original = "CREATE TABLE future (id integer);";
+        var hashes = new Dictionary<string, string> { ["new.sql"] = MigrationHash(original) };
+        var scripts = new Dictionary<string, string>();
+        if (!deleted)
+        {
+            scripts["new.sql"] = "CREATE TABLE future (id text);";
+        }
+        RollingUpgradeViolations(scripts, new Dictionary<string, string>(), hashes)
+            .Should().ContainSingle().Which.Should().Contain("new.sql");
+    }
+
+    private static string MigrationHash(string sql)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sql.Replace("\r\n", "\n", StringComparison.Ordinal))));
+
+    [Fact]
+    public void MigrationClassifier_HistoricalTriggerReplacement_RequiresExactFrozenNameAndHash()
+    {
+        var root = FindProjectRoot(Directory.GetCurrentDirectory());
+        const string name = "003_CreateRelationshipsTable.sql";
+        var sql = File.ReadAllText(Path.Combine(root, "src", "Honua.Server", "Migrations", name));
+        MigrationSafetyClassifier.Classify(name, sql).Classification.Should().Be(MigrationSafetyClassification.ContractAnnotated);
+        MigrationSafetyClassifier.Classify("Honua.Server.Migrations." + name, sql).Classification.Should()
+            .Be(MigrationSafetyClassification.ContractAnnotated);
+        MigrationSafetyClassifier.Classify(name, sql + "\n-- changed").Classification.Should()
+            .Be(MigrationSafetyClassification.ContractUnannotated);
+        MigrationSafetyClassifier.Classify("future.sql", sql).Classification.Should()
+            .Be(MigrationSafetyClassification.ContractUnannotated);
+    }
+
+    [Fact]
+    public void MigrationClassifier_DropNotNull_IsStillExpand()
+        => MigrationSafetyClassifier.Classify("new.sql", "ALTER TABLE honua.features ALTER COLUMN note DROP  NOT NULL;")
+            .Classification.Should().Be(MigrationSafetyClassification.Expand);
+
+    private static IEnumerable<string> RollingUpgradeViolations(
+        Dictionary<string, string> scripts, Dictionary<string, string> baseline,
+        Dictionary<string, string>? hashes = null)
+    {
+        hashes ??= baseline;
+        foreach (var (name, hash) in baseline)
+        {
+            if (!scripts.TryGetValue(name, out var sql) || MigrationHash(sql) != hash)
+            {
+                yield return $"{name}: an existing reader-baseline migration was changed or deleted";
+            }
+        }
+
+        foreach (var (name, hash) in hashes)
+        {
+            if (baseline.TryGetValue(name, out var baselineHash))
+            {
+                if (hash != baselineHash)
+                {
+                    yield return $"{name}: the frozen reader-baseline hash cannot change";
+                }
+            }
+            else if (!scripts.TryGetValue(name, out var sql) || MigrationHash(sql) != hash)
+            {
+                yield return $"{name}: a hash-pinned migration was changed or deleted";
+            }
+        }
+
+        foreach (var (name, sql) in scripts)
+        {
+            if (!hashes.ContainsKey(name))
+            {
+                yield return $"{name}: every migration must be hash-pinned in schema-migration-hashes.json";
+            }
+            if (!baseline.ContainsKey(name) && MigrationSafetyClassifier.Classify(name, sql).IsBreaking)
+            {
+                yield return $"{name}: contracting migrations cannot ship in a rolling update";
+            }
+        }
+    }
+
     private static readonly Regex ConcurrentIndexPattern = new(
         @"\bCREATE\s+INDEX\s+CONCURRENTLY\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);

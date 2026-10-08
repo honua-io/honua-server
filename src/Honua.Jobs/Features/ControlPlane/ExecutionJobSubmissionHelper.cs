@@ -12,6 +12,17 @@ internal static partial class ExecutionJobSubmissionHelper
 {
     internal const string SubmissionFailurePhase = "Failed (submission)";
     internal const string SubmissionFailureMessage = "Submission failed.";
+    internal const string LocalDispatchAcceptedPhase = "Queued for execution";
+
+    // A persisted initial local Queued record is durable dispatch intent. Both replay
+    // and the background sweep repair it after a cancelled request or process loss.
+    public static bool NeedsLocalDispatchRepair(ExecutionJobRecord job)
+        => job.Status == ExecutionJobStatus.Queued
+            && job.Spec.Kind == ExecutionJobKind.Geoprocessing
+            && job.AttemptCount == 0
+            && job.ClaimedBy == null
+            && !job.CancellationRequestedAt.HasValue
+            && string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal);
 
     public static async Task TryRollbackCreatedJobAsync(
         IExecutionJobStore jobStore,
@@ -28,7 +39,10 @@ internal static partial class ExecutionJobSubmissionHelper
         try
         {
             var current = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (current == null || current.Status is not (ExecutionJobStatus.Queued or ExecutionJobStatus.Provisioning))
+            if (current == null || current.Status is not (ExecutionJobStatus.Queued or ExecutionJobStatus.Provisioning)
+                || ((current.AttemptCount > 0 || current.ClaimedBy != null
+                    || current.CurrentPhase == LocalDispatchAcceptedPhase)
+                    && string.Equals(current.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)))
             {
                 return;
             }
@@ -59,7 +73,8 @@ internal static partial class ExecutionJobSubmissionHelper
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // Best-effort rollback; job TTL or manual intervention will repair. Still log so
+            // Best-effort compensation; the active-job sweep repairs remaining local
+            // Queued dispatch intent if the store was unavailable. Still log so
             // the failure is diagnosable instead of silently swallowed.
             if (logger != null)
             {
@@ -111,6 +126,10 @@ internal static partial class ExecutionJobSubmissionHelper
         var submittedAttemptCount = provisioning.AttemptCount + 1;
         var updated = provisioning with
         {
+            // TrySetAsync increments the durable version, not this immutable record.
+            // Use the version just committed above; otherwise every Redis submission
+            // takes the conflict path and leaves its own Provisioning state behind.
+            Version = provisioning.Version + 1,
             Status = submission.Status,
             UpdatedAt = now,
             CompletedAt = ExecutionJobReconciler.IsTerminal(submission.Status) ? now : provisioning.CompletedAt,
@@ -338,7 +357,7 @@ internal static partial class ExecutionJobSubmissionHelper
         [LoggerMessage(9042, LogLevel.Warning, "Exhausted provenance-merge retries for execution job {OperationId}; resolved parameters may not be pinned on the authoritative record")]
         public static partial void PostStartProvenanceMergeExhausted(ILogger logger, string operationId);
 
-        [LoggerMessage(9043, LogLevel.Warning, "Best-effort rollback of execution job {OperationId} failed; job TTL or manual intervention will repair")]
+        [LoggerMessage(9043, LogLevel.Warning, "Best-effort compensation of execution job {OperationId} failed")]
         public static partial void RollbackFailed(ILogger logger, string operationId, Exception exception);
     }
 }

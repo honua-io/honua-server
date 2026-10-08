@@ -356,6 +356,62 @@ public sealed class GrpcConversionHelpersTests
     }
 
     [UnitTest]
+    public void ToProtoFeature_WithObjectIdFieldName_DoesNotRepeatTheIdAsAnAttribute()
+    {
+        // honua-server#5330: storage returns the primary key as a lowercase
+        // "objectid" attribute while the published id field is "OBJECTID".
+        // geospatial.v1.Feature carries the id in Feature.id only.
+        var feature = Feature.Create(42, null, ImmutableDictionary<string, object?>.Empty
+            .Add("objectid", 42L)
+            .Add("NAME", "Golden Gate Park")
+            .Add("AREA", 44340000.0));
+
+        var proto = GrpcConversionHelpers.ToProtoFeature(feature, objectIdFieldName: "OBJECTID");
+
+        proto.Id.Should().Be(42);
+        proto.Attributes.Keys.Should().BeEquivalentTo(["NAME", "AREA"]);
+    }
+
+    [UnitTest]
+    public void ToProtoFeature_WithCustomPublicId_KeepsThePublicIdAndDropsOnlyTheStorageId()
+    {
+        // A layer whose id.primary field is a string public id: Feature.Id stays the
+        // storage object id, so only the storage "objectid" duplicate is dropped.
+        var feature = Feature.Create(42, null, ImmutableDictionary<string, object?>.Empty
+            .Add("objectid", 42L)
+            .Add("public_id", "PARK-0042")
+            .Add("NAME", "Golden Gate Park"));
+
+        var proto = GrpcConversionHelpers.ToProtoFeature(feature, objectIdFieldName: "public_id");
+
+        proto.Attributes.Keys.Should().BeEquivalentTo(["public_id", "NAME"]);
+        proto.Attributes["public_id"].StringValue.Should().Be("PARK-0042");
+    }
+
+    [UnitTest]
+    public void ToProtoFeature_WithIdFieldValueThatDiffersFromFeatureId_KeepsTheAttribute()
+    {
+        var feature = Feature.Create(42, null, ImmutableDictionary<string, object?>.Empty
+            .Add("OBJECTID", 7L));
+
+        var proto = GrpcConversionHelpers.ToProtoFeature(feature, objectIdFieldName: "OBJECTID");
+
+        proto.Attributes.Keys.Should().BeEquivalentTo(["OBJECTID"]);
+    }
+
+    [UnitTest]
+    public void ToProtoFeature_WithoutObjectIdFieldName_KeepsEveryVisibleAttribute()
+    {
+        var feature = Feature.Create(42, null, ImmutableDictionary<string, object?>.Empty
+            .Add("objectid", 42L)
+            .Add("NAME", "Golden Gate Park"));
+
+        var proto = GrpcConversionHelpers.ToProtoFeature(feature);
+
+        proto.Attributes.Keys.Should().BeEquivalentTo(["objectid", "NAME"]);
+    }
+
+    [UnitTest]
     public void ToProtoFeature_WithIntAttribute_MapsToInt32()
     {
         var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty
@@ -660,6 +716,20 @@ public sealed class GrpcConversionHelpersTests
         proto.FieldType.Should().Be(Proto.FieldType.String);
         proto.Length.Should().Be(255);
         proto.Nullable.Should().BeTrue();
+        proto.Alias.Should().Be("name");
+    }
+
+    [UnitTest]
+    public void ToProtoField_UsesAliasThenTitleThenName()
+    {
+        // honua-server#5330: same display-name precedence as GeoServices REST.
+        var aliased = new MetadataV2Field { Name = "NAME", Alias = "Park Name", Title = "Name title" };
+        var titled = new MetadataV2Field { Name = "NAME", Title = "Name title" };
+        var bare = new MetadataV2Field { Name = "NAME" };
+
+        GrpcConversionHelpers.ToProtoField(aliased).Alias.Should().Be("Park Name");
+        GrpcConversionHelpers.ToProtoField(titled).Alias.Should().Be("Name title");
+        GrpcConversionHelpers.ToProtoField(bare).Alias.Should().Be("NAME");
     }
 
     [UnitTest]

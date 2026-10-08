@@ -85,6 +85,12 @@ public sealed class LayerPublishRequest
     public string? ServiceName { get; init; }
 
     /// <summary>
+    /// Optional metadata grouping namespace. A non-null value requires a trusted tenant context.
+    /// Null preserves legacy unscoped publication; existing services cannot be retagged.
+    /// </summary>
+    public string? Namespace { get; init; }
+
+    /// <summary>
     /// Optional connection identifier to associate with the service.
     /// </summary>
     public Guid? ConnectionId { get; init; }

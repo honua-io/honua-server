@@ -2,9 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.SpatialAnalytics.Domain;
+using Honua.Core.Queries.Filters;
+using Honua.Core.Queries.Filters.GeoServicesSql;
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
@@ -93,7 +96,7 @@ public static class FeatureQuerySecurity
 
         if (!string.IsNullOrWhiteSpace(query.Where))
         {
-            ThrowIfFilterReferencesMaskedField(masked, query.Where, "where");
+            ThrowIfWhereReferencesMaskedField(masked, query.Where, "where");
         }
 
         if (query.TextSearch is { } textSearch)
@@ -121,6 +124,32 @@ public static class FeatureQuerySecurity
         if (!string.IsNullOrWhiteSpace(query.PublicIdAttributeName))
         {
             ThrowIfMasked(masked, query.PublicIdAttributeName, "public feature id");
+        }
+    }
+
+    /// <summary>
+    /// Rejects a parsed filter that references any of <paramref name="maskedFields"/>. Every
+    /// field reference in the tree counts, whichever operator, negation or function consumes
+    /// it, so a protocol adapter can refuse the predicate before it reaches a provider.
+    /// </summary>
+    /// <param name="expression">Parsed filter, or null when the request has none.</param>
+    /// <param name="maskedFields">Fields masked from the caller.</param>
+    /// <param name="surface">Request parameter named in the refusal.</param>
+    /// <exception cref="ArgumentException">The filter references a masked field.</exception>
+    public static void ValidateFilterExpression(
+        FilterExpression? expression,
+        IEnumerable<string>? maskedFields,
+        string surface)
+    {
+        if (expression is null || maskedFields is null)
+        {
+            return;
+        }
+
+        var masked = maskedFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (masked.Count > 0)
+        {
+            ThrowIfExpressionReferencesMaskedField(masked, expression, surface);
         }
     }
 
@@ -290,6 +319,7 @@ public static class FeatureQuerySecurity
     {
         foreach (var field in masked.Where(field =>
                      FieldComparisonRegex(field).IsMatch(expression) ||
+                     QuotedIdentifierRegex(field).IsMatch(expression) ||
                      FieldSortRegex(field).IsMatch(expression) ||
                      AttributeAccessorRegex(field).IsMatch(expression)))
         {
@@ -297,6 +327,190 @@ public static class FeatureQuerySecurity
                 $"Field '{field}' is masked and cannot be used by {surface}.",
                 nameof(expression));
         }
+    }
+
+    // Field references are read from the shared filter AST, so the operator that consumes a
+    // field (negated LIKE/IN/BETWEEN included) cannot hide it. Raw WHERE text that the shared
+    // grammar does not parse can still reach a provider's own WHERE parser; for that text every
+    // identifier token, and every attribute key addressed through a JSON accessor, is treated
+    // as a field reference.
+    private static void ThrowIfWhereReferencesMaskedField(HashSet<string> masked, string where, string surface)
+    {
+        FilterExpression? expression;
+        try
+        {
+            expression = new GeoServicesSqlParser().Parse(where);
+        }
+        catch (ArgumentException)
+        {
+            expression = null;
+        }
+        catch (NotSupportedException)
+        {
+            expression = null;
+        }
+
+        if (expression is not null)
+        {
+            ThrowIfExpressionReferencesMaskedField(masked, expression, surface);
+            return;
+        }
+
+        foreach (var reference in EnumerateFieldTokens(where))
+        {
+            ThrowIfMasked(masked, reference, surface);
+        }
+    }
+
+    private static void ThrowIfExpressionReferencesMaskedField(
+        HashSet<string> masked,
+        FilterExpression expression,
+        string surface)
+    {
+        // Iterative: parsed trees are bounded by FilterParserGuard, but callers may also pass
+        // server-built trees, so the walk must not depend on recursion depth.
+        var pending = new Stack<FilterExpression>();
+        pending.Push(expression);
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            if (current is PropertyReference property)
+            {
+                ThrowIfMasked(masked, property.PropertyName, surface);
+                continue;
+            }
+
+            foreach (var child in EnumerateChildren(current))
+            {
+                pending.Push(child);
+            }
+        }
+    }
+
+    private static IEnumerable<FilterExpression> EnumerateChildren(FilterExpression expression)
+    {
+        switch (expression)
+        {
+            case BinaryExpression binary:
+                return [binary.Left, binary.Right];
+            case UnaryExpression unary:
+                return [unary.Operand];
+            case SpatialPredicate spatial:
+                return [spatial.Left, spatial.Right];
+            case SpatialDistancePredicate spatialDistance:
+                return [spatialDistance.Left, spatialDistance.Right, spatialDistance.Distance];
+            case TemporalPredicate temporal:
+                return [temporal.Left, temporal.Right];
+            case ArrayPredicate array:
+                return [array.Left, array.Right];
+            case FunctionCall function:
+                return function.Arguments;
+            case ArrayLiteral arrayLiteral:
+                return arrayLiteral.Elements;
+            case ValueList valueList:
+                return valueList.Values;
+            default:
+                return [];
+        }
+    }
+
+    // Lexical field references in WHERE text: bare identifiers, "quoted", `quoted` and
+    // [bracketed] identifiers, and the key of a ->> / -> accessor. Other string literals and
+    // numbers are values, not references.
+    private static IEnumerable<string> EnumerateFieldTokens(string text)
+    {
+        var index = 0;
+        var afterAccessor = false;
+        while (index < text.Length)
+        {
+            var current = text[index];
+            if (current == '\'')
+            {
+                var literal = ReadDelimited(text, ref index, '\'');
+                if (afterAccessor)
+                {
+                    yield return literal;
+                }
+
+                afterAccessor = false;
+                continue;
+            }
+
+            if (current is '"' or '`' or '[')
+            {
+                yield return ReadDelimited(text, ref index, current == '[' ? ']' : current);
+                afterAccessor = false;
+                continue;
+            }
+
+            if (char.IsLetter(current) || current == '_')
+            {
+                var start = index;
+                while (index < text.Length && (char.IsLetterOrDigit(text[index]) || text[index] == '_'))
+                {
+                    index++;
+                }
+
+                yield return text[start..index];
+                afterAccessor = false;
+                continue;
+            }
+
+            if (char.IsDigit(current))
+            {
+                while (index < text.Length && (char.IsLetterOrDigit(text[index]) || text[index] == '.'))
+                {
+                    index++;
+                }
+
+                afterAccessor = false;
+                continue;
+            }
+
+            if (current == '-' && index + 1 < text.Length && text[index + 1] == '>')
+            {
+                index += index + 2 < text.Length && text[index + 2] == '>' ? 3 : 2;
+                afterAccessor = true;
+                continue;
+            }
+
+            if (!char.IsWhiteSpace(current))
+            {
+                afterAccessor = false;
+            }
+
+            index++;
+        }
+    }
+
+    // Reads a delimited token starting at text[index] (the opening delimiter); a doubled
+    // closing delimiter is an escaped character. Advances past the closing delimiter, or to the
+    // end of the text when the token is unterminated.
+    private static string ReadDelimited(string text, ref int index, char close)
+    {
+        var value = new StringBuilder();
+        index++;
+        while (index < text.Length)
+        {
+            var current = text[index];
+            if (current == close)
+            {
+                if (index + 1 < text.Length && text[index + 1] == close && close != ']')
+                {
+                    value.Append(current);
+                    index += 2;
+                    continue;
+                }
+
+                index++;
+                return value.ToString();
+            }
+
+            value.Append(current);
+            index++;
+        }
+
+        return value.ToString();
     }
 
     private static Regex AttributeAccessorRegex(string field)
@@ -309,7 +523,14 @@ public static class FeatureQuerySecurity
 
     private static Regex FieldComparisonRegex(string field)
         => new(
-            $@"(?<![A-Za-z0-9_]){Regex.Escape(field)}(?![A-Za-z0-9_])\s*(?:=|<>|!=|<=|>=|<|>|LIKE\b|ILIKE\b|IS\b|IN\b)",
+            $@"(?<![A-Za-z0-9_]){Regex.Escape(field)}(?![A-Za-z0-9_])\s*(?:=|<>|!=|<=|>=|<|>|LIKE\b|ILIKE\b|IS\b|IN\b|NOT\b|BETWEEN\b)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    // Translated SQL quotes column identifiers, so a quoted masked column is a reference
+    // whichever operator follows it.
+    private static Regex QuotedIdentifierRegex(string field)
+        => new(
+            "\"" + Regex.Escape(field.Replace("\"", "\"\"", StringComparison.Ordinal)) + "\"",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private static Regex FieldSortRegex(string field)

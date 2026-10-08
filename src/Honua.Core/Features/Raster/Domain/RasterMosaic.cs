@@ -44,13 +44,13 @@ public enum RasterMergeStrategy
 public enum RasterMosaicOrdering
 {
     /// <summary>
-    /// Newest acquisition wins a contested pixel (Esri <c>esriMosaicByAttribute</c> on an
+    /// Newest acquisition wins a contested pixel (Esri <c>esriMosaicAttribute</c> on an
     /// acquisition field, descending). This is the default mosaic ordering.
     /// </summary>
     AcquisitionNewest = 0,
 
     /// <summary>
-    /// Oldest acquisition wins a contested pixel (Esri <c>esriMosaicByAttribute</c> on an
+    /// Oldest acquisition wins a contested pixel (Esri <c>esriMosaicAttribute</c> on an
     /// acquisition field, ascending).
     /// </summary>
     AcquisitionOldest = 1,
@@ -70,7 +70,7 @@ public enum RasterMosaicOrdering
 
     /// <summary>
     /// A contested pixel is resolved by an arbitrary allowlisted raster attribute (Esri
-    /// <c>esriMosaicByAttribute</c> over a non-date field). The attribute column and sort
+    /// <c>esriMosaicAttribute</c> over a non-date field). The attribute column and sort
     /// direction are carried separately on <see cref="RasterMosaicAttributeSort"/>, since the
     /// ordering enum cannot encode an arbitrary column name.
     /// </summary>
@@ -97,7 +97,7 @@ public enum RasterMosaicOrdering
 }
 
 /// <summary>
-/// Describes an <c>esriMosaicByAttribute</c> ordering over a non-date raster attribute. The
+/// Describes an <c>esriMosaicAttribute</c> ordering over a non-date raster attribute. The
 /// <see cref="Column"/> is a strictly allowlisted physical raster-catalog column name (never
 /// caller-supplied free text) so it can be safely interpolated into the mosaic <c>ORDER BY</c>.
 /// </summary>

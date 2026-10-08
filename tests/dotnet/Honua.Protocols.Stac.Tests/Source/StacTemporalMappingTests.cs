@@ -46,7 +46,7 @@ public sealed class StacTemporalMappingTests
         var item = StacMappingService.MapFeatureToItem(feature, resource, new MetadataV2Publication(), 0, "https://example.test");
         var filter = StacFilterHelpers.ParseDatetime("2024-01-01T00:00:00Z", resource);
         var collection = await StacMappingService.MapResourceToCollectionAsync(
-            resource, new MetadataV2Publication(), new MetadataV2Service(), 0, reader, "https://example.test", null, CancellationToken.None);
+            resource, new MetadataV2Publication(), new MetadataV2Service(), 0, 0, reader, "https://example.test", null, CancellationToken.None);
 
         item.Properties.Should().NotBeNull();
         item.Properties!["datetime"].Should().Be(instant.ToString("o", System.Globalization.CultureInfo.InvariantCulture));

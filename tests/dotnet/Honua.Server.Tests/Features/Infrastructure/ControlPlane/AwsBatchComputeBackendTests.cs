@@ -16,6 +16,14 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 public sealed class AwsBatchComputeBackendTests
 {
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public void SubmissionClient_DisablesSdkRetries_ForNonIdempotentSubmitJob()
+    {
+        using var client = AwsSdkBatchJobClient.CreateClient("us-west-2", "http://localhost:4566", submitting: true);
+        client.Config.MaxErrorRetry.Should().Be(0);
+    }
+
     private const string DefaultJobDefinitionArn =
         "arn:aws:batch:us-west-2:123:job-definition/heavy-gdal:1";
 

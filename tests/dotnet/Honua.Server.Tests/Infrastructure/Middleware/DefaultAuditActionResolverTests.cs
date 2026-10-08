@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Infrastructure.Middleware;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
 
@@ -37,6 +38,19 @@ public sealed class DefaultAuditActionResolverTests
     public void Resolve_AdminRead_ReturnsNull(string method, string route)
     {
         _resolver.Resolve(method, route).Should().BeNull();
+    }
+
+    [UnitTheory]
+    [InlineData("PUT", "/api/v{version:apiVersion}/console/content/{id}/share/access")]
+    [InlineData("POST", "/api/v{version:apiVersion}/console/content/{id}/share/link")]
+    [InlineData("PATCH", "/api/v{version:apiVersion}/console/content/{id}")]
+    [InlineData("DELETE", "/api/enrich/datasets/{id}")]
+    public void SRV_INF_010_ControlPlaneMutation_ReturnsAuditDescriptor(string method, string route)
+    {
+        var descriptor = _resolver.Resolve(method, route);
+
+        descriptor.Should().NotBeNull();
+        descriptor!.EventType.Should().Be(AuditEventType.AdminAction);
     }
 
     [Fact]

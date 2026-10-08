@@ -48,6 +48,32 @@ public class ImageServerExportHandlerTests
             NullLogger<ImageServerExportHandler>.Instance);
     }
 
+    // #5437: the request annotations are the published OpenAPI contract for exportImage, so
+    // they must admit every raw pixel-block format and compression the handler serves.
+    [UnitTheory]
+    [InlineData("bsq", null)]
+    [InlineData("bip", "None")]
+    [InlineData("BIP", null)]
+    [InlineData("lerc", "LERC")]
+    [InlineData("LERC", "lerc")]
+    [Operation(Operations.Export)]
+    public void ExportImageRequest_RawPixelBlockFormatsAndLercCompression_PassContractValidation(
+        string format,
+        string? compression)
+    {
+        var request = new ExportImageRequest { Format = format, Compression = compression };
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+
+        var valid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            request,
+            new System.ComponentModel.DataAnnotations.ValidationContext(request),
+            results,
+            validateAllProperties: true);
+
+        results.Select(static result => result.ErrorMessage).Should().BeEmpty();
+        valid.Should().BeTrue();
+    }
+
     [UnitTest]
     [Operation(Operations.Export)]
     public async Task ExportImageAsync_LayerNotFound_ReturnsNotFound()
@@ -602,9 +628,9 @@ public class ImageServerExportHandlerTests
         SetupTemporaryStorage();
 
         var context = CreateImageServerContext();
-        // esriMosaicByAttribute over an acquisition date field, descending (default).
+        // esriMosaicAttribute over an acquisition date field, descending (default).
         var request = CreateRequest(
-            mosaicRule: "{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"AcquisitionDate\"}");
+            mosaicRule: "{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"AcquisitionDate\"}");
         var result = await _handler.ExportImageAsync(context, 1, request);
 
         result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
@@ -628,7 +654,7 @@ public class ImageServerExportHandlerTests
 
         var context = CreateImageServerContext();
         var request = CreateRequest(
-            mosaicRule: "{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"AcquisitionDate\",\"ascending\":true}");
+            mosaicRule: "{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"AcquisitionDate\",\"ascending\":true}");
         var result = await _handler.ExportImageAsync(context, 1, request);
 
         result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();

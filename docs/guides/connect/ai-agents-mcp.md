@@ -17,6 +17,8 @@ Which tool calls an agent may make is an edition boundary: reading is Community,
 
 The handshake methods (`initialize`, `tools/list`, `resources/list`, `resources/templates/list`) are open; `tools/call` and `resources/read` require an authenticated principal plus the matching operator grant. Authentication accepts `X-API-Key` and OAuth bearer tokens (`Authorization: Bearer`); when both are present, the bearer token is evaluated first.
 
+Layer references also require tenant-visible publications and shared resource access for the requested operation. Entity resolution and grounding rank only readable publications and omit services without readable publications or service metadata access. A layer-specific grant preserves the layer candidate while service candidates require service metadata access. `honua_render_map` checks every requested layer before invoking the renderer; layer-specific style operations use the same checked resolver. Rendering checks query access, catalog and layer discovery check metadata access, and applying a style preset checks administrative resource access in addition to its operation authorization.
+
 ## Connect a client
 
 **Claude Code.** Add the server to the project's `.mcp.json`:
@@ -156,7 +158,7 @@ The curated prompts select `configure` or `analyze`, not `setup`. Each view is b
 | `configure` | The closed admin roster (server status, API-key reads, connection create and test, import from URL, layer publish, access policy), inline ingest, service publish, layer reads, style and render, and the Studio composition, save, get-version, and publication tools. |
 | `operate` | Health, findings, events, alerts, platform-release status, deploy operations, and `honua_propose_finding`. |
 | `analyze` | Grounding, geocoding, layer reads, and the plan / validate / execute / job tools. A published-layer buffer is process `analytics.buffer-aggregate` (`layerId`). `geometry.buffer` accepts one WKB and does not read a published layer. |
-| `setup` | The older lifecycle-only path. It stays available and still keeps `honua_studio_propose_publication` out of its compose stage. New prompts do not select it. |
+| `setup` | The bounded terminal path (`setup.v3`): readiness, ingest, publish, verify, style and render, bounded GP, Studio composition and lifecycle (including `honua_studio_get_version`), and publication submit. `honua_studio_propose_publication` stays in the publication stage. Curated prompts select `configure` or `analyze` instead, because those views also carry the admin roster or the analysis path. |
 | `default` | The 12-tool discovery surface. It does not contain the admin roster. |
 
 A view is **discovery, not authority**:
@@ -219,6 +221,9 @@ The operator-grant model includes a `StudioDraft` resource type — a distinct g
 | `Mcp:ServerInitiatedStreamEnabled` | `false` | Offer the optional server-initiated `GET /mcp` SSE stream (progress / `*/list_changed`). Off by default: `GET /mcp` returns `405 Method Not Allowed` + `Allow: POST, DELETE` per the Streamable-HTTP spec, so spec-compliant SDK clients skip the stream instead of hanging it at a buffering ingress. |
 | `Mcp:SessionIdleTimeout` | `00:30:00` | Sliding idle TTL. Every request (or an opened GET stream) on a session refreshes the window; an untouched session expires and is swept. Expired ids return `404`, so clients re-initialize cleanly. |
 | `Mcp:MaxSessions` | `10000` | Maximum concurrently tracked sessions. Bounds memory on a public endpoint. |
+| `Mcp:MaxAnonymousSessions` | `1000` | Maximum concurrently tracked anonymous sessions, counted inside `Mcp:MaxSessions`. An anonymous `initialize` only ever evicts another anonymous session, and an authenticated `initialize` at capacity evicts anonymous sessions first. |
+| `Mcp:MaxBatchSize` | `50` | Maximum elements in one JSON-RPC batch. A longer batch is answered with a single `invalid_request` error (`id: null`) and none of its elements runs. |
+| `Mcp:MaxRequestBodyBytes` | `10485760` | Maximum `POST /mcp` body size (10 MiB). A larger body is refused with `413 Payload Too Large` before it is parsed. |
 | `Mcp:SessionEvictionPolicy` | `EvictLeastRecentlyUsed` | What to do at capacity: evict the least-recently-used session, or `RejectNew` (refuse `initialize` with a retryable `unavailable` error and leave live sessions untouched). |
 | `Mcp:StatelessSessionFallback` | `true` | Serve a `POST /mcp` that presents a well-formed but unknown `Mcp-Session-Id` as if it were session-less instead of `404`. Session state is per instance, so this keeps spec-compliant clients working on multi-instance deployments without sticky routing. Set `false` for the strict Streamable-HTTP behavior (`404` so the client re-initializes). Malformed ids always `404`. |
 

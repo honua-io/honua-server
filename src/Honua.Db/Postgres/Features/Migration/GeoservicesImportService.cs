@@ -250,18 +250,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         => _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken);
 
     private string ResolveTargetSchema(string? requestedSchema)
-    {
-        var schema = string.IsNullOrWhiteSpace(requestedSchema)
-            ? _schemaConfiguration.DefaultOperationalSchema
-            : requestedSchema.Trim();
-
-        if (!SchemaSearchPath.IsValidIdentifier(schema))
-        {
-            throw new ArgumentException("Target schema contains invalid characters.", nameof(requestedSchema));
-        }
-
-        return schema;
-    }
+        => _schemaConfiguration.ResolveImportTargetSchema(requestedSchema);
 
     /// <summary>
     /// Emits a progress report for an import phase. Shared with

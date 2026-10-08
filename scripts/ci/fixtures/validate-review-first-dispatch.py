@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import json
+import math
 import re
 from pathlib import Path
 
@@ -52,6 +54,28 @@ def mode(source: str, path: Path) -> str:
     if len(matches) != 1:
         raise AssertionError(f"{path}: expected exactly one top-level REVIEW_FIRST_MODE")
     return matches[0]
+
+
+def validate_synthetic_artifact_catalog(
+    page_counts: list[int], declared_total: int, maximum_pages: int
+) -> None:
+    """Exercise the workflow's bounded, fail-closed catalog pagination contract."""
+    discovered = 0
+    for page, page_count in enumerate(page_counts[:maximum_pages], start=1):
+        discovered += page_count
+        if page * 100 >= declared_total:
+            if discovered < declared_total:
+                raise AssertionError(
+                    "repository artifact catalog ended before its declared total"
+                )
+            return
+        if page_count != 100:
+            raise AssertionError("repository artifact catalog ended before its declared total")
+
+    raise AssertionError(
+        "review-first-observation-v1 artifact catalog needs more than "
+        f"{maximum_pages} page(s) of 100 (declared total {declared_total})"
+    )
 
 
 def main() -> None:
@@ -476,9 +500,76 @@ def main() -> None:
     )
     require(
         promotion_policy,
-        '"maximum_artifact_catalog_pages": 3',
+        '"maximum_artifact_catalog_pages": 50',
         "repository artifact discovery must remain bounded",
     )
+    # The scheduled ledger went red when the retained catalog (1,601 receipts,
+    # #5363) outgrew a 3-page budget. Keep the finite bound at least twice the
+    # observed catalog, and keep the worst-case request total inside the
+    # declared API budget so raising one bound cannot silently spend another.
+    policy = json.loads(promotion_policy)
+    observed_catalog = 1601
+    if policy["maximum_artifact_catalog_pages"] * 100 < 2 * observed_catalog:
+        raise AssertionError(
+            "artifact catalog budget must keep 2x headroom over the observed catalog"
+        )
+    partitions = math.ceil(policy["receipt_retention_days"] * 24 / policy["query_partition_hours"])
+    worst_case_requests = (
+        partitions * math.ceil(policy["maximum_runs_per_partition"] / 100)
+        + policy["maximum_artifact_catalog_pages"]
+        + policy["maximum_receipt_downloads"]
+    )
+    if worst_case_requests > policy["maximum_github_api_requests"]:
+        raise AssertionError(
+            f"ledger worst case of {worst_case_requests} requests exceeds the API budget"
+        )
+
+    # Exercise the boundary with catalogs rather than only matching workflow
+    # source. The current-sized catalog must be complete, while the first
+    # catalog outside the finite budget must fail instead of yielding partial
+    # evidence that could be reported as green.
+    current_catalog_pages = [100] * (observed_catalog // 100) + [observed_catalog % 100]
+    validate_synthetic_artifact_catalog(
+        current_catalog_pages,
+        observed_catalog,
+        policy["maximum_artifact_catalog_pages"],
+    )
+    beyond_budget_total = policy["maximum_artifact_catalog_pages"] * 100 + 1
+    try:
+        validate_synthetic_artifact_catalog(
+            [100] * policy["maximum_artifact_catalog_pages"] + [1],
+            beyond_budget_total,
+            policy["maximum_artifact_catalog_pages"],
+        )
+    except AssertionError as error:
+        if "needs more than" not in str(error) or str(beyond_budget_total) not in str(error):
+            raise AssertionError("catalog truncation error must be actionable") from error
+    else:
+        raise AssertionError("catalog beyond the declared page budget must fail closed")
+    for needle, message in (
+        (
+            "while (( page <= maximum_pages )); do",
+            "artifact discovery must stop at its catalog-page budget",
+        ),
+        (
+            "if (( page * 100 >= expected_total )); then\n              catalog_complete=true",
+            "artifact discovery is complete only once it covers the declared total",
+        ),
+        (
+            'echo "repository artifact total changed during pagination" >&2',
+            "artifact discovery must reject a catalog that changes mid-pagination",
+        ),
+        (
+            'echo "repository artifact catalog ended before its declared total" >&2',
+            "artifact discovery must reject a short page before the declared total",
+        ),
+        (
+            'if [[ "${catalog_complete}" != true ]]; then\n'
+            "            printf '::error::review-first-observation-v1 artifact catalog needs more than",
+            "a truncated artifact catalog must fail with an actionable error",
+        ),
+    ):
+        require(evidence_ledger, needle, message)
     require(
         promotion_policy,
         '"maximum_receipt_downloads": 300',

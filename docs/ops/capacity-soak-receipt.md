@@ -1,207 +1,133 @@
 ---
 type: reference
 title: "Candidate capacity-soak receipt"
-description: "How the candidate capacity/SLO receipt the release train requires is produced, what each signal means, what the receipt claims, and how to verify a published one."
+description: "Producing and verifying candidate-bound capacity observations and their attested evidence ZIP."
 ---
 # Candidate capacity-soak receipt
 
-The release train will not certify a candidate without a capacity/SLO receipt. This page
-describes the producer that makes one: what it measures, on what substrate, what the receipt
-claims, and how anyone can verify a published receipt for themselves.
+The release gate consumes an attested **ZIP**, containing
+`capacity-soak-receipt.json` (schema version 2) and the exact raw files it cites.
+The approved producer is
+[capacity-soak-candidate.yml](../../.github/workflows/capacity-soak-candidate.yml).
+The normative envelope, frozen queries and thresholds live in honua-release
+[`docs/CAPACITY-ENVELOPE-2026.1.md`](https://github.com/honua-io/honua-release/blob/trunk/docs/CAPACITY-ENVELOPE-2026.1.md).
 
-- Producer: [`.github/workflows/capacity-soak-candidate.yml`](../../.github/workflows/capacity-soak-candidate.yml)
-- Substrate: [`docker-compose.soak.yml`](../../docker-compose.soak.yml)
-- Measurement: [`scripts/soak/`](../../scripts/soak/)
-- Consumer: honua-release `.github/workflows/capacity-soak.yml` →
-  `tools/check_capacity_soak.py --lock certification/capacity-envelope.v1.json`
-- Contract: honua-release `docs/CAPACITY-ENVELOPE-2026.1.md` and the frozen
-  `certification/capacity-envelope.v1.json`
+## Dispatch and candidate identity
 
-## The chain
-
-1. The release train takes a `capacity_receipt_url`.
-2. Its `capacity-soak.yml` gate fetches that HTTPS JSON — HTTPS only, TLS 1.2 or better,
-   failing on any error status, and **without following redirects** — runs
-   `gh attestation verify --repo honua-io/honua-server` over the fetched bytes, and evaluates
-   them against the frozen lock.
-3. This workflow is what produces those bytes, signs them, and publishes them at a URL the
-   gate can fetch anonymously.
-
-Run it with `workflow_dispatch`, passing the manifest-pinned honua-server SHA from
-honua-release's `platform-manifest.yaml`:
+Create a branch or tag whose head is the manifest's exact server commit. That
+commit must contain this producer. Dispatch the workflow **on that ref**, using
+the matching immutable image and a committed release ref:
 
 ```bash
 gh workflow run capacity-soak-candidate.yml -R honua-io/honua-server \
-  -f candidate_sha=<40-char sha> -f lock_ref=trunk
+  --ref <candidate-ref> \
+  -f candidate_sha=<manifest-server-sha> \
+  -f candidate_image=ghcr.io/honua-io/honua-server@sha256:<manifest-image-digest> \
+  -f lock_ref=<honua-release-commit>
 ```
 
-`steady_state_seconds` defaults to the lock's `soak.minimumSteadyStateSeconds` (3,600) and is
-refused below it. `candidate_image` runs a published image instead of building the candidate
-source; either way the receipt's `observedRevision` is read back out of the running server, so
-an image that is not the candidate fails the run rather than producing a mislabelled receipt.
+The workflow refuses a producer source or checkout different from the candidate,
+a source-built image, and a candidate/image pair different from the release
+manifest. It resolves the release ref once and fetches the manifest, lock and
+verifier from that same commit. The deployment's revision and Production posture
+are read back from the running server. A later producer ref cannot qualify an
+older candidate: GitHub attests the workflow's source commit.
 
-## Substrate and scope (operator ruling A, 2026-09-12)
+`steady_state_seconds=0` uses the frozen minimum, currently 3,600 seconds.
+`publish=false` still runs attestation and the full checker against the local ZIP.
+A failing checker always fails the workflow, whether publication is enabled or not.
 
-The soak runs on the **local-docker** substrate: `docker compose` on a GitHub-hosted runner
-with PostGIS, Redis and the candidate server image, under the **Production** startup policy
-(the run fails if the server reports any other environment). No cloud substrate is exercised,
-and the receipt says so in its `substrate` block. A capacity claim derived from this receipt
-is a claim about this topology.
+## Collection
 
-The deployment runs on a real, signed **Pro** licence minted for the run (`Honua.LicenseMint`),
-because `Licensing:DevGrantEdition` is refused under the Production startup policy by design and
-the declared envelope covers Pro surfaces. The key pair is generated on the runner, used once,
-and never leaves it.
+The substrate is [local Docker](../../docker-compose.soak.yml): one server
+replica, PostGIS, Redis and local file storage. All share one host failure domain.
+The server boots its Production policy with a real per-run Pro license and a
+throwaway password-protected key-ring certificate. Schema migrations run before
+[fixture seeding](../../scripts/soak/seed_envelope.py); the served catalogue is
+then republished. These observations carry no cloud or Preview capacity claim.
 
-The Production startup policy also composes the Redis-backed durable operation secret channel,
-and since honua-server#4722 it refuses to start unless an operator certificate encrypts that
-channel's data-protection key ring (`Operations:SecretChannel:KeyRingCertificatePath`). The run
-mints a throwaway PKCS#12 certificate with a random password for this purpose. It mounts the
-certificate read-only into the server container and deletes the loose PEM private key once the
-certificate is exported. The requirement is not relaxed for the soak (#4885): the run meets it
-the way an operator would, and no key material is committed.
+[collect_capacity.py](../../scripts/soak/collect_capacity.py) owns the eight
+scenario populations in the soak profile: 30 feature, 15 spatial, 20 OGC feature,
+10 CQL, 60 connection-pool, 5 large-result, 15 OData and 15 tile users. Each user
+cycles independently. This collector replaces the legacy NBomber aggregate
+receipt path; its population is measured directly, never reconstructed from
+percentiles or summary counts. The workflow still checks the canonical profile's
+concurrency before starting.
 
-## What the run does
+Before measurement, one existing layer-0 feature is updated through the authenticated
+FeatureServer edit API to exactly the locked maximum canonical UTF-8 feature size.
+The fixture advertises Update and gives its description field enough declared
+capacity for that payload. A successful per-feature edit result and unchanged
+geometry and attributes on read-back are required; no SQL write bypasses API
+validation and no extra row is added. Samples re-read the
+feature, catalogue, per-layer counts and tenant scope. The canonical feature
+encoding is compact JSON with Unicode preserved, including geometry and all
+returned attributes.
 
-1. Builds (or pulls) the candidate image and boots the substrate.
-2. Waits for `/healthz/ready` under the Production startup policy.
-3. Seeds **exactly** the declared envelope topology — one service, `layersPerService` layers,
-   `featuresPerLayer` features each — with [`scripts/soak/seed_envelope.py`](../../scripts/soak/seed_envelope.py),
-   then re-reads it from the database.
-4. Recompiles the served metadata-v2 snapshot from the seeded catalogue and restarts the server
-   (the snapshot is compiled at startup, so a catalogue seeded afterwards is otherwise invisible).
-5. Runs the lock's `soak` profile at the declared concurrency for the locked steady state, while
-   [`scripts/soak/drive_soak.py`](../../scripts/soak/drive_soak.py) observes the signals a request
-   generator cannot see.
-6. Runs a recovery drill **after** the steady-state window closes.
-7. Builds the receipt, self-checks it with the same rules the release gate applies, attests it,
-   publishes it, and then re-verifies the **published** bytes exactly as the gate will.
+Each completed load, GP or probe request belongs to exactly one replica/container-incarnation
+and one UTC interval of at most 30 seconds. The joint histogram retains count,
+measured duration (rounded up to a millisecond), HTTP status, in-band error and
+protocol. HTTP 200 error documents and malformed JSON remain failures. Transport
+errors/timeouts are recorded as 599; they are never dropped. Requests completing
+outside the measured window are excluded by the same rule for every outcome.
 
-### Seeding order is the fix for #3812
+Metric and workload samples cover both endpoints and the complete window, with
+no gap above 60 seconds. Samples retain their supporting observations. Worker
+pressure is the server container's CPU consumption divided by the available host
+CPUs (GP shares this process); database pressure is the server's measured pool
+utilization; Redis pressure is connected clients divided by its `maxclients`.
+The receipt gates the maximum of these three ratios. Queue depth and age are
+observed through submitted GP jobs. The driver offers a bounded batch up to the
+queue target plus worker slots and replenishes terminal jobs; admission rejections
+are retained as failures, never counted as queued jobs. Configured limits are not substituted
+for observed depths. Missing samples and background-task errors remain explicit
+`samplingFailures` and cannot qualify.
 
-`tests/seed/server.yaml` is the migration-**skipping** fixture: it creates the migration-owned
-core schema itself. Applying it before a Production server boots leaves those tables present
-with no row in `public.schema_versions`, and `PostgresCoreSchemaGuard` fails closed at migration
-003 (`SchemaExistsWithoutJournal`, `raster_layer_statistics`). The server exits, `/healthz/ready`
-never answers, and the lane dies at "Wait for readiness" — which is what
-`load-soak-nightly.yml` did every night from 2026-09-02.
+Worker, database and Redis stop/start drills run **inside** the window. Each
+retains injection, detected-stop and recovery timestamps plus its serving probe.
+Database and Redis recovery also require direct dependency readiness. Deliberate
+faults remain inside the load population and may cause the candidate to fail its
+availability budget. The collector never excludes those failures to get green.
 
-The server owns the core schema. It migrates first; data is seeded afterwards. That is the order
-`.github/actions/setup-honua-server` already used, it is the order `load-soak-nightly.yml` now
-uses, and this producer seeds data only.
+## Evidence and verification
 
-## The eight signals
+[capacity_evidence.py](../../scripts/soak/capacity_evidence.py) computes the
+receipt's values and populations from the raw observations. The one
+`honua.capacity-observations/v1` artifact shares the receipt's candidate, window,
+topology, producer and lock hash. It is uploaded first so the receipt can cite the
+actual immutable Actions artifact URL. The ZIP is flat and bounded to 64 files,
+64 MiB per file and 256 MiB total; it currently contains two files.
 
-Every signal carries its own `method`, `unit`, window, sample count and supporting evidence in
-the receipt. A measurement that could not be taken is recorded without a value and fails the run;
-nothing is defaulted.
+The workflow attests that complete ZIP with SLSA v1 on a GitHub-hosted runner and
+publishes its bytes on the evidence branch at a commit-pinned HTTPS URL. It
+fetches the published bytes, compares them, verifies the attestation with `gh`,
+extracts with the release checker’s bounded extractor, and runs
+`tools/check_capacity_soak.py`. The receipt's `signature` field points to the
+external ZIP attestation; the field itself is not cryptographic proof.
 
-| Signal | How it is measured |
-|---|---|
-| `availability` | served/attempted ratio of an independent 1 Hz FeatureServer query probe across the steady-state window — deliberately not the load harness's own counters, so availability and error rate are two observations rather than one number reported twice |
-| `errorRate` | failed/total requests from the NBomber soak run |
-| `p95LatencyMs`, `p99LatencyMs` | worst-scenario percentile across the profile's scenarios, the same worst-scenario reading the frozen limits were taken from |
-| `throughputRps` | successful requests ÷ full run duration (ramp-up + steady + ramp-down), the aggregate the frozen floor was derived from |
-| `queueAgeSeconds` | maximum age a queued geoprocessing job reached before the single declared worker started it, sampled once per second |
-| `saturationRatio` | peak connection-pool utilisation from the server's own `/monitoring/metrics/connection-pool`; a sample without utilisation data invalidates the signal |
-| `recoveryTimeSeconds` | seconds from injecting a server-process fault (container restart) until the deployment served a feature query again, measured after the steady-state window so the frozen availability budget is not spent on a deliberate outage |
+The release checker independently recomputes all eight signals and verifies the
+raw hashes, populations, eight workload dimensions, freeze, source commit,
+workflow, run ID/attempt, image digest and ZIP subject digest. Green requires that
+checker to accept everything. The legacy manual load workflow is diagnostic only;
+its nightly schedule has been retired in favor of candidate qualification.
 
-## Envelope coverage
+## Failed qualification
 
-`check_capacity_soak.py` compares the receipt's `envelope` block with the lock's
-`supportedEnvelope` for equality on every dimension present in the lock. Excluded Preview
-observations are informational and cannot make the GA receipt incomplete. Copying a block is easy; claiming it is not. The receipt
-therefore also carries `envelopeVerification` — one record per declared dimension, with what was
-declared, what was observed, and how — and an `envelopeCoverage` summary. A dimension is one of
+A failed or incomplete run is evidence of a failed or incomplete qualification.
+Its ZIP may still be attested and published for diagnosis; the final check remains
+red. Preserve it and investigate the failing dimensions or signals. Do not alter
+thresholds, copy targets into observation rows, or relabel an incomplete window.
 
-- `verified` — established on the deployment under test and re-observed there;
-- `not-exercised` — declared by the lock and deliberately not driven by this run, with the reason
-  recorded in the receipt; or
-- `not-met` — driven, and the deployment did not hold it. The receipt records declared against
-  observed, its status becomes `incomplete`, and the release gate refuses it. Aborting the run
-  instead would throw away the very evidence the soak exists to produce.
+The pinned candidate at implementation time was
+`87966c3f7b6c840ffc4d4da0b451714ab717b18a`, which predates this collector.
+Qualification against this implementation requires a new manifest-pinned
+candidate containing it. No run on a newer producer ref can repair that immutable
+source mismatch. This PR's analytical and local HTTP fixtures are implementation
+evidence, not a candidate soak or a cryptographic attestation.
 
-There is no fourth, silent state: a dimension with no record at all fails receipt construction.
-
-### Preview exclusions (operator ruling A, 2026-09-13)
-
-[honua-release#345](https://github.com/honua-io/honua-release/pull/345) removes
-`activeSubscriptions` and `alertEvaluationsPerSecond` from the 2026.1 lock. Realtime
-subscriptions and customer alerting are **Preview**; Preview features carry no capacity promise.
-The producer reads the updated lock, seeds only its GA topology, leaves Preview streams disabled,
-and never drives or asserts the removed dimensions. If a receipt still contains Preview
-observations, the release report echoes them as informational. The eight required GA SLO
-signals are unchanged.
-
-The following historical findings explain the ruling; they are not current capacity obligations.
-
-### Historical alerting finding: `alertEvaluationsPerSecond`
-
-The alert pipeline validates at startup that tenant-context resolution is **off** ("alert
-evaluation and delivery stores are instance-wide"). With `MultiTenancy:Enabled=false`, the OGC
-API Features item query — which the soak profile drives and through which the declared envelope's
-layers are served — answers `403 Tenant context is required to query collection items`. Driving
-the declared alert rate and serving the declared envelope are therefore mutually exclusive on one
-deployment. The original #4708 producer kept the serving surface and recorded the alert rate
-as declared, not claimed. Ruling A removes that declaration from the GA envelope.
-
-### Historical subscription finding: `activeSubscriptions`
-
-On `7ba4226` the deployment did not hold the declared 1,000 subscriptions for the hour: 1,000 were
-opened and confirmed by the server, and 400 were still open at the end of the window, with the
-rest closed by the server. Each subscription is drained by a reader, so they are live consumers,
-not idle sockets. The receipt records the shortfall; it does not claim the dimension.
-
-### Note on `gpQueueDepth`
-
-There is no queue-capacity setting to read back: the declared depth is an operating bound. With
-the declared single worker, execution admission answers `503 Global active job limit reached
-(1/1)` to a submission that arrives while a job runs, so the queue does not grow towards the
-bound through the GPServer submit path. What the run verifies is that geoprocessing work ran
-continuously under the declared single-worker configuration and the observed queue never exceeded
-the bound; the admission rejections are recorded as evidence.
-
-## Signing, publication and verification
-
-`signingIdentity` and `signature` are not self-asserted text:
-
-1. the payload — the receipt without its signature members, canonicalised as sorted-key JSON with
-   no insignificant whitespace — is attested with `actions/attest-build-provenance`, which signs
-   an in-toto statement whose subject digest is the payload's SHA-256, under a Fulcio certificate
-   issued to this workflow's identity;
-2. [`scripts/soak/sign_receipt.py`](../../scripts/soak/sign_receipt.py) checks that the bundle
-   really covers those bytes, then copies the DSSE signature into `signature` and the
-   certificate's SAN into `signingIdentity`;
-3. the finished receipt is attested as well — that is the attestation the consumer verifies.
-
-To verify a published receipt yourself, download it over HTTPS to `receipt.json` (any client;
-the gate's own fetch does not follow redirects, which is why the publication target must answer
-`200` directly), then, from a honua-release checkout:
-
-```bash
-gh attestation verify receipt.json --repo honua-io/honua-server
-python3 tools/check_capacity_soak.py --lock certification/capacity-envelope.v1.json \
-  --receipt receipt.json --expected-revision "$(yq '.components.honua-server.sha' platform-manifest.yaml)"
-```
-
-To re-derive the signed payload, drop the
-`signature`, `signingIdentity`, `signatureFormat` and `signingIdentitySource` members and
-re-serialise with sorted keys and `(',', ':')` separators; its SHA-256 is the subject digest named
-in `signatureFormat`.
-
-### Why a commit-pinned raw URL
-
-The consumer's fetch fails on an error status but does not follow redirects. A GitHub
-**release-asset** URL answers `302`, so that fetch writes an empty file and reports success —
-release assets are therefore not a usable publication target for this gate. A
-`raw.githubusercontent.com` URL pinned to a commit answers `200` with the exact bytes, needs no
-credentials, and cannot be moved afterwards. Receipts are committed to the orphan `soak-receipts`
-branch of this repository — the same repository whose attestation the gate verifies — so
-publishing evidence never touches trunk.
-
-## A failing soak still publishes a receipt
-
-If a signal misses its frozen threshold, the run still builds, signs and publishes the receipt —
-an honest negative one — and then asserts that the real gate **refuses** it. The workflow fails.
-Thresholds are never relaxed to make a receipt pass, and a threshold miss is reported as a
-finding against the candidate.
+The old GP driver reports that the single-worker admission limit rejects new jobs
+while one runs; it does not fill the declared queue of 100. The new collector
+records the actual depth. If a new candidate still behaves that way, its queue
+workload fails the existing frozen contract and #5314 remains open until a real
+full-envelope soak passes. Neither a passing ZIP fixture nor retiring the nightly
+job waives that release requirement.

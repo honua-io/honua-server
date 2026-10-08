@@ -1148,3 +1148,94 @@ supports a whole-class split of about 360s / 407s into `OGC API Maps Basic and
 Conformance` and `OGC API Maps Rendering and Records`. Both keep the **22m test /
 32m job caps**, with an exact-partition contract preserving the original suite.
 See [the rebalance evidence and registration details](shard-rebalance-5006.md).
+
+
+## October 1 Catalog/ImageServer support capacity follow-up
+
+[Trunk run 36890294472](https://github.com/honua-io/honua-server/actions/runs/36890294472/job/110464254373)
+terminated `GeoServices Catalog and ImageServer Support` after 1,081 seconds
+against its 18-minute inner cap. The uploaded timing receipt reports
+`capacity_exhausted`, output four seconds before termination and no kill
+escalation. It has no completed TRX: 18 minutes is a lower bound, not a measured
+completion time or p90. This is separate from the XML assertion repair in #5345.
+
+Increase this shard to a 30-minute test cap and a 40-minute job cap, preserving
+the policy's ten-minute artifact/upload allowance. Keep its filter, project,
+paths, concurrency and test coverage unchanged. This restores provisional
+headroom without claiming the 70% utilization target is proven; use the next
+completed timing/TRX receipt to assess that target and any later whole-class
+split. No application or Native AOT build inputs change.
+
+
+The first trailing run after #5345,
+[36912211773](https://github.com/honua-io/honua-server/actions/runs/36912211773/job/110537624367),
+passed the server image scan but failed its filesystem scan on the OWSLib
+client-tooling pin `urllib3==2.7.0` (CVE-2026-97687 and CVE-2026-97689; scanner
+fixed version2.8.0). Update both the canonical OWSLib client and OGC API
+conformance pins to [2.8.0](https://pypi.org/project/urllib3/2.8.0/), preserving
+every other pinned dependency. No scan suppression or server runtime package
+change is involved. Historical certification receipts retain their original
+client identities; new receipts must record the updated client tooling.
+
+The independent review of this repair at `c89c4db32f59942a47e742a7a9f019078ba01327`
+posted a clean exact-head attestation and returned `verdict=clean`. Its evidence
+checker confirmed exactly one clean attestation, then failed in
+[review run36915468887](https://github.com/honua-io/honua-server/actions/runs/36915468887/job/110548345559)
+because GitHub CLI rejects combining `--slurp` and `--jq`. Pipe the complete
+paginated JSON to external jq instead, preserving the trusted application ID,
+latest-check selection and fail-closed handling. The regression fixture executes
+the workflow's real expression against separate pages, newer failures, foreign
+applications, unrelated checks, missing checks and malformed JSON. No review or
+merge admission requirement is relaxed.
+
+## FeatureServer Tiles and Replica capacity split (2026-10-07)
+
+Trunk went provisionally red at `c19f29d` on run
+[37435142851](https://github.com/honua-io/honua-server/actions/runs/37435142851),
+attempt 1, job
+[112175268559](https://github.com/honua-io/honua-server/actions/runs/37435142851/job/112175268559):
+`HONUA_SHARD_CAPACITY_EXHAUSTED` at the 22-minute test budget (1321s, idle 4s,
+exit 124). Attempt 2 of the same run passed with no code change in 1217s
+(20.2 minutes, 92% of the 22-minute budget). The September baseline in the
+table above is 8.9 minutes. The passing retry's TRX sums to 5.6 minutes of
+test-method time; the other 14.6 minutes is host startup and shutdown around
+each integration case. No case exceeds 13 seconds. The longest classes, by
+earliest start to latest end on that retry, are serial:
+
+| Class | Cases | Method sum | Span |
+|---|---:|---:|---:|
+| FeatureServerReplicaEsriParityTests | 28 | 1.26m | 6.08m |
+| FeatureServerReplicaSyncTests | 32 | 1.34m | 5.69m |
+| ReplicaConflictReviewEndpointTests | 25 | 0.88m | 2.55m |
+| MvtTileTemporalEndpointTests | 10 | 0.34m | 1.21m |
+| MobileOfflineDemoFixtureReplicationTests | 7 | 0.27m | 1.00m |
+| MvtTileDecodeTests | 5 | 0.32m | 0.89m |
+| FeatureServerReplicaDeliveryWindowTests | 3 | 0.15m | 0.69m |
+| ReplicaManagementEndpointTests | 7 | 0.30m | 0.62m |
+| ReplicaOwnershipEndpointTests | 5 | 0.15m | 0.44m |
+| Remaining MVT and unit classes | 37 | 0.57m | 0.4m |
+
+MVT classes occupy a contiguous 2.8 minutes. Replica classes occupy 17.3
+minutes. The log's `42703: column "globalid" does not exist` is one query on
+`mobile_offline_demo` that still answered HTTP 200 in 46ms; the passing retry
+logs the same error the same number of times. It is not a retry loop and it
+does not account for the extra time.
+
+The shard is split on the existing `MvtTile | Replica` filter boundary into
+`FeatureServer MVT Tiles` (measured 2.8m, 13% of the unchanged 22m budget) and
+`FeatureServer Replica` (measured 17.3m, 79% of the unchanged 22m budget).
+Neither budget was raised. The two filters exclude each other, so a name that
+contains both substrings matches neither child and must be assigned explicitly.
+Coverage currently finds no such class. The replica-store and replication
+classes stay on `FeatureServer Endpoints Query Services and Replication`.
+
+## 2026-10-07: capacity exhaustion during the server drain
+
+Trunk run [37694901734](https://github.com/honua-io/honua-server/actions/runs/37694901734) at `03e8e6e6c` exhausted two inner test budgets while still producing passing test output:
+
+| Shard | Passing test log entries before timeout | Last output before timeout | Previous inner / outer | New inner / outer |
+|---|---:|---:|---:|---:|
+| Security and Authorization | 214 | 3 seconds | 30 / 40 min | 60 / 70 min |
+| WFS | 207 | 1 second | 40 / 50 min | 70 / 80 min |
+
+These observations are censored durations, not measured p90 completion times. The bounded increases restore room to obtain a complete run; they do not establish the 70% utilization target. Test selection and every assertion remain enabled, and each outer job retains the required ten-minute overhead. Reassess headroom from the completed branch verification and subsequent timing receipts; persistent growth requires fixture or shard-capacity work rather than unbounded timeout increases.

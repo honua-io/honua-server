@@ -183,7 +183,7 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
         }
 
         var nullSafe = $"NULLIF({baseExpression}, '')";
-        if (castType is "timestamptz" or "date" or "time")
+        if (castType is "timestamptz" or "date")
         {
             return BuildEpochAwareTemporalCast(nullSafe, castType);
         }
@@ -252,6 +252,15 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
             ? TranslateGeographyExpression(spatial.Right, context)
             : TranslateGeometryExpression(spatial.Right, context);
         var distance = TranslateExpression(spatial.Distance, context);
+
+        // Geography measures metres. The planar path measures in the layer CRS's own unit, so a
+        // distance the parser already normalised to metres (FES uom) is converted to that unit:
+        // 20 m on a US-foot layer is 65.6 ftUS, not 20 ftUS (#5462). Distances without a unit
+        // keep their native planar-in-CRS reading.
+        if (!useGeography && spatial.DistanceInMeters)
+        {
+            distance = $"({distance} / {PostgresCrsUnitSql.MetersPerProjectedUnit(context.Wkid)})";
+        }
 
         return spatial.Operator switch
         {
@@ -1261,7 +1270,9 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
         {
             MetadataV2FieldType.Integer => "integer",
             MetadataV2FieldType.BigInteger => "bigint",
-            MetadataV2FieldType.Float => "real",
+            // Numeric literals are bound as double precision. Compare JSONB single values
+            // at that same precision rather than widening an already-rounded real value.
+            MetadataV2FieldType.Float => "double precision",
             MetadataV2FieldType.Double => "double precision",
             MetadataV2FieldType.Boolean => "boolean",
             MetadataV2FieldType.DateTime => "timestamptz",

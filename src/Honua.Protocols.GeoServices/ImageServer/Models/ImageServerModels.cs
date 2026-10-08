@@ -729,7 +729,7 @@ public sealed class IdentifyResponse
     public Dictionary<string, object?>? Properties { get; init; }
 
     [JsonPropertyName("catalogItems")]
-    public CatalogItem[]? CatalogItems { get; init; }
+    public IdentifyCatalogItems? CatalogItems { get; init; }
 
     /// <summary>
     /// Additive identify entries for native ArcGIS REST raster clients which read
@@ -784,18 +784,21 @@ public sealed class ImageServerIdentifyResult
 }
 
 /// <summary>
-/// Catalog item for identify operations.
+/// Raster catalog feature set returned by identify, matching the Esri wire contract.
 /// </summary>
-public sealed class CatalogItem
+public sealed class IdentifyCatalogItems
 {
-    [JsonPropertyName("id")]
-    public required long Id { get; init; }
+    [JsonPropertyName("objectIdFieldName")]
+    public string ObjectIdFieldName { get; init; } = "OBJECTID";
 
-    [JsonPropertyName("name")]
-    public string? Name { get; init; }
+    [JsonPropertyName("geometryType")]
+    public string GeometryType { get; init; } = "esriGeometryPolygon";
 
-    [JsonPropertyName("footprint")]
-    public object? Footprint { get; init; }
+    [JsonPropertyName("spatialReference")]
+    public SpatialReference? SpatialReference { get; init; }
+
+    [JsonPropertyName("features")]
+    public CatalogQueryFeature[] Features { get; init; } = [];
 }
 
 /// <summary>
@@ -828,9 +831,10 @@ public sealed class ExportImageRequest
     // Accepts the Esri ImageServer format tokens the ArcGIS SDKs send. png8/png24/png32
     // and jpgpng are normalised to a concrete encoding by the handler; bmp and gif are
     // accepted for shape but rejected with a clear 400 because the shared raster export
-    // pipeline only emits png/jpeg/tiff containers.
-    [RegularExpression(@"(?i)^(png|png8|png24|png32|jpgpng|jpg|jpeg|tiff|tif|bmp|gif)$",
-        ErrorMessage = "Format must be one of png, png8, png24, png32, jpgpng, jpg, jpeg, tiff, tif, bmp, or gif")]
+    // pipeline only emits png/jpeg/tiff containers. bsq, bip and lerc return the raw
+    // pixel block of the stored samples (#5437).
+    [RegularExpression(@"(?i)^(png|png8|png24|png32|jpgpng|jpg|jpeg|tiff|tif|bmp|gif|bsq|bip|lerc)$",
+        ErrorMessage = "Format must be one of png, png8, png24, png32, jpgpng, jpg, jpeg, tiff, tif, bmp, gif, bsq, bip, or lerc")]
     public string? Format { get; init; } = "png";
 
     [RegularExpression(@"(?i)^(C128|C64|F32|F64|S16|S32|S8|U1|U16|U2|U32|U4|U8|UNKNOWN)$",
@@ -846,8 +850,10 @@ public sealed class ExportImageRequest
     [StringLength(50, ErrorMessage = "Interpolation value is too long")]
     public string? Interpolation { get; init; }
 
-    [RegularExpression(@"(?i)^(none|jpeg|lz77)$",
-        ErrorMessage = "Compression must be one of: None, JPEG, or LZ77")]
+    // LERC is accepted for lerc pixel blocks only (a no-op: the block is lossless LERC);
+    // the handler rejects it for every other format.
+    [RegularExpression(@"(?i)^(none|jpeg|lz77|lerc)$",
+        ErrorMessage = "Compression must be one of: None, JPEG, LZ77, or LERC")]
     public string? Compression { get; init; }
 
     [Range(0, 100, ErrorMessage = "CompressionQuality must be between 0 and 100")]

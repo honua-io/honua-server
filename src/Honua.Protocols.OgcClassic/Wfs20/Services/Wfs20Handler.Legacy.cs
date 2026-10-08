@@ -46,7 +46,7 @@ internal sealed partial class Wfs20Handler
 
         var descriptors = await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false);
         var featureTypes = await BuildFeatureTypesAsync(descriptors, cancellationToken).ConfigureAwait(false);
-        var wfsUrl = $"{baseUrl.TrimEnd('/')}/wfs";
+        var wfsUrl = BaseUrlResolver.PreserveToken(context.Request, $"{baseUrl.TrimEnd('/')}/wfs");
 
         return IsWfs10(version)
             ? BuildWfs10Capabilities(wfsUrl, featureTypes)
@@ -248,6 +248,7 @@ internal sealed partial class Wfs20Handler
         AppendWfs10Operation(sb, "GetCapabilities", wfsUrl, includeSchemaDescriptionLanguage: false, includeResultFormat: false);
         AppendWfs10Operation(sb, "DescribeFeatureType", wfsUrl, includeSchemaDescriptionLanguage: true, includeResultFormat: false);
         AppendWfs10Operation(sb, "GetFeature", wfsUrl, includeSchemaDescriptionLanguage: false, includeResultFormat: true);
+        AppendWfs10Operation(sb, "Transaction", wfsUrl, includeSchemaDescriptionLanguage: false, includeResultFormat: false, includeGet: false);
         sb.AppendLine("    </Request>");
         sb.AppendLine("  </Capability>");
         AppendWfs10FeatureTypeList(sb, featureTypes);
@@ -262,15 +263,19 @@ internal sealed partial class Wfs20Handler
         AppendWfs11Operation(sb, "GetCapabilities", wfsUrl);
         AppendWfs11Operation(sb, "DescribeFeatureType", wfsUrl);
         AppendWfs11Operation(sb, "GetFeature", wfsUrl);
+        AppendWfs11Operation(sb, "Transaction", wfsUrl, includeGet: false);
         sb.AppendLine("  </ows:OperationsMetadata>");
     }
 
-    private static void AppendWfs11Operation(StringBuilder sb, string name, string wfsUrl)
+    private static void AppendWfs11Operation(StringBuilder sb, string name, string wfsUrl, bool includeGet = true)
     {
         sb.Append("    <ows:Operation name=\"").Append(XmlEscape(name)).AppendLine("\">");
         sb.AppendLine("      <ows:DCP>");
         sb.AppendLine("        <ows:HTTP>");
-        sb.Append("          <ows:Get xlink:href=\"").Append(XmlEscape(wfsUrl)).AppendLine("\" />");
+        if (includeGet)
+        {
+            sb.Append("          <ows:Get xlink:href=\"").Append(XmlEscape(wfsUrl)).AppendLine("\" />");
+        }
         sb.Append("          <ows:Post xlink:href=\"").Append(XmlEscape(wfsUrl)).AppendLine("\" />");
         sb.AppendLine("        </ows:HTTP>");
         sb.AppendLine("      </ows:DCP>");
@@ -282,7 +287,8 @@ internal sealed partial class Wfs20Handler
         string name,
         string wfsUrl,
         bool includeSchemaDescriptionLanguage,
-        bool includeResultFormat)
+        bool includeResultFormat,
+        bool includeGet = true)
     {
         sb.Append("      <").Append(name).AppendLine(">");
         if (includeSchemaDescriptionLanguage)
@@ -301,7 +307,10 @@ internal sealed partial class Wfs20Handler
 
         sb.AppendLine("        <DCPType>");
         sb.AppendLine("          <HTTP>");
-        sb.Append("            <Get onlineResource=\"").Append(XmlEscape(wfsUrl)).AppendLine("\" />");
+        if (includeGet)
+        {
+            sb.Append("            <Get onlineResource=\"").Append(XmlEscape(wfsUrl)).AppendLine("\" />");
+        }
         sb.Append("            <Post onlineResource=\"").Append(XmlEscape(wfsUrl)).AppendLine("\" />");
         sb.AppendLine("          </HTTP>");
         sb.AppendLine("        </DCPType>");
@@ -342,6 +351,9 @@ internal sealed partial class Wfs20Handler
         sb.AppendLine("  <FeatureTypeList>");
         sb.AppendLine("    <Operations>");
         sb.AppendLine("      <Query />");
+        sb.AppendLine("      <Insert />");
+        sb.AppendLine("      <Update />");
+        sb.AppendLine("      <Delete />");
         sb.AppendLine("    </Operations>");
         foreach (var featureType in featureTypes)
         {

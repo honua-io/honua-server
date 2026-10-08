@@ -4,7 +4,7 @@
   "receipt_retention_days": 30,
   "query_partition_hours": 24,
   "maximum_runs_per_partition": 999,
-  "maximum_artifact_catalog_pages": 3,
+  "maximum_artifact_catalog_pages": 50,
   "maximum_receipt_downloads": 300,
   "maximum_github_api_requests": 650,
   "minimum_countable_heads": 20,

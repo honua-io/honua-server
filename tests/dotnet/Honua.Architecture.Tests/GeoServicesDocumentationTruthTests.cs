@@ -16,8 +16,8 @@ public sealed class GeoServicesDocumentationTruthTests
         var judgment = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "docs", "gis", "data", "geoservices-parity-judgment.json"));
 
         parity.Should().Contain("png/png8/png24/png32/jpg/jpeg").And.NotContain("png/png8/png24/png32/jpg/gif");
-        parity.Should().Contain("Explicit `noData` overrides and non-`UNKNOWN` `pixelType` values return 501");
-        judgment.Should().Contain("every explicit conversion type returns 501");
+        parity.Should().Contain("Explicit `noData` overrides, and `pixelType` values other than `UNKNOWN` or the service's own pixel type, return 501");
+        judgment.Should().Contain("every other explicit conversion type returns 501");
         judgment.Should().Contain("\"name\": \"noData, noDataInterpretation\"");
         judgment.Should().NotContain("\"name\": \"bandIds, noData, noDataInterpretation\"");
     }
@@ -59,8 +59,8 @@ public sealed class GeoServicesDocumentationTruthTests
     {
         // #4037: the protocol reference must describe every served NAServer solver with the
         // HTTP methods actually registered, and keep the VersionManagementServer
-        // 404-by-default caveat. Only Route/solve has a GET route; if another solver gains
-        // one, this fails so the docs are updated with it. #4030/#4034: the GP guide and
+        // 404-by-default caveat. Route and ServiceArea have GET routes; if another solver
+        // gains one, this fails so the docs are updated with it. #4030/#4034: the GP guide and
         // parity judgment must state how `context` and failed sync runs behave.
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var protocol = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "docs", "reference", "protocols", "geoservices-rest.md"));
@@ -80,12 +80,15 @@ public sealed class GeoServicesDocumentationTruthTests
                 "/rest/services/{serviceId}/NAServer/ODCostMatrix/solveODCostMatrix",
                 "/rest/services/{serviceId}/NAServer/LocationAllocation/solveLocationAllocation");
         naServerSolveRoutes.Where(endpoint => endpoint.Method == "GET").Select(endpoint => endpoint.Path)
-            .Should().Equal(["/rest/services/{serviceId}/NAServer/Route/solve"],
-                "the NAServer docs say only Route/solve is served over GET");
+            .Should().Equal(
+                [
+                    "/rest/services/{serviceId}/NAServer/Route/solve",
+                    "/rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea"
+                ],
+                "the NAServer docs describe Route and ServiceArea solves over GET");
 
         protocol.Should().Contain(
-            "Route solves are available over GET and POST; ServiceArea, ClosestFacility, ODCostMatrix, and LocationAllocation solves are POST-only");
-        protocol.Should().NotContain("GET and POST solves are available for Route, ServiceArea");
+            "Route and ServiceArea solves are available over GET and POST; ClosestFacility, ODCostMatrix, and LocationAllocation solves are POST-only");
         parity.Should().Contain("`Route/solve` accepts GET query parameters or POST form parameters");
         judgment.Should().NotContain("All five NAServer solve operations accept GET");
         protocol.Should().Contain("Experimental and off by default; routes return 404 until `versioning.branch` is enabled.");

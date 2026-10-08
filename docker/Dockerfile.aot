@@ -152,7 +152,7 @@ FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS runtime
 
 # Invalidate the cached upgrade layer with security refreshes so a cached package
 # layer cannot retain old packages.
-ARG RUNTIME_PACKAGE_REVISION=20260905
+ARG RUNTIME_PACKAGE_REVISION=20261001
 
 # Security: Install runtime dependencies. The Ubuntu runtime-deps base already ships
 # ICU (InvariantGlobalization=false, honua-server#1369). libatomic1 is required by

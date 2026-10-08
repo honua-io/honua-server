@@ -14,6 +14,28 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureQueryBuilder
 {
+    // WGS 84 lower bounds on arc length per degree: the meridian degree is shortest at the equator,
+    // a(1 - e^2) * pi / 180 = 110574.27 m, and the parallel degree at latitude phi is at least
+    // a * cos(phi) * pi / 180 = 111319.49 m * cos(phi). Rounded down so the expansion only grows.
+    private const double MinMetersPerLatitudeDegree = 110574.0;
+    private const double MinMetersPerEquatorialLongitudeDegree = 111319.0;
+
+    // Head-room over the requested radius for floating-point and spheroid-tolerance differences.
+    private const double DistanceReachFactor = 1.001;
+    private const double DistanceReachSlackMeters = 1.0;
+
+    // Geodesic filter edges are densified at the radius (at least this long) before the vertex box
+    // is taken, adding half a segment to the reach of line and polygon filters.
+    private const double MinFilterSegmentMeters = 1000.0;
+
+    // Transformed probes: segments per box edge, relative margin for the densification, the widest
+    // expansion still transformed (wider reaches risk leaving the projection's domain), and the
+    // ordinate of the admit-everything envelope (finite in the float4 GiST keys).
+    private const int ProjectedEnvelopeSegments = 64;
+    private const double ProjectedEnvelopeMargin = 0.01;
+    private const double MaxTransformedReachDegrees = 10.0;
+    private const double UnboundedEnvelopeOrdinate = 1e30;
+
     private string BuildSpatialFilterGeometryExpression(
         SpatialFilter filter,
         FeatureQuery query,
@@ -163,10 +185,10 @@ internal sealed partial class FeatureQueryBuilder
                 // index prunes candidates before the exact geodesic check runs. (#2740)
                 var withinDistanceMeters = _geometryProcessor.ConvertDistanceToMeters(filter.Distance ?? 0, filter.DistanceUnit);
                 var storageFilterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
-                var distancePrefilter = BuildDistanceEnvelopePrefilter(
-                    geometryOperand, storageFilterGeometry, withinDistanceMeters, query.SpatialReferenceSrid);
                 var geographyFilter = BuildGeographyFilterExpression(filter, query, ref paramIndex);
                 parameters?.Add(filter.Geometry);
+                var distancePrefilter = BuildDistanceEnvelopePrefilter(
+                    geometryOperand, storageFilterGeometry, geographyFilter, withinDistanceMeters, query.SpatialReferenceSrid);
                 clause = $"{distancePrefilter} AND ST_DWithin({geographyOperand}, {geographyFilter}, ${paramIndex++})";
                 parameters?.Add(withinDistanceMeters);
                 break;
@@ -264,82 +286,74 @@ internal sealed partial class FeatureQueryBuilder
 
     /// <summary>
     /// Builds an index-usable <c>&amp;&amp;</c> bounding-box pre-filter for a WithinDistance predicate.
-    /// The envelope is the filter geometry (already in the stored column's CRS) expanded by the
-    /// search distance converted to the storage CRS's units, so the GiST index on the geometry
-    /// column can prune candidates before the exact geodesic <c>ST_DWithin(...::geography)</c> runs.
-    /// The pre-filter is deliberately conservative (over-expanding rather than under-expanding); the
-    /// exact geography predicate still decides membership, so the envelope can never exclude a real
-    /// match. Only WithinDistance uses this — BeyondDistance selects features outside the envelope,
-    /// where a bounding-box window would incorrectly drop the desired far features.
+    /// The exact <c>ST_DWithin(...::geography)</c> check runs only on rows the box admits, so the box
+    /// must contain the whole geodesic neighbourhood of the filter or true matches are lost (#5461).
+    /// A metre expansion in the storage CRS cannot promise that: projections scale distances (Web
+    /// Mercator doubles them at latitude 60), a spherical degree overstates the equatorial meridian
+    /// degree, and longitudes converge at the poles.
     /// </summary>
+    /// <remarks>
+    /// The box is derived on the WGS 84 ellipsoid from the same geography the exact check uses. Along
+    /// any geodesic of length d, latitude changes by at most d / M(0) (the meridian radius is smallest
+    /// at the equator) and longitude by at most d / (a cos(phi)) while |phi| stays below the reach
+    /// latitude (N(phi) is never below a), so the lat/lon box around the filter expanded by those
+    /// amounts holds every match. Filter edges are great-circle arcs that can bulge poleward of their
+    /// vertices; segmentizing them puts every edge point within half a segment of a vertex, so the
+    /// reach grows by that half for non-point filters. A reach past a pole spans all longitudes.
+    /// WGS 84 storage probes the box directly, shifted by +/-360 degrees for the antimeridian. Other
+    /// storage CRSes probe the bounding box of the densified box transformed into the stored CRS,
+    /// with a margin for the densification; when the box crosses the antimeridian or a pole, or is
+    /// too wide to transform reliably, the probe admits every geometry instead of guessing. The
+    /// probe is one uncorrelated scalar subquery, evaluated once per statement.
+    /// </remarks>
     private static string BuildDistanceEnvelopePrefilter(
         string geometryOperand,
         string storageFilterGeometry,
+        string geographyFilter,
         double distanceInMeters,
         int? spatialReferenceSrid)
     {
         var storageSrid = spatialReferenceSrid ?? SpatialReference.WGS84.Wkid;
+        var reach = Sql(distanceInMeters * DistanceReachFactor + DistanceReachSlackMeters);
+        var segment = Sql(Math.Max(distanceInMeters, MinFilterSegmentMeters));
+        var metresPerLatitudeDegree = Sql(MinMetersPerLatitudeDegree);
+        var metresPerLongitudeDegree = Sql(MinMetersPerEquatorialLongitudeDegree);
+        var storageSridSql = $"ST_SRID({storageFilterGeometry})";
 
-        // Bias classification toward "geographic" only for the curated list plus the unlisted
-        // EPSG geographic 2D range (4000-4999). Misclassifying projected storage as geographic
-        // would under-expand (degrees << metres) and drop matches.
-        var isGeographicStorage =
-            DistanceConversions.IsGeographicSrid(storageSrid) || IsUnlistedGeographicSridRange(storageSrid);
+        var neighbourhood =
+            "SELECT n.vertices, n.lat_reach, n.dlat, " +
+            $"CASE WHEN n.lat_reach >= 90 THEN 360 ELSE LEAST(360, n.reach / ({metresPerLongitudeDegree} * cos(radians(n.lat_reach)))) END AS dlon " +
+            "FROM (SELECT v.vertices, v.reach, " +
+            $"v.reach / {metresPerLatitudeDegree} AS dlat, " +
+            $"GREATEST(abs(ST_YMin(v.vertices)), abs(ST_YMax(v.vertices))) + v.reach / {metresPerLatitudeDegree} AS lat_reach " +
+            $"FROM (SELECT g.vertices, {reach} + CASE WHEN ST_Dimension(g.vertices) = 0 THEN 0 ELSE {segment} / 2.0 END AS reach " +
+            $"FROM (SELECT ST_Segmentize({geographyFilter}, {segment})::geometry AS vertices) g) v) n";
+        var box = $"SELECT b.lat_reach, b.dlat, b.dlon, ST_Expand(b.vertices, b.dlon, b.dlat) AS box FROM ({neighbourhood}) b";
 
-        if (isGeographicStorage)
+        if (storageSrid == SpatialReference.WGS84.Wkid)
         {
-            // Geographic storage measures the envelope in degrees: ~111320 m per degree of
-            // latitude, and ~111320*cos(lat) m per degree of longitude. Expanding by only
-            // metres/111320 would under-cover east/west at high latitudes and could drop true
-            // matches, so divide by cos(lat) using the filter geometry's own latitude extent,
-            // clamped to 89.9deg to bound the blow-up near the poles. Over-expansion only costs
-            // index selectivity; correctness is preserved by the exact geography ST_DWithin.
-            var degrees = (distanceInMeters / 111320.0).ToString("R", CultureInfo.InvariantCulture);
-            var latExtent =
-                $"LEAST(89.9, GREATEST(abs(ST_YMin({storageFilterGeometry})), abs(ST_YMax({storageFilterGeometry}))))";
-            var expansion = $"({degrees} / cos(radians({latExtent})))";
-
-            // Longitude is periodic: a planar && envelope near the antimeridian cannot see a
-            // geodesic match on the other side (a query at lon 179.9 expanded by 30 km spans
-            // roughly [179.63, 180.17], while a true match at lon -179.9 sits ~359.8 planar
-            // degrees away and would be wrongly pruned). Probe the envelope shifted by +/-360
-            // degrees as well; each && stays index-usable (bitmap OR over the GiST index) and
-            // the exact geography ST_DWithin still decides membership, so the extra probes only
-            // cost selectivity for data normalized to [-180, 180].
-            var envelope = $"ST_Expand({storageFilterGeometry}, {expansion})";
+            var envelope = $"(SELECT ST_SetSRID(e.box, {storageSridSql}) FROM ({box}) e)";
             return $"({geometryOperand} && {envelope}" +
                    $" OR {geometryOperand} && ST_Translate({envelope}, 360, 0)" +
                    $" OR {geometryOperand} && ST_Translate({envelope}, -360, 0))";
         }
 
-        // Expand by the layer's native unit. A US-foot CRS stores coordinates in feet, so
-        // expanding by the raw metre count under-covers and drops matches the exact
-        // geography test would have kept. A missing spatial_ref_sys row still expands by metres.
-        var metres = distanceInMeters.ToString("R", CultureInfo.InvariantCulture);
-        var nativeExpansion = $"({metres} / {ProjectedMetersPerUnitSql(storageSrid)})";
-        return $"{geometryOperand} && ST_Expand({storageFilterGeometry}, {nativeExpansion})";
+        var maxDegrees = Sql(MaxTransformedReachDegrees);
+        var unbounded = Sql(UnboundedEnvelopeOrdinate);
+        var transformed =
+            "SELECT CASE WHEN e.lat_reach >= 90 OR ST_XMin(e.box) < -180 OR ST_XMax(e.box) > 180 " +
+            $"OR e.dlat > {maxDegrees} OR e.dlon > {maxDegrees} THEN NULL " +
+            "ELSE ST_Envelope(ST_Transform(ST_Segmentize(e.box, " +
+            $"GREATEST(ST_XMax(e.box) - ST_XMin(e.box), ST_YMax(e.box) - ST_YMin(e.box)) / {ProjectedEnvelopeSegments}), {storageSridSql})) END AS envelope " +
+            $"FROM ({box}) e";
+        var projectedEnvelope =
+            $"(SELECT CASE WHEN t.envelope IS NULL THEN ST_MakeEnvelope(-{unbounded}, -{unbounded}, {unbounded}, {unbounded}, {storageSridSql}) " +
+            $"ELSE ST_Expand(t.envelope, {Sql(ProjectedEnvelopeMargin)} * GREATEST(ST_XMax(t.envelope) - ST_XMin(t.envelope), ST_YMax(t.envelope) - ST_YMin(t.envelope))) END " +
+            $"FROM ({transformed}) t)";
+        return $"{geometryOperand} && {projectedEnvelope}";
     }
 
-    /// <summary>
-    /// Scalar SQL for metres per projected unit of <paramref name="srid"/>, from
-    /// <c>spatial_ref_sys</c>. Preference matches <see cref="CrsLinearUnitFactor"/>:
-    /// <c>+to_meter</c>, then <c>+units</c>, otherwise 1.
-    /// </summary>
-    private static string ProjectedMetersPerUnitSql(int srid)
-    {
-        var usFoot = CrsLinearUnitFactor.UsSurveyFootMeters.ToString("R", CultureInfo.InvariantCulture);
-        var foot = CrsLinearUnitFactor.InternationalFootMeters.ToString("R", CultureInfo.InvariantCulture);
-        return "COALESCE((SELECT CASE "
-            + "WHEN COALESCE(proj4text, '') ~ '\\+to_meter=' THEN NULLIF(substring(proj4text FROM '\\+to_meter=([0-9.eE+-]+)'), '')::double precision "
-            + $"WHEN COALESCE(proj4text, '') ILIKE '%+units=us-ft%' OR COALESCE(proj4text, '') ILIKE '%+units=ftus%' THEN {usFoot} "
-            + $"WHEN COALESCE(proj4text, '') ILIKE '%+units=ft%' OR COALESCE(proj4text, '') ILIKE '%+units=foot%' THEN {foot} "
-            + "WHEN COALESCE(proj4text, '') ILIKE '%+units=ind-ft%' THEN 0.3047995102481469 "
-            + "WHEN COALESCE(proj4text, '') ILIKE '%+units=km%' THEN 1000 "
-            + "WHEN COALESCE(proj4text, '') ILIKE '%+units=m%' OR COALESCE(proj4text, '') ILIKE '%+units=meter%' OR COALESCE(proj4text, '') ILIKE '%+units=metre%' THEN 1 "
-            + "ELSE NULL END FROM spatial_ref_sys WHERE srid = "
-            + srid.ToString(CultureInfo.InvariantCulture)
-            + " LIMIT 1), 1.0)";
-    }
+    private static string Sql(double value) => value.ToString("R", CultureInfo.InvariantCulture);
 
     private static string IndexProbe(string geometryOperand, string filterGeometry, bool antimeridianSplit)
         => antimeridianSplit

@@ -3,10 +3,12 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Api.Records.Models;
 using Honua.Protocols.Ogc.Common;
@@ -55,6 +57,16 @@ internal static class OgcRecordsEndpoints
             .WithSummary("Get OGC API Records landing page")
             .WithTags("OGC API Records")
             .Produces<LandingPage>(200, MediaTypes.Json)
+            .Produces(400);
+
+        endpoints.MapGet("/ogc/records/openapi.json", HandleGetApiDefinition)
+            .WithDisplayName("OGC API Records OpenAPI Specification")
+            .WithName("OgcRecordsOpenApiSpec")
+            .WithSummary("Get OpenAPI 3.0 specification for OGC API Records")
+            .WithDescription("The OpenAPI specification describes all available OGC API Records endpoints")
+            .WithTags("OGC API Records")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
+            .Produces<object>(200, MediaTypes.OpenApi)
             .Produces(400);
 
         endpoints.MapGet("/ogc/records/conformance", HandleGetConformance)
@@ -113,6 +125,9 @@ internal static class OgcRecordsEndpoints
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var basePath = $"{baseUrl}/ogc/records";
         var links = OgcCoreMetadataUtilities.BuildLandingPageLinks(context, basePath, outputFormat);
+        // OGC API - Records Part 1 /req/core/root-success (via OGC API - Common): the landing page
+        // links the API definition. Clients that start from service-desc stop here without it (#5510).
+        links.Add(Link.Create($"{basePath}/openapi.json", RelationTypes.ServiceDesc, MediaTypes.OpenApi, "API definition"));
         links.Add(Link.Create($"{basePath}/conformance", RelationTypes.Conformance, MediaTypes.Json, "Conformance declaration"));
         links.Add(Link.Create($"{basePath}/collections", RelationTypes.Data, MediaTypes.Json, "Record collections"));
 
@@ -129,6 +144,23 @@ internal static class OgcRecordsEndpoints
             OgcRecordsJsonContext.Default.LandingPage,
             outputFormat,
             landingPage.Title);
+    }
+
+    private static IResult HandleGetApiDefinition(HttpContext context, string? f)
+    {
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, MetadataQueryParameters);
+        if (validationError is not null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(f) && !string.Equals(f, "json", StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, $"Unsupported format '{f}'. Supported formats: json.");
+        }
+
+        var document = OgcRecordsOpenApiDocument.Build(BaseUrlResolver.GetBaseUrl(context), DefaultLimit, MaxLimit);
+        return Results.Text(document, MediaTypes.OpenApi);
     }
 
     private static IResult HandleGetConformance(HttpContext context, string? f)
@@ -319,6 +351,28 @@ internal static class OgcRecordsEndpoints
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var records = new List<CatalogRecord>();
+        var transformService = context.RequestServices.GetService<ICoordinateTransformService>();
+        var resourceBboxes = new Dictionary<string, ImmutableArray<double>?>();
+
+        async Task<ImmutableArray<double>?> GetBboxAsync(MetadataV2Resource resource)
+        {
+            if (!resourceBboxes.TryGetValue(resource.Metadata.Id, out var result))
+            {
+                var bbox = resource.ReadBbox();
+                var srid = resource.ReadSrid();
+                (double MinLon, double MinLat, double MaxLon, double MaxLat)? extent = bbox is not null && srid.HasValue
+                    ? await OgcExtentTransformer.TryTransformExtentToCrs84Async(
+                        bbox.West, bbox.South, bbox.East, bbox.North,
+                        srid.Value, transformService, cancellationToken).ConfigureAwait(false)
+                    : null;
+                result = extent.HasValue
+                    ? ImmutableArray.Create(extent.Value.MinLon, extent.Value.MinLat, extent.Value.MaxLon, extent.Value.MaxLat)
+                    : null;
+                resourceBboxes.Add(resource.Metadata.Id, result);
+            }
+
+            return result;
+        }
 
         // Service-level records: one public record per service name. The V2 graph can
         // contain multiple protocol-specific service rows with the same public name
@@ -357,12 +411,19 @@ internal static class OgcRecordsEndpoints
                 .DefaultIfEmpty(null)
                 .Max();
 
+            // Transform each resource before combining extents from different CRSs.
+            foreach (var publication in visiblePublications)
+            {
+                await GetBboxAsync(publication.Resource!).ConfigureAwait(false);
+            }
+
             records.Add(CreateServiceRecord(
                 representative,
                 visiblePublications.Select(t => (t.Publication, t.Resource)).ToArray()!,
                 snapshot,
                 baseUrl,
-                mergedModified));
+                mergedModified,
+                CombineBboxes(visiblePublications.Select(p => resourceBboxes[p.Resource!.Metadata.Id]))));
         }
 
         // Resource-level records: one per resource, attributed to its primary publication's service.
@@ -401,7 +462,8 @@ internal static class OgcRecordsEndpoints
                 continue;
             }
 
-            var record = CreateResourceRecord(resource, primary, primaryService, snapshot, baseUrl);
+            var record = CreateResourceRecord(resource, primary, primaryService, snapshot, baseUrl,
+                await GetBboxAsync(resource).ConfigureAwait(false));
             if (resourceRecordIds.Add(record.Feature.Id))
             {
                 records.Add(record);
@@ -416,12 +478,11 @@ internal static class OgcRecordsEndpoints
         (MetadataV2Publication Publication, MetadataV2Resource? Resource)[] visiblePublications,
         MetadataV2GraphSnapshot snapshot,
         string baseUrl,
-        DateTimeOffset? modified)
+        DateTimeOffset? modified,
+        ImmutableArray<double>? bbox)
     {
         var serviceMetadata = service.Metadata
             ?? throw new InvalidOperationException("Metadata v2 service metadata is required.");
-        // Combine bboxes of visible resources; project into WGS84 only if the resource declares 4326.
-        var bbox = CombineResourceBboxes(visiblePublications.Select(p => p.Resource!));
         var servicePath = $"{baseUrl}/rest/services/{Uri.EscapeDataString(serviceMetadata.Name)}";
         var links = ImmutableArray.CreateBuilder<Link>();
         links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"service:{serviceMetadata.Name}")}", RelationTypes.Self, MediaTypes.GeoJson, serviceMetadata.Name));
@@ -440,6 +501,8 @@ internal static class OgcRecordsEndpoints
             .Select(p => snapshot.ResolveStorageLayerId(p.Publication))
             .Where(id => id.HasValue)
             .Select(id => id!.Value)
+            // Several protocol-specific service rows can publish the same storage layer (#5510).
+            .Distinct()
             .ToImmutableArray();
 
         var properties = new OgcRecordProperties
@@ -456,7 +519,7 @@ internal static class OgcRecordsEndpoints
             new OgcRecordFeature
             {
                 Id = $"service:{serviceMetadata.Name}",
-                Geometry = null,
+                Geometry = CreateExtentGeometry(bbox),
                 Bbox = bbox,
                 Properties = properties,
                 Links = links.ToImmutable()
@@ -476,9 +539,9 @@ internal static class OgcRecordsEndpoints
         MetadataV2Publication? publication,
         MetadataV2Service? service,
         MetadataV2GraphSnapshot snapshot,
-        string baseUrl)
+        string baseUrl,
+        ImmutableArray<double>? bbox)
     {
-        var bbox = ToBbox(resource);
         // Use the storage layer id as the externally-facing v1-compatible identifier
         // when available; otherwise fall back to the resource id.
         var storageLayerId = publication is not null
@@ -522,7 +585,7 @@ internal static class OgcRecordsEndpoints
             new OgcRecordFeature
             {
                 Id = $"layer:{layerIdString}",
-                Geometry = null,
+                Geometry = CreateExtentGeometry(bbox),
                 Bbox = bbox,
                 Properties = properties,
                 Links = links.ToImmutable()
@@ -536,6 +599,32 @@ internal static class OgcRecordsEndpoints
                 resource.Metadata.Name,
                 resource.Metadata.Title,
                 resource.Metadata.Description));
+    }
+
+    private static OgcRecordGeometry? CreateExtentGeometry(ImmutableArray<double>? bbox)
+    {
+        if (bbox is not { Length: 4 } extent)
+        {
+            return null;
+        }
+
+        var west = extent[0];
+        var south = extent[1];
+        var east = extent[2];
+        var north = extent[3];
+        return new OgcRecordGeometry
+        {
+            Coordinates =
+            [
+                [
+                    [west, south],
+                    [east, south],
+                    [east, north],
+                    [west, north],
+                    [west, south]
+                ]
+            ]
+        };
     }
 
     /// <summary>
@@ -694,11 +783,15 @@ internal static class OgcRecordsEndpoints
         pageOffset = offset ?? 0;
         error = null;
 
-        if (pageLimit < 1 || pageLimit > MaxLimit)
+        if (pageLimit < 1)
         {
-            error = $"limit must be between 1 and {MaxLimit}.";
+            error = "limit must be greater than or equal to 1.";
             return false;
         }
+
+        // OGC API - Features Part 1 §7.15.4: a limit above the maximum SHALL NOT result in an
+        // error; the maximum is used instead, and the paging links carry the applied value (#5510).
+        pageLimit = Math.Min(pageLimit, MaxLimit);
 
         if (pageOffset < 0)
         {
@@ -804,31 +897,19 @@ internal static class OgcRecordsEndpoints
         return false;
     }
 
-    private static ImmutableArray<double>? ToBbox(MetadataV2Resource resource)
+    private static ImmutableArray<double>? CombineBboxes(IEnumerable<ImmutableArray<double>?> extents)
     {
-        var bbox = resource.ReadBbox();
-        return bbox is null
-            ? null
-            : ImmutableArray.Create(bbox.West, bbox.South, bbox.East, bbox.North);
-    }
-
-    private static ImmutableArray<double>? CombineResourceBboxes(IEnumerable<MetadataV2Resource> resources)
-    {
-        var bboxes = resources
-            .Select(r => r.ReadBbox())
-            .Where(b => b is not null)
-            .Select(b => b!)
-            .ToArray();
+        var bboxes = extents.Where(b => b.HasValue).Select(b => b!.Value).ToArray();
         if (bboxes.Length == 0)
         {
             return null;
         }
 
         return ImmutableArray.Create(
-            bboxes.Min(b => b.West),
-            bboxes.Min(b => b.South),
-            bboxes.Max(b => b.East),
-            bboxes.Max(b => b.North));
+            bboxes.Min(b => b[0]),
+            bboxes.Min(b => b[1]),
+            bboxes.Max(b => b[2]),
+            bboxes.Max(b => b[3]));
     }
 
     private static bool Intersects(ImmutableArray<double> recordBbox, BboxFilter filter)

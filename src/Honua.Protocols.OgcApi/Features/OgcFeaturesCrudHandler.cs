@@ -249,6 +249,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 publication,
                 resource,
                 featureId,
+                requireEditSnapshot: true,
                 cancellationToken).ConfigureAwait(false);
             if (!resolvedFeature.HasValue)
             {
@@ -284,7 +285,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
                         detail: "The resource has been modified since the provided ETag.");
                 }
 
-                expectedStateToken = FeatureStateToken.Compute(existing);
+                expectedStateToken = FeatureStateToken.FromReadSnapshot(existing);
             }
 
             var editResult = await ExecuteEditAsync(

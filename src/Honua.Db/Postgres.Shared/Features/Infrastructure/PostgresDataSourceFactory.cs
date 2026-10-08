@@ -55,6 +55,22 @@ internal static class PostgresDataSourceFactory
         return builder.Build();
     }
 
+    public static NpgsqlDataSource CreateForBoundSource(string connectionString, ConnectionLimits limits)
+    {
+        var builder = new NpgsqlDataSourceBuilder(connectionString);
+        var sourceOptions = builder.ConnectionStringBuilder.Options;
+        Configure(builder, schemaHeadersEnabled: false, limits);
+        if (!string.IsNullOrWhiteSpace(sourceOptions) &&
+            !string.Equals(sourceOptions, builder.ConnectionStringBuilder.Options, StringComparison.Ordinal))
+        {
+            // Multiplexing supplies common timeouts as startup options. Retain
+            // source options such as search_path, with configured limits last.
+            builder.ConnectionStringBuilder.Options = $"{sourceOptions} {builder.ConnectionStringBuilder.Options}";
+        }
+
+        return builder.Build();
+    }
+
     public static void Configure(NpgsqlDataSourceBuilder builder, bool schemaHeadersEnabled, ConnectionLimits limits, string? defaultSchema = null)
     {
         ArgumentNullException.ThrowIfNull(builder);

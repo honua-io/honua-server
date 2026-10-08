@@ -29,13 +29,15 @@ namespace Honua.Protocols.Ogc.Api.Features;
 /// </summary>
 internal static class OgcFeaturesUtilities
 {
+    private const string TokenQueryParameter = "token";
+
     /// <summary>
     /// Allowed query parameters by operation type
     /// </summary>
     public static class AllowedQueryParameters
     {
         public static readonly FrozenSet<string> Metadata =
-            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "f", TokenQueryParameter }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> Items = new[]
             {
@@ -51,26 +53,29 @@ internal static class OgcFeaturesUtilities
                 "sortby",
                 "filter",
                 "filter-lang",
-                "filter-crs"
+                "filter-crs",
+                TokenQueryParameter
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> Item = new[]
             {
                 "f",
-                "crs"
+                "crs",
+                TokenQueryParameter
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> OpenApi =
-            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "f", TokenQueryParameter }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> Transactions =
-            Array.Empty<string>().ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { TokenQueryParameter }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> H3 = new[]
             {
-                "resolution"
+                "resolution",
+                TokenQueryParameter
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }

@@ -18,7 +18,7 @@ Serve published 3D Tiles scene layers through the SceneServer surface. Scene ing
 | Edition | Community |
 | Surface maturity | 6 experimental |
 | Registry entries | 6 |
-| Proving tests | 61 |
+| Proving tests | 69 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

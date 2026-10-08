@@ -50,7 +50,9 @@
     ".dockerignore",
     "docker/worker-gdal/**",
     "scripts/ci/verify-serving-image-boundary.py",
-    ".github/workflows/worker-gdal-image.yml"
+    ".github/workflows/worker-gdal-image.yml",
+    "scripts/ci/worker_publication.py",
+    "scripts/ci/test_worker_publication.py"
   ],
   "worker_vulnerability_patterns": [
     ".trivyignore"
@@ -103,7 +105,9 @@
       "tests/dotnet/Honua.Worker.Gdal.Tests/GdalCli.cs",
       "tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj",
       ".github/actions/setup-dotnet-ci/**",
-      ".github/workflows/worker-gdal-image.yml"
+      ".github/workflows/worker-gdal-image.yml",
+      "scripts/ci/worker_publication.py",
+      "scripts/ci/test_worker_publication.py"
     ]
   }
 }

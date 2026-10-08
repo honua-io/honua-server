@@ -75,7 +75,7 @@ public sealed class ModuleDependencyPolicyTests
         DuckDB,
         MySql,
         SqlServer,
-        ArcGisRest,
+        GeoServicesRest,
         Oracle,
         Redshift,
         Snowflake,
@@ -154,11 +154,11 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.SqlServer, ModuleRole.Abstractions),
         (ModuleRole.SqlServer, ModuleRole.Core),
         (ModuleRole.SqlServer, ModuleRole.Geometry),
-        // ArcGIS REST federated read-through provider (#1251): consumes Abstractions
+        // GeoServices REST federated read-through provider (#1251): consumes Abstractions
         // + Core; needs no NTS bindings because all wire-format conversion happens
         // inline against the canonical Feature/WKB seam.
-        (ModuleRole.ArcGisRest, ModuleRole.Abstractions),
-        (ModuleRole.ArcGisRest, ModuleRole.Core),
+        (ModuleRole.GeoServicesRest, ModuleRole.Abstractions),
+        (ModuleRole.GeoServicesRest, ModuleRole.Core),
         (ModuleRole.Oracle,    ModuleRole.Abstractions),
         (ModuleRole.Oracle,    ModuleRole.Core),
         (ModuleRole.Oracle,    ModuleRole.Geometry),
@@ -175,7 +175,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Snowflake, ModuleRole.Geometry),
 
         // Databricks read-only HTTP read-through provider (#1714): consumes
-        // Abstractions + Core; like ArcGisRest it needs no NTS bindings because all
+        // Abstractions + Core; like GeoServicesRest it needs no NTS bindings because all
         // geometry conversion happens inline against the canonical Feature/WKB seam.
         (ModuleRole.Databricks, ModuleRole.Abstractions),
         (ModuleRole.Databricks, ModuleRole.Core),
@@ -197,6 +197,9 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Protocols, ModuleRole.Jobs),
         (ModuleRole.Protocols, ModuleRole.Geoprocessing),
         (ModuleRole.Protocols, ModuleRole.Routing),
+        // GeoServices locator discovery consumes the canonical provider registry and
+        // configuration, keeping REST/SOAP catalogs aligned with the geocoder runtime.
+        (ModuleRole.Protocols, ModuleRole.Geocoding),
         (ModuleRole.Protocols, ModuleRole.Scene),
         (ModuleRole.Protocols, ModuleRole.ServiceDefaults),
         (ModuleRole.Protocols, ModuleRole.Protocols),
@@ -338,7 +341,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Server, ModuleRole.DuckDB),
         (ModuleRole.Server, ModuleRole.MySql),
         (ModuleRole.Server, ModuleRole.SqlServer),
-        (ModuleRole.Server, ModuleRole.ArcGisRest),
+        (ModuleRole.Server, ModuleRole.GeoServicesRest),
         (ModuleRole.Server, ModuleRole.Oracle),
         (ModuleRole.Server, ModuleRole.Redshift),
         (ModuleRole.Server, ModuleRole.Snowflake),
@@ -730,9 +733,9 @@ public sealed class ModuleDependencyPolicyTests
         {
             return ModuleRole.SqlServer;
         }
-        if (projectName.Equals("Honua.ArcGisRest", StringComparison.Ordinal))
+        if (projectName.Equals("Honua.GeoServicesRest", StringComparison.Ordinal))
         {
-            return ModuleRole.ArcGisRest;
+            return ModuleRole.GeoServicesRest;
         }
         if (projectName.Equals("Honua.Oracle", StringComparison.Ordinal))
         {

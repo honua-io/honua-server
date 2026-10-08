@@ -16,6 +16,7 @@ namespace Honua.Protocols.Ogc.Api.Tiles;
 
 internal static class OgcTilesUtilities
 {
+    private const string TokenQueryParameter = "token";
     private static readonly string[] _pngTileMediaTypes = ["image/png"];
 
     private static readonly string[] _vectorTileMediaTypes =
@@ -34,7 +35,7 @@ internal static class OgcTilesUtilities
         /// Allowed parameters for tile matrix set metadata endpoints.
         /// </summary>
         public static readonly FrozenSet<string> Metadata =
-            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "f", TokenQueryParameter }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// Allowed parameters for dataset tileset metadata endpoints.
@@ -42,7 +43,8 @@ internal static class OgcTilesUtilities
         public static readonly FrozenSet<string> DatasetTilesetMetadata = new[]
             {
                 "f",
-                "collections"
+                "collections",
+                TokenQueryParameter
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
@@ -50,7 +52,7 @@ internal static class OgcTilesUtilities
         /// Allowed parameters for OpenAPI endpoints.
         /// </summary>
         public static readonly FrozenSet<string> OpenApi =
-            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "f", TokenQueryParameter }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// Allowed parameters for tiles endpoints.
@@ -61,7 +63,8 @@ internal static class OgcTilesUtilities
                 "datetime",
                 "subset",
                 "crs",
-                "subset-crs"
+                "subset-crs",
+                TokenQueryParameter
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
@@ -75,7 +78,8 @@ internal static class OgcTilesUtilities
                 "subset",
                 "crs",
                 "subset-crs",
-                "collections"
+                "collections",
+                TokenQueryParameter
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }
@@ -438,7 +442,10 @@ internal static class OgcTilesUtilities
     /// Determines whether the requested tile format is PNG (raster).
     /// Checks the <c>f</c> query parameter and <c>Accept</c> header.
     /// </summary>
-    public static bool IsRasterTileFormat(string? format, HttpRequest request)
+    public static bool IsRasterTileFormat(
+        string? format,
+        HttpRequest request,
+        bool defaultToRaster = false)
     {
         if (!string.IsNullOrWhiteSpace(format) &&
             string.Equals(format, "png", StringComparison.OrdinalIgnoreCase))
@@ -455,12 +462,16 @@ internal static class OgcTilesUtilities
         var accept = request.Headers.Accept;
         if (Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(accept))
         {
-            return false;
+            return defaultToRaster;
         }
 
         var pngQuality = ContentNegotiationHelpers.GetBestQuality(_pngTileMediaTypes, accept);
         var vectorQuality = ContentNegotiationHelpers.GetBestQuality(_vectorTileMediaTypes, accept);
-        return pngQuality > vectorQuality;
+        // The raster default only breaks ties PNG is party to (e.g. */*); when neither
+        // format is acceptable, fall through so the vector path answers 406.
+        return defaultToRaster
+            ? pngQuality > 0 && pngQuality >= vectorQuality
+            : pngQuality > vectorQuality;
     }
 
     /// <summary>

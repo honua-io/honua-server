@@ -35,7 +35,7 @@ public sealed class GeoservicesEsriProbeImportTests(PostgresFixture fixture)
 
         try
         {
-            var service = CreateService(handler);
+            var service = CreateService(handler, targetSchema: schema);
             var result = await service.ImportLayerAsync(new GeoservicesImportRequest
             {
                 ServiceUrl = "https://example.com/arcgis/rest/services/Probe/FeatureServer",
@@ -80,7 +80,7 @@ public sealed class GeoservicesEsriProbeImportTests(PostgresFixture fixture)
         }
     }
 
-    private GeoservicesImportService CreateService(HttpMessageHandler handler)
+    private GeoservicesImportService CreateService(HttpMessageHandler handler, string? targetSchema = null)
     {
         var restClient = new ArcGisRestClient(
             new HttpClient(handler),
@@ -101,7 +101,8 @@ public sealed class GeoservicesEsriProbeImportTests(PostgresFixture fixture)
             crsRegistry.Object,
             new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
-            new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance));
+            new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance),
+            schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(targetSchema));
     }
 
     private sealed class ObjectIdWindowOnlyHandler : HttpMessageHandler

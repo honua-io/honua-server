@@ -60,7 +60,7 @@ internal sealed partial class Wfs20Handler
         try
         {
             var featureTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
-            var wfsUrl = $"{baseUrl}/wfs";
+            var wfsUrl = BaseUrlResolver.PreserveToken(context.Request, $"{baseUrl}/wfs");
 
             var capabilities = new WfsCapabilities
             {

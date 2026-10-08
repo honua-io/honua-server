@@ -10,13 +10,129 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Queries.Filters;
 using Microsoft.Extensions.ObjectPool;
 using NSubstitute;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 public sealed class PostgresStorageMappedFeatureReaderSqlTests
 {
+    [Fact]
+    public void SRV_DB_005_PagedCallerOrdering_AppendsPrimaryKeyTiebreaker()
+    {
+        var reader = CreateReader(CreateResource());
+        var query = new FeatureQuery
+        {
+            OrderBy = [new OrderByClause("name", ascending: false)],
+            Limit = 25,
+            Offset = 50
+        };
+
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [query, false])!.ToString()!;
+
+        sql.Should().Contain("ORDER BY \"__honua_page_order_0\" DESC, \"__honua_page_order_1\"");
+        sql.Should().Contain("ORDER BY page_source.\"__honua_page_order_0\" DESC, page_source.\"__honua_page_order_1\"");
+    }
+
+    [Fact]
+    public void SRV_DB_006_SourceTemporalFilterConvertsTypedColumnToTextBeforeEpochDetection()
+    {
+        var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "WrapEpochAwareTimestamp", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        var expression = (string)method.Invoke(null, ["\"observed_at\""])!;
+
+        expression.Should().Contain("NULLIF((\"observed_at\")::text, '')");
+        expression.Should().NotContain("NULLIF(\"observed_at\", '')");
+    }
+
+    [Fact]
+    public void SRV_DB_020_JsonbNumericSortTreatsEmptyStringAsNull()
+    {
+        var resource = CreateResource() with
+        {
+            SchemaFields = [new MetadataV2Field { Name = "measurement", Type = MetadataV2FieldType.Integer }],
+        };
+        var query = new FeatureQuery { OrderBy = [new OrderByClause("measurement", ascending: true)] };
+
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(CreateReader(resource, attributesColumn: "attributes"), [query, false])!.ToString()!;
+
+        sql.Should().Contain("NULLIF(((\"attributes\" ->> $2::text))::text, '')::bigint");
+    }
+
+    [Theory]
+    [InlineData(MetadataV2FieldType.Integer)]
+    [InlineData(MetadataV2FieldType.BigInteger)]
+    [InlineData(MetadataV2FieldType.Float)]
+    [InlineData(MetadataV2FieldType.Double)]
+    public void BuildFeatureSelect_CanonicalNumericFilter_UsesTypedPhysicalColumn(MetadataV2FieldType type)
+    {
+        var resource = CreateResource() with
+        {
+            SchemaFields = [new MetadataV2Field { Name = "measurement", Type = type }]
+        };
+        var filter = new PostgresSqlFilterTranslator(useJsonAttributes: true).Translate(
+            new BinaryExpression(new PropertyReference("measurement"), BinaryOperator.GreaterThanOrEqual,
+                new Literal(25, LiteralType.Number)), resource);
+        var reader = CreateReader(resource);
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [new FeatureQuery { SqlFilter = filter }, false])!.ToString()!;
+
+        sql.Should().Contain("WHERE ((\"measurement\")::");
+        sql.Should().NotContain("NULLIF");
+    }
+
+    [Theory]
+    [InlineData(MetadataV2FieldType.Integer)]
+    [InlineData(MetadataV2FieldType.BigInteger)]
+    [InlineData(MetadataV2FieldType.Float)]
+    [InlineData(MetadataV2FieldType.Double)]
+    public void BuildFeatureSelect_CanonicalNumericFilter_JsonbRetainsNumericConversion(MetadataV2FieldType type)
+    {
+        var resource = CreateResource() with
+        {
+            SchemaFields = [new MetadataV2Field { Name = "measurement", Type = type }]
+        };
+        var filter = new PostgresSqlFilterTranslator(useJsonAttributes: true).Translate(
+            new BinaryExpression(new PropertyReference("measurement"), BinaryOperator.GreaterThanOrEqual,
+                new Literal(25, LiteralType.Number)), resource);
+        var reader = CreateReader(resource, attributesColumn: "attributes");
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [new FeatureQuery { SqlFilter = filter }, false])!.ToString()!;
+
+        sql.Should().Contain("NULLIF").And.Contain("->>");
+        sql.Should().NotContain("WHERE (\"measurement\" >=");
+    }
+
+    [Theory]
+    [InlineData(MetadataV2FieldType.Double, "integer")]
+    [InlineData(MetadataV2FieldType.Integer, "double precision")]
+    [InlineData(MetadataV2FieldType.String, "integer")]
+    public void BuildFeatureSelect_NumericFilterWithDifferentDeclaredType_RetainsExplicitCast(
+        MetadataV2FieldType type, string cast)
+    {
+        var resource = CreateResource() with
+        {
+            SchemaFields = [new MetadataV2Field { Name = "measurement", Type = type }]
+        };
+        var filter = new SqlFragment($"NULLIF(\"attributes\" ->> 'measurement', '')::{cast} >= @p0", [25]);
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(CreateReader(resource), [new FeatureQuery { SqlFilter = filter }, false])!.ToString()!;
+
+        sql.Should().Contain("NULLIF").And.Contain($"::{cast} >= $");
+    }
+
+
+
     [Fact]
     public void BuildFeatureSelect_TextSearch_UsesMappedColumns()
     {
@@ -291,15 +407,36 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         sql.Should().Contain("LIMIT $2 OFFSET $3");
     }
 
-    [Fact]
-    public void BuildAttributesExpressionText_WithWideOutFields_ChunksJsonbBuildObjectCalls()
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildFeatureSelect_AttributesUseJsonbExceptDistinctTextBoundary(bool distinct)
+    {
+        var query = new FeatureQuery { OutFields = ["name"], Distinct = distinct };
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(CreateReader(CreateResource()), [query, false])!.ToString()!;
+
+        if (distinct)
+        {
+            sql.Should().Contain("(jsonb_build_object($1::text, \"name\"))::text AS attributes")
+                .And.NotContain("__honua_native_attribute_");
+        }
+        else
+        {
+            sql.Should().Contain(" AS attributes").And.NotContain(")::text AS attributes");
+        }
+    }
+
+    [UnitTest]
+    public void BuildAttributesJsonbExpression_WithWideOutFields_ChunksJsonbBuildObjectCalls()
     {
         var fields = Enumerable.Range(1, 51)
             .Select(index => new MetadataV2Field { Name = $"field_{index}", Type = MetadataV2FieldType.String })
             .ToArray();
 
         var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
-            "BuildAttributesExpressionText",
+            "BuildAttributesJsonbExpression",
             BindingFlags.NonPublic | BindingFlags.Static,
             binder: null,
             types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>), typeof(string)],
@@ -318,15 +455,15 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
 
         expression.Split("jsonb_build_object", StringSplitOptions.None).Length.Should().Be(3);
         expression.Should().StartWith("(");
-        expression.Should().EndWith(")::text");
+        expression.Should().EndWith(")");
         expression.Should().Contain(" || ");
         expression.Should().Contain("$1::text, \"field_1\"");
         expression.Should().Contain("$51::text, \"field_51\"");
         parameters.Should().Equal(fields.Select(static field => field.Name));
     }
 
-    [Fact]
-    public void BuildAttributesExpressionText_WithJsonbColumn_PreservesNumericTypeButStringifiesText()
+    [UnitTest]
+    public void BuildAttributesJsonbExpression_WithJsonbColumn_PreservesNumericTypeButStringifiesText()
     {
         var fields = new[]
         {
@@ -338,7 +475,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         };
 
         var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
-            "BuildAttributesExpressionText",
+            "BuildAttributesJsonbExpression",
             BindingFlags.NonPublic | BindingFlags.Static,
             binder: null,
             types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>), typeof(string)],
@@ -367,8 +504,8 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         parameters.Should().Equal(fields.Select(static field => field.Name));
     }
 
-    [Fact]
-    public void BuildAttributesExpressionText_WithQuotedJsonbKey_BindsKeyWithoutChangingStatement()
+    [UnitTest]
+    public void BuildAttributesJsonbExpression_WithQuotedJsonbKey_BindsKeyWithoutChangingStatement()
     {
         const string fieldName = "owner's key ->> 'x'; SELECT pg_sleep(1); --";
         var field = new MetadataV2Field { Name = fieldName, Type = MetadataV2FieldType.String };
@@ -384,7 +521,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             "the existing JSON attribute-key allow-list remains the first gate");
 
         var buildMethod = typeof(PostgresStorageMappedFeatureReader).GetMethod(
-            "BuildAttributesExpressionText",
+            "BuildAttributesJsonbExpression",
             BindingFlags.NonPublic | BindingFlags.Static,
             binder: null,
             types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>), typeof(string)],
@@ -401,7 +538,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             null,
             [new[] { field }, "attributes", (Func<object?, string>)AddParameter, null])!;
 
-        expression.Should().Be("(jsonb_build_object($1::text, \"attributes\" ->> $1::text))::text");
+        expression.Should().Be("(jsonb_build_object($1::text, \"attributes\" ->> $1::text))");
         expression.Should().NotContain(fieldName);
         parameters.Should().ContainSingle().Which.Should().Be(fieldName);
     }

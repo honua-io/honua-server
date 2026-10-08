@@ -38,7 +38,8 @@ public sealed class LambdaAotDockerfileTests
         var job = workflow[start..end];
 
         job.Should().Contain("file: docker/Dockerfile.lambda.aot");
-        job.Should().Contain("HONUA_GIT_SHA=${{ github.sha }}");
+        job.Should().Contain("HONUA_GIT_SHA=${{ needs.select-candidate.outputs.sha }}",
+            "the nightly stamps the certified candidate it builds, not the workflow head");
     }
 
     [ArchitectureTest]

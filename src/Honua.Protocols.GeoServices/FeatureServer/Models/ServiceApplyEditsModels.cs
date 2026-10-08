@@ -67,18 +67,6 @@ public sealed class ServiceLayerEdits
 }
 
 /// <summary>
-/// Response model for service-level applyEdits containing per-layer results
-/// </summary>
-public sealed class ServiceApplyEditsResponse
-{
-    /// <summary>
-    /// Per-layer edit results
-    /// </summary>
-    [JsonPropertyName("editResults")]
-    public ServiceLayerEditResult[]? EditResults { get; set; }
-}
-
-/// <summary>
 /// Edit results for a single layer in a service-level applyEdits response
 /// </summary>
 public sealed class ServiceLayerEditResult

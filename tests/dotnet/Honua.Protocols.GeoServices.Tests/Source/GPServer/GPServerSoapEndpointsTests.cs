@@ -13,7 +13,8 @@ using Honua.TestKit.Helpers;
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
 [Protocol(TestProtocols.GPServer)]
-public sealed partial class GPServerSoapEndpointsTests
+public sealed partial class GPServerSoapEndpointsTests(GPServerSoapMetadataFixture fixture)
+    : IClassFixture<GPServerSoapMetadataFixture>
 {
     private const string Soap11 = "http://schemas.xmlsoap.org/soap/envelope/";
     private const string Soap12 = "http://www.w3.org/2003/05/soap-envelope";
@@ -24,8 +25,7 @@ public sealed partial class GPServerSoapEndpointsTests
     [Endpoint("POST /services/{serviceId}/GPServer")]
     public async Task GetToolInfos_ArcPyToolIdentifiers_AreValidUniqueAndRoundTrip()
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var client = ServiceRbacTestFixture.CreateClient(fixture.Factory, "alpha-reader");
         using var response = await PostAsync(client, "GetToolInfos");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var tasks = XDocument.Parse(await response.Content.ReadAsStringAsync()).Descendants("GPToolInfo").ToArray();
@@ -69,8 +69,7 @@ public sealed partial class GPServerSoapEndpointsTests
     [InterfaceOperation(TestProtocols.GPServer, "GetToolInfos")]
     public async Task GetToolInfos_ArcPyEnvelope_ReturnsCanonicalTaskAndParameterMetadata(string soap, string contentType, string arcGis)
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var client = ServiceRbacTestFixture.CreateClient(fixture.Factory, "alpha-reader");
         using var response = await PostAsync(client, "GetToolInfos", soap: soap, contentType: contentType, arcGis: arcGis);
         var text = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, text);
@@ -126,8 +125,7 @@ public sealed partial class GPServerSoapEndpointsTests
     [InterfaceOperation(TestProtocols.GPServer, "GetResultMapServerName")]
     public async Task DiscoveryOperation_ValidRequest_ReturnsTypedResult(string operation, string arguments, string? child)
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var client = ServiceRbacTestFixture.CreateClient(fixture.Factory, "alpha-reader");
         using var response = await PostAsync(client, operation, arguments);
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
@@ -154,8 +152,7 @@ public sealed partial class GPServerSoapEndpointsTests
     [InterfaceOperation(TestProtocols.GPServer, "GetToolInfo")]
     public async Task GetToolInfo_ArgumentNamespaceForms_BindByLocalName(string form, string arguments, string? expectedFault)
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var client = ServiceRbacTestFixture.CreateClient(fixture.Factory, "alpha-reader");
         using var response = await PostOperationAsync(client, SoapOperationForm("GetToolInfo", arguments, form));
         var text = await response.Content.ReadAsStringAsync();
         var document = XDocument.Parse(text);
@@ -180,8 +177,7 @@ public sealed partial class GPServerSoapEndpointsTests
     [Endpoint("POST /services/{serviceId}/GPServer")]
     public async Task GetToolInfos_ProtectedService_EnforcesCanonicalAuthorization(string? role, HttpStatusCode expected)
     {
-        var policy = ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["gp-reader"]);
-        using var factory = ServiceRbacTestFixture.CreateFactory(() => new RbacTestLayerCatalog(alphaServiceMetadata: policy));
+        var factory = fixture.ProtectedFactory;
         using var client = role is null ? factory.CreateClient() : ServiceRbacTestFixture.CreateClient(factory, role);
         using var response = await PostAsync(client, "GetToolInfos");
         var text = await response.Content.ReadAsStringAsync();
@@ -204,8 +200,7 @@ public sealed partial class GPServerSoapEndpointsTests
     [Endpoint("POST /services/{serviceId}/GPServer")]
     public async Task Request_InvalidOrUnsupportedOperation_ReturnsSoapFault(string operation, string arguments, HttpStatusCode expected)
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var client = ServiceRbacTestFixture.CreateClient(fixture.Factory, "alpha-reader");
         using var response = await PostAsync(client, operation, arguments);
         var text = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(expected, text);
@@ -222,8 +217,7 @@ public sealed partial class GPServerSoapEndpointsTests
     [Endpoint("POST /services/{serviceId}/GPServer")]
     public async Task Request_MalformedEnvelope_ReturnsSafeSoapFault(string xml, string contentType, HttpStatusCode expected)
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = fixture.Factory.CreateClient();
         using var content = new StringContent(xml, Encoding.UTF8, contentType);
         using var response = await client.PostAsync("/services/alpha/GPServer", content);
         var text = await response.Content.ReadAsStringAsync();

@@ -12,11 +12,14 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 class GeneratedFilesContracts(unittest.TestCase):
-    def test_workflow_runs_only_on_trunk_push_and_never_writes_trunk_directly(self):
+    def test_workflow_runs_nightly_or_on_demand_and_never_writes_trunk_directly(self):
         workflow = (ROOT / '.github/workflows/generated-files-on-trunk.yml').read_text()
-        self.assertIn('  push:\n    branches: [trunk]', workflow)
+        # Nightly + on demand, not per trunk push: a per-push PR moved trunk after
+        # every landing and re-gated every open PR. Drift is advisory.
+        self.assertIn('  schedule:\n    - cron:', workflow)
+        self.assertIn('  workflow_dispatch:', workflow)
+        self.assertNotIn('  push:', workflow)
         self.assertNotIn('pull_request:', workflow)
-        self.assertNotIn('workflow_dispatch:', workflow)
         self.assertIn('concurrency:\n  group: generated-files-on-trunk\n  cancel-in-progress: false', workflow)
         self.assertIn('  contents: read', workflow)
         self.assertNotIn('  contents: write', workflow)

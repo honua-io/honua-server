@@ -151,6 +151,7 @@ public static class OperationRegistry
         new(VersionManagementServer, "serviceInfo"),
         new(VersionManagementServer, "versions"),
         new(VersionManagementServer, "versionInfo"),
+        new(VersionManagementServer, "versionInfos"),
         new(VersionManagementServer, "create"),
         new(VersionManagementServer, "delete"),
         new(VersionManagementServer, "alter"),
@@ -207,6 +208,15 @@ public static class OperationRegistry
         new(ImageServer, "ExecuteAISRequest"),
         new(ImageServer, "ExportImage"),
         new(ImageServer, "GetImage"),
+        new(ImageServer, "GetCatalogItemCount"),
+        new(ImageServer, "GetCatalogItemIDs"),
+        new(ImageServer, "GetCatalogItems"),
+        new(ImageServer, "GetRasterKeyProperties"),
+        new(ImageServer, "ComputeHistograms"),
+        new(ImageServer, "GetCacheDescriptionInfo"),
+        new(ImageServer, "GetTileCacheInfo"),
+        new(ImageServer, "GetTileImageInfo"),
+        new(ImageServer, "GetImageTile"),
     ];
 }
 

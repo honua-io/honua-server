@@ -9,6 +9,7 @@ using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Honua.ControlPlane;
 using Honua.Server.Tests.Infrastructure;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
@@ -27,6 +28,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 /// Requires Docker; skipped automatically when the database fixture is unavailable.
 /// </summary>
 [Collection("Database")]
+[Protocol(TestProtocols.Infrastructure)]
 public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";
@@ -49,6 +51,60 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
         await _fixture.DropSchemaAsync(_schemaName);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ExecuteAsync_CancellationAtCommittedPublication_PreservesDestinationReceipt()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var resolver = Substitute.For<ISecureConnectionResolver>();
+        resolver.ResolveConnectionStringAsync("external-target", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(_fixture.ConnectionString));
+        var executor = new ExternalPostgisSinkExecutor(Options(), resolver);
+        var context = Substitute.For<IJobExecutionContext>();
+        string? receipt = null;
+        context.When(c => c.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                // Inject request cancellation at publication, after the destination commit.
+                cancellation.Cancel();
+                call.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                receipt = call.Arg<string>();
+            });
+        context.When(c => c.RecordCommittedEffectAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                cancellation.Cancel();
+                call.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                receipt = call.Arg<string>();
+            });
+        var input = BuildInputUri(new Feature(
+            new GeometryFactory(new PrecisionModel(), 4326).CreatePoint(new Coordinate(1, 2)),
+            new AttributesTable()));
+        var job = Record(("input", input), ("connectionName", "external-target"),
+            ("schema", _schemaName), ("table", "cancelled_publication"), ("targetSrid", "4326"),
+            ("batchId", "committed-external-batch"));
+
+        JobExecutionResult? result = null;
+        var error = await Xunit.Record.ExceptionAsync(async () =>
+        {
+            result = await executor.ExecuteAsync(job, context, cancellation.Token);
+        });
+
+        Assert.True(cancellation.IsCancellationRequested);
+        await using var connection = await _fixture.DataSource.OpenConnectionAsync();
+        await using var count = new NpgsqlCommand($"SELECT COUNT(*) FROM \"{_schemaName}\".cancelled_publication", connection);
+        Assert.Equal(1L, (long)(await count.ExecuteScalarAsync())!);
+        Assert.Null(error);
+        Assert.NotNull(result);
+        Assert.Equal(ExecutionJobStatus.Succeeded, result!.Status);
+        Assert.NotNull(receipt);
+        using var json = System.Text.Json.JsonDocument.Parse(Encoding.UTF8.GetString(
+            Convert.FromBase64String(receipt![(receipt.IndexOf(',') + 1)..])));
+        Assert.Equal("committed-external-batch", json.RootElement.GetProperty("batchId").GetString());
+        Assert.Equal(1, json.RootElement.GetProperty("featuresWritten").GetInt64());
+        Assert.True(json.RootElement.GetProperty("committed").GetBoolean());
+    }
+
     [Fact]
     public async Task ExecuteAsync_CreatesTableAndInsertsFeaturesWithBatchTag()
     {
@@ -69,6 +125,9 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
         context
             .When(c => c.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
             .Do(call => publishedUri = call.ArgAt<string>(0));
+
+        context.When(c => c.RecordCommittedEffectAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(call => publishedUri = call.Arg<string>());
 
         var record = Record(
             ("input", input),

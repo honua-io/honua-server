@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Attachments.Services;
 using Honua.Core.Features.Federation.Services;
@@ -32,6 +33,7 @@ public static partial class Extensions
     private const double DefaultSlowRequestThresholdMs = 1000.0;
     private const int DefaultMemorySamplingIntervalMs = 100;
     private const int DefaultHttpErrorStatusCode = 400;
+    private const string SpanEventCountLimitKey = "OTEL_SPAN_EVENT_COUNT_LIMIT";
     private static readonly string[] _meterNames =
     [
         HonuaTelemetry.ServiceName,
@@ -77,7 +79,11 @@ public static partial class Extensions
         "Honua.Core.Edit",
         "Honua.Core.FeatureStore",
         // PA-108: federated ArcGIS REST provider query span (paging loop).
-        "Honua.ArcGisRest"
+        "Honua.GeoServicesRest",
+        // A3-004 (#5476): replica conflict resolution and the Zarr slice readers declared their
+        // own sources but were never subscribed, so their spans were dropped.
+        "Honua.Server.ReplicaConflicts",
+        "Honua.Core.Raster.Zarr"
     ];
 
     /// <summary>
@@ -148,6 +154,7 @@ public static partial class Extensions
         var otlpEndpoint = ResolveOtlpEndpoint(builder.Configuration, tracingOptions);
         var otlpHeaders = ResolveOtlpHeaders(builder.Configuration, tracingOptions);
         var useOtlp = !string.IsNullOrWhiteSpace(otlpEndpoint);
+        ApplyExporterSpanEventLimit(builder.Configuration, tracingOptions);
         var useXRay = ResolveXRayEnabled(builder.Configuration, tracingOptions);
 
         // Record the Lambda cold start once during process initialization so the
@@ -432,6 +439,27 @@ public static partial class Extensions
         }
     }
 
+    /// <summary>
+    /// Makes <see cref="TracingOptions.MaxEventsPerSpan"/> an export ceiling rather than an
+    /// annotation (#5475). A span processor cannot remove events from an <see cref="Activity"/>, so
+    /// the limit is handed to the OTLP exporter, which drops events past
+    /// <c>OTEL_SPAN_EVENT_COUNT_LIMIT</c> while serializing and reports them as dropped. An
+    /// explicitly configured <c>OTEL_SPAN_EVENT_COUNT_LIMIT</c> still wins.
+    /// </summary>
+    private static void ApplyExporterSpanEventLimit(IConfigurationManager configuration, TracingOptions tracingOptions)
+    {
+        if (tracingOptions.MaxEventsPerSpan <= 0 ||
+            !string.IsNullOrWhiteSpace(configuration[SpanEventCountLimitKey]))
+        {
+            return;
+        }
+
+        configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [SpanEventCountLimitKey] = tracingOptions.MaxEventsPerSpan.ToString(CultureInfo.InvariantCulture),
+        });
+    }
+
     private static bool ShouldAddSpanSanitizer(TracingOptions tracingOptions)
     {
         return true;
@@ -504,6 +532,8 @@ public static partial class Extensions
                 TrimTags(activity, _maxAttributes);
             }
 
+            // Events cannot be removed here; the OTLP exporter enforces the ceiling (see
+            // ApplyExporterSpanEventLimit). This tag records how many it will drop.
             if (_maxEvents > 0)
             {
                 var eventCount = activity.Events.Count();

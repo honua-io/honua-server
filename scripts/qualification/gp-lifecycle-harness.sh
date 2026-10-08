@@ -29,6 +29,15 @@ case "${lane}" in
   output-store)
     declared_scenarios=(topology output-store-attestation cleanup)
     ;;
+  heartbeat-recovery)
+    declared_scenarios=(topology stale-lease cleanup)
+    ;;
+  terminal-result-recovery)
+    declared_scenarios=(topology terminal-result-recovery cleanup)
+    ;;
+  output-store-outage)
+    declared_scenarios=(topology output-write-failure cleanup)
+    ;;
   crash-boundaries)
     declared_scenarios=(topology)
     for boundary in output-bytes-written-unpublished artifact-reference-published-terminal-cas-pending terminal-committed-registration-pending; do
@@ -57,7 +66,7 @@ case "${lane}" in
     declared_scenarios=(assertion-failure follow-up cleanup)
     ;;
   *)
-    echo "HONUA_GP_LANE must be output-store, output-store-dr, crash-boundaries, lifecycle, resilience, or self-test" >&2
+    echo "HONUA_GP_LANE must be output-store, output-store-outage, heartbeat-recovery, terminal-result-recovery, output-store-dr, crash-boundaries, lifecycle, resilience, or self-test" >&2
     exit 2
     ;;
 esac
@@ -81,6 +90,7 @@ scenario_evidence_file=""
 scenario_finding=""
 scenario_cleanup_failure=""
 preflight_failure=""
+runtime_taint=""
 failures=0
 finished=0
 observed_candidate_file="${receipt_root}/.observed-candidate.json"
@@ -914,16 +924,35 @@ run_retry() {
 }
 
 run_timeout_live() {
-  local mode="$1" job record terminal state retry_code result_code failed_terminal_count
+  local job="" state="" result=0 cleanup_result=0
+  # The case changes exported settings only in its function scope. On every
+  # return (including an assertion failure), recreate the topology using the
+  # caller's original values before another scenario can run.
+  run_timeout_case "$@" || result=$?
+  compose up -d --force-recreate server server-peer worker >/dev/null || cleanup_result=$?
+  if (( cleanup_result == 0 )); then
+    wait_ready && wait_peer_ready || cleanup_result=$?
+  fi
+  if (( cleanup_result != 0 )); then
+    scenario_cleanup_failure="timeout qualification topology restoration failed"
+    runtime_taint="${scenario_cleanup_failure}"
+    scenario_finding="${scenario_finding:+${scenario_finding}; }${scenario_cleanup_failure}"
+    return 1
+  fi
+  (( result == 0 )) || return "$result"
+  write_receipt "$scenario_name" pass "" "$job" "$state"
+}
+
+run_timeout_case() {
+  local mode="$1" record terminal retry_code result_code failed_terminal_count
   local request_at signal_file object_count_before object_count_after process_ready child_pid worker_container child_alive signal_deadline
   local behavior="native production executor"
-  export HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
-  export HONUA_GP_TIMEOUT_SECONDS=2
+  local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
+  local -x HONUA_GP_TIMEOUT_SECONDS=2
+  local -x HONUA_GP_QUALIFICATION_EXECUTOR_MODE=""
   if [[ "$mode" == ignore-cancellation ]]; then
     export HONUA_GP_QUALIFICATION_EXECUTOR_MODE=ignore-cancellation
     behavior="native production executor ignores operator cancellation; timeout remains authoritative"
-  else
-    unset HONUA_GP_QUALIFICATION_EXECUTOR_MODE
   fi
   compose up -d --force-recreate server server-peer worker >/dev/null || {
     scenario_fail "timeout qualification topology could not be recreated"
@@ -1020,12 +1049,6 @@ run_timeout_live() {
     --argjson before "$object_count_before" --argjson after "$object_count_after" \
     --argjson child_alive "$child_alive" --argjson failed_terminal_count "$failed_terminal_count" \
     '{request_at:$request_at,claim_at:$record.claimedAt,worker_id:$record.claimedBy,process:$process,artifact_references:($record.artifactReferences // []),timeout_source:"supported workload policy batch.timeout_seconds",cancellation_source:(if $behavior|startswith("native production executor ignores") then "OGC DELETE via peer" else null end),signal_observed_at:($signal.observedAt // null),child_process:{pid:($process.childProcessId // null),exit_observed:($child_alive|not)},terminal_history:$transitions,terminal_failure_count:$failed_terminal_count,attempt_count:($record.attemptCount // null),queue_membership:{pending_score:(if $pending=="" then null else $pending end),claimed_score:(if $claimed=="" then null else $claimed end)},retry_race_http:$retry_code,result_visibility:{after_terminal:$result_code},object_inventory:{before:$before,after_retention_cleanup:$after}}')"
-  unset HONUA_GP_QUALIFICATION_EXECUTOR_MODE
-  unset HONUA_GP_QUALIFICATION_BARRIER_ROOT
-  export HONUA_GP_TIMEOUT_SECONDS=3600
-  compose up -d --force-recreate server server-peer worker >/dev/null || return 1
-  wait_ready || return 1
-  write_receipt "$scenario_name" pass "" "$job" "$state"
 }
 
 run_timeout_cooperative() {
@@ -1075,36 +1098,15 @@ run_poison_job() {
 }
 
 run_stale_lease() {
-  local scenario=stale-lease job old terminal digest
-  compose stop worker >/dev/null
-  job="$(submit_async gdal.ogr2ogr "${native_payload}")" || { compose start worker >/dev/null; return 1; }
-  old=$(( $(date +%s%3N) - 3600000 ))
-  compose exec -T redis redis-cli ZREM controlplane:jobqueue:pending "${job}" >/dev/null
-  compose exec -T redis redis-cli ZADD controlplane:jobqueue:claimed "${old}" "${job}" >/dev/null
-  compose exec -T redis redis-cli HSET "controlplane:jobqueue:meta:${job}" claimedBy dead-worker claimedAt "${old}" >/dev/null
-  compose start worker >/dev/null
-  terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: stale lease was not recovered" "${job}"; return 1; }
-  digest="$(result_digest "${job}" 2>/dev/null || true)"
-  [[ "$(jq -r .status <<<"${terminal}")" == successful && -n "${digest}" ]] || { write_receipt "${scenario}" fail "FINDING: recovered lease lost output" "${job}"; return 1; }
-  write_receipt "${scenario}" pass "" "${job}" successful "${digest}"
+  source "${repo_root}/scripts/qualification/gp-heartbeat-recovery.sh"
+  run_heartbeat_recovery
 }
 
 run_output_write_failure() {
-  local scenario=output-write-failure job terminal state digest
-  job="$(submit_async gdal.ogr2ogr "${native_payload}")" || return 1
-  wait_running "${job}" || { write_receipt "${scenario}" fail "job never ran" "${job}"; return 1; }
-  compose pause worker >/dev/null
-  if result_digest "${job}" >/dev/null 2>&1; then
-    compose unpause worker >/dev/null
-    write_receipt "${scenario}" fail "FINDING: output was published before the outage barrier" "${job}" running
-    return 1
-  fi
-  compose stop redis >/dev/null; compose unpause worker >/dev/null; sleep 2; compose start redis >/dev/null
-  terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: output-store outage lost terminal state" "${job}"; return 1; }
-  state="$(jq -r .status <<<"${terminal}")"; digest="$(result_digest "${job}" 2>/dev/null || true)"
-  if [[ "${state}" == successful && -n "${digest}" ]]; then write_receipt "${scenario}" pass "recovered after output-store outage" "${job}" "${state}" "${digest}"; return; fi
-  [[ "${state}" == failed && -z "${digest}" ]] || { write_receipt "${scenario}" fail "FINDING: partial/orphaned output after store outage" "${job}" "${state}" "${digest}"; return 1; }
-  write_receipt "${scenario}" pass "bounded failure without exposed output" "${job}" "${state}"
+  # Release native execution into an actual unavailable staged store. Stopping Redis
+  # cannot establish output-store durability, even if a job later succeeds.
+  source "${repo_root}/scripts/qualification/gp-store-crash.sh"
+  run_store_crash_boundary native-process-started store
 }
 
 run_backlog() {
@@ -1245,6 +1247,10 @@ run_scenario() {
   local name="$1" function="$2" result=0 outcome finding
   shift 2
   scenario_state_reset "${name}"
+  if [[ -n "${runtime_taint}" && "${name}" != cleanup ]]; then
+    write_receipt "${name}" fail "not executed: ${runtime_taint}"
+    return 1
+  fi
   "${function}" "$@" || result=$?
   outcome=pass; finding=""
   if (( result != 0 )); then
@@ -1338,7 +1344,14 @@ else
     fill_missing_receipts
   }
   if [[ -z "${preflight_failure}" ]]; then
-    if [[ "${lane}" == output-store || "${lane}" == output-store-dr ]]; then
+    if [[ "${lane}" == heartbeat-recovery ]]; then
+      run_scenario stale-lease run_stale_lease || failures=$((failures + 1))
+    elif [[ "${lane}" == terminal-result-recovery ]]; then
+      source "${repo_root}/scripts/qualification/gp-store-crash.sh"
+      run_scenario terminal-result-recovery run_store_crash_boundary terminal-committed-registration-pending worker || failures=$((failures + 1))
+    elif [[ "${lane}" == output-store-outage ]]; then
+      run_scenario output-write-failure run_output_write_failure || failures=$((failures + 1))
+    elif [[ "${lane}" == output-store || "${lane}" == output-store-dr ]]; then
       run_scenario output-store-attestation run_output_store_attestation || failures=$((failures + 1))
       if [[ "${lane}" == output-store-dr ]]; then
         run_scenario output-store-dr run_output_store_attestation output-store-dr || failures=$((failures + 1))

@@ -681,9 +681,9 @@ public class ImportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload")]
-    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
-    public async Task ImportFile_CustomTargetSchema_CanDiscoverAdHocImportSchema()
+    public async Task ImportFile_TargetSchemaOutsideOperationalSchemas_Returns400AndCreatesNoSchema()
     {
+        // SEC-23: import targets are limited to the configured operational schemas.
         var requestedTableName = $"custom_schema_{Guid.NewGuid():N}";
         var targetSchema = $"adhoc_{Guid.NewGuid():N}";
 
@@ -722,43 +722,15 @@ public class ImportEndpointTests : IAsyncLifetime
 
             var importResponse = await _client.PostAsync("/api/v1/admin/import/upload", content);
             var importPayload = await importResponse.Content.ReadAsStringAsync();
-            importResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {importPayload}");
-            var importResult = JsonSerializer.Deserialize<ImportResult>(importPayload, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            }) ?? throw new InvalidOperationException("Import response did not contain a result.");
-            var physicalTableName = importResult.PhysicalTableName
-                ?? throw new InvalidOperationException("Successful import did not return its physical table name.");
+            importResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"response: {importPayload}");
+            importPayload.Should().Contain("not a configured operational schema");
 
-            importResult.Should().NotBeNull();
-            importResult.Success.Should().BeTrue($"response: {importPayload}");
-            importResult.TableName.Should().Be(requestedTableName);
-            importResult.Schema.Should().Be(targetSchema);
-            importResult.PhysicalTableName.Should().NotBeNullOrWhiteSpace();
-            importResult.PhysicalTableName.Should().StartWith("imported_");
-            importResult.PhysicalTableName.Length.Should().BeLessThanOrEqualTo(40);
-
-            await using (var connection = await _fixture.Postgres.GetConnectionAsync())
-            {
-                var tableExists = await TableExistsAsync(connection, targetSchema, physicalTableName);
-                tableExists.Should().BeTrue("imports should create valid ad hoc target schemas");
-            }
-
-            var connectionId = await _fixture.GetTestSecureConnectionIdAsync()
-                ?? throw new InvalidOperationException("Test secure connection was not initialized.");
-            var discoveryResponse = await _client.GetAsync($"/api/v1/admin/connections/{connectionId}/tables");
-            var discoveryPayload = await discoveryResponse.Content.ReadAsStringAsync();
-            discoveryResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {discoveryPayload}");
-
-            var discovery = JsonSerializer.Deserialize<TableDiscoveryResponse>(discoveryPayload, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-            discovery.Should().NotBeNull();
-            discovery!.Tables.Should().Contain(table =>
-                table.Schema == targetSchema &&
-                table.Table == physicalTableName &&
-                table.GeometryColumn == "geometry");
+            await using var connection = await _fixture.Postgres.GetConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = @schema)";
+            command.Parameters.AddWithValue("schema", targetSchema);
+            var schemaExists = (bool)(await command.ExecuteScalarAsync())!;
+            schemaExists.Should().BeFalse("a refused import must not create its target schema");
         }
         finally
         {

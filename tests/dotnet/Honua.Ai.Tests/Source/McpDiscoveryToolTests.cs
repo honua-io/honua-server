@@ -4,6 +4,8 @@
 using System.Text.Json;
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Infrastructure.Authentication;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Operations.Domain;
@@ -185,6 +187,7 @@ public sealed class McpDiscoveryToolTests
             NullLogger<McpDataAccessSurface>.Instance,
             toolSources: [new FixedToolSource(published, orphan)]);
         var services = new ServiceCollection();
+        services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         services.AddSingleton<IMetadataV2GraphProvider>(BuildGraphProvider());
         services.AddSingleton(surface);
         services.AddSingleton<ICapabilityRegistry>(new CapabilityRegistry());
@@ -241,6 +244,7 @@ public sealed class McpDiscoveryToolTests
     private static ServiceProvider BuildServices(McpDataAccessSurface? surface = null)
     {
         var services = new ServiceCollection();
+        services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         services.AddSingleton<IMetadataV2GraphProvider>(BuildGraphProvider());
         if (surface is not null)
         {

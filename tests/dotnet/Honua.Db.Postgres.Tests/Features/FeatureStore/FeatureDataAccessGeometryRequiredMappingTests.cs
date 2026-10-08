@@ -112,6 +112,24 @@ public sealed class FeatureDataAccessGeometryRequiredMappingTests
     }
 
     [Fact]
+    public void GetSafeEditOperationError_InvalidOperation_SurfacesFixedSentence()
+    {
+        FeatureDataAccess.GetSafeEditOperationError(
+                new InvalidOperationException("Failed to create feature: no result returned"),
+                "Create")
+            .Should().Be("Failed to create feature: no result returned");
+    }
+
+    [Fact]
+    public void GetSafeEditOperationError_InvalidOperationWithInternals_StaysGeneric()
+    {
+        FeatureDataAccess.GetSafeEditOperationError(
+                new InvalidOperationException("failed at System.InvalidOperationException"),
+                "Create")
+            .Should().Be("Invalid feature data.");
+    }
+
+    [Fact]
     public void GetSafeEditOperationError_OtherProviderError_StaysGeneric()
     {
         // A generic NOT NULL violation on an unrelated column is not mapped to the

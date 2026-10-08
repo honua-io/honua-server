@@ -6,6 +6,8 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Geoprocessing;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Tiles;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -42,7 +44,9 @@ public static class TileExportRuntimeServiceCollectionExtensions
             sp.GetService<IJobQueue>(),
             sp.GetService<ICloudFileStorage>(),
             sp.GetService<IExecutionAdmissionEvaluator>(),
-            sp.GetService<ExecutionAdmissionCoordinator>()));
+            sp.GetService<ExecutionAdmissionCoordinator>(),
+            sp.GetService<IOptions<RbacOptions>>(),
+            sp.GetService<ITenantContext>()));
 
         // One coordinator per process, shared with geoprocessing when that module is also
         // composed (TryAddSingleton). A tiles-only host still gets the shared lease when Redis

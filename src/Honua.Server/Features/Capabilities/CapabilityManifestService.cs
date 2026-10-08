@@ -466,7 +466,7 @@ internal sealed class CapabilityManifestService(
                 policyCapability: "features.edit",
                 requiresWorkspace: true),
             Capability("admin.multi-tenancy", "control-plane", context,
-                maturity: CapabilityMaturity.Preview,
+                maturity: CapabilityMaturity.Internal,
                 configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("admin.multi-tenancy")
                     && options.TenantSchemaRoutingEnabled,
                 entitlementKey: FeatureCatalog.MultiTenancyKey,
@@ -585,7 +585,7 @@ internal sealed class CapabilityManifestService(
             // from the descriptor rather than restated in the spec map so this path and the
             // hand-curated roster cannot disagree about which capabilities are gaps.
             var served = descriptor.ImplementationStatus == CapabilityImplementationStatus.Served;
-            var lifecycleEnabled = descriptor.Maturity is not (CapabilityMaturity.Preview or CapabilityMaturity.Experimental)
+            var lifecycleEnabled = descriptor.Maturity is not (CapabilityMaturity.Internal or CapabilityMaturity.Preview or CapabilityMaturity.Experimental)
                 || !IsExperimentalDisabled(resolution);
             var configured = spec.Configured && lifecycleEnabled;
             capabilities.Add(Capability(
@@ -881,7 +881,7 @@ internal sealed class CapabilityManifestService(
             Id = id,
             Category = category,
             Lifecycle = maturity == CapabilityMaturity.Preview ? "preview" : maturity.ToString().ToLowerInvariant(),
-            OptInRequired = (maturity is CapabilityMaturity.Preview or CapabilityMaturity.Experimental)
+            OptInRequired = (maturity is CapabilityMaturity.Internal or CapabilityMaturity.Preview or CapabilityMaturity.Experimental)
                 && (capabilityRegistry.Find(id)?.RequiresOptIn ?? true),
             Supported = supported,
             Available = available,

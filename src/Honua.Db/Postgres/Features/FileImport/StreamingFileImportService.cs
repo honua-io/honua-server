@@ -231,6 +231,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         // Validate request has exactly one source: FileStream, CloudFileId, or LocalFilePath
         request.Validate();
 
+        // Refuse a reserved target schema before any source is read or connection opened (SEC-23).
+        _ = ResolveTargetSchema(request.TargetSchema);
+
         var stopwatch = Stopwatch.StartNew();
         var format = DetectFormat(request.FileName);
         var formatName = format?.ToString() ?? "unknown";
@@ -611,9 +614,14 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 shapefileScratch,
                 fileGdbScratch);
 
-            if (importedCount == 0 && failedCount == 0)
+            // A replace whose load dropped rows against an already-populated target never
+            // promoted its staging sibling (see ImportStreamingAsync) — the live target is
+            // unchanged. Report that truthfully rather than a complete success: the caller asked
+            // to replace the whole dataset and got nothing applied instead (#4006).
+            if (replacementBlocked)
             {
-                errorMessage = "No features found in file";
+                errorMessage = $"Import failed: {failedCount} feature(s) could not be imported; " +
+                    "the replace was not applied and the prior target is unchanged.";
                 result = ImportResult.CreateFailure(
                     request.TableName,
                     format.Value,
@@ -623,14 +631,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 return result;
             }
 
-            // A replace whose load dropped rows against an already-populated target never
-            // promoted its staging sibling (see ImportStreamingAsync) — the live target is
-            // unchanged. Report that truthfully rather than a complete success: the caller asked
-            // to replace the whole dataset and got nothing applied instead (#4006).
-            if (replacementBlocked)
+            if (importedCount == 0)
             {
-                errorMessage = $"Import failed: {failedCount} feature(s) could not be imported; " +
-                    "the replace was not applied and the prior target is unchanged.";
+                errorMessage = "No features found in file";
                 result = ImportResult.CreateFailure(
                     request.TableName,
                     format.Value,

@@ -397,17 +397,32 @@ if (connectedRedis is not null &&
 {
     // The operation-secret protector is intentionally backed by the same Redis authority
     // as the proposal/instance stores so every replay node shares a rotation-capable key ring.
+    // Native AOT cannot run EncryptedXml. It still stores the ring in Redis and wraps each key
+    // with the certificate using RSA-OAEP and AES-GCM, so another execution environment can
+    // unwrap it. A process-local ring would make a consume on the wrong environment delete the
+    // secret before it can be unprotected.
+    var nativeAot = !System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported;
     var keyRepository = new RedisDataProtectionKeyRepository(connectedRedis);
     keyRepository.EnsureAllElementsAreProtected();
     var keyRing = builder.Services.AddDataProtection()
         .SetApplicationName("Honua.Server")
-        .AddKeyManagementOptions(options =>
-            options.XmlRepository = keyRepository);
+        .AddKeyManagementOptions(options => options.XmlRepository = keyRepository);
 
     // A key ring persisted beside the ciphertext it unlocks is not a boundary on its own. The
-    // certificate is mandatory so a Redis reader or snapshot cannot carry both halves.
+    // certificate is mandatory so a Redis reader or snapshot cannot carry both halves. Lambda
+    // cannot mount the file, so a Secrets Manager bundle is written to a private temp file first.
+    await StartupConfigurationHelpers.EnsureKeyRingCertificateMaterializedAsync(builder.Configuration);
     var keyRingCertificate = OperationSecretKeyRingProtection.Resolve(builder.Configuration);
-    keyRing.ProtectKeysWithCertificate(keyRingCertificate);
+    if (nativeAot)
+    {
+        builder.Services.AddSingleton(new RsaAesGcmKeyRingMaterial(keyRingCertificate));
+        keyRing.AddKeyManagementOptions(options =>
+            options.XmlEncryptor = new RsaAesGcmKeyRingEncryptor(keyRingCertificate));
+    }
+    else
+    {
+        keyRing.ProtectKeysWithCertificate(keyRingCertificate);
+    }
 }
 
 // The ONE sanctioned way an unattested durable job substrate may stop this process
@@ -871,12 +886,14 @@ builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleDepe
 builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleOpenDataStore>(sp =>
     new Honua.Server.Features.Console.Services.InMemoryConsoleOpenDataStore(
         sp.GetService<TimeProvider>() ?? TimeProvider.System));
-// Console catalog discovery-endpoints registry read model (#1279). The discovery
-// dialects a server publishes are a server-wide config/metadata concern; this
-// config-backed read model materialises them into the Console projection. A
-// durable/metadata-v2-backed source can replace this registration later.
-builder.Services.AddSingleton<Honua.Server.Features.Console.Services.ICatalogDiscoveryRegistryStore>(
-    _ => new Honua.Server.Features.Console.Services.ConfigCatalogDiscoveryRegistryStore());
+// Discovery is a scoped projection: an explicit workspace mapping never replaces caller authorization.
+builder.Services.AddOptions<Honua.Server.Features.Console.Services.CatalogDiscoveryOptions>()
+    .BindConfiguration(Honua.Server.Features.Console.Services.CatalogDiscoveryOptions.SectionName)
+    .ValidateOnStart();
+builder.Services.AddSingleton<Microsoft.Extensions.Options.IValidateOptions<Honua.Server.Features.Console.Services.CatalogDiscoveryOptions>,
+    Honua.Server.Features.Console.Services.CatalogDiscoveryOptionsValidator>();
+builder.Services.AddScoped<Honua.Server.Features.Console.Services.ICatalogDiscoveryRegistryStore,
+    Honua.Server.Features.Console.Services.ProjectedCatalogDiscoveryRegistryStore>();
 
 // Content publication registry for Studio-generated maps/dashboards/reports/apps (#1183).
 // In-memory store is the default; Postgres registration (AddPostgreSqlServices) overrides
@@ -1110,11 +1127,16 @@ builder.Services.AddHonuaJsonContexts();
 // RFC 9110 §9.3.2: answer HEAD wherever GET is answered (#3389). Registered as a startup
 // filter so the HEAD -> GET rewrite runs ahead of WebApplication's implicit UseRouting;
 // the matching restoration middleware below puts HEAD back once the endpoint is selected.
+// Normalize the optional ArcGIS application prefix before HEAD's endpoint inspection.
+builder.Services.AddSingleton<IStartupFilter, ArcGisPathBaseStartupFilter>();
 builder.Services.AddHonuaHeadRequestSupport();
 
 // Add comprehensive IOptions configuration validation
 builder.Services.AddConfigurationOptionsValidation();
 
+// Bound EventSource logger retention after all provider registrations, while
+// preserving Serilog forwarding and the rest of the diagnostic providers.
+builder.Services.CacheEventSourceLoggersForSerilogForwarding();
 var app = builder.Build();
 
 // A PostgreSQL production composition is never allowed to construct an unguarded migration
@@ -1314,7 +1336,7 @@ if (serveApiDocs)
 
         ## Explore in this reference (OpenAPI)
         Use the document switcher (top-left) to open any of these:
-        - **OGC API — Features**, **Tiles**, **Maps**, **Coverages**, **Styles**, **Processes**
+        - **OGC API — Features**, **Tiles**, **Maps**, **Coverages**, **Styles**, **Processes**, **Records**
         - **STAC API**
         - **Admin API**
 
@@ -1352,6 +1374,7 @@ if (serveApiDocs)
             .AddDocument("maps", "OGC API Maps", "/ogc/maps/openapi.json")
             .AddDocument("styles", "OGC API Styles", "/ogc/styles/openapi.json")
             .AddDocument("processes", "OGC API Processes", "/ogc/processes/openapi.json")
+            .AddDocument("records", "OGC API Records", "/ogc/records/openapi.json")
             .AddDocument("stac", "STAC API", "/stac/openapi.json")
             .AddDocument("admin", "Admin API", "/api/v1/admin/openapi.json");
     }).WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
@@ -1455,6 +1478,10 @@ app.Use(async (context, next) =>
 
 // Enable gRPC-Web for all gRPC services (before CORS and endpoint mapping)
 app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
+
+// Record each gRPC call's grpc-status for the serving-latency sample while the gRPC-Web trailers
+// are still attached; the outer CorrelationIdMiddleware cannot see them (#5473).
+app.UseGrpcServingStatusCapture();
 
 // Add CORS middleware before the exception handler so error responses (4xx/5xx) carry
 // Access-Control-Allow-Origin headers; otherwise browsers report every server error as
@@ -1940,7 +1967,7 @@ async Task RunDatabaseMigrationsAsync()
         {
             migrationState.MarkFailed("Database schema diverges from the migration journal.");
             Honua.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, ex.Message, ex);
-            if (!app.Environment.IsDevelopment())
+            if (ex is Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException || !app.Environment.IsDevelopment())
             {
                 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
             }
@@ -2001,8 +2028,9 @@ async Task RunDatabaseMigrationsAsync()
             // In non-Development environments, re-throw so the app fails to start
             // (gives a clear CrashLoopBackOff signal in Kubernetes) — unless degraded
             // start is enabled and the failure is transient connectivity (#1632).
-            if (!app.Environment.IsDevelopment()
-                && !TryEnterDegradedStart("migrations", error, migrationsPending: true))
+            if (error is Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException ||
+                (!app.Environment.IsDevelopment()
+                && !TryEnterDegradedStart("migrations", error, migrationsPending: true)))
             {
                 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
                 return; // unreachable; satisfies the compiler
@@ -2037,8 +2065,9 @@ async Task RunDatabaseMigrationsAsync()
         // In non-Development environments, re-throw so the app fails to start
         // (gives a clear CrashLoopBackOff signal in Kubernetes) — unless degraded
         // start is enabled and the failure is transient connectivity (#1632).
-        if (!app.Environment.IsDevelopment()
-            && !TryEnterDegradedStart("migrations", ex, migrationsPending: true))
+        if (ex is Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException ||
+            (!app.Environment.IsDevelopment()
+            && !TryEnterDegradedStart("migrations", ex, migrationsPending: true)))
         {
             throw;
         }

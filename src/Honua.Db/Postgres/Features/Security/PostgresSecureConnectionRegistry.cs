@@ -21,6 +21,7 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
 {
     private readonly IPrimaryDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresSecureConnectionRegistry> _logger;
+    private readonly SecureConnectionDataSourceCache _dataSources;
 
     private static string ToLowerString(ConnectionHealthStatus status) => status switch
     {
@@ -104,10 +105,12 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
 
     public PostgresSecureConnectionRegistry(
         IPrimaryDatabaseConnectionProvider connectionProvider,
-        ILogger<PostgresSecureConnectionRegistry> logger)
+        ILogger<PostgresSecureConnectionRegistry> logger,
+        SecureConnectionDataSourceCache dataSources)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _dataSources = dataSources ?? throw new ArgumentNullException(nameof(dataSources));
     }
 
     public async Task<DataConnection> CreateConnectionAsync(DataConnection connection, CancellationToken cancellationToken = default)
@@ -140,6 +143,7 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
 
             await command.ExecuteNonQueryAsync(cancellationToken);
 
+            connection.Id = connection.ConnectionId.ToString("D");
             _logConnectionCreated(_logger, connection.Name, connection.ConnectionId, null);
 
             return connection;
@@ -306,6 +310,7 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
                 throw new InvalidOperationException($"Connection with ID {connection.ConnectionId} not found for update");
             }
 
+            connection.Id = connection.ConnectionId.ToString("D");
             _logConnectionUpdated(_logger, connection.Name, connection.ConnectionId, null);
 
             return connection;
@@ -319,7 +324,7 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
 
     public async Task<bool> DeleteConnectionAsync(Guid connectionId, CancellationToken cancellationToken = default)
     {
-        const string sql = "DELETE FROM honua.data_connections WHERE connection_id = @connection_id";
+        const string sql = "DELETE FROM honua.data_connections WHERE connection_id = @connection_id RETURNING name";
 
         try
         {
@@ -329,10 +334,11 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
             command.CommandText = sql;
             command.Parameters.Add(new NpgsqlParameter("@connection_id", connectionId));
 
-            var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
+            var deletedName = await command.ExecuteScalarAsync(cancellationToken);
 
-            if (rowsAffected > 0)
+            if (deletedName is string connectionName)
             {
+                _dataSources.RetireConnection(connectionId, connectionName);
                 _logConnectionDeleted(_logger, connectionId, null);
                 return true;
             }
@@ -428,6 +434,7 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
     {
         return new DataConnection
         {
+            Id = reader.GetGuid(0).ToString("D"),
             ConnectionId = reader.GetGuid(0),                // connection_id
             Name = reader.GetString(1),                      // name
             Description = reader.IsDBNull(2) ? null : reader.GetString(2), // description

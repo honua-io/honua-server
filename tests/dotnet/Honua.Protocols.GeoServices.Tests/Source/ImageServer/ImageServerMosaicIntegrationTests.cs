@@ -99,7 +99,7 @@ public sealed class ImageServerMosaicIntegrationTests
 
             json.RootElement.GetProperty("name").GetString().Should().Contain("mosaic");
             json.RootElement.GetProperty("properties").GetProperty("Band_1").GetDouble().Should().Be(5);
-            json.RootElement.GetProperty("catalogItems").GetArrayLength().Should().Be(2);
+            json.RootElement.GetProperty("catalogItems").GetProperty("features").GetArrayLength().Should().Be(2);
         }
         finally
         {
@@ -202,9 +202,9 @@ public sealed class ImageServerMosaicIntegrationTests
                          // Northwest: equal YMax, so the lower XMin ("west") wins.
                          ("{\"mosaicMethod\":\"esriMosaicNorthwest\"}", "20"),
                          // ByAttribute OBJECTID ascending: the lowest OBJECTID ("west") wins.
-                         ("{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"OBJECTID\",\"ascending\":true}", "20"),
+                         ("{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"OBJECTID\",\"ascending\":true}", "20"),
                          // ByAttribute OBJECTID descending (Esri default): the highest OBJECTID wins.
-                         ("{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"OBJECTID\"}", "5")
+                         ("{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"OBJECTID\"}", "5")
                      })
             {
                 using var json = await IdentifyJsonAsync(
@@ -217,7 +217,7 @@ public sealed class ImageServerMosaicIntegrationTests
             foreach (var unsupported in new[]
                      {
                          "{\"mosaicMethod\":\"esriMosaicCenter\"}",
-                         "{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"AcquisitionDate\",\"sortValue\":\"2024/01/10\"}"
+                         "{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"AcquisitionDate\",\"sortValue\":\"2024/01/10\"}"
                      })
             {
                 var response = await fixture.Client.GetAsync(
@@ -273,17 +273,19 @@ public sealed class ImageServerMosaicIntegrationTests
                 insert.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
                 insert.Parameters.AddWithValue("acquired", RasterIntegrationTestData.WestAcquisition.UtcDateTime);
                 await insert.ExecuteNonQueryAsync();
+
+                // honua.raster_data is shared across fixture schemas. Keep the seed lock
+                // through the read so a parallel fixture cannot replace the four-band raster.
+                var geometry = Uri.EscapeDataString(FormattableString.Invariant(
+                    $"{{\"x\":{mercatorX},\"y\":{mercatorY},\"spatialReference\":{{\"wkid\":3857}}}}"));
+                using var json = await IdentifyJsonAsync(fixture, $"geometry={geometry}&geometryType=esriGeometryPoint");
+
+                json.RootElement.GetProperty("value").GetString().Should().Be("17, 22.5, 39, 45");
+                var location = json.RootElement.GetProperty("location");
+                location.GetProperty("x").GetDouble().Should().BeApproximately(mercatorX, 1e-6);
+                location.GetProperty("y").GetDouble().Should().BeApproximately(mercatorY, 1e-6);
+                location.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
             });
-
-            var geometry = Uri.EscapeDataString(FormattableString.Invariant(
-                $"{{\"x\":{mercatorX},\"y\":{mercatorY},\"spatialReference\":{{\"wkid\":3857}}}}"));
-            using var json = await IdentifyJsonAsync(fixture, $"geometry={geometry}&geometryType=esriGeometryPoint");
-
-            json.RootElement.GetProperty("value").GetString().Should().Be("17, 22.5, 39, 45");
-            var location = json.RootElement.GetProperty("location");
-            location.GetProperty("x").GetDouble().Should().BeApproximately(mercatorX, 1e-6);
-            location.GetProperty("y").GetDouble().Should().BeApproximately(mercatorY, 1e-6);
-            location.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
         }
         finally
         {

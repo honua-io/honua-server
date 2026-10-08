@@ -17,6 +17,52 @@ public sealed class MetadataV2GraphSnapshotTests
 {
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public void Index_ServiceScopes_PreservesFirstWinsIdsAndCaseRules()
+    {
+        var graph = new MetadataV2Graph
+        {
+            Services =
+            [
+                new() { Metadata = new() { Id = "first", Name = "Alpha" } },
+                new() { Metadata = new() { Id = "first", Name = "wrong_duplicate_service" } },
+                new() { Metadata = new() { Id = "alias", Name = "ALPHA" } },
+                new() { Metadata = new() { Id = "second", Name = "Beta" } },
+                new() { Metadata = new() { Id = "blank", Name = "  " } }
+            ],
+            Publications =
+            [
+                new() { Metadata = new() { Id = "duplicate" }, ResourceId = "resource", ServiceId = "first" },
+                new() { Metadata = new() { Id = "duplicate" }, ResourceId = "ignored_duplicate", ServiceId = "second" },
+                new() { Metadata = new() { Id = "alias" }, ResourceId = "resource", ServiceId = "alias" },
+                new()
+                {
+                    Metadata = new() { Id = "retired" }, ResourceId = "resource", ServiceId = "second",
+                    Status = new() { Lifecycle = MetadataV2LifecycleStatus.Retired }
+                },
+                new() { Metadata = new() { Id = "case" }, ResourceId = "RESOURCE", ServiceId = "second" },
+                new() { Metadata = new() { Id = "missing" }, ResourceId = "no_names", ServiceId = "missing" },
+                new() { Metadata = new() { Id = "blank" }, ResourceId = "no_names", ServiceId = "blank" }
+            ]
+        };
+
+        var index = MetadataV2GraphIndex.Build(graph);
+
+        index.ServiceNamesByResource["resource"].Should().Equal("Alpha", "Beta");
+        index.ServiceNamesByResource["RESOURCE"].Should().Equal("Beta");
+        index.ServiceNamesByResource.Should().NotContainKey("no_names");
+        index.ServiceNamesByResource.Should().NotContainKey("ignored_duplicate");
+        // The snapshot, not a TTL cache, owns the names. Updating the graph builds
+        // fresh names without modifying an already authorized snapshot.
+        var changed = graph with
+        {
+            Services = [new() { Metadata = new() { Id = "first", Name = "Changed" } }]
+        };
+        MetadataV2GraphIndex.Build(changed).ServiceNamesByResource["resource"].Should().Equal("Changed");
+        index.ServiceNamesByResource["resource"].Should().Equal("Alpha", "Beta");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public void Index_Build_PopulatesAllLookups()
     {
         var graph = SampleGraph();
@@ -423,6 +469,129 @@ public sealed class MetadataV2GraphSnapshotTests
 
         snapshot.ResolveStorageLayerId(publication, snapshot.ResolveResource(publication))
             .Should().Be(77);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ResolveStorageLayerId_UnboundPublicationWhoseLayerIndexIsAnotherResourcesStorageId_ResolvesNoHandle()
+    {
+        var snapshot = new MetadataV2GraphSnapshot(UnboundCollidingGraph(), "\"unbound\"", DateTimeOffset.UtcNow);
+        var publication = snapshot.Index.PublicationsById["pub.unbound"];
+
+        publication.LayerIndex.Should().Be(AliasedCollidingStorageLayerId);
+        snapshot.ResolveStorageLayerId(publication, snapshot.ResolveResource(publication))
+            .Should().BeNull("the layer index is resource.permits' storage handle, not this publication's");
+        snapshot.ResolveStorageLayerId(publication, resource: null).Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void Validate_AliasedPublicationWithItsOwnStorageBinding_IsValid()
+    {
+        MetadataV2GraphValidator.Validate(AliasedGraph()).Errors.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void Validate_UnboundPublicationWhoseLayerIndexIsAnotherResourcesStorageId_ReturnsError()
+    {
+        var result = MetadataV2GraphValidator.Validate(UnboundCollidingGraph());
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle().Which.Should().Be(
+            "publication 'pub.unbound' has no storage binding and its layer index 3 is the storage layer id of resource 'resource.permits'.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ResolveStorageLayerId_UnboundPublicationCollidingWithAnotherConnection_RejectsUnsafeFallback()
+    {
+        var graph = WithPermitsOnAnotherConnection(UnboundCollidingGraph());
+        var snapshot = new MetadataV2GraphSnapshot(graph, "\"cross-connection\"", DateTimeOffset.UtcNow);
+        var publication = snapshot.Index.PublicationsById["pub.unbound"];
+        var binding = snapshot.Index.StorageBindingsById["storage.permits"];
+
+        binding.ConnectionId.Should().Be("conn.sqlserver");
+        snapshot.ResolveStorageBinding(publication).Should().BeNull();
+        publication.LayerIndex.Should().Be(AliasedCollidingStorageLayerId);
+        // Default-reader metadata and read policy use this integer-only index. Moving
+        // the claimant to another connection does not make the legacy fallback safe.
+        snapshot.Index.ResourcesByStorageLayerId[AliasedCollidingStorageLayerId]
+            .Metadata.Id.Should().Be("resource.permits");
+        snapshot.ResolveStorageLayerId(publication, resource: null).Should().BeNull();
+        snapshot.ResolveStorageLayerId(publication, snapshot.ResolveResource(publication)).Should().BeNull();
+        MetadataV2GraphValidator.Validate(graph).Errors.Should().ContainSingle().Which.Should().Be(
+            "publication 'pub.unbound' has no storage binding and its layer index 3 is the storage layer id of resource 'resource.permits'.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ResolveStorageLayerId_BoundPublicationsSharingAnIdAcrossConnections_PreserveTheirBindings()
+    {
+        var graph = WithPermitsOnAnotherConnection(AliasedGraph());
+        graph = graph with
+        {
+            StorageBindings = graph.StorageBindings.Select(binding => binding with
+            {
+                StorageLayerId = AliasedCollidingStorageLayerId,
+            }).ToArray(),
+        };
+        var snapshot = new MetadataV2GraphSnapshot(graph, "\"cross-connection\"", DateTimeOffset.UtcNow);
+        var parcels = snapshot.Index.PublicationsById["pub.parcels.aliased"];
+        var permits = snapshot.Index.PublicationsById["pub.permits"];
+
+        MetadataV2GraphValidator.Validate(graph).Errors.Should().BeEmpty();
+        (snapshot.ResolveStorageBinding(parcels)?.ConnectionId).Should().Be("conn.postgres");
+        (snapshot.ResolveStorageBinding(permits)?.ConnectionId).Should().Be("conn.sqlserver");
+        snapshot.ResolveStorageLayerId(parcels, resource: null).Should().Be(AliasedCollidingStorageLayerId);
+        snapshot.ResolveStorageLayerId(permits, resource: null).Should().Be(AliasedCollidingStorageLayerId);
+    }
+
+    private static MetadataV2Graph WithPermitsOnAnotherConnection(MetadataV2Graph graph)
+        => graph with
+        {
+            Connections =
+            [
+                .. graph.Connections,
+                new MetadataV2Connection
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "conn.sqlserver", Name = "sqlserver" },
+                    Type = MetadataV2ConnectionType.Managed,
+                    Provider = "sqlserver",
+                },
+            ],
+            StorageBindings = graph.StorageBindings.Select(binding => binding.Metadata.Id == "storage.permits"
+                ? binding with { ConnectionId = "conn.sqlserver" }
+                : binding).ToArray(),
+        };
+
+    /// <summary>
+    /// <see cref="AliasedGraph"/> plus a feature resource with no storage binding whose
+    /// publication's service-local index equals <c>resource.permits</c>' storage handle.
+    /// </summary>
+    private static MetadataV2Graph UnboundCollidingGraph()
+    {
+        var graph = AliasedGraph();
+        return graph with
+        {
+            Resources =
+            [
+                .. graph.Resources,
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource.unbound", Name = "unbound" },
+                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+                    StorageBindingIds = [],
+                    SchemaFields = [],
+                },
+            ],
+            Publications =
+            [
+                .. graph.Publications,
+                Publication("pub.unbound", "resource.unbound", storageBindingId: null, AliasedCollidingStorageLayerId),
+            ],
+        };
     }
 
     private const int AliasedParcelsStorageLayerId = 7;

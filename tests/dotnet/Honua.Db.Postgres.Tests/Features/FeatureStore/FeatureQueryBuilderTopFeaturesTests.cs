@@ -12,6 +12,47 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 public sealed class FeatureQueryBuilderTopFeaturesTests
 {
+    // Audit platform-20261006 / #5613 outcomes:
+    // SRV-DB-002 -> fixed; SRV_DB_002_TopFeaturesProjectionHonorsMasksAndOutFields.
+    // SRV-GS-004 -> not attempted; remaining ImageServer surfaces require a separate complete slice.
+    // SRV-INF-002 -> fixed; SRV_INF_002_FieldMasksPartitionMapTileCache (MapServerTileEndpointTests).
+    // SRV-INF-012 -> not attempted; async export security-context persistence remains.
+    // SRV-DB-012 -> not attempted; temporal field-mask behavior remains.
+    // SRV-DB-014 -> fixed; SRV_DB_014_DefaultProjectionRemovesMasksCaseInsensitively.
+    // SRV-DB-015 -> not attempted; DuckDB permanent-filter temporal extent remains.
+
+    [Fact]
+    public void SRV_DB_002_TopFeaturesProjectionHonorsMasksAndOutFields()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            TopFilter = CreateTopFilter(topCount: 1),
+            OutFields = ImmutableArray.Create("district", "ssn"),
+            EnforcedMaskedFields = ImmutableArray.Create("ssn")
+        };
+
+        var result = queryBuilder.BuildTopFeaturesQuery(layerId: 1, query);
+
+        result.Sql.Should().Contain("jsonb_build_object");
+        result.WhereParameters.Should().Contain("district").And.NotContain("ssn");
+    }
+
+    [Fact]
+    public void SRV_DB_014_DefaultProjectionRemovesMasksCaseInsensitively()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            TopFilter = CreateTopFilter(topCount: 1),
+            EnforcedMaskedFields = ImmutableArray.Create("SSN")
+        };
+
+        var result = queryBuilder.BuildTopFeaturesQuery(layerId: 1, query);
+
+        result.Sql.Should().Contain("UPPER(masked_attr.key)");
+        result.WhereParameters.Should().ContainEquivalentOf(new[] { "SSN" });
+    }
     [Fact]
     public void BuildTopFeaturesQuery_ParameterizesTopCount()
     {

@@ -12,9 +12,13 @@ internal static class GeoServicesSpatialFilterBuilder
     public static SpatialFilter BuildSpatialFilter(
         QueryParameters queryParams,
         GeoServicesGeometry geometry,
-        int? inputSrid)
+        int? inputSrid,
+        int? maxCurveVertices = null)
     {
-        var wkbBytes = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(geometry, inputSrid);
+        var wkbBytes = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(
+            geometry,
+            inputSrid,
+            maxCurveVertices);
 
         if (queryParams.NearestCount.HasValue && queryParams.NearestCount.Value > 0)
         {
@@ -136,8 +140,8 @@ internal static class GeoServicesSpatialFilterBuilder
             "esrispatialreloverlaps" => SpatialRelationship.Overlaps,
             "esrispatialreldisjoint" => SpatialRelationship.Disjoint,
             "esrispatialrelequals" => SpatialRelationship.Equals,
-            "esrispatialrelwithindistance" => SpatialRelationship.WithinDistance,
-            "esrispatialrelbeyonddistance" => SpatialRelationship.BeyondDistance,
+            "withindistance" => SpatialRelationship.WithinDistance,
+            "beyonddistance" => SpatialRelationship.BeyondDistance,
             _ => throw new ArgumentException($"Unsupported spatial relationship: {spatialRel}")
         };
     }

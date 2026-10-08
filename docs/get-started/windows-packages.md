@@ -9,24 +9,25 @@ resource: "https://github.com/honua-io/honua-server/releases"
 Run these blocks in order in **Windows PowerShell 5.1 or PowerShell 7**, from a
 directory where you can create a private installation folder. You need Docker
 Desktop running Linux containers, Docker Compose **2.23.1+**, and Python **3.11+**
-on `PATH`. This local, single-node Community installation uses Production startup
+on `PATH`. This local, single-node installation uses Production startup
 validation, loopback HTTP, and isolated persistent storage. For a public hostname
 and TLS, use [production deployment](../guides/deploy/docker-compose.md).
 
 No repository checkout, compiler, Bash, Git, developer helper, or GitHub Packages
 credential is needed. The server image and the two PyPI clients below are public.
-Community needs no license. Installing Redis does not grant paid capabilities;
+The 2026.1 release runs with licensing disabled, so there is no licence or
+edition-selection step. Redis is installed for Production operation secrets;
 this journey uses a small synchronous import and does not require durable jobs.
 
 ## Artifact identity and qualification
 
 The commands pin the anonymously published **pre-cut rehearsal** image
-`ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9`
-(Docker Desktop Linux containers; this journey selects `linux/amd64`, source `5a657b9eaed7cdeac915d584ad58c028a52ca61e`). Its
-[registry manifest](https://ghcr.io/v2/honua-io/honua-server/manifests/sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9)
+`ghcr.io/honua-io/honua-server@sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39`
+(Docker Desktop Linux containers; this journey selects `linux/amd64`, source `87966c3f7b6c840ffc4d4da0b451714ab717b18a`). Its
+[registry manifest](https://ghcr.io/v2/honua-io/honua-server/manifests/sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39)
 is fetched by `docker pull` below. The control-plane package is
-[honua-admin 0.1.8](https://pypi.org/project/honua-admin/0.1.8/); the data-plane
-package is [honua-sdk 0.1.11](https://pypi.org/project/honua-sdk/0.1.11/).
+[honua-admin 0.1.10](https://pypi.org/project/honua-admin/0.1.10/); the data-plane
+package is [honua-sdk 0.1.13](https://pypi.org/project/honua-sdk/0.1.13/).
 The import step invokes Honua's `honua_ingest_dataset` MCP tool using the
 published [MCP transport client 2.1.1](https://pypi.org/project/mcp/2.1.1/).
 
@@ -46,6 +47,13 @@ session open through verification. Each new installation gets its own Compose
 project, network, three volumes, and directory. Do not regenerate credentials
 for an existing database.
 
+Production stores operation secrets in Redis and will not start until an RSA PKCS#12
+encrypts that key ring. The block writes `secrets\keyring.pfx` and mounts it read-only.
+The container runs as a different user, so the file grants read to Everyone; the password
+still encrypts it.
+[honua-server#5439](https://github.com/honua-io/honua-server/issues/5439) tracks whether a
+root-owned `0640` mount can replace that mode.
+
 ```powershell
 $ErrorActionPreference = 'Stop'
 $Project = 'honua-' + [Guid]::NewGuid().ToString('N').Substring(0, 12)
@@ -64,8 +72,9 @@ function New-InstallSecret {
     try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
     return ([BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
 }
-$Image = 'ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9'
+$Image = 'ghcr.io/honua-io/honua-server@sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39'
 $Port = 18080
+$KeyringPassword = New-InstallSecret
 @"
 COMPOSE_PROJECT_NAME=$Project
 HONUA_IMAGE=$Image
@@ -73,6 +82,7 @@ HONUA_HTTP_PORT=$Port
 POSTGRES_PASSWORD=$(New-InstallSecret)
 HONUA_ADMIN_PASSWORD=Aa1!$(New-InstallSecret)
 HONUA_MASTER_KEY=$(New-InstallSecret)
+HONUA_KEYRING_PASSWORD=$KeyringPassword
 "@ | Set-Content -LiteralPath .env -Encoding Ascii
 function dc {
     & docker compose --env-file .env -f compose.yaml @args
@@ -96,12 +106,15 @@ services:
       - "127.0.0.1:${HONUA_GRPC_PORT:-18081}:8081"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      Licensing__Mode: Disabled
       AllowedHosts: "localhost;127.0.0.1"
       PUBLIC_BASE_URL: "http://localhost:${HONUA_HTTP_PORT}"
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua;Username=honua;Password=${POSTGRES_PASSWORD:?Required}"
       ConnectionStrings__Redis: redis:6379
       HONUA_ADMIN_PASSWORD: ${HONUA_ADMIN_PASSWORD:?Required}
       Security__ConnectionEncryption__MasterKey: ${HONUA_MASTER_KEY:?Required}
+      Operations__SecretChannel__KeyRingCertificatePath: /var/lib/honua/keyring.pfx
+      Operations__SecretChannel__KeyRingCertificatePassword: ${HONUA_KEYRING_PASSWORD:?Required}
       Cors__AllowedOrigins__0: "http://localhost:${HONUA_HTTP_PORT}"
       Database__MigrationSafety__ContractApplyPolicy: Gate
       FileStorage__Provider: Local
@@ -119,6 +132,7 @@ services:
       - /tmp:noexec,nosuid,size=100m
     volumes:
       - storage:/var/lib/honua/storage
+      - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro
   postgres:
     image: pgrouting/pgrouting:17-3.5-3.7.3
     environment:
@@ -159,6 +173,13 @@ configs:
       CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;
       CREATE EXTENSION IF NOT EXISTS postgis_tiger_geocoder;
 '@ | Set-Content -LiteralPath compose.yaml -Encoding Ascii
+New-Item -ItemType Directory -Path (Join-Path $Install 'secrets') | Out-Null
+$cert = New-SelfSignedCertificate -Subject 'CN=honua-windows' -KeyAlgorithm RSA -KeyLength 2048 -KeyExportPolicy Exportable -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter (Get-Date).AddYears(10)
+$secure = ConvertTo-SecureString -String $KeyringPassword -AsPlainText -Force
+Export-PfxCertificate -Cert $cert -FilePath (Join-Path $Install 'secrets\keyring.pfx') -Password $secure | Out-Null
+Remove-Item -LiteralPath ('Cert:\CurrentUser\My\' + $cert.Thumbprint) -DeleteKey
+Remove-Variable KeyringPassword
+icacls (Join-Path $Install 'secrets\keyring.pfx') /grant '*S-1-1-0:R' | Out-Null
 dc config --quiet
 dc pull
 dc up -d --wait --wait-timeout 180
@@ -173,7 +194,7 @@ needed. Do not substitute `git+https` installs or local source packages.
 python -m venv .venv
 if ($LASTEXITCODE -ne 0) { throw 'Python virtual environment creation failed' }
 $Python = Join-Path $Install '.venv\Scripts\python.exe'
-& $Python -m pip install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.8' 'honua-sdk==0.1.11' 'mcp==2.1.1'
+& $Python -m pip install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.10' 'honua-sdk==0.1.13' 'mcp==2.1.1'
 if ($LASTEXITCODE -ne 0) { throw 'Registry package installation failed' }
 & $Python -m pip freeze | Set-Content -LiteralPath installed-packages.txt -Encoding Ascii
 $values = @{}
@@ -340,9 +361,11 @@ the retained volumes and original credentials. Only then run step 2's
 variable-loading and readiness blocks. Run
 `journey.py --verify-only` afterward. A restart or container recreation is not a
 backup restore; follow [backup and recovery](../guides/deploy/backup-and-restore.md)
-before storing irreplaceable data. Retain the private `.env`, database, Redis,
-file-storage backup, and exact image identity together. Never delete volumes or
-regenerate `.env` to bypass a migration or credential failure.
+before storing irreplaceable data. Retain the private `.env`, `secrets\keyring.pfx`,
+database, Redis, file-storage backup, and exact image identity together. The
+certificate password is `HONUA_KEYRING_PASSWORD` in `.env`. A new certificate cannot
+decrypt operation secrets already stored in Redis. Never delete volumes, the
+certificate, or regenerate `.env` to bypass a migration or credential failure.
 
 ## Diagnostics and scoped teardown
 

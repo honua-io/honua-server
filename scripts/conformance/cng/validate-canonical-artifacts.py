@@ -9,9 +9,13 @@ import os
 import re
 import subprocess
 import tempfile
+from enum import Enum
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, NamedTuple
+from pmtiles_http import HttpRangeSource, load_source
+from derived_zarr import has_derived_binding, observe_array
+from derived_fsspec import observe_fsspec
 
 CLIENTS = {
     "GeoPandas": "1.1.4",
@@ -134,7 +138,9 @@ def _evaluate_budget(observation: dict, assignment: "GovernedAssignment") -> lis
                     f"metadata '{key}' observed {observed[key]!r}, expected {expected!r}"
                 )
 
-    if "range-efficiency" in assignment.facets:
+    # Derived-output attribution also requires measured transfer within the
+    # existing profile, without adding a governed range-efficiency facet.
+    if "range-efficiency" in assignment.facets or has_derived_binding(observation):
         transfer = observation.get("observed_transfer")
         if not isinstance(transfer, dict) or not transfer:
             reasons.append(
@@ -605,7 +611,7 @@ def _command_version(client: str, *command: str, expected_version: str | None = 
 
 def _mark_unbound(observations: list[dict]) -> list[dict]:
     for observation in observations:
-        if observation["result"] == "pass":
+        if observation["result"] == "pass" and not has_derived_binding(observation):
             observation["result"] = "skip"
             observation["skip_reason"] = UNBOUND_CONSUMER_GAP
     return observations
@@ -627,6 +633,8 @@ def _apply_producer_attribution(observation: dict) -> None:
     )
     producer = ARTIFACT_PRODUCER_OVERRIDES.get(
         identity, ARTIFACT_PRODUCERS.get(observation["surface"], "third-party-fixture"))
+    if has_derived_binding(observation):
+        producer = "honua"
     observation["artifact_producer"] = producer
     observation["honua_in_loop"] = producer == "honua"
     if not observation["honua_in_loop"] and observation["result"] == "pass":
@@ -932,53 +940,92 @@ def validate_flatgeobuf(path: Path, args: argparse.Namespace) -> list[dict]:
 
     observations: list[dict] = []
     metadata_seen: dict[str, Any] = {}
+    geopandas_seen: dict[str, Any] = {}
+    gdal_seen: dict[str, Any] = {}
 
     def pyogrio_check() -> None:
         frame = pyogrio.read_dataframe(path)
         if frame.empty or frame.geometry.isna().any() or frame.crs is None:
             raise ValueError("Pyogrio did not recover non-null FlatGeobuf geometries and CRS")
-        metadata_seen.update({
-            "geometry_type": str(frame.geometry.geom_type.iloc[0]),
-            "feature_count": int(len(frame)),
-            "crs": _normalize_crs(frame.crs),
-            "bounds": [float(value) for value in frame.total_bounds],
-        })
+        metadata_seen.update(_flatgeobuf_frame_metadata(frame))
 
     def geopandas_check() -> None:
         frame = geopandas.read_file(path)
-        if frame.empty or frame.geometry.isna().any():
-            raise ValueError("GeoPandas did not recover FlatGeobuf geometries")
+        if frame.empty or frame.geometry.isna().any() or frame.crs is None:
+            raise ValueError("GeoPandas did not recover FlatGeobuf geometries and CRS")
+        geopandas_seen.update(_flatgeobuf_frame_metadata(frame))
 
     def gdal_check() -> str:
-        _run("ogrinfo", "-al", "-so", str(path))
+        info = _run("ogrinfo", "-json", "-al", "-so", str(path))
+        gdal_seen.update(_gdal_flatgeobuf_metadata(json.loads(info.stdout)))
         return _command_version("GDAL", "gdalinfo", "--version")
 
     _collect_client(
         observations, "flatgeobuf", "feature-read", "Pyogrio", "pyogrio-flatgeobuf", args,
         pyogrio_check, observed_metadata=metadata_seen)
-    _collect_client(observations, "flatgeobuf", "feature-read", "GeoPandas", "geopandas-flatgeobuf", args, geopandas_check)
-    _collect_client(observations, "flatgeobuf", "feature-read", "GDAL", "gdal-flatgeobuf", args, gdal_check)
+    _collect_client(observations, "flatgeobuf", "feature-read", "GeoPandas", "geopandas-flatgeobuf", args,
+                    geopandas_check, observed_metadata=geopandas_seen)
+    _collect_client(observations, "flatgeobuf", "feature-read", "GDAL", "gdal-flatgeobuf", args,
+                    gdal_check, observed_metadata=gdal_seen)
     return observations
 
 
+def _flatgeobuf_frame_metadata(frame) -> dict[str, Any]:
+    """Capture this client's decoded geometry, count, CRS and extent, not fixture values."""
+    types = sorted(set(str(value) for value in frame.geometry.geom_type))
+    return {
+        "geometry_type": types[0] if len(types) == 1 else ",".join(types),
+        "feature_count": int(len(frame)),
+        "crs": _normalize_crs(frame.crs),
+        "bounds": [float(value) for value in frame.total_bounds],
+    }
+
+
+def _gdal_flatgeobuf_metadata(info: dict) -> dict[str, Any]:
+    """Read GDAL's independent ogrinfo JSON projection of the FlatGeobuf layer."""
+    layers = info.get("layers") or []
+    if len(layers) != 1:
+        raise ValueError(f"GDAL reported {len(layers)} FlatGeobuf layers, expected 1")
+    layer = layers[0]
+    fields = layer.get("geometryFields") or []
+    if len(fields) != 1:
+        raise ValueError("GDAL did not report exactly one FlatGeobuf geometry field")
+    field = fields[0]
+    observed = {
+        "geometry_type": field.get("type"),
+        "feature_count": layer.get("featureCount"),
+        "crs": _normalize_crs((field.get("coordinateSystem") or {}).get("projjson")),
+        "bounds": [float(value) for value in field.get("extent") or []],
+    }
+    return {key: value for key, value in observed.items() if value not in (None, [])}
+
+
 def validate_pmtiles(path: Path, args: argparse.Namespace) -> list[dict]:
-    from pmtiles.reader import MmapSource, Reader, all_tiles
+    from pmtiles.reader import Reader, all_tiles
 
     started = _now()
-    with path.open("rb") as stream:
-        source = MmapSource(stream)
+    content, serving_source = load_source(path, args.base_url)
+    source = HttpRangeSource(content, serving_source["url"])
+    observation = _observation("pmtiles", "archive-read", "pmtiles", "python-pmtiles", started, args)
+    observation["serving_source"] = serving_source
+    observation["observed_transfer"] = source.transfer
+    observation["http_responses"] = source.responses
+    try:
         reader = Reader(source)
         header = reader.header()
         metadata = reader.metadata()
         tiles = list(all_tiles(source))
         first = tiles[0] if tiles else None
-    if header.get("version") != 3:
-        raise ValueError(f"PMTiles reader reported version={header.get('version')!r}, expected 3")
-    if not isinstance(metadata, dict):
-        raise ValueError("PMTiles metadata is not an object")
-    if first is None or not first[1]:
-        raise ValueError("PMTiles reader found no non-empty tiles")
-    observation = _observation("pmtiles", "archive-read", "pmtiles", "python-pmtiles", started, args)
+        if header.get("version") != 3:
+            raise ValueError(f"PMTiles reader reported version={header.get('version')!r}, expected 3")
+        if not isinstance(metadata, dict):
+            raise ValueError("PMTiles metadata is not an object")
+        if first is None or not first[1]:
+            raise ValueError("PMTiles reader found no non-empty tiles")
+    except Exception as error:
+        observation["result"] = "fail"
+        observation["failure_reason"] = f"{type(error).__name__}: {error}"
+        return [observation]
     # #4398: the declared pmtiles budget oracle, read back from the archive Honua wrote.
     observation["observed_metadata"] = {
         "spec_version": str(header.get("version")),
@@ -995,6 +1042,8 @@ def validate_pmtiles(path: Path, args: argparse.Namespace) -> list[dict]:
 
 def _pmtiles_tile_type(raw) -> str:
     """Maps the PMTiles v3 numeric tile-type enum onto the profile's spelling."""
+    if isinstance(raw, Enum):
+        raw = raw.value
     if isinstance(raw, str):
         return raw.lower()
     return {0: "unknown", 1: "mvt", 2: "png", 3: "jpeg", 4: "webp", 5: "avif"}.get(raw, str(raw))
@@ -1276,9 +1325,21 @@ def validate_zarr(path: Path, args: argparse.Namespace) -> list[dict]:
         ("store-read", "fsspec", "fsspec-zarr", fsspec_check),
         ("distributed-array-compute", "Dask", "dask-zarr", dask_check),
     ):
-        _collect_client(
-            observations, "zarr", operation, client, lane, args, check, unbound=True,
-            observed_metadata=metadata_seen if client == "zarr" else None)
+        if client in ("zarr", "fsspec") and (path.parent / "derived-zarr-receipt.json").exists():
+            derived_metadata, derived_transfer, derived_evidence = {}, {}, {}
+            def read_derived():
+                reader = observe_array if client == "zarr" else observe_fsspec
+                return reader(path.parent, args.source_sha, args.image_digest,
+                              derived_metadata, derived_transfer, derived_evidence)
+            _collect_client(observations, "zarr", operation, client, lane, args, read_derived)
+            # Retain observations even if a value/axis oracle or transport fails.
+            observations[-1].update(derived_evidence)
+            observations[-1]["observed_metadata"] = derived_metadata
+            observations[-1]["observed_transfer"] = derived_transfer
+        else:
+            _collect_client(
+                observations, "zarr", operation, client, lane, args, check, unbound=True,
+                observed_metadata=metadata_seen if client == "zarr" else None)
     return observations
 
 
@@ -1323,7 +1384,7 @@ def validate_stac(base_url: str, args: argparse.Namespace) -> list[dict]:
 def validate_javascript(path: Path, args: argparse.Namespace) -> list[dict]:
     script = Path(__file__).with_name("validate-js-artifacts.mjs")
     started = _now()
-    payload = json.loads(_run("node", str(script), str(path)).stdout)
+    payload = json.loads(_run("node", str(script), str(path), args.base_url).stdout)
     observations = []
     for row in payload:
         observation = _observation(
@@ -1331,6 +1392,11 @@ def validate_javascript(path: Path, args: argparse.Namespace) -> list[dict]:
             started, args, row["client_version"],
         )
         observation["result"] = row["result"]
+        if isinstance(row.get("observed_metadata"), dict):
+            observation["observed_metadata"] = row["observed_metadata"]
+        for key in ("observed_transfer", "serving_source", "http_responses"):
+            if key in row:
+                observation[key] = row[key]
         if row["result"] == "fail":
             observation["failure_reason"] = row.get("failure_reason", "JavaScript validator failed")
         observations.append(observation)

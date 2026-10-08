@@ -48,6 +48,7 @@ internal static partial class FeatureServerEndpoints
     /// <param name="branchVersioningEnabled">Whether branch versioning is available (Postgres + Pro entitlement).</param>
     /// <param name="versionManagementEnabled">Whether the experimental VMS lifecycle surface is enabled.</param>
     /// <param name="offlineSyncEnabled">Whether disconnected-sync routes are enabled by lifecycle configuration.</param>
+    /// <param name="pathBase">Application mount path retained in relative service links.</param>
     internal static FeatureServerResponse MapServiceToResponseV2(
         MetadataV2Service service,
         IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
@@ -57,7 +58,8 @@ internal static partial class FeatureServerEndpoints
         bool supportsAttachmentUploads,
         bool branchVersioningEnabled,
         bool versionManagementEnabled,
-        bool offlineSyncEnabled)
+        bool offlineSyncEnabled,
+        PathString pathBase = default)
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(publications);
@@ -114,7 +116,7 @@ internal static partial class FeatureServerEndpoints
             IsDataVersioned = branchVersioningEnabled,
             SupportsBranchVersioning = versionManagementEnabled,
             VersionManagementServerUrl = versionManagementEnabled
-                ? $"/rest/services/{service.Metadata.Name}/VersionManagementServer"
+                ? $"{pathBase}/rest/services/{service.Metadata.Name}/VersionManagementServer"
                 : null,
         };
     }
@@ -772,7 +774,7 @@ internal static partial class FeatureServerEndpoints
                 Id = relationshipId,
                 Name = relationship.Name,
                 RelatedTableId = relatedLayerId,
-                Role = relationship.Role,
+                Role = MapEsriRelationshipRole(relationship.Role),
                 Cardinality = MapEsriCardinality(relationship.Cardinality),
                 Composite = relationship.Composite,
                 KeyField = relationship.OriginField,
@@ -797,6 +799,28 @@ internal static partial class FeatureServerEndpoints
             _ => "esriRelCardinalityOneToMany",
         };
 
+    private static string MapEsriRelationshipRole(string? role)
+    {
+        var value = role?.Trim() ?? string.Empty;
+        if (value.Equals("origin", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("esriRelRoleOrigin", StringComparison.OrdinalIgnoreCase))
+        {
+            return "esriRelRoleOrigin";
+        }
+
+        if (IsDestinationRelationshipRole(value))
+        {
+            return "esriRelRoleDestination";
+        }
+
+        return role ?? string.Empty;
+    }
+
+    private static bool IsDestinationRelationshipRole(string? role)
+        => role?.Trim() is { } value &&
+           (value.Equals("destination", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("esriRelRoleDestination", StringComparison.OrdinalIgnoreCase));
+
     internal static int StableStringHash(string value)
     {
         // FNV-1a 32-bit hash, then clamped to a non-negative int so the Esri client doesn't
@@ -816,20 +840,8 @@ internal static partial class FeatureServerEndpoints
         return (int)(hash & 0x7FFFFFFFu);
     }
 
-    private static string MapGeometryTypeV2(MetadataV2GeometryType geometryType)
-        => geometryType switch
-        {
-            MetadataV2GeometryType.Point => "esriGeometryPoint",
-            MetadataV2GeometryType.LineString => "esriGeometryPolyline",
-            MetadataV2GeometryType.Polygon => "esriGeometryPolygon",
-            MetadataV2GeometryType.MultiPoint => "esriGeometryMultipoint",
-            MetadataV2GeometryType.MultiLineString => "esriGeometryPolyline",
-            MetadataV2GeometryType.MultiPolygon => "esriGeometryPolygon",
-            MetadataV2GeometryType.GeometryCollection => "esriGeometryNull",
-            MetadataV2GeometryType.Mixed => "esriGeometryNull",
-            MetadataV2GeometryType.None => "esriGeometryNull",
-            _ => "esriGeometryNull"
-        };
+    private static string? MapGeometryTypeV2(MetadataV2GeometryType geometryType)
+        => QueryFormatter.MapGeometryType(geometryType);
 
     private static string MapFieldTypeToSqlV2(MetadataV2FieldType type)
         // Shared with the query response so the layer resource and /query cannot

@@ -378,18 +378,25 @@ internal sealed partial class AwsBatchComputeBackend(
     }
 
     /// <summary>
-    /// True when the exception is part of the AWS SDK runtime exception family
-    /// (<see cref="AmazonServiceException"/> for service-level failures or
-    /// <see cref="AmazonClientException"/> for client-side identity/transport failures).
-    /// In AWS SDK v4 these are sibling types rooted at <see cref="Exception"/>, so both
-    /// must be caught explicitly — the adapter comments promise uncertain-submit and
-    /// status-preservation behavior for the entire class.
+    /// Identifies SDK failures and independently cancelled provider requests (such as
+    /// transport deadlines). A cancelled request does not prove the provider job stopped
+    /// or that a submission was rejected. Caller cancellation must still propagate so
+    /// host shutdown and lease loss retain the reconciler's ownership semantics.
     /// </summary>
-    private static bool IsAwsRuntimeException(Exception ex)
-        => ex is AmazonServiceException or AmazonClientException;
+    private static bool IsProviderRequestException(Exception ex, CancellationToken cancellationToken)
+        => ex is AmazonServiceException or AmazonClientException
+            || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested);
 
     private static bool IsSubmissionOutcomeUncertain(Exception ex)
     {
+        if (ex is OperationCanceledException)
+        {
+            // The request may have reached Batch before its response was interrupted.
+            // The catch filter excludes controller cancellation; discover this submission
+            // by its original name instead of failing or repeating a non-idempotent call.
+            return true;
+        }
+
         // AmazonClientException (credential resolution, DNS, socket) never reached AWS —
         // the SubmitJob call did not get far enough to be rejected, so the outcome is
         // ambiguous by definition. In AWS SDK v4 AmazonClientException and
@@ -480,7 +487,7 @@ internal sealed partial class AwsBatchComputeBackend(
                 Message = $"Submitted AWS Batch job '{result.JobName}' ({result.JobId}) to queue '{jobQueue}'."
             };
         }
-        catch (Exception ex) when (IsAwsRuntimeException(ex) && IsSubmissionOutcomeUncertain(ex))
+        catch (Exception ex) when (IsProviderRequestException(ex, cancellationToken) && IsSubmissionOutcomeUncertain(ex))
         {
             // Transport-ambiguous submit (5xx/429/408/credential/network): AWS Batch may
             // have accepted the job even though we never got a response. Preserve the
@@ -586,7 +593,7 @@ internal sealed partial class AwsBatchComputeBackend(
                 Message = message
             };
         }
-        catch (Exception ex) when (IsAwsRuntimeException(ex))
+        catch (Exception ex) when (IsProviderRequestException(ex, cancellationToken))
         {
             // Preserve durable state on provider/transport/auth failures, covering both
             // AmazonServiceException (HTTP-level errors) and AmazonClientException
@@ -682,7 +689,7 @@ internal sealed partial class AwsBatchComputeBackend(
                 Message = $"Discovered AWS Batch job '{summary.JobId}' by name '{pendingJobName}' in state {summary.Status ?? "UNKNOWN"}."
             };
         }
-        catch (Exception ex) when (IsAwsRuntimeException(ex))
+        catch (Exception ex) when (IsProviderRequestException(ex, cancellationToken))
         {
             Log.BatchJobObservationFailed(logger, job.OperationId, pendingJobName, ex.Message);
             return new BatchComputeObservation
@@ -799,7 +806,7 @@ internal sealed partial class AwsBatchComputeBackend(
                 Message = message
             };
         }
-        catch (Exception ex) when (IsAwsRuntimeException(ex))
+        catch (Exception ex) when (IsProviderRequestException(ex, cancellationToken))
         {
             // Preserve durable state on provider/transport/auth failures, covering both
             // AmazonServiceException (HTTP-level errors) and AmazonClientException
@@ -890,7 +897,7 @@ internal sealed partial class AwsBatchComputeBackend(
             var hydrated = job with { ProviderOperationId = summary.JobId };
             return await CancelAsync(hydrated, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (IsAwsRuntimeException(ex))
+        catch (Exception ex) when (IsProviderRequestException(ex, cancellationToken))
         {
             Log.BatchJobCancellationFailed(logger, job.OperationId, pendingJobName, ex.Message);
             return new BatchComputeObservation

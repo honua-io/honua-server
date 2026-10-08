@@ -13,6 +13,8 @@ using Honua.Import;
 using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Import.FileImport;
 
 /// <summary>
@@ -41,4 +43,11 @@ internal static class ImportValidationHelpers
         return schemaName.All(c => char.IsLetterOrDigit(c) || c == '_') &&
                (char.IsLetter(schemaName[0]) || schemaName[0] == '_');
     }
+
+    /// <summary>
+    /// Whether <paramref name="schemaName"/> may be an import target: omitted, or one of the configured
+    /// operational schemas and not the metadata schema or a database system schema (SEC-23).
+    /// </summary>
+    public static bool IsPermittedTargetSchema(string? schemaName, IServiceProvider services)
+        => ImportTargetSchemaPolicy.IsAllowed(schemaName, services.GetService<IConfiguration>());
 }

@@ -13,6 +13,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Security;
 using Honua.ControlPlane;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -396,6 +397,13 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
             {
                 var jobId = result.Value;
                 await WaitForSoapJobSucceededAsync(client, jobId, fixture.GetService<IExecutionJobStore>());
+                foreach (var progressHint in new[] { "false", "true" })
+                {
+                    var status = await SendSoapAsync(client, "GetJobStatus",
+                        $"<JobID>{jobId}</JobID><GetProgressMsg>{progressHint}</GetProgressMsg>");
+                    status.Value.Should().Be("esriJobSucceeded");
+                    status.HasElements.Should().BeFalse();
+                }
                 result = await SendSoapAsync(client, "GetJobResult", $"<JobID>{jobId}</JobID><ParameterNames><String>outputScalar</String></ParameterNames>");
             }
             var scalar = result.Element("Values")!.Elements("GPValue").Should().ContainSingle().Subject;
@@ -543,8 +551,16 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
         await fixture.InitializeAsync();
         try
         {
-            using var owner = fixture.CreateClient(client => client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, "alice"));
-            using var other = fixture.CreateClient(client => client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, "bob"));
+            using var owner = fixture.CreateClient(client =>
+            {
+                client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, "alice");
+                client.DefaultRequestHeaders.Add(TestAuthHandler.SubjectHeader, "alice");
+            });
+            using var other = fixture.CreateClient(client =>
+            {
+                client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, "bob");
+                client.DefaultRequestHeaders.Add(TestAuthHandler.SubjectHeader, "bob");
+            });
             owner.Timeout = GPServerJobWait.RequestTimeout;
             other.Timeout = GPServerJobWait.RequestTimeout;
             var submitted = await SendSoapAsync(owner, "SubmitJob",
@@ -555,7 +571,16 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
             var jobId = submitted.Value;
             var jobStore = fixture.GetService<IExecutionJobStore>();
             await WaitForSoapJobSucceededAsync(owner, jobId, jobStore);
-            (await jobStore.GetAsync(jobId))!.Audit.RequestedBy.Should().Be("alice");
+            var stored = (await jobStore.GetAsync(jobId))!;
+            var durableOwner = CanonicalSecurityActor.Resolve(new ClaimsPrincipal(new ClaimsIdentity(
+                [
+                    new Claim(ClaimTypes.Name, "alice"),
+                    new Claim(ClaimTypes.NameIdentifier, "alice"),
+                    new Claim("sub", "alice")
+                ],
+                TestAuthHandler.SchemeName)))!.ActorId;
+            stored.Audit.RequestedBy.Should().Be(durableOwner);
+            stored.Audit.SubmitterSecurityContext!.OwnerActorId.Should().Be(durableOwner);
 
             var outputNames = "<ParameterNames><String>outputScalar</String></ParameterNames>";
             using var denied = await PostSoapAsync(other, operation,

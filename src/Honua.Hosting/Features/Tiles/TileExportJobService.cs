@@ -3,8 +3,6 @@
 
 using System.Globalization;
 using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -12,6 +10,9 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Geoprocessing;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -34,6 +35,8 @@ internal sealed partial class TileExportJobService : ITileExportJobService
     // are admissible while enormous ones are still gated per partition.
     private const long AdmissionTilesPerCostUnit = 1000;
 
+    private readonly RbacOptions _rbacOptions;
+    private readonly ITenantContext? _tenantContext;
     private readonly TimeProvider _timeProvider;
     private readonly IOptions<CloudStorageOptions> _storageOptions;
     private readonly ILogger<TileExportJobService> _logger;
@@ -51,8 +54,12 @@ internal sealed partial class TileExportJobService : ITileExportJobService
         IJobQueue? jobQueue = null,
         ICloudFileStorage? storage = null,
         IExecutionAdmissionEvaluator? admissionEvaluator = null,
-        ExecutionAdmissionCoordinator? admissionCoordinator = null)
+        ExecutionAdmissionCoordinator? admissionCoordinator = null,
+        IOptions<RbacOptions>? rbacOptions = null,
+        ITenantContext? tenantContext = null)
     {
+        _rbacOptions = rbacOptions?.Value ?? new RbacOptions();
+        _tenantContext = tenantContext;
         _timeProvider = timeProvider;
         _storageOptions = storageOptions;
         _logger = logger;
@@ -86,9 +93,11 @@ internal sealed partial class TileExportJobService : ITileExportJobService
         }
 
         var jobStore = RequireJobStore();
-        var principalId = ResolvePrincipalId(principal);
+        var principalId = JobOwnershipSecurity.ResolveOwner(principal)
+            ?? throw new TileExportValidationException("A durable authenticated submitter identity is required for tile-export jobs.");
+        var submitter = JobSecurityContextCapture.Capture(principal, _rbacOptions, _tenantContext) with { PrincipalId = principalId };
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey.Trim();
-        var jobId = CreateJobId(resolvedKey);
+        var jobId = JobOwnershipSecurity.CreateJobId("te", resolvedKey, principalId, submitter.TenantId);
 
         // Artifact identity covers byte-affecting inputs and permits safe package reuse across
         // same-layer aliases. Request identity additionally retains a publication-specific
@@ -106,10 +115,27 @@ internal sealed partial class TileExportJobService : ITileExportJobService
             var replay = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
             if (replay is not null)
             {
-                EnsureMatchingIdempotentRequest(replay, requestFingerprint, principalId);
+                EnsureMatchingIdempotentRequest(replay, requestFingerprint, principalId, submitter.TenantId);
                 EnsureSubmissionDidNotRollback(replay);
                 Log.SubmittedIdempotent(_logger, jobId);
                 return replay;
+            }
+
+            // A keyed job written before ids were scoped by tenant and owner lives under the
+            // key-only id: replay it to its own submitter and refuse the key to anyone else, so a
+            // retry that crosses that change does not export twice.
+            var priorFormat = await jobStore
+                .GetAsync(JobOwnershipSecurity.CreatePriorFormatJobId("te", resolvedKey), cancellationToken)
+                .ConfigureAwait(false);
+            if (priorFormat is not null)
+            {
+                EnsureMatchingIdempotentRequest(
+                    priorFormat,
+                    requestFingerprint,
+                    JobOwnershipSecurity.MatchesPriorFormatSubmitter(priorFormat.Audit, principal, submitter.TenantId));
+                EnsureSubmissionDidNotRollback(priorFormat);
+                Log.SubmittedIdempotent(_logger, priorFormat.OperationId);
+                return priorFormat;
             }
         }
 
@@ -125,7 +151,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
                     var replayInWindow = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
                     if (replayInWindow is not null)
                     {
-                        EnsureMatchingIdempotentRequest(replayInWindow, requestFingerprint, principalId);
+                        EnsureMatchingIdempotentRequest(replayInWindow, requestFingerprint, principalId, submitter.TenantId);
                         EnsureSubmissionDidNotRollback(replayInWindow);
                         Log.SubmittedIdempotent(_logger, jobId);
                         return replayInWindow;
@@ -148,6 +174,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
                         RequestedBy = principalId,
                         IdempotencyKey = resolvedKey,
                         CorrelationId = string.IsNullOrWhiteSpace(correlationId) ? null : correlationId.Trim(),
+                        SubmitterSecurityContext = submitter,
                         RequestFingerprint = requestFingerprint
                     },
                     // The recognized admission envelope is persisted on first-class record fields rather than
@@ -173,7 +200,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
                     var existing = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false)
                         ?? throw new TileExportStoreUnavailableException(
                             "Tile-export job could not be created or located during idempotent submission.");
-                    EnsureMatchingIdempotentRequest(existing, requestFingerprint, principalId);
+                    EnsureMatchingIdempotentRequest(existing, requestFingerprint, principalId, submitter.TenantId);
                     EnsureSubmissionDidNotRollback(existing);
                     Log.SubmittedIdempotent(_logger, jobId);
                     return existing;
@@ -424,7 +451,8 @@ internal sealed partial class TileExportJobService : ITileExportJobService
         // Ownership, source/resource binding, and existence all collapse to the same sanitized
         // not-found so a caller cannot distinguish "does not exist" from "not yours" or
         // "different service" — closing the cross-principal/cross-resource probing channel.
-        if (job is null || !MatchesBinding(job, scope) || !IsOwnedBy(job, principal))
+        if (job is null || job.Audit.SubmitterSecurityContext is null
+            || !MatchesBinding(job, scope) || !IsOwnedBy(job, principal))
         {
             Log.NotFound(_logger, jobId);
             throw new TileExportNotFoundException($"Tile-export job '{jobId}' not found.");
@@ -446,19 +474,9 @@ internal sealed partial class TileExportJobService : ITileExportJobService
             && string.Equals(resourceId, scope.ResourceId, StringComparison.Ordinal);
     }
 
-    private static bool IsOwnedBy(ExecutionJobRecord job, ClaimsPrincipal principal)
-    {
-        if (principal.IsInRole("admin"))
-        {
-            return true;
-        }
-
-        var owner = job.Audit.RequestedBy;
-        // An ownerless job (no recorded submitter) is reachable only by admin, matching the
-        // geoprocessing lifecycle so a coarse grant cannot enumerate unattributed jobs.
-        return !string.IsNullOrWhiteSpace(owner)
-            && string.Equals(owner, ResolvePrincipalId(principal), StringComparison.Ordinal);
-    }
+    private bool IsOwnedBy(ExecutionJobRecord job, ClaimsPrincipal principal)
+        => JobOwnershipSecurity.CanAccess(job.Audit,
+            JobSecurityContextCapture.Capture(principal, _rbacOptions, _tenantContext).TenantId, principal);
 
     private static TileExportPackageFormat ResolvePackageFormat(ExecutionJobRecord job)
         => job.Spec.Parameters.TryGetValue(TileExportJobParameterKeys.PackageFormat, out var raw)
@@ -529,12 +547,19 @@ internal sealed partial class TileExportJobService : ITileExportJobService
     private static void EnsureMatchingIdempotentRequest(
         ExecutionJobRecord existing,
         string requestFingerprint,
-        string? principalId)
+        string? principalId,
+        string? tenantId)
+        => EnsureMatchingIdempotentRequest(
+            existing, requestFingerprint, JobOwnershipSecurity.MatchesSubmitter(existing.Audit, principalId, tenantId));
+
+    private static void EnsureMatchingIdempotentRequest(
+        ExecutionJobRecord existing,
+        string requestFingerprint,
+        bool ownedByCaller)
     {
         // A different principal must never silently receive another caller's job through an
         // idempotency-key collision.
-        var owner = existing.Audit.RequestedBy;
-        if (!string.IsNullOrWhiteSpace(owner) && !string.Equals(owner, principalId, StringComparison.Ordinal))
+        if (!ownedByCaller)
         {
             throw new TileExportIdempotencyConflictException();
         }
@@ -562,22 +587,6 @@ internal sealed partial class TileExportJobService : ITileExportJobService
 
     private IExecutionJobStore RequireJobStore()
         => _jobStore ?? throw new TileExportStoreUnavailableException();
-
-    private static string CreateJobId(string? idempotencyKey)
-    {
-        if (string.IsNullOrWhiteSpace(idempotencyKey))
-        {
-            return $"te-{Guid.NewGuid():N}";
-        }
-
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(idempotencyKey.Trim()));
-        return $"te-{Convert.ToHexStringLower(hash.AsSpan(0, 12))}";
-    }
-
-    private static string? ResolvePrincipalId(ClaimsPrincipal principal)
-        => principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
-            ?? principal.FindFirst("sub")?.Value
-            ?? principal.Identity?.Name;
 
     private static bool IsTerminal(ExecutionJobStatus status)
         => status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled;

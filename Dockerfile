@@ -121,7 +121,8 @@ FROM ${DOTNET_ASPNET_IMAGE} AS runtime
 
 # The current upstream digest predates available OS fixes. Bump this revision
 # with security refreshes so a cached package layer cannot retain old packages.
-ARG RUNTIME_PACKAGE_REVISION=20260905
+# 2026-09-30: refresh OpenSSL for CVE-2026-84782 (Ubuntu fix 3.0.13-0ubuntu3.16).
+ARG RUNTIME_PACKAGE_REVISION=20260930
 
 # Security: Install runtime dependencies. The glibc runtime is required by
 # ParquetSharp's native library, which backs the GeoParquet writer.

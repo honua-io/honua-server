@@ -425,7 +425,10 @@ internal static partial class FeatureServerEndpoints
                     InSr = inSr
                 };
                 var spatialFilter = GeoServicesSpatialFilterBuilder.BuildSpatialFilter(
-                    deleteQueryParams, parsedGeometry, inputSrid);
+                    deleteQueryParams,
+                    parsedGeometry,
+                    inputSrid,
+                    limits.Geometry.MaxVerticesPerGeometry);
                 query = query with { SpatialFilter = spatialFilter };
             }
         }
@@ -677,7 +680,7 @@ internal static partial class FeatureServerEndpoints
         // the byte-identical non-versioned path.
 
         // Group entries by layer id while preserving first-seen layer order so the response
-        // emits one editResults entry per distinct layer (matching ArcGIS), and merge their
+        // emits one result entry per distinct layer (matching ArcGIS), and merge their
         // adds/updates/deletes so each layer is applied in a single transaction.
         var orderedLayerIds = new List<int>();
         var mergedEdits = new Dictionary<int, ServiceLayerEdits>();
@@ -806,13 +809,17 @@ internal static partial class FeatureServerEndpoints
             }
         }
 
-        var serviceResponse = new ServiceApplyEditsResponse { EditResults = results };
         var responseStatusCode = hasPartialFailure
             ? StatusCodes.Status207MultiStatus
             : StatusCodes.Status200OK;
-        return Results.Json(serviceResponse, FeatureServerJsonContext.Default.ServiceApplyEditsResponse,
-            statusCode: responseStatusCode, contentType: "application/json");
+        return CreateServiceApplyEditsResult(results, responseStatusCode);
     }
+
+    internal static IResult CreateServiceApplyEditsResult(
+        ServiceLayerEditResult[] results,
+        int statusCode = StatusCodes.Status200OK)
+        => Results.Json(results, FeatureServerJsonContext.Default.ServiceLayerEditResultArray,
+            statusCode: statusCode, contentType: "application/json");
 
     /// <summary>
     /// Builds per-slot add failure entries for a layer whose applyEdits call returned a

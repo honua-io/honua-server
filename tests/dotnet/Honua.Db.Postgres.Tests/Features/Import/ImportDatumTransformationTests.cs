@@ -299,7 +299,7 @@ public sealed class ImportDatumTransformationTests(PostgresFixture fixture)
             NullLogger<StreamingFileImportService>.Instance,
             limits: null,
             cloudStorage: null,
-            schemaConfiguration: null,
+            schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema),
             datumTransformationCatalog: datumTransformationCatalog);
     }
 

@@ -22,6 +22,10 @@ namespace Honua.Protocols.GeoServices;
 /// </remarks>
 public static class GeoServicesContract
 {
-    /// <summary>The rolled-up GeoServices REST wire-contract version (semver).</summary>
-    public const string Version = "1.0.0";
+    /// <summary>
+    /// The rolled-up GeoServices REST wire-contract version (semver). 2.0.0 stops
+    /// accepting the concatenated attribute-mosaic token; callers send
+    /// <c>esriMosaicAttribute</c>.
+    /// </summary>
+    public const string Version = "2.0.0";
 }

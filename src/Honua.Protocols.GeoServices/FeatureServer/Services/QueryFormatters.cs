@@ -453,7 +453,7 @@ internal sealed class QueryFormatter : IQueryFormatter
     internal static GeoJsonFeatureBuildOptions CreateFeatureServerGeoJsonBuildOptions(
         MetadataV2Resource resource,
         IReadOnlySet<string>? projectedProperties)
-        => new(
+        => GeoJsonFeatureBaseBuilder.PrepareOptions(resource, new(
             ProjectedProperties: projectedProperties,
             IncludeObjectIdProperty: true,
             // GeoJSON properties must mirror the f=json attributes, which carry only the
@@ -461,7 +461,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             // two formats stay faithful (the OID is also exposed via the feature `id`).
             IncludeObjectIdAlias: false,
             IncludeAdditionalAttributes: true,
-            ResolveIdFromProperties: true);
+            ResolveIdFromProperties: true));
 
     internal static GeoServicesFieldInfo[] BuildQueryFields(
         MetadataV2Resource resource,
@@ -939,10 +939,12 @@ internal sealed class QueryFormatter : IQueryFormatter
     }
 
     /// <summary>
-    /// Maps a canonical geometry type to its Esri geometry-type token. Shared with
+    /// Maps a canonical geometry type to a layer geometry token. Shared with
     /// the queryRelatedRecords response builder so both surfaces agree (#1452).
+    /// Types that are not one of the five layer tokens (none, mixed, or a
+    /// heterogeneous collection) return null so the property is omitted.
     /// </summary>
-    internal static string MapGeometryType(MetadataV2GeometryType geometryType)
+    internal static string? MapGeometryType(MetadataV2GeometryType geometryType)
         => geometryType switch
         {
             MetadataV2GeometryType.Point => "esriGeometryPoint",
@@ -951,8 +953,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             MetadataV2GeometryType.MultiPoint => "esriGeometryMultipoint",
             MetadataV2GeometryType.MultiLineString => "esriGeometryPolyline",
             MetadataV2GeometryType.MultiPolygon => "esriGeometryPolygon",
-            MetadataV2GeometryType.GeometryCollection or MetadataV2GeometryType.Mixed or MetadataV2GeometryType.None => "esriGeometryNull",
-            _ => "esriGeometryNull"
+            _ => null
         };
 
     internal static bool ShouldReturnCentroid(MetadataV2Resource resource, bool returnCentroid)
@@ -1026,6 +1027,11 @@ internal sealed class StreamingQueryFormatter
         bool returnCentroid = false,
         CancellationToken cancellationToken = default)
     {
+        // Acquire the source before writing JSON so admission failures can still
+        // produce a complete protocol error. Keep only the current feature buffered.
+        await using var enumerator = features.GetAsyncEnumerator(cancellationToken);
+        var hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
+
         using var writer = new Utf8JsonWriter(outputStream, new JsonWriterOptions
         {
             Indented = false,
@@ -1062,7 +1068,11 @@ internal sealed class StreamingQueryFormatter
 
         if (hasGeometry)
         {
-            writer.WriteString("geometryType", MapGeometryType(geometryType));
+            var wireGeometryType = MapGeometryType(geometryType);
+            if (wireGeometryType is not null)
+            {
+                writer.WriteString("geometryType", wireGeometryType);
+            }
             writer.WriteStartObject("spatialReference");
             writer.WriteNumber("wkid", srid);
             writer.WriteNumber("latestWkid", srid);
@@ -1084,8 +1094,9 @@ internal sealed class StreamingQueryFormatter
         writer.WriteStartArray("features");
         var featuresSinceFlush = 0;
 
-        await foreach (var feature in features.WithCancellation(cancellationToken))
+        while (hasFeature)
         {
+            var feature = enumerator.Current;
             WriteGeoServicesFeature(
                 writer,
                 feature,
@@ -1107,6 +1118,8 @@ internal sealed class StreamingQueryFormatter
                 await writer.FlushAsync(cancellationToken);
                 featuresSinceFlush = 0;
             }
+
+            hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
         }
 
         writer.WriteEndArray();
@@ -1165,6 +1178,11 @@ internal sealed class StreamingQueryFormatter
         PipeWriter outputStream,
         CancellationToken cancellationToken = default)
     {
+        // Acquire the source before writing JSON so admission failures can still
+        // produce a complete protocol error. Keep only the current feature buffered.
+        await using var enumerator = features.GetAsyncEnumerator(cancellationToken);
+        var hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
+
         using var writer = new Utf8JsonWriter(outputStream, new JsonWriterOptions
         {
             Indented = false,
@@ -1186,8 +1204,9 @@ internal sealed class StreamingQueryFormatter
             forceSimplify: maxAllowableOffset is > 0);
         var featuresSinceFlush = 0;
 
-        await foreach (var feature in features.WithCancellation(cancellationToken))
+        while (hasFeature)
         {
+            var feature = enumerator.Current;
             WriteGeoJsonFeature(
                 writer,
                 feature,
@@ -1204,6 +1223,8 @@ internal sealed class StreamingQueryFormatter
                 await writer.FlushAsync(cancellationToken);
                 featuresSinceFlush = 0;
             }
+
+            hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
         }
 
         writer.WriteEndArray();
@@ -1493,17 +1514,7 @@ internal sealed class StreamingQueryFormatter
         cancellationToken.ThrowIfCancellationRequested();
     }
 
-    private static string MapGeometryType(MetadataV2GeometryType geometryType)
-        => geometryType switch
-        {
-            MetadataV2GeometryType.Point => "esriGeometryPoint",
-            MetadataV2GeometryType.LineString => "esriGeometryPolyline",
-            MetadataV2GeometryType.Polygon => "esriGeometryPolygon",
-            MetadataV2GeometryType.MultiPoint => "esriGeometryMultipoint",
-            MetadataV2GeometryType.MultiLineString => "esriGeometryPolyline",
-            MetadataV2GeometryType.MultiPolygon => "esriGeometryPolygon",
-            MetadataV2GeometryType.GeometryCollection or MetadataV2GeometryType.Mixed or MetadataV2GeometryType.None => "esriGeometryNull",
-            _ => "esriGeometryNull"
-        };
+    private static string? MapGeometryType(MetadataV2GeometryType geometryType)
+        => QueryFormatter.MapGeometryType(geometryType);
 
 }

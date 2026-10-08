@@ -1,0 +1,13 @@
+{
+  "format": "honua.component-versions/v1",
+  "component": "honua-server",
+  "contractVersions": {
+    "admin": "v1",
+    "metadata": "metadata.honua.io/v2alpha1",
+    "grpc": "v1",
+    "geoservices": "2.0.0",
+    "ogc": "1.0.0",
+    "stac": "1.0.0"
+  },
+  "schemaVersions": {}
+}

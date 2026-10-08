@@ -89,6 +89,13 @@ public sealed record JobExecutionResult
     public IReadOnlyList<string> Warnings { get; init; } = [];
 
     /// <summary>
+    /// Whether successful execution completed by committing sink effects. A later
+    /// operator cancellation cannot undo this completion. Finalization also requires
+    /// a durable committed-effect receipt before honouring this indication.
+    /// </summary>
+    public bool CompletedWithCommittedEffects { get; init; }
+
+    /// <summary>
     /// Creates a successful result.
     /// </summary>
     public static JobExecutionResult Succeeded(IReadOnlyList<string>? warnings = null)
@@ -162,6 +169,20 @@ public interface IJobExecutionContext
     {
         await PublishArtifactAsync(artifactReference, cancellationToken).ConfigureAwait(false);
         return true;
+    }
+
+    /// <summary>
+    /// Records a receipt for a sink transaction that has already committed. Durable
+    /// contexts preserve this evidence after operator cancellation, while retaining
+    /// worker ownership and attempt fences. Rejection must be surfaced to the executor.
+    /// Use an independent cleanup token after commit rather than the cancelled job token.
+    /// </summary>
+    async Task RecordCommittedEffectAsync(string artifactReference, CancellationToken cancellationToken = default)
+    {
+        if (!await TryPublishArtifactAsync(artifactReference, cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("The execution fence rejected a committed-effect receipt.");
+        }
     }
 
     /// <summary>

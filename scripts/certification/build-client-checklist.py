@@ -12,10 +12,10 @@ Why this exists: coverage was previously answered from recall and from
 every state that is not a pass carries either an evidence reference or a citation,
 so an unreachable cell is closed by proof rather than by assertion.
 
-The two rules that make the target finishable:
+Historical operation accounting is distinct from certification acceptance:
 
-* A cell closes as ``pass`` (evidence naming the client build) or ``n/a-*`` (a
-  vendor-documentation or provider-registry citation). Nothing else counts.
+* A historical cell closes as ``pass`` or ``n/a-*``. Closed is not a pass rate;
+  this projection does not verify receipts or bind a shipping candidate.
 * ``n/a`` needs operation-specific evidence covering the native paths in scope.
   A failed URI, missing fixture or incomplete module inventory cannot close it.
 
@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -33,11 +34,369 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_PATH = REPO_ROOT / "docs" / "gis" / "data" / "client-certification-checklist.v1.json"
 DOC_PATH = REPO_ROOT / "docs" / "gis" / "CLIENT_CERTIFICATION_CHECKLIST.md"
 
+# Lane results measured after a cell's MATRIX entry was written.
+#
+# MATRIX is the baseline: what each cell was believed to be when the operation was first
+# enumerated. Running a lane then produces a verdict, and until now those verdicts were
+# written straight into the generated JSON, which `--check` rejects as stale - so 123 of
+# them accumulated on a branch that could never land. They live here instead, in a data
+# file the certification promotion scripts own and this generator merges last, so a
+# measured result survives regeneration and CI stays green.
+#
+# Each entry is a whole cell, keyed by (protocol, version, operation, lane), and replaces
+# the MATRIX-derived cell outright. Keeping the prior verdict is the writer's job: the
+# promotion scripts carry it in `previous_exclusion`, which is why re-measuring a stale
+# pass does not erase the run it superseded.
+RESULTS_PATH = REPO_ROOT / "docs" / "gis" / "data" / "client-certification-results.v1.json"
+
+
+# Defined here beside RESULTS_PATH but called after MATRIX, because the overlay is
+# validated against the cells MATRIX defines and MATRIX is built further down.
+def _load_certified_results() -> dict:
+    """Load the measured-result overlay, failing closed on a key that addresses no cell.
+
+    `build_rows()` looks each cell up by key, so a key naming no cell is silently
+    dropped: a promotion writer who misspells a protocol, version, operation or lane
+    would see `--check` stay green while the measured result it wrote never reaches
+    the checklist, because `validate()` only ever inspects generated rows. Duplicate
+    keys are rejected for the same reason - the previous dict comprehension kept the
+    last entry and discarded the rest without a word.
+    """
+    if not RESULTS_PATH.is_file():
+        return {}
+    document = json.loads(RESULTS_PATH.read_text(encoding="utf-8"))
+    valid = {
+        (entry["protocol"], entry["version"], operation, lane)
+        for entry in MATRIX
+        for operation in entry["operations"]
+        for lane in LANES
+    }
+    results: dict = {}
+    problems: list[str] = []
+    for index, record in enumerate(document["results"]):
+        missing = [f for f in ("protocol", "version", "operation", "lane", "cell")
+                   if f not in record]
+        if missing:
+            problems.append(f"results[{index}]: missing field(s) {', '.join(missing)}")
+            continue
+        key = (record["protocol"], record["version"], record["operation"], record["lane"])
+        if key not in valid:
+            problems.append(
+                f"results[{index}]: {key} addresses no checklist cell, so the measured "
+                "result would be dropped without a word")
+            continue
+        if key in results:
+            problems.append(
+                f"results[{index}]: {key} is already claimed by an earlier entry")
+            continue
+        results[key] = record["cell"]
+    if problems:
+        raise ValueError(
+            f"{RESULTS_PATH.name} has {len(problems)} unusable result(s):\n  "
+            + "\n  ".join(problems))
+    return results
+
+
 # The prose in DOC_PATH is hand-authored; only the region between these markers
 # is generated, so the tables cannot drift from the data while the argument
 # around them stays editable.
 DOC_BEGIN = "<!-- BEGIN GENERATED TABLES -->"
 DOC_END = "<!-- END GENERATED TABLES -->"
+
+AUTHORITY_URL = (
+    "https://github.com/honua-io/honua-server/blob/trunk/"
+    "docs/gis/CLIENT_CERTIFICATION_CHECKLIST.md"
+)
+AUDIT_URL = (
+    "https://github.com/honua-io/honua-client-compat/blob/"
+    "9c9b327c81811948a96a9d94371ede2f3d26273c/"
+    "docs/reports/client-surface-completeness-2026-09-28.json"
+)
+CUSTOMER_READINESS_GOAL = (
+    "Demonstrate that customers can reliably use Honua's advertised supported "
+    "workflows in QGIS, PyQGIS, ArcGIS Pro and ArcPy on declared client versions "
+    "and license profiles. Reconcile the client surface into one traceable matrix, "
+    "repair server and harness defects, and pass every required native workflow "
+    "and regression gate against the same frozen shipping NativeAOT/Production "
+    "candidate. Publish reproducible setup instructions, evidence and precise "
+    "limitations. Accept documented client exclusions and licensed skips only "
+    "within their stated profile; keep preview/experimental readiness separate."
+)
+
+# These are outstanding coverage reviews, not invented executable tests. Resolve
+# them into versioned native cases in the owning harness before freezing a claim.
+COVERAGE_GAPS = {
+    "source-inventory": "Reconcile both directions: 118 capability keys and 1,306 server surfaces; the QGIS base has 117 and 1,270, with an overlay at 1,271.",
+    "native-case-crosswalk": "Map the 367 Esri operation/parameter cases and active LTR reviews from the retained 6,767-row QGIS inventory to native child cases, shared witnesses or evidenced dispositions. QGIS 4.2.2 rows are historical only and require no certification replay. Inventory counts are not test counts.",
+    "authentication": "Bind valid, denied, scoped, expired, revoked and rotated credentials to native workflows and dependent resource requests; the 94-row baseline has no explicit authentication rows. Preserve default WFS failures, cache-disabled provider reads, Browser catalog transitions and protected-first GetFeature denial as distinct PyQGIS diagnostics. Disabling both URL-only memory caches before the first request restores catalog recovery on both installed versions; catalog visibility does not prove a denied data request. Complete retained-layer reload, other auth methods, least-privilege roles, dependent resources and authenticated project reopen on the shipping candidate; no N/A or shipping promotion.",
+    "workflow-variants": "Bind schema/paging, edits/relationships/attachments, offline/versioning, imagery/tiles, processing parameters, project reopen and recovery variants to executable cases and independent oracles.",
+    "native-editing": "Map single-feature, bulk and multi-layer edits to independent inputs, SQL persistence, native readback, denied commits, retained buffers and recovery. Final Debug/JIT PyQGIS diagnostics at server 64066504d2e5578ec781ef1c2722a6696a7e1084 pass 9/9 FeatureServer and 9/9 OAPIF per installed version; WFS passes 8/9 per version and retains empty-string-to-null readback failures. Separate default WFS batch diagnostics pass 5/5 per version: two-feature insert/delete, storage-rejected insert/update, atomic SQL rollback and correction/retry in the same retained buffer. These are individual single-layer requests, not a mixed editing session or a multi-layer transaction. Complete best-effort/unknown-commit, mixed-stage and concurrent-edit recovery, other geometry/CRS, scoped roles, relationships/attachments and project-reopen variants, plus the other native lanes and the frozen shipping replay. Do not count unit or historical receipt validation as fresh native acceptance.",
+    "vector-data-fidelity": "Bind fractional timestamps, empty strings versus null, provider-specific IDs/CRS, all page contents, export and cold project reopen to native children on QGIS/PyQGIS 3.44.14 LTR only. Replay the GeoJSON timestamp fix merged in server PR5335 on the shipping candidate. Both installed GML decoders turn seven independent empty-string encodings into null while five controls match; this is decoder evidence, not a live workflow pass. Preserve the WFS data-loss failure and original oracle, review other installed native entrypoints and customer workarounds, and do not award whole-client/protocol N/A.",
+    "versions-and-licenses": "Require only QGIS/PyQGIS 3.44.14 LTR certification. Retain 4.2.2 inventory and diagnostics as historical records without requiring certification reruns or blocking LTR acceptance. The updated installation reports ArcPy 3.7.2/build1901 and ArcGISPro.exe 3.7.2.1904, Named User/ArcView. Treat that as a new target: keep 3.7.1 receipts historical, and bind operation-specific licenses, extensions and portal privileges before accepting a licensed skip.",
+    "native-versioning": "Keep the preview branch profile separate. The 367-case Esri inventory already includes an 11-case VersionManagementServer manifest: seven implemented/partial groups and four recorded gaps. Its geoservices rules wire only service metadata and list/version-info REST probes; five supported lifecycle groups remain pending. Map those grouped operations to independent native cases and repair stale descriptions, including the capability-string claim corrected by server PR5335. On server fa2c29dc4 with the experimental branch flag and Enterprise development entitlements, ArcPy 3.7.2 recognizes the remote workspace through root and /arcgis URLs, but supplied-token portal sign-in, branch-layer recognition, ListVersions and CreateVersion fail. An independent username/password replay on ba7f4ba96 fails during portal discovery before requesting token issuance, with the same later native failures. Preserve both authentication failures and ERROR 000301 as repair work; six passing REST/SQL checks on fa2c29dc4 and 57 regression tests on ba7f4ba96 do not certify native workflows or prove a license exclusion.",
+    "maturity-and-profile": "Classify source maturity and selected configuration independently of client support; retain lower-priority preview/experimental work and explicit priorities 5238, 5192 and 5036.",
+    "exclusion-review": "Review operation-specific N/A and skip evidence. Preserve genuine exclusions; repair harness failures. A missing fixture, disabled flag or failed connection alone proves no server implementation gap.",
+    "candidate-and-receipts": "Join native cases to hashed receipts, independent expected results and the same frozen NativeAOT/Production candidate. The historical checklist string validator is not this acceptance join.",
+}
+
+DISPOSITION_RULES = {
+    "client-unsupported": {
+        "outcome": "n/a for the exact native client/version/operation",
+        "required_evidence": ["version-matched vendor documentation or upstream source", "review of applicable native providers and entrypoints"],
+    },
+    "license-unavailable": {
+        "outcome": "valid skip for the declared installed-license profile; no coverage claim for the unavailable operation",
+        "required_evidence": ["installed build and license/extension/portal-entitlement observation", "operation-specific vendor license requirement, including service-backed exceptions"],
+    },
+    "preview-not-selected": {
+        "outcome": "deferred in a separate preview/experimental profile; retain the obligation",
+        "required_evidence": ["source maturity and configuration gate", "declared profile selection and priority; explicit requested work remains tracked"],
+    },
+    "server-not-implemented": {
+        "outcome": "evidenced server capability gap; never client N/A",
+        "required_evidence": ["exact candidate route/capability/implementation source", "runtime discovery and request/response with prerequisites verified", "native reproducer and independent working control where available"],
+    },
+    "harness-defect": {
+        "outcome": "open repair and native replay",
+        "required_evidence": ["runner error and failing entrypoint", "vendor-supported or positive-control path", "repair regression test and native replay"],
+    },
+    "environment-unavailable": {
+        "outcome": "blocked or documented skip; no server/client absence inference",
+        "required_evidence": ["missing fixture, credentials, service configuration or automation dependency", "retry prerequisites"],
+    },
+}
+
+# Manual review identifies native paths and limitations, never a Honua pass.
+# Latest Esri documentation still needs binding to the installed client.
+# Each QGIS review records its documentation version or installed source revision.
+MANUAL_REVIEWS = [
+    {
+        "id": "pro-372-native-branch-workspace", "reviewed_at": "2026-09-29",
+        "documentation_version": "ArcGIS Pro latest; observed ArcPy 3.7.2/build1901 and executable 3.7.2.1904",
+        "url": "https://doc.esri.com/en/arcgis-pro/latest/tool-reference/data-management/create-version.html",
+        "related_sources": [
+            "https://doc.esri.com/en/arcgis-pro/latest/arcpy/functions/signintoportal.html",
+            "https://doc.esri.com/en/arcgis-pro/latest/arcpy/functions/workspace-properties.html",
+            "https://doc.esri.com/en/arcgis-pro/latest/arcpy/functions/dataset-properties.html",
+            "https://doc.esri.com/en/arcgis-pro/latest/arcpy/data-access/listversions.html",
+            "https://github.com/honua-io/honua-esri-compat/blob/ac7c5b624cdb3c27b6cdd73c3f72ef8cad8ba563/docs/reports/native-version-workspace-2026-09-29.md",
+            "https://github.com/honua-io/honua-esri-compat/blob/b076f60ce576401f8a9f16bc0a2306683b2033a6/matrix/version-management-server.matrix.json",
+            "https://github.com/honua-io/honua-esri-compat/blob/b076f60ce576401f8a9f16bc0a2306683b2033a6/src/honua_esri_compat/lanes/geoservices.py#L659",
+            "https://developers.arcgis.com/rest/services-reference/enterprise/version-management-service/",
+            "https://github.com/honua-io/honua-server/blob/f126f8613255931e89282b0ae62ce98658f851bc/src/Honua.Protocols.GeoServices/VersionManagementServer/Models/VersionManagementModels.cs",
+            "https://github.com/honua-io/honua-esri-compat/pull/133",
+        ],
+        "protocols": ["featureserver", "portal-sharing", "versionmanagementserver"],
+        "lanes": ["pro-ui", "arcpy"],
+        "finding": "A fresh signed-in Named User/Basic installation is available. Each of the independent HTTPS supplied-token and native username/password diagnostics records two workspace-description passes and eight failed native operations across root and alias. Server metadata advertises branch layers, yet native Describe reports isBranchVersioned=false; CreateVersion returns ERROR 000301. The supplied-token request hits a referer-binding mismatch. Username/password sign-in fails during discovery: /arcgisuris.xml returns 404 and no token-issuance request follows. Both retained descriptors omit the documented defaultVersionGuid, consistent with the exact server model; the stronger REST validator merged in Esri PR133 now rejects that gap. These observations do not establish which missing field or route caused native initialization to fail. Neither run establishes a license exclusion or native UI acceptance.",
+        "next_check": "Isolate portal discovery and branch recognition with vendor documentation, positive controls, exact metadata and request traces. Complete operation-specific entitlements, VMS inventory/case mapping, native UI and frozen NativeAOT/Production replay. Keep #5036 open and preserve both authentication variants' failed observations and any later successful configuration.",
+    },
+    {
+        "id": "qgis-native-wfs-batch-transactions", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS API commitChanges contract; installed QGIS 3.44.14 revision 1a4cda5f262 and 4.2.2 revision f1431de8676; OGC WFS 1.1 clause 12",
+        "url": "https://api.qgis.org/api/classQgsVectorLayer.html",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgswfsprovider.cpp",
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsprovider.cpp",
+            "https://docs.ogc.org/is/04-094r1/04-094r1.html",
+            "https://github.com/honua-io/honua-client-compat/blob/c4caed8e49505785f9b359e58fd704731309be44/docs/reports/pyqgis-native-edit-batches-2026-09-29.json",
+        ],
+        "protocols": ["wfs"], "lanes": ["pyqgis"],
+        "finding": "QGIS preserves failed edit buffers for correction but commits distinct operation stages. Fresh native runs on both installed versions pass five default single-layer WFS batch cases each against unchanged server assemblies built from 64066504. A named database constraint rejects one member of a two-feature insert or update after ordinary request validation. Each native request contains both records, reports failure, retains both edits and leaves every SQL row unchanged. Correcting that buffer commits the independently specified values once; fresh native readback verifies IDs, attributes and coordinates. Two-feature add/delete also pass. OGC WFS 1.1 separately describes partial-failure TransactionResults; positive-count client success checks still require a best-effort audit.",
+        "next_check": "The batch oracle, storage controls and diagnostic index are published in client-compat PR #2, merged as c4caed8 with both contract workflows green. The server fixes are merged as f126f8613 in PR5335. Revalidate best-effort/unknown outcomes, mixed save stages, multiple layers and concurrent changes. The older empty-string and default cache failures stay open. Replay on the frozen NativeAOT/Production candidate with native UI and the remaining clients; award no shipping acceptance from this Debug/JIT run.",
+    },
+    {
+        "id": "qgis-34414-native-edit-contracts", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 3.44.14, installed source revision 1a4cda5f262",
+        "url": "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/arcgisrest/qgsafsshareddata.cpp",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgswfsprovider.cpp",
+            "https://www.rfc-editor.org/info/rfc7396/",
+            "https://github.com/honua-io/honua-client-compat/blob/c4caed8e49505785f9b359e58fd704731309be44/docs/reports/pyqgis-native-edits-2026-09-29.json",
+        ],
+        "protocols": ["featureserver", "wfs", "ogc-api-features"], "lanes": ["pyqgis"],
+        "finding": "AFS postData treats a successful HTTP exchange as success; top-level HTTP-200 error envelopes can leave empty mutation result lists and falsely successful saves. Actual native denied edits previously discarded buffers. WFS sends a 1.0.0 transaction even from a 2.0.0 read connection. The repaired server returns write HTTP failures and adapts legacy transactions through the canonical pipeline. Final native edits pass 9/9 AFS, 9/9 OAPIF and 8/9 WFS with SQL persistence and same-buffer recovery. WFS empty string is stored intact but read as null.",
+        "next_check": "Preserve the failed fidelity case and exact Debug/JIT receipts. Complete bulk/atomic/partial/unknown-commit, other geometry and authentication variants; validate UI and shipping replay. The client diagnostic index and harness fixes are merged in PR #2, and the server fixes as f126f8613 in PR5335; native revalidation on the frozen shipping candidate remains required. No native UI or shipping passes are awarded.",
+    },
+    {
+        "id": "qgis-422-native-edit-contracts", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 4.2.2, installed source revision f1431de8676",
+        "url": "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsprovider.cpp#L1600",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsprovider.cpp#L1642",
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/core/qgsgml.cpp",
+            "https://github.com/honua-io/honua-client-compat/blob/c4caed8e49505785f9b359e58fd704731309be44/docs/reports/pyqgis-native-edits-2026-09-29.json",
+        ],
+        "protocols": ["featureserver", "wfs", "ogc-api-features"], "lanes": ["pyqgis"],
+        "finding": "Unlike the installed 3.44 provider, this WFS provider sends 1.1.0 transactions for a 2.0.0 read connection and uses geographic CRS axis order. Its transactionSuccess checks positive summary totals; it does not interpret Honua partial-failure extensions. Separate native execution verifies corrected 2D point coordinates, persistent edits, explicit rejection and retained-buffer recovery: 9/9 AFS, 9/9 OAPIF, 8/9 WFS. The remaining WFS empty-string/null failure has exact expected/observed values and unchanged SQL evidence.",
+        "certification_scope": "historical-only",
+        "next_check": "Retain the original 4.2.2 single-feature profile and empty-string failure as historical diagnostics. Broaden required geometry/CRS, authentication and best-effort coverage on LTR, then replay its UI and Python workflows on the frozen shipping candidate. No 4.2.2 certification replay is required.",
+    },
+    {
+        "id": "qgis-34414-wfs-cache-and-gml", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 3.44.14, installed source revision 1a4cda5f262",
+        "url": "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgsbasenetworkrequest.cpp#L84",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgswfsdataitems.cpp#L103",
+            "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgswfsprovider.cpp#L2754",
+            "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/core/qgsgml.cpp",
+            "https://github.com/qgis/QGIS/blob/1a4cda5f262/tests/src/core/testqgsgml.cpp",
+            "https://api.qgis.org/api/3.44/classQgsDataItem.html",
+        ],
+        "protocols": ["wfs"], "lanes": ["pyqgis"],
+        "finding": "Browser discovery uses a second URL-only response cache in addition to the parsed provider capabilities cache. Both use qgis/wfsMemoryCacheAllowed on insertion, after their cache lookup. A new profile/process with the setting false restores all six public-first and seven protected-first catalog transitions; default runs retain old catalogs without new requests. Protected-first provider data requests separately prove AccessDenied. Native QgsGml returns null for seven empty-string encodings while explicit nil, absent, whitespace, Unicode and escaped-text controls match.",
+        "next_check": "Preserve separate operation scopes and default failures. Validate retained-layer reload, native UI settings/recovery, other installed WFS entrypoints and empty-string-preserving alternatives against original inputs. Repeat on the frozen shipping candidate; these are Debug/JIT diagnostics with zero UI/shipping acceptance.",
+    },
+    {
+        "id": "qgis-422-wfs-cache-and-gml", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 4.2.2, installed source revision f1431de8676",
+        "url": "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgsbasenetworkrequest.cpp#L89",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsdataitems.cpp#L114",
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsprovider.cpp#L1947",
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/core/qgsgml.cpp",
+        ],
+        "protocols": ["wfs"], "lanes": ["pyqgis"],
+        "finding": "This installed version independently reproduces both URL-only cache paths and all seven empty-string-to-null decoder failures. Cache-disabled Browser discovery passes six public-first and seven protected-first transitions with fresh native GetCapabilities exchanges. Cache-disabled provider loading recovers valid reads, but hidden discovery prevents those invalid loads from proving an actual data-request denial; the separate protected-first default-cache control supplies that narrower proof.",
+        "certification_scope": "historical-only",
+        "next_check": "Retain original 4.2.2 source hashes, settings, traces, failures and exits as historical diagnostics. Required reload/fidelity/UI paths and shipping replay apply to LTR only. No 4.2.2 certification replay or whole-client/protocol exclusion is required.",
+    },
+    {
+        "id": "qgis-34414-auth-recovery", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 3.44.14, installed source revision 1a4cda5f262",
+        "url": "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/qgswfsprovider.cpp#L2754",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/core/providers/arcgis/qgsarcgisrestquery.cpp#L213",
+            "https://docs.qgis.org/3.44/en/docs/pyqgis_developer_cookbook/authentication.html",
+        ],
+        "protocols": ["featureserver", "ogc-api-features", "wfs"], "lanes": ["pyqgis"],
+        "finding": "Stock APIHeader can propagate X-API-Key through these native provider paths. AFS parses HTTP-200 error envelopes into provider errors. WFS caches capabilities by request URL for 60 seconds without credential identity; anonymous-first discovery blocks a subsequent protected load. A valid cached WFS schema can remain valid while actual GetFeature requests receive AccessDenied and return no data.",
+        "next_check": "Retain exact native requests, header classifications, provider errors and independent protected payloads. Keep public-first and protected-first results separate, validate a supported cache-recovery configuration without suppressing the failed default, and complete token/OAuth/scoped-user and project-persistence variants on the shipping candidate.",
+    },
+    {
+        "id": "qgis-422-auth-recovery", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 4.2.2, installed source revision f1431de8676",
+        "url": "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/qgswfsprovider.cpp#L1947",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/core/providers/arcgis/qgsarcgisrestquery.cpp",
+        ],
+        "protocols": ["featureserver", "ogc-api-features", "wfs"], "lanes": ["pyqgis"],
+        "finding": "The installed 4.2.2 source has the same URL-only WFS capabilities cache. Its separate native runs reproduce the public-first recovery failure, a successful cold authorized load, and explicit denied GetFeature responses despite a valid schema. Layer validity is not a data-authorization assertion.",
+        "certification_scope": "historical-only",
+        "next_check": "Retain the original 4.2.2 profiles, traces, failures and process exits as historical diagnostics. No 4.2.2 certification replay is required; required authentication variants are replayed on LTR.",
+    },
+    {
+        "id": "qgis-34414-vector-identity", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 3.44.14, installed source revision 1a4cda5f262",
+        "url": "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/providers/wfs/oapif/qgsoapifprovider.cpp#L716",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/1a4cda5f262/src/core/qgsgml.cpp#L1492",
+            "https://docs.ogc.org/is/17-069r4/17-069r4.html",
+        ],
+        "protocols": ["ogc-api-features", "wfs"], "lanes": ["pyqgis"],
+        "finding": "The OAPIF provider maps layer-local FIDs to separate remote IDs; an Esri objectid property is not a universal native identity contract. OGC Core defaults to CRS84 longitude/latitude. Exact installed-revision GML source and observed empty-string/null conversion are retained for review; this is not an approved exclusion.",
+        "next_check": "Use independent fixture keys for payload comparisons and native FID selection; test remote-ID edits separately. Preserve empty-string/null assertions while reviewing valid GML encodings and supported native alternatives. Revalidate every required child against the frozen shipping candidate.",
+    },
+    {
+        "id": "qgis-422-vector-identity", "reviewed_at": "2026-09-29",
+        "documentation_version": "QGIS 4.2.2, installed source revision f1431de8676",
+        "url": "https://github.com/qgis/QGIS/blob/f1431de8676/src/providers/wfs/oapif/qgsoapifprovider.cpp#L816",
+        "related_sources": [
+            "https://github.com/qgis/QGIS/blob/f1431de8676/src/core/qgsgml.cpp#L1434",
+            "https://docs.ogc.org/is/17-069r4/17-069r4.html",
+        ],
+        "protocols": ["ogc-api-features", "wfs"], "lanes": ["pyqgis"],
+        "finding": "This installed revision independently maintains a native-FID/remote-ID mapping and exposes default OAPIF geometry as CRS84. The same empty-string/null failure was observed through its stock WFS provider; the 3.44 result must not substitute for this version's evidence.",
+        "certification_scope": "historical-only",
+        "next_check": "Retain the original 4.2.2 execution/profile binding and failures as historical diagnostics. Complete required WFS decoder/workaround, remote-ID editing and UI replay on LTR; no 4.2.2 certification replay is required.",
+    },
+    {
+        "id": "qgis-service-paths", "reviewed_at": "2026-09-28",
+        "documentation_version": "QGIS 3.44",
+        "url": "https://doc.qgis.org/3.44/en/docs/user_manual/working_with_ogc/ogc_client_support.html",
+        "protocols": ["wfs", "ogc-api-features", "featureserver", "sensorthings"],
+        "lanes": ["qgis-ui", "pyqgis"],
+        "finding": "The manual documents WFS-T, OGC API Features editing, conditional ArcGIS Feature Service editing, and SensorThings connections, filters and entity expansion. Review the actual provider path before declaring unsupported.",
+        "next_check": "Compare the installed provider and advertised service capabilities, execute the documented native entrypoint, and retain requests plus independent readback. Keep UI and PyQGIS results distinct.",
+    },
+    {
+        "id": "pro-routing-license", "reviewed_at": "2026-09-28",
+        "documentation_version": "ArcGIS Pro latest; installed-build verification required",
+        "url": "https://doc.esri.com/en/arcgis-pro/latest/help/analysis/networks/what-is-network-analysis-using-web-services.html",
+        "protocols": ["naserver", "gpserver"], "lanes": ["pro-ui", "arcpy"],
+        "finding": "Service-backed network analysis does not require the local Network Analyst extension. Service access and supported native tool contracts still need verification.",
+        "next_check": "For #5192 compare native Route/ServiceArea binding and solve with an independent service control. Do not dismiss it solely because of a local extension license.",
+    },
+    {
+        "id": "pro-branch-prerequisites", "reviewed_at": "2026-09-28",
+        "documentation_version": "ArcGIS Pro latest; installed-build verification required",
+        "url": "https://doc.esri.com/en/arcgis-pro/latest/help/data/geodatabases/overview/manage-branch-versions.html",
+        "protocols": ["versionmanagementserver"], "lanes": ["pro-ui", "arcpy"],
+        "finding": "Branch workflows depend on web feature layer Version Management capability, active portal identity and version access. A disabled Versions command alone does not isolate licensing or server implementation.",
+        "next_check": "For #5036 bind the precise operation's license requirement and actual entitlement, compare service metadata and native recognition, then exercise available operations.",
+    },
+    {
+        "id": "pro-ogc-api-limits", "reviewed_at": "2026-09-28",
+        "documentation_version": "ArcGIS Pro latest; installed-build verification required",
+        "url": "https://doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html",
+        "protocols": ["ogc-api-features", "ogc-api-tiles"], "lanes": ["pro-ui", "arcpy"],
+        "finding": "The documented OGC API connection supports Features Part 1 and Tiles map tiles. This supports checking operation-specific limitations instead of declaring the entire protocol unavailable.",
+        "next_check": "Map each native operation and tile type; verify ArcPy entrypoints separately from application menu support.",
+    },
+]
+
+
+def scope_contract() -> dict:
+    return {
+        "revision": "2026-09-30.1",
+        "authority": AUTHORITY_URL,
+        "objective": CUSTOMER_READINESS_GOAL,
+        "audit": AUDIT_URL,
+        "coverage_complete": False,
+        "applicable_test_denominator": None,
+        "certification_verdict": "not-assessed",
+        "shipping_candidate": None,
+        "accepted_shipping_passes": 0,
+        "acceptance": "All required native cases in the declared version/license/configuration profile pass with verified candidate-bound evidence; genuine exclusions and licensed skips are separately evidenced and disclosed.",
+        "profiles": {
+            "supported": "Advertised supported workflows; security and data integrity first.",
+            "preview-experimental": "Separate, lower-priority readiness coverage; no automatic GA requirement or GA claim.",
+        },
+        "completion_evidence": [
+            "Reviewed mapping from manuals, source inventories and representative public examples to every required native workflow and variant; no unexplained omissions.",
+            "Actual UI and native Python receipts with independent expected results, exact client/license/configuration bindings and verified artifact hashes.",
+            "All required positive, denied-access, persistence and recovery cases pass on the final candidate; server, fixture and harness fixes are merged and required CI is green.",
+            "Customer setup steps replay successfully from a clean client profile with reproducible owned fixtures.",
+            "Published support table names tested versions, licenses, enabled features, results, evidenced exclusions, licensed skips and known limitations; preview readiness is separately reported.",
+        ],
+        "explicit_priority_issues": [5238, 5192, 5036],
+        "qgis_version_policy": {
+            "declared_at": "2026-09-30", "authority": "User instruction: certify only QGIS LTR",
+            "required": ["QGIS 3.44.14 LTR UI", "PyQGIS 3.44.14 LTR"],
+            "historical_only": ["QGIS 4.2.2 UI", "PyQGIS 4.2.2"],
+            "historical_results_transfer": False,
+            "meaning": "Current-version inventory and diagnostics are retained; no 4.2.2 certification rerun is required and those records cannot block LTR acceptance.",
+        },
+        "additional_version_reviews": ["ArcGIS Pro 3.7.2.1904 UI", "ArcPy 3.7.2/build1901 (Pro executable 3.7.2.1904)"],
+        "reviewed_maturity": {
+            "source": "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs",
+            "candidate_revision": "ab2e3ed3d58196658fbd98567de65eec4db7dc64",
+            "capabilities": {
+                "serve.sensorthings": "preview",
+                "serve.geoservices-imageserver": "preview",
+                "serve.wmts": "preview",
+                "serve.ogc-api-coverages": "preview",
+                "sync.offline": "preview",
+                "versioning.branch": "experimental",
+            },
+            "sensorthings_opt_in": "Capabilities:Experimental:serve.sensorthings:Enabled",
+            "remaining_classification": "review-required; implemented source status alone is not a GA profile decision",
+        },
+        "disposition_rules": DISPOSITION_RULES,
+        "coverage_gaps": [{"id": key, "status": "open", "required_work": value}
+                          for key, value in COVERAGE_GAPS.items()],
+        "manual_reviews": MANUAL_REVIEWS,
+    }
 
 LANES = ("pro-ui", "arcpy", "qgis-ui", "pyqgis")
 
@@ -64,7 +423,47 @@ NEEDS_CITATION = {"n/a-no-client", "n/a-superseded", "blocked"}
 # changes create a new target revision" - so these tokens are searched for in the
 # evidence string. Superseded QGIS builds (3.44.3, 3.40.15) and QGIS 4.2.2 fail
 # the check by simply not matching.
-CERTIFIED_BUILD_TOKENS = ("3.7.1.1904", "3.44.14")
+#
+# Per lane, because the lanes do not all have access to the same precision. The
+# arcpy lane records the version arcpy itself reports, and
+# arcpy.GetInstallInfo()["Version"] returns the three-part product version
+# "3.7.1" with no desktop file-version resource. Those historical probes did
+# not capture the executable's independent four-part version; newer probes do.
+# Do not rewrite old observations to add evidence they did not retain. The seat
+# for those historical receipts is the same one the
+# pro-ui lane drives: a single ArcGIS Pro 3.7.1.1904 install on the certification
+# runner, so "3.7.1" and "3.7.1.1904" name one build here.
+#
+# Every other lane keeps the strict token. pro-ui receipts come from the
+# application's own About page and do carry the build, and both QGIS lanes report
+# 3.44.14 in full.
+CERTIFIED_BUILD_TOKENS_BY_LANE = {
+    "pro-ui": ("3.7.1.1904",),
+    "arcpy": ("3.7.1.1904", "3.7.1"),
+    "qgis-ui": ("3.44.14",),
+    "pyqgis": ("3.44.14",),
+}
+
+# Retained for the error message and for readers looking for the whole set.
+CERTIFIED_BUILD_TOKENS = tuple(
+    dict.fromkeys(t for tokens in CERTIFIED_BUILD_TOKENS_BY_LANE.values() for t in tokens))
+
+
+# Tokens are matched at version boundaries rather than as bare substrings. A plain
+# `"3.7.1" in evidence` also accepts "ArcGIS Pro 3.7.10", a different build, which
+# would be credited to the 3.7.1 certification target against the stated invariant
+# that a version change creates a new target revision. So a trailing digit
+# disqualifies a match, while a trailing dot-separated build number does not -
+# "3.7.1.1904" still satisfies the three-part "3.7.1" token the arcpy lane reports.
+# The leading guard stops "13.7.1" and "4.3.7.1" from matching the same way.
+def _build_token_matcher(token: str) -> "re.Pattern[str]":
+    return re.compile(rf"(?<![\d.]){re.escape(token)}(?!\d)")
+
+
+CERTIFIED_BUILD_TOKEN_MATCHERS_BY_LANE = {
+    lane: tuple(_build_token_matcher(token) for token in tokens)
+    for lane, tokens in CERTIFIED_BUILD_TOKENS_BY_LANE.items()
+}
 
 # --------------------------------------------------------------------------
 # Citations. Every n/a in the checklist resolves to one of these, so a reader can
@@ -1353,7 +1752,19 @@ NATIVE_REPLAY_RESOLUTIONS = {
 }
 
 
-def build_rows() -> list[dict]:
+# Loaded now that MATRIX exists: the overlay is validated against the cells MATRIX
+# defines, so an entry that addresses no cell is an import-time error rather than a
+# measured result that quietly never lands.
+CERTIFIED_RESULTS = _load_certified_results()
+
+
+def build_rows(apply_results: bool = True) -> list[dict]:
+    """Build every cell from MATRIX and its overrides.
+
+    `apply_results=False` stops short of the measured-results overlay and yields the
+    baseline this module defines. The unit tests use it: they exercise the MATRIX and
+    exclusion-review logic, and must not change meaning because a lane was re-run.
+    """
     rows: list[dict] = []
     for entry in MATRIX:
         for operation, lanes in entry["operations"].items():
@@ -1426,6 +1837,9 @@ def build_rows() -> list[dict]:
                         if name in cell
                     }
                     cell.update(state="pass", evidence=replay)
+                certified = CERTIFIED_RESULTS.get(key) if apply_results else None
+                if certified:
+                    cell = dict(certified)
                 cells[lane] = cell
             rows.append({
                 "protocol": entry["protocol"],
@@ -1438,8 +1852,19 @@ def build_rows() -> list[dict]:
 
 def validate(rows: list[dict]) -> list[str]:
     problems: list[str] = []
+    expected = {(entry["protocol"], entry["version"], operation)
+                for entry in MATRIX for operation in entry["operations"]}
+    observed_keys = set()
     for row in rows:
+        row_key = (row["protocol"], row["version"], row["operation"])
         where = f"{row['protocol']} {row['version']} {row['operation']}"
+        if row_key in observed_keys:
+            problems.append(f"{where}: duplicate checklist row")
+        observed_keys.add(row_key)
+        if row_key not in expected:
+            problems.append(f"{where}: unknown checklist row")
+        for lane in set(row["lanes"]) - set(LANES):
+            problems.append(f"{where}: unknown lane {lane}")
         for lane in LANES:
             cell = row["lanes"].get(lane)
             if cell is None:
@@ -1485,10 +1910,15 @@ def validate(rows: list[dict]) -> list[str]:
                 if not evidence:
                     problems.append(
                         f"{where}/{lane}: a pass requires an evidence reference")
-                elif not any(token in evidence for token in CERTIFIED_BUILD_TOKENS):
-                    problems.append(
-                        f"{where}/{lane}: a pass must name a build under "
-                        f"certification {CERTIFIED_BUILD_TOKENS}, got {evidence!r}")
+                else:
+                    tokens = CERTIFIED_BUILD_TOKENS_BY_LANE[lane]
+                    matchers = CERTIFIED_BUILD_TOKEN_MATCHERS_BY_LANE[lane]
+                    if not any(matcher.search(evidence) for matcher in matchers):
+                        problems.append(
+                            f"{where}/{lane}: a pass must name a build under "
+                            f"certification {tokens}, got {evidence!r}")
+    for key in sorted(expected - observed_keys):
+        problems.append(f"{key}: missing checklist row")
     return problems
 
 
@@ -1500,32 +1930,48 @@ def render_markdown(rows: list[dict], summary: dict) -> str:
         "<!-- Generated by scripts/certification/build-client-checklist.py."
         + " Do not edit by hand. -->",
         "",
-        "### Totals",
+        "### Customer-readiness goal",
         "",
-        "| Lane | Client build | Closed | Open | Breakdown |",
+        CUSTOMER_READINESS_GOAL,
+        "",
+        "### Coverage review",
+        "",
+        "**Certification: not assessed. The applicable denominator and shipping receipt join remain open.**",
+        "The following audit work belongs to this checklist. These are reviews to bind",
+        "to executable native cases, not additional test passes or a new denominator.",
+        "",
+        "| Review | State | Required work |",
+        "|---|---|---|",
+    ]
+    for key, work in COVERAGE_GAPS.items():
+        lines.append(f"| `{key}` | open | {work} |")
+    lines += [
+        "",
+        "### Historical operation totals",
+        "",
+        "| Lane | Client build | Recorded passes | Excluded | Open |",
         "|---|---|---|---|---|",
     ]
     for lane in LANES:
         totals = summary["per_lane"][lane]
-        closed = sum(count for state, count in totals.items() if state in CLOSED_STATES)
         opened = sum(count for state, count in totals.items() if state not in CLOSED_STATES)
-        breakdown = ", ".join(
-            f"{state} {totals[state]}" for state in sorted(totals))
+        excluded = sum(count for state, count in totals.items() if state.startswith("n/a-"))
         lines.append(
-            f"| `{lane}` | {CLIENT_BUILDS[lane]} | {closed}/{closed + opened} | "
-            f"{opened} | {breakdown} |"
+            f"| `{lane}` | {CLIENT_BUILDS[lane]} | {totals.get('pass', 0)} | "
+            f"{excluded} | {opened} |"
         )
 
     overall = summary["overall"]
     lines += [
         "",
-        f"**{overall['closed']} of {overall['cells']} cells closed; "
-        f"{overall['open']} open.**",
+        f"**{overall['recorded_passes']} recorded passes, {overall['excluded']} exclusions, "
+        f"{overall['open']} open cells ({overall['cells']} historical cells).**",
         "",
         "### Cells",
         "",
-        "A cell closes as `pass`, `n/a-no-client` or `n/a-superseded`. Every other",
-        "value is open work. The full evidence reference or citation for each cell is",
+        "Historical `closed` totals include `pass`, `n/a-no-client` and `n/a-superseded`.",
+        "Exclusions are not passes; historical passes are not fresh shipping acceptance.",
+        "The full evidence reference or citation for each cell is",
         "in `docs/gis/data/client-certification-checklist.v1.json`.",
         "",
     ]
@@ -1588,20 +2034,70 @@ def summarise(rows: list[dict]) -> dict:
         for lane in LANES:
             state = row["lanes"][lane]["state"]
             totals[lane][state] = totals[lane].get(state, 0) + 1
-    overall = {"cells": len(rows) * len(LANES), "closed": 0, "open": 0}
+    overall = {"cells": len(rows) * len(LANES), "closed": 0, "open": 0,
+               "recorded_passes": 0, "excluded": 0}
     for lane in LANES:
         for state, count in totals[lane].items():
             if state in CLOSED_STATES:
                 overall["closed"] += count
             else:
                 overall["open"] += count
+            if state == "pass":
+                overall["recorded_passes"] += count
+            elif state.startswith("n/a-"):
+                overall["excluded"] += count
     return {"per_lane": totals, "overall": overall}
+
+
+def committed_regressions(rows: list[dict]) -> list[str]:
+    """Cells that are closed in the committed JSON but would not be closed by `rows`.
+
+    This file is a build output, but lane results are in practice written straight into
+    it by the certification promotion scripts and only later folded back into MATRIX and
+    the RESOLVED_EXCLUSION_EVIDENCE overlays here. While a result is in that gap, a plain
+    regeneration silently reopens it: measured 2026-09-26, the committed file held 303
+    closed cells and this generator produced 183, so a regenerate-and-commit would have
+    destroyed 120 cells of evidence without a diff anyone would read.
+
+    Refusing to write is the conservative direction. Recovering the lost evidence means
+    re-driving licensed desktop clients by hand; re-running the generator after folding
+    the results back in costs seconds.
+    """
+    if not DATA_PATH.is_file():
+        return []
+    try:
+        committed = json.loads(DATA_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    generated = {
+        (row["protocol"], row.get("version"), row["operation"], lane): cell["state"]
+        for row in rows for lane, cell in row["lanes"].items()
+    }
+    regressions = []
+    for row in committed.get("rows", []):
+        for lane, cell in row.get("lanes", {}).items():
+            was = cell.get("state")
+            if was not in CLOSED_STATES:
+                continue
+            key = (row.get("protocol"), row.get("version"), row.get("operation"), lane)
+            now = generated.get(key)
+            if now is None:
+                regressions.append(f"{key[0]}.{key[2]} @ {key[1]} [{lane}] "
+                                   f"closed as {was} but the row no longer exists")
+            elif now not in CLOSED_STATES:
+                regressions.append(f"{key[0]}.{key[2]} @ {key[1]} [{lane}] "
+                                   f"{was} -> {now}")
+    return regressions
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true",
                         help="validate rows and committed JSON/Markdown projections without writing")
+    parser.add_argument("--allow-regressions", action="store_true",
+                        help="write even when that would reopen cells the committed file "
+                             "records as closed (use only when the reopening is intended)")
     args = parser.parse_args()
 
     rows = build_rows()
@@ -1616,11 +2112,12 @@ def main() -> int:
     document = {
         "schema_version": "1.0",
         "description": (
-            "Four-lane client certification checklist. A cell closes as pass (with an "
-            "evidence reference naming the client build) or n/a-* (with a "
-            "vendor-documentation or provider-registry citation). blocked and "
-            "not-started are open."
+            "Authoritative four-client scope contract and historical operation tracker. "
+            "Closed totals include exclusions and are not certification acceptance. "
+            "Coverage reviews, licensed skips, maturity and candidate-bound native "
+            "evidence are governed separately in scope_contract."
         ),
+        "scope_contract": scope_contract(),
         "lanes": {lane: CLIENT_BUILDS[lane] for lane in LANES},
         "states": sorted(STATES),
         "closed_states": sorted(CLOSED_STATES),
@@ -1636,6 +2133,19 @@ def main() -> int:
                 print(f"FAIL {problem}")
             return 1
     else:
+        regressions = committed_regressions(rows)
+        if regressions and not args.allow_regressions:
+            print(f"REFUSING TO WRITE: {len(regressions)} cell(s) the committed file "
+                  f"records as closed would be reopened.")
+            for regression in regressions[:20]:
+                print(f"  - {regression}")
+            if len(regressions) > 20:
+                print(f"  ... and {len(regressions) - 20} more")
+            print()
+            print("These are lane results written into the JSON that have not been "
+                  "folded back into MATRIX / RESOLVED_EXCLUSION_EVIDENCE here. Fold "
+                  "them in, or pass --allow-regressions if the reopening is intended.")
+            return 1
         DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
         DATA_PATH.write_text(json_text, encoding="utf-8", newline="\n")
         print(f"wrote {DATA_PATH.relative_to(REPO_ROOT)}")
@@ -1645,7 +2155,11 @@ def main() -> int:
         print(f"wrote {DOC_PATH.relative_to(REPO_ROOT)}")
 
     overall = summary["overall"]
-    print(f"OK  {len(rows)} operations x {len(LANES)} lanes = {overall['cells']} cells")
+    print(f"OK historical projection: {len(rows)} operations x {len(LANES)} lanes = {overall['cells']} cells")
+    scope = document["scope_contract"]
+    print(f"    certification={scope['certification_verdict']}  "
+          f"coverage_complete={scope['coverage_complete']}  "
+          f"accepted_shipping_passes={scope['accepted_shipping_passes']}")
     print(f"    closed {overall['closed']}  open {overall['open']}")
     for lane in LANES:
         states = summary["per_lane"][lane]

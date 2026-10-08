@@ -407,10 +407,8 @@ internal static partial class SceneEndpoints
                         // InvalidOperationException from its constructor
                         // when any binding option is invalid (signing key
                         // unset, TTL or refresh fraction out of range).
-                        // Resolving inside this try block keeps the
-                        // misconfiguration response structured (matches the
-                        // issue endpoint) rather than surfacing as an
-                        // unhandled 500.
+                        // Resolving inside this try block keeps verifier
+                        // configuration state from escaping as a server error.
                         var envelopeService = context.RequestServices
                             .GetRequiredService<ISceneAccessEnvelopeService>();
                         validation = envelopeService.Validate(rawToken, scene.Id);
@@ -418,9 +416,9 @@ internal static partial class SceneEndpoints
                     catch (InvalidOperationException ex)
                     {
                         SceneAccessLog.OptionsMisconfigured(logger, scene.Id, ex.Message);
-                        return StandardErrorHelpers.CreateInternalServerError(
+                        return StandardErrorHelpers.CreateUnauthorized(
                             context,
-                            "Scene access envelope verification is not configured.");
+                            "Scene access credential is invalid.");
                     }
 
                     switch (validation)

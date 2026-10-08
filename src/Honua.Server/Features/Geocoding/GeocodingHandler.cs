@@ -11,6 +11,7 @@ using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Geocoding.Features.Geocoding.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer;
+using Honua.Protocols.GeoServices.GeocodeServer;
 using Honua.Infrastructure.Models;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -64,19 +65,13 @@ internal sealed class GeocodingHandler(
                 return Task.FromResult(StandardErrorHelpers.CreateBadRequest(context, "Geocoding provider not found or not configured."));
             }
 
-            var capabilities = provider.Capabilities;
-            if (!context.RequestServices
-                    .GetRequiredService<ILicenseEntitlementService>()
-                    .CheckEntitlement(FeatureCatalog.BatchGeocodingKey)
-                    .IsActive)
-            {
-                capabilities = capabilities with { SupportsBatch = false };
-            }
+            var capabilities = GeocodeServerCapabilities.ApplyLicense(
+                provider.Capabilities, context.RequestServices.GetRequiredService<ILicenseEntitlementService>());
 
             var response = new GeocodeServerInfoResponse
             {
                 ServiceDescription = "Honua GeocodeServer",
-                Capabilities = BuildCapabilitiesString(capabilities),
+                Capabilities = GeocodeServerCapabilities.Format(capabilities),
                 SpatialReference = new GeocodeSpatialReference
                 {
                     Wkid = _options.DefaultSpatialReferenceWkid,
@@ -1062,27 +1057,6 @@ internal sealed class GeocodingHandler(
         }
 
         return properties;
-    }
-
-    private static string BuildCapabilitiesString(Honua.Geocoding.Features.Geocoding.Domain.GeocodeProviderCapabilities capabilities)
-    {
-        var availableCapabilities = new List<string>(capacity: 4)
-        {
-            "Geocode",
-            "ReverseGeocode"
-        };
-
-        if (capabilities.SupportsSuggest)
-        {
-            availableCapabilities.Add("Suggest");
-        }
-
-        if (capabilities.SupportsBatch)
-        {
-            availableCapabilities.Add("BatchGeocode");
-        }
-
-        return string.Join(',', availableCapabilities);
     }
 
     private static bool IsSupportedFormat(string? format)

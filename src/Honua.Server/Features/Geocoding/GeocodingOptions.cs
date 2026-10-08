@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
+using Honua.Geocoding.Features.Geocoding.Domain;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Geocoding;
@@ -48,6 +49,10 @@ internal sealed class GeocodingOptionsValidator : OptionsValidator<GeocodingOpti
         if (string.IsNullOrWhiteSpace(options.LocatorName))
         {
             failures.Add("Geocoding:LocatorName is required.");
+        }
+        else if (!GeocodeLocatorNameRules.IsValid(options.LocatorName))
+        {
+            failures.Add($"Geocoding:LocatorName: {GeocodeLocatorNameRules.ValidationMessage}");
         }
 
         if (string.IsNullOrWhiteSpace(options.DefaultProvider))

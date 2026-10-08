@@ -63,7 +63,7 @@
     <ProjectReference Include="..\Honua.Db\SqlServer\Honua.SqlServer.csproj" />
     <ProjectReference Include="..\Honua.Db\MySql\Honua.MySql.csproj" />
     <ProjectReference Include="..\Honua.Db\Redshift\Honua.Redshift.csproj" />
-    <ProjectReference Include="..\Honua.ArcGisRest\Honua.ArcGisRest.csproj" />
+    <ProjectReference Include="..\Honua.GeoServicesRest\Honua.GeoServicesRest.csproj" />
     <ProjectReference Include="..\Honua.Db\Databricks\Honua.Databricks.csproj" />
     <ProjectReference Include="..\Honua.Db\Oracle\Honua.Oracle.csproj" Condition="'$(HonuaIncludeOracle)' == 'true'" />
     <ProjectReference Include="..\Honua.Snowflake\Honua.Snowflake.csproj" Condition="'$(HonuaIncludeSnowflake)' == 'true'" />
@@ -152,6 +152,10 @@
     <EmbeddedResource Include="..\..\docs\gis\data\feature-catalog.json"
                       Link="DeploymentProfiles\feature-catalog.json"
                       LogicalName="Honua.Server.DeploymentProfiles.feature-catalog.json" />
+    <!-- honua-server#5378: the release resolver's declaration, advertised at /api/v1/admin/capabilities. -->
+    <EmbeddedResource Include="..\..\release\component-versions.json"
+                      Link="Release\component-versions.json"
+                      LogicalName="Honua.Server.release.component-versions.json" />
   </ItemGroup>
 
   <ItemGroup>

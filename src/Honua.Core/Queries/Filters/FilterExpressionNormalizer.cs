@@ -35,18 +35,20 @@ public static class FilterExpressionNormalizer
         {
             BinaryExpression binary => NormalizeBinaryExpression(binary, schema),
             UnaryExpression unary => new UnaryExpression(unary.Operator, NormalizeCore(unary.Operand, schema)),
-            // 'with' preserves protocol-scoped flags (SpatialPredicate.Geodesic) that a
-            // positional reconstruction would silently reset to their defaults.
+            // 'with' preserves protocol-scoped flags (SpatialPredicate.Geodesic,
+            // SpatialDistancePredicate.DistanceInMeters) that a positional reconstruction would
+            // silently reset to their defaults.
             SpatialPredicate spatial => spatial with
             {
                 Left = NormalizeCore(spatial.Left, schema),
                 Right = NormalizeCore(spatial.Right, schema)
             },
-            SpatialDistancePredicate spatialDistance => new SpatialDistancePredicate(
-                spatialDistance.Operator,
-                NormalizeCore(spatialDistance.Left, schema),
-                NormalizeCore(spatialDistance.Right, schema),
-                NormalizeCore(spatialDistance.Distance, schema)),
+            SpatialDistancePredicate spatialDistance => spatialDistance with
+            {
+                Left = NormalizeCore(spatialDistance.Left, schema),
+                Right = NormalizeCore(spatialDistance.Right, schema),
+                Distance = NormalizeCore(spatialDistance.Distance, schema)
+            },
             TemporalPredicate temporal => new TemporalPredicate(
                 temporal.Operator,
                 NormalizeCore(temporal.Left, schema),
@@ -80,6 +82,13 @@ public static class FilterExpressionNormalizer
             {
                 left = CoerceLiteral(propertyRight, literalLeft, schema);
             }
+        }
+
+        if (binary.Operator == BinaryOperator.In && left is PropertyReference listProperty && right is ValueList values)
+        {
+            right = new ValueList(values.Values.Select(value => value is Literal literal
+                ? CoerceLiteral(listProperty, literal, schema)
+                : value).ToArray());
         }
 
         return new BinaryExpression(left, binary.Operator, right);
@@ -204,13 +213,61 @@ public static class FilterExpressionNormalizer
 
         return fieldType switch
         {
+            MetadataV2FieldType.String => CoerceStringLiteral(literal),
+            MetadataV2FieldType.Uuid => CoerceUuidLiteral(property.PropertyName, literal),
             MetadataV2FieldType.DateTime => CoerceDateTimeLiteral(property.PropertyName, literal),
             MetadataV2FieldType.Date => CoerceDateLiteral(property.PropertyName, literal),
+            MetadataV2FieldType.Time => CoerceTimeLiteral(property.PropertyName, literal),
             MetadataV2FieldType.Boolean => CoerceBooleanLiteral(property.PropertyName, literal),
             MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger or MetadataV2FieldType.Float or MetadataV2FieldType.Double
                 => CoerceNumericLiteral(property.PropertyName, literal),
             _ => literal
         };
+    }
+
+    private static Literal CoerceStringLiteral(Literal literal)
+        => literal.Type is LiteralType.Text or LiteralType.Null
+            ? literal
+            : new Literal(Convert.ToString(literal.Value, CultureInfo.InvariantCulture), LiteralType.Text);
+
+    private static Literal CoerceUuidLiteral(string propertyName, Literal literal)
+    {
+        if (literal.Type == LiteralType.Null)
+        {
+            return literal;
+        }
+
+        if (literal.Value is Guid)
+        {
+            return literal;
+        }
+
+        if (literal.Value is string text && Guid.TryParse(text, out var value))
+        {
+            return new Literal(value, LiteralType.Text);
+        }
+
+        throw new ArgumentException($"Field '{propertyName}' expects a UUID value.");
+    }
+
+    private static Literal CoerceTimeLiteral(string propertyName, Literal literal)
+    {
+        if (literal.Type == LiteralType.Null)
+        {
+            return literal;
+        }
+
+        if (literal.Value is TimeOnly)
+        {
+            return literal;
+        }
+
+        if (literal.Value is string text && TimeOnly.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out var value))
+        {
+            return new Literal(value, LiteralType.Text);
+        }
+
+        throw new ArgumentException($"Field '{propertyName}' expects a time value.");
     }
 
     private static Literal CoerceDateTimeLiteral(string propertyName, Literal literal)
@@ -281,6 +338,24 @@ public static class FilterExpressionNormalizer
         if (literal.Type == LiteralType.Number)
         {
             return literal;
+        }
+
+        // Untyped FES literals (and CQL2 string literals) arrive as Text so a string
+        // field keeps their lexical form; a numeric field takes their numeric value.
+        if (literal.Type == LiteralType.Text && literal.Value is string text)
+        {
+            if (long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer))
+            {
+                return integer is >= int.MinValue and <= int.MaxValue
+                    ? new Literal((int)integer, LiteralType.Number)
+                    : new Literal(integer, LiteralType.Number);
+            }
+
+            if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var real) &&
+                double.IsFinite(real))
+            {
+                return new Literal(real, LiteralType.Number);
+            }
         }
 
         throw new ArgumentException($"Field '{propertyName}' expects a numeric value.");

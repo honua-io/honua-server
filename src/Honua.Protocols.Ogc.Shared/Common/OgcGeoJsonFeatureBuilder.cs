@@ -18,7 +18,8 @@ internal static class OgcGeoJsonFeatureBuilder
         OgcFeaturesGeometryServices geometryServices,
         IReadOnlySet<string>? projectedProperties = null,
         Func<long, object?>? idFactory = null,
-        ImmutableArray<Link>? links = null)
+        ImmutableArray<Link>? links = null,
+        GeoJsonFeatureBaseBuilder.PreparedSchema? schema = null)
     {
         var geometry = geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
         return CreateCore(
@@ -27,10 +28,11 @@ internal static class OgcGeoJsonFeatureBuilder
                 resource,
                 new GeoJsonFeatureBuildOptions(
                     ProjectedProperties: projectedProperties,
-                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(resource),
-                    IdFactory: idFactory ?? (_ => OgcFeatureIdentifierResolver.GetPublicId(feature, resource)))),
+                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(resource, schema),
+                    IdFactory: idFactory ?? (_ => OgcFeatureIdentifierResolver.GetPublicId(feature, resource)),
+                    Schema: schema)),
             geometry,
-            links);
+            links, ownsProperties: true);
     }
 
     internal static GeoJsonFeature Create(
@@ -40,7 +42,8 @@ internal static class OgcGeoJsonFeatureBuilder
         OgcFeaturesGeometryServices geometryServices,
         IReadOnlySet<string>? projectedProperties = null,
         Func<long, object?>? idFactory = null,
-        ImmutableArray<Link>? links = null)
+        ImmutableArray<Link>? links = null,
+        GeoJsonFeatureBaseBuilder.PreparedSchema? schema = null)
     {
         var geometry = geometryServices.ConvertGeoJsonToSimpleGeometry(feature.GeometryGeoJson, axisOrder);
         return CreateCore(
@@ -49,15 +52,17 @@ internal static class OgcGeoJsonFeatureBuilder
                 resource,
                 new GeoJsonFeatureBuildOptions(
                     ProjectedProperties: projectedProperties,
-                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(resource),
-                    IdFactory: idFactory ?? (_ => OgcFeatureIdentifierResolver.GetPublicId(feature, resource)))),
+                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(resource, schema),
+                    IdFactory: idFactory ?? (_ => OgcFeatureIdentifierResolver.GetPublicId(feature, resource)),
+                    Schema: schema)),
             geometry,
-            links);
+            links, ownsProperties: true);
     }
 
-    private static bool ShouldIncludePublicIdentifierProperty(MetadataV2Resource resource)
+    private static bool ShouldIncludePublicIdentifierProperty(
+        MetadataV2Resource resource, GeoJsonFeatureBaseBuilder.PreparedSchema? schema)
     {
-        var name = resource.FindPrimaryIdField()?.Name ?? "objectid";
+        var name = schema?.ObjectIdFieldName ?? resource.FindPrimaryIdField()?.Name ?? "objectid";
         return !name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -70,6 +75,20 @@ internal static class OgcGeoJsonFeatureBuilder
             Features = [.. features],
             NumberMatched = numberMatched,
             NumberReturned = features.Count,
+            Links = links,
+            TimeStamp = DateTimeOffset.UtcNow
+        };
+
+    // Caller transfers the exact array it has materialized for this response.
+    internal static FeatureCollection CreateCollectionWithOwnedFeatures(
+        GeoJsonFeature[] features,
+        long? numberMatched,
+        ImmutableArray<Link>? links = null)
+        => new()
+        {
+            Features = features,
+            NumberMatched = numberMatched,
+            NumberReturned = features.Length,
             Links = links,
             TimeStamp = DateTimeOffset.UtcNow
         };
@@ -87,6 +106,9 @@ internal static class OgcGeoJsonFeatureBuilder
     private static GeoJsonFeature CreateCore(
         GeoJsonFeatureBase featureBase,
         SimpleGeoJsonGeometry? geometry,
-        ImmutableArray<Link>? links)
-        => featureBase.ToOgcGeoJsonFeature(geometry, links);
+        ImmutableArray<Link>? links,
+        bool ownsProperties = false)
+        => ownsProperties && featureBase.Properties is Dictionary<string, object?> properties
+            ? featureBase.ToOgcGeoJsonFeatureWithOwnedProperties(properties, geometry, links)
+            : featureBase.ToOgcGeoJsonFeature(geometry, links);
 }

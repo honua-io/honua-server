@@ -19,11 +19,27 @@ internal sealed record SharingInfoResponse
     // (guarded by NoArcGisServerVersionTests).
 
     /// <summary>
+    /// Actual public portal root, including its application mount point. Native
+    /// clients use it to resolve Sharing resources without treating the token
+    /// service's <c>/sharing</c> segment as the portal root.
+    /// </summary>
+    [JsonPropertyName("owningSystemUrl")]
+    public required string OwningSystemUrl { get; init; }
+
+    /// <summary>
     /// Authentication metadata advertising token-based security and the
     /// token-issuance endpoint.
     /// </summary>
     [JsonPropertyName("authInfo")]
     public required SharingAuthInfo AuthInfo { get; init; }
+}
+
+/// <summary>Portal Sharing REST root discovery document.</summary>
+internal sealed record SharingRootResponse
+{
+    /// <summary>Identifies this endpoint as a portal sharing root.</summary>
+    [JsonPropertyName("isPortal")]
+    public bool IsPortal { get; init; } = true;
 }
 
 /// <summary>
@@ -73,8 +89,39 @@ internal sealed record PortalSelfResponse
     [JsonPropertyName("user")]
     public PortalUser? User { get; init; }
 
+    /// <summary>Supported routing helpers clients can resolve through this portal.</summary>
+    [JsonPropertyName("helperServices")]
+    public PortalHelperServices HelperServices { get; init; } = new();
+
     // No ArcGIS Portal version (currentVersion) is advertised — Honua does not impersonate a
     // specific ArcGIS Portal release (guarded by NoArcGisServerVersionTests).
+}
+
+/// <summary>Only synchronous solvers supported by the configured routing provider.</summary>
+internal sealed record PortalHelperServices
+{
+    [JsonPropertyName("route")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PortalHelperService? Route { get; init; }
+
+    [JsonPropertyName("serviceArea")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PortalHelperService? ServiceArea { get; init; }
+
+    [JsonPropertyName("closestFacility")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PortalHelperService? ClosestFacility { get; init; }
+
+    [JsonPropertyName("odCostMatrix")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PortalHelperService? OdCostMatrix { get; init; }
+}
+
+/// <summary>Canonical URL of an available helper service.</summary>
+internal sealed record PortalHelperService
+{
+    [JsonPropertyName("url")]
+    public required string Url { get; init; }
 }
 
 /// <summary>
@@ -83,6 +130,10 @@ internal sealed record PortalSelfResponse
 /// </summary>
 internal sealed record CommunitySelfResponse
 {
+    /// <summary>Stable identifier of the calling principal.</summary>
+    [JsonPropertyName("id")]
+    public required string Id { get; init; }
+
     /// <summary>Username of the calling principal.</summary>
     [JsonPropertyName("username")]
     public required string Username { get; init; }
@@ -94,6 +145,26 @@ internal sealed record CommunitySelfResponse
     /// <summary>Roles granted to the calling principal.</summary>
     [JsonPropertyName("role")]
     public string Role { get; init; } = "org_user";
+
+    /// <summary>Groups visible through this minimal portal facade.</summary>
+    [JsonPropertyName("groups")]
+    public IReadOnlyList<object> Groups { get; init; } = Array.Empty<object>();
+}
+
+/// <summary>Content collection for an authenticated portal user.</summary>
+internal sealed record ContentUserResponse
+{
+    [JsonPropertyName("username")]
+    public required string Username { get; init; }
+
+    [JsonPropertyName("currentFolder")]
+    public string? CurrentFolder { get; init; }
+
+    [JsonPropertyName("folders")]
+    public IReadOnlyList<object> Folders { get; init; } = Array.Empty<object>();
+
+    [JsonPropertyName("items")]
+    public IReadOnlyList<PortalItem> Items { get; init; } = Array.Empty<PortalItem>();
 }
 
 /// <summary>

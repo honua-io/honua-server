@@ -28,6 +28,48 @@ public sealed class OgcFeatureEntityTagTests
             geometry: null,
             ImmutableDictionary<string, object?>.Empty.Add("name", name));
 
+    [UnitTest]
+    public void Compute_SparseAndNullPaddedAttributes_ProduceSameEntityETag()
+    {
+        var sparse = MakeFeature(1, "original");
+        var projected = sparse with
+        {
+            Attributes = sparse.Attributes
+                .Add("description", null)
+                .Add("category", System.Text.Json.JsonSerializer.SerializeToElement<object?>(null))
+        };
+
+        var sparseTag = OgcFeatureEntityTag.Compute(sparse, ETagService);
+        var projectedTag = OgcFeatureEntityTag.Compute(projected, ETagService);
+        projectedTag.Should().Be(sparseTag);
+        var representation = OgcFeatureEntityTag.ComputeRepresentation(
+            System.Text.Encoding.UTF8.GetBytes("{\"properties\":{\"name\":\"original\",\"description\":null}}"),
+            projectedTag, ETagService);
+        OgcFeatureEntityTag.MatchesEntityOrRepresentation(representation, sparseTag, ETagService)
+            .Should().BeTrue();
+
+        var changed = projected with { Attributes = projected.Attributes.SetItem("description", "added") };
+        OgcFeatureEntityTag.Compute(changed, ETagService).Should().NotBe(sparseTag);
+    }
+
+    [UnitTest]
+    public void Compute_NestedJsonNullAndAbsentProperty_ProduceDifferentEntityETags()
+    {
+        var original = MakeFeature(1, "original");
+        var absent = original with
+        {
+            Attributes = original.Attributes.Add("metadata", System.Text.Json.JsonSerializer.SerializeToElement(new { }))
+        };
+        var explicitNull = original with
+        {
+            Attributes = original.Attributes.Add("metadata",
+                System.Text.Json.JsonSerializer.SerializeToElement(new { value = (string?)null }))
+        };
+
+        OgcFeatureEntityTag.Compute(absent, ETagService)
+            .Should().NotBe(OgcFeatureEntityTag.Compute(explicitNull, ETagService));
+    }
+
     /// <summary>
     /// Proves that two Feature versions with the same id but different attributes produce
     /// different entity ETags.

@@ -7,6 +7,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
@@ -760,6 +761,7 @@ public sealed class McpStyleToolTests
             NullLogger<McpDataAccessSurface>.Instance);
 
         var services = new ServiceCollection();
+        services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         var authorization = Substitute.For<IAuthorizationService>();
         authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), Arg.Any<string>())
             .Returns(adminAuthorized ? AuthorizationResult.Success() : AuthorizationResult.Failed());

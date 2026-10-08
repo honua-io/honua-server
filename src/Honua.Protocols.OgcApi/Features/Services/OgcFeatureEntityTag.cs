@@ -4,6 +4,7 @@
 using System.Buffers;
 using System.Collections;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
@@ -29,7 +30,13 @@ internal static class OgcFeatureEntityTag
             ["geometry"] = feature.Geometry is { Length: > 0 }
                 ? Convert.ToBase64String(feature.Geometry)
                 : null,
-            ["attributes"] = NormalizeForEtag(feature.Attributes)
+            // Provider projections materialize absent declared fields as null; edit snapshots
+            // keep sparse stored attributes. They represent the same visible feature.
+            // Normalize only top-level field absence, retaining nested JSON distinctions.
+            ["attributes"] = NormalizeForEtag(feature.Attributes
+                .Where(entry => entry.Value is not null &&
+                    entry.Value is not JsonElement { ValueKind: JsonValueKind.Null })
+                .ToImmutableDictionary())
         };
 
         var buffer = new ArrayBufferWriter<byte>();

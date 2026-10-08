@@ -10,7 +10,6 @@ using FluentAssertions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Import.Domain;
-using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
@@ -80,6 +79,60 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         await DropPostGisTableAsync();
         await DropImportedTableAsync();
         await _fixture.DisposeAsync();
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{layerId}/enabled")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/enabled")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers/extents/refresh")]
+    public async Task QualifiedLayerMutations_ThroughConnectionRoute_PreserveEffectiveStorageOwnership(bool managed)
+    {
+        await UseServerFeatureStoreConnectionAsync();
+        var layer = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = "Scoped mutation",
+            ServiceName = _serviceName,
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            StorageMode = managed ? "managed" : "source",
+            Enabled = true
+        });
+        _layerId = layer.LayerId;
+        var expectedConnection = managed ? null : _connectionId.ToString("D");
+        var before = _fixture.GetCurrentV2GraphSnapshot();
+        var binding = before.Graph.StorageBindings.Single(item =>
+            item.StorageLayerId == layer.LayerId && item.ConnectionId == expectedConnection);
+        var route = $"/api/v1/admin/connections/{_connectionId}/layers";
+
+        using var disabled = await _client.PutAsync($"{route}/{layer.LayerId}/enabled?serviceName={_serviceName}",
+            JsonContent.Create(new LayerEnabledRequest { Enabled = false }, options: _jsonOptions));
+        disabled.StatusCode.Should().Be(HttpStatusCode.OK, await disabled.Content.ReadAsStringAsync());
+        var retired = _fixture.GetCurrentV2GraphSnapshot();
+        retired.Graph.StorageBindings.Single(item => item.Metadata.Id == binding.Metadata.Id).Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Retired);
+        retired.Graph.Resources.Single(item => item.Metadata.Id == binding.ResourceId).Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Retired);
+
+        using var enabled = await _client.PutAsync($"{route}/enabled?serviceName={_serviceName}",
+            JsonContent.Create(new LayerEnabledRequest { Enabled = true }, options: _jsonOptions));
+        enabled.StatusCode.Should().Be(HttpStatusCode.OK, await enabled.Content.ReadAsStringAsync());
+        using var refreshed = await _client.PostAsync($"{route}/extents/refresh?serviceName={_serviceName}", null);
+        refreshed.StatusCode.Should().Be(HttpStatusCode.OK, await refreshed.Content.ReadAsStringAsync());
+        var active = _fixture.GetCurrentV2GraphSnapshot();
+        active.Graph.StorageBindings.Single(item => item.Metadata.Id == binding.Metadata.Id).ConnectionId.Should().Be(expectedConnection);
+        active.Graph.Resources.Single(item => item.Metadata.Id == binding.ResourceId).Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Active);
+        active.Graph.Resources.Single(item => item.Metadata.Id == binding.ResourceId).Spatial!.Bbox.Should().NotBeNull();
     }
 
     [IntegrationTest]
@@ -1492,6 +1545,62 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         (await GetManagedStoreRowCountAsync(_layerId.Value)).Should().Be(2);
         (await GetSourceRowCountAsync()).Should().Be(1);
         (await GetSourceRowCountAsync("Managed Feature")).Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits, Operations.Query)]
+    [Protocol(TestProtocols.Admin, TestProtocols.FeatureServer)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task HonuaServer5407_ApplyEditsAttributeOnlyUpdateOnManagedLayerPreservesGeometry()
+    {
+        await UseServerFeatureStoreConnectionAsync();
+        var publishedLayer = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName,
+            Enabled = true,
+            StorageMode = "managed",
+            Capabilities = ["Query", "Create", "Update", "Delete"]
+        });
+        _layerId = publishedLayer.LayerId;
+
+        var queryPath = $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true";
+        using var beforeResponse = await _client.GetAsync(queryPath);
+        beforeResponse.Be200Ok();
+        using var before = JsonDocument.Parse(await beforeResponse.Content.ReadAsStringAsync());
+        var original = before.RootElement.GetProperty("features").EnumerateArray().Single();
+        var objectId = original.GetProperty("attributes").GetProperty("objectid").GetInt64();
+        var originalGeometry = original.GetProperty("geometry").GetRawText();
+
+        using var edits = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["updates"] = $"[{{\"attributes\":{{\"objectid\":{objectId},\"population\":5407}}}}]"
+        });
+        using var updateResponse = await _client.PostAsync(
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/applyEdits", edits);
+        updateResponse.Be200Ok();
+        var updatePayload = await updateResponse.Content.ReadAsStringAsync();
+        using (var update = JsonDocument.Parse(updatePayload))
+        {
+            update.RootElement.GetProperty("updateResults").EnumerateArray().Single()
+                .GetProperty("success").GetBoolean().Should().BeTrue($"response: {updatePayload}");
+        }
+
+        using var afterResponse = await _client.GetAsync(queryPath);
+        afterResponse.Be200Ok();
+        using var after = JsonDocument.Parse(await afterResponse.Content.ReadAsStringAsync());
+        var updated = after.RootElement.GetProperty("features").EnumerateArray().Single();
+        updated.GetProperty("attributes").GetProperty("population").GetDouble().Should().Be(5407d);
+        updated.GetProperty("geometry").GetRawText().Should().Be(originalGeometry);
     }
 
     [IntegrationTest]

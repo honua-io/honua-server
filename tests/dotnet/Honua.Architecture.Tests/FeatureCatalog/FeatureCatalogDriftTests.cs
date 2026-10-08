@@ -141,6 +141,7 @@ public sealed class FeatureCatalogDriftTests
             var descriptor = gatedDescriptorId is null ? null : new CapabilityRegistry().Find(gatedDescriptorId);
             var gateTier = descriptor?.Maturity switch
             {
+                CapabilityMaturity.Internal => "internal",
                 CapabilityMaturity.Experimental => FeatureCatalogGenerator.MaturityExperimental,
                 CapabilityMaturity.Preview => FeatureCatalogGenerator.MaturityPreview,
                 _ => FeatureCatalogGenerator.MaturityImplemented,

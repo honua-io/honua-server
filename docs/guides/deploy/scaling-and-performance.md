@@ -34,7 +34,7 @@ Limits__Tiles__TileTimeout=00:00:30
 TileOptions__CacheMaxAge=3600
 ```
 
-3. Add Redis caching. With Redis configured, metadata and output caches are shared across replicas; without it each replica falls back to a bounded in-memory cache.
+3. Add Redis caching. With Redis configured, metadata and output caches are shared across replicas; without it each replica uses its own in-memory cache. `Cache__EnableFallback` controls fallback during a configured backend outage; it does not disable the normal no-Redis cache.
 
 ```bash
 ConnectionStrings__Redis=redis.example.com:6379
@@ -57,8 +57,11 @@ kubectl -n honua scale deployment/honua-server --replicas=4
 |---|---|---|
 | Edge / CDN | Tiles, public read endpoints | Recommended in production; honor `TileOptions__CacheMaxAge` |
 | Redis (shared) | Service/layer metadata, output cache | Set `ConnectionStrings__Redis`; shared across replicas |
-| In-memory fallback | Same surfaces, per replica | Automatic when Redis is absent or down (`Cache__EnableFallback`) |
+| In-memory (no Redis configured) | Same surfaces, per replica | Automatic; entries retain their configured TTL |
+| In-memory outage fallback | Same surfaces, per replica | Controlled by `Cache__EnableFallback` and `Cache__FallbackMaxEntries` |
 | Npgsql prepared statements | Query plans | Internal; inspect via `GET /api/v1/admin/performance/database/query-cache/statistics` |
+
+The default no-Redis `MemoryDistributedCache` index expires with its latest tracked payload deadline. Subsequent writes remove expired membership instead of renewing it for another 30 days. A bounded background sweep also reclaims visited idle indexes and checks older index formats without removing renewed values. Updates from service instances sharing the same local cache backend are serialized together, including maintenance and renewals. The local cache cannot enumerate previously unvisited schema scopes: legacy indexes are checked when their scope is next used, and otherwise retain their existing expiry. Use Redis for shared cache behavior across replicas.
 
 ## What needs Redis when multi-node
 
@@ -69,6 +72,10 @@ kubectl -n honua scale deployment/honua-server --replicas=4
 A read-replica database connection is not currently supported; all queries use `ConnectionStrings__DefaultConnection`.
 
 ## Redis capacity and latency
+
+The Redis cache service sweeps expired payload references from its cache-key indexes every five seconds, including indexes left by earlier processes. Each tick permits at most 16 discovery commands and 128 total commands while draining a discovered index, with at most 128 payload keys per atomic removal. This bounds maintenance work per tick, not total cache cardinality; sustained key creation can exceed cleanup capacity, so monitor Redis memory and index counts during representative traffic. Redis `SCAN COUNT` is a page-size hint and does not impose a strict response-byte limit.
+
+Cache maintenance requires `SCAN`, `SSCAN`, and Lua execution permitting `EXISTS` and `SREM`, in addition to the normal cache read/write commands. Permission or connectivity failures are logged and retried without failing foreground requests. Redis Cluster cache payloads and their index must share a hash tag in the configured storage/key prefix, as required by their existing atomic write transaction; maintenance declares all accessed keys for the same routing rule. The default no-Redis `MemoryDistributedCache` uses the expiry-aware JSON membership and bounded visited-scope maintenance described above. Other `IDistributedCache`-only providers retain the legacy foreground-only JSON index and 30-day expiry: the interface has no cross-process compare-and-swap primitive, so their existing pattern-invalidation index remains best effort. They do not run expiry sweeps or mutate index membership during reads. Use the native Redis path for shared deployments.
 
 Size Redis from observed peak memory, not its empty-instance footprint. Include shared cache keys, durable job state and logs, queued imports, workflow state, persistence overhead, replication buffers, and failover headroom. Alert before the configured maximum leaves too little room for a traffic spike or persistence operation; the example `RedisMemoryHigh` threshold is 90%.
 

@@ -26,6 +26,8 @@ namespace Honua.Infrastructure.Models;
 /// </remarks>
 internal static class StandardErrorResponseFormatter
 {
+    internal const string WfsRequestVersionItemKey = "Honua.Wfs.RequestVersion";
+
     /// <summary>
     /// Optional OData error formatter. When set, requests classified as OData
     /// (<see cref="ProtocolRequestClassifier.IsOData"/>) are formatted via the
@@ -191,11 +193,13 @@ internal static class StandardErrorResponseFormatter
         // PA-076: Select the version-appropriate exception envelope based on the VERSION query parameter.
         // WFS 1.0.0 → ogc:ServiceExceptionReport; WFS 1.1.0 → OWS 1.0 ows:ExceptionReport;
         // WFS 2.0.0 / absent → OWS 1.1 ows:ExceptionReport (current default, language required).
-        var wfsVersion = context.Request.Query.TryGetValue("VERSION", out var versionValue)
-            ? versionValue.ToString()
-            : context.Request.Query.TryGetValue("version", out var versionLowerValue)
-                ? versionLowerValue.ToString()
-                : null;
+        var wfsVersion = context.Items.TryGetValue(WfsRequestVersionItemKey, out var parsedVersion)
+            ? parsedVersion as string
+            : context.Request.Query.TryGetValue("VERSION", out var versionValue)
+                ? versionValue.ToString()
+                : context.Request.Query.TryGetValue("version", out var versionLowerValue)
+                    ? versionLowerValue.ToString()
+                    : null;
 
         string xmlContent;
         if (string.Equals(wfsVersion, "1.0.0", StringComparison.Ordinal))
@@ -656,16 +660,39 @@ internal static class StandardErrorResponseFormatter
             return "unknown";
         }
 
-        // Use the last segment as the operation only when it is purely alphabetic
-        // (Esri operations like query/addFeatures/applyEdits/exportImage). Numeric
-        // or mixed segments are identifiers (layer/feature ids) and would explode
-        // metric cardinality, so they collapse to "unknown".
+        // Closed set: the last segment is caller-controlled (service and layer names), so only
+        // known operation terminals become labels; everything else collapses to "unknown".
         var last = segments[^1];
-        if (last.Any(ch => !char.IsLetter(ch)))
-        {
-            return "unknown";
-        }
-
-        return last.ToLowerInvariant();
+        return GeoServicesOperations.Contains(last) ? last.ToLowerInvariant() : "unknown";
     }
+
+    /// <summary>
+    /// Fixed GeoServices REST operation terminals across Feature/Map/Image/GP/NA/Geocode/
+    /// VectorTile servers that are safe to emit as the bounded <c>operation</c> metric label.
+    /// </summary>
+    private static readonly HashSet<string> GeoServicesOperations = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // FeatureServer / layer
+        "query", "queryTopFeatures", "queryDateBins", "queryBins", "queryRelatedRecords",
+        "queryAttachments", "queryDomains", "queryContingentValues", "queryAnalytic",
+        "addFeatures", "updateFeatures", "deleteFeatures", "applyEdits", "calculate", "append",
+        "validateSQL", "generateRenderer", "addAttachment", "updateAttachment", "deleteAttachments",
+        "createReplica", "synchronizeReplica", "unRegisterReplica", "extractChanges",
+        "uploadAssets", "queryAssets", "cleanupAssets", "hasAssets",
+
+        // MapServer
+        "export", "identify", "find", "legend", "queryLegends", "generateKml", "exportTiles",
+        "estimateExportTilesSize", "htmlPopup", "dynamicLayer", "allLayersAndTables", "tilemap",
+
+        // ImageServer
+        "exportImage", "getSamples", "measure", "computeHistograms", "computeStatisticsHistograms",
+        "computeClassStatistics", "computePixelLocation", "computeTiePoints", "calculateVolume",
+        "queryBoundary", "rasterAttributeTable", "keyProperties", "rasterFunctionInfos",
+        "multidimensionalInfo", "imageSupportData", "histograms", "statistics", "download",
+
+        // GPServer / NAServer / GeocodeServer / generic
+        "submitJob", "execute", "cancel", "solve", "solveClosestFacility", "solveServiceArea",
+        "findAddressCandidates", "geocodeAddresses", "reverseGeocode", "suggest",
+        "generate", "generateToken",
+    };
 }

@@ -29,6 +29,11 @@ internal readonly record struct StretchBounds(double Lo, double Hi);
 /// </summary>
 internal sealed class PostgresRasterStore : IRasterStore
 {
+    private static string BuildExportDataExpression(RasterFormat format, string driver, string options)
+        => format == RasterFormat.Raw
+            ? "ST_AsBinary(rast, TRUE)"
+            : $"ST_AsGDALRaster(rast, '{driver}'{options})";
+
     private static readonly FrozenSet<string> _allowedOutputFormats = new[] { "GTiff", "PNG", "JPEG", "COG" }.ToFrozenSet(StringComparer.Ordinal);
     private static readonly FrozenSet<string> _allowedResamplingAlgorithms = new[] { "NearestNeighbor", "Bilinear", "Cubic", "Lanczos" }.ToFrozenSet(StringComparer.Ordinal);
     private static readonly FrozenSet<string> _allowedZonalStatistics = new[] { "count", "sum", "mean", "min", "max", "stddev", "variance" }.ToFrozenSet(StringComparer.Ordinal);
@@ -88,6 +93,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         command.CommandText = $"""
             SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
                    ST_BandNoDataValue(raster, 1) AS nodata_value,
+                   (SELECT bool_and(ST_BandNoDataValue(raster, band) IS NOT DISTINCT FROM ST_BandNoDataValue(raster, 1))
+                    FROM generate_series(1, ST_NumBands(raster)) band) AS uniform_nodata,
                    ST_UpperLeftX(raster) AS upper_left_x,
                    ST_ScaleX(raster) AS scale_x,
                    ST_SkewX(raster) AS skew_x,
@@ -163,6 +170,8 @@ internal sealed class PostgresRasterStore : IRasterStore
             WITH candidate AS (
                 SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
                        ST_BandNoDataValue(raster, 1) AS nodata_value,
+                   (SELECT bool_and(ST_BandNoDataValue(raster, band) IS NOT DISTINCT FROM ST_BandNoDataValue(raster, 1))
+                    FROM generate_series(1, ST_NumBands(raster)) band) AS uniform_nodata,
                        ST_UpperLeftX(raster) AS upper_left_x,
                        ST_ScaleX(raster) AS scale_x,
                        ST_SkewX(raster) AS skew_x,
@@ -182,7 +191,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             )
             {timestampCte}
             SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
-                   nodata_value, upper_left_x, scale_x, skew_x, upper_left_y, skew_y, scale_y,
+                   nodata_value, uniform_nodata, upper_left_x, scale_x, skew_x, upper_left_y, skew_y, scale_y,
                    xmin, ymin, xmax, ymax, acquisition_date, created_at, updated_at
             FROM candidate
             {timestampWhereClause}
@@ -372,6 +381,8 @@ internal sealed class PostgresRasterStore : IRasterStore
             filtered AS (
                 SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
                        ST_BandNoDataValue(raster, 1) AS nodata_value,
+                   (SELECT bool_and(ST_BandNoDataValue(raster, band) IS NOT DISTINCT FROM ST_BandNoDataValue(raster, 1))
+                    FROM generate_series(1, ST_NumBands(raster)) band) AS uniform_nodata,
                        ST_UpperLeftX(raster) AS upper_left_x,
                        ST_ScaleX(raster) AS scale_x,
                        ST_SkewX(raster) AS skew_x,
@@ -442,7 +453,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         var rowsSql = $"""
             {ctePrefix}
             SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
-                   nodata_value, upper_left_x, scale_x, skew_x, upper_left_y, skew_y, scale_y,
+                   nodata_value, uniform_nodata, upper_left_x, scale_x, skew_x, upper_left_y, skew_y, scale_y,
                    xmin, ymin, xmax, ymax, acquisition_date, created_at, updated_at
             FROM filtered
             ORDER BY effective_acquisition DESC, created_at DESC, id DESC
@@ -528,7 +539,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
 
         var formatName = query.OutputFormat.ToGdalDriverName();
-        if (!_allowedOutputFormats.Contains(formatName))
+        if (query.OutputFormat != RasterFormat.Raw && !_allowedOutputFormats.Contains(formatName))
         {
             throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
         }
@@ -645,7 +656,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                            ORDER BY n)) AS rast
                 FROM frame_grid g, source s
             )
-            SELECT ST_AsGDALRaster(rast, '{effectiveFormat}'{creationOptionsClause}) AS data,
+            SELECT {BuildExportDataExpression(query.OutputFormat, effectiveFormat, creationOptionsClause)} AS data,
                    ST_Width(rast) AS width,
                    ST_Height(rast) AS height,
                    ST_SRID(rast) AS srid,
@@ -701,6 +712,11 @@ internal sealed class PostgresRasterStore : IRasterStore
         var ymaxOrd = reader.GetOrdinal("ymax");
 
         var data = reader.IsDBNull(dataOrd) ? Array.Empty<byte>() : (byte[])reader[dataOrd];
+        if (query.OutputFormat == RasterFormat.Raw)
+        {
+            return PostgresRasterRawDecoder.Decode(data);
+        }
+
         var width = reader.GetInt32(widthOrd);
         var height = reader.GetInt32(heightOrd);
         var srid = reader.GetInt32(sridOrd);
@@ -735,7 +751,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         var formatName = query.OutputFormat.ToGdalDriverName();
-        if (!_allowedOutputFormats.Contains(formatName))
+        if (query.OutputFormat != RasterFormat.Raw && !_allowedOutputFormats.Contains(formatName))
         {
             throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
         }
@@ -877,7 +893,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM {_rasterDataTable}
                 WHERE layer_id = @layerId AND id = @rasterId
             ){frameCtes}
-            SELECT ST_AsGDALRaster(rast, '{effectiveFormat}'{creationOptionsClause}) AS data,
+            SELECT {BuildExportDataExpression(query.OutputFormat, effectiveFormat, creationOptionsClause)} AS data,
                    ST_Width(rast) AS width,
                    ST_Height(rast) AS height,
                    ST_SRID(rast) AS srid,
@@ -919,6 +935,11 @@ internal sealed class PostgresRasterStore : IRasterStore
         var ymaxOrd = reader.GetOrdinal("ymax");
 
         var data = reader.IsDBNull(dataOrd) ? Array.Empty<byte>() : (byte[])reader[dataOrd];
+        if (query.OutputFormat == RasterFormat.Raw)
+        {
+            return PostgresRasterRawDecoder.Decode(data);
+        }
+
         var width = reader.GetInt32(widthOrd);
         var height = reader.GetInt32(heightOrd);
         var srid = reader.GetInt32(sridOrd);
@@ -2037,7 +2058,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         var formatName = query.OutputFormat.ToGdalDriverName();
-        if (!_allowedOutputFormats.Contains(formatName))
+        if (query.OutputFormat != RasterFormat.Raw && !_allowedOutputFormats.Contains(formatName))
         {
             throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
         }
@@ -2049,6 +2070,19 @@ internal sealed class PostgresRasterStore : IRasterStore
             ("@layerId", layerId),
             ("@rasterIds", rasterIds)
         };
+
+        // Select/order source bands before union, matching the single-raster export path.
+        // Keeping selection in the canonical expression also preserves NoData per band.
+        if (query.Bands is { Length: > 0 } bands)
+        {
+            if (bands.Any(static band => band <= 0))
+            {
+                throw new ArgumentException("Raster band numbers must be positive.", nameof(query));
+            }
+
+            sourceRasterExpr = "ST_Band(raster, @bands)";
+            extraParams.Add(("@bands", bands));
+        }
 
         // Covering the clip envelope (Esri exportImage bbox, #4060) replaces the in-place
         // reprojection and resize with the frame CTEs, exactly as on the single-raster path.
@@ -2177,7 +2211,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM merged
                 WHERE rast IS NOT NULL
             ){mosaicFrameCtes}
-            SELECT ST_AsGDALRaster(rast, '{effectiveFormat}'{creationOptionsClause}) AS data,
+            SELECT {BuildExportDataExpression(query.OutputFormat, effectiveFormat, creationOptionsClause)} AS data,
                    ST_Width(rast) AS width,
                    ST_Height(rast) AS height,
                    ST_SRID(rast) AS srid,
@@ -2219,6 +2253,11 @@ internal sealed class PostgresRasterStore : IRasterStore
         var ymaxOrd = reader.GetOrdinal("ymax");
 
         var data = reader.IsDBNull(dataOrd) ? Array.Empty<byte>() : (byte[])reader[dataOrd];
+        if (query.OutputFormat == RasterFormat.Raw)
+        {
+            return PostgresRasterRawDecoder.Decode(data);
+        }
+
         var width = reader.IsDBNull(widthOrd) ? query.OutputWidth ?? 0 : reader.GetInt32(widthOrd);
         var height = reader.IsDBNull(heightOrd) ? query.OutputHeight ?? 0 : reader.GetInt32(heightOrd);
         var srid = reader.IsDBNull(sridOrd) ? query.OutputSrid : reader.GetInt32(sridOrd);
@@ -3392,6 +3431,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         command.CommandText = $"""
             SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
                    ST_BandNoDataValue(raster, 1) AS nodata_value,
+                   (SELECT bool_and(ST_BandNoDataValue(raster, band) IS NOT DISTINCT FROM ST_BandNoDataValue(raster, 1))
+                    FROM generate_series(1, ST_NumBands(raster)) band) AS uniform_nodata,
                    ST_UpperLeftX(raster) AS upper_left_x,
                    ST_ScaleX(raster) AS scale_x,
                    ST_SkewX(raster) AS skew_x,
@@ -4645,6 +4686,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         command.CommandText = $"""
             SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
                    ST_BandNoDataValue(raster, 1) AS nodata_value,
+                   (SELECT bool_and(ST_BandNoDataValue(raster, band) IS NOT DISTINCT FROM ST_BandNoDataValue(raster, 1))
+                    FROM generate_series(1, ST_NumBands(raster)) band) AS uniform_nodata,
                    ST_UpperLeftX(raster) AS upper_left_x,
                    ST_ScaleX(raster) AS scale_x,
                    ST_SkewX(raster) AS skew_x,
@@ -4899,6 +4942,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             PixelType = reader.GetString(pixelTypeOrd),
             Srid = reader.GetInt32(sridOrd),
             NoDataValue = reader.IsDBNull(noDataOrd) ? null : reader.GetDouble(noDataOrd),
+            HasUniformNoDataValue = reader.GetBoolean(reader.GetOrdinal("uniform_nodata")),
             GeoTransform = geoTransform,
             Extent = new RasterExtent
             {
@@ -4950,7 +4994,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         var acquisitionColumn = seamlineRequested ? "rd.acquisition_date" : "acquisition_date";
         var layerIdColumn = seamlineRequested ? "rd.layer_id" : "layer_id";
 
-        // esriMosaicByAttribute over a non-date attribute needs the allowlisted attribute column
+        // esriMosaicAttribute over a non-date attribute needs the allowlisted attribute column
         // projected into the source CTE so the union's ORDER BY can reference it. The column name
         // is strictly allowlisted upstream (never caller free text). 'id' is already projected, so
         // skip the extra projection to avoid a duplicate column. Attribute ordering and seamline

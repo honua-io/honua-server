@@ -195,7 +195,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
                 new TestFileFormatDetectionService(),
                 new NoopPerformanceMonitor(),
-                NullLogger<StreamingFileImportService>.Instance);
+                NullLogger<StreamingFileImportService>.Instance,
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
 
             await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(PointGeoJson));
             var result = await service.ImportFileAsync(new ImportRequest
@@ -359,7 +360,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 new TestFileFormatDetectionService(),
                 new NoopPerformanceMonitor(),
                 NullLogger<StreamingFileImportService>.Instance,
-                strictSkipLimits);
+                strictSkipLimits,
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
 
             await using (var seed = new MemoryStream(Encoding.UTF8.GetBytes(PointGeoJson)))
             {
@@ -478,7 +480,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 new TestFileFormatDetectionService(),
                 new NoopPerformanceMonitor(),
                 NullLogger<StreamingFileImportService>.Instance,
-                strictLimits);
+                strictLimits,
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
 
             await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(SelfIntersectingPolygonGeoJson));
             var result = await service.ImportFileAsync(new ImportRequest
@@ -541,7 +544,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             var service = new StreamingFileImportService(provider,
                 new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
                 new TestFileFormatDetectionService(), new NoopPerformanceMonitor(),
-                NullLogger<StreamingFileImportService>.Instance, ImportLimits.Default with { BatchSize = 1 });
+                NullLogger<StreamingFileImportService>.Instance, ImportLimits.Default with { BatchSize = 1 },
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
             await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(PointGeoJson));
             var request = new ImportRequest
             {
@@ -605,7 +609,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             var service = new StreamingFileImportService(provider,
                 new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
                 new TestFileFormatDetectionService(), new NoopPerformanceMonitor(),
-                NullLogger<StreamingFileImportService>.Instance, ImportLimits.Default with { BatchSize = 500 });
+                NullLogger<StreamingFileImportService>.Instance, ImportLimits.Default with { BatchSize = 500 },
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
             await using var stream = File.OpenRead(filePath);
             var baseline = GC.GetTotalMemory(forceFullCollection: true);
             var peakRetained = baseline;
@@ -731,7 +736,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
             new TestFileFormatDetectionService(),
             new NoopPerformanceMonitor(),
-            NullLogger<StreamingFileImportService>.Instance);
+            NullLogger<StreamingFileImportService>.Instance,
+            schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
 
         // All segments are fixed literals and can never be rooted, so Path.Join cannot drop
         // earlier segments here (cs/path-combine false positive).
@@ -817,7 +823,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
                 new TestFileFormatDetectionService(),
                 new NoopPerformanceMonitor(),
-                NullLogger<StreamingFileImportService>.Instance);
+                NullLogger<StreamingFileImportService>.Instance,
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
 
             await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(PointGeoJson));
             var result = await service.ImportFileAsync(new ImportRequest
@@ -856,13 +863,15 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 new CrsDetectionService(firstProvider, NullLogger<CrsDetectionService>.Instance),
                 new TestFileFormatDetectionService(),
                 new NoopPerformanceMonitor(),
-                NullLogger<StreamingFileImportService>.Instance);
+                NullLogger<StreamingFileImportService>.Instance,
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
             var secondService = new StreamingFileImportService(
                 secondProvider,
                 new CrsDetectionService(secondProvider, NullLogger<CrsDetectionService>.Instance),
                 new TestFileFormatDetectionService(),
                 new NoopPerformanceMonitor(),
-                NullLogger<StreamingFileImportService>.Instance);
+                NullLogger<StreamingFileImportService>.Instance,
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
 
             firstStream = new GateStream(Encoding.UTF8.GetBytes("POINT(10 10)"));
             firstTask = firstService.ImportFileAsync(new ImportRequest
@@ -991,7 +1000,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
                 new TestFileFormatDetectionService(),
                 new NoopPerformanceMonitor(),
-                NullLogger<StreamingFileImportService>.Instance);
+                NullLogger<StreamingFileImportService>.Instance,
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
 
             await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(PointGeoJson));
             var result = await service.ImportFileAsync(new ImportRequest
@@ -1036,7 +1046,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
                 new TestFileFormatDetectionService(),
                 new NoopPerformanceMonitor(),
-                NullLogger<StreamingFileImportService>.Instance);
+                NullLogger<StreamingFileImportService>.Instance,
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
 
             await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(SelfIntersectingPolygonGeoJson));
             var result = await service.ImportFileAsync(new ImportRequest
@@ -1092,7 +1103,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 new TestFileFormatDetectionService(),
                 new NoopPerformanceMonitor(),
                 NullLogger<StreamingFileImportService>.Instance,
-                strictLimits);
+                strictLimits,
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
 
             await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(SelfIntersectingPolygonGeoJson));
             var result = await service.ImportFileAsync(new ImportRequest
@@ -1139,7 +1151,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 new TestFileFormatDetectionService(),
                 new NoopPerformanceMonitor(),
                 NullLogger<StreamingFileImportService>.Instance,
-                strictSkipLimits);
+                strictSkipLimits,
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
 
             await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(MixedValidityGeoJson));
             var result = await service.ImportFileAsync(new ImportRequest
@@ -1196,7 +1209,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 new TestFileFormatDetectionService(),
                 new NoopPerformanceMonitor(),
                 NullLogger<StreamingFileImportService>.Instance,
-                acceptLimits);
+                acceptLimits,
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
 
             await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(SelfIntersectingPolygonGeoJson));
             var result = await service.ImportFileAsync(new ImportRequest
@@ -1258,7 +1272,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
                 new TestFileFormatDetectionService(),
                 new NoopPerformanceMonitor(),
-                NullLogger<StreamingFileImportService>.Instance);
+                NullLogger<StreamingFileImportService>.Instance,
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
 
             await using var stream = File.OpenRead(filePath);
             var result = await service.ImportFileAsync(new ImportRequest
@@ -1309,7 +1324,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
                 new TestFileFormatDetectionService(),
                 new NoopPerformanceMonitor(),
-                NullLogger<StreamingFileImportService>.Instance);
+                NullLogger<StreamingFileImportService>.Instance,
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
 
             await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(PointGeoJson));
             var result = await service.ImportFileAsync(new ImportRequest

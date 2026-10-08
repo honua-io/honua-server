@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Ai.Discovery;
 using System.Diagnostics;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -63,7 +64,7 @@ internal sealed partial class SpecGroundingService
         SpecGroundingLog.MutateStarted(_logger, turn.Length, retried);
 
         var warnings = new List<SpecDiagnostic>();
-        var layers = await LoadLayersAsync(warnings, cancellationToken).ConfigureAwait(false);
+        var layers = await LoadLayersAsync(warnings, principal, cancellationToken).ConfigureAwait(false);
         var catalogSnapshot = layers.Count == 0
             ? StaticSpecCatalogSnapshot.Empty
             : new MetadataV2SpecCatalogSnapshot(layers);
@@ -747,6 +748,7 @@ internal sealed partial class SpecGroundingService
 
     private async Task<IReadOnlyList<GroundingCatalogLayer>> LoadLayersAsync(
         List<SpecDiagnostic> warnings,
+        ClaimsPrincipal? principal,
         CancellationToken cancellationToken)
     {
         try
@@ -759,7 +761,9 @@ internal sealed partial class SpecGroundingService
             }
 
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            return MetadataV2GroundingCatalog.BuildLayers(snapshot);
+            var context = ReadableMetadataCatalog.CreateAccessContext(scope.ServiceProvider, principal);
+            var publications = await ReadableMetadataCatalog.GetPublicationsAsync(context, snapshot, cancellationToken).ConfigureAwait(false);
+            return MetadataV2GroundingCatalog.BuildLayers(snapshot, publications);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

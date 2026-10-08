@@ -472,15 +472,18 @@ internal static class SearchEndpoints
                 {
                     globalOrderBy ??= query.OrderBy.Value;
                 }
-                var readerResolution = await StacFeatureReaderResolver.ResolveAsync(
-                    context,
-                    featureReader,
-                    target.Snapshot,
-                    target.Service,
-                    target.Resource,
-                    target.Publication,
-                    layerId,
-                    cancellationToken).ConfigureAwait(false);
+                if (await StacFeatureReaderResolver.ResolveAsync(
+                        context,
+                        featureReader,
+                        target.Snapshot,
+                        target.Service,
+                        target.Resource,
+                        target.Publication,
+                        cancellationToken).ConfigureAwait(false) is not { } readerResolution)
+                {
+                    continue;
+                }
+
                 var targetReader = readerResolution.Reader;
                 var storageLayerId = readerResolution.StorageLayerId;
 

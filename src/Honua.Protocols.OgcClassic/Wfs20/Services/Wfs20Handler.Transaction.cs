@@ -14,6 +14,7 @@ using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -75,6 +76,13 @@ internal sealed partial class Wfs20Handler
                     "request");
             }
 
+            var transactionVersion = root.Attribute("version")?.Value;
+            var legacyTransaction = transactionVersion is "1.0.0" or "1.1.0";
+            if (legacyTransaction)
+            {
+                root = NormalizeLegacyTransaction(root);
+            }
+
             var rollbackOnFailure = ResolveRollbackOnFailure(context.Request, root);
             var prepared = await PrepareTransactionAsync(
                 context,
@@ -93,6 +101,10 @@ internal sealed partial class Wfs20Handler
                     // All actions matched zero features — ISO 19142 §15.2.5.3 no-op: return
                     // a valid TransactionResponse with all counts at zero rather than an error.
                     var emptyResponse = BuildTransactionResponseXml(prepared, FeatureEditResult.Success(0, 0, 0));
+                    if (legacyTransaction)
+                    {
+                        emptyResponse = FormatLegacyTransactionResponse(emptyResponse, transactionVersion!);
+                    }
                     return Results.Content(emptyResponse, "application/xml", Encoding.UTF8);
                 }
 
@@ -162,6 +174,10 @@ internal sealed partial class Wfs20Handler
             HonuaTelemetry.SetSuccess(activity, committedChangeCount);
 
             var responseXml = BuildTransactionResponseXml(prepared, editResult);
+            if (legacyTransaction)
+            {
+                responseXml = FormatLegacyTransactionResponse(responseXml, transactionVersion!);
+            }
             return Results.Content(responseXml, "application/xml", Encoding.UTF8);
         }
         catch (InvalidDataException ex)
@@ -690,6 +706,8 @@ internal sealed partial class Wfs20Handler
             targetIds[0],
             featureElement,
             cancellationToken).ConfigureAwait(false);
+        // Compare the stored target snapshot, rather than the new replacement payload.
+        replacement = replacement with { ReadStateToken = FeatureStateToken.FromReadSnapshot(existing.Value) };
         // Replace constructs a fresh feature from the request payload (or null when
         // the body omits geometry), and the operation overwrites the existing row.
         // Mark the change when either side has geometry so a body-less Replace that
@@ -764,12 +782,13 @@ internal sealed partial class Wfs20Handler
             mergedAttributes[name] = value;
         }
 
-        return await CreateTransactionFeatureAsync(
+        var updated = await CreateTransactionFeatureAsync(
             resource,
             existing.Id,
             changes.GeometrySpecified ? changes.Geometry : existing.Geometry,
             mergedAttributes.ToImmutable(),
             cancellationToken).ConfigureAwait(false);
+        return updated with { ReadStateToken = FeatureStateToken.FromReadSnapshot(existing) };
     }
 
 
@@ -977,6 +996,12 @@ internal sealed partial class Wfs20Handler
     {
         var filterElement = actionElement.Elements()
             .FirstOrDefault(element => string.Equals(element.Name.LocalName, "Filter", StringComparison.OrdinalIgnoreCase));
+        if (filterElement is not null)
+        {
+            filterElement = PrepareLegacyTransactionFilter(
+                filterElement, descriptor.Resource.ReadSrid() ?? SpatialReference.WGS84.Wkid);
+        }
+
         var filterChildren = filterElement?.Elements().ToArray() ?? [];
         var resourceIdValues = filterElement == null
             ? []
@@ -1404,7 +1429,7 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static Geometry ParseTransactionGeometry(XElement geometryElement, int defaultSrid)
+    internal static Geometry ParseTransactionGeometry(XElement geometryElement, int defaultSrid)
     {
         var srsNameValue = geometryElement.Attributes()
             .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, "srsName", StringComparison.OrdinalIgnoreCase))
@@ -1431,15 +1456,18 @@ internal sealed partial class Wfs20Handler
         }
 
         var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(crsDefinition.Srid);
+        var axisOrder = geometryElement.Annotation<LegacyWfs10Coordinates>() is not null
+            ? AxisOrder.EastNorth
+            : crsDefinition.AxisOrder;
 
         return geometryElement.Name.LocalName switch
         {
-            "Point" => ParseTransactionPointGeometry(geometryElement, geometryFactory, crsDefinition.AxisOrder),
-            "MultiPoint" => ParseTransactionMultiPointGeometry(geometryElement, geometryFactory, crsDefinition.AxisOrder),
-            "LineString" or "Curve" => ParseTransactionLineStringGeometry(geometryElement, geometryFactory, crsDefinition.AxisOrder),
-            "MultiLineString" or "MultiCurve" => ParseTransactionMultiLineStringGeometry(geometryElement, geometryFactory, crsDefinition.AxisOrder),
-            "Polygon" or "Surface" => ParseTransactionPolygonGeometry(geometryElement, geometryFactory, crsDefinition.AxisOrder),
-            "MultiPolygon" or "MultiSurface" => ParseTransactionMultiPolygonGeometry(geometryElement, geometryFactory, crsDefinition.AxisOrder),
+            "Point" => ParseTransactionPointGeometry(geometryElement, geometryFactory, axisOrder),
+            "MultiPoint" => ParseTransactionMultiPointGeometry(geometryElement, geometryFactory, axisOrder),
+            "LineString" or "Curve" => ParseTransactionLineStringGeometry(geometryElement, geometryFactory, axisOrder),
+            "MultiLineString" or "MultiCurve" => ParseTransactionMultiLineStringGeometry(geometryElement, geometryFactory, axisOrder),
+            "Polygon" or "Surface" => ParseTransactionPolygonGeometry(geometryElement, geometryFactory, axisOrder),
+            "MultiPolygon" or "MultiSurface" => ParseTransactionMultiPolygonGeometry(geometryElement, geometryFactory, axisOrder),
             _ => throw new NotSupportedException($"Unsupported GML geometry type '{geometryElement.Name.LocalName}'.")
         };
     }
@@ -1756,8 +1784,11 @@ internal sealed partial class Wfs20Handler
 
     private static string GetFirstTransactionError(FeatureEditResult editResult)
     {
-        return editResult.CreateResults.Concat(editResult.UpdateResults).Concat(editResult.DeleteResults)
-            .FirstOrDefault(result => !result.IsSuccess)
+        var results = editResult.CreateResults.Concat(editResult.UpdateResults).Concat(editResult.DeleteResults);
+        // Preserve the lease refusal when earlier layer edits now report rollback notices.
+        return results.FirstOrDefault(result => !result.IsSuccess && result.ErrorCode == StatusCodes.Status423Locked)
+            .ErrorMessage
+            ?? results.FirstOrDefault(result => !result.IsSuccess)
             .ErrorMessage
             ?? "Transaction failed.";
     }
@@ -1776,7 +1807,7 @@ internal sealed partial class Wfs20Handler
             // post-merge feature WKB (which BuildTransactionUpdatedFeatureAsync preserves
             // when the request omits geometry).
             var operations = prepared.Operations
-                .Select(static operation => operation.EditOperation)
+                .Select(static operation => operation.AdapterOperation)
                 .ToImmutableArray();
             var requestGeometryChangedFlags = prepared.Operations
                 .Select(static operation => operation.RequestGeometryChanged)
@@ -1849,7 +1880,7 @@ internal sealed partial class Wfs20Handler
                     layerGroup.Key,
                     resource,
                     operations
-                        .Select(static operation => operation.EditOperation)
+                        .Select(static operation => operation.AdapterOperation)
                         .ToImmutableArray(),
                     operations
                         .Select(static operation => operation.RequestGeometryChanged)
@@ -2002,7 +2033,7 @@ internal sealed partial class Wfs20Handler
         HttpContext context,
         int layerId,
         MetadataV2Resource resource,
-        ImmutableArray<FeatureEditOperation> operations,
+        ImmutableArray<Wfs20EditOperation> operations,
         ImmutableArray<bool> requestGeometryChangedFlags,
         bool rollbackOnFailure,
         CancellationToken cancellationToken,
@@ -2033,7 +2064,9 @@ internal sealed partial class Wfs20Handler
         // existing row). Reading editBatch.Operations[i].Feature.Geometry would over-
         // report attribute-only Updates because BuildTransactionUpdatedFeatureAsync
         // preserves the existing WKB when changes.GeometrySpecified is false.
-        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(operations, requestGeometryChangedFlags);
+        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(
+            operations.Select(static operation => operation.Operation).ToImmutableArray(),
+            requestGeometryChangedFlags);
         var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
             context,
             layerId,
@@ -2461,6 +2494,10 @@ internal sealed partial class Wfs20Handler
         Feature? MutationFeature,
         Feature? DeleteSnapshot)
     {
+        public Wfs20EditOperation AdapterOperation => new(
+            EditOperation,
+            ActionKind == TransactionActionKind.Replace ? EditUpdateMode.Replace : EditUpdateMode.Merge);
+
         /// <summary>
         /// True when the originating request body explicitly specified a geometry. For
         /// Insert/Replace this is always true (the request must carry the feature payload);

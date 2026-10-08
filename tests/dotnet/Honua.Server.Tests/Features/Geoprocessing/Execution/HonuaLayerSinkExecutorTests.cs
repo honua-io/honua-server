@@ -52,6 +52,76 @@ public sealed class HonuaLayerSinkExecutorTests
         message.Should().Contain("unavailable in this deployment");
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    [Trait("Tier", "Fast")]
+    public async Task HonuaLayerSink_CancellationAfterCommit_PreservesReceiptAndReportsCommittedCompletion(
+        bool cancelToken, bool stopLaterWork)
+    {
+        using var securityScope = BeginAdminSubmitterScope();
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+        var record = CreateRecord(
+            ("input", BuildInputUri(Feature(Point(1, 2)))),
+            ("layer", "parcels"), ("targetSrid", "4326"), ("batchId", "committed-batch")) with
+        {
+            Status = ExecutionJobStatus.Provisioning,
+            ClaimedBy = "worker-test",
+            AttemptCount = 1,
+            Audit = new OperationAuditInfo
+            {
+                SubmitterSecurityContext = new JobSecurityContext("admin", null,
+                    [new JobSecurityClaim(ClaimTypes.Role, "admin")])
+            }
+        };
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync(record.OperationId, Arg.Any<CancellationToken>()).Returns(_ => record);
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { record = call.Arg<ExecutionJobRecord>(); return true; });
+        var sink = Substitute.For<IHonuaLayerSink>();
+        sink.LoadAsync(Arg.Any<HonuaLayerSinkRequest>(), Arg.Any<IReadOnlyList<HonuaLayerSinkRow>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                // The destination and its receipt have committed; another host stamps cancellation.
+                record = record with { CancellationRequestedAt = DateTimeOffset.UtcNow };
+                if (cancelToken) cancellationTokens.Cancel(record.OperationId).Should().BeTrue();
+                var request = call.Arg<HonuaLayerSinkRequest>();
+                return new HonuaLayerSinkOutcome(1, request.Schema, request.Table, request.BatchId);
+            });
+        var sinkExecutor = new HonuaLayerSinkExecutor(Options(), NullLogger<HonuaLayerSinkExecutor>.Instance,
+            sink, EmptyCatalogScopeFactory());
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var result = await sinkExecutor.ExecuteAsync(call.Arg<ExecutionJobRecord>(),
+                    call.Arg<IJobExecutionContext>(), call.Arg<CancellationToken>());
+                if (stopLaterWork) call.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                return result;
+            });
+        using var service = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor],
+            cancellationTokens, [], null, NullLogger<JobExecutionService>.Instance);
+        var method = typeof(JobExecutionService).GetMethod("ProcessJobAsync",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+
+        await ((Task)method.Invoke(service, [record.OperationId, "worker-test", CancellationToken.None])!);
+
+        record.ArtifactReferences.Should().ContainSingle();
+        var receipt = DecodeDescriptor(record.ArtifactReferences[0]);
+        receipt.GetProperty("batchId").GetString().Should().Be("committed-batch");
+        receipt.GetProperty("featuresWritten").GetInt64().Should().Be(1);
+        receipt.GetProperty("committed").GetBoolean().Should().BeTrue();
+        record.Status.Should().Be(stopLaterWork ? ExecutionJobStatus.Cancelled : ExecutionJobStatus.Succeeded);
+        record.CurrentPhase.Should().Contain("committed");
+        record.Warnings.Should().Contain(w => w.Contains("committed", StringComparison.Ordinal));
+        var package = GeoprocessingResultPackageFactory.Create(record, new BuiltInProcessCatalog());
+        package.Artifacts.Should().ContainSingle().Which.Uri.Should().Be(record.ArtifactReferences[0]);
+        package.Summary.Description.Should().Contain("committed");
+    }
+
     [UnitTest]
     public async Task HonuaLayerSink_LoadsRowsThroughCapability_AppendMode()
     {
@@ -469,7 +539,6 @@ public sealed class HonuaLayerSinkExecutorTests
         HonuaLayerSinkExecutor executor,
         params (string Name, string Value)[] inputs)
     {
-        const string processId = HonuaLayerSinkExecutor.HandledProcessId;
         var context = Substitute.For<IJobExecutionContext>();
         context.OperationId.Returns("op-test");
         string? publishedUri = null;
@@ -477,6 +546,16 @@ public sealed class HonuaLayerSinkExecutorTests
             .When(c => c.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
             .Do(call => publishedUri = call.ArgAt<string>(0));
 
+        context.When(c => c.RecordCommittedEffectAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(call => publishedUri = call.Arg<string>());
+
+        var record = CreateRecord(inputs);
+        var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+        return (result.Status, publishedUri, result.ErrorMessage ?? string.Empty);
+    }
+    private static ExecutionJobRecord CreateRecord(params (string Name, string Value)[] inputs)
+    {
+        const string processId = HonuaLayerSinkExecutor.HandledProcessId;
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = processId,
@@ -489,7 +568,7 @@ public sealed class HonuaLayerSinkExecutorTests
             parameters[prefix + name] = value;
         }
 
-        var record = new ExecutionJobRecord
+        return new ExecutionJobRecord
         {
             OperationId = "op-test",
             Status = ExecutionJobStatus.Running,
@@ -505,7 +584,6 @@ public sealed class HonuaLayerSinkExecutorTests
             }
         };
 
-        var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
-        return (result.Status, publishedUri, result.ErrorMessage ?? string.Empty);
     }
+
 }

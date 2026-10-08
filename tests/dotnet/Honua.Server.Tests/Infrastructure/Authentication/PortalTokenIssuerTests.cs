@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
@@ -15,6 +16,7 @@ using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -30,6 +32,48 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 [Operation(Operations.Security)]
 public sealed class PortalTokenIssuerTests
 {
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("   ", false)]
+    [InlineData("https://other.example.com/private?token=sensitive#fragment", true)]
+    [InlineData("http://app.example.com/private", true)]
+    [InlineData("https://app.example.com:8443/private", true)]
+    [Trait("Tier", "Fast")]
+    public async Task ValidateAsync_RefererMismatch_LogsBindingPresenceAndHashesWithoutSecrets(
+        string? requestReferer, bool expectedPresence)
+    {
+        var logger = Substitute.For<ILogger<PortalTokenIssuer>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var issuer = new PortalTokenIssuer(cache, logger);
+        var issuance = await issuer.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: "alice",
+                DisplayName: "Alice",
+                TenantId: null,
+                Roles: ["editor"],
+                ClientType: PortalTokenClientType.Referer,
+                BindingValue: "https://app.example.com/private?password=sensitive",
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5)),
+            CancellationToken.None);
+
+        var validation = await issuer.ValidateAsync(
+            issuance.Token, new PortalTokenBinding(requestReferer, null), CancellationToken.None);
+
+        validation.Should().BeNull();
+        var entry = logger.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(ILogger.Log))
+            .Select(call => call.GetArguments())
+            .Single(arguments => arguments[1] is EventId { Id: 7003 });
+        var fields = ((IEnumerable<KeyValuePair<string, object?>>)entry[2]!).ToDictionary(pair => pair.Key, pair => pair.Value);
+        fields["RequestBindingPresent"].Should().Be(expectedPresence);
+        fields["IssuedBindingHash"].Should().Be(LogValueRedactor.Hash("https://app.example.com"));
+        fields["RequestBindingHash"].Should().NotBeNull();
+        var message = entry[2]!.ToString()!;
+        message.Should().NotContain(issuance.Token).And.NotContain("sensitive").And.NotContain("private");
+        message.Should().NotContain("app.example.com").And.NotContain("other.example.com");
+    }
+
     [UnitTest]
     public async Task IssueAsync_RoundTripsRefererBoundToken_HydratesPrincipalWithRolesAndTenant()
     {
@@ -559,6 +603,203 @@ public sealed class PortalTokenIssuerTests
         verified.Source.Version.Should().NotContain(adminPassword);
     }
 
+    // ─── #5491 federated exchange ───────────────────────────────────────────────
+
+    [UnitTest]
+    public async Task ExchangeAsync_PresentedFromAnotherBinding_ReturnsNull_Issue5491()
+    {
+        var issuer = CreateIssuer();
+        var portal = await issuer.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: "alice",
+                DisplayName: null,
+                TenantId: null,
+                Roles: ["viewer"],
+                ClientType: PortalTokenClientType.Referer,
+                BindingValue: "https://app.example.com/",
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30),
+                Source: PortalCredentialSource.None),
+            CancellationToken.None);
+
+        var replayed = await issuer.ExchangeAsync(
+            new PortalTokenExchangeRequest(
+                portal.Token,
+                new PortalTokenBinding(Referer: "https://attacker.example.com/", ClientIp: null),
+                PortalTokenClientType.Referer,
+                "https://attacker.example.com/",
+                DateTimeOffset.UtcNow.AddMinutes(30)),
+            CancellationToken.None);
+        var bound = await issuer.ExchangeAsync(
+            new PortalTokenExchangeRequest(
+                portal.Token,
+                new PortalTokenBinding(Referer: "https://app.example.com/maps", ClientIp: null),
+                PortalTokenClientType.Referer,
+                "https://app.example.com/",
+                DateTimeOffset.UtcNow.AddMinutes(30)),
+            CancellationToken.None);
+
+        replayed.Should().BeNull("a token bound to one referer cannot authenticate an exchange from another");
+        bound.Should().NotBeNull();
+        bound!.PrincipalId.Should().Be("alice");
+    }
+
+    [UnitTest]
+    public async Task ExchangeAsync_MappedRoles_KeepClaimsMappingProvenance_Issue5491()
+    {
+        var entitlements = new MutableLicenseEntitlementService(HonuaEdition.Enterprise);
+        var issuer = CreateIssuer(entitlements);
+        var portal = await issuer.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: "alice",
+                DisplayName: null,
+                TenantId: null,
+                Roles: ["viewer", "editor"],
+                ClientType: PortalTokenClientType.Ip,
+                BindingValue: "192.0.2.40",
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30),
+                RolesRequireClaimsMappingEntitlement: true,
+                RolesWithoutClaimsMapping: ["viewer"],
+                Source: PortalCredentialSource.None),
+            CancellationToken.None);
+        var binding = new PortalTokenBinding(Referer: null, ClientIp: "192.0.2.40");
+
+        var exchange = await ExchangeForSameIpAsync(issuer, portal.Token, "192.0.2.40");
+        exchange.Should().NotBeNull();
+
+        var entitled = await issuer.ValidateAsync(exchange!.Issuance.Token, binding, CancellationToken.None);
+        entitled!.Principal.IsInRole("editor").Should().BeTrue();
+
+        entitlements.Expire();
+
+        var expired = await issuer.ValidateAsync(exchange.Issuance.Token, binding, CancellationToken.None);
+        expired.Should().NotBeNull();
+        expired!.Principal.IsInRole("viewer").Should().BeTrue();
+        expired.Principal.IsInRole("editor").Should().BeFalse(
+            "the exchanged token's roles depend on the same entitlement as the presented token's");
+    }
+
+    [UnitTest]
+    public async Task ExchangeAsync_MappedTenant_RefusedAfterEntitlementExpires_Issue5491()
+    {
+        var entitlements = new MutableLicenseEntitlementService(HonuaEdition.Enterprise);
+        var issuer = CreateIssuer(entitlements);
+        var portal = await issuer.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: "alice",
+                DisplayName: null,
+                TenantId: "mapped-tenant",
+                Roles: ["viewer"],
+                ClientType: PortalTokenClientType.Ip,
+                BindingValue: "192.0.2.41",
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30),
+                TenantRequiresClaimsMappingEntitlement: true,
+                RolesWithoutClaimsMapping: ["viewer"],
+                Source: PortalCredentialSource.None),
+            CancellationToken.None);
+        var binding = new PortalTokenBinding(Referer: null, ClientIp: "192.0.2.41");
+
+        var exchange = await ExchangeForSameIpAsync(issuer, portal.Token, "192.0.2.41");
+        exchange!.TenantId.Should().Be("mapped-tenant");
+        (await issuer.ValidateAsync(exchange.Issuance.Token, binding, CancellationToken.None))
+            .Should().NotBeNull();
+
+        entitlements.Expire();
+
+        (await issuer.ValidateAsync(exchange.Issuance.Token, binding, CancellationToken.None))
+            .Should().BeNull("the tenant came from claims mapping, which is no longer entitled");
+    }
+
+    [UnitTest]
+    public async Task ExchangeAsync_AdminPasswordSource_StopsWhenPasswordRotates_Issue5491()
+    {
+        const string original = "Or1ginal-Exchange-Password!";
+        var context = CreateSourceBoundIssuer(original);
+        var portal = await context.Issuer.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: "admin",
+                DisplayName: null,
+                TenantId: null,
+                Roles: ["admin"],
+                ClientType: PortalTokenClientType.Ip,
+                BindingValue: "192.0.2.42",
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30),
+                Source: new PortalCredentialSource(
+                    PortalCredentialSourceKind.AdminPassword,
+                    Version: PortalCredentialSourceVersion.ForAdminPassword(original))),
+            CancellationToken.None);
+        var binding = new PortalTokenBinding(Referer: null, ClientIp: "192.0.2.42");
+
+        var exchange = await ExchangeForSameIpAsync(context.Issuer, portal.Token, "192.0.2.42");
+        (await context.Issuer.ValidateAsync(exchange!.Issuance.Token, binding, CancellationToken.None))
+            .Should().NotBeNull();
+
+        context.ApiKeyOptions.AdminPassword = "R0tated-Exchange-Password!";
+
+        (await context.Issuer.ValidateAsync(exchange.Issuance.Token, binding, CancellationToken.None))
+            .Should().BeNull("the exchanged token is backed by the password the presented token came from");
+    }
+
+    [UnitTest]
+    public async Task ExchangeAsync_ManagedKeySource_StopsWhenKeyIsRevoked_Issue5491()
+    {
+        var context = CreateSourceBoundIssuer();
+        var key = await context.KeyStore.CreateAsync(
+            "automation", ["admin:*"], DateTimeOffset.UtcNow.AddHours(2), "test", CancellationToken.None);
+        var portal = await IssueFromManagedKeyAsync(context, key.Record, "192.0.2.43");
+        var binding = new PortalTokenBinding(Referer: null, ClientIp: "192.0.2.43");
+
+        var exchange = await ExchangeForSameIpAsync(context.Issuer, portal.Token, "192.0.2.43");
+        (await context.Issuer.ValidateAsync(exchange!.Issuance.Token, binding, CancellationToken.None))
+            .Should().NotBeNull();
+
+        await context.KeyStore.RevokeAsync(key.Record.Id, CancellationToken.None);
+
+        (await context.Issuer.ValidateAsync(exchange.Issuance.Token, binding, CancellationToken.None))
+            .Should().BeNull("the exchanged token is backed by the key the presented token came from");
+    }
+
+    [UnitTest]
+    public async Task ExchangeAsync_NeverOutlivesPresentedToken_Issue5491()
+    {
+        var issuer = CreateIssuer();
+        var presentedExpiry = DateTimeOffset.UtcNow.AddMinutes(5);
+        var portal = await issuer.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: "alice",
+                DisplayName: null,
+                TenantId: null,
+                Roles: [],
+                ClientType: PortalTokenClientType.Ip,
+                BindingValue: "192.0.2.44",
+                ExpiresAt: presentedExpiry,
+                Source: PortalCredentialSource.None),
+            CancellationToken.None);
+
+        var exchange = await issuer.ExchangeAsync(
+            new PortalTokenExchangeRequest(
+                portal.Token,
+                new PortalTokenBinding(Referer: null, ClientIp: "192.0.2.44"),
+                PortalTokenClientType.Ip,
+                "192.0.2.44",
+                DateTimeOffset.UtcNow.AddHours(2)),
+            CancellationToken.None);
+
+        exchange!.Issuance.ExpiresAt.Should().Be(portal.ExpiresAt);
+    }
+
+    private static Task<PortalTokenExchange?> ExchangeForSameIpAsync(
+        PortalTokenIssuer issuer,
+        string token,
+        string clientIp)
+        => issuer.ExchangeAsync(
+            new PortalTokenExchangeRequest(
+                token,
+                new PortalTokenBinding(Referer: null, ClientIp: clientIp),
+                PortalTokenClientType.Ip,
+                clientIp,
+                DateTimeOffset.UtcNow.AddMinutes(30)),
+            CancellationToken.None);
+
     private static Task<PortalTokenIssuance> IssueFromManagedKeyAsync(
         SourceBoundIssuer context,
         AdminApiKeyRecord record,
@@ -638,8 +879,16 @@ public sealed class PortalTokenIssuerTests
     private static PortalTokenIssuer CreateIssuer(ILicenseEntitlementService entitlements)
     {
         var memoryCache = new MemoryCache(new MemoryCacheOptions());
+        // The real source validator, as every host registers it, so an exchanged token is
+        // judged by the same source checks as any other.
         var services = new ServiceCollection()
             .AddSingleton(entitlements)
+            .AddSingleton<IMemoryCache>(memoryCache)
+            .AddSingleton(Options.Create(new PortalTokenAuthenticationOptions()))
+            .AddSingleton<IPortalTokenSourceValidator>(sp => new PortalTokenSourceValidator(
+                sp.GetRequiredService<IMemoryCache>(),
+                sp.GetRequiredService<IOptions<PortalTokenAuthenticationOptions>>(),
+                sp))
             .BuildServiceProvider();
         return new PortalTokenIssuer(
             memoryCache,

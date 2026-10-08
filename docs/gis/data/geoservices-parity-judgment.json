@@ -1470,7 +1470,7 @@
           {
             "name": "format",
             "status": "partial",
-            "notes": "Supports png, jpg, jpeg, tif, and tiff."
+            "notes": "Supports png, png8, png24, png32, jpg, jpeg, jpgpng, tif, and tiff, plus raw pixel blocks of the stored samples: bsq, bip, and lossless lerc (one LERC2 blob per band)."
           },
           {
             "name": "f",
@@ -1485,12 +1485,12 @@
           {
             "name": "pixelType",
             "status": "partial",
-            "notes": "UNKNOWN is accepted as the no-conversion default; every explicit conversion type returns 501 because pixel conversion is not implemented."
+            "notes": "UNKNOWN and the service's own pixel type are accepted as the no-conversion default; every other explicit conversion type returns 501 because pixel conversion is not implemented."
           },
           {
             "name": "compression",
             "status": "partial",
-            "notes": "Applied to TIFF output only. Supports None, JPEG, and LZ77; LZ77 maps to GDAL DEFLATE. Ignored for non-TIFF outputs."
+            "notes": "Applied to TIFF output, which supports None, JPEG, and LZ77; LZ77 maps to GDAL DEFLATE. Raw pixel blocks accept None, and lerc also accepts LERC. Ignored for PNG and JPEG outputs."
           },
           {
             "name": "renderingRule",
@@ -1708,7 +1708,8 @@
       "knownGaps": [
         "tiles carry only the service's primary tiled publication, not every layer packed per tile",
         "tilemap availability is grid arithmetic and never consults the tile store",
-        "no sprite or glyph store: sprite and font resources are content-free placeholders",
+        "no sprite store: sprite resources are content-free placeholders",
+        "glyphs come from one bundled sans-serif face substituted for every served fontstack, Basic Latin and Latin-1 only",
         "service metadata hardcodes capabilities/type/exportTilesAllowed and always reports minLOD 0"
       ],
       "evidence": {
@@ -1723,7 +1724,8 @@
         ],
         "tests": [
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileServerEndpointTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileStyleComposerTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileStyleComposerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileEmbeddedAssetsTests.cs"
         ]
       },
       "operations": [
@@ -1758,7 +1760,7 @@
           "esriPaths": [
             "/VectorTileServer/resources/styles"
           ],
-          "notes": "Composes a Mapbox GL v8 style document from the layer's stored MapLibre style through the shared style projection, rewriting source, sprite, and glyph URLs onto this service; falls back to a deterministic default style when the layer has none stored."
+          "notes": "Composes a Mapbox GL v8 style document from the layer's stored MapLibre style through the shared style projection, rewriting source, sprite, and glyph URLs onto this service (each vector source carries the service URL and the tile template); falls back to a deterministic default style when the layer has none stored."
         },
         {
           "name": "Style sub-resource",
@@ -1778,15 +1780,16 @@
         },
         {
           "name": "Font (glyph) resources",
-          "status": "stub",
+          "status": "partial",
           "esriPaths": [
             "/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf"
           ],
-          "notes": "Route exists and returns a spec-shaped glyph PBF containing one fontstack (\"Honua Default\") with zero glyphs. No font store backs it: the requested fontstack is ignored and every name yields the same bytes; only the 0-255 range is served and all other ranges return 404."
+          "notes": "Returns signed-distance-field glyphs for the requested fontstack and range, labelled with the requested fontstack, from one bundled sans-serif face (DejaVu Sans). Any fontstack naming a common sans-serif family is served with that face, so weights and styles are not distinguished; other fontstacks return 404. Only the 0-255 range is bundled; all other ranges return 404."
         }
       ],
       "knownLimitations": [
-        "Sprite and glyph resources are deliberately scoped-minimal placeholders (#1780): a client that renders symbols or labels from them gets nothing to draw."
+        "Sprite resources are deliberately scoped-minimal placeholders (#1780): a client that renders icons from them gets nothing to draw.",
+        "Labels draw with one bundled sans-serif face for Basic Latin and Latin-1 text only (#5535)."
       ]
     },
     {
@@ -2607,16 +2610,17 @@
           "esriPaths": [
             "/VersionManagementServer"
           ],
-          "notes": "GET and POST return the descriptor after service-read, branch-versioning entitlement, and accessible bound-publication capability checks. The descriptor still uses a capability string rather than the Esri capability object and does not expose a durable DEFAULT version GUID; native workspace initialization remains unresolved."
+          "notes": "GET and POST return the descriptor after service-read, branch-versioning entitlement, and accessible bound-publication capability checks. It names DEFAULT by the contract's fixed defaultVersionGuid, which native clients read, then start a read session on, to open the feature service as a versioned workspace; the sibling MapServer lists VersionManagementServer in supportedExtensions even when a map-only service shares the name."
         },
         {
           "name": "List versions; version info",
           "status": "implemented",
           "esriPaths": [
+            "/VersionManagementServer/versionInfos",
             "/VersionManagementServer/versions",
             "/VersionManagementServer/versions/{versionGuid}"
           ],
-          "notes": "Lists and resolves real versions from the version manager, filtered by the access policy (private versions are visible to owner/admin only). A non-visible version returns 404 rather than 403, so existence is not leaked; an invalid GUID returns 400. Providers without versioning return an empty list rather than an error."
+          "notes": "Lists and resolves real versions from the version manager, filtered by the access policy (private versions are visible to owner/admin only). versionInfos (GET or POST) lists DEFAULT first, and version info (GET or POST) answers DEFAULT at its fixed GUID; the Honua-named versions route omits DEFAULT. A non-visible version returns 404 rather than 403, so existence is not leaked; an invalid GUID returns 400. Providers without versioning return an empty list rather than an error."
         },
         {
           "name": "Create version",
@@ -2663,7 +2667,7 @@
             "/VersionManagementServer/versions/{versionGuid}/stopEditing",
             "/VersionManagementServer/versions/{versionGuid}/stopReading"
           ],
-          "notes": "Stateless acknowledgements: Honua holds no Esri edit/read session and issues no session token, because edits land per-request via gdbVersion rather than inside a server-held session. startEditing does resolve the version, return its durable branch generation as moment, and return 409 mid-reconcile/post; stopEditing has no saveEdits semantics (there is nothing to commit or discard). A client that depends on session tokens will not get Esri's behaviour."
+          "notes": "Stateless acknowledgements: Honua holds no Esri edit/read session and issues no session token, because edits land per-request via gdbVersion rather than inside a server-held session. startEditing does resolve the version, return its durable branch generation as moment, and return 409 mid-reconcile/post. Read sessions follow the read rule (service read access plus version visibility, the same rule as a gdbVersion read), so any reader can open one on DEFAULT or a public or protected version, while another owner's private version answers 404; edit sessions keep the owner-or-admin rule. stopEditing has no saveEdits semantics (there is nothing to commit or discard). A client that depends on session tokens will not get Esri's behaviour."
         }
       ],
       "knownLimitations": [
@@ -2793,7 +2797,23 @@
           "esriPaths": [
             "/sharing/rest/portals/self"
           ],
-          "notes": "Only username and fullName are real (projected from the caller's claims). The portal id (\"0123456789ABCDEF\"), name, portalName, isPortal, and role are hardcoded; org settings, urlKey, allSSL, basemaps, and privileges are absent. Sufficient for client bootstrap, not for portal administration."
+          "notes": "username and fullName are projected from the caller's claims. helperServices advertises supported synchronous route, serviceArea, closestFacility and odCostMatrix layers using the public base URL. Unsupported helpers are omitted; provider failure is logged and leaves the helper block empty. The portal id (\"0123456789ABCDEF\"), name, portalName, isPortal, and role are hardcoded; org settings, urlKey, allSSL, basemaps, and privileges are absent. Sufficient for client bootstrap, not for portal administration."
+        },
+        {
+          "name": "Community User",
+          "status": "partial",
+          "esriPaths": [
+            "/sharing/rest/community/users/{username}"
+          ],
+          "notes": "Returns id, username and fullName from the authenticated caller's claims only when the requested username matches the caller (case-insensitive). Anonymous callers get 401; other usernames get 404 without revealing whether they exist. The role remains the fixed org_user value and groups is empty; this is a self-profile projection, not a general user directory or a complete organization profile."
+        },
+        {
+          "name": "User Content",
+          "status": "partial",
+          "esriPaths": [
+            "/sharing/rest/content/users/{username}"
+          ],
+          "notes": "Lists RBAC-visible graph service items for the authenticated caller when the requested username matches case-insensitively. Items with a mapped owner are filtered to that caller; visible services without an owner mapping are also included. Anonymous callers get 401 and other usernames get 404. Folders is always empty, the graph-service projection is not a general portal content store, and pagination and folder traversal are not implemented."
         },
         {
           "name": "Community Self",

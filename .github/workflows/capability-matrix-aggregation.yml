@@ -24,6 +24,9 @@ on:
       - 'docs/gis/data/capability-no-surface-allowlist.v1.json'
       - 'docs/gis/data/capability-matrix.v1.json'
       - 'docs/gis/data/client-certification-checklist.v1.json'
+      # The authoritative measured-lane input the checklist generator merges
+      # last. A PR that changes only this file still has to run --check.
+      - 'docs/gis/data/client-certification-results.v1.json'
       - 'docs/gis/CLIENT_CERTIFICATION_CHECKLIST.md'
       - 'docs/gis/data/operation-capability.v1.json'
       - 'tests/baselines/client-compat/**'

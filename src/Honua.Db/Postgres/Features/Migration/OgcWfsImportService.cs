@@ -892,18 +892,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
     }
 
     private string ResolveTargetSchema(string? requestedSchema)
-    {
-        var schema = string.IsNullOrWhiteSpace(requestedSchema)
-            ? _schemaConfiguration.DefaultOperationalSchema
-            : requestedSchema.Trim();
-
-        if (!SchemaSearchPath.IsValidIdentifier(schema))
-        {
-            throw new ArgumentException("Target schema contains invalid characters.", nameof(requestedSchema));
-        }
-
-        return schema;
-    }
+        => _schemaConfiguration.ResolveImportTargetSchema(requestedSchema);
 
     private static Uri BuildGetFeatureUrl(Uri serviceUri, string version, string featureTypeName, int startIndex, int pageSize)
     {

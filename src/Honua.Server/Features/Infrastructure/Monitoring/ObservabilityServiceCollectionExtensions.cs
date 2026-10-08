@@ -611,6 +611,8 @@ internal static class ObservabilityServiceCollectionExtensions
             {
                 policy.Expire(ttl.SceneTilesetMetadata);
                 policy.SetVaryByRouteValue("sceneId");
+                policy.SetVaryByHost(false);
+                policy.AddPolicy<IgnoreRequestHostOutputCachePolicy>();
                 policy.AddPolicy<BypassOutputCacheOnRangeRequestPolicy>();
                 policy.AddPolicy<BypassOutputCacheOnNoStoreResponsePolicy>();
                 policy.AddPolicy<BypassOutputCacheOnSceneAccessTokenPolicy>();
@@ -627,6 +629,8 @@ internal static class ObservabilityServiceCollectionExtensions
             {
                 policy.Expire(ttl.SceneTileAsset);
                 policy.SetVaryByRouteValue("sceneId", "assetPath");
+                policy.SetVaryByHost(false);
+                policy.AddPolicy<IgnoreRequestHostOutputCachePolicy>();
                 policy.AddPolicy<BypassOutputCacheOnRangeRequestPolicy>();
                 policy.AddPolicy<BypassOutputCacheOnNoStoreResponsePolicy>();
                 policy.AddPolicy<BypassOutputCacheOnSceneAccessTokenPolicy>();

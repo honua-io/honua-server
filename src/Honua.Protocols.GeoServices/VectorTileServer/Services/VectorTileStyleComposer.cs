@@ -4,11 +4,11 @@
 // Composes the Mapbox GL v8 style document served by the GeoServices VectorTileServer
 // resources/styles/root.json endpoint (honua-server#1779, epic #1776). Given the canonical
 // MapLibre/Mapbox style stored for the service's primary layer (or none), it produces a
-// GL v8 document whose vector source's tile template resolves to this service's
-// tile/{z}/{y}/{x}.pbf route.
+// GL v8 document whose vector source's url names this service's descriptor (#5534) and whose
+// tile template resolves to this service's tile/{z}/{y}/{x}.pbf route.
 //
-// Sprite/glyphs references are scoped-minimal (honua-server#1780, epic decision): Honua serves
-// only a stub sprite sheet and a stub glyph stack, so emitting sprite/glyphs is useful ONLY for
+// Sprite/glyphs references are scoped (honua-server#1780, epic decision): Honua serves a stub
+// sprite sheet and one bundled glyph face (#5535), so emitting sprite/glyphs is useful ONLY for
 // styles that actually consume them — i.e. styles with at least one `symbol` layer. When the
 // composed style has a symbol layer, the composer points sprite/glyphs at THIS service's
 // resources routes (absolute); otherwise it omits them. Any stale sprite/glyphs already present
@@ -70,6 +70,12 @@ internal static class VectorTileStyleComposer
     /// emitted only when the composed style has a symbol layer. Pass <see langword="null"/> to
     /// always omit.
     /// </param>
+    /// <param name="serviceUrl">
+    /// The absolute service descriptor URL (for example
+    /// <c>https://host/rest/services/{id}/VectorTileServer</c>), emitted as every vector
+    /// source's <c>url</c> so clients discover the service extent and tile map from it (#5534).
+    /// Pass <see langword="null"/> to emit tiles-only sources.
+    /// </param>
     /// <returns>A serialized Mapbox GL v8 style document.</returns>
     public static string Compose(
         string? storedMapLibreJson,
@@ -78,7 +84,8 @@ internal static class VectorTileStyleComposer
         string tileUrl,
         MetadataV2GeometryType geometryType,
         string? spriteUrl = null,
-        string? glyphsUrl = null)
+        string? glyphsUrl = null,
+        string? serviceUrl = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
@@ -87,7 +94,7 @@ internal static class VectorTileStyleComposer
         var root = TryParseStoredStyle(storedMapLibreJson)
             ?? BuildDefaultStyle(serviceName, sourceId, tileUrl, geometryType);
 
-        RewriteSources(root, sourceId, tileUrl);
+        RewriteSources(root, sourceId, tileUrl, serviceUrl);
         ApplySpriteAndGlyphs(root, spriteUrl, glyphsUrl);
         EnsureVersionAndName(root, serviceName);
 
@@ -120,11 +127,12 @@ internal static class VectorTileStyleComposer
 
     /// <summary>
     /// Rewrites every <c>sources.&lt;id&gt;</c> entry so the served document only advertises
-    /// the local vector tile route. The configured <paramref name="sourceId"/> is guaranteed to
-    /// exist as a vector source whose <c>tiles[]</c> is the absolute service tile template; the
-    /// legacy <c>url</c> (TileJSON pointer) is removed so clients fetch tiles directly.
+    /// this service. The configured <paramref name="sourceId"/> is guaranteed to exist as a
+    /// vector source whose <c>tiles[]</c> is the absolute service tile template and whose
+    /// <c>url</c> is the service descriptor; any stored <c>url</c> is replaced (or dropped when
+    /// no <paramref name="serviceUrl"/> is supplied) so the document never names another service.
     /// </summary>
-    private static void RewriteSources(JsonObject root, string sourceId, string tileUrl)
+    private static void RewriteSources(JsonObject root, string sourceId, string tileUrl, string? serviceUrl)
     {
         if (root["sources"] is not JsonObject sources)
         {
@@ -135,7 +143,7 @@ internal static class VectorTileStyleComposer
         // Rewrite any existing vector source in place so layer source-bindings stay valid.
         foreach (var source in sources.ToArray().Select(entry => entry.Value).OfType<JsonObject>())
         {
-            RewriteVectorSource(source, tileUrl);
+            RewriteVectorSource(source, tileUrl, serviceUrl);
         }
 
         if (sources[sourceId] is not JsonObject configured)
@@ -144,15 +152,24 @@ internal static class VectorTileStyleComposer
             sources[sourceId] = configured;
         }
 
-        RewriteVectorSource(configured, tileUrl);
+        RewriteVectorSource(configured, tileUrl, serviceUrl);
     }
 
-    private static void RewriteVectorSource(JsonObject source, string tileUrl)
+    private static void RewriteVectorSource(JsonObject source, string tileUrl, string? serviceUrl)
     {
         source["type"] = "vector";
-        // Direct tile template wins; drop the TileJSON pointer so we never emit a URL the
-        // VectorTileServer surface does not serve.
-        source.Remove("url");
+        // The url names this service's descriptor, from which clients read the fullExtent and
+        // tile map (#5534); the direct tile template stays for clients that fetch tiles from
+        // the style alone. A stored url never survives: it may name a service we do not serve.
+        if (string.IsNullOrWhiteSpace(serviceUrl))
+        {
+            source.Remove("url");
+        }
+        else
+        {
+            source["url"] = serviceUrl;
+        }
+
         source["tiles"] = new JsonArray(tileUrl);
     }
 

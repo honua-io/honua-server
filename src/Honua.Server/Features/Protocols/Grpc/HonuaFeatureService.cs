@@ -4,15 +4,20 @@
 using System.Collections.Immutable;
 using Grpc.Core;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
@@ -109,9 +114,18 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         var layer = await ValidateGrpcLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
         await EnsureReadAccessAsync(context, layer.Service, layer.Resource).ConfigureAwait(false);
-        var queryContext = await CreateQueryContextAsync(request, layer, context.CancellationToken).ConfigureAwait(false);
+        var queryContext = await CreateQueryContextAsync(
+            request, layer, context.GetHttpContext().RequestServices, context.CancellationToken).ConfigureAwait(false);
         var query = queryContext.Query;
         var pkField = layer.ObjectIdFieldName;
+        var readOperation = request.ReturnCountOnly
+            ? FeatureProviderReadOperation.Count
+            : request.ReturnExtentOnly
+                ? FeatureProviderReadOperation.Extent
+                : FeatureProviderReadOperation.Query;
+        var reader = await ResolveReaderAsync(
+                layer, readOperation, context.GetHttpContext().RequestServices, context.CancellationToken)
+            .ConfigureAwait(false);
 
         var response = new Proto.QueryFeaturesResponse
         {
@@ -123,7 +137,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         // Count-only query
         if (request.ReturnCountOnly)
         {
-            response.Count = await _featureReader.CountAsync(
+            response.Count = await reader.CountAsync(
                 layer.StorageLayerId, query, context.CancellationToken).ConfigureAwait(false);
             return response;
         }
@@ -131,7 +145,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         // IDs-only query
         if (request.ReturnIdsOnly)
         {
-            var objectIds = await _featureReader.QueryObjectIdsAsync(
+            var objectIds = await reader.QueryObjectIdsAsync(
                 layer.StorageLayerId, query, context.CancellationToken).ConfigureAwait(false);
             response.ObjectIds.AddRange(objectIds);
             return response;
@@ -140,7 +154,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         // Extent-only query
         if (request.ReturnExtentOnly)
         {
-            var extent = await _featureReader.GetExtentAsync(
+            var extent = await reader.GetExtentAsync(
                 layer.StorageLayerId, query, context.CancellationToken).ConfigureAwait(false);
             if (extent.HasValue)
             {
@@ -155,7 +169,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             response.Fields.Add(GrpcConversionHelpers.ToProtoField(field));
         }
 
-        var result = await _featureReader.QueryAsync(
+        var result = await reader.QueryAsync(
             layer.StorageLayerId, query, context.CancellationToken).ConfigureAwait(false);
 
         foreach (var feature in result.Items)
@@ -163,7 +177,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             response.Features.Add(GrpcConversionHelpers.ToProtoFeature(
                 feature,
                 queryContext.ReturnGeometry,
-                queryContext.GeometryLimits));
+                queryContext.GeometryLimits,
+                query.Distinct ? null : pkField));
         }
 
         response.ExceededTransferLimit = result.HasMoreResults;
@@ -181,14 +196,29 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         var layer = await ValidateGrpcLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
         await EnsureReadAccessAsync(context, layer.Service, layer.Resource).ConfigureAwait(false);
-        var queryContext = await CreateQueryContextAsync(request, layer, context.CancellationToken).ConfigureAwait(false);
+        var queryContext = await CreateQueryContextAsync(
+            request, layer, context.GetHttpContext().RequestServices, context.CancellationToken, streaming: true).ConfigureAwait(false);
         var query = queryContext.Query;
         var pkField = layer.ObjectIdFieldName;
+        var requestServices = context.GetHttpContext().RequestServices;
+        var resolvedReader = await ResolveReaderAsync(
+                layer, FeatureProviderReadOperation.Query, requestServices, context.CancellationToken)
+            .ConfigureAwait(false);
+        var streamingStore = requestServices.GetService<FeatureProviderQueryRouter>() is null
+            && requestServices.GetService<IMetadataV2GraphProvider>() is null
+            ? _streamingFeatureStore
+            : resolvedReader as IStreamingFeatureStore;
+        if (streamingStore is null)
+        {
+            throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                "The layer's feature provider does not support streaming queries."));
+        }
 
         var isFirstPage = true;
         var batch = new List<Proto.Feature>(_streamBatchSize);
 
-        await using var enumerator = _streamingFeatureStore
+        await using var enumerator = streamingStore
             .StreamFeaturesAsync(layer.StorageLayerId, query, context.CancellationToken)
             .GetAsyncEnumerator(context.CancellationToken);
 
@@ -198,7 +228,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             batch.Add(GrpcConversionHelpers.ToProtoFeature(
                 enumerator.Current,
                 queryContext.ReturnGeometry,
-                queryContext.GeometryLimits));
+                queryContext.GeometryLimits,
+                query.Distinct ? null : pkField));
 
             if (batch.Count < _streamBatchSize)
             {
@@ -251,6 +282,20 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         var layer = await ValidateGrpcLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
 
+        var metadataGraphProvider = context.GetHttpContext().RequestServices.GetService<IMetadataV2GraphProvider>();
+        if (metadataGraphProvider is not null)
+        {
+            var snapshot = await metadataGraphProvider.GetCurrentAsync(context.CancellationToken).ConfigureAwait(false);
+            var storageBinding = snapshot.ResolveStorageBinding(layer.Publication)
+                ?? throw new RpcException(new Status(StatusCode.FailedPrecondition, "The layer has no resolvable storage binding."));
+            if (!FeatureStorageMapping.FromMetadata(layer.Resource, storageBinding).SupportsManagedWrites)
+            {
+                throw new RpcException(new Status(
+                    StatusCode.FailedPrecondition,
+                    "The layer's storage binding does not support managed writes."));
+            }
+        }
+
         // gRPC ApplyEdits is an open-protocol edit surface and remains Community (#1591).
         // Validation, authz, eventing, and telemetry still run through the shared edit pipeline.
 
@@ -270,16 +315,16 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         GrpcApplyEditsIdempotencyStore.Lease? idempotencyLease = null;
         if (!string.IsNullOrEmpty(idempotencyKey))
         {
-            var principal = context.GetHttpContext()?.User;
-            var principalId = principal?.FindFirst("api_key_id")?.Value
-                ?? principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                ?? principal?.FindFirst("sub")?.Value
-                ?? principal?.Identity?.Name
-                ?? "anonymous";
-            var scopedKey = $"{request.ServiceId ?? ""}:{request.LayerId}:{principalId}:{idempotencyKey}";
-            idempotencyLease = await _idempotencyStore.EnterAsync(scopedKey, context.CancellationToken).ConfigureAwait(false);
+            // A stored result is replayed only within the same service, layer, effective
+            // tenant and scheme/issuer-qualified actor (SEC-34).
+            var scope = GrpcApplyEditsIdempotencyStore.CreateScope(
+                context.GetHttpContext(), request.ServiceId, request.LayerId, idempotencyKey)
+                ?? throw new RpcException(new Status(
+                    StatusCode.FailedPrecondition,
+                    "An idempotency key requires a caller identity the server can bind retries to."));
+            idempotencyLease = await _idempotencyStore.EnterAsync(scope, context.CancellationToken).ConfigureAwait(false);
         }
-        using var heldIdempotencyLease = idempotencyLease;
+        await using var heldIdempotencyLease = idempotencyLease;
         if (idempotencyLease?.Response is not null)
         {
             return idempotencyLease.Response;
@@ -319,10 +364,38 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             cancellationToken: context.CancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
 
-        var result = await _featureWriter.ApplyEditsAsync(
-            layer.StorageLayerId,
-            editBatch,
-            context.CancellationToken).ConfigureAwait(false);
+        // A keyed write runs only while its shared reservation is provably held, and is
+        // cancelled before that reservation could lapse, so another replica can never begin
+        // the same keyed edit while this one may still commit (SEC-36).
+        var writeCancellation = context.CancellationToken;
+        if (idempotencyLease is not null)
+        {
+            writeCancellation = await idempotencyLease.TryBeginWriteAsync(context.CancellationToken).ConfigureAwait(false)
+                ?? throw IdempotencyReservationLost();
+        }
+
+        FeatureEditResult result;
+        try
+        {
+            result = await _featureWriter.ApplyEditsAsync(
+                layer.StorageLayerId,
+                editBatch,
+                writeCancellation).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (
+            idempotencyLease?.OwnershipLost == true && !context.CancellationToken.IsCancellationRequested)
+        {
+            throw IdempotencyReservationLost();
+        }
+
+        var response = GrpcConversionHelpers.ToProtoApplyEditsResponse(result);
+
+        // Record the committed result before any later step can fail, so a retry replays it
+        // instead of executing the edit again.
+        if (idempotencyLease is not null)
+        {
+            await idempotencyLease.CompleteAsync(response).ConfigureAwait(false);
+        }
 
         await PublishFeatureChangeEventsAsync(
             request.ServiceId ?? "unknown",
@@ -332,18 +405,37 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             result,
             context).ConfigureAwait(false);
 
-        var response = GrpcConversionHelpers.ToProtoApplyEditsResponse(result);
-        if (idempotencyLease is not null)
-        {
-            var principal = context.GetHttpContext()?.User;
-            var principalId = principal?.FindFirst("api_key_id")?.Value
-                ?? principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                ?? principal?.FindFirst("sub")?.Value
-                ?? principal?.Identity?.Name
-                ?? "anonymous";
-            _idempotencyStore.Set($"{request.ServiceId ?? ""}:{request.LayerId}:{principalId}:{idempotencyKey}", response);
-        }
         return response;
+    }
+
+    private static RpcException IdempotencyReservationLost() => new(new Status(
+        StatusCode.Aborted,
+        "The edit lost its idempotency reservation before it completed; retry with the same idempotency key."));
+
+    // The router and graph provider are resolved per request, as the FeatureServer handlers
+    // do, so the service stays within the architecture collaborator ceiling.
+    private async Task<IFeatureReader> ResolveReaderAsync(
+        GrpcLayerContext layer,
+        FeatureProviderReadOperation operation,
+        IServiceProvider requestServices,
+        CancellationToken cancellationToken)
+    {
+        var providerQueryRouter = requestServices.GetService<FeatureProviderQueryRouter>();
+        var metadataGraphProvider = requestServices.GetService<IMetadataV2GraphProvider>();
+        if (providerQueryRouter is null || metadataGraphProvider is null)
+        {
+            return _featureReader;
+        }
+
+        var snapshot = await metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        return await providerQueryRouter.ResolveReaderAsync(
+            snapshot,
+            layer.Service,
+            layer.Resource,
+            layer.Publication,
+            layer.StorageLayerId,
+            operation,
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -602,9 +694,12 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     private async Task<QueryContext> CreateQueryContextAsync(
         Proto.QueryFeaturesRequest request,
         GrpcLayerContext layer,
+        IServiceProvider requestServices,
         CancellationToken cancellationToken,
         bool streaming = false)
     {
+        EnsureAggregationNotRequested(request);
+
         var whereValidation = _queryValidator.ValidateWhereClause(request.Where);
         if (!whereValidation.IsValid)
         {
@@ -612,6 +707,9 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                 StatusCode.InvalidArgument,
                 whereValidation.ErrorMessage ?? "Invalid where clause."));
         }
+
+        var whereFilter = await BindWhereClauseAsync(
+            request.Where, layer.Resource, requestServices, cancellationToken).ConfigureAwait(false);
 
         // 0.2.0-alpha.1 retired the int32 result_offset / result_record_count fields in favour of
         // the int64 result_offset_long / result_record_count_long; narrow here so the existing
@@ -642,10 +740,19 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         var query = GrpcConversionHelpers.ToFeatureQuery(request) with
         {
+            SqlFilter = whereFilter,
             SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
             Offset = pagination.Offset,
             Limit = streaming && !requestedLimit.HasValue ? null : pagination.Limit
         };
+
+        if (query.OrderBy is { } orderBy)
+        {
+            query = query with
+            {
+                OrderBy = GrpcConversionHelpers.WithSchemaFieldTypes(orderBy, layer.Resource.SchemaFields)
+            };
+        }
 
         var outputSrid = query.OutputSrid;
         if (request.OutSr != null)
@@ -698,6 +805,94 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             responseSpatialReference,
             GrpcConversionHelpers.CreateEffectiveGeometryLimits(_geometryLimits, request),
             request.ReturnGeometry);
+    }
+
+    /// <summary>
+    /// Binds the request's <c>where</c> clause to the shared filter pipeline, as FeatureServer
+    /// does with the same GeoServices SQL parameter: the clause is parsed by the shared parser,
+    /// refused when any field it references is masked from the caller, and translated against
+    /// the layer schema. The raw text stays on <see cref="FeatureQuery.Where"/> for providers
+    /// that re-parse it, and the provider's own field-security check still runs on both.
+    /// </summary>
+    private static async Task<SqlFragment?> BindWhereClauseAsync(
+        string? where,
+        MetadataV2Resource resource,
+        IServiceProvider requestServices,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(where))
+        {
+            return null;
+        }
+
+        var filterService = requestServices.GetService<IFilterExpressionService>()
+            ?? throw new InvalidOperationException("A where clause requires the shared filter expression service.");
+
+        var parse = filterService.Parse(FilterLanguage.ArcGisSql, where);
+        if (!parse.IsSuccess || parse.Expression is null)
+        {
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                parse.ErrorMessage ?? "Invalid where clause."));
+        }
+
+        var expression = parse.Expression;
+        if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "Invalid where clause."));
+        }
+
+        if (requestServices.GetService<IFieldMaskSource>() is { } fieldMaskSource)
+        {
+            var maskedFields = await fieldMaskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                FeatureQuerySecurity.ValidateFilterExpression(expression, maskedFields, "where");
+            }
+            catch (ArgumentException ex)
+            {
+                throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
+            }
+        }
+
+        // ArcGIS clients send "1=1" for "no filter"; providers already accept it as raw text.
+        if (IsConstantTrue(expression))
+        {
+            return null;
+        }
+
+        var translation = filterService.Translate(expression, resource);
+        if (!translation.IsSuccess)
+        {
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                translation.ErrorMessage ?? "Invalid where clause."));
+        }
+
+        return translation.SqlFilter;
+    }
+
+    private static bool IsConstantTrue(FilterExpression expression)
+        => expression switch
+        {
+            Literal { Type: LiteralType.Boolean, Value: true } => true,
+            BinaryExpression { Operator: BinaryOperator.Equal, Left: Literal left, Right: Literal right }
+                => left.Type == right.Type && Equals(left.Value, right.Value),
+            _ => false
+        };
+
+    private static void EnsureAggregationNotRequested(Proto.QueryFeaturesRequest request)
+    {
+        // #5465: geospatial.v1 defines no aggregate result shape. QueryFeaturesResponse and
+        // FeaturePage carry the layer's attribute field definitions and feature rows only, so
+        // answering out_statistics/group_by would either invent an unpublished response shape
+        // or silently return ordinary features. Refuse until the contract defines one.
+        if (request.OutStatistics.Count > 0 || request.GroupBy.Count > 0)
+        {
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                "out_statistics and group_by are not supported by geospatial.v1 feature queries. Use the GeoServices FeatureServer query outStatistics and groupByFieldsForStatistics parameters for aggregates."));
+        }
     }
 
     private static void EnsureStreamingFlagsSupported(Proto.QueryFeaturesRequest request)

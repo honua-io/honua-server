@@ -54,7 +54,7 @@ Run `POST /api/v1/admin/import/geoservices/start` with this body:
 }
 ```
 
-Returns `202 Accepted` with a `jobId`. Optional fields: `whereClause` and `outputFields` to filter what is copied, `targetSchema`, `batchSize`, `serviceName` (target Honua service for auto-publishing; `autoPublish` defaults to `true`).
+Returns `202 Accepted` with a `jobId`. Optional fields: `whereClause` and `outputFields` to filter what is copied, `targetSchema` (a configured operational schema; see [Import files](import-files.md)), `batchSize`, `serviceName` (target Honua service for auto-publishing; `autoPublish` defaults to `true`).
 
 ### 3. Poll the job
 

@@ -199,7 +199,7 @@ internal static partial class I3sSceneServerEndpoints
             // Node geometry binary resource (#1810): the first slice that serves
             // RENDERABLE geometry (not just the descriptor). The transcoder
             // (I3sGeometryTranscoder) converts the scene's polygon/extruded geometry
-            // into an I3S Default interleaved buffer; this route streams it so an
+            // into an I3S Default PerAttributeArray buffer; this route streams it so an
             // ArcGIS SceneLayer / I3S client can draw the layer. Mapped at both the
             // GeoServices and the legacy /scenes alias for path parity with the
             // descriptor routes above.
@@ -209,7 +209,7 @@ internal static partial class I3sSceneServerEndpoints
                 .WithName("GetGeoServicesSceneNodeGeometry")
                 .WithDisplayName("Get GeoServices SceneServer Node Geometry")
                 .WithSummary("Get the Esri I3S node geometry buffer at the GeoServices path")
-                .WithDescription("Returns the I3S Default interleaved node geometry binary when a production geometry provider is registered; otherwise returns 404. Enterprise entitlement required.")
+                .WithDescription("Returns the I3S Default PerAttributeArray node geometry binary when a production geometry provider is registered; otherwise returns 404. Enterprise entitlement required.")
                 .WithTags(ScenesTag)
                 .Produces(StatusCodes.Status200OK, contentType: I3sGeometryContentType)
                 .Produces(StatusCodes.Status400BadRequest)
@@ -491,7 +491,7 @@ internal static partial class I3sSceneServerEndpoints
         var datasetType = await ResolveDatasetTypeAsync(context, scene, cancellationToken)
             .ConfigureAwait(false);
 
-        // Advertise store.nodePages only when the tileset actually projects to
+        // Advertise layer.nodePages only when the tileset actually projects to
         // fetchable node pages (#1809), so a conformant client never requests a
         // node URL that 404s.
         var advertiseNodePages = I3sNodeStore.TryBuildNodePages(scene, out _);

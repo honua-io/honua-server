@@ -49,7 +49,7 @@ public sealed class FeatureServerReturnDistanceQueryTests : IClassFixture<WebApp
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
             $"?geometry={Uri.EscapeDataString(PointGeometry)}" +
-            $"&spatialRel=esriSpatialRelWithinDistance" +
+            $"&spatialRel=withinDistance" +
             $"&distance=50000&units=esriSRUnit_Meter" +
             $"&returnDistance=true&f=json");
 
@@ -70,7 +70,7 @@ public sealed class FeatureServerReturnDistanceQueryTests : IClassFixture<WebApp
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
             $"?geometry={Uri.EscapeDataString(PointGeometry)}" +
-            $"&spatialRel=esriSpatialRelWithinDistance" +
+            $"&spatialRel=withinDistance" +
             $"&distance=50000&units=esriSRUnit_Meter" +
             $"&f=json");
 

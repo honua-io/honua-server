@@ -93,3 +93,22 @@ Missing evidence forbids new changes. An already-approved operation's bound
 policy may require deterministic recovery after missing telemetry exceeds its
 grace period; retain that trigger and the original approval instead of creating
 a new change. Unknown recovery health never establishes successful restoration.
+
+## Outside this scenario
+
+The required sources are exactly the selected finding's `requiredSourceIds`.
+Do not enable Preview alerting only to complete an unrelated health envelope.
+If a selected rule requires a source that is not configured, stop; do not drop
+that source from the denominator. Prometheus series inform diagnosis. The
+server-authored envelope and the typed operation receipt decide whether a
+change is allowed.
+
+A composite observation is no fresher than its oldest component. Keep the
+requested and returned windows, component coverage and replica coverage when
+the source reports them. A missing metric is not numeric zero, and a new
+`generatedAt` or scrape time does not refresh a failed collection.
+
+Pool saturation, slow-query remediation, tile-cache seeding, warehouse depth,
+raster and 3D performance, broad autonomous tuning and hosted-model metrics
+are later performance-depth work. They are not signals this scenario requires,
+and they do not gate the bounded deployment and readiness loop.

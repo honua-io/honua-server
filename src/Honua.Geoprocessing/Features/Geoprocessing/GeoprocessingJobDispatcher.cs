@@ -12,6 +12,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Geoprocessing.CustomCode;
+using Honua.Infrastructure.Security;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
 
@@ -202,6 +203,12 @@ internal sealed class GeoprocessingJobDispatcher
             SubmitterSecurityContext = submitterSecurityContext,
         };
 
+        // The envelope and gateway derive the proposal identity from the idempotency key and
+        // tenant alone, so scope the key to the durable submitter before it reaches them: two
+        // actors reusing one client key must not resolve to the same proposal. The payload keeps
+        // the client key, from which the resumed job derives its owner-scoped job id.
+        var proposalKey = JobOwnershipSecurity.CreateOwnerScopedKey(
+            payload.IdempotencyKey, requestedBy, submitterSecurityContext?.TenantId);
         var request = new OperationGatewayRequest
         {
             Kind = OperationClass.Geoprocess,
@@ -209,7 +216,7 @@ internal sealed class GeoprocessingJobDispatcher
             Reason = approvalGatedProcessId == null
                 ? "Destructive geoprocessing plan requires approval."
                 : $"Geoprocessing plan step '{approvalGatedProcessId}' requires approval.",
-            IdempotencyKey = payload.IdempotencyKey,
+            IdempotencyKey = proposalKey,
             ExecutionPayload = payload.Serialize(),
             Plan = GeoprocessOperationExecutor.BuildPlanSummary(payload, executionPayload: null),
         };
@@ -220,7 +227,7 @@ internal sealed class GeoprocessingJobDispatcher
                 {
                     PrincipalId = requestedBy,
                     AuthorizationOutcome = "approval-gate-authorized",
-                    IdempotencyKey = payload.IdempotencyKey,
+                    IdempotencyKey = proposalKey,
                 },
                 cancellationToken)
             .ConfigureAwait(false);
@@ -293,12 +300,70 @@ internal sealed class GeoprocessingJobDispatcher
     /// Enqueues the job on the local in-process queue when a queue is configured and the job
     /// targets the local backend. No-ops otherwise.
     /// </summary>
-    public async Task MaybeEnqueueLocalAsync(string jobId, string backend, CancellationToken cancellationToken)
+    public Task<ExecutionJobRecord> MaybeEnqueueLocalAsync(
+        ExecutionJobRecord job, IExecutionJobStore jobStore, CancellationToken cancellationToken)
+        => RepairLocalDispatchAsync(job, jobStore, cancellationToken, newlyCreated: true);
+
+    /// <summary>
+    /// Repairs an interrupted local admission before acknowledging a keyed replay.
+    /// The queue keeps repair idempotent and fences deliveries already claimed by workers.
+    /// </summary>
+    public async Task<ExecutionJobRecord> RepairLocalDispatchAsync(
+        ExecutionJobRecord job, IExecutionJobStore jobStore, CancellationToken cancellationToken,
+        bool admissionWindowHeld = false, bool newlyCreated = false)
     {
-        if (_jobQueue != null && string.Equals(backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+        if (_jobQueue == null || !ExecutionJobSubmissionHelper.NeedsLocalDispatchRepair(job)
+            || job.CurrentPhase == ExecutionJobSubmissionHelper.LocalDispatchAcceptedPhase)
         {
-            await _jobQueue.EnqueueAsync(jobId, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return job;
         }
+
+        if (!admissionWindowHeld)
+        {
+            await using var window = await EnterAdmissionWindowAsync(cancellationToken).ConfigureAwait(false);
+            await window.EnsureHeldAsync().ConfigureAwait(false);
+            return await RepairLocalDispatchAsync(job, jobStore, cancellationToken,
+                admissionWindowHeld: true, newlyCreated: newlyCreated).ConfigureAwait(false);
+        }
+
+        var current = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+        if (current == null && newlyCreated)
+        {
+            // The caller has just persisted this record successfully.
+            current = job;
+        }
+        if (current == null || !ExecutionJobSubmissionHelper.NeedsLocalDispatchRepair(current)
+            || current.CurrentPhase == ExecutionJobSubmissionHelper.LocalDispatchAcceptedPhase)
+        {
+            return current ?? job;
+        }
+
+        await _jobQueue.EnqueueAsync(current.OperationId, current.Priority, cancellationToken).ConfigureAwait(false);
+
+        // The queue accepted the delivery. Complete its durable acknowledgement
+        // independently of request cancellation; missing acknowledgements remain
+        // recoverable through the idempotent queue and active-job sweep.
+        using var completion = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var accepted = current with
+            {
+                CurrentPhase = ExecutionJobSubmissionHelper.LocalDispatchAcceptedPhase,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+            if (await jobStore.TrySetAsync(accepted, cancellationToken: completion.Token).ConfigureAwait(false))
+            {
+                return await jobStore.GetAsync(job.OperationId, completion.Token).ConfigureAwait(false) ?? accepted;
+            }
+            var latest = await jobStore.GetAsync(job.OperationId, completion.Token).ConfigureAwait(false);
+            if (latest == null || !ExecutionJobSubmissionHelper.NeedsLocalDispatchRepair(latest)
+                || latest.CurrentPhase == ExecutionJobSubmissionHelper.LocalDispatchAcceptedPhase)
+            {
+                return latest ?? current;
+            }
+            current = latest;
+        }
+        return current;
     }
 
     /// <summary>

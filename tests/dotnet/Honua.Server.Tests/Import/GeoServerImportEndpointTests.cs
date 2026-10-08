@@ -2,6 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Reflection;
+using Honua.Core.Features.Infrastructure.Domain;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Collections.Concurrent;
 using System.Net.Http.Json;
 using System.Text;
@@ -352,17 +355,10 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/geoserver/jobs/{jobId}/cancel")]
     public async Task CancelJob_WithQueuedJob_ReturnsCancelled()
     {
-        // Use an isolated fixture whose import blocks far longer than the cancel
-        // round-trip so the cancellation deterministically wins the race against
-        // completion. With the shared 250ms service, a loaded CI worker can
-        // dequeue and finish the dry-run import (writing the terminal Completed
-        // status) before the cancel request lands, after which the job can never
-        // reach Cancelled and the poll times out. A long, cancellation-honouring
-        // import keeps the job in-flight until the cancel token fires.
-        var slowImportService = new TestGeoServerImportService(TimeSpan.FromSeconds(30));
-        var fixture = new WebAppFixture()
+        var importService = new TestGeoServerImportService(TimeSpan.Zero);
+        var fixture = WithoutGeoServerWorker(new WebAppFixture()
             .WithTestLicense(HonuaEdition.Enterprise)
-            .ReplaceService<IGeoServerImportService>(slowImportService);
+            .ReplaceService<IGeoServerImportService>(importService));
 
         try
         {
@@ -378,16 +374,141 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
             var jobId = await GetJobIdAsync(startResponse);
 
+            var manager = fixture.Services.GetRequiredService<GeoServerImportJobManager>();
+            (await manager.ProgressStore.GetProgressAsync(jobId))!.Status.Should().Be(GeoServerImportStatus.Queued);
             var cancelResponse = await client.PostAsync($"/api/v1/admin/import/geoserver/jobs/{jobId}/cancel", null);
             cancelResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-            using var cancelled = await WaitForJobStatusAsync(client, jobId, "Cancelled", TimeSpan.FromSeconds(20));
-            cancelled.RootElement.GetProperty("status").GetString().Should().Be("Cancelled");
+            // Delivery after cancellation must neither invoke import nor replace its status.
+            (await manager.JobQueue.DequeueAsync(TimeSpan.FromSeconds(5))).Should().Be(jobId);
+            await ProcessDequeuedJobAsync(fixture, jobId).WaitAsync(TimeSpan.FromSeconds(20));
+            using var response = await client.GetAsync($"/api/v1/admin/import/geoserver/jobs/{jobId}");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var cancelled = await response.Content.ReadFromJsonAsync<JsonDocument>();
+            cancelled!.RootElement.GetProperty("status").GetString().Should().Be("Cancelled");
+            importService.ImportRequests.Should().BeEmpty();
         }
         finally
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoserver/jobs/{jobId}/cancel")]
+    public async Task CancelJob_AfterDequeueBeforeRequestRead_PreservesCancelledWithoutImporting()
+    {
+        var underlying = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
+        var store = Substitute.For<IUniversalProgressStore>();
+        var snapshotRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var armed = 0;
+        store.GetProgressAsync<GeoServerImportProgress>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var snapshot = await underlying.GetProgressAsync<GeoServerImportProgress>(call.Arg<string>(), call.Arg<CancellationToken>());
+                if (Interlocked.Exchange(ref armed, 0) == 1)
+                {
+                    snapshotRead.SetResult();
+                    await releaseRead.Task;
+                }
+                return snapshot;
+            });
+        store.GetProgressAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => underlying.GetProgressAsync(call.Arg<string>(), call.Arg<CancellationToken>()));
+        store.SetProgressAsync(Arg.Any<string>(), Arg.Any<IOperationProgress>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => underlying.SetProgressAsync(call.Arg<string>(), call.Arg<IOperationProgress>(), call.Arg<TimeSpan?>(), call.Arg<CancellationToken>()));
+        store.TrySetProgressAsync(Arg.Any<string>(), Arg.Any<IOperationProgress>(), Arg.Any<OperationStatus>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => underlying.TrySetProgressAsync(call.Arg<string>(), call.Arg<IOperationProgress>(), call.Arg<OperationStatus>(), call.Arg<TimeSpan?>(), call.Arg<CancellationToken>()));
+        var importService = new TestGeoServerImportService(TimeSpan.Zero);
+        var fixture = WithoutGeoServerWorker(new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Enterprise)
+            .ReplaceService<IUniversalProgressStore>(store)
+            .ReplaceService<IGeoServerImportService>(importService));
+        Task? processing = null;
+        try
+        {
+            await fixture.InitializeAsync();
+            var start = await fixture.Client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", new
+            {
+                GeoServerRestUrl = "https://example.com/geoserver/rest",
+                DryRun = true
+            });
+            start.StatusCode.Should().Be(HttpStatusCode.Accepted);
+            var jobId = await GetJobIdAsync(start);
+            var manager = fixture.Services.GetRequiredService<GeoServerImportJobManager>();
+            (await manager.JobQueue.DequeueAsync(TimeSpan.FromSeconds(5))).Should().Be(jobId);
+            Interlocked.Exchange(ref armed, 1);
+            // Drive exactly the dequeue -> first-read boundary without scheduler delays.
+            processing = ProcessDequeuedJobAsync(fixture, jobId);
+            await snapshotRead.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            var cancel = await fixture.Client.PostAsync($"/api/v1/admin/import/geoserver/jobs/{jobId}/cancel", null);
+            cancel.StatusCode.Should().Be(HttpStatusCode.OK);
+            releaseRead.SetResult();
+            await processing.WaitAsync(TimeSpan.FromSeconds(20));
+            using var response = await fixture.Client.GetAsync($"/api/v1/admin/import/geoserver/jobs/{jobId}");
+            using var payload = await response.Content.ReadFromJsonAsync<JsonDocument>();
+            payload!.RootElement.GetProperty("status").GetString().Should().Be("Cancelled");
+            importService.ImportRequests.Should().BeEmpty();
+            (await manager.RequestStore.GetProgressAsync(jobId)).Should().BeNull();
+        }
+        finally
+        {
+            releaseRead.TrySetResult();
+            if (processing != null)
+            {
+                await processing.WaitAsync(TimeSpan.FromSeconds(20));
+            }
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoserver/jobs/{jobId}/cancel")]
+    public async Task CancelJob_RejectsStaleWorkerProgressAndTerminalWrites()
+    {
+        var store = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns("Development");
+        using var manager = new GeoServerImportJobManager(store, null,
+            NullLogger<GeoServerImportJobManager>.Instance, environment);
+        const string jobId = "cancelled-stale-worker";
+        var queued = GeoServerImportProgress.CreateInitial(jobId,
+            "https://example.com/geoserver/rest", "https://honua.example.com");
+        await manager.ProgressStore.SetProgressAsync(jobId, queued);
+        await manager.ProgressStore.SetProgressAsync(jobId, queued with
+        {
+            Status = GeoServerImportStatus.Cancelled,
+            CompletedAt = DateTimeOffset.UtcNow
+        });
+
+        foreach (var status in new[]
+        {
+            GeoServerImportStatus.Queued, GeoServerImportStatus.Discovering,
+            GeoServerImportStatus.Completed, GeoServerImportStatus.Failed
+        })
+        {
+            await manager.ProgressStore.SetProgressAsync(jobId, queued with { Status = status });
+            (await manager.ProgressStore.GetProgressAsync(jobId))!.Status.Should()
+                .Be(GeoServerImportStatus.Cancelled, "a stale worker write must not replace cancellation");
+        }
+    }
+
+    private static WebAppFixture WithoutGeoServerWorker(WebAppFixture fixture)
+        => fixture.ConfigureServices(services =>
+        {
+            var worker = services.Single(d => d.ServiceType == typeof(IHostedService) &&
+                d.ImplementationType == typeof(GeoServerImportBackgroundService));
+            services.Remove(worker);
+        });
+
+    private static async Task ProcessDequeuedJobAsync(WebAppFixture fixture, string jobId)
+    {
+        using var worker = ActivatorUtilities.CreateInstance<GeoServerImportBackgroundService>(fixture.Services);
+        var processing = (Task)typeof(GeoServerImportBackgroundService)
+            .GetMethod("ProcessJobAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(worker, [jobId, CancellationToken.None])!;
+        await processing;
     }
 
     private async Task<string> GetJobIdAsync(HttpResponseMessage response)

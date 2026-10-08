@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -14,6 +15,8 @@ using Honua.Infrastructure.Services;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Protocols.SpatialAnalytics.Models;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Infrastructure.Analytics;
@@ -52,7 +55,7 @@ namespace Honua.Infrastructure.Analytics;
 ///   <item><c>geometry</c>/<c>geometryType</c>/<c>inSR</c>/<c>spatialRel</c>
 ///     — GeoServices-style spatial filter mapped to
 ///     <see cref="FeatureQuery.SpatialFilter"/>. Distance-based relationships
-///     (<c>esriSpatialRelWithinDistance</c>/<c>esriSpatialRelBeyondDistance</c>)
+///     (<c>withinDistance</c>/<c>beyondDistance</c>)
 ///     are rejected because the analytics endpoints already overload
 ///     <c>distance</c> for spatial-join (DWithin radius) and buffer-aggregate
 ///     (buffer radius); reusing the same key for two different concepts would
@@ -236,14 +239,17 @@ internal static class AnalyticsFeatureQueryFactory
                 // of a confusing parameter collision.
                 return LayerSelectionTranslation.Failure(
                     "Unsupported spatialRel",
-                    "Distance-based spatial relationships (esriSpatialRelWithinDistance / esriSpatialRelBeyondDistance) are not supported on the spatial analytics endpoints; use the operation-specific 'distance' parameter or apply the predicate via the 'where' clause instead.");
+                    "Distance-based spatial relationships (withinDistance / beyondDistance) are not supported on the spatial analytics endpoints; use the operation-specific 'distance' parameter or apply the predicate via the 'where' clause instead.");
             }
 
             try
             {
                 var queryParamsForFilter = new QueryParameters { SpatialRel = spatialRel };
                 spatialFilter = GeoServicesSpatialFilterBuilder.BuildSpatialFilter(
-                    queryParamsForFilter, parsedGeometry, inputSrid);
+                    queryParamsForFilter,
+                    parsedGeometry,
+                    inputSrid,
+                    services.GetService<IOptions<LimitsOptions>>()?.Value.Geometry.MaxVerticesPerGeometry);
             }
             catch (ArgumentException ex)
             {
@@ -354,7 +360,7 @@ internal static class AnalyticsFeatureQueryFactory
         }
 
         var normalized = spatialRel.Trim().ToLowerInvariant();
-        return normalized is "esrispatialrelwithindistance" or "esrispatialrelbeyonddistance";
+        return normalized is "withindistance" or "beyonddistance";
     }
 
     private static string? GetValueString(IReadOnlyDictionary<string, StringValues> values, string key)

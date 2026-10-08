@@ -1,6 +1,7 @@
 # Generated files on trunk
 
-Repository-state projections are regenerated after merges by
+Repository-state projections are regenerated nightly (10:30 UTC) and on demand
+(`workflow_dispatch`) by
 `.github/workflows/generated-files-on-trunk.yml`, which opens or refreshes a
 PR carrying the diff rather than writing trunk directly (see "Execution and
 write contract" below). PR Gate runs the same generators before the
@@ -12,12 +13,12 @@ inputs still fail. Generator implementation and serialization are unchanged.
 
 | Checked-in output | Existing generator | Cadence |
 | --- | --- | --- |
-| `docs/gis/data/feature-catalog.json` | `scripts/generate-feature-catalog.sh` → `FeatureCatalogEmitter` / `FeatureCatalogGenerator` | Every trunk push |
-| `docs/gis/data/admin-openapi-operation-ids.json` and `admin-mcp-projection-manifest.json` | `scripts/generate-admin-operation-parity-exports.sh` → `AdminOperationParityExportTests` | Every trunk push |
-| `docs/gis/data/geoservices-rest-parity.json` | `scripts/generate-geoservices-parity.sh` → `GeoServicesParityEmitter` / `GeoServicesParityGenerator` | Every trunk push |
-| `docs/gis/data/capability-matrix.v1.json` | `scripts/ci/generate-capability-matrix.py` (after catalog and parity) | Every trunk push |
-| `docs/okf/capabilities` | `scripts/ci/generate-capability-concepts.py` (after the capability matrix) | Every trunk push |
-| `examples/manifest.json` | `scripts/examples/generate-manifest.py` | Every trunk push |
+| `docs/gis/data/feature-catalog.json` | `scripts/generate-feature-catalog.sh` → `FeatureCatalogEmitter` / `FeatureCatalogGenerator` | Nightly / on demand |
+| `docs/gis/data/admin-openapi-operation-ids.json` and `admin-mcp-projection-manifest.json` | `scripts/generate-admin-operation-parity-exports.sh` → `AdminOperationParityExportTests` | Nightly / on demand |
+| `docs/gis/data/geoservices-rest-parity.json` | `scripts/generate-geoservices-parity.sh` → `GeoServicesParityEmitter` / `GeoServicesParityGenerator` | Nightly / on demand |
+| `docs/gis/data/capability-matrix.v1.json` | `scripts/ci/generate-capability-matrix.py` (after catalog and parity) | Nightly / on demand |
+| `docs/okf/capabilities` | `scripts/ci/generate-capability-concepts.py` (after the capability matrix) | Nightly / on demand |
+| `examples/manifest.json` | `scripts/examples/generate-manifest.py` | Nightly / on demand |
 | `src/Honua.Core/Features/Infrastructure/Crs/Resources/geoparquet-crs-projjson.json` | `scripts/geoparquet/generate-projjson-catalog.py` | Explicit CRS/PROJ dependency update; depends on external pyproj/PROJ data, not trunk evidence |
 | `docs/gis/gap-report.md`, `docs/internal/compatibility/cross-server-consume-gap-report.md` | `scripts/client-compat/diff-baselines.py`, `scripts/ci/generate-cross-server-gap-report.sh` | Evidence-run snapshots; require measured results, external checkouts or live servers |
 | `tests/fixtures/curated-edge-corpus/v1/sea-surface-temperature.zarr/temperature/0.0.0` | `scripts/test-data/generate-curated-corpus-zarr.py` | Explicit refresh of fixed sample values |

@@ -73,6 +73,256 @@ public sealed class GeoprocessingJobServiceTests
             resultPackageStore: _resultPackageStore);
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task JobAccess_SameSubjectDifferentIssuer_ReturnsNotFound()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(true);
+        var owner = CreateStablePrincipal();
+        ((ClaimsIdentity)owner.Identity!).AddClaim(new Claim("iss", "issuer-a"));
+        var job = await _sut.SubmitJobAsync(CreateValidPlan(), null, owner);
+        _jobStore.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(job);
+        var caller = CreateStablePrincipal();
+        ((ClaimsIdentity)caller.Identity!).AddClaim(new Claim("iss", "issuer-b"));
+
+        await FluentActions.Awaiting(() => _sut.GetJobForTerminalAsync(job.OperationId, caller))
+            .Should().ThrowAsync<GeoprocessingNotFoundException>();
+        (await _sut.GetJobForTerminalAsync(job.OperationId, owner)).OperationId.Should().Be(job.OperationId);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task JobAccess_NameOnlyIdentity_ReturnsNotFound()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "display-name")], "Test"));
+        var job = CreateOwnedJobRecord("name-only", ExecutionJobStatus.Queued, "display-name");
+        _jobStore.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(job);
+
+        await FluentActions.Awaiting(() => _sut.GetJobForTerminalAsync(job.OperationId, principal))
+            .Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_ApiKeyIdentity_RecordsCanonicalOwner()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(true);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("api_key_id", "11111111-1111-1111-1111-111111111111"), new Claim(ClaimTypes.Name, "shared-name")],
+            AuthenticationExtensions.ApiKeyScheme));
+
+        var job = await _sut.SubmitJobAsync(CreateValidPlan(), null, principal);
+
+        job.Audit.RequestedBy.Should().Be(CanonicalSecurityActor.Resolve(principal)!.ActorId);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_SameKeyDifferentTenant_CreatesSeparateJobs()
+    {
+        var store = new InMemoryExecutionJobStore();
+        var service = new GeoprocessingJobService(_progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator, new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance, DefaultExecutorOptions,
+            store, _jobQueue, resultPackageStore: _resultPackageStore);
+        var first = await service.SubmitJobAsync(CreateValidPlan(), "tenant-key", CreateTenantPrincipal("tenant-a"));
+        var second = await service.SubmitJobAsync(CreateValidPlan(), "tenant-key", CreateTenantPrincipal("tenant-b"));
+
+        second.OperationId.Should().NotBe(first.OperationId);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_KeyedTokenRefresh_PreservesOriginalSnapshotAndOwnerScope()
+    {
+        var store = new InMemoryExecutionJobStore();
+        var service = new GeoprocessingJobService(_progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator, new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance, DefaultExecutorOptions,
+            store, _jobQueue, resultPackageStore: _resultPackageStore);
+        var principal = CreateStablePrincipal();
+        ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim("exp", "100"));
+        var first = await service.SubmitJobAsync(CreateValidPlan(), "refresh-key", principal);
+        var refreshed = CreateStablePrincipal();
+        ((ClaimsIdentity)refreshed.Identity!).AddClaim(new Claim("exp", "200"));
+
+        var replay = await service.SubmitJobAsync(CreateValidPlan(), "refresh-key", refreshed);
+        var other = CreatePrincipal();
+        var separate = await service.SubmitJobAsync(CreateValidPlan(), "refresh-key", other);
+
+        replay.OperationId.Should().Be(first.OperationId);
+        replay.Audit.SubmitterSecurityContext!.Claims.Should().Contain(claim => claim.Type == "exp" && claim.Value == "100");
+        separate.OperationId.Should().NotBe(first.OperationId);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_NameOnlyIdentityWithoutKey_IsRefused()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "display-name")], "Test"));
+
+        var act = async () => await _sut.SubmitJobAsync(CreateValidPlan(), null, principal);
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*durable submitter identity*");
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_UnauthenticatedCallerWithoutKey_RequiresAuthentication()
+    {
+        var act = async () => await _sut.SubmitJobAsync(CreateValidPlan(), null, new ClaimsPrincipal(new ClaimsIdentity()));
+
+        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeTrue();
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_ApprovalRequiredNameOnlyIdentity_IsRefusedBeforeProposal()
+    {
+        _approvalEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Is<OperatorAuthorizationRequest>(r => r.IsDestructive))
+            .Returns(ApprovalRequirement.Required("operator.destructive.process", "destructive-action-requires-approval"));
+        var gateway = Substitute.For<IOperationGateway>();
+        var sut = CreateServiceWithGateway(gateway, out var envelopeFactory);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "display-name")], "Test"));
+
+        var act = async () => await sut.SubmitJobAsync(CreateImportPlan(), "idem-1", principal);
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*durable submitter identity*");
+        await envelopeFactory.DidNotReceiveWithAnyArgs().CreateAcceptedAsync(default!, default!, default);
+        await gateway.DidNotReceiveWithAnyArgs().CreateApprovalProposalAsync(default!, default!, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_ApprovalRequiredSameKeyTwoActors_ScopesProposalIdempotencyPerActor()
+    {
+        _approvalEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Is<OperatorAuthorizationRequest>(r => r.IsDestructive))
+            .Returns(ApprovalRequirement.Required("operator.destructive.process", "destructive-action-requires-approval"));
+        var requests = new List<OperationGatewayRequest>();
+        var gateway = Substitute.For<IOperationGateway>();
+        gateway
+            .CreateApprovalProposalAsync(Arg.Any<string>(), Arg.Do<OperationGatewayRequest>(requests.Add), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new OperationGatewayResult
+            {
+                Outcome = OperationGatewayOutcome.ProposalCreated,
+                Decision = new GuardrailDecision(
+                    GuardrailTier.RequiresApproval, OperationClass.Geoprocess, HonuaEdition.Enterprise, "test"),
+                ProposalId = "gp-proposal",
+            }));
+        var envelopeKeys = new List<string?>();
+        var sut = CreateServiceWithGateway(gateway, out var envelopeFactory);
+        envelopeFactory.When(factory => factory.CreateAcceptedAsync(
+                Arg.Any<string>(), Arg.Any<OperationPolicyContext>(), Arg.Any<CancellationToken>()))
+            .Do(call => envelopeKeys.Add(call.Arg<OperationPolicyContext>().IdempotencyKey));
+
+        foreach (var principal in new[] { CreatePrincipal(), CreateStablePrincipal(), CreateStablePrincipal() })
+        {
+            var act = async () => await sut.SubmitJobAsync(CreateImportPlan(), "shared-key", principal);
+            await act.Should().ThrowAsync<GeoprocessingApprovalRequiredException>();
+        }
+
+        requests.Should().HaveCount(3);
+        requests[0].IdempotencyKey.Should().NotBe(requests[1].IdempotencyKey);
+        requests[1].IdempotencyKey.Should().Be(requests[2].IdempotencyKey);
+        requests.Should().OnlyContain(request => request.IdempotencyKey != "shared-key");
+        envelopeKeys.Should().Equal(requests.Select(request => request.IdempotencyKey));
+        requests.Select(request => GeoprocessExecutionPayload.Parse(request.ExecutionPayload)!.IdempotencyKey)
+            .Should().OnlyContain(key => key == "shared-key");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task JobAccess_RecordWithoutStoredOwnerActor_IsReadableOnlyByItsDurableSubject()
+    {
+        var job = CreateJobRecord("gp-prior-subject", ExecutionJobStatus.Queued) with
+        {
+            Audit = CreatePriorFormatAudit("subject-123", new JobSecurityClaim(ClaimTypes.NameIdentifier, "subject-123"))
+        };
+        _jobStore.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(job);
+        var otherIssuer = CreateStablePrincipal();
+        ((ClaimsIdentity)otherIssuer.Identity!).AddClaim(new Claim("iss", "issuer-b"));
+        var sameName = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "subject-123")], "Test"));
+
+        (await _sut.GetJobForTerminalAsync(job.OperationId, CreateStablePrincipal())).OperationId.Should().Be(job.OperationId);
+        foreach (var caller in new[] { CreatePrincipal(), otherIssuer, sameName })
+        {
+            await FluentActions.Awaiting(() => _sut.GetJobForTerminalAsync(job.OperationId, caller))
+                .Should().ThrowAsync<GeoprocessingNotFoundException>();
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task JobAccess_RecordWithoutStoredOwnerActor_IsReadableByItsApiKey()
+    {
+        const string apiKeyId = "11111111-1111-1111-1111-111111111111";
+        var job = CreateJobRecord("gp-prior-key", ExecutionJobStatus.Queued) with
+        {
+            Audit = CreatePriorFormatAudit(apiKeyId, new JobSecurityClaim("api_key_id", apiKeyId))
+        };
+        _jobStore.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(job);
+        static ClaimsPrincipal ApiKey(string id) => new(new ClaimsIdentity(
+            [new Claim("api_key_id", id), new Claim(ClaimTypes.Name, "shared-name")],
+            AuthenticationExtensions.ApiKeyScheme));
+
+        (await _sut.GetJobForTerminalAsync(job.OperationId, ApiKey(apiKeyId))).OperationId.Should().Be(job.OperationId);
+        await FluentActions.Awaiting(() => _sut.GetJobForTerminalAsync(
+                job.OperationId, ApiKey("22222222-2222-2222-2222-222222222222")))
+            .Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_KeyOfPriorFormatRecord_ReplaysForSameSubjectAndConflictsForOthers()
+    {
+        var store = new InMemoryExecutionJobStore();
+        var service = new GeoprocessingJobService(_progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator, new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance, DefaultExecutorOptions,
+            store, _jobQueue, resultPackageStore: _resultPackageStore);
+        var plan = CreateValidPlan();
+        var priorJobId = "gp-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes("prior-key")).AsSpan(0, 12));
+        var prior = CreateJobRecord(priorJobId, ExecutionJobStatus.Queued) with
+        {
+            Audit = CreatePriorFormatAudit("subject-123", new JobSecurityClaim(ClaimTypes.NameIdentifier, "subject-123")) with
+            {
+                IdempotencyKey = "prior-key",
+                RequestFingerprint = GeoprocessingJobService.CreateRequestFingerprint(plan)
+            }
+        };
+        (await store.TryCreateAsync(prior)).Should().BeTrue();
+
+        var replay = await service.SubmitJobAsync(plan, "prior-key", CreateStablePrincipal());
+        var other = async () => await service.SubmitJobAsync(plan, "prior-key", CreatePrincipal());
+
+        replay.OperationId.Should().Be(priorJobId);
+        await other.Should().ThrowAsync<GeoprocessingIdempotencyConflictException>();
+    }
+
+    /// <summary>
+    /// Audit as written before the durable owner actor was recorded: <c>RequestedBy</c> holds the
+    /// raw subject or API-key id and the snapshot carries no <c>OwnerActorId</c>.
+    /// </summary>
+    private static OperationAuditInfo CreatePriorFormatAudit(string requestedBy, JobSecurityClaim identityClaim)
+        => new()
+        {
+            RequestedBy = requestedBy,
+            SubmitterSecurityContext = new JobSecurityContext(
+                requestedBy,
+                null,
+                [identityClaim, new JobSecurityClaim("honua:job-authenticated", bool.TrueString)],
+                ClaimTypes.Role)
+        };
+
     // -----------------------------------------------------------------------
     // ValidatePlan
     // -----------------------------------------------------------------------
@@ -880,7 +1130,7 @@ public sealed class GeoprocessingJobServiceTests
 
         var job = await _sut.SubmitJobAsync(CreateValidPlan(), null, CreateStablePrincipal());
 
-        job.Audit.RequestedBy.Should().Be("subject-123");
+        job.Audit.RequestedBy.Should().Be(CanonicalSecurityActor.Resolve(CreateStablePrincipal())!.ActorId);
     }
 
     [UnitTest]
@@ -912,6 +1162,7 @@ public sealed class GeoprocessingJobServiceTests
         var principal = new ClaimsPrincipal(new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.Name, "tenant-admin"),
+                new Claim(ClaimTypes.NameIdentifier, "tenant-admin"),
                 new Claim("organization_scope", "tenant-from-custom-claim"),
                 new Claim("tenant_id", "tenant-from-token")
             ],
@@ -1147,7 +1398,7 @@ public sealed class GeoprocessingJobServiceTests
         var replay = await _sut.SubmitJobAsync(CreateValidPlan(), "stable-replay", CreateStablePrincipal());
 
         replay.OperationId.Should().Be(first.OperationId);
-        replay.Audit.RequestedBy.Should().Be("subject-123");
+        replay.Audit.RequestedBy.Should().Be(CanonicalSecurityActor.Resolve(CreateStablePrincipal())!.ActorId);
     }
 
     [UnitTest]
@@ -1542,15 +1793,19 @@ public sealed class GeoprocessingJobServiceTests
         await _jobStore.DidNotReceive().TryCreateAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
 
-        // The proposal carries the Geoprocess kind, the idempotency key, and a
-        // non-empty execution payload the resume path can replay.
+        // The proposal carries the Geoprocess kind, an idempotency key scoped to the
+        // submitter, and a non-empty execution payload the resume path can replay with
+        // the client's key.
+        var scopedKey = JobOwnershipSecurity.CreateOwnerScopedKey(
+            "idem-1", CanonicalSecurityActor.Resolve(CreatePrincipal())!.ActorId, null);
         captured.Should().NotBeNull();
         captured!.Kind.Should().Be(OperationClass.Geoprocess);
-        captured.IdempotencyKey.Should().Be("idem-1");
+        captured.IdempotencyKey.Should().Be(scopedKey);
         captured.ExecutionPayload.Should().NotBeNullOrWhiteSpace();
+        GeoprocessExecutionPayload.Parse(captured.ExecutionPayload)!.IdempotencyKey.Should().Be("idem-1");
         await envelopeFactory.Received(1).CreateAcceptedAsync(
             "control-plane.geoprocess",
-            Arg.Is<OperationPolicyContext>(context => context.IdempotencyKey == "idem-1"),
+            Arg.Is<OperationPolicyContext>(context => context.IdempotencyKey == scopedKey),
             Arg.Any<CancellationToken>());
     }
 
@@ -1599,7 +1854,7 @@ public sealed class GeoprocessingJobServiceTests
         var job = await _sut.ResumeApprovedJobAsync(payload);
 
         job.Status.Should().Be(ExecutionJobStatus.Queued);
-        job.Audit.RequestedBy.Should().Be("subject-123");
+        job.Audit.RequestedBy.Should().Be(CanonicalSecurityActor.Resolve(CreateStablePrincipal())!.ActorId);
 
         // The resumed job carries the ORIGINAL submitter's snapshot, not one recaptured from
         // the name-only resume principal.
@@ -1871,7 +2126,10 @@ public sealed class GeoprocessingJobServiceTests
         var inherited = new JobSecurityContext(
             "subject-123",
             TenantId: "tenant-requester",
-            [new JobSecurityClaim(ClaimTypes.Role, "analyst"), new JobSecurityClaim("region", "west")]);
+            [new JobSecurityClaim(ClaimTypes.Role, "analyst"), new JobSecurityClaim("region", "west")])
+        {
+            OwnerActorId = CanonicalSecurityActor.Resolve(CreateStablePrincipal())!.ActorId
+        };
 
         await sut.SubmitJobWithSecurityContextAsync(
             CreateLayerSourcePlan(42), null, orchestratorPrincipal, TrustedWorkflowMetadata(), inherited);
@@ -1886,7 +2144,10 @@ public sealed class GeoprocessingJobServiceTests
         => new(
             "subject-123",
             TenantId: null,
-            [new JobSecurityClaim(ClaimTypes.Role, "analyst"), new JobSecurityClaim("region", "west")]);
+            [new JobSecurityClaim(ClaimTypes.Role, "analyst"), new JobSecurityClaim("region", "west")])
+        {
+            OwnerActorId = CanonicalSecurityActor.Resolve(CreateStablePrincipal())!.ActorId
+        };
 
     [UnitTest]
     [Operation(Operations.Create)]
@@ -2599,7 +2860,7 @@ public sealed class GeoprocessingJobServiceTests
         {
             Audit = record.Audit with
             {
-                SubmitterSecurityContext = CreateSubmitterSecurityContext() with { TenantId = tenant }
+                SubmitterSecurityContext = CreateSubmitterSecurityContext() with { TenantId = tenant, OwnerActorId = record.Audit.RequestedBy }
             }
         };
     }
@@ -5109,7 +5370,7 @@ public sealed class GeoprocessingJobServiceTests
     {
         var plan = CreateValidPlan();
         var idempotencyKey = "retry-submission-rollback";
-        var jobId = GeoprocessingJobService.CreateJobId(idempotencyKey);
+        var jobId = GeoprocessingJobService.CreateJobId(idempotencyKey, CanonicalSecurityActor.Resolve(CreatePrincipal())!.ActorId);
         var requestFingerprint = GeoprocessingJobService.CreateRequestFingerprint(plan);
 
         var failedSubmission = CreateJobRecord(jobId, ExecutionJobStatus.Failed) with
@@ -5119,6 +5380,8 @@ public sealed class GeoprocessingJobServiceTests
             Audit = new OperationAuditInfo
             {
                 IdempotencyKey = idempotencyKey,
+                RequestedBy = CanonicalSecurityActor.Resolve(CreatePrincipal())!.ActorId,
+                SubmitterSecurityContext = CreateOwnerAudit("test-user").SubmitterSecurityContext,
                 RequestFingerprint = requestFingerprint
             }
         };
@@ -5132,6 +5395,166 @@ public sealed class GeoprocessingJobServiceTests
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*previously failed before queueing*");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_CancellationRacingQueueClaim_PreservesAcceptedAttemptForReplay(bool requeued)
+    {
+        using var request = new CancellationTokenSource();
+        ExecutionJobRecord? durable = null;
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => durable);
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { durable = call.Arg<ExecutionJobRecord>(); return true; });
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { durable = call.Arg<ExecutionJobRecord>(); return true; });
+        _jobQueue.EnqueueAsync(Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                // Delivery and its worker claim committed before the request observed cancellation.
+                var accepted = durable!;
+                durable = accepted with
+                {
+                    Status = requeued ? ExecutionJobStatus.Queued : ExecutionJobStatus.Provisioning,
+                    ClaimedBy = requeued ? null : "accepted-worker",
+                    AttemptCount = 1,
+                    Version = accepted.Version + 1
+                };
+                request.Cancel();
+                call.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                return Task.CompletedTask;
+            });
+
+        await FluentActions.Awaiting(() => _sut.SubmitJobAsync(
+                CreateValidPlan(), "claimed-admission", CreatePrincipal(), cancellationToken: request.Token))
+            .Should().ThrowAsync<OperationCanceledException>();
+
+        durable!.Status.Should().Be(requeued ? ExecutionJobStatus.Queued : ExecutionJobStatus.Provisioning);
+        durable.ClaimedBy.Should().Be(requeued ? null : "accepted-worker");
+        var replay = await _sut.SubmitJobAsync(CreateValidPlan(), "claimed-admission", CreatePrincipal());
+        replay.Should().BeSameAs(durable);
+        replay.AttemptCount.Should().Be(1);
+        await _jobQueue.Received(1).EnqueueAsync(replay.OperationId, replay.Priority, Arg.Any<CancellationToken>());
+        await _jobStore.DidNotReceive().TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("create")]
+    [InlineData("progress")]
+    [InlineData("enqueue")]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_CancellationAfterPersistence_CompensatesAndRejectsPhantomReplay(string cancelAt)
+    {
+        using var request = new CancellationTokenSource();
+        ExecutionJobRecord? durable = null;
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => durable);
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                durable = call.Arg<ExecutionJobRecord>();
+                if (cancelAt == "create") request.Cancel();
+                return true;
+            });
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                call.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                durable = call.Arg<ExecutionJobRecord>();
+                return true;
+            });
+        _progressStore.SetProgressAsync(Arg.Any<string>(), Arg.Any<IOperationProgress>(),
+                Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                if (cancelAt == "progress") request.Cancel();
+                call.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                return Task.CompletedTask;
+            });
+        _jobQueue.EnqueueAsync(Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                if (cancelAt == "enqueue") request.Cancel();
+                call.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                return Task.CompletedTask;
+            });
+
+        await FluentActions.Awaiting(() => _sut.SubmitJobAsync(
+                CreateValidPlan(), "cancelled-admission", CreatePrincipal(), cancellationToken: request.Token))
+            .Should().ThrowAsync<OperationCanceledException>();
+
+        durable.Should().NotBeNull();
+        durable!.Status.Should().Be(ExecutionJobStatus.Failed);
+        durable.CurrentPhase.Should().Be("Failed (submission)");
+        await FluentActions.Awaiting(() => _sut.SubmitJobAsync(
+                CreateValidPlan(), "cancelled-admission", CreatePrincipal()))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*previously failed before queueing*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_IdempotentReplayOfUnclaimedLocalJob_RepairsDispatchBeforeAcknowledging()
+    {
+        ExecutionJobRecord? persistedIntent = null;
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                persistedIntent = call.Arg<ExecutionJobRecord>();
+                return true;
+            });
+        var first = await _sut.SubmitJobAsync(CreateValidPlan(), "interrupted-dispatch", CreatePrincipal());
+        // Replay the durable intent captured before dispatch, as after a serving
+        // process exits between record creation and enqueue acknowledgement.
+        persistedIntent.Should().NotBeNull();
+        persistedIntent!.Status.Should().Be(ExecutionJobStatus.Queued);
+        persistedIntent.AttemptCount.Should().Be(0);
+        _jobStore.GetAsync(first.OperationId, Arg.Any<CancellationToken>()).Returns(persistedIntent);
+        _jobQueue.ClearReceivedCalls();
+
+        var replay = await _sut.SubmitJobAsync(CreateValidPlan(), "interrupted-dispatch", CreatePrincipal());
+
+        replay.OperationId.Should().Be(first.OperationId);
+        await _jobQueue.Received(1).EnqueueAsync(first.OperationId, first.Priority, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_CancellationAfterQueueAcceptance_AcknowledgesDeliveryBeforeReplay()
+    {
+        using var request = new CancellationTokenSource();
+        ExecutionJobRecord? durable = null;
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => durable);
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                durable = call.Arg<ExecutionJobRecord>();
+                return true;
+            });
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                call.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                durable = call.Arg<ExecutionJobRecord>();
+                return true;
+            });
+        _jobQueue.EnqueueAsync(Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                request.Cancel();
+                return Task.CompletedTask;
+            });
+
+        var submitted = await _sut.SubmitJobAsync(
+            CreateValidPlan(), "accepted-dispatch", CreatePrincipal(), cancellationToken: request.Token);
+        var replay = await _sut.SubmitJobAsync(CreateValidPlan(), "accepted-dispatch", CreatePrincipal());
+
+        replay.OperationId.Should().Be(submitted.OperationId);
+        durable!.Status.Should().Be(ExecutionJobStatus.Queued);
+        durable.CurrentPhase.Should().Be("Queued for execution");
+        await _jobQueue.Received(1).EnqueueAsync(replay.OperationId, replay.Priority, Arg.Any<CancellationToken>());
     }
 
     // -----------------------------------------------------------------------
@@ -5519,7 +5942,7 @@ public sealed class GeoprocessingJobServiceTests
             Status = status,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
-            Audit = new OperationAuditInfo { RequestedBy = owner },
+            Audit = CreateOwnerAudit(owner),
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.Geoprocessing,
@@ -5535,17 +5958,30 @@ public sealed class GeoprocessingJobServiceTests
         string owner)
         => CreateJobRecord(jobId, status) with
         {
-            Audit = new OperationAuditInfo { RequestedBy = owner }
+            Audit = CreateOwnerAudit(owner)
+        };
+
+    private static OperationAuditInfo CreateOwnerAudit(string? owner)
+        => new()
+        {
+            RequestedBy = owner is null ? null : CanonicalSecurityActor.Resolve(new ClaimsPrincipal(
+                new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, owner)], "Test")))!.ActorId,
+            SubmitterSecurityContext = new Honua.Core.Features.Authorization.Domain.JobSecurityContext(owner, null, [], ClaimTypes.Role)
+            {
+                OwnerActorId = owner is null ? null : CanonicalSecurityActor.Resolve(new ClaimsPrincipal(
+                    new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, owner)], "Test")))!.ActorId
+            }
         };
 
     private static ClaimsPrincipal CreatePrincipal()
         => new(new ClaimsIdentity(
-            [new Claim(ClaimTypes.Name, "test-user")], "Test"));
+            [new Claim(ClaimTypes.Name, "test-user"), new Claim(ClaimTypes.NameIdentifier, "test-user")], "Test"));
 
     private static ClaimsPrincipal CreateTenantPrincipal(string tenantId)
         => new(new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.Name, "test-user"),
+                new Claim(ClaimTypes.NameIdentifier, "test-user"),
                 new Claim("tenant_id", tenantId)
             ], "Test"));
 

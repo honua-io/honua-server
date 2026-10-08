@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.ObjectModel;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
@@ -25,6 +26,10 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 /// <see cref="AdminMcpOperationExclusions"/> never publish. In "deterministic mode" (<c>DeterministicOnly</c>) only AI-free
 /// descriptors are published — the audit/inspect toolset. Descriptors already exposed by a
 /// hand-authored tool are skipped so the same operation is not advertised twice.
+/// The projection is cached per catalog version (SEC-18): it is rebuilt only when
+/// <see cref="OperationCatalogSnapshot.CatalogVersion"/> or the descriptor instances
+/// it was built from change, so repeated <c>tools/list</c> calls neither resolve
+/// executors nor rebuild tool schemas.
 /// </remarks>
 internal sealed class PublishedOperationToolSource : IMcpToolSource
 {
@@ -51,6 +56,7 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
     private readonly ILogger<PublishedOperationToolSource> _logger;
     private readonly IReadOnlyDictionary<string, int> _mapperCounts;
     private readonly HashSet<string> _auditedOperationIds;
+    private volatile CachedProjection? _cached;
 
     public PublishedOperationToolSource(
         IOperationCatalog catalog,
@@ -81,6 +87,27 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
         }
 
         var snapshot = await _catalog.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var cached = _cached;
+        if (cached is not null && cached.Matches(snapshot, options))
+        {
+            return cached.Tools;
+        }
+
+        var tools = Project(snapshot, options, auditedOnly);
+        _cached = new CachedProjection(
+            snapshot.CatalogVersion,
+            snapshot.Operations,
+            options.Enabled,
+            options.DeterministicOnly,
+            tools);
+        return tools;
+    }
+
+    private ReadOnlyCollection<IMcpTool> Project(
+        OperationCatalogSnapshot snapshot,
+        McpPublishedOperationOptions options,
+        bool auditedOnly)
+    {
         HashSet<string>? executorOperationIds = null;
         if (_scopeFactory is not null)
         {
@@ -126,6 +153,41 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
             tools.Add(new PublishedOperationTool(descriptor, snapshot.CatalogVersion, _logger));
         }
 
-        return tools;
+        return tools.AsReadOnly();
+    }
+
+    /// <summary>
+    /// A built projection and the inputs it was built from. The catalog version hashes
+    /// only operation and provider ids, so the descriptor instances are compared too:
+    /// a descriptor whose schema or policy changed under an unchanged id set still
+    /// rebuilds the projection.
+    /// </summary>
+    private sealed record CachedProjection(
+        string CatalogVersion,
+        IReadOnlyList<OperationDescriptor> Operations,
+        bool Enabled,
+        bool DeterministicOnly,
+        IReadOnlyList<IMcpTool> Tools)
+    {
+        public bool Matches(OperationCatalogSnapshot snapshot, McpPublishedOperationOptions options)
+        {
+            if (!string.Equals(CatalogVersion, snapshot.CatalogVersion, StringComparison.Ordinal)
+                || Enabled != options.Enabled
+                || DeterministicOnly != options.DeterministicOnly
+                || Operations.Count != snapshot.Operations.Count)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < Operations.Count; i++)
+            {
+                if (!ReferenceEquals(Operations[i], snapshot.Operations[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
     }
 }

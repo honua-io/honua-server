@@ -165,7 +165,9 @@ internal sealed class GetStyleTool : IMcpTool
         var graphProvider = httpContext.RequestServices.GetService<IMetadataV2GraphProvider>()
             ?? throw new GeoprocessingStoreUnavailableException("The metadata catalog is not available on this server.");
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var layer = MapToolLayerResolver.Resolve(snapshot, argument.ServiceId, argument.LayerId);
+        var layer = await MapToolLayerResolver.ResolveForReadAsync(
+            httpContext, snapshot, argument.ServiceId, argument.LayerId, AuthorizationOperation.Metadata, cancellationToken)
+            .ConfigureAwait(false);
 
         var styles = await styleCatalog.GetStylesForLayerAsync(layer.StorageLayerId, cancellationToken).ConfigureAwait(false);
         if (styles.Count == 0)

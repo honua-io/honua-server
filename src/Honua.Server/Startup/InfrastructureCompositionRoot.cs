@@ -114,7 +114,7 @@ internal static class InfrastructureCompositionRoot
         // when ArcGisRest:Enabled is explicitly false.
         if (configuration.GetValue("ArcGisRest:Enabled", true))
         {
-            Honua.ArcGisRest.ServiceCollectionExtensions.AddArcGisRestFeatureProvider(services, configuration);
+            Honua.GeoServicesRest.ServiceCollectionExtensions.AddArcGisRestFeatureProvider(services, configuration);
         }
 
         // Register the Oracle spatial provider as an additional read-only feature backend (#1252).

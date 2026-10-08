@@ -21,6 +21,16 @@ Host=db.example.com;Port=5432;Database=honua;Username=honua_app;Password=...;SSL
 - There is no replica connection setting — read replicas are not load-balanced at the application layer. Point Honua at the writer endpoint and rely on DNS-level failover.
 - For TLS configuration, see the [TLS guide](../../../guides/secure/tls-and-mtls.md).
 
+### Schemas
+
+| Variable | Purpose |
+| --- | --- |
+| `Database__Schema` | Metadata schema (default `honua`). Never an import target. |
+| `Database__DefaultOperationalSchema` | Schema imports write to when no target schema is given (default `honua_data`). |
+| `Database__OperationalSchemas__0`, `__1`, ... | Additional schemas that imports may target and table discovery searches. `public` and the default operational schema are always included. |
+
+An import that names any other target schema is refused with `400 Bad Request`.
+
 ## Supported versions
 
 PostgreSQL 16–18 with PostGIS 3.4–3.6 are tested in CI; see the [tested configurations matrix](README.md#tested-postgresql-configurations).
@@ -104,7 +114,171 @@ Honua applies its PostgreSQL session settings (`lock_timeout`, `statement_timeou
 | `Limits__Connections__AdaptiveConcurrencyEnabled` | `false` | Adaptive query admission below the concurrency ceiling. |
 | `Limits__Connections__Multiplexing` | `false` | Npgsql multiplexing (`false`, `true`, or `auto`). Incompatible with RDS Proxy and transaction-mode poolers — see [Connection poolers and proxies](#connection-poolers-and-proxies-rds-proxy-pgbouncer). |
 
+Pool maxima and minima apply **per data source, per Honua process**. The primary
+database, named secure connections, and registered source-bound feature/tile
+connections have independently owned pools. Source-bound reads use the configured
+pool settings and the same admission gate as primary database operations. A
+source's credentials, database, and search path remain independent of the primary
+connection. Primary `Database:Schema` and request-scoped schema overrides do not
+apply to bound source connections.
+
+The admission ceiling is shared within each process; it bounds active leases,
+not the sum of idle physical connections across pools or replicas. Account for
+all source pools and application replicas when budgeting PostgreSQL connection
+slots. Credential changes for a registered connection retire its previous pool;
+pending opens and active connection leases retain their pool until the connection
+is returned. This also protects multiplexed logical connections between commands.
+Shutdown retires all cached pools with the same lifetime guarantees. Legacy bindings without a stable connection
+ID use a separate pool for each distinct connection string.
+
+Named secure and source-bound pools are retired when their registered connection
+is deleted locally. Pools with no active or opening leases also expire after
+`Limits:Connections:ConnectionIdleLifetimeSeconds`, checked every
+`ConnectionPruningIntervalSeconds`. This bounds idle pools on other server
+instances and requests that finish opening after a deletion. The idle period
+starts when the last lease returns. Minimum pool size applies while the source
+pool remains active; a later request recreates an expired pool. Active leases
+finish normally, and the primary default database pool is unaffected.
+
 The full admission set (adaptive bounds, target lease duration, update interval) is in the [environment variable reference](../environment-variables.md#admission-and-pooling). Pool and admission behavior can be observed at `GET /monitoring/metrics/connection-pool`.
+
+## Indexing numeric source columns
+
+For source-backed layers with physical columns, Honua retains the published
+numeric type in filter expressions. Newly published PostgreSQL `smallint` columns
+include a provider hint that lets simple `Integer` comparisons (`=`, `!=`, `<>`,
+`<`, `<=`, `>`, `>=` with an integer literal) use an ordinary index on the source
+column. Parameters retain their original integer width, including out-of-range
+literals.
+
+Publication hints can become stale. Before an eligible buffered or streaming read,
+Honua checks the actual column type in a row-free statement batched with the query
+in one database round trip. The batch holds the relation lock until execution
+finishes, preventing external DDL between verification and use. A mismatched type,
+domain, or custom operator search path uses the original declared-type query.
+The discarded statement is guarded against evaluating source rows or row-security
+policies. Existing transactions, bindings without hints, compound predicates,
+arithmetic, explicit casts, JSONB attributes, counts and aggregates retain the
+canonical casts.
+Republish an existing source layer to record its current smallint hints; existing
+publications do not discover or persist these hints during queries.
+
+Those canonical queries can still use an expression index matching the declared
+type. For example, `priority::integer` can prevent an ordinary `smallint` index
+from serving a selective filter; an expression index preserves its semantics:
+
+```sql
+CREATE INDEX CONCURRENTLY features_priority_integer_idx
+    ON public.features ((priority::integer));
+ANALYZE public.features;
+EXPLAIN SELECT * FROM public.features WHERE priority::integer = 32767;
+```
+
+Replace the example table and column with the source binding's names. Run
+`CREATE INDEX CONCURRENTLY` outside a transaction block. Check the actual query
+plan and workload before retaining the additional index: it consumes storage and
+adds maintenance work on writes. See PostgreSQL's
+[indexes on expressions](https://www.postgresql.org/docs/current/indexes-expressional.html).
+
+This example applies to physical `smallint` columns published as `Integer`, not
+fields stored inside a JSONB attributes document. Honua keeps numeric casts
+because removing them can change arithmetic overflow and decimal-to-Double
+comparison results. An expression index supports the canonical declared-type
+predicate without changing those query semantics. Check the plan before adding
+one to a newly published source whose simple comparisons already use its ordinary
+index.
+
+## Bounded source-backed spatial reads
+
+When `Database__PreferSerialBoundedSpatialReads` is unset, Honua automatically
+uses a narrow serial-planner policy for source-backed PostGIS point layers.
+Set it to `false` to retain PostgreSQL planning for these reads, or `true` to
+explicitly enable the same bounded policy. Eligible reads have a simple
+intersects/envelope bbox, an effective first-page limit of
+1–100 features before the extra pagination probe row, default ordering (including
+the normalized ascending primary-ID sort), and no distinct, branch-version or null-geometry request.
+Unknown geometry types, ambient transactions and borrowed mutation transactions
+retain ordinary planning.
+This option does not change counts, statistics, streaming, tiles, larger pages,
+later pages or custom sorts. Count planning has separate options below.
+
+For an eligible read, Honua batches a transaction-local
+`max_parallel_workers_per_gather=0` setting with the original parameterized
+feature SELECT. The setting ends with the batch, including errors, cancellation
+and early reader disposal. The scoped SELECT uses the equivalent `SELECT ALL`
+modifier so auto-preparation cannot reuse a parallel plan from an ordinary read.
+Connection pool limits, query admission, predicates, authorization, CRS and
+pagination remain in effect.
+
+This profile targets parallel-worker startup overhead observed in bounded point
+bbox reads. It does not set a PostgreSQL global or session default. Benchmark
+representative selectivities and concurrent workloads on your deployment;
+limiting returned rows does not limit the work required to find them. An explicit
+`false` provides a control for measuring this policy and opting out.
+
+## Source-backed spatial counts
+
+`Database__DisableJitForSourceSpatialCounts=true` disables PostgreSQL JIT only
+within eligible count queries. The default is `false`. Eligible queries count
+source-backed point layers with a simple intersects/envelope bbox. Distinct
+queries, non-default branches, unknown geometry types, ambient transactions and
+borrowed mutation transactions retain ordinary planning. Page size and offset do
+not restrict eligibility: the exact count still considers all matching rows.
+
+Honua batches transaction-local `jit=off` with the original parameterized count.
+The setting ends with that batch, including SQL errors and cancellation, and the
+scoped count uses a distinct `SELECT ALL` identity to avoid reusing a generic plan
+prepared by the ordinary path. Spatial predicates, security filters and exact
+count results are unchanged. The profile does not alter parallel-worker settings
+or the planning of feature reads, statistics or tiles. It can be enabled
+independently of `PreferSerialBoundedSpatialReads`.
+
+This profile targets SQL compilation overhead observed in broad point-bbox
+counts. PostgreSQL JIT is separate from Honua Native AOT. It can help short queries
+where compilation costs outweigh execution savings; larger or more complex
+queries may benefit from JIT. Measure representative selectivities and concurrent
+workloads before enabling it. Keep this tuned profile separate from shipping
+defaults in benchmark reports.
+
+When `Database__PreferSerialSourceSpatialCounts` is unset, Honua automatically
+uses serial plans only for exact counts associated with the bounded reads
+described above. The count retains the originating query's eligibility limits:
+first page, limit 1–100, ascending primary-ID/default order, simple point bbox,
+and no distinct, branch-version or null-geometry request. Standalone counts
+retain PostgreSQL planning even if their query includes an eligible limit.
+Unbounded, larger-page and later-page reads also retain ordinary count planning.
+
+Set `Database__PreferSerialSourceSpatialCounts=false` to opt out of serial counts.
+Set it to `true` to explicitly enable serial plans for all eligible source-backed
+point bbox counts, including standalone counts and those associated with
+unbounded or later-page reads. The explicit option retains the broader
+eligibility described for count JIT suppression above.
+
+The read and count options are independent: opting out of serial feature reads
+does not opt out of automatically scoped associated counts, and vice versa.
+Serial counts batch transaction-local `max_parallel_workers_per_gather=0` with
+the count, without changing feature SELECT planning or PostgreSQL JIT unless the
+JIT option is also enabled. Explicit `EnvelopeIntersects` requests retain their existing bbox-only
+predicate; exact `Intersects` requests retain exact intersection.
+
+When both count options are enabled, both settings precede the same count in one
+implicit batch transaction. Ordinary, JIT-only, serial-only and combined counts
+use distinct SQL preparation identities so their generic plans cannot mix on a
+pooled connection. Both settings end on success, SQL errors and cancellation;
+caller-owned transactions retain their original planning behavior. Short first
+pages that already prove the exact total do not execute a count or apply either
+count setting.
+
+Serial counts target worker-startup overhead observed in a 100K-point SQL
+diagnostic. That experiment is not an application throughput result or evidence
+that serial execution wins for every dataset or selectivity. Validate throughput
+and tail latency under representative concurrent traffic, using an explicit
+`false` as the control. No global database setting or migration is required;
+these SQL planner policies are independent of Honua's JIT or Native AOT build.
+
+See PostgreSQL's [JIT decision documentation](https://www.postgresql.org/docs/17/jit-decision.html)
+and Npgsql's [batch transaction behavior](https://www.npgsql.org/doc/basic-usage.html#batching)
+for the underlying planner and transaction semantics.
 
 ## Related pages
 

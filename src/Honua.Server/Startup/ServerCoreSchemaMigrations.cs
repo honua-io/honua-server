@@ -23,5 +23,11 @@ internal static class ServerCoreSchemaMigrations
         "Honua.Server.Migrations.109_AdoptConfiguredGuardedSchema.sql",
         "Honua.Server.Migrations.110_PreserveGovernedLineage.sql",
         "Honua.Server.Migrations.001_CreateHonuaSchema.sql",
-        "Honua.Server.Migrations.116_AddSensorThingsIdSequences.sql");
+        "Honua.Server.Migrations.116_AddSensorThingsIdSequences.sql")
+    {
+        KnownMigrationNames = typeof(ServerCoreSchemaMigrations).Assembly.GetManifestResourceNames()
+            .Concat(typeof(PostgresDatabaseMigrationRunner).Assembly.GetManifestResourceNames())
+            .Where(name => name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
+            .ToHashSet(StringComparer.Ordinal)
+    };
 }

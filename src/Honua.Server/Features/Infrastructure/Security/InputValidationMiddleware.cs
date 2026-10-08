@@ -313,7 +313,8 @@ internal sealed class InputValidationMiddleware
                     return InputValidationResult.Invalid(geometryError, isSuspicious: false);
                 }
             }
-            else if (value.Length > _options.MaxParameterLength)
+            else if (value.Length > _options.MaxParameterLength &&
+                     !IsGeoServicesProtocolPayloadField(request, paramType, name))
             {
                 return InputValidationResult.Invalid($"Parameter '{name}' exceeds maximum length of {_options.MaxParameterLength}", isSuspicious: false);
             }
@@ -398,6 +399,7 @@ internal sealed class InputValidationMiddleware
     // into SQL text, so the SQL-injection heuristic produces false positives that reject valid
     // tokens (e.g. a JWT signature containing "--" → 400 on /sharing/rest/oauth2/introspect).
     // This mirrors the opaque-credential handling for the Authorization / X-API-Key headers.
+    // "token" is also exempt on every route; see IsOpaqueTokenCredentialParameter.
     private static readonly HashSet<string> _oauth2CredentialFields = new(StringComparer.OrdinalIgnoreCase)
     {
         "token",
@@ -411,9 +413,22 @@ internal sealed class InputValidationMiddleware
 
     private static bool ShouldSkipSqlInspection(HttpRequest request, string paramType, string name)
         => IsFeatureEditPayloadField(request, paramType, name)
+           || IsOpaqueTokenCredentialParameter(paramType, name)
            || IsOAuth2CredentialParameter(request, paramType, name)
            || IsGenerateTokenPasswordParameter(request, paramType, name)
            || IsAdminSignalRConnectionId(request, paramType, name);
+
+    private static bool IsOpaqueTokenCredentialParameter(string paramType, string name)
+    {
+        // The token query/form parameter is an opaque credential on every route
+        // (GeoServices, OGC/WFS, portal, OAuth2). Managed API keys are base64url and
+        // may contain "--" or "/*"-like bytes. The verifier looks the value up or
+        // compares it; it is never concatenated into SQL. Skip only the SQL heuristic.
+        // Size, control-character, XSS, command, path, and LDAP checks still run, matching
+        // the reason Authorization and X-API-Key skip SQL inspection.
+        return paramType is "form" or "query"
+            && name.Equals("token", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static bool IsGenerateTokenPasswordParameter(HttpRequest request, string paramType, string name)
     {
@@ -455,6 +470,30 @@ internal sealed class InputValidationMiddleware
         // on unrelated routes. Every OAuth2 route lives under "/sharing/rest/oauth2/" (authorize,
         // callback, token, revoke, introspect).
         return request.Path.Value?.Contains("/sharing/rest/oauth2/", StringComparison.OrdinalIgnoreCase) == true;
+    }
+
+    private static readonly HashSet<string> _geoServicesQueryPayloadFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "objectIds",
+        "outFields"
+    };
+
+    private static bool IsGeoServicesProtocolPayloadField(HttpRequest request, string paramType, string name)
+    {
+        if (IsFeatureEditPayloadField(request, paramType, name))
+        {
+            return true;
+        }
+
+        if (!paramType.Equals("form", StringComparison.Ordinal) ||
+            !_geoServicesQueryPayloadFields.Contains(name))
+        {
+            return false;
+        }
+
+        var path = request.Path.Value;
+        return path?.Contains("/FeatureServer/", StringComparison.OrdinalIgnoreCase) == true ||
+               path?.Contains("/MapServer/", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     private static bool IsFeatureEditPayloadField(HttpRequest request, string paramType, string name)
@@ -518,7 +557,14 @@ internal sealed class InputValidationMiddleware
     private static bool ShouldSkipLdapInspection(HttpRequest request, string paramType, string name, string value)
         => IsODataSystemQueryOption(request, paramType, name) ||
            IsProtocolFilterQueryOption(request, paramType, name) ||
+           IsPortalSearchQuery(request, paramType, name) ||
            IsEdrWktCoordsQueryOption(request, paramType, name, value);
+
+    private static bool IsPortalSearchQuery(HttpRequest request, string paramType, string name)
+        => paramType is "query" or "form"
+           && name.Equals("q", StringComparison.OrdinalIgnoreCase)
+           && (string.Equals(request.Path.Value, "/sharing/rest/search", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(request.Path.Value, "/sharing/rest/search/", StringComparison.OrdinalIgnoreCase));
 
     private static bool IsEdrWktCoordsQueryOption(HttpRequest request, string paramType, string name, string value)
     {

@@ -197,21 +197,22 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
         }
 
         NpgsqlConnection? connection = null;
+        SecureConnectionDataSourceCache.Acquisition? acquisition = null;
         try
         {
-            // Key the cache by the logical connection name so a rotated secret
-            // (new resolved connection string) replaces — and disposes — the
-            // previous data source instead of leaking its connection pool.
-            var dataSource = _dataSourceCache.GetOrCreate(_namedConnectionToUse, connectionString);
-            connection = await dataSource.OpenConnectionWithRetryAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+            // Multiplexed logical connections need the source command channel for
+            // their whole lease, so retain the pool pin until connection disposal.
+            var source = _dataSourceCache.Acquire(_namedConnectionToUse, connectionString);
+            acquisition = source;
+            connection = await source.DataSource.OpenConnectionWithRetryAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
             await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
 
             _logSecureConnectionOpened(_logger, _namedConnectionToUse, null);
             DbConnectionTracking.Track(connection, _activeDbConnectionTracker);
 
-            return _concurrencyGate is null
-                ? connection
-                : new SemaphoreReleasingConnection(connection, () => ReleaseOneSlot(slotAcquiredAt));
+            var lease = new SemaphoreReleasingConnection(connection, () => ReleaseOneSlot(slotAcquiredAt), acquisition);
+            acquisition = null;
+            return lease;
         }
         catch
         {
@@ -226,6 +227,10 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
             }
 
             throw;
+        }
+        finally
+        {
+            acquisition?.Dispose();
         }
     }
 

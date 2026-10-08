@@ -238,10 +238,10 @@ internal sealed class OgcMapsRenderingHandler
                         }
 
                         sawEnabledLayer = true;
-                        var decision = AccessPolicyHelpers.EvaluateAccess(
+                        var decision = AccessPolicyHelpers.EvaluateResourceAccess(
                             context,
-                            entry.Resource.AccessPolicy,
-                            entry.Service?.AccessPolicy);
+                            entry.Resource,
+                            entry.Service);
 
                         if (decision.IsAllowed)
                         {

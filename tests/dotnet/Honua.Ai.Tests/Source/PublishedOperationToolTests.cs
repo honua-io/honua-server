@@ -673,6 +673,63 @@ public sealed class PublishedOperationToolTests
             "the mutating operation is AI-assisted and excluded from deterministic mode");
     }
 
+    [UnitTest]
+    public async Task Source_RepeatedCalls_ReuseProjectionUntilCatalogVersionChanges()
+    {
+        // SEC-18: the projection is rebuilt only when the catalog version changes, so
+        // repeated tools/list calls do not resolve executors or rebuild tool schemas.
+        var executorResolutions = 0;
+        var scopeFactory = new ServiceCollection()
+            .AddScoped<IOperationExecutor>(_ =>
+            {
+                executorResolutions++;
+                return new RecordingExecutor(DeterministicReadOnlyOpId);
+            })
+            .BuildServiceProvider()
+            .GetRequiredService<IServiceScopeFactory>();
+        var catalog = Catalog(DeterministicReadOnlyDescriptor());
+        var source = new PublishedOperationToolSource(
+            catalog,
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance,
+            scopeFactory);
+
+        var first = await source.GetToolsAsync(CancellationToken.None);
+        var second = await source.GetToolsAsync(CancellationToken.None);
+
+        second.Should().BeSameAs(first);
+        executorResolutions.Should().Be(1);
+
+        catalog.GetSnapshotAsync(Arg.Any<CancellationToken>()).Returns(new OperationCatalogSnapshot
+        {
+            CatalogVersion = "cat-v2",
+            GeneratedAt = DateTimeOffset.UnixEpoch,
+            ProviderIds = ["test"],
+            Operations = [DeterministicReadOnlyDescriptor()],
+        });
+
+        var third = await source.GetToolsAsync(CancellationToken.None);
+
+        third.Should().NotBeSameAs(first);
+        third.Select(t => t.Name).Should().Equal(first.Select(t => t.Name));
+        executorResolutions.Should().Be(2);
+
+        // The version hashes ids only, so a replaced descriptor under the same
+        // version still rebuilds the projection.
+        catalog.GetSnapshotAsync(Arg.Any<CancellationToken>()).Returns(new OperationCatalogSnapshot
+        {
+            CatalogVersion = "cat-v2",
+            GeneratedAt = DateTimeOffset.UnixEpoch,
+            ProviderIds = ["test"],
+            Operations = [DeterministicReadOnlyDescriptor()],
+        });
+
+        var fourth = await source.GetToolsAsync(CancellationToken.None);
+
+        fourth.Should().NotBeSameAs(third);
+        executorResolutions.Should().Be(3);
+    }
+
     // ---- Surface merge: published tools appear in tools/list and are callable ---
 
     [UnitTest]

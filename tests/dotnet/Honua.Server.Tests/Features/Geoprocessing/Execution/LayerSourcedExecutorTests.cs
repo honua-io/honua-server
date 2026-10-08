@@ -781,7 +781,7 @@ public sealed class LayerSourcedExecutorTests
             ("distance", "10"),
             ("geometry", """{"xmin":0,"ymin":0,"xmax":1,"ymax":1}"""),
             ("geometryType", "esriGeometryEnvelope"),
-            ("spatialRel", "esriSpatialRelWithinDistance"));
+            ("spatialRel", "withinDistance"));
 
         status.Should().Be(ExecutionJobStatus.Failed,
             "distance-based relationships collide with the operation's own 'distance' and are rejected, as on the synchronous surface");

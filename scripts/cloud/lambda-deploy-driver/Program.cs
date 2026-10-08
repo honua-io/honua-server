@@ -72,11 +72,20 @@ var observed = await backend.ObserveAsync(operation);
 if (rollback)
 {
     // Alias convergence is not a certified rollback. This driver does not attach a data-plane
-    // probe, so the backend must stay non-terminal (or fail) instead of reporting RolledBack.
+    // probe, so a backend that reports RolledBack from the alias alone is refused. When the
+    // alias is back on the previous version, hand that version to the caller. The certification
+    // script then smokes it; that query is the readiness proof.
     if (observed.Status == WorkflowOperationStatus.RolledBack)
     {
         throw new InvalidOperationException(
             "Refusing to certify Lambda rollback: alias convergence alone reported RolledBack without restored readiness and a functional query.");
+    }
+
+    if (observed.Status != WorkflowOperationStatus.Failed
+        && string.Equals(observed.ObservedRevision, args[3], StringComparison.Ordinal))
+    {
+        Console.WriteLine(JsonSerializer.Serialize(new { version = observed.ObservedRevision, status = "AliasRestored" }));
+        return;
     }
 
     throw new InvalidOperationException(

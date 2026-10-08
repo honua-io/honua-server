@@ -1712,7 +1712,11 @@ internal sealed class FeatureServerEditsHandler(
             // alias of it, so store the geometry tagged with the layer's canonical SRID.
             try
             {
-                geometry = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(feature.Geometry, layerSrid);
+                geometry = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(
+                    feature.Geometry,
+                    layerSrid,
+                    GeoServicesGeometryConverter.ResolveConfiguredEditCurveVertexBudget(
+                        _httpContextAccessor.HttpContext?.RequestServices));
             }
             catch (ArgumentException ex)
             {
@@ -2017,7 +2021,7 @@ internal sealed class FeatureServerEditsHandler(
             MetadataV2GeometryType.MultiPoint => "esriGeometryMultipoint",
             MetadataV2GeometryType.LineString or MetadataV2GeometryType.MultiLineString => "esriGeometryPolyline",
             MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon => "esriGeometryPolygon",
-            _ => "esriGeometryNull"
+            _ => geometryType.ToString()
         };
 
     private static bool TryGetObjectId(Dictionary<string, object?>? attributes, MetadataV2Resource resource, out long objectId)

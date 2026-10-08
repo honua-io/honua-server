@@ -179,7 +179,10 @@ internal static class ServiceCollectionExtensions
         services.TryAddScoped<IArtifactStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresWorkspaceStore>());
 
         // Register refactored feature store implementation
-        services.AddRefactoredFeatureStore(configuration["Database:Schema"]);
+        services.AddRefactoredFeatureStore(configuration["Database:Schema"],
+            configuration.GetValue<bool?>("Database:PreferSerialBoundedSpatialReads"),
+            configuration.GetValue<bool>("Database:DisableJitForSourceSpatialCounts"),
+            preferSerialSourceSpatialCounts: configuration.GetValue<bool?>("Database:PreferSerialSourceSpatialCounts"));
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
             new FeatureDataProviderRegistry(serviceProvider.GetServices<IFeatureDataProvider>()));
         services.TryAddScoped(serviceProvider =>
@@ -216,9 +219,16 @@ internal static class ServiceCollectionExtensions
         // Console Operate read APIs (#1168)
         services.AddScoped<IAuditLogReader, PostgresAuditLogReader>();
 
+        services.TryAddSingleton(new Honua.Core.Features.AuditLog.AuditChainKeySnapshot(
+            configuration["AuditLog:ChainVerification:Key"]));
+
         // SIEM export + tamper-evidence surfaces over the audit trail (#350, #509)
         services.AddScoped<IAuditLogExporter, PostgresAuditLogExporter>();
-        services.AddScoped<IAuditLogIntegrityVerifier, PostgresAuditLogIntegrityVerifier>();
+        services.AddScoped<IAuditLogIntegrityVerifier>(serviceProvider =>
+            new PostgresAuditLogIntegrityVerifier(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                configuration["Database:Schema"],
+                serviceProvider.GetRequiredService<Honua.Core.Features.AuditLog.AuditChainKeySnapshot>().Key));
         services.AddScoped<IInvestigationStore, PostgresInvestigationStore>();
 
         // Persisted ops-health rollup store (#2553). Schema-qualified so it targets the configured
@@ -298,11 +308,15 @@ internal static class ServiceCollectionExtensions
 
         // The read surface is the cached path; the write surface (IMetadataV2GraphStore) stays the
         // raw store so read-modify-write publish paths always load a fresh persisted snapshot.
+        // Cache-miss loads are shared across callers and outlive a cancelled initiator, so they
+        // resolve the store from their own scope instead of the initiating request's.
         services.AddScoped<IMetadataV2GraphProvider>(serviceProvider =>
             new CachingMetadataV2GraphProvider(
                 serviceProvider.GetRequiredService<IMetadataV2GraphStore>(),
                 serviceProvider.GetRequiredService<MetadataV2GraphSnapshotCache>(),
-                metadataEnvironment));
+                metadataEnvironment,
+                serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                static loadScope => loadScope.GetRequiredService<IMetadataV2GraphStore>()));
         // Legacy V1 catalog -> Metadata v2 graph projector (honua-server#2081). Lets compat
         // seeding paths (cloud-demo reset/startup) project freshly-seeded legacy services
         // into the active graph store so the v2 read paths resolve them.
@@ -455,7 +469,8 @@ internal static class ServiceCollectionExtensions
                 configuration["Database:Schema"],
                 serviceProvider.GetService<IStyleCatalog>(),
                 serviceProvider.GetService<IAdoNetDatabaseConnectionProvider>(),
-                serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<LayerPublishingOptions>>().Value));
+                serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<LayerPublishingOptions>>().Value,
+                serviceProvider.GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>()));
 
         // Register health checker
         services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();
@@ -526,7 +541,18 @@ internal static class ServiceCollectionExtensions
         services.AddHostedService<HighFrequencyQueryPreparationService>();
 
         // Register enhanced database connection provider with prepared statement caching
-        services.AddScoped<IDatabaseConnectionProvider, CachingDatabaseConnectionProvider>();
+        // Keep construction behind a factory so DB-less hosts can remove the public
+        // provider/data source without activating this otherwise-unused concrete alias.
+        services.AddScoped<CachingDatabaseConnectionProvider>(provider =>
+            new CachingDatabaseConnectionProvider(
+                provider.GetRequiredService<NpgsqlDataSource>(),
+                provider.GetRequiredService<ILogger<CachingDatabaseConnectionProvider>>(),
+                provider.GetService<ISchemaContext>(),
+                provider.GetService<IActiveDbConnectionTracker>(),
+                provider.GetService<QueryConcurrencyGate>(),
+                provider.GetService<ConnectionPoolMetrics>()));
+        services.AddScoped<IDatabaseConnectionProvider>(provider =>
+            provider.GetRequiredService<CachingDatabaseConnectionProvider>());
 
         // Provider-internal ADO.NET escape hatch (ADR 0046): forwards to whatever
         // IDatabaseConnectionProvider resolves to at runtime so secure-connection
@@ -767,7 +793,8 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IOgcApiFeaturesCollectionSink>(serviceProvider =>
             new PostgresOgcApiFeaturesCollectionSink(
                 serviceProvider.GetRequiredService<NpgsqlDataSource>(),
-                serviceProvider.GetRequiredService<ILogger<PostgresOgcApiFeaturesCollectionSink>>()));
+                serviceProvider.GetRequiredService<ILogger<PostgresOgcApiFeaturesCollectionSink>>(),
+                serviceProvider.GetService<PostgresSchemaConfiguration>()));
         services.AddResilientHttpClient<OgcApiFeaturesImportService>(
             "ogc-api-features-import",
             HttpResiliencePolicies.SlowServiceDefaults,

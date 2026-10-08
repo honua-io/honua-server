@@ -293,6 +293,61 @@ public sealed class Wcs10EndpointsTests : IAsyncLifetime
     [Operation(Operations.Metadata)]
     [InterfaceOperation(TestProtocols.Wcs10, "GetCoverage")]
     [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task HonuaServer5447_Wcs10GetCoverage_BindsAdvertisedBandAxisSelection()
+    {
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(CreateRasterInfo() with { BandCount = 2 }));
+
+        var endpoint = $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&VERSION=1.0.0&REQUEST=GetCoverage" +
+            "&COVERAGE=coverage_0&FORMAT=GeoTIFF&WIDTH=8&HEIGHT=8";
+
+        foreach (var (parameter, expected) in new[]
+        {
+            ("&bands=1", new[] { 1 }),
+            ("&BANDS=2,1", new[] { 2, 1 }),
+        })
+        {
+            var response = await _fixture.Client.GetAsync(endpoint + parameter);
+            response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+            _exportQueries.Last().Bands.Should().Equal(expected,
+                "the advertised bands axis must select only the requested canonical raster bands in order");
+        }
+
+        var allBands = await _fixture.Client.GetAsync(endpoint);
+        allBands.StatusCode.Should().Be(HttpStatusCode.OK, await allBands.Content.ReadAsStringAsync());
+        _exportQueries.Should().HaveCount(3);
+        _exportQueries.Last().Bands.Should().BeNull("omitting the axis retrieves every band");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs10, "GetCoverage")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task Wcs10_GetCoverage_InvalidBandAxisIsRejectedBeforeExport()
+    {
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(CreateRasterInfo() with { BandCount = 2 }));
+
+        var endpoint = $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&VERSION=1.0.0&REQUEST=GetCoverage" +
+            "&COVERAGE=coverage_0&FORMAT=GeoTIFF&WIDTH=8&HEIGHT=8&BANDS=";
+        foreach (var selection in new[] { "", "0", "3", "-1", "1,,2", "1,x", "2.5", "2147483648" })
+        {
+            var response = await _fixture.Client.GetAsync(endpoint + Uri.EscapeDataString(selection));
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+            var error = XDocument.Parse(content).Root!
+                .Elements(XName.Get("ServiceException", OgcNamespace)).Single();
+            error.Attribute("code")!.Value.Should().Be("InvalidParameterValue");
+            error.Attribute("locator")!.Value.Should().Be("BANDS");
+        }
+
+        _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs10, "GetCoverage")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
     public async Task Wcs10_GetCoverage_UnknownFormat_ReturnsLegacyServiceExceptionReport()
     {
         var response = await _fixture.Client.GetAsync(

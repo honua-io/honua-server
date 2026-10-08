@@ -373,7 +373,8 @@ internal static class McpServiceCollectionExtensions
                 options.MaxSessions,
                 options.SessionIdleTimeout,
                 options.SessionEvictionPolicy,
-                timeProvider);
+                timeProvider,
+                options.MaxAnonymousSessions);
         });
 
         // honua-server#4909: a bearer token admitted on a session's initialize (or on a

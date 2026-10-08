@@ -81,13 +81,15 @@ internal static class I3sProtocolShapeValidator
 
         RequireString(store, "profile", violations);
 
-        // If the store advertises nodePages, the pagination descriptor must be
+        RequireArray(layer, "capabilities", violations);
+
+        // If the layer advertises nodePages, the pagination descriptor must be
         // complete so a client can page the node tree.
-        if (store.TryGetProperty("nodePages", out var nodePages))
+        if (layer.TryGetProperty("nodePages", out var nodePages))
         {
             if (nodePages.ValueKind != JsonValueKind.Object)
             {
-                violations.Add("store.nodePages must be an object when present.");
+                violations.Add("layer.nodePages must be an object when present.");
             }
             else
             {
@@ -95,7 +97,7 @@ internal static class I3sProtocolShapeValidator
                     || nodesPerPage.ValueKind != JsonValueKind.Number
                     || nodesPerPage.GetInt32() <= 0)
                 {
-                    violations.Add("store.nodePages.nodesPerPage must be a positive integer.");
+                    violations.Add("layer.nodePages.nodesPerPage must be a positive integer.");
                 }
 
                 RequireString(nodePages, "lodSelectionMetricType", violations);
@@ -103,7 +105,7 @@ internal static class I3sProtocolShapeValidator
                 if (!store.TryGetProperty("defaultGeometrySchema", out var schema)
                     || schema.ValueKind != JsonValueKind.Object)
                 {
-                    violations.Add("store.defaultGeometrySchema must accompany store.nodePages.");
+                    violations.Add("store.defaultGeometrySchema must accompany layer.nodePages.");
                 }
             }
         }
@@ -136,6 +138,14 @@ internal static class I3sProtocolShapeValidator
         var index = 0;
         foreach (var node in nodes.EnumerateArray())
         {
+            if (!node.TryGetProperty("index", out var nodeIndex) ||
+                nodeIndex.ValueKind != JsonValueKind.Number ||
+                !nodeIndex.TryGetInt32(out var nodeIndexValue) ||
+                nodeIndexValue < 0)
+            {
+                violations.Add($"node[{index}].index must be a non-negative integer global node index.");
+            }
+
             if (!node.TryGetProperty("lodThreshold", out var lod) || lod.ValueKind != JsonValueKind.Number)
             {
                 violations.Add($"node[{index}].lodThreshold must be a number.");

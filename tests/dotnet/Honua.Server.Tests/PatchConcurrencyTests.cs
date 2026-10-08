@@ -26,6 +26,90 @@ namespace Honua.Server.Tests;
 public sealed class PatchConcurrencyTests
 {
     [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Protocol(TestProtocols.OgcApiFeatures)]
+    [Operation(Operations.Delete)]
+    [Endpoint("DELETE /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task SRV_OGC_015_Delete_WithMaskedSnapshot_ValidatesIfMatch(bool stale)
+    {
+        var barrier = new WriteBarrier();
+        barrier.Resume.TrySetResult();
+        var mask = new MutableFieldMask();
+        var fixture = CreateFixture(barrier, mask);
+        await fixture.InitializeAsync();
+        try
+        {
+            var id = await fixture.InsertFeatureAsync(0, "conditional delete");
+            var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+            await fixture.GetService<IFeatureWriter>().UpdateAsync(
+                0,
+                original with { Attributes = original.Attributes.SetItem("population", 12345L) });
+            mask.Fields = ImmutableArray.Create("population");
+
+            using var read = await fixture.Client.GetAsync($"/ogc/features/collections/0/items/{id}");
+            Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+            Assert.NotNull(read.Headers.ETag);
+            Assert.DoesNotContain("population", await read.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+            if (stale)
+            {
+                var current = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+                await fixture.GetService<IFeatureWriter>().UpdateAsync(
+                    0, current with { Attributes = current.Attributes.SetItem("name", "changed name") });
+            }
+
+            using var request = new HttpRequestMessage(
+                HttpMethod.Delete,
+                $"/ogc/features/collections/0/items/{id}");
+            request.Headers.TryAddWithoutValidation("If-Match", read.Headers.ETag!.ToString());
+            using var response = await fixture.Client.SendAsync(request);
+
+            Assert.Equal(stale ? HttpStatusCode.PreconditionFailed : HttpStatusCode.NoContent, response.StatusCode);
+        }
+        finally { await fixture.DisposeAsync(); }
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.OgcApiFeatures)]
+    [Operation(Operations.Delete)]
+    [Endpoint("DELETE /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task OgcDelete_ConcurrentMaskedChange_ReturnsPreconditionFailed()
+    {
+        var barrier = new WriteBarrier { PauseDelete = true };
+        var mask = new MutableFieldMask();
+        var fixture = CreateFixture(barrier, mask);
+        await fixture.InitializeAsync();
+        try
+        {
+            var id = await fixture.InsertFeatureAsync(0, "conditional delete");
+            var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+            var populated = original with { Attributes = original.Attributes.SetItem("population", 12345L) };
+            await fixture.GetService<IFeatureWriter>().UpdateAsync(0, populated);
+            mask.Fields = ImmutableArray.Create("population");
+            using var read = await fixture.Client.GetAsync($"/ogc/features/collections/0/items/{id}");
+            Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+            Assert.NotNull(read.Headers.ETag);
+            using var request = new HttpRequestMessage(HttpMethod.Delete, $"/ogc/features/collections/0/items/{id}");
+            request.Headers.TryAddWithoutValidation("If-Match", read.Headers.ETag!.ToString());
+            var pending = fixture.Client.SendAsync(request);
+            try
+            {
+                await barrier.Reached.Task.WaitAsync(TimeSpan.FromSeconds(30));
+                await fixture.GetService<IFeatureWriter>().UpdateAsync(
+                    0, populated with { Attributes = populated.Attributes.SetItem("population", 54321L) });
+            }
+            finally { barrier.Resume.TrySetResult(); }
+
+            using var response = await pending;
+            Assert.Equal(HttpStatusCode.PreconditionFailed, response.StatusCode);
+            mask.Fields = ImmutableArray<string>.Empty;
+            var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+            Assert.Equal(54321L, Convert.ToInt64(stored.Attributes["population"], CultureInfo.InvariantCulture));
+        }
+        finally { await fixture.DisposeAsync(); }
+    }
+
+    [IntegrationTheory]
     [InlineData(true)]
     [InlineData(false)]
     [Protocol(TestProtocols.ODataV4)]
@@ -644,6 +728,7 @@ public sealed class PatchConcurrencyTests
         public TaskCompletionSource Reached { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Resume { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int Claimed;
+        public bool PauseDelete { get; init; }
         public Func<IFeatureWriter, Task>? AfterRejectedWrite { get; set; }
     }
 
@@ -660,7 +745,8 @@ public sealed class PatchConcurrencyTests
 
         public async Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken = default)
         {
-            if (editBatch.Updates.Any(feature => feature.Attributes.TryGetValue("name", out var name) && Equals(name, "changed name"))
+            if ((editBatch.Updates.Any(feature => feature.Attributes.TryGetValue("name", out var name) && Equals(name, "changed name"))
+                    || (barrier.PauseDelete && !editBatch.Deletes.IsDefaultOrEmpty))
                 && Interlocked.CompareExchange(ref barrier.Claimed, 1, 0) == 0)
             {
                 barrier.Reached.TrySetResult();

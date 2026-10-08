@@ -1158,7 +1158,8 @@
               "/MapServer/allLayersAndTables"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/MapServer/allLayersAndTables"
+              "GET /rest/services/{serviceId}/MapServer/allLayersAndTables",
+              "POST /rest/services/{serviceId}/MapServer/allLayersAndTables"
             ],
             "capabilityMaturity": [
               "implemented"
@@ -1265,7 +1266,8 @@
               "/MapServer/layers"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/MapServer/layers"
+              "GET /rest/services/{serviceId}/MapServer/layers",
+              "POST /rest/services/{serviceId}/MapServer/layers"
             ],
             "capabilityMaturity": [
               "implemented"
@@ -2330,7 +2332,7 @@
           {
             "name": "format",
             "status": "partial",
-            "notes": "Supports png, jpg, jpeg, tif, and tiff."
+            "notes": "Supports png, png8, png24, png32, jpg, jpeg, jpgpng, tif, and tiff, plus raw pixel blocks of the stored samples: bsq, bip, and lossless lerc (one LERC2 blob per band)."
           },
           {
             "name": "f",
@@ -2345,12 +2347,12 @@
           {
             "name": "pixelType",
             "status": "partial",
-            "notes": "UNKNOWN is accepted as the no-conversion default; every explicit conversion type returns 501 because pixel conversion is not implemented."
+            "notes": "UNKNOWN and the service\u0027s own pixel type are accepted as the no-conversion default; every other explicit conversion type returns 501 because pixel conversion is not implemented."
           },
           {
             "name": "compression",
             "status": "partial",
-            "notes": "Applied to TIFF output only. Supports None, JPEG, and LZ77; LZ77 maps to GDAL DEFLATE. Ignored for non-TIFF outputs."
+            "notes": "Applied to TIFF output, which supports None, JPEG, and LZ77; LZ77 maps to GDAL DEFLATE. Raw pixel blocks accept None, and lerc also accepts LERC. Ignored for PNG and JPEG outputs."
           },
           {
             "name": "renderingRule",
@@ -2568,7 +2570,8 @@
       "knownGaps": [
         "tiles carry only the service\u0027s primary tiled publication, not every layer packed per tile",
         "tilemap availability is grid arithmetic and never consults the tile store",
-        "no sprite or glyph store: sprite and font resources are content-free placeholders",
+        "no sprite store: sprite resources are content-free placeholders",
+        "glyphs come from one bundled sans-serif face substituted for every served fontstack, Basic Latin and Latin-1 only",
         "service metadata hardcodes capabilities/type/exportTilesAllowed and always reports minLOD 0"
       ],
       "evidence": {
@@ -2583,7 +2586,8 @@
         ],
         "tests": [
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileServerEndpointTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileStyleComposerTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileStyleComposerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileEmbeddedAssetsTests.cs"
         ]
       },
       "operations": {
@@ -2600,7 +2604,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Composes a Mapbox GL v8 style document from the layer\u0027s stored MapLibre style through the shared style projection, rewriting source, sprite, and glyph URLs onto this service; falls back to a deterministic default style when the layer has none stored."
+            "notes": "Composes a Mapbox GL v8 style document from the layer\u0027s stored MapLibre style through the shared style projection, rewriting source, sprite, and glyph URLs onto this service (each vector source carries the service URL and the tile template); falls back to a deterministic default style when the layer has none stored."
           }
         ],
         "partial": [
@@ -2618,6 +2622,20 @@
               "implemented"
             ],
             "notes": "Emits a real LOD table and a unioned extent for the resolved service, but capabilities (\u0022TilesOnly\u0022), type, the tiles template, and exportTilesAllowed=false are hardcoded; minLOD is always 0 even though the tile route rejects zooms below the configured minimum; the extent unions per-resource bboxes without reprojecting them while labelling the result with the service SR; and only f=json/pjson are accepted."
+          },
+          {
+            "name": "Font (glyph) resources",
+            "status": "partial",
+            "esriPaths": [
+              "/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "Returns signed-distance-field glyphs for the requested fontstack and range, labelled with the requested fontstack, from one bundled sans-serif face (DejaVu Sans). Any fontstack naming a common sans-serif family is served with that face, so weights and styles are not distinguished; other fontstacks return 404. Only the 0-255 range is bundled; all other ranges return 404."
           },
           {
             "name": "Style sub-resource",
@@ -2666,20 +2684,6 @@
         ],
         "stub": [
           {
-            "name": "Font (glyph) resources",
-            "status": "stub",
-            "esriPaths": [
-              "/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf"
-            ],
-            "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf"
-            ],
-            "capabilityMaturity": [
-              "implemented"
-            ],
-            "notes": "Route exists and returns a spec-shaped glyph PBF containing one fontstack (\u0022Honua Default\u0022) with zero glyphs. No font store backs it: the requested fontstack is ignored and every name yields the same bytes; only the 0-255 range is served and all other ranges return 404."
-          },
-          {
             "name": "Sprite resources",
             "status": "stub",
             "esriPaths": [
@@ -2697,7 +2701,8 @@
         "notImplemented": []
       },
       "knownLimitations": [
-        "Sprite and glyph resources are deliberately scoped-minimal placeholders (#1780): a client that renders symbols or labels from them gets nothing to draw."
+        "Sprite resources are deliberately scoped-minimal placeholders (#1780): a client that renders icons from them gets nothing to draw.",
+        "Labels draw with one bundled sans-serif face for Basic Latin and Latin-1 text only (#5535)."
       ]
     },
     {
@@ -3756,6 +3761,7 @@
               "/NAServer/ServiceArea/solveServiceArea"
             ],
             "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea",
               "POST /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea"
             ],
             "capabilityMaturity": [
@@ -3891,17 +3897,21 @@
             "name": "List versions; version info",
             "status": "implemented",
             "esriPaths": [
+              "/VersionManagementServer/versionInfos",
               "/VersionManagementServer/versions",
               "/VersionManagementServer/versions/{versionGuid}"
             ],
             "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/VersionManagementServer/versionInfos",
               "GET /rest/services/{serviceId}/VersionManagementServer/versions",
-              "GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}"
+              "GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}",
+              "POST /rest/services/{serviceId}/VersionManagementServer/versionInfos",
+              "POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}"
             ],
             "capabilityMaturity": [
               "experimental"
             ],
-            "notes": "Lists and resolves real versions from the version manager, filtered by the access policy (private versions are visible to owner/admin only). A non-visible version returns 404 rather than 403, so existence is not leaked; an invalid GUID returns 400. Providers without versioning return an empty list rather than an error."
+            "notes": "Lists and resolves real versions from the version manager, filtered by the access policy (private versions are visible to owner/admin only). versionInfos (GET or POST) lists DEFAULT first, and version info (GET or POST) answers DEFAULT at its fixed GUID; the Honua-named versions route omits DEFAULT. A non-visible version returns 404 rather than 403, so existence is not leaked; an invalid GUID returns 400. Providers without versioning return an empty list rather than an error."
           },
           {
             "name": "Alter version; delete version",
@@ -3968,7 +3978,7 @@
             "capabilityMaturity": [
               "experimental"
             ],
-            "notes": "GET and POST return the descriptor after service-read, branch-versioning entitlement, and accessible bound-publication capability checks. The descriptor still uses a capability string rather than the Esri capability object and does not expose a durable DEFAULT version GUID; native workspace initialization remains unresolved."
+            "notes": "GET and POST return the descriptor after service-read, branch-versioning entitlement, and accessible bound-publication capability checks. It names DEFAULT by the contract\u0027s fixed defaultVersionGuid, which native clients read, then start a read session on, to open the feature service as a versioned workspace; the sibling MapServer lists VersionManagementServer in supportedExtensions even when a map-only service shares the name."
           },
           {
             "name": "Create version",
@@ -4002,7 +4012,7 @@
             "capabilityMaturity": [
               "experimental"
             ],
-            "notes": "Stateless acknowledgements: Honua holds no Esri edit/read session and issues no session token, because edits land per-request via gdbVersion rather than inside a server-held session. startEditing does resolve the version, return its durable branch generation as moment, and return 409 mid-reconcile/post; stopEditing has no saveEdits semantics (there is nothing to commit or discard). A client that depends on session tokens will not get Esri\u0027s behaviour."
+            "notes": "Stateless acknowledgements: Honua holds no Esri edit/read session and issues no session token, because edits land per-request via gdbVersion rather than inside a server-held session. startEditing does resolve the version, return its durable branch generation as moment, and return 409 mid-reconcile/post. Read sessions follow the read rule (service read access plus version visibility, the same rule as a gdbVersion read), so any reader can open one on DEFAULT or a public or protected version, while another owner\u0027s private version answers 404; edit sessions keep the owner-or-admin rule. stopEditing has no saveEdits semantics (there is nothing to commit or discard). A client that depends on session tokens will not get Esri\u0027s behaviour."
           }
         ],
         "stub": [],
@@ -4290,6 +4300,20 @@
             "notes": "Returns username and fullName from the caller\u0027s claims; role is hardcoded \u0022org_user\u0022 rather than derived from RBAC, and Esri\u0027s groups array is absent (the group store is never consulted). id/email/orgId/privileges are not emitted. Anonymous callers get 401."
           },
           {
+            "name": "Community User",
+            "status": "partial",
+            "esriPaths": [
+              "/sharing/rest/community/users/{username}"
+            ],
+            "honuaEndpoints": [
+              "GET /sharing/rest/community/users/{username}"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "Returns id, username and fullName from the authenticated caller\u0027s claims only when the requested username matches the caller (case-insensitive). Anonymous callers get 401; other usernames get 404 without revealing whether they exist. The role remains the fixed org_user value and groups is empty; this is a self-profile projection, not a general user directory or a complete organization profile."
+          },
+          {
             "name": "Item; item data",
             "status": "partial",
             "esriPaths": [
@@ -4322,6 +4346,20 @@
             "notes": "Records sharing intent in an in-memory, single-node store that does not survive restart and is not replicated. It is write-only: no read path consults it, so sharing an item to everyone/org/a group does not change what /search or /content/items/{id} return for any caller \u2014 those project from the Metadata v2 graph and RBAC alone. Item existence is not validated, notSharedWith is always empty (group existence is never checked), and confirmItemControl, bulk items, and folder are ignored. Owner-or-admin gated."
           },
           {
+            "name": "User Content",
+            "status": "partial",
+            "esriPaths": [
+              "/sharing/rest/content/users/{username}"
+            ],
+            "honuaEndpoints": [
+              "GET /sharing/rest/content/users/{username}"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "Lists RBAC-visible graph service items for the authenticated caller when the requested username matches case-insensitively. Items with a mapped owner are filtered to that caller; visible services without an owner mapping are also included. Anonymous callers get 401 and other usernames get 404. Folders is always empty, the graph-service projection is not a general portal content store, and pagination and folder traversal are not implemented."
+          },
+          {
             "name": "Portal Self",
             "status": "partial",
             "esriPaths": [
@@ -4333,7 +4371,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Only username and fullName are real (projected from the caller\u0027s claims). The portal id (\u00220123456789ABCDEF\u0022), name, portalName, isPortal, and role are hardcoded; org settings, urlKey, allSSL, basemaps, and privileges are absent. Sufficient for client bootstrap, not for portal administration."
+            "notes": "username and fullName are projected from the caller\u0027s claims. helperServices advertises supported synchronous route, serviceArea, closestFacility and odCostMatrix layers using the public base URL. Unsupported helpers are omitted; provider failure is logged and leaves the helper block empty. The portal id (\u00220123456789ABCDEF\u0022), name, portalName, isPortal, and role are hardcoded; org settings, urlKey, allSSL, basemaps, and privileges are absent. Sufficient for client bootstrap, not for portal administration."
           },
           {
             "name": "Search",
@@ -4342,7 +4380,8 @@
               "/sharing/rest/search"
             ],
             "honuaEndpoints": [
-              "GET /sharing/rest/search"
+              "GET /sharing/rest/search",
+              "POST /sharing/rest/search"
             ],
             "capabilityMaturity": [
               "implemented"

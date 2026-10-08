@@ -114,6 +114,7 @@ internal sealed class ODataFilterLexer
                 {
                     builder.Append('\'');
                     _position++;
+                    EnsureQuotedLiteralLength(builder, start);
                     continue;
                 }
 
@@ -121,9 +122,23 @@ internal sealed class ODataFilterLexer
             }
 
             builder.Append(c);
+            EnsureQuotedLiteralLength(builder, start);
         }
 
         throw new ODataFilterParseException("Unclosed string literal", start);
+    }
+
+    // Outer bound for every quoted token, checked while it is read. Typed literals such as
+    // geography'...' share this token and are allowed up to the geometry text limit; the
+    // parser applies the tighter string-literal limit once a token is known to be text.
+    private static void EnsureQuotedLiteralLength(StringBuilder builder, int start)
+    {
+        if (builder.Length > FilterParserGuard.MaxGeometryTextBytes)
+        {
+            throw new ODataFilterParseException(
+                $"Quoted literal exceeds the maximum length of {FilterParserGuard.MaxGeometryTextBytes} characters.",
+                start);
+        }
     }
 
     private ODataFilterToken ReadNumberLiteral()

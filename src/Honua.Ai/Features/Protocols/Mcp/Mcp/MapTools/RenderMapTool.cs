@@ -105,7 +105,9 @@ internal sealed class RenderMapTool : IMcpTool
         for (var i = 0; i < argument.Layers.Count; i++)
         {
             var layerRef = argument.Layers[i];
-            var resolved = MapToolLayerResolver.Resolve(snapshot, layerRef.ServiceId, layerRef.LayerId);
+            var resolved = await MapToolLayerResolver.ResolveForReadAsync(
+                httpContext, snapshot, layerRef.ServiceId, layerRef.LayerId, AuthorizationOperation.Query, cancellationToken)
+                .ConfigureAwait(false);
             storageLayerIds[i] = resolved.StorageLayerId;
             effectiveStyleIds[i] = await ResolveEffectiveStyleIdAsync(styleCatalog, resolved.StorageLayerId, cancellationToken)
                 .ConfigureAwait(false);

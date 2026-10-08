@@ -19,8 +19,60 @@ public sealed class VersionManagementServiceInfo
     /// <summary>Default version name (always the implicit DEFAULT version).</summary>
     public string DefaultVersionName { get; init; } = "sde.DEFAULT";
 
-    /// <summary>Capability list advertised for the version-management surface.</summary>
-    public string Capabilities { get; init; } = "Create,Delete,Alter,Reconcile,Post";
+    /// <summary>
+    /// GUID of the implicit DEFAULT version. Clients open the versioned workspace by reading this
+    /// version's resource and starting a read session on it before any named version is used.
+    /// </summary>
+    public required string DefaultVersionGuid { get; init; }
+
+    /// <summary>Named capability flags advertised for the version-management surface.</summary>
+    public VersionManagementCapabilities Capabilities { get; init; } = new();
+}
+
+/// <summary>
+/// Version-management discovery flags. Advertises implemented canonical operations and keeps
+/// unsupported optional operations disabled in the Esri capability-object wire format.
+/// </summary>
+public sealed class VersionManagementCapabilities
+{
+    /// <summary>Whether reconcile can detect conflicts by attribute.</summary>
+    public bool SupportsConflictDetectionByAttribute { get; init; } = true;
+
+    /// <summary>Whether post accepts a subset of changed rows.</summary>
+    public bool SupportsPartialPost { get; init; }
+
+    /// <summary>Whether differences can be requested from a specified moment.</summary>
+    public bool SupportsDifferencesFromMoment { get; init; }
+
+    /// <summary>Whether differences can be filtered by layer.</summary>
+    public bool SupportsDifferencesWithLayers { get; init; }
+
+    /// <summary>Whether reconcile supports asynchronous execution through the shared job runner.</summary>
+    public bool SupportsAsyncReconcile { get; init; } = true;
+
+    /// <summary>Whether post supports asynchronous execution through the shared job runner.</summary>
+    public bool SupportsAsyncPost { get; init; } = true;
+
+    /// <summary>Whether differences supports asynchronous execution.</summary>
+    public bool SupportsAsyncDifferences { get; init; }
+
+    /// <summary>Whether differences and conflicts support an output spatial reference.</summary>
+    public bool SupportsOutSR { get; init; }
+
+    /// <summary>Whether the partialPost operation is implemented.</summary>
+    public bool SupportsPartialPostOperation { get; init; }
+
+    /// <summary>Whether versionInfos can filter by version name.</summary>
+    public bool SupportsVersionInfosNameFilter { get; init; }
+
+    /// <summary>Whether version locks support concurrent readers and a single writer.</summary>
+    public bool SupportsMultipleReadersSingleWriterLocking { get; init; }
+
+    /// <summary>Whether the locks resource and lockInfos operation are implemented.</summary>
+    public bool SupportsLockInfos { get; init; }
+
+    /// <summary>Whether create supports branching from a specified historical moment.</summary>
+    public bool SupportsCreateWithMoment { get; init; }
 }
 
 /// <summary>
@@ -64,6 +116,46 @@ public sealed class VersionListResponse
 {
     /// <summary>The known branch versions (DEFAULT is implicit and not listed).</summary>
     public VersionInfo[] Versions { get; init; } = [];
+}
+
+/// <summary>
+/// One version entry of the GeoServices <c>versionInfos</c> operation. Unlike
+/// <see cref="VersionInfo"/>, it uses the contract's field names (<c>creationDate</c>,
+/// <c>modifiedDate</c>); the reconcile, evaluation and ancestor dates are omitted because Honua
+/// tracks branch generations, not those timestamps.
+/// </summary>
+public sealed class VersionInfosEntry
+{
+    /// <summary>Esri-style <c>owner.name</c> version identity.</summary>
+    public required string VersionName { get; init; }
+
+    /// <summary>Stable version identifier (registry-format GUID).</summary>
+    public required string VersionGuid { get; init; }
+
+    /// <summary>Optional human-readable description.</summary>
+    public string? Description { get; init; }
+
+    /// <summary>Epoch-milliseconds the version was created.</summary>
+    public long CreationDate { get; init; }
+
+    /// <summary>Epoch-milliseconds the version was last modified.</summary>
+    public long ModifiedDate { get; init; }
+
+    /// <summary>Access level: <c>private</c>, <c>protected</c>, or <c>public</c>.</summary>
+    public required string Access { get; init; }
+}
+
+/// <summary>
+/// Response for the GeoServices <c>versionInfos</c> operation: DEFAULT first, then the versions
+/// visible to the caller, with the contract's <c>success</c> flag.
+/// </summary>
+public sealed class VersionInfosResponse
+{
+    /// <summary>DEFAULT followed by the visible branch versions.</summary>
+    public VersionInfosEntry[] Versions { get; init; } = [];
+
+    /// <summary>Always true for a successful listing; failures answer with an error document.</summary>
+    public bool Success { get; init; } = true;
 }
 
 /// <summary>
@@ -280,4 +372,3 @@ public sealed class VersionJobResponse
     /// <summary>Sanitized error message when the job failed; null otherwise.</summary>
     public string? Error { get; init; }
 }
-

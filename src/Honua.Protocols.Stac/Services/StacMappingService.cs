@@ -43,18 +43,19 @@ internal sealed class StacMappingService
     /// Builds a STAC Collection directly from a Metadata v2 resource/publication.
     /// </summary>
     /// <remarks>
-    /// The feature reader still operates on the integer service-local layer index resolved
-    /// from the V2 publication, because the feature-store contract has not yet been ported
-    /// (see cutover plan step 2). The mapped collection metadata — license, keywords,
-    /// declared extensions — is read from the V2 resource via
-    /// <see cref="StacResourceExtensions"/>; spatial/temporal extents come from the V2
-    /// resource's spatial/temporal extensions plus the feature store probe.
+    /// <paramref name="layerIndex"/> is the collection's protocol-facing identifier; the
+    /// feature store probe reads <paramref name="storageLayerId"/>, the publication's
+    /// storage-layer handle, and is skipped when the publication has none. The mapped
+    /// collection metadata — license, keywords, declared extensions — is read from the V2
+    /// resource via <see cref="StacResourceExtensions"/>; spatial/temporal extents come from
+    /// the V2 resource's spatial/temporal extensions plus the feature store probe.
     /// </remarks>
     public static async Task<StacCollection> MapResourceToCollectionAsync(
         MetadataV2Resource resource,
         MetadataV2Publication publication,
         MetadataV2Service service,
         int layerIndex,
+        int? storageLayerId,
         IFeatureReader featureReader,
         string baseUrl,
         ICoordinateTransformService? coordinateTransformService,
@@ -127,7 +128,7 @@ internal sealed class StacMappingService
 
         var extent = await BuildStacExtentV2Async(
             resource,
-            layerIndex,
+            storageLayerId,
             featureReader,
             coordinateTransformService,
             cancellationToken).ConfigureAwait(false);
@@ -510,7 +511,7 @@ internal sealed class StacMappingService
     /// </summary>
     private static async Task<StacExtent> BuildStacExtentV2Async(
         MetadataV2Resource resource,
-        int layerIndex,
+        int? storageLayerId,
         IFeatureReader featureReader,
         ICoordinateTransformService? coordinateTransformService,
         CancellationToken cancellationToken)
@@ -546,8 +547,10 @@ internal sealed class StacMappingService
                 EndTimeField = temporalEndField
             }
         };
-        var temporalExtent = await OgcQueryablesUtilities.BuildTemporalExtentAsync(
-            temporalResource, layerIndex, featureReader, cancellationToken).ConfigureAwait(false);
+        var temporalExtent = storageLayerId is int storageLayer
+            ? await OgcQueryablesUtilities.BuildTemporalExtentAsync(
+                temporalResource, storageLayer, featureReader, cancellationToken).ConfigureAwait(false)
+            : null;
         if (temporalExtent is not null)
         {
             temporalInterval = temporalExtent.Interval;

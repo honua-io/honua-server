@@ -24,6 +24,57 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
 {
     [IntegrationTest]
+    public async Task JobReconciliation_PersistedLocalJobWithoutDelivery_ReplacementWorkerExecutesOnce()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var queued = CreateQueuedJob($"interrupted-admission-{Guid.NewGuid():N}");
+        queued = queued with { Spec = queued.Spec with { Backend = "local" }, Priority = OperationPriority.High };
+        await harness.JobStore.TryCreateAsync(queued);
+        // Simulate process loss after durable creation: no progress or pending membership.
+        using var sweep = new JobReconciliationService(harness.JobStore, harness.Queue, harness.Queue,
+            new ExecutionJobCancellationTokens(), [], harness.LogStore, NullLogger<JobReconciliationService>.Instance);
+        await sweep.SweepActiveJobsAsync(CancellationToken.None);
+        await sweep.SweepActiveJobsAsync(CancellationToken.None);
+        (await harness.Queue.GetQueueDepthAsync()).Should().Be(1);
+        var executions = 0;
+        var callback = new RecordingTerminalCallback();
+        var executor = new DelegatingJobExecutor(ExecutionJobKind.Geoprocessing, (_, _, _) =>
+        {
+            Interlocked.Increment(ref executions);
+            return Task.FromResult(JobExecutionResult.Succeeded());
+        });
+        using var replacement = new JobExecutionService(harness.Queue, harness.JobStore, [executor],
+            new ExecutionJobCancellationTokens(), [callback], harness.LogStore, NullLogger<JobExecutionService>.Instance);
+        await replacement.StartAsync(CancellationToken.None);
+        try
+        {
+            var terminal = await callback.WhenCompleted.WaitAsync(TimeSpan.FromSeconds(15));
+            terminal.Status.Should().Be(ExecutionJobStatus.Succeeded);
+            terminal.AttemptCount.Should().Be(1);
+            executions.Should().Be(1);
+            (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
+        }
+        finally
+        {
+            await replacement.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task JobQueue_RepeatedAdmissionRepair_DoesNotRepublishAnAlreadyClaimedDelivery()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var job = CreateQueuedJob($"dispatch-repair-{Guid.NewGuid():N}");
+        await harness.JobStore.TryCreateAsync(job);
+        await harness.Queue.EnqueueAsync(job.OperationId);
+        (await harness.Queue.TryClaimAsync("worker-first")).Should().Be(job.OperationId);
+        await harness.Queue.EnqueueAsync(job.OperationId);
+
+        (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
+        (await harness.Queue.TryClaimAsync("worker-second")).Should().BeNull();
+    }
+
+    [IntegrationTest]
     public async Task ExecutionJobStore_TenantScope_FiltersBeforePaginationAndCursorCreation()
     {
         await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);

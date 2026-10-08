@@ -1,12 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -239,6 +241,89 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// #5036: a read session follows the read rule, not the lifecycle rule. A client starts one on
+    /// DEFAULT to open the workspace and on each version it creates or switches to, so a non-owner,
+    /// non-admin reader opens and closes read sessions on DEFAULT and on another owner's public
+    /// version, while another owner's private version stays undisclosed (404, no acknowledgement).
+    /// Edit sessions are not part of that exchange and stay owner-or-admin only.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/startReading")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/stopReading")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/startEditing")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]
+    public async Task ReadSessions_FollowVersionVisibility_AndEditSessionsStayOwnerOnly()
+    {
+        // The GeoServices branch-versioning contract's fixed DEFAULT version GUID.
+        const string defaultGuid = "BD3F4817-9A00-41AC-B0CC-58F78DBAE0A1";
+
+        using (var info = await PostFormAsync(
+            _nonOwnerToken, $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{defaultGuid}", ("f", "json")))
+        {
+            var body = await info.Content.ReadAsStringAsync();
+            info.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            using var document = JsonDocument.Parse(body);
+            document.RootElement.TryGetProperty("error", out _).Should().BeFalse(body);
+            document.RootElement.GetProperty("versionName").GetString().Should().Be("sde.DEFAULT");
+        }
+
+        foreach (var url in new[]
+                 {
+                     $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{defaultGuid}/startReading",
+                     $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{defaultGuid}/stopReading",
+                 })
+        {
+            using var session = await PostFormAsync(
+                _nonOwnerToken, url, ("f", "json"), ("sessionId", "{D447A85D-E9BE-498C-892C-F5D89C791D94}"));
+            var body = await session.Content.ReadAsStringAsync();
+            session.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            using var document = JsonDocument.Parse(body);
+            document.RootElement.TryGetProperty("error", out _).Should().BeFalse("{0}: {1}", url, body);
+            document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue("{0}: {1}", url, body);
+        }
+
+        var publicVersion = await CreateVersionAsync(
+            _ownerToken, $"alice.public_read_{Guid.NewGuid():N}", "public-read", access: "public");
+        var privateVersion = await CreateVersionAsync(
+            _ownerToken, $"alice.private_read_{Guid.NewGuid():N}", "private-read");
+        var publicGuid = publicVersion.GetProperty("versionGuid").GetString()!;
+        var privateGuid = privateVersion.GetProperty("versionGuid").GetString()!;
+        foreach (var operation in new[] { "startReading", "stopReading" })
+        {
+            using var readable = await PostFormAsync(
+                _nonOwnerToken,
+                $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{publicGuid}/{operation}",
+                ("f", "json"), ("sessionId", "{D447A85D-E9BE-498C-892C-F5D89C791D94}"));
+            var readableBody = await readable.Content.ReadAsStringAsync();
+            readable.StatusCode.Should().Be(HttpStatusCode.OK, readableBody);
+            using var readableDocument = JsonDocument.Parse(readableBody);
+            readableDocument.RootElement.TryGetProperty("error", out _).Should().BeFalse("{0}: {1}", operation, readableBody);
+            readableDocument.RootElement.GetProperty("success").GetBoolean().Should().BeTrue("{0}: {1}", operation, readableBody);
+
+            using var hidden = await PostFormAsync(
+                _nonOwnerToken,
+                $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{privateGuid}/{operation}",
+                ("f", "json"));
+            var hiddenBody = await hidden.Content.ReadAsStringAsync();
+            await hidden.AssertGeoServicesErrorAsync((int)HttpStatusCode.NotFound);
+            hiddenBody.Should().NotContain("\"success\":true", "{0} must not acknowledge another owner's private version", operation);
+        }
+
+        foreach (var guid in new[] { defaultGuid, publicGuid })
+        {
+            using var editing = await PostFormAsync(
+                _nonOwnerToken,
+                $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/startEditing",
+                ("f", "json"));
+            var editingBody = await editing.Content.ReadAsStringAsync();
+            await editing.AssertGeoServicesErrorAsync((int)HttpStatusCode.NotFound, (int)HttpStatusCode.Forbidden);
+            editingBody.Should().NotContain("\"success\":true", "an edit session on {0} stays owner-or-admin only", guid);
+        }
+    }
+
+    /// <summary>
     /// With the development bypass off, an unauthenticated caller reaches no VMS lifecycle
     /// operation and learns nothing about the versions that exist.
     /// </summary>
@@ -282,6 +367,120 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         versions.Should().Contain("alice.anon_target");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]
+    public async Task AnonymousPrivateCreate_MatchesProtectedOperationAuthenticationError_AndWritesNothing()
+    {
+        var owned = await CreateVersionAsync(_ownerToken, "alice.auth_shape", "auth-shape-control");
+        var guid = owned.GetProperty("versionGuid").GetString()!;
+
+        using var create = await PostFormAsync(
+            token: null,
+            $"{ServiceBase}/create",
+            ("versionName", "anonymous.private_refused"),
+            ("accessPermission", "private"),
+            ("f", "json"));
+        using var delete = await PostFormAsync(
+            token: null,
+            $"{ServiceBase}/versions/{guid}/delete",
+            ("f", "json"));
+
+        using var createDocument = JsonDocument.Parse(await create.Content.ReadAsByteArrayAsync());
+        using var deleteDocument = JsonDocument.Parse(await delete.Content.ReadAsByteArrayAsync());
+        var createError = createDocument.RootElement.GetProperty("error");
+        var deleteError = deleteDocument.RootElement.GetProperty("error");
+        createError.GetProperty("code").GetInt32().Should().Be(deleteError.GetProperty("code").GetInt32());
+        createError.GetProperty("message").GetString().Should().Be(deleteError.GetProperty("message").GetString());
+        createError.GetProperty("details")[0].GetString().Should().Be(deleteError.GetProperty("details")[0].GetString());
+        await create.AssertGeoServicesErrorAsync(EsriTokenRequired);
+        create.Headers.WwwAuthenticate.Should().NotBeEmpty();
+        create.Headers.WwwAuthenticate.Select(value => value.ToString()).Should()
+            .Equal(delete.Headers.WwwAuthenticate.Select(value => value.ToString()));
+
+        var versions = await ListVersionNamesAsync(_ownerToken);
+        versions.Should().NotContain("anonymous.private_refused");
+    }
+
+    [IntegrationTheory]
+    [InlineData("", "ApiKey")]
+    // An empty portal token leaves the caller anonymous but selects a Bearer challenge.
+    [InlineData("?token=", "Bearer")]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]
+    public async Task AnonymousPrivateCreate_WithAnonymousWritePolicy_PreservesAuthenticationChallenge(
+        string query, string expectedScheme)
+    {
+        // The shared version manager outlives individual theory cases.
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var ownedName = $"alice.challenge_control_{suffix}";
+        var publicName = $"anonymous.public_challenge_{suffix}";
+        var refusedName = $"anonymous.private_challenge_{suffix}";
+        var owned = await CreateVersionAsync(_ownerToken, ownedName, "challenge-control");
+        var guid = owned.GetProperty("versionGuid").GetString()!;
+        using var control = await PostFormAsync(
+            token: null, $"{ServiceBase}/versions/{guid}/delete{query}", ("f", "json"));
+        await control.AssertGeoServicesErrorAsync(EsriTokenRequired);
+        control.Headers.WwwAuthenticate.Should().ContainSingle()
+            .Which.Scheme.Should().Be(expectedScheme);
+
+        _fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, accessPolicy: new AccessPolicy
+        {
+            AllowAnonymous = true,
+            AllowAnonymousWrite = true
+        });
+
+        // A public create proves the anonymous caller clears both service write gates.
+        using var publicCreate = await PostFormAsync(
+            token: null, $"{ServiceBase}/create{query}",
+            ("versionName", publicName), ("accessPermission", "public"), ("f", "json"));
+        using var publicDocument = JsonDocument.Parse(await publicCreate.Content.ReadAsByteArrayAsync());
+        publicDocument.RootElement.TryGetProperty("versionInfo", out _).Should().BeTrue();
+
+        using var create = await PostFormAsync(
+            token: null, $"{ServiceBase}/create{query}",
+            ("versionName", refusedName), ("accessPermission", "private"), ("f", "json"));
+        await create.AssertGeoServicesErrorAsync(EsriTokenRequired);
+        create.Headers.WwwAuthenticate.Should().ContainSingle()
+            .Which.Scheme.Should().Be(expectedScheme);
+        create.Headers.WwwAuthenticate.Select(value => value.ToString()).Should()
+            .Equal(control.Headers.WwwAuthenticate.Select(value => value.ToString()));
+        using var createDocument = JsonDocument.Parse(await create.Content.ReadAsByteArrayAsync());
+        using var controlDocument = JsonDocument.Parse(await control.Content.ReadAsByteArrayAsync());
+        var createError = createDocument.RootElement.GetProperty("error");
+        var controlError = controlDocument.RootElement.GetProperty("error");
+        createError.GetProperty("code").GetInt32().Should().Be(controlError.GetProperty("code").GetInt32());
+        createError.GetProperty("message").GetString().Should().Be(controlError.GetProperty("message").GetString());
+        foreach (var (error, response) in new[] { (createError, create), (controlError, control) })
+        {
+            error.EnumerateObject().Should().HaveCount(3);
+            var details = error.GetProperty("details");
+            details.GetArrayLength().Should().Be(3);
+            details[0].GetString().Should().Be(controlError.GetProperty("details")[0].GetString());
+            var correlationId = response.Headers.GetValues("X-Correlation-ID").Single();
+            correlationId.Should().NotBeNullOrWhiteSpace();
+            details[1].GetString().Should().Be($"CorrelationId: {correlationId}");
+            var timestamp = details[2].GetString();
+            timestamp.Should().StartWith("Timestamp: ");
+            DateTimeOffset.TryParseExact(timestamp!["Timestamp: ".Length..], "O",
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out _).Should().BeTrue();
+        }
+
+        var versions = await ListVersionNamesAsync(_ownerToken);
+        versions.Should().Contain(publicName);
+        versions.Should().Contain(ownedName);
+        versions.Should().NotContain(refusedName);
+
+        // Admin visibility also catches an orphan private version owned by the anonymous fallback.
+        using var adminClient = _fixture.CreateAdminClient();
+        using var adminList = await adminClient.GetAsync($"{ServiceBase}/versions?f=json");
+        adminList.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var adminDocument = JsonDocument.Parse(await adminList.Content.ReadAsByteArrayAsync());
+        adminDocument.RootElement.GetProperty("versions").EnumerateArray()
+            .Select(version => version.GetProperty("versionName").GetString()).Should()
+            .NotContain(refusedName);
+    }
+
     private static async Task AssertDeniedAsync(HttpResponseMessage response, string operation)
     {
         var body = await response.Content.ReadAsStringAsync();
@@ -306,13 +505,14 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
                 DateTimeOffset.UtcNow.AddMinutes(30)),
             CancellationToken.None)).Token;
 
-    private async Task<JsonElement> CreateVersionAsync(string token, string versionName, string description)
+    private async Task<JsonElement> CreateVersionAsync(
+        string token, string versionName, string description, string access = "private")
     {
         using var response = await PostFormAsync(
             token,
             $"{ServiceBase}/create",
             ("versionName", versionName),
-            ("accessPermission", "private"),
+            ("accessPermission", access),
             ("description", description),
             ("f", "json"));
         var body = await response.Content.ReadAsStringAsync();

@@ -37,7 +37,9 @@ public static partial class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/MapServer/query"),
         new("POST", "/rest/services/{serviceId}/MapServer/query"),
         new("GET", "/rest/services/{serviceId}/MapServer/allLayersAndTables"),
+        new("POST", "/rest/services/{serviceId}/MapServer/allLayersAndTables"),
         new("GET", "/rest/services/{serviceId}/MapServer/layers"),
+        new("POST", "/rest/services/{serviceId}/MapServer/layers"),
         new("GET", "/rest/services/{serviceId}/MapServer/queryDomains"),
         // queryDomains also accepts POST so clients can submit large layers arrays (#1825).
         new("POST", "/rest/services/{serviceId}/MapServer/queryDomains"),

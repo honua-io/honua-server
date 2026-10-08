@@ -43,17 +43,20 @@ internal sealed class PostgresAuditLog : IAuditLog
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresAuditLog> _logger;
     private readonly string _table;
+    private readonly byte[] _chainKey;
 
     public PostgresAuditLog(
         IAdoNetDatabaseConnectionProvider connectionProvider,
         ILogger<PostgresAuditLog> logger,
-        string? schemaName = null)
+        string? schemaName = null,
+        ReadOnlyMemory<byte> chainKey = default)
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);
         ArgumentNullException.ThrowIfNull(logger);
         _connectionProvider = connectionProvider;
         _logger = logger;
         _table = SchemaSearchPath.QualifyTable("audit_log", schemaName);
+        _chainKey = chainKey.ToArray();
     }
 
     public async Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
@@ -111,26 +114,48 @@ internal sealed class PostgresAuditLog : IAuditLog
 
             string? previousHash;
             await using (var tailCommand = new NpgsqlCommand(
-                $"SELECT entry_hash FROM {_table} ORDER BY audit_id DESC LIMIT 1", connection, transaction))
+                $"SELECT entry_hash FROM {_table} WHERE entry_hash IS NOT NULL ORDER BY audit_id DESC LIMIT 1",
+                connection,
+                transaction))
             {
                 var tail = await tailCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-                previousHash = tail is null or DBNull ? null : (string)tail;
+                previousHash = tail is null or DBNull ? null : ((string)tail).Trim();
+                if (previousHash is { Length: 0 })
+                {
+                    previousHash = null;
+                }
             }
 
-            var entryHash = AuditEntryHasher.ComputeEntryHash(
-                previousHash,
-                auditEvent.Timestamp,
-                auditEvent.EventType,
-                actor,
-                auditEvent.ActorType,
-                resourceType,
-                resourceId,
-                action,
-                auditEvent.Outcome,
-                correlationId,
-                remoteIp,
-                userAgent,
-                details);
+            var entryHash = _chainKey.Length >= AuditChainKeyMaterial.MinimumLength
+                ? AuditEntryHasher.ComputeEntryMac(
+                    _chainKey,
+                    previousHash,
+                    auditEvent.Timestamp,
+                    auditEvent.EventType,
+                    actor,
+                    auditEvent.ActorType,
+                    resourceType,
+                    resourceId,
+                    action,
+                    auditEvent.Outcome,
+                    correlationId,
+                    remoteIp,
+                    userAgent,
+                    details)
+                : AuditEntryHasher.ComputeEntryHash(
+                    previousHash,
+                    auditEvent.Timestamp,
+                    auditEvent.EventType,
+                    actor,
+                    auditEvent.ActorType,
+                    resourceType,
+                    resourceId,
+                    action,
+                    auditEvent.Outcome,
+                    correlationId,
+                    remoteIp,
+                    userAgent,
+                    details);
 
             await using (var command = new NpgsqlCommand(sql, connection, transaction))
             {
@@ -188,7 +213,13 @@ internal sealed class PostgresAuditLog : IAuditLog
 
         // Keep room for a single-character marker so the truncation is visible
         // to forensic readers without breaking the column width contract.
-        return string.Concat(value.AsSpan(0, max - TruncationMarker.Length), TruncationMarker);
+        var contentLength = max - TruncationMarker.Length;
+        if (contentLength > 0 && char.IsHighSurrogate(value[contentLength - 1]))
+        {
+            contentLength--;
+        }
+
+        return string.Concat(value.AsSpan(0, contentLength), TruncationMarker);
     }
 }
 

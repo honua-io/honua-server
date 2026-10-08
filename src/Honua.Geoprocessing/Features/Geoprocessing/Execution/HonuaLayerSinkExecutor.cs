@@ -231,19 +231,20 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
         // falsely report Cancelled (implying no effect / safe to discard) over data that was
         // actually written (server#4626: "cancellation does not claim rollback of committed
         // data").
-        await context.PublishArtifactAsync(
+        await context.RecordCommittedEffectAsync(
             SinkResultArtifact.Build(
                 HandledProcessId,
                 ("schema", outcome.Schema),
                 ("layer", outcome.Table),
                 ("loadMode", loadMode.ToString()),
                 ("batchId", outcome.BatchId),
+                ("committed", true),
                 ("featuresWritten", outcome.FeaturesWritten),
                 ("featuresRejected", rejected)),
             CancellationToken.None).ConfigureAwait(false);
         await context.ReportProgressAsync(100, $"{HandledProcessId} completed", CancellationToken.None).ConfigureAwait(false);
 
-        return JobExecutionResult.Succeeded();
+        return JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true };
     }
 
     /// <summary>

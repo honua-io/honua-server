@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Buffers;
 using System.Linq;
 using System.Text.Json;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -14,7 +15,6 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Internal;
-using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
@@ -22,6 +22,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.GeoJson;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
@@ -104,8 +105,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var publication = layerValidation.Publication!;
             var service = layerValidation.Service;
 
-            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
-            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var snapshot = layerValidation.Snapshot!;
             // Storage handle resolution mirrors the FeatureServer V2 ports: when the V2
             // graph carries no explicit storage binding for the publication, fall back to
             // the service-local layer index. This is what test fixtures and the Postgres
@@ -315,6 +315,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             PagedQueryResult<RawGeoJsonFeature>? pagedRawResult = null;
             PagedQueryResult<RawGeoServicesFeature>? pagedRawPointResult = null;
             GeoJsonFeature[] features = [];
+            GeoJsonFeatureBaseBuilder.PreparedSchema? featureSchema = null;
             var canUseRawGeoJsonFastPath = omitExactNumberMatched &&
                                            useNativeGeoJson &&
                                            outputAxisOrder == AxisOrder.EastNorth &&
@@ -359,7 +360,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             outputAxisOrder,
                             _geometryServices,
                             projectedProperties,
-                            links);
+                            links,
+                            featureSchema ??= new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false));
                     })
                     .ToArray();
             }
@@ -382,7 +384,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             outputAxisOrder,
                             _geometryServices,
                             projectedProperties,
-                            links);
+                            links,
+                            featureSchema ??= new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false));
                     })
                     .ToArray();
             }
@@ -405,7 +408,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             outputAxisOrder,
                             _geometryServices,
                             projectedProperties,
-                            links);
+                            links,
+                            featureSchema ??= new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false));
                     })
                     .ToArray();
             }
@@ -428,7 +432,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             outputAxisOrder,
                             _geometryServices,
                             projectedProperties,
-                            links);
+                            links,
+                            featureSchema ??= new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false));
                     })
                     .ToArray();
             }
@@ -504,7 +509,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 return Results.Bytes(payload, contentType);
             }
 
-            var response = OgcGeoJsonFeatureBuilder.CreateCollection(features, queryTotalCount, links);
+            var response = OgcGeoJsonFeatureBuilder.CreateCollectionWithOwnedFeatures(features, queryTotalCount, links);
 
             if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
             {
@@ -546,7 +551,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
         {
             OgcFeaturesLog.ItemsQueryFailed(_logger, collectionId, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
-            return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving items.");
+            return ex is ServiceUnavailableException
+                ? StandardErrorHelpers.CreateFromException(context, ex)
+                : StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving items.");
         }
         finally
         {
@@ -604,8 +611,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var publication = layerValidation.Publication!;
             var service = layerValidation.Service;
 
-            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
-            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var snapshot = layerValidation.Snapshot!;
             // Storage handle resolution mirrors the FeatureServer V2 ports: when the V2
             // graph carries no explicit storage binding for the publication, fall back to
             // the service-local layer index. This is what test fixtures and the Postgres
@@ -799,7 +805,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
         {
             OgcFeaturesLog.ItemQueryFailed(_logger, collectionId, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
-            return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving the feature.");
+            return ex is ServiceUnavailableException
+                ? StandardErrorHelpers.CreateFromException(context, ex)
+                : StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving the feature.");
         }
         finally
         {
@@ -813,14 +821,16 @@ internal sealed partial class OgcFeaturesQueryHandler(
         AxisOrder axisOrder,
         OgcFeaturesGeometryServices geometryServices,
         ImmutableHashSet<string>? projectedProperties = null,
-        ImmutableArray<Link>? links = null)
+        ImmutableArray<Link>? links = null,
+        GeoJsonFeatureBaseBuilder.PreparedSchema? schema = null)
         => OgcGeoJsonFeatureBuilder.Create(
             feature,
             resource,
             axisOrder,
             geometryServices,
             projectedProperties,
-            links: links);
+            links: links,
+            schema: schema);
 
     private static GeoJsonFeature ToOgcFeature(
         EncodedGeoJsonFeature feature,
@@ -828,14 +838,16 @@ internal sealed partial class OgcFeaturesQueryHandler(
         AxisOrder axisOrder,
         OgcFeaturesGeometryServices geometryServices,
         ImmutableHashSet<string>? projectedProperties = null,
-        ImmutableArray<Link>? links = null)
+        ImmutableArray<Link>? links = null,
+        GeoJsonFeatureBaseBuilder.PreparedSchema? schema = null)
         => OgcGeoJsonFeatureBuilder.Create(
             feature,
             resource,
             axisOrder,
             geometryServices,
             projectedProperties,
-            links: links);
+            links: links,
+            schema: schema);
 
     private static string[] ResolveCsvFieldNames(
         MetadataV2Resource resource,
@@ -1377,6 +1389,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
         long numberMatched,
         CancellationToken cancellationToken)
     {
+        // Do not commit a FeatureCollection prefix until source admission succeeds.
+        await using var enumerator = features.GetAsyncEnumerator(cancellationToken);
+        var hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
+
         using var writer = new Utf8JsonWriter(context.Response.BodyWriter, new JsonWriterOptions
         {
             Indented = false,
@@ -1390,8 +1406,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
         var numberReturned = 0;
         var hasMoreResults = false;
         var featuresSinceFlush = 0;
-        await foreach (var feature in features.WithCancellation(cancellationToken))
+        GeoJsonFeatureBaseBuilder.PreparedSchema? featureSchema = null;
+        while (hasFeature)
         {
+            var feature = enumerator.Current;
             if (numberReturned >= maxFeatures)
             {
                 // The limit+1 probe row exists: there is a next page.
@@ -1406,7 +1424,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                     OgcFeatureIdentifierResolver.FormatPublicId(feature, resource),
                     outputFormat)
                 : null;
-            var ogcFeature = ToOgcFeature(feature, resource, axisOrder, geometryServices, projectedProperties, featureLinks);
+            var ogcFeature = ToOgcFeature(feature, resource, axisOrder, geometryServices, projectedProperties, featureLinks,
+                featureSchema ??= new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false));
             JsonSerializer.Serialize(writer, ogcFeature, OgcJsonContext.Default.GeoJsonFeature);
 
             numberReturned++;
@@ -1416,6 +1435,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 await context.Response.BodyWriter.FlushAsync(cancellationToken);
                 featuresSinceFlush = 0;
             }
+
+            hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
         }
 
         writer.WriteEndArray();

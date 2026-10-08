@@ -63,6 +63,35 @@ public sealed class JobReconciliationServiceTests
     }
 
     [UnitTest]
+    public async Task SweepActiveJobs_InterruptedLocalSubmission_RepairsMissingDeliveryWithoutRestartingClaimedJobs()
+    {
+        var queued = CreateRunningJob() with
+        {
+            Status = ExecutionJobStatus.Queued,
+            AttemptCount = 0,
+            ClaimedBy = null,
+            ClaimedAt = null,
+            LastHeartbeatAt = null,
+            Priority = OperationPriority.High
+        };
+        var store = Substitute.For<IExecutionJobStore>().WithTrySet();
+        store.ListActiveAsync(null, null, Arg.Any<CancellationToken>()).Returns([queued]);
+        store.GetAsync(queued.OperationId, Arg.Any<CancellationToken>()).Returns(queued);
+        var queue = Substitute.For<IJobQueue>();
+        using var service = new JobReconciliationService(store, queue, Substitute.For<IQueueClaimReconciler>(),
+            new ExecutionJobCancellationTokens(), [], null, NullLogger<JobReconciliationService>.Instance);
+
+        await RunSingleSweepAsync(service, CancellationToken.None);
+
+        await queue.Received(1).EnqueueAsync(queued.OperationId, OperationPriority.High, Arg.Any<CancellationToken>());
+        queue.ClearReceivedCalls();
+        store.GetAsync(queued.OperationId, Arg.Any<CancellationToken>())
+            .Returns(queued with { Status = ExecutionJobStatus.Running, ClaimedBy = "other-worker", AttemptCount = 1 });
+        await RunSingleSweepAsync(service, CancellationToken.None);
+        await queue.DidNotReceive().EnqueueAsync(Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task HeartbeatExpiry_SkipsTransition_WhenJobAlreadySucceeded()
     {
         var snapshot = CreateRunningJob(

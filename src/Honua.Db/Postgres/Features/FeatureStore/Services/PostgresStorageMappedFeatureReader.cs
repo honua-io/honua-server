@@ -36,6 +36,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private const int MaxJsonbBuildObjectPairs = 50;
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
+    private readonly PostgresBoundConnectionProvider? _boundConnectionProvider;
     private readonly ObjectPool<Dictionary<string, object?>> _dictionaryPool;
     private readonly MetadataV2Resource _resource;
     private readonly FeatureStorageMapping _mapping;
@@ -46,6 +47,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private readonly ILogger _logger;
     private readonly string _qualifiedTableName;
     private readonly string? _managedFeatureSchema;
+    private readonly bool? _preferSerialBoundedSpatialReads;
+    private readonly bool _disableJitForSourceSpatialCounts;
+    private readonly bool? _preferSerialSourceSpatialCounts;
     private readonly string _primaryKeyColumn;
     private readonly string? _geometryColumn;
     private readonly int _storageSrid;
@@ -64,14 +68,22 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         IFilterExpressionService? filterExpressionService = null,
         IRowLevelSecurityFilterSource? rlsFilterSource = null,
         IFieldMaskSource? fieldMaskSource = null,
-        string? managedFeatureSchema = null)
+        string? managedFeatureSchema = null,
+        PostgresBoundConnectionProvider? boundConnectionProvider = null,
+        bool? preferSerialBoundedSpatialReads = null,
+        bool disableJitForSourceSpatialCounts = false,
+        bool? preferSerialSourceSpatialCounts = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _dictionaryPool = dictionaryPool ?? throw new ArgumentNullException(nameof(dictionaryPool));
         _resource = resource ?? throw new ArgumentNullException(nameof(resource));
         _mapping = mapping ?? throw new ArgumentNullException(nameof(mapping));
         _managedFeatureSchema = string.IsNullOrWhiteSpace(managedFeatureSchema) ? null : managedFeatureSchema.Trim();
+        _preferSerialBoundedSpatialReads = preferSerialBoundedSpatialReads;
+        _disableJitForSourceSpatialCounts = disableJitForSourceSpatialCounts;
+        _preferSerialSourceSpatialCounts = preferSerialSourceSpatialCounts;
         _connection = connection;
+        _boundConnectionProvider = boundConnectionProvider;
         _connectionEncryptionService = connectionEncryptionService;
         _filterExpressionService = filterExpressionService;
         // The reader is bound to its resource, so the shared resolver needs no layer-id lookup
@@ -107,7 +119,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             Limit = 1
         };
 
-        var result = await QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        var result = await QueryPageAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         return result.Items.Length == 0 ? null : result.Items[0];
     }
 
@@ -117,7 +129,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         CancellationToken cancellationToken = default)
     {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
+        return await QueryCoreAsync(query, cancellationToken).ConfigureAwait(false);
+    }
 
+    // Only public entry points resolve security. Nested count/page operations use
+    // this same resolved query, including when no row filter or field mask applies.
+    private async Task<QueryResult<Feature>> QueryCoreAsync(
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
         if (IsNearestNeighborQuery(query))
         {
             var nearestItems = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
@@ -126,14 +146,39 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 : QueryResult<Feature>.Create(nearestItems.Length, nearestItems, hasMoreResults: false);
         }
 
-        var totalCount = await CountAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        var offset = query.Offset.GetValueOrDefault();
+        ImmutableArray<Feature> items = default;
+        if (!query.Distinct && offset == 0 && query.Limit is int limit && limit > 0)
+        {
+            items = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
+            // A short first page proves the exact total in that SELECT's snapshot.
+            // Full pages still need a separate count; as before, the two reads
+            // do not establish a shared snapshot unless the caller supplies one.
+            if (items.Length < limit)
+            {
+                return QueryResult<Feature>.Create(items.Length, items, hasMoreResults: false);
+            }
+        }
+
+        var totalCount = await CountCoreAsync(query, isAssociatedFeatureRead: true, cancellationToken).ConfigureAwait(false);
+        if (!items.IsDefault)
+        {
+            // READ COMMITTED permits deletes between the page and count snapshots.
+            // Retain the materialized first page and never report fewer matches
+            // than the rows that this response already contains.
+            totalCount = Math.Max(totalCount, items.Length);
+        }
+
         if (totalCount == 0)
         {
             return QueryResult<Feature>.Empty();
         }
 
-        var items = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
-        var offset = query.Offset.GetValueOrDefault();
+        if (items.IsDefault)
+        {
+            items = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
+        }
+
         var hasMoreResults = offset + items.Length < totalCount;
         return QueryResult<Feature>.Create(totalCount, items, hasMoreResults);
     }
@@ -178,12 +223,36 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         CancellationToken cancellationToken = default)
     {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
+        return await CountCoreAsync(query, isAssociatedFeatureRead: false, cancellationToken).ConfigureAwait(false);
+    }
 
+    private async Task<long> CountCoreAsync(
+        FeatureQuery query, bool isAssociatedFeatureRead, CancellationToken cancellationToken)
+    {
         var sql = new SqlBuilder();
         sql.Append(CultureInfo.InvariantCulture, $"SELECT COUNT(*)::bigint FROM {BuildFeatureSource(query, sql)}");
         AppendFilter(sql, query);
 
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        // A caller-owned transaction would retain SET LOCAL beyond this count.
+        var useSerialPlan = ShouldUseSerialSourceSpatialCount(query, isAssociatedFeatureRead);
+        var disableJit = ShouldDisableJitForSpatialCount(query);
+        if (connection.Transaction is null && (useSerialPlan || disableJit))
+        {
+            await using var batch = useSerialPlan
+                ? CreateSerialSourceSpatialCountBatch(connection, sql, disableJit)
+                : CreateScopedPlannerReadBatch(connection, sql,
+                    "SELECT pg_catalog.set_config('jit', 'off', true)");
+            await using var reader = await batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false) ||
+                !await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException("The scoped planner batch did not return a count.");
+            }
+
+            return reader.GetInt64(0);
+        }
+
         await using var command = CreateReadCommand(connection, sql);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
@@ -332,7 +401,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
         if (!query.Limit.HasValue || query.Limit.Value == int.MaxValue)
         {
-            var result = await QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            var result = await QueryCoreAsync(query, cancellationToken).ConfigureAwait(false);
             return PagedQueryResult<Feature>.Create(result.Items, result.HasMoreResults, result.TotalCount);
         }
 
@@ -357,14 +426,12 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
-        var sql = BuildFeatureSelect(query, probeLimit: false);
-        await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = CreateReadCommand(connection, sql);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-
+        await using var session = await OpenFeatureReadSessionAsync(
+            query, probeLimit: false, allowSerialPlan: false, cancellationToken).ConfigureAwait(false);
+        var reader = session.Reader!;
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            yield return ReadFeature(reader);
+            yield return ReadFeature(reader, textAttributes: query.Distinct, session.NativeAttributes);
         }
     }
 
@@ -403,24 +470,25 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         bool probeLimit,
         CancellationToken cancellationToken)
     {
-        var sql = BuildFeatureSelect(query, probeLimit);
         var features = ImmutableArray.CreateBuilder<Feature>();
-
-        await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = CreateReadCommand(connection, sql);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-
+        await using var session = await OpenFeatureReadSessionAsync(
+            query, probeLimit, allowSerialPlan: true, cancellationToken).ConfigureAwait(false);
+        var reader = session.Reader!;
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            features.Add(ReadFeature(reader));
+            features.Add(ReadFeature(reader, textAttributes: query.Distinct, session.NativeAttributes));
         }
 
         return features.ToImmutable();
     }
 
     private SqlBuilder BuildFeatureSelect(FeatureQuery query, bool probeLimit)
+        => BuildFeatureSelectCore(query, probeLimit, TryGetSmallintComparison(query));
+
+    private SqlBuilder BuildFeatureSelectCore(FeatureQuery query, bool probeLimit, SmallintComparison? comparison,
+        bool useNativeAttributes = true)
     {
-        var sql = new SqlBuilder();
+        var sql = new SqlBuilder { SmallintComparison = comparison };
         // Preserve Z/M ordinates through extended WKB when the canonical query requests it (returnZ/
         // returnM); ST_AsBinary emits 2D OGC WKB and silently drops higher ordinates. EWKB is read
         // transparently by the WKB consumers, so 2D-only data is unaffected.
@@ -428,8 +496,16 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var geometrySelect = _geometryColumn == null
             ? "NULL"
             : $"{geometryEncoder}({BuildGeometryExpression(query)})";
-        var attributesSelect = BuildAttributesExpression(query, sql);
+        var nativeAttributes = useNativeAttributes ? BuildNativeAttributesProjection(query, sql) : null;
+        var attributesSelect = nativeAttributes ?? BuildAttributesJsonbExpression(query, sql);
+        // DISTINCT compares and orders the text representation. Preserve that
+        // contract; ordinary reads decode JSONB directly without a UTF-16 string.
+        if (query.Distinct)
+        {
+            attributesSelect = $"{attributesSelect}::text";
+        }
         var distanceSelect = BuildDistanceSelectExpression(query, sql);
+        var nativeSelect = BuildNativeAttributeSelect(sql);
 
         if (query.Distinct)
         {
@@ -445,12 +521,18 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             sql.Append(CultureInfo.InvariantCulture, $"""
                 SELECT {_primaryKeyColumn}::bigint AS objectid,
                        {geometrySelect} AS geometry,
-                       {attributesSelect} AS attributes{distanceSelect}
-                FROM {BuildFeatureSource(query, sql)}
+                       {attributesSelect} AS attributes{distanceSelect}{nativeSelect}
                 """);
-            AppendFilter(sql, query);
-            AppendOrderBy(sql, query);
-            AppendPagination(sql, query, probeLimit);
+            if (query.Limit.HasValue || query.Offset.HasValue || IsNearestNeighborQuery(query))
+            {
+                AppendPagedFeatureSource(sql, query, probeLimit);
+            }
+            else
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" FROM {BuildFeatureSource(query, sql)}");
+                AppendFilter(sql, query);
+                AppendOrderBy(sql, query);
+            }
         }
         if (query.Distinct)
         {
@@ -476,38 +558,38 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return geometryExpression;
     }
 
-    private string BuildAttributesExpression(FeatureQuery query, SqlBuilder sql)
+    private string BuildAttributesJsonbExpression(FeatureQuery query, SqlBuilder sql)
     {
         if (query.ExcludeAttributes)
         {
-            return "NULL";
+            return "NULL::jsonb";
         }
 
         var fields = ResolveAttributeFields(query);
         if (fields.Length == 0)
         {
-            return "'{}'::jsonb::text";
+            return "'{}'::jsonb";
         }
 
-        return BuildAttributesExpressionText(
+        return BuildAttributesJsonbExpression(
             fields,
             useMapping: true,
             sql.AddParameter,
             query.Distinct || !string.IsNullOrWhiteSpace(_mapping.AttributesColumn) ? _primaryKeyColumn : null);
     }
 
-    private string BuildAttributesExpressionText(
+    private string BuildAttributesJsonbExpression(
         MetadataV2Field[] fields,
         bool useMapping,
         Func<object?, string> addParameter,
         string? distinctObjectIdExpression = null)
-        => BuildAttributesExpressionText(
+        => BuildAttributesJsonbExpression(
             fields,
             useMapping ? _mapping.AttributesColumn : null,
             addParameter,
             distinctObjectIdExpression);
 
-    private static string BuildAttributesExpressionText(
+    private static string BuildAttributesJsonbExpression(
         MetadataV2Field[] fields,
         string? attributesColumn,
         Func<object?, string> addParameter,
@@ -521,7 +603,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 addParameter,
                 distinctObjectIdExpression));
 
-        return $"({string.Join(" || ", chunks)})::text";
+        return $"({string.Join(" || ", chunks)})";
     }
 
     private static string BuildAttributesExpressionChunk(
@@ -630,6 +712,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private void AppendFilter(SqlBuilder sql, FeatureQuery query, string prefix = "WHERE")
     {
         var conditions = new List<string>();
+        if (sql.SmallintComparison is { } smallint)
+        {
+            conditions.Add(BuildSmallintTypeGuard(smallint, lockRelation: false));
+        }
         if (query.TextSearch is { } search)
         {
             conditions.Add(FeatureTextSearchSql.Build(search,
@@ -653,7 +739,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         if (query.SqlFilter != null)
         {
-            conditions.Add(ConvertSqlFilter(query.SqlFilter, sql));
+            conditions.Add(sql.SmallintComparison is { } comparison
+                ? $"{ResolveColumnExpression(comparison.FieldName, sql)} {comparison.Operator} {sql.AddParameter(comparison.Value)}"
+                : ConvertSqlFilter(query.SqlFilter, sql));
         }
         else if (!string.IsNullOrWhiteSpace(query.Where))
         {
@@ -738,7 +826,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     // numeric form and convert via to_timestamp; otherwise cast the ISO text.
     private static string WrapEpochAwareTimestamp(string textExpression)
     {
-        var trimmed = $"NULLIF({textExpression}, '')";
+        // Physical source columns can already be timestamp/date typed. Converting to text
+        // before empty/epoch detection keeps that path type-correct while retaining support
+        // for JSONB epoch-millisecond values.
+        var trimmed = $"NULLIF(({textExpression})::text, '')";
         return $"CASE WHEN {trimmed} ~ '^-?[0-9]+$' " +
                $"THEN to_timestamp({trimmed}::double precision / 1000.0) " +
                $"ELSE {trimmed}::timestamptz END";
@@ -965,7 +1056,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         converted = RewriteAttributeTextAccessExpressions(
             converted,
             fieldName => ResolveColumnExpression(fieldName, sql),
-            TryResolveFieldType);
+            TryResolveFieldType,
+            usePhysicalNumericColumns: string.IsNullOrWhiteSpace(_mapping.AttributesColumn));
 
         return QuotedIdentifierRegex().Replace(
             converted,
@@ -979,8 +1071,40 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     internal static string RewriteAttributeTextAccessExpressions(
         string sql,
         Func<string, string> resolveColumnExpression,
-        Func<string, MetadataV2FieldType?>? resolveFieldType = null)
-        => AttributeTextAccessRegex().Replace(
+        Func<string, MetadataV2FieldType?>? resolveFieldType = null,
+        bool usePhysicalNumericColumns = false)
+    {
+        if (usePhysicalNumericColumns && resolveFieldType is not null)
+        {
+            // Canonical JSONB filters cast text to the declared numeric type. A mapped
+            // physical column needs no text round trip, which prevents ordinary source
+            // indexes from satisfying selective predicates. Retain the numeric cast:
+            // native numeric/decimal fields are also published as Double, and their
+            // declared floating-point semantics must survive. PostgreSQL eliminates
+            // identity casts on columns already having the target type. Match the
+            // complete canonical cast, leaving text operations and intentional casts
+            // to a different type unchanged. JSONB mappings still need their coercion.
+            sql = NumericAttributeCastRegex().Replace(sql, match =>
+            {
+                var fieldName = match.Groups["field"].Value.Replace("''", "'", StringComparison.Ordinal);
+                var expectedCast = resolveFieldType(fieldName) switch
+                {
+                    MetadataV2FieldType.Integer => "integer",
+                    MetadataV2FieldType.BigInteger => "bigint",
+                    // Same cast GetJsonCastType emits for Float: numeric literals are bound
+                    // as double precision, so a physical column must drop the JSONB text
+                    // round trip at that precision rather than the legacy real cast.
+                    MetadataV2FieldType.Float => "double precision",
+                    MetadataV2FieldType.Double => "double precision",
+                    _ => null
+                };
+                return string.Equals(match.Groups["cast"].Value, expectedCast, StringComparison.OrdinalIgnoreCase)
+                    ? $"({resolveColumnExpression(fieldName)})::{expectedCast}"
+                    : match.Value;
+            });
+        }
+
+        return AttributeTextAccessRegex().Replace(
             sql,
             match =>
             {
@@ -1003,6 +1127,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
                 return $"NULLIF({column}, '')";
             });
+    }
 
     // String-like fields whose empty-string values must survive filter translation as a
     // non-NULL value. Null (unresolved) field type keeps the legacy NULLIF behavior so the
@@ -1139,28 +1264,36 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         };
 
     private void AppendOrderBy(SqlBuilder sql, FeatureQuery query)
+        => sql.Append(CultureInfo.InvariantCulture,
+            $" ORDER BY {string.Join(", ", BuildOrderExpressions(sql, query).Select(term => term.Expression + term.Suffix))}");
+
+    private IEnumerable<(string Expression, string Suffix)> BuildOrderExpressions(SqlBuilder sql, FeatureQuery query)
     {
         if (IsNearestNeighborQuery(query))
         {
-            sql.Append(CultureInfo.InvariantCulture, $" ORDER BY {BuildNearestNeighborOrderExpression(query, sql)}");
-            return;
+            yield return (BuildNearestNeighborOrderExpression(query, sql), string.Empty);
+            yield break;
         }
 
         if (query.OrderBy.HasValue && !query.OrderBy.Value.IsDefaultOrEmpty)
         {
-            var clauses = new List<string>();
+            var ordersByPrimaryKey = false;
             foreach (var clause in query.OrderBy.Value)
             {
                 var column = ResolveSortColumnExpression(clause.Field, sql);
-                clauses.Add(
-                    $"{column} {(clause.Ascending ? "ASC" : "DESC")}{FeatureQueryBuilder.GetNullOrderingSuffix(clause.NullOrdering)}");
+                ordersByPrimaryKey |= column.Equals(_primaryKeyColumn, StringComparison.OrdinalIgnoreCase);
+                yield return (column,
+                    $" {(clause.Ascending ? "ASC" : "DESC")}{FeatureQueryBuilder.GetNullOrderingSuffix(clause.NullOrdering)}");
             }
 
-            sql.Append(CultureInfo.InvariantCulture, $" ORDER BY {string.Join(", ", clauses)}");
-            return;
+            if ((query.Limit.HasValue || query.Offset.HasValue) && !ordersByPrimaryKey)
+            {
+                yield return (_primaryKeyColumn, string.Empty);
+            }
+            yield break;
         }
 
-        sql.Append(CultureInfo.InvariantCulture, $" ORDER BY {_primaryKeyColumn}");
+        yield return (_primaryKeyColumn, string.Empty);
     }
 
     private static void AppendDistinctOrderBy(SqlBuilder sql, FeatureQuery query)
@@ -1392,7 +1525,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             or MetadataV2FieldType.Date
             or MetadataV2FieldType.Time
             ? BuildEpochAwareTemporalExpression(column, field.Type)
-            : sortCast is null ? column : $"{column}{sortCast}";
+            : sortCast is null ? column : $"NULLIF(({column})::text, ''){sortCast}";
     }
 
     private MetadataV2Field ResolveFieldDefinition(string fieldName)
@@ -1408,32 +1541,33 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             ?? throw new ArgumentException($"Field '{fieldName}' was not found on resource '{_resource.Metadata.Name}'.");
     }
 
-    private Feature ReadFeature(NpgsqlDataReader reader)
+    private Feature ReadFeature(NpgsqlDataReader reader, bool textAttributes, NativeAttributeDecoder? nativeAttributes)
     {
         var id = reader.GetInt64(0);
         var geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
-        var attributesJson = reader.IsDBNull(2) ? null : reader.GetString(2);
         var attributesDictionary = _dictionaryPool.Get();
 
         try
         {
-            var deserialized = string.IsNullOrWhiteSpace(attributesJson)
-                ? new Dictionary<string, object?>()
-                : JsonSerializer.Deserialize(
-                    attributesJson,
-                    FeatureAttributesJsonContext.Default.DictionaryStringObject) ?? new Dictionary<string, object?>();
-
-            foreach (var entry in deserialized)
+            if (!reader.IsDBNull(2) && (nativeAttributes is null || nativeAttributes.HasJsonFallback))
             {
-                attributesDictionary[entry.Key] = entry.Value is JsonElement element
-                    ? JsonElementConverter.ConvertToScalar(element)
-                    : entry.Value;
+                if (textAttributes)
+                {
+                    FeatureAttributeJsonReader.ReadInto(reader.GetString(2), attributesDictionary);
+                }
+                else
+                {
+                    using var document = reader.GetFieldValue<JsonDocument>(2);
+                    FeatureAttributeJsonReader.ReadInto(document.RootElement, attributesDictionary);
+                }
             }
 
+            nativeAttributes?.ReadInto(reader, attributesDictionary);
             attributesDictionary[FieldNames.ObjectId] = id;
-            if (reader.FieldCount > 3)
+            var metadataEndOrdinal = nativeAttributes?.FirstOrdinal ?? reader.FieldCount;
+            if (metadataEndOrdinal > 3)
             {
-                for (var i = 3; i < reader.FieldCount; i++)
+                for (var i = 3; i < metadataEndOrdinal; i++)
                 {
                     var fieldName = reader.GetName(i);
                     if (fieldName.Equals(FeatureQueryEncoding.InternalDistanceColumn, StringComparison.OrdinalIgnoreCase))
@@ -1466,19 +1600,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        var connection = new NpgsqlConnection(connectionString);
-        try
+        if (_boundConnectionProvider is null)
         {
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            await connection.DisposeAsync().ConfigureAwait(false);
-            throw;
+            throw new InvalidOperationException("Managed source-bound PostGIS connections are not configured.");
         }
 
-        // The bound-string connection owns itself: disposing the lease disposes the connection.
-        return new NpgsqlConnectionLease(connection, connection);
+        return await _boundConnectionProvider.OpenConnectionAsync(
+            _connection!.Id, connectionString, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<string?> ResolveBoundConnectionStringAsync()
@@ -1620,6 +1748,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private static NpgsqlCommand CreateReadCommand(NpgsqlConnection connection, SqlBuilder sql)
     {
+        if (sql.SmallintComparison is not null)
+        {
+            throw new InvalidOperationException("A smallint query requires its type-verification batch.");
+        }
+
         var command = PostgresSqlSafety.CreateReadCommand(connection, sql.ToString());
         foreach (var parameter in sql.Parameters)
         {
@@ -1957,6 +2090,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private static partial Regex AttributeTextAccessRegex();
 
     [GeneratedRegex(
+        @"\bNULLIF\(\s*(?:""attributes""|attributes)\s*->>\s*'(?<field>(?:''|[^'])+)'\s*,\s*''\s*\)\s*::\s*(?<cast>integer|bigint|real|double precision)(?![\w\[])",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex NumericAttributeCastRegex();
+
+    [GeneratedRegex(
         @"""(?<identifier>(?:[^""]|"""")+)""",
         RegexOptions.CultureInvariant)]
     private static partial Regex QuotedIdentifierRegex();
@@ -1969,6 +2107,12 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         public IReadOnlyList<object?> Parameters => _parameters;
 
         public bool HasOuterFilter { get; set; }
+
+        public SmallintComparison? SmallintComparison { get; init; }
+
+        public string[] NativeAttributeNames { get; set; } = [];
+
+        public bool HasJsonAttributeFields { get; set; } = true;
 
         public void Append(string value) => _text.Append(value);
 

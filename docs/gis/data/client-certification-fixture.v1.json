@@ -8,7 +8,7 @@
   "matrixSource": "docs/gis/data/client-certification-matrix.v1.json",
   "proseContract": "docs/gis/CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md",
   "evidenceSchema": "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
-  "fixtureRevision": "sha256:cb28aeb46423d45948cd869c22bb674502760414c3ffd52b86e8821daaa2e925",
+  "fixtureRevision": "sha256:a58bef19c3c1c38b24a3a00de53b9210c6d80fe3b08972e3ebca073a7fdee599",
   "serverConfigRevision": "sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a",
   "authPolicyRevision": "sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9",
   "digestAlgorithms": {
@@ -41,8 +41,8 @@
     {
       "path": "tests/seed/client-compat-v1.sql",
       "role": "fixture",
-      "sha256": "sha256:9874de13a0c589152d3d5d33364038b5af03365401df930238718f6e88848584",
-      "purpose": "Canonical vector and raster seed: base schema, honua.seed_metadata_v2_compat_snapshot, service test_service, canonical Point layer 0 with a deterministic 64x64 single-band raster and statistics, ten read fixtures, and isolated WFS-T mutation layers 10-12."
+      "sha256": "sha256:87b5a1d6d6a966b526ee0b1a6d2037722b2b91f86d07c649240c901df4fbffc7",
+      "purpose": "Canonical vector and raster seed: base schema, honua.seed_metadata_v2_compat_snapshot, service test_service, canonical Point layer 0 with a deterministic 64x64 single-band raster and statistics, ten read fixtures, and isolated WFS-T mutation layers 10-12. Additive cert_relations service with attachment parents and bidirectional asset/inspection relationships."
     },
     {
       "path": "tests/seed/browser-compat.yaml",
@@ -71,7 +71,7 @@
     {
       "path": "docker/client-compat/seed/run.sh",
       "role": "fixture",
-      "sha256": "sha256:69b4b9118b4edee033dcde30b79fd24b8f62923c0d5af725c8aa004c60ec981f",
+      "sha256": "sha256:08cb95a1cacd5f71f60c24e235843db2dcbf8bca1d510dafbe78130a9886d72c",
       "purpose": "Definition of which seed files are applied, and in which order, for the client-compat matrix. Adding or removing a fixture input changes this file and therefore fixtureRevision."
     },
     {
@@ -89,7 +89,7 @@
     {
       "path": "docker/client-compat/seed/publish-scene.py",
       "role": "fixture",
-      "sha256": "sha256:2a7283060de2b42bc2f7ff72451a6784a7245c21eacf7a4fec9a0578b7d0a720",
+      "sha256": "sha256:db172214d03330089e40e6c905213fe032e26fdaacde64957398245b9027685a",
       "purpose": "Publishes the deterministic scene derivatives used by client certification."
     },
     {
@@ -97,6 +97,12 @@
       "role": "server-config",
       "sha256": "sha256:3eb71252f241546d4fa9fc23799296de3a75592f189449f056dadf103313998f",
       "purpose": "Declared server-configuration input: server mode, runtime and database images, environment, base URL, canonical service/layer identity, and the pinned setup-action revision."
+    },
+    {
+      "path": "docker/client-compat/seed/publish-attachments.py",
+      "role": "fixture",
+      "sha256": "sha256:208cd1072db8ba13ba5f930df94a0091ffb551007be5f862de6211894b3ccece",
+      "purpose": "Materializes downloadable desktop attachment bytes and verifies bidirectional related-record fixtures; reruns do not duplicate attachments."
     }
   ],
   "identities": {
@@ -4042,7 +4048,7 @@
     "producer": "tests/python/shared/cert_envelope.py::build_lane_runtime",
     "currentValues": {
       "fixture_revision": {
-        "value": "sha256:9874de13a0c589152d3d5d33364038b5af03365401df930238718f6e88848584",
+        "value": "sha256:87b5a1d6d6a966b526ee0b1a6d2037722b2b91f86d07c649240c901df4fbffc7",
         "boundTo": "inputs[tests/seed/client-compat-v1.sql].sha256",
         "convergenceTarget": "fixtureRevision",
         "gapId": "receipt-binding-uses-per-file-digests"

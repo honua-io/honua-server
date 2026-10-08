@@ -481,7 +481,7 @@ jobs:
       - name: Review the diff and publish evidence
         id: claude
         if: steps.target.outputs.skip == 'false'
-        uses: anthropics/claude-code-action@4036a180cf690f49529f5d8c79c998855287f590 # v1.0.230
+        uses: anthropics/claude-code-action@756cc22e19660d20e8cc9496b4f242475a7f7790 # v1.0.235
         with:
           # Exactly one of these is set; the empty one is ignored. Do NOT add a
           # `github_token` input — the default path mints the Claude App token,
@@ -615,7 +615,7 @@ jobs:
 
       - name: Publish reviewer turn-budget fallback
         if: failure() && steps.claude.outcome == 'failure' && steps.exhausted.outputs.max_turns == 'true'
-        uses: anthropics/claude-code-action@4036a180cf690f49529f5d8c79c998855287f590 # v1.0.230
+        uses: anthropics/claude-code-action@756cc22e19660d20e8cc9496b4f242475a7f7790 # v1.0.235
         with:
           # Use the same App identity and append-only write surface as the main
           # review. GITHUB_TOKEN remains read-only, and no candidate text is
@@ -747,7 +747,7 @@ jobs:
           echo "eligible=true" >> "${GITHUB_OUTPUT}"
 
           pr_gate_green="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD}/check-runs" --paginate --slurp \
-            --jq '[.[].check_runs[] | select(.name == "PR Gate" and .app.id == 15368)]
+            | jq '[.[].check_runs[] | select(.name == "PR Gate" and .app.id == 15368)]
                   | sort_by(.started_at) | last | .conclusion == "success"')"
           if [ "${pr_gate_green}" != "true" ]; then
             echo "::notice::PR Gate is not green for ${HEAD}; train nudge skipped."

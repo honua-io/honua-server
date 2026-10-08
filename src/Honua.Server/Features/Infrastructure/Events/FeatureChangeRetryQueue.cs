@@ -52,7 +52,7 @@ internal sealed partial class FeatureChangeRetryQueue(
     private readonly IDatabase? _redisDb = redis?.GetDatabase();
     private readonly ConcurrentDictionary<string, PendingFeatureChangePublish> _pendingPublishes = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _scheduledRetries = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, byte> _completedBroadcasts = new(StringComparer.Ordinal);
+    private readonly CompletedBroadcastTracker _completedBroadcasts = new(PendingRetention);
     private readonly SemaphoreSlim _cacheLock = new(1, 1);
 
     public async Task<string> EnqueueAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
@@ -91,6 +91,11 @@ internal sealed partial class FeatureChangeRetryQueue(
             while (_queue.Reader.TryRead(out var signal))
             {
                 yield return signal.PendingId;
+                if (DateTimeOffset.UtcNow >= nextRecoveryAt)
+                {
+                    // Keep recovery and retention cleanup running under a sustained backlog.
+                    break;
+                }
             }
 
             var now = DateTimeOffset.UtcNow;
@@ -283,7 +288,7 @@ internal sealed partial class FeatureChangeRetryQueue(
                 : BroadcastClaimResult.InProgress;
         }
 
-        return _completedBroadcasts.ContainsKey(eventId)
+        return _completedBroadcasts.IsCompleted(eventId)
             ? BroadcastClaimResult.Completed
             : BroadcastClaimResult.Acquired;
     }
@@ -300,7 +305,7 @@ internal sealed partial class FeatureChangeRetryQueue(
             return;
         }
 
-        _completedBroadcasts[eventId] = 0;
+        _completedBroadcasts.MarkCompleted(eventId);
     }
 
     private async Task<PendingFeatureChangePublish?> TryGetPendingAsync(string pendingId, CancellationToken cancellationToken)
@@ -364,6 +369,10 @@ internal sealed partial class FeatureChangeRetryQueue(
 
     private async Task<IReadOnlyList<string>> RecoverPendingIdsAsync(CancellationToken cancellationToken)
     {
+        // This also runs while the queue is idle, so completed fallback IDs do not
+        // remain rooted for the singleton's lifetime after traffic stops.
+        _completedBroadcasts.RemoveExpired();
+
         if (_redisDb != null)
         {
             var members = await _redisDb.SetMembersAsync(PendingIdsSetKey).ConfigureAwait(false);
@@ -551,7 +560,11 @@ internal sealed partial class FeatureChangeRetryQueue(
         });
     }
 
-    public void Dispose() => _cacheLock.Dispose();
+    public void Dispose()
+    {
+        _completedBroadcasts.Clear();
+        _cacheLock.Dispose();
+    }
 
     private static string GetPendingKey(string pendingId) => $"{PendingKeyPrefix}{pendingId}";
     private static string GetClaimKey(string pendingId) => $"{ClaimKeyPrefix}{pendingId}";

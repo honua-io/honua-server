@@ -41,7 +41,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Models;
 [JsonSerializable(typeof(LevelOfDetail))]
 [JsonSerializable(typeof(RasterFunctionInfo))]
 [JsonSerializable(typeof(RasterTypeInfo))]
-[JsonSerializable(typeof(CatalogItem))]
+[JsonSerializable(typeof(IdentifyCatalogItems))]
 [JsonSerializable(typeof(CatalogQueryResponse))]
 [JsonSerializable(typeof(CatalogQueryFeature))]
 [JsonSerializable(typeof(RasterItemInfoResponse))]

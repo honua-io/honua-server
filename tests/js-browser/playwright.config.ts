@@ -6,15 +6,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const baseURL = process.env.HONUA_BASE_URL ?? 'http://localhost:5556';
 
 export default defineConfig({
-  testDir: './esri-leaflet',
+  testDir: './leaflet-client',
   fullyParallel: false,
   workers: 1,
   retries: 1,
   reporter: [
     ['list'],
-    ['./esri-leaflet/support/cert-reporter.ts'],
+    ['./leaflet-client/support/cert-reporter.ts'],
   ],
-  globalSetup: resolve(__dirname, 'esri-leaflet', 'global-setup.ts'),
+  globalSetup: resolve(__dirname, 'leaflet-client', 'global-setup.ts'),
   use: {
     baseURL,
     screenshot: 'only-on-failure',
