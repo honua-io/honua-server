@@ -124,3 +124,9 @@ A requested 20-second host wait took over seven minutes; all source and the
 merge were already preserved remotely. OGC verification reported socket errors
 after this interruption and is being diagnosed. No failed run is counted green;
 current-trunk protocol verification remains required before publication.
+
+Latest-trunk gRPC passed: `grpc-latest-trunk-green.trx`, 187 passed, 0 failed,
+0 skipped. Interrupted OGC finished with 64 passed, 1 failed, 0 skipped; the
+existing keep-alive test hit its unchanged 15-second HTTP timeout during the
+host interruption. Its receipt is retained as `ogc-latest-trunk-interrupted.trx`.
+The unchanged complete 65-case selection is retrying; WFS remains in progress.
