@@ -303,7 +303,7 @@ public sealed class GeoservicesImportServiceScanTests
         var service = CreateService(
             new GeoservicesScanHandler(
                 serviceDescription: "Parcel Viewer",
-                spatialReferenceJson: JsonSerializer.Serialize(new Dictionary<string, string>
+                spatialReferenceJson: JsonSerializer.Serialize(new Dictionary<string, string?>
                 {
                     [wktProperty] = SpatialReference.WebMercator.Wkt
                 })));

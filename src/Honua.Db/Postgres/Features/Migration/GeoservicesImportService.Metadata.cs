@@ -65,7 +65,8 @@ internal sealed partial class GeoservicesImportService
     {
         var wkid = GetOptionalIntProperty(spatialReference, "wkid");
         var latestWkid = GetOptionalIntProperty(spatialReference, "latestWkid");
-        var wkt = GetOptionalStringProperty(spatialReference, "wkt");
+        var wkt = GetOptionalStringProperty(spatialReference, "wkt")
+            ?? GetOptionalStringProperty(spatialReference, "latestWkt");
         var sourceValue = BuildArcGisSourceValue(wkid, latestWkid, wkt);
         var normalizedSrid = latestWkid ?? NormalizeArcGisWkid(wkid);
         var allowFallbackCrsUri = latestWkid.HasValue || IsKnownArcGisAlias(wkid);

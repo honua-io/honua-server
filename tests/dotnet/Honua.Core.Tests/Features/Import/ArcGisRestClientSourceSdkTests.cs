@@ -143,7 +143,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         using var http = new HttpClient(handler);
         const string source = "https://gis.example.com/arcgis/rest/services/Survey/FeatureServer";
         ArcGisServiceRoot.TryParse(new Uri(source), out var root).Should().BeTrue();
-        var sdk = new HonuaFeatureServerClient(http, root.ToClientOptions());
+        var sdk = new HonuaFeatureServerClient(http, root!.ToClientOptions());
 
         var layer = await sdk.GetLayerInfoAsync(root.ServiceId, 3);
 
@@ -169,12 +169,35 @@ public sealed class ArcGisRestClientSourceSdkTests
         imported.SupportsPagination.Should().BeFalse();
         imported.Fields.Select(static field => field.Nullable).Should().Equal(true, false, true, true);
         imported.Fields[2].Domain.Should().NotBeNull();
+        imported.Fields[2].Domain!.CodedValues.Should().ContainSingle().Subject!.Code.GetInt64()
+            .Should().Be(9_007_199_254_740_993);
         var relationship = imported.Relationships.Should().ContainSingle().Subject;
-        relationship.Id.Should().Be(7);
+        relationship!.Id.Should().Be(7);
         relationship.RelatedTableId.Should().Be(9);
         relationship.KeyField.Should().Be("GLOBALID");
         imported.Extent!.Xmin.Should().Be(1);
         imported.Extent.Ymax.Should().Be(4);
+    }
+
+    [Fact]
+    public async Task PublishedSdkQuery_PreservesWktOnlySpatialReferenceAndInt64Ids()
+    {
+        var handler = new ScriptedHandler(_ => Json("""
+            {"objectIdFieldName":"OBJECTID",
+             "spatialReference":{"wkt":"LOCAL_CS[\"Survey\"]","latestWkt":"LOCAL_CS[\"Survey latest\"]"},
+             "features":[{"attributes":{"OBJECTID":9007199254740993},"geometry":null}]}
+            """));
+        using var http = new HttpClient(handler);
+        ArcGisServiceRoot.TryParse(new Uri("https://gis.example.com/arcgis/rest/services/Survey/FeatureServer"), out var root)
+            .Should().BeTrue();
+        var sdk = new HonuaFeatureServerClient(http, root!.ToClientOptions());
+
+        var result = await sdk.QueryAsync(root.ServiceId, 3, new FeatureServerQueryParams());
+
+        result.SpatialReference!.Wkt.Should().Be("LOCAL_CS[\"Survey\"]");
+        result.SpatialReference.LatestWkt.Should().Be("LOCAL_CS[\"Survey latest\"]");
+        result.Features.Should().ContainSingle().Subject!.Attributes!["OBJECTID"].GetInt64()
+            .Should().Be(9_007_199_254_740_993);
     }
 
     [Theory]
