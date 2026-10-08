@@ -91,3 +91,7 @@ feature dictionary in the OGC adapter. All edits remain within packet TOUCHES;
 no shared builder change is needed. Independent review validated these changes
 and the XML summaries in source. Focused green verification is still required.
 Scoped formatting for these final edits passed.
+
+Post-review gRPC verification passed against the rebuilt current-trunk candidate:
+`grpc-review-green.trx`: 187 passed, 0 failed, 0 skipped. The scoped final build
+passed with warnings as errors. OGC and WFS verification is still running.
