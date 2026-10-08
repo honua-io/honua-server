@@ -47,6 +47,8 @@ def reason(base: str, paths: list[str]) -> str:
                                 "scripts/ci/compute-affected-", "scripts/ci/classify-pre-pr-",
                                 "scripts/ci/capability-impact.py", "scripts/ci/honua-server-targeted-tests.sh")):
                 return f"governance/selector input: {path}"
+            if path == "README.md":
+                continue
             if path.startswith("scripts/ci/"):
                 continue
             if path.startswith("docs/"):

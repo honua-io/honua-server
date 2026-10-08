@@ -185,6 +185,19 @@ pathlib.Path(out).write_text(json.dumps({'projects': projects}))
         self.assertNotIn("Mode: CI-SHELL-ONLY", output)
         self.assertIn("Architecture: full catalogue/proof enforcement", output)
 
+    def test_ordinary_docs_keep_shell_only_path(self):
+        self.write("README.md", "A documentation-only repair.\n")
+        output = self.plan("--fast")
+        self.assertIn("Mode: CI-SHELL-ONLY", output)
+        self.assertNotIn("dependency closure:", output)
+
+    def test_public_declarations_and_preprocessor_edits_force_catalogue(self):
+        path = "src/Honua.Geometry/Repair.cs"
+        self.write(path, "public class Repair {}\n")
+        self.assertIn("route/capability", self.guard([path]))
+        self.write(self.test_path, "#if OMIT_PROOFS\n" + self.test_source + "#endif\n")
+        self.assertIn("metadata", self.guard([self.test_path]))
+
     def test_selector_edits_escalate_full(self):
         self.source_repair()
         with (self.root / 'scripts/ci/pre-pr-contract-guard.py').open('a') as f:
