@@ -295,15 +295,17 @@ public sealed class GeoservicesImportServiceScanTests
         }
     }
 
-    [Fact]
-    public async Task ScanSourceAsync_ProjectedWkt_UsesProjectedLengthUnit()
+    [Theory]
+    [InlineData("wkt")]
+    [InlineData("latestWkt")]
+    public async Task ScanSourceAsync_ProjectedWkt_UsesProjectedLengthUnit(string wktProperty)
     {
         var service = CreateService(
             new GeoservicesScanHandler(
                 serviceDescription: "Parcel Viewer",
-                spatialReferenceJson: JsonSerializer.Serialize(new
+                spatialReferenceJson: JsonSerializer.Serialize(new Dictionary<string, string?>
                 {
-                    wkt = SpatialReference.WebMercator.Wkt
+                    [wktProperty] = SpatialReference.WebMercator.Wkt
                 })));
 
         var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
@@ -313,6 +315,7 @@ public sealed class GeoservicesImportServiceScanTests
         });
 
         var spatialReference = artifact.Resources.Should().ContainSingle().Subject.SpatialReferences.Should().ContainSingle().Subject;
+        spatialReference.SourceValue.Should().Be(SpatialReference.WebMercator.Wkt);
         spatialReference.Unit.Should().Be("metre");
         spatialReference.IsGeographic.Should().BeFalse();
     }
