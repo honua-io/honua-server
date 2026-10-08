@@ -532,7 +532,14 @@ internal sealed class InputValidationMiddleware
     private static bool ShouldSkipLdapInspection(HttpRequest request, string paramType, string name, string value)
         => IsODataSystemQueryOption(request, paramType, name) ||
            IsProtocolFilterQueryOption(request, paramType, name) ||
+           IsPortalSearchQuery(request, paramType, name) ||
            IsEdrWktCoordsQueryOption(request, paramType, name, value);
+
+    private static bool IsPortalSearchQuery(HttpRequest request, string paramType, string name)
+        => paramType is "query" or "form"
+           && name.Equals("q", StringComparison.OrdinalIgnoreCase)
+           && (string.Equals(request.Path.Value, "/sharing/rest/search", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(request.Path.Value, "/sharing/rest/search/", StringComparison.OrdinalIgnoreCase));
 
     private static bool IsEdrWktCoordsQueryOption(HttpRequest request, string paramType, string name, string value)
     {

@@ -4300,6 +4300,20 @@
             "notes": "Returns username and fullName from the caller\u0027s claims; role is hardcoded \u0022org_user\u0022 rather than derived from RBAC, and Esri\u0027s groups array is absent (the group store is never consulted). id/email/orgId/privileges are not emitted. Anonymous callers get 401."
           },
           {
+            "name": "Community User",
+            "status": "partial",
+            "esriPaths": [
+              "/sharing/rest/community/users/{username}"
+            ],
+            "honuaEndpoints": [
+              "GET /sharing/rest/community/users/{username}"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "Returns id, username and fullName from the authenticated caller\u0027s claims only when the requested username matches the caller (case-insensitive). Anonymous callers get 401; other usernames get 404 without revealing whether they exist. The role remains the fixed org_user value and groups is empty; this is a self-profile projection, not a general user directory or a complete organization profile."
+          },
+          {
             "name": "Item; item data",
             "status": "partial",
             "esriPaths": [
@@ -4332,6 +4346,20 @@
             "notes": "Records sharing intent in an in-memory, single-node store that does not survive restart and is not replicated. It is write-only: no read path consults it, so sharing an item to everyone/org/a group does not change what /search or /content/items/{id} return for any caller \u2014 those project from the Metadata v2 graph and RBAC alone. Item existence is not validated, notSharedWith is always empty (group existence is never checked), and confirmItemControl, bulk items, and folder are ignored. Owner-or-admin gated."
           },
           {
+            "name": "User Content",
+            "status": "partial",
+            "esriPaths": [
+              "/sharing/rest/content/users/{username}"
+            ],
+            "honuaEndpoints": [
+              "GET /sharing/rest/content/users/{username}"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "Lists RBAC-visible graph service items for the authenticated caller when the requested username matches case-insensitively. Items with a mapped owner are filtered to that caller; visible services without an owner mapping are also included. Anonymous callers get 401 and other usernames get 404. Folders is always empty, the graph-service projection is not a general portal content store, and pagination and folder traversal are not implemented."
+          },
+          {
             "name": "Portal Self",
             "status": "partial",
             "esriPaths": [
@@ -4352,7 +4380,8 @@
               "/sharing/rest/search"
             ],
             "honuaEndpoints": [
-              "GET /sharing/rest/search"
+              "GET /sharing/rest/search",
+              "POST /sharing/rest/search"
             ],
             "capabilityMaturity": [
               "implemented"

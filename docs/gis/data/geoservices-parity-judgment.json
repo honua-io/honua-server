@@ -2800,6 +2800,22 @@
           "notes": "username and fullName are projected from the caller's claims. helperServices advertises supported synchronous route, serviceArea, closestFacility and odCostMatrix layers using the public base URL. Unsupported helpers are omitted; provider failure is logged and leaves the helper block empty. The portal id (\"0123456789ABCDEF\"), name, portalName, isPortal, and role are hardcoded; org settings, urlKey, allSSL, basemaps, and privileges are absent. Sufficient for client bootstrap, not for portal administration."
         },
         {
+          "name": "Community User",
+          "status": "partial",
+          "esriPaths": [
+            "/sharing/rest/community/users/{username}"
+          ],
+          "notes": "Returns id, username and fullName from the authenticated caller's claims only when the requested username matches the caller (case-insensitive). Anonymous callers get 401; other usernames get 404 without revealing whether they exist. The role remains the fixed org_user value and groups is empty; this is a self-profile projection, not a general user directory or a complete organization profile."
+        },
+        {
+          "name": "User Content",
+          "status": "partial",
+          "esriPaths": [
+            "/sharing/rest/content/users/{username}"
+          ],
+          "notes": "Lists RBAC-visible graph service items for the authenticated caller when the requested username matches case-insensitively. Items with a mapped owner are filtered to that caller; visible services without an owner mapping are also included. Anonymous callers get 401 and other usernames get 404. Folders is always empty, the graph-service projection is not a general portal content store, and pagination and folder traversal are not implemented."
+        },
+        {
           "name": "Community Self",
           "status": "partial",
           "esriPaths": [

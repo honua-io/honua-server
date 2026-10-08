@@ -92,6 +92,13 @@ public sealed class PortalFacadeDiscoveryContractTests : IAsyncLifetime
                 accessPolicy: new AccessPolicy { AllowedRoles = ["portal-admin"] })
             .Build();
 
+        graph = graph with
+        {
+            Services = graph.Services.Select(service => service.Metadata.Id == OrgServiceId
+                ? service with { Metadata = service.Metadata with { Publisher = "gis-team", Description = "status:deprecated" } }
+                : service).ToArray(),
+        };
+
         _fixture = new WebAppFixture()
             .ReplaceService<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
             .ConfigureWebHost(builder =>
@@ -369,5 +376,88 @@ public sealed class PortalFacadeDiscoveryContractTests : IAsyncLifetime
         public long Expires { get; init; }
 
         public bool Ssl { get; init; }
+    }
+
+    [IntegrationTheory]
+    [InlineData("/sharing/rest?f=json")]
+    [InlineData("/sharing/rest/?f=json")]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /sharing/rest")]
+    public async Task Server5547_PortalRoot_ReturnsDiscoveryDocument(string path)
+    {
+        using var client = _fixture.CreateClient();
+        using var response = await client.GetAsync(path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("isPortal").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/search")]
+    [Endpoint("GET /sharing/rest/community/users/{username}")]
+    [Endpoint("GET /sharing/rest/content/users/{username}")]
+    public async Task Server5548_UserResourcesAndStructuredPostSearch_AreAccepted()
+    {
+        using var client = _fixture.CreateClient();
+        var token = await IssueAdminTokenAsync(client);
+
+        using var community = await client.GetAsync($"/sharing/rest/community/users/admin?f=json&token={token}");
+        community.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var communityDocument = JsonDocument.Parse(await community.Content.ReadAsStringAsync());
+        communityDocument.RootElement.GetProperty("id").GetString().Should().Be("admin");
+        communityDocument.RootElement.GetProperty("username").GetString().Should().Be("admin");
+        communityDocument.RootElement.GetProperty("groups").ValueKind.Should().Be(JsonValueKind.Array);
+
+        using var content = await client.GetAsync($"/sharing/rest/content/users/admin?f=json&token={token}");
+        content.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var contentDocument = JsonDocument.Parse(await content.Content.ReadAsStringAsync());
+        contentDocument.RootElement.GetProperty("folders").ValueKind.Should().Be(JsonValueKind.Array);
+        contentDocument.RootElement.GetProperty("items").ValueKind.Should().Be(JsonValueKind.Array);
+        contentDocument.RootElement.GetProperty("items").EnumerateArray()
+            .Select(item => item.GetProperty("id").GetString()).Should().Equal(PublicServiceId);
+
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["token"] = token,
+            ["q"] = $"((type:\"Feature Service\")) -typekeywords:(\"CatalogLayer\" OR \"Elevation 3D Layer\") AND owner: admin AND orgid: 0123456789ABCDEF AND access: public",
+            ["start"] = "1",
+            ["num"] = "100",
+            ["sortField"] = "title",
+            ["sortOrder"] = "asc",
+        });
+        using var search = await client.PostAsync("/sharing/rest/search", form);
+
+        search.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadSearchAsync(search);
+        payload.Results.Should().Contain(item => item.Id == PublicServiceId);
+    }
+
+    [IntegrationTheory]
+    [InlineData("Basemap type:\"Feature Service\"", true, false)]
+    [InlineData("\"Public Basemap\" AND type:\"Feature Service\"", true, false)]
+    [InlineData("missing type:\"Feature Service\"", false, false)]
+    [InlineData("Public Basemap", true, false)]
+    [InlineData("status:deprecated", false, true)]
+    [InlineData("-status:deprecated", true, false)]
+    [InlineData("type:\"Feature Service\" status:deprecated", false, true)]
+    [InlineData("owner:admin", true, false)]
+    [InlineData("owner:gis-team", true, true)]
+    [InlineData("-owner:gis-team", true, false)]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/search")]
+    public async Task Search_Clauses_FilterVisibleItems(string query, bool includesPublic, bool includesOrg)
+    {
+        using var client = _fixture.CreateClient();
+        var token = await IssueAdminTokenAsync(client);
+        using var response = await client.GetAsync($"/sharing/rest/search?f=json&token={token}&q={Uri.EscapeDataString(query)}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadSearchAsync(response);
+        payload.Results.Any(item => item.Id == PublicServiceId).Should().Be(includesPublic);
+        payload.Results.Any(item => item.Id == OrgServiceId).Should().Be(includesOrg);
+        payload.Results.Should().NotContain(item => item.Id == PrivateServiceId);
     }
 }
