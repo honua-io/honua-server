@@ -607,7 +607,7 @@ jobs:
       # archive.ubuntu.com + PDAL compiled from source); see the matching step
       # in ci.yml's Worker GDAL Tests job for why it is never written here.
       - name: Set up Docker Buildx for production PDAL
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.generated-only.outputs.generated_only != 'true'
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
 
       - name: Log in to GHCR for the production PDAL build cache

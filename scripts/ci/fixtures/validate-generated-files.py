@@ -93,6 +93,13 @@ class GeneratedFilesContracts(unittest.TestCase):
         self.assertIn('generate-admin-operation-parity-exports.sh "$@" --no-build --no-restore', generator)
         self.assertIn('generate-geoservices-parity.sh "$@" --no-build --no-restore', generator)
 
+    def test_generated_output_admission_contract(self):
+        result = subprocess.run(
+            ['python3', str(ROOT / 'scripts/ci/fixtures/validate-generated-output-diff.py')],
+            cwd=ROOT, capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_generator_failure_stops_the_pipeline(self):
         with tempfile.TemporaryDirectory() as temp:
             repo = Path(temp)

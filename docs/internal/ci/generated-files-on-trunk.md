@@ -157,3 +157,54 @@ emitters via PATH's lane-capped `dotnet`/`dotnet vstest`, both Python
 generators, and CITE/OpenAPI/architecture validation against fresh
 projections all passed then and are not touched by this packet. The full
 pre-PR build/test matrix was not run for this CI-only change.
+
+## Validated generated-only admission
+
+PR Gate can omit product builds, tests, format and affected shards when the
+entire exact base-to-head diff changes only regular, non-executable generated
+outputs. The base commit supplies both `scripts/ci/generated-files.sh` and the
+executable `scripts/ci/generated-output-diff.py` policy; candidate policy edits
+cannot authorize their own exemption. Renames, deletions, type/mode changes,
+forks, source, generator, workflow and mixed changes retain ordinary checks.
+A single publication commit must have the event's exact trunk base as its parent.
+
+An allowlisted diff alone does not suffice. After its existing generation and
+validation and final PR publication, the nightly producer uploads
+`generated-output-proof-<run>-attempt-<attempt>`. The bounded JSON artifact binds
+its triggering source, output commit and complete tree, run ID and attempt.
+Admission reads it only from the canonical, successful completed trunk
+schedule/manual producer in this repository. Branch names, authors, labels and
+`Generated-From` trailers do not confer trust. Admission waits up to 90 seconds
+for an already-running producer to finish publishing its receipt. Missing,
+expired, failed, stale or unreadable proof falls back to ordinary verification;
+it never dispatches another producer. An older producer without the artifact
+also takes the ordinary path.
+
+The named PR Gate jobs and stable `PR Gate` aggregate still run and complete.
+Their existing lightweight admission contracts and exact-head Review Gate
+requirements stay intact. The building-block conformance job completes without
+building or running validators. The normalization producer completes without
+repeating generation, and its trusted consumer independently proves the same
+exemption before skipping envelope validation and mutation. CodeQL's existing
+source/workflow path filter excludes every canonical generated output, so it
+requires no additional exemption. Ordinary changes retain the existing product
+assertions and gates; no workflow is disabled and publication still goes through
+reviewed PR admission. Classification runs under read-only Actions/contents
+credentials and never executes code from the PR head with a write credential.
+
+Offline routing proof (no .NET build or manual regeneration):
+
+```bash
+python3 scripts/ci/fixtures/validate-generated-output-diff.py
+python3 scripts/ci/fixtures/validate-generated-files.py
+bash scripts/ci/validate-ci-router.sh
+bash scripts/ci/validate-single-merge-authority.sh
+```
+
+The fixture applies the actual four-file #5725 patch in a scratch Git repository
+and supplies mocked Actions producer receipts. It also rejects untrusted and
+malformed diffs/proofs, exercises publication timing and classifier failures,
+and checks named-context completion and ordinary product-step routing. This is
+local contract evidence only. A fresh nightly generated-only PR after this fix
+merges must provide the hosted proof that the expensive steps actually skip;
+that live verification is not claimed by these fixtures.

@@ -140,6 +140,10 @@ def main() -> None:
         f"if: ({review_clause}) && steps.docs-only.outputs.docs_only != 'true'"
     )
 
+    generated_gated_condition = (
+        f"if: ({review_clause}) && steps.generated-only.outputs.generated_only != 'true'"
+    )
+
     def review_gated(step: str) -> bool:
         return full_condition in step or docs_gated_condition in step
 
@@ -151,7 +155,7 @@ def main() -> None:
     # and warms the cache even on a docs-only diff). All seventeen conditions
     # (bare attempt-2-only plus docs-gated attempt-2-only) must remain
     # attempt-2-only in review-first enforcement.
-    if pr_gate.count(full_condition) + pr_gate.count(docs_gated_condition) != 17:
+    if pr_gate.count(full_condition) + pr_gate.count(docs_gated_condition) + pr_gate.count(generated_gated_condition) != 17:
         raise AssertionError("every expensive PR Gate step must be attempt-2-only in enforce mode")
     for name, message in [
         ("Prove raster catalog execution with production GDAL", "real raster execution must remain behind exact-head review"),
