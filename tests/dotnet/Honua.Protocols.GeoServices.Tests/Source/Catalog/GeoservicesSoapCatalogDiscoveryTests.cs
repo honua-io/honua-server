@@ -458,6 +458,7 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests : IClassFixture<Geoserv
         // The built-in print service is published beside fixture services. Parity still
         // requires the two catalogs to match; the fixture name set is the dataset services.
         const string builtInPrintService = "Utilities/PrintingTools";
+        soapEntries.Should().ContainSingle(entry => entry.Name == builtInPrintService && entry.Type == "GPServer");
         var datasetEntries = soapEntries
             .Where(entry => !string.Equals(entry.Name, builtInPrintService, StringComparison.Ordinal))
             .ToArray();

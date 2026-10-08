@@ -663,7 +663,9 @@ internal static class GeoservicesCatalogEndpoints
     private static XElement CreateSoapServiceDescription(string baseUrl, ServiceDirectoryEntry entry)
     {
         XNamespace xsi = "http://www.w3.org/2001/XMLSchema-instance";
-        var escapedName = PrintingToolsServiceCatalog.EscapeCatalogName(entry.Name);
+        var escapedName = entry.Name == PrintingToolsServiceCatalog.QualifiedName
+            ? PrintingToolsServiceCatalog.EscapeCatalogName(entry.Name)
+            : Uri.EscapeDataString(entry.Name);
         var soapUrl = entry.Type is ImageServerProtocolName or GPServerProtocolName
             ? $"{baseUrl}/services/{escapedName}/{entry.Type}"
             : entry.Url;

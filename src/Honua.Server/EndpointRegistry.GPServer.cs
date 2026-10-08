@@ -3,6 +3,9 @@
 
 namespace Honua.Server;
 
+/// <summary>
+/// Declares the supported GPServer and PrintingTools endpoints.
+/// </summary>
 public static partial class EndpointRegistry
 {
     // Expression-bodied (computed) so it is a method, not a static field

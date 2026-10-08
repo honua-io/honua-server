@@ -168,6 +168,71 @@ public sealed class PrintingToolsGpServerService5546Tests : IAsyncLifetime
             element.Name.LocalName == "Value" && element.Value.Contains("MAP_ONLY", StringComparison.Ordinal));
     }
 
+    [IntegrationTheory]
+    [InlineData("Execute", "Get Layout Templates Info Task", "outputCoordinateSystem")]
+    [InlineData("Execute", "Get Layout Templates Info Task", "unknownSetting")]
+    [InlineData("Execute", "Export Web Map Task", "outputCoordinateSystem")]
+    [InlineData("Execute", "Export Web Map Task", "unknownSetting")]
+    [InlineData("SubmitJob", "Export Web Map Task", "outputCoordinateSystem")]
+    [InlineData("SubmitJob", "Export Web Map Task", "unknownSetting")]
+    [Operation(Operations.Print)]
+    [Endpoint("POST /services/Utilities/PrintingTools/GPServer")]
+    public async Task PrintingTools5546_SoapExecutionWithUnsupportedEnvironment_ReturnsFault(
+        string operation, string taskName, string environmentName)
+    {
+        var values = taskName == "Export Web Map Task" ? ExportValues() : "<Values />";
+        var response = await PostSoapAsync(SoapPath, operation, $"""
+            <ToolName>{taskName}</ToolName>
+            {values}
+            <EnvironmentValues>
+              <PropertyArray>
+                <PropertySetProperty>
+                  <Key>{environmentName}</Key>
+                  <Value xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:tns="{ArcGisSoapNamespace}" xsi:type="tns:GPString">
+                    <Value>3857</Value>
+                  </Value>
+                </PropertySetProperty>
+              </PropertyArray>
+            </EnvironmentValues>
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, response.Body);
+        response.Document.Descendants().Should().Contain(element => element.Name.LocalName == "Fault");
+        response.Body.Should().Contain("environment", response.Body);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Print)]
+    [Endpoint("POST /services/Utilities/PrintingTools/GPServer")]
+    public async Task PrintingTools5546_SoapExecuteExport_ReturnsDownloadablePng()
+    {
+        var response = await PostSoapAsync(SoapPath, "Execute", $"""
+            <ToolName>Export Web Map Task</ToolName>
+            {ExportValues()}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, response.Body);
+        var url = response.Document.Descendants().Single(element => element.Name.LocalName == "URL").Value;
+        new Uri(url).IsAbsoluteUri.Should().BeTrue();
+        using var download = await _client.GetAsync(url);
+        download.StatusCode.Should().Be(HttpStatusCode.OK, await download.Content.ReadAsStringAsync());
+        download.Content.Headers.ContentType!.MediaType.Should().Be("image/png");
+        var bytes = await download.Content.ReadAsByteArrayAsync();
+        bytes.Take(8).Should().Equal(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
+    }
+
+    private static string ExportValues()
+    {
+        const string webMap = """
+            {"mapOptions":{"extent":{"xmin":-122.5,"ymin":37.5,"xmax":-122.0,"ymax":38.0,"spatialReference":{"wkid":4326}}},"operationalLayers":[],"exportOptions":{"dpi":96,"outputSize":[32,32]}}
+            """;
+        return $"""
+            <Values xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:tns="{ArcGisSoapNamespace}">
+              <GPValue xsi:type="tns:GPString"><Value>{webMap}</Value></GPValue>
+            </Values>
+            """;
+    }
+
     private async Task AssertDirectoryNodeAsync(string path)
     {
         using var response = await _client.GetAsync(path);

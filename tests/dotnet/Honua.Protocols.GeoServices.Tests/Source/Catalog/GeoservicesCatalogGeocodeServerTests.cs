@@ -145,6 +145,7 @@ public sealed class GeoservicesCatalogGeocodeServerTests
         using var client = factory.CreateClient();
         using var rest = await ReadRestAsync(client);
         var services = rest.RootElement.GetProperty("services").EnumerateArray().ToArray();
+        services.Should().HaveCount(2);
         services.Should().Contain(service => service.GetProperty("type").GetString() == "GeocodeServer");
         services.Should().Contain(service =>
             service.GetProperty("name").GetString() == "Utilities/PrintingTools"
@@ -153,6 +154,7 @@ public sealed class GeoservicesCatalogGeocodeServerTests
         services.Should().NotContain(service => service.GetProperty("type").GetString() == "MapServer");
         var soap = await ReadSoapAsync(client);
         var descriptions = soap.Descendants().Where(element => element.Name.LocalName == "ServiceDescription").ToArray();
+        descriptions.Should().HaveCount(2);
         descriptions.Should().Contain(element => element.Elements().Single(child => child.Name.LocalName == "Type").Value == "GeocodeServer");
         descriptions.Should().Contain(element => element.Elements().Single(child => child.Name.LocalName == "Name").Value == "Utilities/PrintingTools");
         descriptions.Select(element => element.Elements().Single(child => child.Name.LocalName == "Type").Value)
