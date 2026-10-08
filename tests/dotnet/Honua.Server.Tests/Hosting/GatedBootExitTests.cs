@@ -103,6 +103,12 @@ public sealed class GatedBootExitTests
         start.Environment["ASPNETCORE_URLS"] = "http://127.0.0.1:0";
         start.Environment["ConnectionStrings__DefaultConnection"] = connectionString;
         start.Environment["DataSource__Provider"] = "postgis";
+        // Production refuses to build a host without these. They are not the migration
+        // approval token and they do not skip migrations; they only let boot reach the gate.
+        start.Environment["HONUA_ADMIN_PASSWORD"] = "GatedBoot-Refusal-1a";
+        start.Environment["Security__ConnectionEncryption__MasterKey"] =
+            "gated-boot-refusal-connection-encryption-key";
+        start.Environment["Security__ConnectionEncryption__Salt"] = "Z2F0ZWQtYm9vdC1yZWZ1c2FsLXNhbHQ=";
         start.Environment["DOTNET_DbgEnableMiniDump"] = "1";
         start.Environment["DOTNET_DbgMiniDumpName"] = dumpPath;
         start.Environment["COMPlus_DbgEnableMiniDump"] = "1";
