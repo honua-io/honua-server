@@ -140,7 +140,11 @@ public sealed class PdalExecutionProofTests(ITestOutputHelper testOutput) : IDis
             }
             vlr += 54 + length;
         }
-        wkt.Should().NotBeNullOrWhiteSpace("CRS must survive artifact publication");
+        if (string.IsNullOrWhiteSpace(wkt))
+        {
+            throw new InvalidOperationException("CRS must survive artifact publication");
+        }
+
         Directory.CreateDirectory(_scratch);
         await File.WriteAllTextAsync(Path.Join(_scratch, "crs.wkt"), wkt);
         var decodedCrs = await runner.RunAsync("python3",

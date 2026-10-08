@@ -65,12 +65,12 @@ public sealed class CogEncodedTileTests
 
         // Fixture scale 1222.992452562495 m/px * 128 px = the XYZ zoom-8 tile span.
         var result = await resolver.GetTileAsync(registration, 8, 0, 0, RasterFormat.PNG);
-        result.Should().NotBeNull();
-        result!.Value.ContentType.Should().Be("image/png");
-        result.Value.Width.Should().Be(128);
-        result.Value.Height.Should().Be(128);
-        result.Value.Srid.Should().Be(3857);
-        var chunks = ReadPngChunks(result.Value.Data);
+        var png = result ?? throw new InvalidOperationException("PNG tile was not produced");
+        png.ContentType.Should().Be("image/png");
+        png.Width.Should().Be(128);
+        png.Height.Should().Be(128);
+        png.Srid.Should().Be(3857);
+        var chunks = ReadPngChunks(png.Data);
         chunks["IHDR"][8].Should().Be((byte)bits);
         chunks["IHDR"][9].Should().Be(bands == 1 ? (byte)0 : (byte)2);
         chunks.Should().NotContainKey("tRNS"); // The fixture declares no nodata.
@@ -97,13 +97,13 @@ public sealed class CogEncodedTileTests
         foreach (var format in new[] { RasterFormat.TIFF, RasterFormat.COG })
         {
             var tiff = await resolver.GetTileAsync(registration, 8, 0, 0, format);
-            tiff.Should().NotBeNull();
-            tiff!.Value.ContentType.Should().Be("image/tiff");
-            tiff.Value.Data[..8].Should().Equal(73, 73, 42, 0, 8, 0, 0, 0);
-            tiff.Value.Data[^expected.Length..].Should().Equal(expected);
+            var encoded = tiff ?? throw new InvalidOperationException("TIFF tile was not produced");
+            encoded.ContentType.Should().Be("image/tiff");
+            encoded.Data[..8].Should().Equal(73, 73, 42, 0, 8, 0, 0, 0);
+            encoded.Data[^expected.Length..].Should().Equal(expected);
             // The output is independently covered at tag/value level by CogTiffTileEncoderTests.
             var outputMetadata = await new CogMetadataExtractor().ReadMetadataAsync(
-                new CogPinnedRangeReader(new FixtureReader(tiff.Value.Data), "fixture-v1"), "fixtures", "output");
+                new CogPinnedRangeReader(new FixtureReader(encoded.Data), "fixture-v1"), "fixtures", "output");
             outputMetadata.Width.Should().Be(128);
             outputMetadata.Height.Should().Be(128);
             outputMetadata.BitsPerSample.Should().Be(bits);

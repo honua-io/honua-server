@@ -134,10 +134,10 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
                 afterRestartPoll.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
                 afterRestartPoll.CoordinatedRelease.Steps.Single(s => s.Step == CoordinatedReleaseStep.ContainerRollout).Status
                     .Should().Be(CoordinatedReleaseStepStatus.RollbackRequested);
-                childAfterRestartPoll.Should().BeNull("a missing child record must not be treated as a successful rollback");
                 if (childAfterRestartPoll is not null)
                 {
-                    throw new InvalidOperationException("The child operation unexpectedly remained in the store.");
+                    throw new InvalidOperationException(
+                        "a missing child record must not be treated as a successful rollback");
                 }
                 afterRestartPoll.ErrorMessage.Should().Contain("could not be read back");
                 // honua-server#4618: the previous replica is retained (not stopped) through cutover, so
@@ -194,7 +194,6 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
             else
             {
                 afterRestartPoll.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
-                childAfterRestartPoll.Should().NotBeNull();
                 var manualChildAfterRestart = childAfterRestartPoll ?? throw new InvalidOperationException("The manual child operation could not be read back.");
                 manualChildAfterRestart.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
                 manualChildAfterRestart.ObservedState.Should().Be(DesiredRevision, "the ledger must preserve that the failed revision remained observed");

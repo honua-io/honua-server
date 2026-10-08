@@ -303,25 +303,30 @@ public sealed class ClientCertificationRosterTests
             switch (role)
             {
                 case "lane":
-                    matrixLaneId.Should().Be(id);
+                    (matrixLaneId == id).Should().BeTrue($"{id} must bind its own matrix lane");
                     lanes.Should().ContainKey(id, $"{id} claims to own a matrix lane");
                     break;
                 case "sub-lane":
-                    lanes.Should().ContainKey(matrixLaneId!,
+                    if (matrixLaneId is not { } parentLaneId)
+                    {
+                        throw new InvalidOperationException($"{id} is a sub-lane and must name its parent matrix lane");
+                    }
+
+                    lanes.Should().ContainKey(parentLaneId,
                         $"{id} is a sub-lane of a matrix lane that must exist");
                     entry.GetProperty("status").GetString().Should().Be("active",
                         $"{id} emits under an active lane id");
                     break;
                 case "planned-lane":
-                    matrixLaneId.Should().Be(id);
+                    (matrixLaneId == id).Should().BeTrue($"{id} must bind its own planned matrix lane");
                     plannedLanes.Should().ContainKey(id, $"{id} claims a matrix planned-lane row");
                     break;
                 case "exclusion":
-                    matrixLaneId.Should().Be(id);
+                    (matrixLaneId == id).Should().BeTrue($"{id} must bind its own matrix exclusion");
                     exclusions.Should().Contain(id, $"{id} claims a matrix exclusion row");
                     break;
                 default:
-                    matrixLaneId.Should().BeNull(
+                    (matrixLaneId is null).Should().BeTrue(
                         $"{id} has role {role} and must not claim a matrix lane binding");
                     break;
             }
@@ -572,6 +577,7 @@ public sealed class ClientCertificationRosterTests
         IReadOnlyCollection<string> declaredCaseIds)
     {
         var expanded = new HashSet<string>(StringComparer.Ordinal);
+        // codeql[cs/linq/missed-select]: expands a glob into declared case ids and adds literal ids unchanged
         foreach (var element in patterns.EnumerateArray())
         {
             var pattern = element.GetString()!;
@@ -609,6 +615,7 @@ public sealed class ClientCertificationRosterTests
     {
         var evidenceRoot = ArchitectureTestHelpers.CombinePath(root, "tests", "baselines", "client-compat");
         var result = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        // codeql[cs/linq/missed-select]: groups evidence protocols by lane while reading each certificate file
         foreach (var path in Directory.EnumerateFiles(evidenceRoot, "*.cert.json", SearchOption.AllDirectories))
         {
             using var document = JsonDocument.Parse(File.ReadAllText(path));

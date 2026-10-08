@@ -69,9 +69,14 @@ public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
             for (var index = 0; index < 2; index++)
             {
                 var stored = await reader.GetAsync(0, uploaded.CreatedIds[index]);
-                stored.Should().NotBeNull();
-                stored!.Value.Attributes["name"].Should().Be(index == 0 ? "bulk-one" : "bulk-two");
-                var geometry = new NetTopologySuite.IO.WKBReader().Read(stored.Value.Geometry!);
+                if (stored is not { } feature)
+                {
+                    throw new InvalidOperationException("stored feature was null");
+                }
+
+                feature.Attributes["name"].Should().Be(index == 0 ? "bulk-one" : "bulk-two");
+                var geometryBytes = feature.Geometry ?? throw new InvalidOperationException("stored geometry was null");
+                var geometry = new NetTopologySuite.IO.WKBReader().Read(geometryBytes);
                 geometry.Coordinate.X.Should().Be(index == 0 ? 10 : 30);
                 geometry.Coordinate.Y.Should().Be(index == 0 ? 20 : 40);
             }

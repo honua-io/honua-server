@@ -142,10 +142,9 @@ public sealed class WfsLegacyGeometryMetadataTests
                 var document = await GetFeatureAsync(fixture, version, usePost, typeName, id);
                 var feature = document.Descendants(Honua + typeName).Single();
                 var geometry = feature.Element(Honua + propertyName)?.Element(Gml + geometryType);
-                geometry.Should().NotBeNull($"{version} {typeName} must return the advertised geometry");
                 if (geometry is null)
                 {
-                    return;
+                    throw new InvalidOperationException($"{version} {typeName} must return the advertised geometry");
                 }
 
                 feature.Elements(Honua + propertyName).Should().ContainSingle();
@@ -186,11 +185,10 @@ public sealed class WfsLegacyGeometryMetadataTests
                 var document = await GetFeatureAsync(fixture, version, usePost, typeName, id);
                 var feature = document.Descendants(Honua + typeName).Single();
                 var aggregate = feature.Element(Honua + "geometry")?.Element(Gml + aggregateName);
-                aggregate.Should().NotBeNull(
-                    $"{version} {typeName} must return its declared gml:{aggregateName}");
                 if (aggregate is null)
                 {
-                    return;
+                    throw new InvalidOperationException(
+                        $"{version} {typeName} must return its declared gml:{aggregateName}");
                 }
 
                 document.Descendants(Gml + "MultiGeometry").Should().BeEmpty(
