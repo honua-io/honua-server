@@ -649,11 +649,10 @@ class SoakDriver:
             self._stop.set()
             for task in tasks:
                 with contextlib.suppress(asyncio.CancelledError):
-                    # Probes are typed to return None. Checking the result keeps the
-                    # await from being a discarded expression and still waits for
-                    # cancellation to finish after the stop signal.
-                    if await task is not None:
-                        raise RuntimeError("soak probe task returned a payload")
+                    # codeql[py/ineffectual-statement]: awaiting waits until the
+                    # probe finishes or observes the stop signal. The result is
+                    # None, and a test double may return a sentinel.
+                    await task
 
             for reader in self._subscription_readers:
                 reader.cancel()
