@@ -674,7 +674,7 @@ else
         | while IFS= read -r proj; do sln_literal_path "${proj}"; printf '\n'; done \
         | jq -R . | jq -s 'unique')"
     jq -n --argjson p "${projects_json}" '{solution:{path:"Honua.sln",projects:$p}}' > "${SLNF}"
-    echo "   (build set: $(jq -r '.solution.projects|length' "${SLNF}") projects; pruned ${pruned_count} test projects that neither run locally nor changed)"
+    echo "   (build roots: $(jq -r '.solution.projects|length' "${SLNF}") projects; removed ${pruned_count} test roots that neither run locally nor changed — references may pull them back in)"
     evaluate_dependency_graph "${SLNF}"
     BUILD_GRAPHS=("${DEPENDENCY_GRAPH}")
     if [[ "${ARCHITECTURE_TEST_PROJECT}" == "${TOPOLOGY_TEST_PROJECT}" ]]; then
@@ -689,7 +689,7 @@ else
     fi
 
     if [[ "${DRY_RUN}" == "1" ]]; then
-        echo "2-3. [dry-run] Would restore + build the $(jq -r '.solution.projects|length' "${SLNF}")-project set above."
+        echo "2-3. [dry-run] Would restore + build the dependency closure above (${ARCHITECTURE_TEST_PROJECT})."
     else
         echo "2. Restoring packages (build set only)..."
         dotnet restore "${SLNF}"
@@ -760,7 +760,7 @@ elif [[ "${DRY_RUN}" == "1" ]]; then
     if [[ "${FULL}" == "1" ]]; then
         echo "   [dry-run] Would run 'dotnet format Honua.sln --verify-no-changes' (whole solution)."
     else
-        echo "   [dry-run] Would run 'dotnet format --include <${#changed_arr[@]} changed .cs files> --verify-no-changes'."
+        echo "   [dry-run] Would run 'timeout 20m dotnet format <owning-project workspace> --include <${#changed_arr[@]} changed .cs files> --verify-no-changes'."
     fi
 else
     # Diagnostic verbosity makes dotnet-format log every analyzed document —
@@ -1006,7 +1006,7 @@ else
         echo "  - Mode: SMART"
     fi
     if [[ -n "${SLNF:-}" && -f "${SLNF:-/dev/null}" ]]; then
-        echo "  - Build set: $(jq -r '.solution.projects|length' "${SLNF}") projects (AFFECTED=$([[ "${AFFECTED}" == "ALL" ]] && echo ALL || echo scoped))"
+        echo "  - Build roots: $(jq -r '.solution.projects|length' "${SLNF}") projects (AFFECTED=$([[ "${AFFECTED}" == "ALL" ]] && echo ALL || echo scoped))"
     fi
     echo "  - Format scope: ${#changed_arr[@]} changed .cs file(s)"
     echo "  - Architecture lane: ${ARCHITECTURE_TEST_PROJECT}"

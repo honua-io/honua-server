@@ -7,6 +7,8 @@
          isolated in this directory; no runtime or integration-test references. -->
     <AssemblyName>Honua.Architecture.Tests</AssemblyName>
     <RootNamespace>Honua.Architecture.Tests</RootNamespace>
+    <!-- Linked guard comments reference types in the full suite; suppress only
+         unresolved XML-doc cref warnings in this independent assembly. -->
     <NoWarn>$(NoWarn);CS1591;CS1574</NoWarn>
   </PropertyGroup>
   <ItemGroup>
