@@ -8,6 +8,8 @@ using System.Text;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.TestKit;
+using Honua.Sdk.GeoServices.FeatureServer;
+using Honua.Sdk.GeoServices.FeatureServer.Models;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Import;
@@ -115,6 +117,64 @@ public sealed class ArcGisRestClientSourceSdkTests
             expectedServicePath, expectedServicePath + "/3", expectedServicePath + "/3", expectedServicePath + "/3/query");
         handler.Requests.Should().OnlyContain(request => request.EsriAuthorization == "Bearer metadata-secret"
             && !request.Uri.Query.Contains("metadata-secret", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task PublishedSdkMetadata_PreservesFieldPresenceCrsDomainsRelationshipsAndIds()
+    {
+        const string metadata = """
+            {"id":3,"name":"Survey","type":"Feature Layer","hasZ":true,"hasM":true,
+             "objectIdField":"OBJECTID","globalIdField":"GLOBALID","hasAttachments":true,
+             "maxRecordCount":750,"minScale":50000,"maxScale":0,
+             "advancedQueryCapabilities":{"supportsPagination":false},
+             "extent":{"xmin":1,"ymin":2,"xmax":3,"ymax":4,
+                       "spatialReference":{"wkt":"LOCAL_CS[\"Survey\"]","latestWkt":"LOCAL_CS[\"Survey latest\"]"}},
+             "fields":[{"name":"OMITTED","type":"esriFieldTypeString"},
+                       {"name":"REQUIRED","type":"esriFieldTypeString","nullable":false,"editable":false},
+                       {"name":"OPTIONAL","type":"esriFieldTypeString","nullable":true,"editable":true,
+                        "domain":{"type":"codedValue","name":"Status","codedValues":[{"name":"Active","code":9007199254740993}]}},
+                       {"name":"NULL","type":"esriFieldTypeString","nullable":null,"editable":null}],
+             "relationships":[{"id":7,"name":"Inspections","relatedTableId":9,
+                               "role":"esriRelRoleOrigin","cardinality":"esriRelCardinalityOneToMany","keyField":"GLOBALID"}],
+             "vendorMetadata":{"largeId":9007199254740993}}
+            """;
+        var handler = new ScriptedHandler(request => request.RequestUri.AbsolutePath.EndsWith("/query", StringComparison.Ordinal)
+            ? Json("""{"count":2}""") : Json(metadata));
+        using var http = new HttpClient(handler);
+        const string source = "https://gis.example.com/arcgis/rest/services/Survey/FeatureServer";
+        ArcGisServiceRoot.TryParse(new Uri(source), out var root).Should().BeTrue();
+        var sdk = new HonuaFeatureServerClient(http, root.ToClientOptions());
+
+        var layer = await sdk.GetLayerInfoAsync(root.ServiceId, 3);
+
+        layer.Fields!.Select(static field => field.IsNullable).Should().Equal(null, false, true, null);
+        layer.Fields!.Select(static field => field.IsEditable).Should().Equal(null, false, true, null);
+        layer.Extent!.SpatialReference!.Wkt.Should().Be("LOCAL_CS[\"Survey\"]");
+        layer.Extent.SpatialReference.LatestWkt.Should().Be("LOCAL_CS[\"Survey latest\"]");
+        layer.Fields![2].Domain!.Value.GetProperty("codedValues")[0].GetProperty("code")
+            .GetInt64().Should().Be(9_007_199_254_740_993);
+        layer.Relationships!.Value[0].GetProperty("relatedTableId").GetInt32().Should().Be(9);
+        layer.ObjectIdField.Should().Be("OBJECTID");
+        layer.AdditionalProperties!["vendorMetadata"].GetProperty("largeId").GetInt64().Should().Be(9_007_199_254_740_993);
+
+        var imported = await CreateClient(handler).GetLayerInfoAsync(source, 3, 5, 0, CancellationToken.None);
+        imported.Id.Should().Be(3);
+        imported.GlobalIdField.Should().Be("GLOBALID");
+        imported.HasAttachments.Should().BeTrue();
+        imported.HasZ.Should().BeTrue();
+        imported.HasM.Should().BeTrue();
+        imported.MaxRecordCount.Should().Be(750);
+        imported.MinScale.Should().Be(50000);
+        imported.MaxScale.Should().Be(0);
+        imported.SupportsPagination.Should().BeFalse();
+        imported.Fields.Select(static field => field.Nullable).Should().Equal(true, false, true, true);
+        imported.Fields[2].Domain.Should().NotBeNull();
+        var relationship = imported.Relationships.Should().ContainSingle().Subject;
+        relationship.Id.Should().Be(7);
+        relationship.RelatedTableId.Should().Be(9);
+        relationship.KeyField.Should().Be("GLOBALID");
+        imported.Extent!.Xmin.Should().Be(1);
+        imported.Extent.Ymax.Should().Be(4);
     }
 
     [Theory]
