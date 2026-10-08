@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsTestProject>true</IsTestProject>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- Keep the existing trait discoverer's assembly identity. Output/obj are
+         isolated in this directory; no runtime or integration-test references. -->
+    <AssemblyName>Honua.Architecture.Tests</AssemblyName>
+    <RootNamespace>Honua.Architecture.Tests</RootNamespace>
+    <NoWarn>$(NoWarn);CS1591;CS1574</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../ArchitectureTestAttribute.cs" Link="ArchitectureTestAttribute.cs" />
+    <Compile Include="../ArchitectureTestHelpers.Source.cs" Link="ArchitectureTestHelpers.Source.cs" />
+    <Compile Include="../ModuleDependencyPolicyTests.cs" Link="ModuleDependencyPolicyTests.cs" />
+    <Compile Include="../CrossProtocolIsolationTests.cs" Link="CrossProtocolIsolationTests.cs" />
+    <Compile Include="../InfrastructureProtocolBackEdgeRatchetTests.cs" Link="InfrastructureProtocolBackEdgeRatchetTests.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

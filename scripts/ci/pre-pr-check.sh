@@ -12,10 +12,9 @@ set -euo pipefail
 #                   closure, or ALL when shared infrastructure changed), then
 #                   PRUNED of test projects that neither run in this
 #                   invocation nor contain changes: test projects are
-#                   dependency leaves, so skipping them skips only their own
-#                   compile + bin/ copy (each one materializes its full
-#                   dependency tree + native runtimes, ~1-2 GB), while every
-#                   src project still compiles. CI builds all test projects
+#                   roots only: ProjectReferences can still pull them back in.
+#                   The evaluated MSBuild closure below reports the real work.
+#                   CI builds all test projects
 #                   in its own shards. FULL mode disables pruning.
 #   - server tests -> scripts/ci/honua-server-targeted-tests.sh picks the
 #                   ADR-0037 shard subset (or run_all); that selector remains
@@ -66,8 +65,10 @@ set -euo pipefail
 #                           build set, targeted shards, capability-narrowed
 #                           filters, format scope — and exit 0 without
 #                           restoring, building, formatting, or testing
-#                           anything. Safe to run with zero Docker/dotnet cost;
-#                           this is the primary way to inspect scope decisions.
+#                           anything. No Docker or compilation; requires dotnet for
+#                           graph evaluation to inspect scope decisions.
+#                           MSBuild evaluates the dependency graph (no restore or
+#                           compilation) so counts include transitive references.
 #   HONUA_PRE_PR_PRINT_BUILD_PLAN=1  print only the resolved build set (the
 #                           .slnf project list after pruning) and exit — a
 #                           narrower predecessor of --dry-run kept for
@@ -201,6 +202,23 @@ if [[ "${FULL}" != "1" ]]; then
     PRE_PR_CHANGED_FILES="$(tail -n +2 <<< "${scope_output}")"
 fi
 
+ARCHITECTURE_GUARD_REASON=""
+if [[ "${FULL}" != "1" ]]; then
+    if [[ "${PRE_PR_SCOPE}" == "UNKNOWN" || -z "${PYTHON_BIN}" ]]; then
+        ARCHITECTURE_GUARD_REASON="complete diff/interpreter unavailable"
+    else
+        GUARD_CHANGED_FILES="$(mktemp -p "${REPO_ROOT}" --suffix=.changed-files.txt)"
+        CLEANUP_PATHS+=("${GUARD_CHANGED_FILES}")
+        printf '%s\n' "${PRE_PR_CHANGED_FILES}" > "${GUARD_CHANGED_FILES}"
+        ARCHITECTURE_GUARD_REASON="$("${PYTHON_BIN}" scripts/ci/pre-pr-contract-guard.py \
+            --base "${BASE_REF}" --changed-files "${GUARD_CHANGED_FILES}")" \
+            || ARCHITECTURE_GUARD_REASON="contract guard failed"
+    fi
+    if [[ -n "${ARCHITECTURE_GUARD_REASON}" ]]; then
+        PRE_PR_SCOPE="NORMAL"
+    fi
+fi
+
 if [[ "${PRE_PR_SCOPE}" == "CI_ONLY" ]]; then
     echo "    Mode: CI-SHELL-ONLY (committed + working tree vs ${BASE_REF})."
     if [[ "${DRY_RUN}" == "1" ]]; then
@@ -269,6 +287,13 @@ CAPABILITY_SELECTION_JSON="{}"
 if [[ "${FULL}" != "1" ]]; then
     CROSS_CUTTING_FULL_TRIGGERS="$(printf '%s\n' \
         'Directory.Build.props' \
+        'Directory.Build.targets' \
+        'scripts/ci/pre-pr-check.sh' \
+        'scripts/ci/pre-pr-contract-guard.py' \
+        'scripts/ci/pre-pr-dependency-plan.py' \
+        'scripts/ci/compute-affected-projects.sh' \
+        'scripts/ci/classify-pre-pr-changes.sh' \
+        'tests/dotnet/Honua.Architecture.Tests/' \
         'Directory.Packages.props' \
         'tests/dotnet/Honua.TestKit/' \
         '.github/ci-shards.json' \
@@ -340,8 +365,13 @@ if [[ "${FULL}" == "1" ]]; then
 else
     echo "    Mode: SMART (diff vs ${BASE_REF}; set HONUA_PRE_PR_FULL=1 to force full)."
     AFFECTED="$(BASE_REF="${BASE_REF}" scripts/ci/compute-affected-projects.sh 2>/dev/null || echo ALL)"
+    # The legacy reverse-dependency selector reads committed changes only.
+    # Working-tree uncertainty widens the build rather than omitting a repair.
+    if [[ -n "$(git diff --name-only; git diff --cached --name-only; git ls-files --others --exclude-standard)" ]]; then
+        AFFECTED="ALL"
+    fi
     TARGETED="$(scripts/ci/honua-server-targeted-tests.sh --base "${BASE_REF}" 2>/dev/null || echo '{"run_all":true,"reason":"router_error"}')"
-    CHANGED_CS="$(git diff --name-only "${BASE_REF}...HEAD" -- '*.cs' 2>/dev/null || true)"
+    CHANGED_CS="$(printf '%s\n' "${PRE_PR_CHANGED_FILES}" | grep '\.cs$' || true)"
 fi
 
 affected_contains() {
@@ -358,11 +388,11 @@ affected_contains() {
 # the whole solution, and every test project copies its full dependency tree
 # plus native runtime assets into bin/, so "build the closure" degrades into
 # tens of GB and 10+ minutes spent compiling suites this script never runs
-# (provider tests, unselected protocol shards). Test projects are dependency
-# LEAVES — nothing references them — so dropping them from the solution
-# filter removes exactly their own compile+copy cost while every src project
-# still builds (listed, or pulled transitively as a ProjectReference of a
-# kept test project). CI compiles everything in its own shards, so no
+# (provider tests, unselected protocol shards). Pruning removes roots only;
+# the evaluated dependency closure reports tests pulled back in transitively.
+# FAST uses the independent source-topology project when the contract guard
+# permits it; default/FULL keep the full assembly-dependent suite.
+# CI compiles everything in its own shards, so no
 # warnings-as-errors coverage is lost overall; a test project that is itself
 # edited stays in the build (its compile IS the local signal), and FULL mode
 # keeps the build-everything behavior.
@@ -372,7 +402,17 @@ tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj
 tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj
 tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj
 tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj'
-ARCHITECTURE_TEST_PROJECT="tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj"
+FULL_ARCHITECTURE_TEST_PROJECT="tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj"
+TOPOLOGY_TEST_PROJECT="tests/dotnet/Honua.Architecture.Tests/Topology/Honua.Architecture.Topology.Tests.csproj"
+ARCHITECTURE_TEST_PROJECT="${FULL_ARCHITECTURE_TEST_PROJECT}"
+if [[ "${FAST}" == "1" && -z "${ARCHITECTURE_GUARD_REASON}" ]]; then
+    ARCHITECTURE_TEST_PROJECT="${TOPOLOGY_TEST_PROJECT}"
+    echo "    Architecture: source topology guards (same assertions as full suite)."
+    echo "    Deferred to default/FULL local and hosted CI: all other architecture tests,"
+    echo "    including route/operation coverage, parity, capability catalogue and proof discovery."
+else
+    echo "    Architecture: full catalogue/proof enforcement (${ARCHITECTURE_GUARD_REASON:-default/FULL mode})."
+fi
 MONOLITH_TEST_PROJECT="tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
 
 RUN_ALL_SHARDS="$(jq -r '.run_all // false' <<< "${TARGETED}")"
@@ -504,13 +544,16 @@ fi
 
 # Full committed diff — used to keep directly-edited test projects in the
 # build even when they will not run locally.
-CHANGED_FILES_ALL="$(git diff --name-only "${BASE_REF}...HEAD" 2>/dev/null || true)"
+CHANGED_FILES_ALL="${PRE_PR_CHANGED_FILES}"
 
 test_project_kept() {
     # Usage: test_project_kept <csproj-path> -> 0 keep, 1 prune.
     # Non-test projects are always kept; test projects are kept when they
     # will run locally or contain changes themselves.
     local proj="$1"
+    if [[ "${ARCHITECTURE_TEST_PROJECT}" == "${TOPOLOGY_TEST_PROJECT}" && "${proj}" == "${FULL_ARCHITECTURE_TEST_PROJECT}" ]]; then
+        return 1
+    fi
     [[ "${proj}" != tests/dotnet/* ]] && return 0
     grep -qxF "${proj}" <<< "${RUN_TEST_PROJECTS}" && return 0
     local dir
@@ -519,10 +562,24 @@ test_project_kept() {
     return 1
 }
 
+evaluate_dependency_graph() {
+    local target="$1" graph
+    graph="$(mktemp -p "${REPO_ROOT}" --suffix=.dependency-graph.json)"
+    CLEANUP_PATHS+=("${graph}")
+    # GenerateRestoreGraphFile evaluates imports/conditional ProjectReferences,
+    # including Directory.Build.props's analyzer. It downloads/builds nothing.
+    dotnet msbuild "${target}" -t:GenerateRestoreGraphFile -p:Configuration=Release \
+        -p:RestoreGraphOutputPath="${graph}" /v:quiet
+    DEPENDENCY_GRAPH="${graph}"
+}
+
 echo "1. Checking canonical instructions..."
 bash scripts/ci/check-instructions-sync.sh
 
 if [[ "${FULL}" == "1" ]]; then
+    evaluate_dependency_graph Honua.sln
+    BUILD_GRAPHS=("${DEPENDENCY_GRAPH}")
+    "${PYTHON_BIN}" scripts/ci/pre-pr-dependency-plan.py --root "${REPO_ROOT}" "${BUILD_GRAPHS[@]}"
     if [[ "${HONUA_PRE_PR_PRINT_BUILD_PLAN:-0}" == "1" ]]; then
         echo "BUILD PLAN: Honua.sln (FULL mode — every project)"
         exit 0
@@ -607,15 +664,26 @@ else
         fi
     done <<< "${candidates}"
     # Architecture.Tests always runs, so it is always part of the build set.
-    kept+="${ARCHITECTURE_TEST_PROJECT}"${HONUA_NL}
+    if [[ "${ARCHITECTURE_TEST_PROJECT}" == "${FULL_ARCHITECTURE_TEST_PROJECT}" ]]; then
+        kept+="${ARCHITECTURE_TEST_PROJECT}"${HONUA_NL}
+    fi
+    # MCP governance always runs, even for a test-only diff.
+    kept+="tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj"${HONUA_NL}
     projects_json="$(printf '%s' "${kept}" \
         | sed '/^$/d' \
         | while IFS= read -r proj; do sln_literal_path "${proj}"; printf '\n'; done \
         | jq -R . | jq -s 'unique')"
     jq -n --argjson p "${projects_json}" '{solution:{path:"Honua.sln",projects:$p}}' > "${SLNF}"
     echo "   (build set: $(jq -r '.solution.projects|length' "${SLNF}") projects; pruned ${pruned_count} test projects that neither run locally nor changed)"
+    evaluate_dependency_graph "${SLNF}"
+    BUILD_GRAPHS=("${DEPENDENCY_GRAPH}")
+    if [[ "${ARCHITECTURE_TEST_PROJECT}" == "${TOPOLOGY_TEST_PROJECT}" ]]; then
+        evaluate_dependency_graph "${TOPOLOGY_TEST_PROJECT}"
+        BUILD_GRAPHS+=("${DEPENDENCY_GRAPH}")
+    fi
+    "${PYTHON_BIN}" scripts/ci/pre-pr-dependency-plan.py --root "${REPO_ROOT}" "${BUILD_GRAPHS[@]}"
     if [[ "${HONUA_PRE_PR_PRINT_BUILD_PLAN:-0}" == "1" ]]; then
-        echo "BUILD PLAN:"
+        echo "BUILD ROOTS (dependencies listed above):"
         jq -r '.solution.projects[]' "${SLNF}"
         exit 0
     fi
@@ -625,10 +693,16 @@ else
     else
         echo "2. Restoring packages (build set only)..."
         dotnet restore "${SLNF}"
+        if [[ "${ARCHITECTURE_TEST_PROJECT}" == "${TOPOLOGY_TEST_PROJECT}" ]]; then
+            dotnet restore "${TOPOLOGY_TEST_PROJECT}"
+        fi
 
         echo "3. Building with warnings as errors..."
         # -p: not /p: — see the FULL-mode build above (MSB1008 under Git Bash).
         dotnet build "${SLNF}" --no-restore --configuration Release -p:TreatWarningsAsErrors=true
+        if [[ "${ARCHITECTURE_TEST_PROJECT}" == "${TOPOLOGY_TEST_PROJECT}" ]]; then
+            dotnet build "${TOPOLOGY_TEST_PROJECT}" --no-restore --configuration Release -p:TreatWarningsAsErrors=true
+        fi
     fi
 fi
 
@@ -640,7 +714,7 @@ if [[ "${FULL}" == "1" ]]; then
     FORMAT_TARGET=(Honua.sln)
     format_scope_args=()
 else
-    FORMAT_TARGET=(Honua.sln)
+    FORMAT_TARGET=()
     # Restrict to the changed files; if none, skip.
     # Only format files that still exist (a changed file may have been deleted
     # or moved) and that are tracked .cs source.
@@ -649,7 +723,35 @@ else
         echo "   (no changed .cs files on disk — skipping format check)"
         FORMAT_TARGET=()
     else
+        FORMAT_SLNF="$(mktemp -p "${REPO_ROOT}" --suffix=.slnf)"
+        CLEANUP_PATHS+=("${FORMAT_SLNF}")
+        format_projects=()
+        for file in "${changed_arr[@]}"; do
+            dir="$(dirname "${file}")"
+            project=""
+            while [[ "${dir}" != "." ]]; do
+                mapfile -t owners < <(find "${dir}" -maxdepth 1 -name '*.csproj')
+                if [[ "${#owners[@]}" -eq 1 ]]; then
+                    project="${owners[0]}"
+                    break
+                elif [[ "${#owners[@]}" -gt 1 ]]; then
+                    echo "❌ Ambiguous format owner for ${file}; run the changed projects explicitly." >&2
+                    exit 1
+                fi
+                dir="$(dirname "${dir}")"
+            done
+            if [[ -z "${project}" || -z "${sln_member_paths[${project}]:-}" ]]; then
+                echo "❌ No validated solution project owns ${file}; run its format check explicitly." >&2
+                exit 1
+            fi
+            format_projects+=("${sln_member_paths[${project}]}")
+        done
+        printf '%s\n' "${format_projects[@]}" | jq -R . | jq -s 'unique | {solution:{path:"Honua.sln",projects:.}}' > "${FORMAT_SLNF}"
+        FORMAT_TARGET=("${FORMAT_SLNF}")
         format_scope_args=(--include "${changed_arr[@]}")
+        echo "   Format workspace: $(jq '.solution.projects|length' "${FORMAT_SLNF}") owning project(s)."
+        evaluate_dependency_graph "${FORMAT_SLNF}"
+        "${PYTHON_BIN}" scripts/ci/pre-pr-dependency-plan.py --root "${REPO_ROOT}" --label Format "${DEPENDENCY_GRAPH}"
     fi
 fi
 if [[ ${#FORMAT_TARGET[@]} -eq 0 ]]; then
@@ -664,9 +766,9 @@ else
     # Diagnostic verbosity makes dotnet-format log every analyzed document —
     # on a 76-project solution that is minutes of pure console I/O. The
     # failure output at normal verbosity still names each unformatted file.
-    if ! dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --verify-no-changes; then
+    if ! timeout 20m dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --verify-no-changes; then
         echo "❌ Format check failed. Running 'dotnet format' to fix..."
-        dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}"
+        timeout 20m dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}"
         echo "✅ Code formatted. Please review changes and commit if needed."
         exit 1
     fi
@@ -826,12 +928,13 @@ else
     fi
 fi
 
-# Architecture tests are cheap and guard the module topology — always run them.
+# Run the selected architecture lane. The full catalogue/proof suite remains
+# mandatory in default/FULL mode and for every changed-contract guard.
 if [[ "${DRY_RUN}" == "1" ]]; then
-    echo "   - [dry-run] would run tests/dotnet/Honua.Architecture.Tests (topology guards)"
+    echo "   - [dry-run] would run ${ARCHITECTURE_TEST_PROJECT}"
 else
-    echo "   - tests/dotnet/Honua.Architecture.Tests (topology guards)"
-    dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
+    echo "   - ${ARCHITECTURE_TEST_PROJECT}"
+    dotnet test "${ARCHITECTURE_TEST_PROJECT}" \
         --no-build \
         --no-restore \
         --configuration Release \
@@ -906,6 +1009,7 @@ else
         echo "  - Build set: $(jq -r '.solution.projects|length' "${SLNF}") projects (AFFECTED=$([[ "${AFFECTED}" == "ALL" ]] && echo ALL || echo scoped))"
     fi
     echo "  - Format scope: ${#changed_arr[@]} changed .cs file(s)"
+    echo "  - Architecture lane: ${ARCHITECTURE_TEST_PROJECT}"
 fi
 echo "  - ADR-0037 shard router reason: ${SHARD_REASON:-n/a}"
 if [[ -n "${SELECTED_SHARDS//[[:space:]]/}" ]]; then

@@ -9,6 +9,12 @@
     <RootNamespace>Honua.Architecture.Tests</RootNamespace>
   </PropertyGroup>
 
+  <!-- The standalone topology project links existing source guards. Its generated
+       files must never enter the full catalogue/proof assembly. -->
+  <ItemGroup>
+    <Compile Remove="Topology/**/*.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
