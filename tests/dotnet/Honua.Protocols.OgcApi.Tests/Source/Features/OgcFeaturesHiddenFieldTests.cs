@@ -8,29 +8,42 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using Honua.Protocols.Ogc.Api.Features;
+using Microsoft.Extensions.DependencyInjection;
 using System.Net;
 using System.Text.Json;
 using System.Xml.Linq;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-[Collection("Database")]
-[Protocol(TestProtocols.OgcApiFeatures)]
-[Operation(Operations.Query)]
-public sealed class OgcFeaturesHiddenFieldTests : IAsyncLifetime
+public sealed class OgcFeaturesHiddenFieldTestsFixture : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
     public async Task InitializeAsync()
     {
-        await _fixture.InitializeAsync();
-        _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field
+        await App.InitializeAsync();
+        App.UpdateV2ResourceSchemaField(0, new MetadataV2Field
         {
             Name = "category", Type = MetadataV2FieldType.String, Hidden = true
         });
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync() => App.DisposeAsync();
+
+}
+
+[Collection("Database")]
+[Protocol(TestProtocols.OgcApiFeatures)]
+[Operation(Operations.Query)]
+public sealed class OgcFeaturesHiddenFieldTests : IClassFixture<OgcFeaturesHiddenFieldTestsFixture>
+{
+    private readonly WebAppFixture _fixture;
+
+    public OgcFeaturesHiddenFieldTests(OgcFeaturesHiddenFieldTestsFixture fixture)
+    {
+        _fixture = fixture.App;
+    }
 
     [IntegrationTheory]
     [InlineData("items?f=gml&limit=1")]
@@ -96,5 +109,54 @@ public sealed class OgcFeaturesHiddenFieldTests : IAsyncLifetime
         document.Descendants().Count(e => e.Name.LocalName == "member").Should().Be(300);
         body.Should().Contain("Visible stream row");
         body.Should().NotContain("category").And.NotContain("hidden-stream-value");
+    }
+}
+
+public sealed class OgcFeaturesHiddenFieldTestsRawFixture : IAsyncLifetime
+{
+    public WebAppFixture App { get; } = new WebAppFixture()
+        .WithTestLicense(HonuaEdition.Pro)
+        .ConfigureServices(services => services.Configure<OgcFeaturesOptions>(options =>
+        {
+            options.NumberMatchedPolicy = OgcFeaturesNumberMatchedPolicy.OmitWhenExpensive;
+            options.IncludeFeatureLinks = false;
+        }));
+
+    public async Task InitializeAsync()
+    {
+        await App.InitializeAsync();
+        App.UpdateV2ResourceSchemaField(0, new MetadataV2Field
+        {
+            Name = "category", Type = MetadataV2FieldType.String, Hidden = true
+        });
+    }
+
+    public Task DisposeAsync() => App.DisposeAsync();
+
+}
+
+[Collection("Database")]
+[Protocol(TestProtocols.OgcApiFeatures)]
+[Operation(Operations.Query)]
+public sealed class OgcFeaturesHiddenFieldTestsRaw : IClassFixture<OgcFeaturesHiddenFieldTestsRawFixture>
+{
+    private readonly WebAppFixture _fixture;
+
+    public OgcFeaturesHiddenFieldTestsRaw(OgcFeaturesHiddenFieldTestsRawFixture fixture)
+    {
+        _fixture = fixture.App;
+    }
+
+    [IntegrationTheory]
+    [InlineData("limit=1")]
+    [InlineData("limit=1&bbox=-122.6,37.4,-122.4,37.6")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task RawOutput_OmitsHiddenFields(string query)
+    {
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/0/items?{query}");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        body.Should().Contain("Test Feature");
+        body.Should().NotContain("category");
     }
 }

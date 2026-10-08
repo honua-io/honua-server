@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
@@ -15,34 +16,47 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
-[Collection("Database")]
-[Protocol(TestProtocols.Grpc)]
-[Operation(Operations.Query)]
-public sealed class GrpcHiddenFieldTests : IAsyncLifetime
+public sealed class GrpcHiddenFieldTestsFixture : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
     public async Task InitializeAsync()
     {
-        await _fixture.InitializeAsync();
-        _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field
+        await App.InitializeAsync();
+        App.UpdateV2ResourceSchemaField(0, new MetadataV2Field
         {
             Name = "category", Type = MetadataV2FieldType.String, Hidden = true
         });
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync() => App.DisposeAsync();
+
+}
+
+[Collection("Database")]
+[Protocol(TestProtocols.Grpc)]
+[Operation(Operations.Query)]
+public sealed class GrpcHiddenFieldTests : IClassFixture<GrpcHiddenFieldTestsFixture>
+{
+    private readonly WebAppFixture _fixture;
+
+    public GrpcHiddenFieldTests(GrpcHiddenFieldTestsFixture fixture)
+    {
+        _fixture = fixture.App;
+    }
 
     [IntegrationTheory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
+    [InlineData(false, null)]
+    [InlineData(false, "*")]
+    [InlineData(false, "name,category")]
+    [InlineData(true, null)]
+    [InlineData(true, "*")]
+    [InlineData(true, "name,category")]
     [Endpoint("POST /geospatial.v1.FeatureService/QueryFeatures")]
     [Endpoint("POST /geospatial.v1.FeatureService/QueryFeaturesStream")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryFeatures")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryFeaturesStream")]
-    public async Task Output_OmitsHiddenFields(bool streaming, bool wildcard)
+    public async Task Output_OmitsHiddenFields(bool streaming, string? outFields)
     {
         using var channel = GrpcChannel.ForAddress("http://localhost", new GrpcChannelOptions
         {
@@ -54,9 +68,9 @@ public sealed class GrpcHiddenFieldTests : IAsyncLifetime
         {
             ServiceId = WebAppFixture.TestServiceId, LayerId = 0
         };
-        if (wildcard)
+        if (outFields != null)
         {
-            request.OutFields.Add("*");
+            request.OutFields.AddRange(outFields.Split(','));
         }
 
         var fields = new List<Proto.FieldDefinition>();
@@ -77,6 +91,7 @@ public sealed class GrpcHiddenFieldTests : IAsyncLifetime
             features.AddRange(response.Features);
         }
 
+        using var scope = new AssertionScope();
         fields.Select(f => f.Name).Should().Contain("name").And.NotContain("category");
         features.Should().HaveCount(5);
         features.Single(f => f.Id == 1).Attributes["name"].StringValue.Should().Be("Test Feature");

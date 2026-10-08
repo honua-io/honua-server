@@ -12,23 +12,34 @@ using System.Net;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
-[Collection("Database")]
-[Protocol(TestProtocols.Wfs20)]
-[Operation(Operations.Query)]
-public sealed class Wfs20HiddenFieldTests : IAsyncLifetime
+public sealed class Wfs20HiddenFieldTestsFixture : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
     public async Task InitializeAsync()
     {
-        await _fixture.InitializeAsync();
-        _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field
+        await App.InitializeAsync();
+        App.UpdateV2ResourceSchemaField(0, new MetadataV2Field
         {
             Name = "category", Type = MetadataV2FieldType.String, Hidden = true
         });
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync() => App.DisposeAsync();
+
+}
+
+[Collection("Database")]
+[Protocol(TestProtocols.Wfs20)]
+[Operation(Operations.Query)]
+public sealed class Wfs20HiddenFieldTests : IClassFixture<Wfs20HiddenFieldTestsFixture>
+{
+    private readonly WebAppFixture _fixture;
+
+    public Wfs20HiddenFieldTests(Wfs20HiddenFieldTestsFixture fixture)
+    {
+        _fixture = fixture.App;
+    }
 
     [IntegrationTheory]
     [InlineData("GetFeature", "")]
