@@ -315,6 +315,24 @@ public sealed class OgcCoveragesOversizeDepthTests : IClassFixture<OgcCoveragesO
         scaledResponse.StatusCode.Should().Be(HttpStatusCode.OK, scaledContent);
     }
 
+    [IntegrationTheory]
+    [InlineData("-122.5,37.7,-122.3,37.9")]
+    [InlineData("-122.5,37.79,-122.3,37.81")]
+    [InlineData("-122.41,37.7,-122.39,37.9")]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
+    public async Task Coverage_SRV_OGC_002_OversizeNativeBbox_ReturnsBadRequestBeforeExport(string bbox)
+    {
+        _fixture.ExportQueries.Clear();
+
+        var response = await _fixture.App.Client.GetAsync($"{CoveragePath}?bbox={bbox}");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("8192");
+        _fixture.ExportQueries.Should().BeEmpty();
+    }
+
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
