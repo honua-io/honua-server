@@ -113,3 +113,8 @@ are not local evidence and are not awaited under this packet's delivery contract
 | `ogc-final-green.trx` | 65 | 0 | 0 | `7b7efe604d0bb2abbbcde7a536d074091265d0f012dc7c5bd86af65156afd5db` |
 | `wfs-review-green.trx` | 21 | 0 | 0 | `e251d087e886f50dc9461a766e9e1ed902934e9f2e228d3e81e640b022121c27` |
 | `grpc-review-green.trx` | 187 | 0 | 0 | `9a3b4fb0767553a8cfd863b29e8b21891275fd4b1ac2423c11a97ed28d509644` |
+
+Publication reconciliation found new trunk `e9eee40b5f794c885ae44d98a76fa388443cee8d`
+(server gated-boot shutdown) and merged it cleanly. Earlier 273-case green evidence
+is retained, but current-trunk build/test verification must be repeated before
+publication. No packet implementation changed during that merge.
