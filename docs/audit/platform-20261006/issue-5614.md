@@ -39,8 +39,10 @@ references with warnings treated as errors.
 - Case-insensitive provider-extra-attribute regressions cover all four GML
   formatter entrypoints and gRPC conversion. Streaming integration requires
   exactly 300 GML members after adding 300 rows.
-- An additional OGC declared-hidden built-in sort field regression is pending
-  runtime diagnosis before any further correction.
+- Candidate OGC run: 19 passed, 2 failed, 0 skipped (`ogc-candidate-core-sort.trx`).
+  Declared-hidden `created_at` still returned HTTP 200 through the built-in sort
+  allow-list, including descending uppercase spelling. The supported correction
+  removes declared-hidden names from that allow-list; verification is pending.
 
 These changes are unfinished until their candidate tests pass. Scoped formatting
 completed for the changed OGC, WFS and gRPC projects; the additional OGC sort
@@ -53,3 +55,16 @@ as optional consideration), non-Postgres provider integration and full CITE
 qualification. Focused candidate verification, latest-trunk reconciliation,
 single self-review, independent review and normal hosted admission are pending.
 Issue 5614 remains open while required acceptance is unfinished.
+
+## Candidate receipts so far
+
+- WFS: fixed for reproduced paths. `wfs-green.trx`: 20 passed, 0 failed,
+  0 skipped. Includes 8 hidden-field cases, property resolver tests, visible
+  QName round trip, schema attribute types and wildcard projection.
+- gRPC: fixed for reproduced output paths. `grpc-green.trx`: 187 passed,
+  0 failed, 0 skipped. Includes 6 Docker-backed unary/streaming hidden-field
+  cases, case-insensitive conversion and existing feature-service, conversion
+  and masked-field predicate tests.
+- The normal-reference candidate build passed after adding the required XML
+  parameter documentation. The subsequent supported OGC sort correction is
+  rebuilding normally; final OGC verification remains pending.

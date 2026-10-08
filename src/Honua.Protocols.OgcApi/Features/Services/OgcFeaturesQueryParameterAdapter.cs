@@ -79,6 +79,8 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
     {
         try
         {
+            var allowedCoreFields = SortByCoreFields.Except(resource.SchemaFields
+                .Where(field => field.Hidden).Select(field => field.Name));
             resource = resource with
             {
                 SchemaFields = resource.SchemaFields.Where(field => !field.Hidden).ToArray()
@@ -123,7 +125,7 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
                 return QueryAdapterResult.Failure(propertiesError ?? "Invalid properties parameter.");
             }
 
-            if (!TryParseSortBy(parameters.Sortby, resource, out var orderBy, out var sortByError))
+            if (!TryParseSortBy(parameters.Sortby, resource, allowedCoreFields, out var orderBy, out var sortByError))
             {
                 return QueryAdapterResult.Failure(sortByError ?? "Invalid sortby parameter.");
             }
@@ -237,6 +239,7 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
     private static bool TryParseSortBy(
         string? rawSortBy,
         MetadataV2Resource resource,
+        IReadOnlySet<string> allowedCoreFields,
         out ImmutableArray<OrderByClause>? orderBy,
         out string? error)
     {
@@ -298,7 +301,7 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
             orderBy = OrderByParsing.ParseFeatureServerOrderBy(
                 string.Join(",", normalized),
                 resource,
-                SortByCoreFields);
+                allowedCoreFields);
             return true;
         }
         catch (InvalidOperationException ex)
