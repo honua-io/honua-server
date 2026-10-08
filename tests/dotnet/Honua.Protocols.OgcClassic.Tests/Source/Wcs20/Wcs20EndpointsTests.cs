@@ -981,6 +981,8 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
     [InlineData(4097, 64, "", "COVERAGEID")]
     [InlineData(64, 4097, "", "COVERAGEID")]
     [InlineData(8192, 64, "SCALEFACTOR=0.75", "SCALEFACTOR")]
+    [InlineData(64, 8192, "SCALESIZE=x(128)", "SCALESIZE")]
+    [InlineData(8192, 64, "SCALESIZE=y(128)", "SCALESIZE")]
     [InlineData(8192, 64, "BBOX=-122.5,37.7,-122.35,37.84", "COVERAGEID")]
     [InlineData(8192, 64, "SUBSET=x(-122.5,-122.35)", "COVERAGEID")]
     [Operation(Operations.ErrorHandling)]
@@ -1010,6 +1012,8 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
     [InlineData(64, 64, "SCALEEXTENT=x(0,4095),y(0,4095)", 4096, 4096)]
     [InlineData(8192, 8192, "SCALEFACTOR=0.5", 4096, 4096)]
     [InlineData(8192, 8192, "SCALESIZE=x(128),y(64)", 128, 64)]
+    [InlineData(8192, 64, "SCALESIZE=x(128)", 128, 64)]
+    [InlineData(64, 8192, "SCALESIZE=y(128)", 64, 128)]
     [Operation(Operations.Export)]
     [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
     [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
@@ -1028,6 +1032,52 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
         _exportQueries.Should().ContainSingle();
         _exportQueries.Single().OutputWidth.Should().Be(outputWidth);
         _exportQueries.Single().OutputHeight.Should().Be(outputHeight);
+    }
+
+    [IntegrationTheory]
+    [InlineData(false, "0.1,0,4096.3,64", HttpStatusCode.BadRequest)]
+    [InlineData(false, "0,0,4096,64", HttpStatusCode.OK)]
+    [InlineData(false, "0.1,0,4095.9,64", HttpStatusCode.OK)]
+    [InlineData(true, "0,0,3,60000", HttpStatusCode.BadRequest)]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_SRV_OGC_004_NativeTrim_BoundsEveryTouchedPixel(
+        bool rotated, string bbox, HttpStatusCode expectedStatus)
+    {
+        var raster = CreateRasterInfo() with
+        {
+            Width = rotated ? 60_000 : 8192,
+            Height = 64,
+            Srid = 3857,
+            GeoTransform = rotated ? [0, 0, 1, 0, 1, 0] : [0, 1, 0, 64, 0, -1],
+            Extent = new RasterExtent
+            {
+                XMin = 0, YMin = 0,
+                XMax = rotated ? 64 : 8192,
+                YMax = rotated ? 60_000 : 64,
+                Srid = 3857
+            }
+        };
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS" +
+            $"?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&BBOX={bbox}");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(expectedStatus, content);
+        if (expectedStatus == HttpStatusCode.BadRequest)
+        {
+            content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+            content.Should().Contain("locator=\"COVERAGEID\"");
+            _exportQueries.Should().BeEmpty();
+        }
+        else
+        {
+            _exportQueries.Should().ContainSingle();
+        }
     }
 
     private static void ConfigureRasterStore(IRasterStore rasterStore, List<RasterQuery> exportQueries)
