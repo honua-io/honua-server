@@ -234,6 +234,14 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // A job can finish after Redis returned but before any other queue call cleared
+        // the cached failure; acknowledging must restore too, or the completed job stays
+        // in the processing list and is redelivered by in-flight recovery (#4877).
+        if (!_useRedis && _redisDb != null && ShouldRetryRedis(DateTime.UtcNow))
+        {
+            await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         if (_useRedis && _redisDb != null)
         {
             try

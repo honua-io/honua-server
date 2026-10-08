@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Reflection;
 using FluentAssertions;
 using Honua.Import;
 using Honua.Migration;
@@ -49,4 +50,27 @@ public sealed class RedisJobQueueFallbackTests
             .WithMessage("*Distributed import queue is unavailable*");
     }
 
+    [UnitTest]
+    public async Task CompleteAsync_AfterRedisReturns_AcknowledgesInsteadOfLeavingJobForRedelivery()
+    {
+        var redis = new OutageRedis();
+        var queue = new RedisJobQueue(redis.Multiplexer, NullLogger.Instance, "test:queue", allowFallback: false);
+        await queue.EnqueueAsync("job-1");
+        (await queue.DequeueAsync(TimeSpan.FromMilliseconds(200))).Should().Be("job-1");
+
+        // Another queue call observes a Redis blip while the job is still running.
+        redis.Down = true;
+        (await queue.GetQueueLengthAsync()).Should().Be(0);
+        queue.IsUsingFallback.Should().BeTrue();
+        redis.Down = false;
+        typeof(RedisJobQueue)
+            .GetField("_lastRedisFailure", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(queue, DateTime.MinValue);
+
+        await queue.CompleteAsync("job-1");
+
+        redis.ListContents("test:queue:processing").Should().BeEmpty("the finished job must be acknowledged once Redis is back");
+        await queue.RecoverInFlightAsync();
+        (await queue.DequeueAsync(TimeSpan.FromMilliseconds(50))).Should().BeNull("an acknowledged job is never redelivered");
+    }
 }

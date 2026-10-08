@@ -319,6 +319,70 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoserver/start")]
+    public async Task Start_AfterRedisRecovers_AdmitsAndCompletesOneJobWithoutRestart()
+    {
+        var coordination = OutageCoordination.ForGeoServer();
+        var importService = new TestGeoServerImportService(TimeSpan.FromMilliseconds(25));
+        var isolatedFixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Enterprise)
+            .ReplaceService<IGeoServerImportService>(importService)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<GeoServerImportJobManager>();
+                services.AddSingleton((GeoServerImportJobManager)coordination.JobManager);
+                ImportWorkerTestServices.RemoveHostedImportWorkers(services);
+            });
+        var request = new
+        {
+            GeoServerRestUrl = "https://example.com/geoserver/rest",
+            DryRun = true
+        };
+
+        try
+        {
+            await isolatedFixture.InitializeAsync();
+
+            coordination.BeginOutage();
+            var refused = await isolatedFixture.Client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", request);
+            refused.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+
+            // Redis returns. Nothing restarts and nothing writes a dummy value: the start
+            // request itself must probe the stale coordination flags back to healthy.
+            coordination.EndOutage();
+            coordination.ElapseRetryThrottles();
+            var accepted = await isolatedFixture.Client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", request);
+            accepted.StatusCode.Should().Be(HttpStatusCode.Accepted);
+            var jobId = await GetJobIdAsync(accepted);
+            coordination.Redis.ListContents("geoserver:import:queue").Should().Equal(jobId);
+
+            var worker = ActivatorUtilities.CreateInstance<GeoServerImportBackgroundService>(isolatedFixture.Services);
+            await worker.StartAsync(CancellationToken.None);
+            try
+            {
+                using var completed = await WaitForJobStatusAsync(isolatedFixture.Client, jobId, "Completed", TimeSpan.FromSeconds(30));
+            }
+            finally
+            {
+                await worker.StopAsync(CancellationToken.None);
+                worker.Dispose();
+            }
+
+            importService.ImportRequests.Should().ContainSingle().Which.JobId.Should().Be(jobId);
+            coordination.Redis.ListContents("geoserver:import:queue").Should().BeEmpty();
+            coordination.Redis.ListContents("geoserver:import:queue:processing").Should().BeEmpty();
+            coordination.Cache.Keys
+                .Where(key => key.StartsWith("universal:type:", StringComparison.Ordinal))
+                .Should().Equal($"universal:type:{jobId}");
+        }
+        finally
+        {
+            await isolatedFixture.DisposeAsync();
+            ((IDisposable)coordination.JobManager).Dispose();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/import/geoserver/jobs")]
     public async Task ListJobs_WithQueuedJob_ReturnsActiveJobs()
     {
