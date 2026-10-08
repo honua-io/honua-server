@@ -6,6 +6,7 @@ using System.Reflection;
 using FluentAssertions;
 using Honua.Server.Hosting;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -18,6 +19,7 @@ namespace Honua.Server.Tests.Hosting;
 /// not write a crash dump. An in-process host cannot observe the process status or a dump, so
 /// this test starts <c>Honua.Server.dll</c> out of process.
 /// </summary>
+[Protocol(TestProtocols.Infrastructure)]
 public sealed class GatedBootExitTests
 {
     private const string PostgisImage = "postgis/postgis:18-3.6";
@@ -46,6 +48,7 @@ public sealed class GatedBootExitTests
     ];
 
     [IntegrationTest]
+    [Operation(Operations.ContractTesting)]
     public async Task RefusedContractMigration_ExitsWithRefusalCodeAndWritesNoCrashDump()
     {
         await using var container = new PostgreSqlBuilder()
