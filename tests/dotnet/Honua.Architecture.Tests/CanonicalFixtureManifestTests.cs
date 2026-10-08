@@ -191,6 +191,7 @@ public sealed class CanonicalFixtureManifestTests
         var lanes = manifest.RootElement.GetProperty("laneBindings").EnumerateArray()
             .ToDictionary(lane => lane.GetProperty("laneId").GetString()!, lane => lane, StringComparer.Ordinal);
 
+        // codeql[cs/linq/missed-select]: asserts each active lane and then each of its protocol bindings
         foreach (var lane in matrix.RootElement.GetProperty("lanes").EnumerateArray())
         {
             var laneId = lane.GetProperty("id").GetString()!;
@@ -431,6 +432,7 @@ public sealed class CanonicalFixtureManifestTests
             }
         }
 
+        // codeql[cs/linq/missed-where]: collects gapId only from profiles that declare one
         foreach (var profile in document.GetProperty("authPolicy").GetProperty("profiles").EnumerateArray())
         {
             if (profile.TryGetProperty("gapId", out var gapId))

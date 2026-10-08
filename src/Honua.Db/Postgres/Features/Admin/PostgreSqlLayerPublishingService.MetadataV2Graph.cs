@@ -153,6 +153,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         var resourcesWithStyles = UpsertById(graph.Resources, resource, static item => item.Metadata.Id);
+        // codeql[cs/linq/missed-select]: folds each style into the graph with UpsertById and preserved dependency metadata
         foreach (var styleResource in styleResources)
         {
             var scopedStyle = styleResource with
@@ -3055,6 +3056,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // Extents follow the physical storage handle, not a protocol's route index.
         var affectedResourceIds = new HashSet<string>(StringComparer.Ordinal);
         var extentByResourceId = new Dictionary<string, LayerExtentInsert?>(StringComparer.Ordinal);
+        // codeql[cs/linq/missed-where]: records both the affected resource id and its refreshed extent
         foreach (var binding in graph.StorageBindings.Where(binding => BindingMatchesStorageScope(binding, storageScope)))
         {
             if (binding.StorageLayerId is { } layerId && refreshedExtents.TryGetValue(layerId, out var extent))

@@ -364,6 +364,7 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
     {
         foreach (var discriminator in discriminators)
         {
+            // codeql[cs/linq/missed-select]: returns as soon as one probe value clears the violation
             foreach (var probeValue in DomainProbeValues)
             {
                 var inputs = new Dictionary<string, string>(baseInputs, StringComparer.Ordinal)

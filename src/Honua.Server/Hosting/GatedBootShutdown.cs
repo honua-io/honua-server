@@ -63,8 +63,10 @@ internal static class GatedBootShutdown
         }
 
         // Instance finalizers of native handles must run before the runtime unloads their modules.
+        // codeql[cs/call-to-gc]: gated boot is exiting and native modules are about to unload
         GC.Collect();
         GC.WaitForPendingFinalizers();
+        // codeql[cs/call-to-gc]: second collect reclaims objects finalized during gated boot exit
         GC.Collect();
     }
 }

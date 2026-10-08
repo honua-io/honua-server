@@ -543,13 +543,21 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
                 var actual = features[i].Attributes[pair.Key];
                 if (pair.Value is JsonElement element)
                 {
-                    var value = actual.Should().BeOfType<JsonElement>().Subject;
+                    if (actual is not JsonElement value)
+                    {
+                        throw new InvalidOperationException(
+                            $"attribute '{pair.Key}' was {(actual is null ? "null" : actual.GetType().Name)}, not a JSON element");
+                    }
+
                     JsonElement.DeepEquals(value, element).Should().BeTrue();
                 }
                 else
                 {
-                    actual.Should().Be(pair.Value);
-                    actual?.GetType().Should().Be(pair.Value?.GetType());
+                    object.Equals(actual, pair.Value).Should().BeTrue();
+                    if (actual is not null)
+                    {
+                        actual.GetType().Should().Be(pair.Value?.GetType());
+                    }
                 }
             }
         }

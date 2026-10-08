@@ -649,7 +649,11 @@ class SoakDriver:
             self._stop.set()
             for task in tasks:
                 with contextlib.suppress(asyncio.CancelledError):
-                    await task
+                    # Probes are typed to return None. Checking the result keeps the
+                    # await from being a discarded expression and still waits for
+                    # cancellation to finish after the stop signal.
+                    if await task is not None:
+                        raise RuntimeError("soak probe task returned a payload")
 
             for reader in self._subscription_readers:
                 reader.cancel()

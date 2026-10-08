@@ -381,13 +381,13 @@ internal sealed partial class GeoservicesImportService
                 ? descriptor.Code
                 : descriptor.UnsupportedCode ?? ImportCompatibilityCodes.ArcGisRelationshipsManualReview;
 
+            // Non-automated relationships are exactly composite or many-to-many, so the
+            // remaining branch is many-to-many. A third message here was unreachable.
             var reason = automated
                 ? descriptor.Reason
                 : isComposite
                     ? $"Relationship type '{derivedType ?? "composite"}' carries side-effects (composite delete or junction attributes) that this slice does not recreate automatically."
-                    : isManyToMany
-                        ? "Many-to-many relationships require a junction table and are deferred from automated migration."
-                        : "Relationship metadata was captured but the source did not advertise enough of the relationship shape to recreate it automatically; map it onto the target before cutover.";
+                    : "Many-to-many relationships require a junction table and are deferred from automated migration.";
 
             IEnumerable<string> manualSteps = automated
                 ? []

@@ -240,6 +240,7 @@ public sealed partial class SecureConnectionDataSourceCacheTests
 
                 lifecycleFinished.SetResult();
             }
+            // codeql[cs/catch-of-all-exceptions]: the background lifecycle must report every failure to the test instead of crashing the process
             catch (Exception exception)
             {
                 lifecycleFinished.SetException(exception);

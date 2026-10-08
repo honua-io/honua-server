@@ -378,6 +378,7 @@ internal static class OgcRecordsEndpoints
         // contain multiple protocol-specific service rows with the same public name
         // (for example FeatureServer/MapServer/STAC views), but Records should expose
         // the public service once with merged protocol links.
+        // codeql[cs/linq/missed-select]: skips service groups with no visible publication before merging protocol links
         foreach (var services in (snapshot.Graph.Services
                      .GroupBy(s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase)
                      .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)).Select(serviceGroup => serviceGroup.ToArray()))

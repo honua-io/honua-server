@@ -205,18 +205,16 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
             return null;
         }
 
-        var builder = ImmutableArray.CreateBuilder<long>();
-        foreach (var token in request.ObjectIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            // The executor already validated every token is a parseable long; a token
-            // that still fails here is skipped rather than throwing mid-stream.
-            if (long.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
-            {
-                builder.Add(id);
-            }
-        }
-
-        return builder.ToImmutable();
+        // The executor already validated every token is a parseable long; a token
+        // that still fails here is skipped rather than throwing mid-stream.
+        return request.ObjectIds
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(token => (
+                Accepted: long.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id),
+                Id: id))
+            .Where(parsed => parsed.Accepted)
+            .Select(parsed => parsed.Id)
+            .ToImmutableArray();
     }
 
     private static string? BuildWhereClause(DagSourceRequest request)

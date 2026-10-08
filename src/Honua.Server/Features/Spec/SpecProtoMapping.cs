@@ -32,6 +32,7 @@ internal static class SpecProtoMapping
         // Compute. The REST layer mirrors this via SpecNodeRequest.Kind being
         // nullable.
         List<SpecWarning>? fatal = null;
+        // codeql[cs/linq/missed-where]: leaves the fatal list null when every node kind is known so a valid document does not throw
         foreach (var n in proto.Nodes)
         {
             if (!IsDefinedResourceKind(n.Kind))

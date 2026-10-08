@@ -105,6 +105,7 @@ public sealed class InMemoryPackageDraftStore : IPackageDraftStore
     private void Trim<T>(ConcurrentDictionary<string, Entry<T>> store, DateTimeOffset now)
         where T : class
     {
+        // codeql[cs/linq/missed-where]: removes expired drafts while enumerating the concurrent store
         foreach (var pair in store)
         {
             if (IsExpired(pair.Value, now))

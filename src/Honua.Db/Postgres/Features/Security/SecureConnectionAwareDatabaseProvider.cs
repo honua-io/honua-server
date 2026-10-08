@@ -197,6 +197,7 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
         }
 
         NpgsqlConnection? connection = null;
+        // codeql[cs/missed-using-statement]: ownership moves into the returned lease, or the finally disposes the pin if open fails
         SecureConnectionDataSourceCache.Acquisition? acquisition = null;
         try
         {

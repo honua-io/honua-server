@@ -72,13 +72,13 @@ public sealed class GatedBootExitTests
 
         var serverAssembly = LocateServerAssembly();
         var serverDirectory = Path.GetDirectoryName(serverAssembly)!;
-        File.Exists(Path.Combine(serverDirectory, "appsettings.json")).Should().BeTrue(
+        File.Exists(Path.Join(serverDirectory, "appsettings.json")).Should().BeTrue(
             "the server process uses its output directory as the content root ({0})",
             serverDirectory);
 
-        var dumpDirectory = Path.Combine(Path.GetTempPath(), "honua-gated-boot-" + Guid.NewGuid().ToString("N"));
+        var dumpDirectory = Path.Join(Path.GetTempPath(), "honua-gated-boot-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dumpDirectory);
-        var dumpPath = Path.Combine(dumpDirectory, "gated-boot.dmp");
+        var dumpPath = Path.Join(dumpDirectory, "gated-boot.dmp");
         var dumpsBefore = SnapshotCrashDumps(serverDirectory, dumpDirectory);
 
         var start = new ProcessStartInfo
@@ -174,7 +174,7 @@ public sealed class GatedBootExitTests
     private static string LocateServerAssembly()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+        while (directory is not null && !File.Exists(Path.Join(directory.FullName, "Honua.sln")))
         {
             directory = directory.Parent;
         }
@@ -188,7 +188,7 @@ public sealed class GatedBootExitTests
         var configuration = typeof(GatedBootExitTests).Assembly
             .GetCustomAttribute<AssemblyConfigurationAttribute>()?.Configuration
             ?? "Debug";
-        var path = Path.Combine(
+        var path = Path.Join(
             directory.FullName,
             "src",
             "Honua.Server",

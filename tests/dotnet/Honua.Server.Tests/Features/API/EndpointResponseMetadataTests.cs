@@ -203,7 +203,7 @@ public sealed class EndpointResponseMetadataTests : IDisposable
             "execute metadata must advertise document mode and only reachable raw representations");
 
         var environment = _factory.Services.GetRequiredService<IHostEnvironment>();
-        using var openApi = JsonDocument.Parse(File.ReadAllText(Path.Combine(
+        using var openApi = JsonDocument.Parse(File.ReadAllText(Path.Join(
             environment.ContentRootPath,
             "ogc-processes-openapi.json")));
         var staticSuccessContentTypes = openApi.RootElement

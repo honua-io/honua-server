@@ -180,6 +180,7 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
         var providedHash = HashKey(keyMaterial);
         var now = _timeProvider.GetUtcNow();
 
+        // codeql[cs/linq/missed-select]: retries a contended key update and returns the first winning record
         foreach (var candidate in _keys.Values)
         {
             var record = candidate;

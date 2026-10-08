@@ -133,6 +133,7 @@ internal sealed partial class FileBackedLicenseService
             return;
         }
         var remaining = (snapshot.ExpiresAt.Value - _timeProvider.GetUtcNow()).TotalDays;
+        // codeql[cs/linq/missed-where]: logs each newly crossed expiry threshold and remembers which warnings already fired
         foreach (var days in new[] { 30, 14, 7, 1 })
         {
             if (remaining > 0 && remaining <= days && _warnings.Add((snapshot.LicenseId, snapshot.ExpiresAt, days)))

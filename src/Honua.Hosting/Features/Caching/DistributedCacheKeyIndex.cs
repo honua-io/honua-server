@@ -141,7 +141,7 @@ internal sealed partial class DistributedCacheKeyIndex : IAsyncDisposable
         {
             foreach (var key in keys)
             {
-                entries[key] = document.ExpiresAtUtcTicks?.TryGetValue(key, out var deadline) == true ? deadline : null;
+                entries[key] = (document.ExpiresAtUtcTicks?.TryGetValue(key, out var deadline) ?? false) ? deadline : null;
             }
         }
         return entries;

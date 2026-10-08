@@ -155,11 +155,13 @@ public sealed class ODataStreamingTimeoutAbortTests : IAsyncLifetime
             transportFailure = ex;
         }
 
-        transportFailure.Should().NotBeNull(
-            "an interrupted stream must surface as a transport failure, but the client read a complete " +
-            "{0}-character 200 body ending in '{1}'",
-            completedBody?.Length,
-            completedBody?[^Math.Min(completedBody.Length, 40)..]);
+        var bodyLength = completedBody?.Length;
+        var bodyTail = completedBody is null ? null : completedBody[^Math.Min(completedBody.Length, 40)..];
+        if (transportFailure is null)
+        {
+            throw new InvalidOperationException(
+                $"an interrupted stream must surface as a transport failure, but the client read a complete {bodyLength}-character 200 body ending in '{bodyTail}'");
+        }
         _source.Stalled.Should().BeTrue("the source must have reached its stall point");
     }
 

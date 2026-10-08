@@ -193,15 +193,10 @@ internal sealed class ListCapabilitiesTool : IMcpTool
         var catalog = entries.Select(e =>
             (Views.McpWorkflowViewDescriptorClassifier.Describe(e.Tool), e.IsDynamic)).ToArray();
 
-        var summaries = new List<Views.McpWorkflowViewSummary>(Views.McpWorkflowViewCatalog.Names.Count);
-        foreach (var name in Views.McpWorkflowViewCatalog.Names)
-        {
-            var definition = Views.McpWorkflowViewCatalog.All[name];
-            summaries.Add(Views.McpWorkflowViewWire.BuildSummary(
-                Views.McpWorkflowViewProjector.Project(definition, catalog)));
-        }
-
-        return summaries;
+        return Views.McpWorkflowViewCatalog.Names
+            .Select(name => Views.McpWorkflowViewWire.BuildSummary(
+                Views.McpWorkflowViewProjector.Project(Views.McpWorkflowViewCatalog.All[name], catalog)))
+            .ToList();
     }
 
     private static async Task<List<McpCapabilityTool>> BuildToolManifestAsync(

@@ -156,6 +156,7 @@ public sealed class EsriSourceExecutionProofTests
                 geometryType = "esriGeometryPoint",
                 spatialReference = new { wkid = 4326 }
             });
+            // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
         }
     }

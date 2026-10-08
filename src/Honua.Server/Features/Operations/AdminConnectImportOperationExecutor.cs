@@ -207,6 +207,7 @@ internal sealed class AdminConnectImportOperationExecutor(
     {
         using var document = JsonDocument.Parse(payload);
         var resources = new Dictionary<string, string>(StringComparer.Ordinal);
+        // codeql[cs/linq/missed-where]: keeps only the string properties present on this payload
         foreach (var name in new[] { "jobId", "statusUrl", "cancelUrl" })
             if (document.RootElement.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
                 resources[name] = value.GetString()!;

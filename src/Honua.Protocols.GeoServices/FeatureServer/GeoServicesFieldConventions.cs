@@ -152,6 +152,7 @@ internal static class GeoServicesFieldConventions
         IDictionary<string, object?> attributes,
         IReadOnlyCollection<string> dateFieldNames)
     {
+        // codeql[cs/linq/missed-where]: writes converted epoch values back into the same attribute dictionary
         foreach (var fieldName in dateFieldNames)
         {
             if (attributes.TryGetValue(fieldName, out var value) &&
@@ -318,6 +319,7 @@ internal static class GeoServicesFieldConventions
         IDictionary<string, object?> attributes,
         IReadOnlyDictionary<string, MetadataV2FieldType> temporalFieldTypes)
     {
+        // codeql[cs/linq/missed-where]: writes converted temporal values back into the same attribute dictionary
         foreach (var field in temporalFieldTypes)
         {
             if (attributes.TryGetValue(field.Key, out var dateValue) &&

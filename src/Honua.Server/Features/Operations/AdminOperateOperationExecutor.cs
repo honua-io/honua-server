@@ -156,6 +156,7 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
             }
             if (schema.TryGetProperty("properties", out var properties))
             {
+                // codeql[cs/linq/missed-where]: recursively validates only properties the schema declares
                 foreach (var property in value.EnumerateObject())
                 {
                     if (properties.TryGetProperty(property.Name, out var child))

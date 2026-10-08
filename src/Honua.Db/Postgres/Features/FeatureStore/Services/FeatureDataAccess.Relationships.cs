@@ -326,17 +326,16 @@ internal sealed partial class FeatureDataAccess
     /// </summary>
     private static long[] ToObjectIds(List<string> foreignKeyValues)
     {
-        var objectIds = new List<long>();
-        foreach (var value in foreignKeyValues)
-        {
-            if (long.TryParse(value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var objectId) &&
-                objectId.ToString(CultureInfo.InvariantCulture) == value)
-            {
-                objectIds.Add(objectId);
-            }
-        }
-
-        return [.. objectIds];
+        return
+        [
+            .. foreignKeyValues
+                .Select(value => (
+                    Accepted: long.TryParse(value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var objectId)
+                        && objectId.ToString(CultureInfo.InvariantCulture) == value,
+                    ObjectId: objectId))
+                .Where(parsed => parsed.Accepted)
+                .Select(parsed => parsed.ObjectId),
+        ];
     }
 
     /// <summary>

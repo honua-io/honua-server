@@ -409,15 +409,8 @@ public static class ToolboxTranslationValidator
 
     private static ProcessParameterSpec? FindParameter(ProcessDefinition definition, string name)
     {
-        foreach (var parameter in definition.Parameters)
-        {
-            if (string.Equals(parameter.Name, name, StringComparison.OrdinalIgnoreCase))
-            {
-                return parameter;
-            }
-        }
-
-        return null;
+        return definition.Parameters.FirstOrDefault(parameter =>
+            string.Equals(parameter.Name, name, StringComparison.OrdinalIgnoreCase));
     }
 
     private static ToolboxToolTranslation BuildResult(

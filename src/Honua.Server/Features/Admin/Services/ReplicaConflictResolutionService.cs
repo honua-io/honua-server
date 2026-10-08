@@ -1172,6 +1172,7 @@ internal sealed partial class ReplicaConflictResolutionService
                     .ConfigureAwait(false);
             }
         }
+        // codeql[cs/catch-of-all-exceptions]: release failure is logged so it cannot mask the feature-write error the caller is already reporting
         catch (Exception ex)
         {
             Log.ResolutionClaimReleaseFailed(_logger, conflict.ConflictId, ex);

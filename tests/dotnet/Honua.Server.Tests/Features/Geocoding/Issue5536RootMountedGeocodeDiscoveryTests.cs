@@ -48,7 +48,8 @@ public sealed class Issue5536RootMountedGeocodeDiscoveryTests
         root.FolderUrl.Should().Be(alias.FolderUrl);
         root.SoapUrl.Should().Be(alias.SoapUrl);
         root.SecureSoapUrl.Should().Be(alias.SecureSoapUrl);
-        root.TokenServicesUrl.Should().Be(alias.TokenServicesUrl);
+        string.Equals(root.TokenServicesUrl, alias.TokenServicesUrl, StringComparison.Ordinal)
+            .Should().BeTrue();
         root.ServiceBody.Should().Be(alias.ServiceBody);
 
         root.CatalogUrl.Should().EndWith($"{InstanceSegment}/rest/services/{LocatorName}/GeocodeServer");

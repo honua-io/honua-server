@@ -168,12 +168,12 @@ public class OgcMapsRenderingHandlerTests
             [geographic, projected], transform, CancellationToken.None);
 
         transformUnavailable.Should().BeFalse();
-        extent.Should().NotBeNull();
-        extent!.Value.SpatialReference.Should().Be(4326, "the first resource's CRS anchors the dataset extent");
-        extent.Value.MinX.Should().Be(-10);
-        extent.Value.MinY.Should().Be(0);
-        extent.Value.MaxX.Should().Be(20);
-        extent.Value.MaxY.Should().Be(40);
+        var bounds = extent ?? throw new InvalidOperationException("dataset extent was not produced");
+        bounds.SpatialReference.Should().Be(4326, "the first resource's CRS anchors the dataset extent");
+        bounds.MinX.Should().Be(-10);
+        bounds.MinY.Should().Be(0);
+        bounds.MaxX.Should().Be(20);
+        bounds.MaxY.Should().Be(40);
     }
 
     [UnitTest]
@@ -200,10 +200,11 @@ public class OgcMapsRenderingHandlerTests
             [west, east], coordinateTransformService: null, CancellationToken.None);
 
         transformUnavailable.Should().BeFalse();
-        extent!.Value.MinX.Should().Be(-10);
-        extent.Value.MinY.Should().Be(-5);
-        extent.Value.MaxX.Should().Be(20);
-        extent.Value.MaxY.Should().Be(10);
+        var bounds = extent ?? throw new InvalidOperationException("dataset extent was not produced");
+        bounds.MinX.Should().Be(-10);
+        bounds.MinY.Should().Be(-5);
+        bounds.MaxX.Should().Be(20);
+        bounds.MaxY.Should().Be(10);
     }
 
     [UnitTest]

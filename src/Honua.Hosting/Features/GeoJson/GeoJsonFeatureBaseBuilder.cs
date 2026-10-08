@@ -90,6 +90,7 @@ internal static partial class GeoJsonFeatureBaseBuilder
         var dateOnlyFields = schema.DateOnlyFields;
         var dateTimeFields = schema.DateTimeFields;
 
+        // codeql[cs/linq/missed-select]: skips hidden fields and coerces values into one property dictionary
         foreach (var field in schema.VisibleFields)
         {
             var fieldName = field.Name;
