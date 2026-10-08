@@ -178,7 +178,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                 feature,
                 queryContext.ReturnGeometry,
                 queryContext.GeometryLimits,
-                query.Distinct ? null : pkField));
+                query.Distinct ? null : pkField,
+                layer.HiddenFields));
         }
 
         response.ExceededTransferLimit = result.HasMoreResults;
@@ -229,7 +230,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                 enumerator.Current,
                 queryContext.ReturnGeometry,
                 queryContext.GeometryLimits,
-                query.Distinct ? null : pkField));
+                query.Distinct ? null : pkField,
+                layer.HiddenFields));
 
             if (batch.Count < _streamBatchSize)
             {
@@ -641,7 +643,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         var spatialReference = ToSpatialReference(resource);
         var geometryType = resource.ReadGeometryType();
         var attributeFields = resource.SchemaFields
-            .Where(static field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
+            .Where(static field => !field.Hidden && field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
             .ToArray();
         var objectIdFieldName = resource.FindPrimaryIdField()?.Name ?? "objectid";
 
@@ -653,7 +655,9 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             spatialReference,
             geometryType,
             attributeFields,
-            objectIdFieldName);
+            objectIdFieldName,
+            resource.SchemaFields.Where(field => field.Hidden)
+                .Select(field => field.Name).ToImmutableHashSet(StringComparer.OrdinalIgnoreCase));
     }
 
     private static SpatialReference ToSpatialReference(MetadataV2Resource resource)
@@ -1060,5 +1064,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         SpatialReference SpatialReference,
         MetadataV2GeometryType GeometryType,
         IReadOnlyList<MetadataV2Field> AttributeFields,
-        string ObjectIdFieldName);
+        string ObjectIdFieldName,
+        IReadOnlySet<string> HiddenFields);
 }
