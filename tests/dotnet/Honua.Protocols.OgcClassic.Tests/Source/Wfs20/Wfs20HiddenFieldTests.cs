@@ -75,4 +75,34 @@ public sealed class Wfs20HiddenFieldTests : IClassFixture<Wfs20HiddenFieldTestsF
             $"/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST={operation}&TYPENAMES=test_layer&{query}");
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
     }
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
+    public async Task Transaction_HiddenFieldRemainsWritable()
+    {
+        const string body = """
+            <wfs:Transaction service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:fes="http://www.opengis.net/fes/2.0">
+              <wfs:Update typeName="test_layer">
+                <wfs:Property>
+                  <wfs:ValueReference>category</wfs:ValueReference>
+                  <wfs:Value>private-update-5614</wfs:Value>
+                </wfs:Property>
+                <fes:Filter><fes:ResourceId rid="test_layer.1" /></fes:Filter>
+              </wfs:Update>
+            </wfs:Transaction>
+            """;
+        using var content = new StringContent(body, System.Text.Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", content);
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
+        payload.Should().Contain("<wfs:totalUpdated>1</wfs:totalUpdated>");
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT attributes->>'category' FROM features WHERE objectid = 1 AND layer_id = 0";
+        (await command.ExecuteScalarAsync()).Should().Be("private-update-5614");
+    }
+
 }

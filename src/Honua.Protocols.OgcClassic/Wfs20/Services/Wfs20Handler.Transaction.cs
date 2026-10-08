@@ -1145,8 +1145,9 @@ internal sealed partial class Wfs20Handler
                 : new TransactionFieldResolution(gmlField, IsGmlProperty: true);
         }
 
-        var resolvedName = WfsPropertyNameResolver.Resolve(resource, rawName, allowGeometryAlias: true) ??
-            WfsPropertyNameResolver.Resolve(resource, normalizedName, allowGeometryAlias: true);
+        // Hidden controls public output and read references, not transaction input permissions.
+        var resolvedName = WfsPropertyNameResolver.Resolve(resource, rawName, allowGeometryAlias: true, includeHiddenFields: true) ??
+            WfsPropertyNameResolver.Resolve(resource, normalizedName, allowGeometryAlias: true, includeHiddenFields: true);
         if (resolvedName == null)
         {
             throw new ArgumentException($"Unknown property '{rawName}' for feature type '{GetResourceFeatureTypeName(resource)}'.");

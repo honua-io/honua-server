@@ -68,3 +68,10 @@ Issue 5614 remains open while required acceptance is unfinished.
 - The normal-reference candidate build passed after adding the required XML
   parameter documentation. The subsequent supported OGC sort correction is
   rebuilding normally; final OGC verification remains pending.
+
+Candidate input-preservation diagnosis: `wfs-input-regression-red.trx` has one
+executed failure, HTTP 400 on an authorized update of hidden `category`. The
+initial resolver correction also affected transaction binding. Transactions
+now explicitly retain declared hidden input fields; read resolution remains
+filtered. The regression checks the stored value directly and awaits green
+verification. This preserves Hidden as a presentation rule, not a write ACL.

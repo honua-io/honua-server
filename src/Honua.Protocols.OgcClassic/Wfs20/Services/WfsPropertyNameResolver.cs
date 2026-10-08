@@ -20,15 +20,19 @@ internal static class WfsPropertyNameResolver
     internal static string? Resolve(
         MetadataV2Resource resource,
         string requestedName,
-        bool allowGeometryAlias)
+        bool allowGeometryAlias,
+        bool includeHiddenFields = false)
     {
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(requestedName);
 
-        resource = resource with
+        if (!includeHiddenFields)
         {
-            SchemaFields = resource.SchemaFields.Where(field => !field.Hidden).ToArray()
-        };
+            resource = resource with
+            {
+                SchemaFields = resource.SchemaFields.Where(field => !field.Hidden).ToArray()
+            };
+        }
         var requested = requestedName.Trim();
         if (requested.Length == 0)
         {
