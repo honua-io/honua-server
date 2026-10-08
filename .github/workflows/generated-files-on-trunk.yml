@@ -1,8 +1,13 @@
 name: Regenerate Generated Files on Trunk
 
+# Nightly, not per trunk push (operator 2026-10-07): a per-push generated-files PR
+# held a WIP slot and moved trunk after every landing, re-gating every open PR.
+# Drift is advisory on PRs and trunk (scripts/ci/report-generated-file-drift.sh),
+# so a day of drift costs nothing. Run on demand with workflow_dispatch.
 on:
-  push:
-    branches: [trunk]
+  schedule:
+    - cron: '30 10 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -45,10 +50,9 @@ jobs:
             --filter 'FullyQualifiedName~FeatureCatalog|FullyQualifiedName~GeoServicesParityMatrixDriftTests|FullyQualifiedName~PublicInterfaceProofLedgerTests'
 
       # Never a direct trunk write; see the header of publish-generated-files.sh
-      # for why (#3213, #4540/#4653). A merge of the PR this opens is itself a
-      # trunk push, but the diff it lands is byte-identical to what this run
-      # just committed, so that follow-up run finds nothing to publish and
-      # exits at the check above -- no self-trigger guard needed.
+      # for why (#3213, #4540/#4653). Merging the PR this opens does not
+      # re-trigger this workflow (it runs on a schedule), and the next nightly
+      # run finds nothing to publish when trunk is already current.
       # The job token cannot create PRs under repository Actions policy and
       # would suppress the PR/push events that start admission checks. Expose
       # the existing automation PAT only to publication; never push trunk.
