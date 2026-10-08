@@ -395,7 +395,7 @@ internal sealed partial class KubernetesArgoRolloutsDeployBackend(
             {
                 Status = WorkflowOperationStatus.RollbackRequested,
                 ProviderOperationId = operation.ProviderOperationId,
-                ObservedRevision = spec.CurrentRevision ?? operation.ObservedState,
+                ObservedRevision = spec.CurrentRevision,
                 Message = $"Argo Rollout '{target.RolloutName}' abort requested; the controller is reverting traffic to the stable revision."
             };
         }

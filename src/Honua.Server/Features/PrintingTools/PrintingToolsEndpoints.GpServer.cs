@@ -90,12 +90,9 @@ internal static partial class PrintingToolsEndpoints
                 return await HandleGpSoapExecutionAsync(context, operation, soap, cancellationToken).ConfigureAwait(false);
             }
 
-            if (operation.HasElements || !string.IsNullOrWhiteSpace(operation.Value))
+            if ((operation.HasElements || !string.IsNullOrWhiteSpace(operation.Value)) && name != "GetToolInfo")
             {
-                if (name != "GetToolInfo")
-                {
-                    return CreateSoapFault("This operation does not accept arguments.", StatusCodes.Status400BadRequest, soap);
-                }
+                return CreateSoapFault("This operation does not accept arguments.", StatusCodes.Status400BadRequest, soap);
             }
 
             XElement result;
