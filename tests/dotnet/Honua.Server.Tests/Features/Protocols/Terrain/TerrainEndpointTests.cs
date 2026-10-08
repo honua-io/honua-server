@@ -61,7 +61,10 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-        response.Headers.CacheControl?.Public.Should().BeTrue();
+        // The fixture sends an API key. Its response must not enter a shared cache.
+        response.Headers.CacheControl?.Private.Should().BeTrue();
+        response.Headers.CacheControl?.Public.Should().BeFalse();
+        response.Headers.Vary.Should().Contain("X-API-Key");
         response.Headers.CacheControl?.MaxAge.Should().BeGreaterThan(TimeSpan.Zero);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -128,7 +131,10 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
-        response.Headers.CacheControl?.Public.Should().BeTrue();
+        // The fixture sends an API key. Its response must not enter a shared cache.
+        response.Headers.CacheControl?.Private.Should().BeTrue();
+        response.Headers.CacheControl?.Public.Should().BeFalse();
+        response.Headers.Vary.Should().Contain("X-API-Key");
         response.Headers.CacheControl?.MaxAge.Should().BeGreaterThan(TimeSpan.Zero);
 
         var bitmap = await DecodeBitmapAsync(response);
