@@ -9,10 +9,10 @@ its READY status and historical test statements were not used as evidence.
 
 ## Work in progress
 
-| Finding | Outcome | Evidence or next action |
+| Finding | Current qualification | Evidence or next action |
 | --- | --- | --- |
-| SRV-OGC-007 | not attempted | WFS baseline completed: 7 failed, 1 passed, 0 skipped (8 cases). GML/CSV, DescribeFeatureType, PROPERTYNAME, SORTBY, GetPropertyValue and FES failures support a small WFS correction, now applied but awaiting verification. OGC runtime diagnosis remains queued. |
-| SRV-GRPC-003 | not attempted | New unary and streaming hidden-field integration regressions are awaiting local baseline execution. Production code is unchanged. |
+| SRV-OGC-007 | reproduced; corrections await verification | WFS baseline completed: 7 failed, 1 passed, 0 skipped (8 cases). GML/CSV, DescribeFeatureType, PROPERTYNAME, SORTBY, GetPropertyValue and FES failures support a small WFS correction, now applied but awaiting verification. OGC baseline completed: 13 failed, 2 passed, 0 skipped (15 cases). GML collection/single/stream, CSV collection/single, queryables, properties/sort/queryable/CQL references and both optimized GeoJSON paths reproduced the finding. Their bounded adapter corrections are applied but not yet verified. |
+| SRV-GRPC-003 | baseline building; correction not attempted | Restore and the four missing test-project dependencies are now complete. The focused unary/streaming baseline is building against unchanged gRPC production binaries. |
 
 The tests use `WebAppFixture` and `PostgresFixture` (Testcontainers image
 `postgis/postgis:18-3.6`), an isolated schema and the real seeded feature rows.
@@ -39,10 +39,18 @@ one self-review and independent review, then normal hosted PR gate admission.
 - Already fixed on starting trunk: WFS GeoJSON output passes the hidden-field
   regression through the existing GeoJSON builder.
 - Not reproduced: none of the completed WFS checks.
-- Not attempted: OGC and gRPC runtime qualification, correction verification,
-  formatting and review/publication remain pending build-slot admission.
+- OGC baseline: 13 reproduced failures and 2 already-enforced GeoJSON cases;
+  receipts are `5614-evidence/ogc-red.trx` and `5614-ogc-red.log` in the local
+  workspace. Four provider-returned-extra-attribute serializer cases cover all
+  GML formatter entrypoints and case-insensitive hidden-field matching.
+- Not attempted: completed gRPC runtime qualification, correction verification
+  and review/publication remain pending. Project-scoped formatting is running.
 
 The four shared slots were confirmed unavailable on 2026-10-08. Active holders
 were the release test job and other server test jobs. Their holds were retained.
 The WFS source correction is unfinished until its focused tests pass; this
 checkpoint is not delivery and does not close issue 5614.
+
+OGC production project formatting has completed using a shared slot,
+`dotnet format <project> --include <changed files> --no-restore`, wrapped in
+`timeout 20m`. The remaining affected-project format invocations are pending.

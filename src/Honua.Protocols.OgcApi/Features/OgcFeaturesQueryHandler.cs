@@ -189,6 +189,18 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var effectiveLimit = query.Limit ?? 0;
             var effectiveOffset = query.Offset ?? 0;
             var projectedProperties = query.OutFields?.ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
+            var hiddenFields = GetHiddenFields(resource);
+            if (query.OutFields == null && string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
+            {
+                // Keep the request projection separate so default GML can still stream.
+                query = query with
+                {
+                    OutFields = resource.SchemaFields
+                        .Where(field => !field.Hidden && field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
+                        .Select(field => field.Name)
+                        .ToImmutableArray()
+                };
+            }
             var outputAxisOrder = unifiedQuery.OutputCrs?.AxisOrder ?? AxisOrder.EastNorth;
             var outputCrsUri = unifiedQuery.OutputCrs?.Uri ?? "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
 
@@ -269,6 +281,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                         var streamGmlSchemaUrl = OgcFeaturesUtilities.BuildGmlApplicationSchemaUrl(streamBaseUrl);
                         return new StreamingGmlItemsResult(
                             streamingFeatureStore,
+                            hiddenFields,
                             layerId,
                             query,
                             snapshotCount, // advisory snapshot estimate; see comment above
@@ -516,7 +529,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 AppendLinkHeaders(context, links);
                 var gmlSchemaUrl = OgcFeaturesUtilities.BuildGmlApplicationSchemaUrl(baseUrl);
                 var gml = gmlResult.HasValue
-                    ? OgcResponseFormatter.BuildGmlFeatureCollection(gmlResult.Value.Items, queryTotalCount, gmlResult.Value.Items.Length, DateTimeOffset.UtcNow, gmlSchemaUrl, outputCrsUri, outputAxisOrder)
+                    ? OgcResponseFormatter.BuildGmlFeatureCollection(gmlResult.Value.Items, queryTotalCount, gmlResult.Value.Items.Length, DateTimeOffset.UtcNow, gmlSchemaUrl, outputCrsUri, outputAxisOrder, hiddenFields)
                     : OgcResponseFormatter.BuildGmlFeatureCollection(features, queryTotalCount, features.Length, DateTimeOffset.UtcNow, gmlSchemaUrl, outputCrsUri, outputAxisOrder);
                 return Results.Text(gml, MediaTypes.Gml);
             }
@@ -711,6 +724,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var query = new FeatureQuery
             {
                 ObjectIds = ImmutableArray.Create(objectId),
+                OutFields = ResolveCsvFieldNames(resource, null).ToImmutableArray(),
                 Limit = 1,
                 SpatialReferenceSrid = resourceSrid,
                 OutputSrid = crsDefinition.Srid,
@@ -731,7 +745,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 }
 
                 HonuaTelemetry.SetSuccess(featureActivity, 1);
-                var gml = OgcResponseFormatter.BuildGmlSingleFeature(gmlResult.Items[0], crsDefinition.Uri, crsDefinition.AxisOrder);
+                var gml = OgcResponseFormatter.BuildGmlSingleFeature(gmlResult.Items[0], crsDefinition.Uri, crsDefinition.AxisOrder, GetHiddenFields(resource));
                 return Results.Text(gml, MediaTypes.Gml);
             }
 
@@ -849,11 +863,16 @@ internal sealed partial class OgcFeaturesQueryHandler(
             links: links,
             schema: schema);
 
+    private static ImmutableHashSet<string> GetHiddenFields(MetadataV2Resource resource)
+        => resource.SchemaFields.Where(field => field.Hidden)
+            .Select(field => field.Name).ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
+
     private static string[] ResolveCsvFieldNames(
         MetadataV2Resource resource,
         ImmutableHashSet<string>? projectedProperties)
     {
         IEnumerable<string> fieldNames = resource.SchemaFields
+            .Where(field => !field.Hidden)
             .Where(field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
             .Select(field => field.Name);
         if (projectedProperties != null)
@@ -999,6 +1018,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
     {
         var objectIdName = resource.FindPrimaryIdField()?.Name ?? "objectid";
         var propertyFields = resource.SchemaFields
+            .Where(field => !field.Hidden)
             .Where(field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
             .Where(field => !field.Name.Equals(objectIdName, StringComparison.OrdinalIgnoreCase))
             .Select(field => field.Name)
@@ -1054,6 +1074,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
     {
         var objectIdName = resource.FindPrimaryIdField()?.Name ?? "objectid";
         var propertyFields = resource.SchemaFields
+            .Where(field => !field.Hidden)
             .Where(field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
             .Where(field => !field.Name.Equals(objectIdName, StringComparison.OrdinalIgnoreCase))
             .Select(field => field.Name)
@@ -1570,6 +1591,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private sealed class StreamingGmlItemsResult : IResult
     {
         private readonly IStreamingFeatureStore _streamingFeatureStore;
+        private readonly IReadOnlySet<string> _hiddenFields;
         private readonly int _storageLayerId;
         private readonly FeatureQuery _query;
         private readonly long _numberMatched;
@@ -1585,6 +1607,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
         public StreamingGmlItemsResult(
             IStreamingFeatureStore streamingFeatureStore,
+            IReadOnlySet<string> hiddenFields,
             int storageLayerId,
             FeatureQuery query,
             long numberMatched,
@@ -1599,6 +1622,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             CancellationToken requestCancellationToken)
         {
             _streamingFeatureStore = streamingFeatureStore;
+            _hiddenFields = hiddenFields;
             _storageLayerId = storageLayerId;
             // Request limit+1 rows for the cursor-paging probe (same as StreamingItemsResult).
             _query = query with { Limit = effectiveLimit + 1 };
@@ -1664,7 +1688,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 _gmlApplicationSchemaUrl,
                 _crsUri,
                 _axisOrder,
-                cancellationToken);
+                cancellationToken,
+                _hiddenFields);
         }
     }
 

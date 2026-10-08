@@ -79,6 +79,10 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
     {
         try
         {
+            resource = resource with
+            {
+                SchemaFields = resource.SchemaFields.Where(field => !field.Hidden).ToArray()
+            };
             var filterResult = await _filterProcessor.ProcessFiltersAsync(
                 parameters.Request,
                 resource,
