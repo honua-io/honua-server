@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Offline regression fixtures for FAST selection and real closure reporting."""
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -65,6 +64,8 @@ if sys.argv[1] != 'validate':
         self.write(self.test_path, self.test_source)
         self.protocol_helper = "src/Honua.Protocols.GeoServices/InputRepair.cs"
         self.write(self.protocol_helper, "internal class InputRepair\n{\n    public int Value()\n    {\n        return 1;\n    }\n}\n")
+        self.constraint_test = "tests/dotnet/Honua.Core.Tests/ConstraintTests.cs"
+        self.write(self.constraint_test, self.test_source.replace("GET /old", "GET /old/{id:[a-z]+}/suffix"))
         self.write(".github/ci-shards.json", '{"shards":[]}')
         self.write("Honua.sln", '\n'.join(f'Project("guid") = "p", "{p.replace(chr(47), chr(92))}", "guid"\nEndProject' for p in self.projects))
         # MSBuild evaluation is the only allowed managed command in --dry-run.
@@ -193,6 +194,11 @@ pathlib.Path(out).write_text(json.dumps({'projects': projects}))
         self.assertEqual(self.guard([self.protocol_helper]), "")
         self.write(self.protocol_helper, source.replace("return 1;", 'app.MapGet("/rest/new", Handler); return 1;'))
         self.assertIn("route/capability", self.guard([self.protocol_helper]))
+
+    def test_route_constraint_bracket_does_not_hide_changed_suffix(self):
+        source = (self.root / self.constraint_test).read_text()
+        self.write(self.constraint_test, source.replace("/suffix", "/changed"))
+        self.assertIn("metadata", self.guard([self.constraint_test]))
 
     def test_ordinary_docs_keep_shell_only_path(self):
         self.write("README.md", "A documentation-only repair.\n")

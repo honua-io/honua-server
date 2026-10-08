@@ -35,6 +35,75 @@ def git(*args: str) -> str:
     return subprocess.check_output(["git", *args], text=True, stderr=subprocess.DEVNULL)
 
 
+def metadata(source: str) -> tuple[list[str], list[str], str]:
+    """Over-approximate attributes and declaration headers without parsing strings
+    as C# delimiters. Collection/indexer edits may escalate, never under-select.
+    In particular, `]` inside a route constraint must not truncate an attribute.
+    """
+    mask = list(source)
+    brackets = []
+    stack = []
+    i = 0
+    while i < len(source):
+        start = i
+        if source.startswith("//", i):
+            end = source.find("\n", i)
+            i = len(source) if end < 0 else end
+        elif source.startswith("/*", i):
+            end = source.find("*/", i + 2)
+            if end < 0:
+                raise ValueError("unterminated C# comment")
+            i = end + 2
+        elif source[i] in ('"', "'"):
+            quote = source[i]
+            end_quotes = i + 1
+            while end_quotes < len(source) and source[end_quotes] == quote:
+                end_quotes += 1
+            run = end_quotes - i
+            if quote == '"' and run >= 3:
+                end = source.find(quote * run, i + run)
+                if end < 0:
+                    raise ValueError("unterminated C# raw string")
+                i = end + run
+            else:
+                verbatim = quote == '"' and (source[max(0, i - 1):i] == "@" or source[max(0, i - 2):i] == "@$")
+                i += 1
+                while i < len(source):
+                    if source[i] == quote:
+                        if verbatim and source.startswith(quote * 2, i):
+                            i += 2
+                            continue
+                        i += 1
+                        break
+                    if not verbatim and source[i] == "\\":
+                        i += 2
+                    else:
+                        i += 1
+                else:
+                    raise ValueError("unterminated C# literal")
+        else:
+            if source[i] == "[":
+                stack.append(i)
+            elif source[i] == "]":
+                if not stack:
+                    raise ValueError("unbalanced C# bracket")
+                opening = stack.pop()
+                if not stack:
+                    brackets.append(source[opening:i + 1])
+            i += 1
+            continue
+        # Keep offsets/newlines, mask literal/comment punctuation for headers.
+        for offset in range(start, min(i, len(source))):
+            if source[offset] not in "\r\n":
+                mask[offset] = " "
+    if stack:
+        raise ValueError("unbalanced C# bracket")
+    masked = "".join(mask)
+    headers = [source[match.start():match.end()] for match in re.finditer(
+        r"\b(?:public|protected)\s+[^{};]*(?:\{|;)", masked)]
+    return brackets, headers, masked
+
+
 def reason(base: str, paths: list[str]) -> str:
     try:
         merge_base = git("merge-base", base, "HEAD").strip()
@@ -72,16 +141,14 @@ def reason(base: str, paths: list[str]) -> str:
                                 if line.startswith(("+", "-"))
                                 and not line.startswith(("+++", "---")))
             snapshots = [old, current, git("show", f"HEAD:{path}"), git("show", f":{path}")]
-            # Compare complete metadata/header spans, including multiline attributes.
-            # Regex over-approximates C# (including collection expressions); ambiguous
-            # changes therefore retain full enforcement rather than narrow the lane.
-            attributes = re.compile(r"\[[^\]]*\]", re.S)
-            declarations = re.compile(r"\b(?:public|protected)\s+[^{};=]+(?:\{|;|=>)")
-            metadata_changed = any(attributes.findall(old) != attributes.findall(snapshot)
-                                   or declarations.findall(old) != declarations.findall(snapshot)
-                                   for snapshot in snapshots)
+            spans = [metadata(snapshot) for snapshot in snapshots]
+            metadata_changed = any(spans[0][:2] != span[:2] for span in spans)
             if path.startswith("src/"):
-                if (metadata_changed or not path.startswith(SAFE_SOURCE_ROOTS) or CONTRACT.search("\n".join(snapshots)) or CONTRACT.search(changed)
+                public_contract = any(re.search(
+                    r"\b(?:public|protected)\s+(?:\w+\s+)*(?:enum|interface|record|readonly|const)\b|"
+                    r"\b(?:public|protected)\s+[^{}();]*[=;]", span[2]) for span in spans)
+                contract_path = re.search(r"Endpoint|Route|Registry|Catalog|Capability|Proof|Parity|Startup|Program", path, re.I)
+                if (metadata_changed or public_contract or contract_path or not path.startswith(SAFE_SOURCE_ROOTS) or CONTRACT.search("\n".join(snapshots)) or CONTRACT.search(changed)
                         or TEST_DISCOVERY.search(changed)
                         or re.search(r"\b(?:public|protected)\b|^\s*#", changed, re.M)):
                     return f"route/capability source: {path}"
@@ -95,7 +162,7 @@ def reason(base: str, paths: list[str]) -> str:
                     return f"test discovery/coverage metadata: {path}"
             else:
                 return f"unclassified C# input: {path}"
-    except (OSError, subprocess.CalledProcessError, UnicodeError):
+    except (OSError, subprocess.CalledProcessError, UnicodeError, ValueError):
         return "contract guard could not account for the complete diff"
     return ""
 
