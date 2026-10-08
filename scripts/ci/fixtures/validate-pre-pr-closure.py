@@ -63,6 +63,8 @@ if sys.argv[1] != 'validate':
 }
 '''
         self.write(self.test_path, self.test_source)
+        self.protocol_helper = "src/Honua.Protocols.GeoServices/InputRepair.cs"
+        self.write(self.protocol_helper, "internal class InputRepair\n{\n    public int Value()\n    {\n        return 1;\n    }\n}\n")
         self.write(".github/ci-shards.json", '{"shards":[]}')
         self.write("Honua.sln", '\n'.join(f'Project("guid") = "p", "{p.replace(chr(47), chr(92))}", "guid"\nEndProject' for p in self.projects))
         # MSBuild evaluation is the only allowed managed command in --dry-run.
@@ -184,6 +186,13 @@ pathlib.Path(out).write_text(json.dumps({'projects': projects}))
         output = self.plan("--fast")
         self.assertNotIn("Mode: CI-SHELL-ONLY", output)
         self.assertIn("Architecture: full catalogue/proof enforcement", output)
+
+    def test_protocol_helper_body_can_defer_but_registration_cannot(self):
+        source = (self.root / self.protocol_helper).read_text()
+        self.write(self.protocol_helper, source.replace("return 1;", "return 2;"))
+        self.assertEqual(self.guard([self.protocol_helper]), "")
+        self.write(self.protocol_helper, source.replace("return 1;", 'app.MapGet("/rest/new", Handler); return 1;'))
+        self.assertIn("route/capability", self.guard([self.protocol_helper]))
 
     def test_ordinary_docs_keep_shell_only_path(self):
         self.write("README.md", "A documentation-only repair.\n")

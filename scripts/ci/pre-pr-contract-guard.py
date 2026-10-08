@@ -27,6 +27,7 @@ TEST_DISCOVERY = re.compile(
 SAFE_SOURCE_ROOTS = (
     "src/Honua.Geometry/", "src/Honua.Core/", "src/Honua.Core.Abstractions/",
     "src/Honua.Db/", "src/Honua.Hosting/", "src/Honua.Io/",
+    "src/Honua.Protocols.", "src/Honua.Server/Features/", "src/Honua.Import/",
 )
 
 
@@ -71,19 +72,23 @@ def reason(base: str, paths: list[str]) -> str:
                                 if line.startswith(("+", "-"))
                                 and not line.startswith(("+++", "---")))
             snapshots = [old, current, git("show", f"HEAD:{path}"), git("show", f":{path}")]
+            # Compare complete metadata/header spans, including multiline attributes.
+            # Regex over-approximates C# (including collection expressions); ambiguous
+            # changes therefore retain full enforcement rather than narrow the lane.
+            attributes = re.compile(r"\[[^\]]*\]", re.S)
+            declarations = re.compile(r"\b(?:public|protected)\s+[^{};=]+(?:\{|;|=>)")
+            metadata_changed = any(attributes.findall(old) != attributes.findall(snapshot)
+                                   or declarations.findall(old) != declarations.findall(snapshot)
+                                   for snapshot in snapshots)
             if path.startswith("src/"):
-                if (not path.startswith(SAFE_SOURCE_ROOTS) or CONTRACT.search("\n".join(snapshots)) or CONTRACT.search(changed)
+                if (metadata_changed or not path.startswith(SAFE_SOURCE_ROOTS) or CONTRACT.search("\n".join(snapshots)) or CONTRACT.search(changed)
                         or TEST_DISCOVERY.search(changed)
                         or re.search(r"\b(?:public|protected)\b|^\s*#", changed, re.M)):
                     return f"route/capability source: {path}"
             elif path.startswith("tests/dotnet/"):
                 # A body-only repair leaves reflected names and coverage metadata
                 # unchanged. Include every diff layer, even when edits cancel out.
-                attributes = re.compile(r"\[[^\]]*\]", re.S)
-                declarations = re.compile(r"\b(?:public|protected)\s+[^{};=]+(?:\{|;|=>)")
-                if any(attributes.findall(old) != attributes.findall(snapshot)
-                       or declarations.findall(old) != declarations.findall(snapshot)
-                       for snapshot in snapshots):
+                if metadata_changed:
                     return f"test discovery/coverage metadata: {path}"
                 if (TEST_DISCOVERY.search(changed) or CONTRACT.search(changed)
                         or re.search(r"^\s*#", changed, re.M)):
