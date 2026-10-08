@@ -621,7 +621,13 @@ public static class SharingRestEndpoints
         return Results.Json(new CommunitySelfResponse { Id = current, Username = current, FullName = ResolveDisplayName(context.User) }, SharingRestJsonContext.Default.CommunitySelfResponse, contentType: JsonContentType);
     }
 
-    private static async Task<IResult> HandleContentUserAsync(HttpContext context, string username, string? f, IMetadataV2GraphProvider graphProvider, IPortalItemProjector projector, ILogger<SharingRestLog> logger)
+    private static async Task<IResult> HandleContentUserAsync(
+        HttpContext context,
+        string username,
+        string? f,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
+        [FromServices] IPortalItemProjector projector,
+        [FromServices] ILogger<SharingRestLog> logger)
     {
         var gate = GateReadSurface(context, f, logger);
         if (gate is not null)
