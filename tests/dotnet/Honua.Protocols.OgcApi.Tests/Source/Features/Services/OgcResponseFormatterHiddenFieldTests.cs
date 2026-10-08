@@ -11,6 +11,9 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.Services;
 
+/// <summary>
+/// Verifies publisher-hidden fields are omitted while supported protocol behavior is preserved.
+/// </summary>
 public sealed class OgcResponseFormatterHiddenFieldTests
 {
     [UnitTheory]

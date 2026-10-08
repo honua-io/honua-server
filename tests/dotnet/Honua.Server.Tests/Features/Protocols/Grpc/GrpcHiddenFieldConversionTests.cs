@@ -10,6 +10,9 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
+/// <summary>
+/// Verifies publisher-hidden fields are omitted while supported protocol behavior is preserved.
+/// </summary>
 [Protocol(TestProtocols.Grpc)]
 [Operation(Operations.Query)]
 public sealed class GrpcHiddenFieldConversionTests

@@ -16,6 +16,9 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
+/// <summary>
+/// Provides an isolated database-backed application with publisher-hidden fields.
+/// </summary>
 public sealed class GrpcHiddenFieldTestsFixture : IAsyncLifetime
 {
     public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
@@ -35,6 +38,9 @@ public sealed class GrpcHiddenFieldTestsFixture : IAsyncLifetime
 
 }
 
+/// <summary>
+/// Verifies publisher-hidden fields are omitted while supported protocol behavior is preserved.
+/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Grpc)]
 [Operation(Operations.Query)]

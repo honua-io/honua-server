@@ -75,3 +75,11 @@ initial resolver correction also affected transaction binding. Transactions
 now explicitly retain declared hidden input fields; read resolution remains
 filtered. The regression checks the stored value directly and awaits green
 verification. This preserves Hidden as a presentation rule, not a write ACL.
+
+Final WFS receipt: `wfs-final-green.trx`, 21 passed, 0 failed, 0 skipped.
+The hidden-field transaction update and direct stored-value assertion pass.
+Independent review and the single self-review froze two original P1 findings
+in 203 seconds: retain full schema for public identifier binding, and document
+new public test types. XML summaries are added; a new Docker-backed hidden
+custom identifier regression is running before the binding correction.
+Neither review finding is marked fixed until focused verification passes.

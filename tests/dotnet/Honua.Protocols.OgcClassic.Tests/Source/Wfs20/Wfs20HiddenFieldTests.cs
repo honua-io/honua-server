@@ -12,6 +12,9 @@ using System.Net;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
+/// <summary>
+/// Provides an isolated database-backed application with publisher-hidden fields.
+/// </summary>
 public sealed class Wfs20HiddenFieldTestsFixture : IAsyncLifetime
 {
     public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
@@ -31,6 +34,9 @@ public sealed class Wfs20HiddenFieldTestsFixture : IAsyncLifetime
 
 }
 
+/// <summary>
+/// Verifies publisher-hidden fields are omitted while supported protocol behavior is preserved.
+/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wfs20)]
 [Operation(Operations.Query)]
