@@ -119,17 +119,18 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 # Runtime stage
 FROM ${DOTNET_ASPNET_IMAGE} AS runtime
 
-# The current upstream digest predates available OS fixes. Bump this revision
-# with security refreshes so a cached package layer cannot retain old packages.
-# 2026-09-30: refresh OpenSSL for CVE-2026-84782 (Ubuntu fix 3.0.13-0ubuntu3.16).
-ARG RUNTIME_PACKAGE_REVISION=20260930
+# The current upstream digest predates available OS fixes. The revision is
+# echoed in the upgrade RUN so a bump invalidates the cached apt layer.
+# 2026-10-08: pick up libfreetype6 2.13.2+dfsg-1ubuntu0.2 (CVE-2026-95512).
+ARG RUNTIME_PACKAGE_REVISION=20261008
 
 # Security: Install runtime dependencies. The glibc runtime is required by
 # ParquetSharp's native library, which backs the GeoParquet writer.
 # The base is digest-pinned; compatible security updates and dependency versions
 # intentionally follow that Debian snapshot's configured repositories.
 # hadolint ignore=DL3005,DL3008
-RUN apt-get update && \
+RUN echo "runtime package revision ${RUNTIME_PACKAGE_REVISION}" && \
+    apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
     ca-certificates \

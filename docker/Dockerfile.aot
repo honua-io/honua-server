@@ -150,9 +150,9 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 # Runtime stage - distroless-style minimal image for maximum security
 FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS runtime
 
-# Invalidate the cached upgrade layer with security refreshes so a cached package
-# layer cannot retain old packages.
-ARG RUNTIME_PACKAGE_REVISION=20261001
+# Echoed in the upgrade RUN so a bump invalidates the cached apt layer.
+# 2026-10-08: refresh Ubuntu pocket updates on the digest-pinned runtime-deps base.
+ARG RUNTIME_PACKAGE_REVISION=20261008
 
 # Security: Install runtime dependencies. The Ubuntu runtime-deps base already ships
 # ICU (InvariantGlobalization=false, honua-server#1369). libatomic1 is required by
@@ -163,7 +163,8 @@ ARG RUNTIME_PACKAGE_REVISION=20261001
 # The base is digest-pinned; compatible security updates and dependency versions
 # intentionally follow that Ubuntu snapshot's configured repositories.
 # hadolint ignore=DL3005,DL3008
-RUN apt-get update && \
+RUN echo "runtime package revision ${RUNTIME_PACKAGE_REVISION}" && \
+    apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
     ca-certificates \

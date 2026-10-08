@@ -440,3 +440,89 @@ do not carry a separate .NET shared framework.
   nightly Trivy gate; track Microsoft Patch Tuesday for `azure-functions/base`
   digest bumps and propose follow-up PRs the same way every other Dockerfile
   digest is bumped today.
+
+## 2026-10-08 Security tab pass
+
+This section records the pass tracked by issue
+[honua-io/honua-server#5729](https://github.com/honua-io/honua-server/issues/5729).
+It does not replace the Q2 history above. Base-image digests stay pinned.
+`wget` stays in the runtime images because the AOT `HEALTHCHECK` calls it.
+`libicu` stays because `InvariantGlobalization` is false. `.trivyignore` and
+`.trivyignore-release` are unchanged, and the release allowlist stays empty.
+Unfixed OS packages are left open.
+
+### Dependabot
+
+| Alert | Advisory | Package | Manifest | Fix |
+| --- | --- | --- | --- | --- |
+| #90 | GHSA-6688-9rhm-gjv2 | dompurify | `tests/js-browser/cesium/package-lock.json` | override `3.4.16` |
+| #87 | GHSA-p98j-92pf-mc4p | dompurify | same lock | override `3.4.16` |
+| #86 | GHSA-hrr3-gc8f-f4qj | fast-uri | `scripts/conformance/ogcapi/package-lock.json` | override `3.1.8` |
+
+`tests/js/package.json` also overrides `fast-uri` to `3.1.8`. The locked
+`node_modules/@mapbox/vtvalidate` optional stub in the OGC API lockfile is
+kept. These alerts close when the lockfiles reach `trunk`. A local `npm audit`
+on each tree reported zero vulnerabilities.
+
+Filesystem Trivy reports the same two packages (`dompurify` #3700 and #3696,
+`fast-uri` #3680). They close on the next filesystem scan after the locks land.
+
+### CodeQL false positives
+
+In-source `// codeql[<rule>]` comments sit on the statement CodeQL flags. They
+take effect on the next default-branch CodeQL run. Nothing here changes
+authorization, quoting, or connection encryption.
+
+| Location | Rule | Why it is a false positive |
+| --- | --- | --- |
+| `PostgresObservationStore` catalog helpers (`ExecuteCatalogReaderAsync`, `ExecuteCatalogScalarAsync`, `ExecuteCatalogNonQueryAsync`) | `cs/sql-injection` | The only taint source is `X-Honua-Test-Schema`. The header and `SchemaSearchPath` both allow-list the identifier (`\A[A-Za-z_][A-Za-z0-9_]{0,62}\z`) and quote it before interpolation. Table and sequence names are compile-time literals. `$filter` and `$orderby` values are parameters. The twenty open alerts, plus the two already dismissed at the old line numbers, all land on these three helpers. |
+| `AttachmentEndpoints` `form == null` in add, update, and delete | `cs/user-controlled-bypass` | Alerts #3465, #3466, and #3467. Layer write authorization runs in `TryValidateLayerAccessAsync` before the null check. A missing form fails closed. Supplying a form cannot skip that decision or the owner-edit check below it. |
+| `SqlServerConnectionSecurity.RequireEncryption` | `cs/insecure-sql-connection` | Alert #3488. Every incoming string, including a test value of `Encrypt=false`, is re-parsed and `Encrypt` is forced true before a connection is opened. CodeQL traces the pre-rewrite string into the builder and does not model the object initializer. |
+
+### Image packages that have a fix
+
+`RUNTIME_PACKAGE_REVISION` is echoed inside each `apt-get upgrade` `RUN`. An
+unused `ARG` does not bust the Buildx cache, which is why `libfreetype6` stayed
+on `2.13.2+dfsg-1ubuntu0.1` after the previous revision bump.
+
+| Image | Change | Advisory |
+| --- | --- | --- |
+| Root `Dockerfile` (jit-debian) | revision `20261008` echoed in the existing upgrade | `libfreetype6` CVE-2026-95512, fixed by `2.13.2+dfsg-1ubuntu0.2` (alert #3702) |
+| `docker/Dockerfile.aot` | same cache-bust echo | refresh Ubuntu pocket updates on the pinned `runtime-deps` base |
+| `docker/Dockerfile.lambda.aot` | new `apt-get upgrade` before the runtime packages, revision echoed after the publish `COPY` | `openssl` / `libssl3t64` CVE-2026-84782, fixed by `3.0.13-0ubuntu3.16` (alerts #3698 and #3697) |
+
+`docker/Dockerfile.lambda` already runs `dnf upgrade`, so the Lambda JIT scan
+was clean. These image alerts leave the Security tab only after the next
+nightly or deploy scan rebuilds the images.
+
+### Left open on purpose
+
+Trivy reports these with an empty fixed version. They stay open. They are not
+in either ignore file.
+
+| Package | Advisory | Where |
+| --- | --- | --- |
+| `libpng16-16t64` 1.6.43-5ubuntu0.6 | CVE-2026-46675 | jit-debian #3703 |
+| `libexpat1` 2.6.1-2ubuntu0.6 | CVE-2025-66382 | jit-debian #3393 |
+| `libpcre2-8-0` 10.42-4ubuntu2.1 | CVE-2026-86145, CVE-2026-89161 | aot #3679, #3678 |
+| `libc6` / `libc-bin` 2.39-0ubuntu8.9 | CVE-2026-89092, CVE-2026-18374 | aot #3677, #3676, #3490, #3489 |
+| `zlib1g` 1:1.3.dfsg-3.1ubuntu2.2 | CVE-2026-85091 | aot #3532 |
+| `tar` 1.35+dfsg-3ubuntu0.4 | CVE-2026-18508, CVE-2026-18477 | aot #3412, #3411 |
+| `wget` 1.21.4-1ubuntu4.5 | CVE-2021-31879 | aot #3406 (required for `HEALTHCHECK`) |
+| `passwd` / `login` 1:4.13+dfsg1-4ubuntu3.2 | CVE-2024-56433 | aot #3404, #3402 |
+| `libudev1` / `libsystemd0` 255.4-1ubuntu8.17 | CVE-2026-40228 | aot #3400, #3399 |
+| `libicu74` 74.2-1ubuntu3.1 | CVE-2025-5222 | aot #3395 (required; `InvariantGlobalization=false`) |
+
+### Stranded `container-security-scan` alerts
+
+`security-nightly.yml` now uploads `trivy-container-jit-debian` and
+`trivy-container-aot-alpine`. The old category
+`.github/workflows/security-nightly.yml:container-security-scan` no longer
+receives a SARIF upload, so GitHub cannot auto-close findings that the
+2026-10-08 scans already omit. These eleven were real and are already gone
+from the replacement categories (diffutils, libattr1, the older zlib
+CVE-2026-27171, the util-linux family CVE-2026-27456, and libgcrypt20
+CVE-2024-2236): #3416, #3410, #3407, #3405, #3403, #3401, #3398, #3396, #3394,
+#3392, #3391. They were dismissed with reason `won't fix` and a comment that
+the finding was real and is already fixed. The open no-fix OS advisories above
+were not dismissed.

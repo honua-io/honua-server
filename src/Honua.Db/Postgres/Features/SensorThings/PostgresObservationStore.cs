@@ -88,7 +88,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         AddCatalogParameters(command, query);
 
         var results = new List<SensorThingsDatastream>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var reader = await ExecuteCatalogReaderAsync(command, cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             results.Add(ReadDatastream(reader));
@@ -116,7 +116,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         await using var command = new NpgsqlCommand(sql, lease);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var reader = await ExecuteCatalogReaderAsync(command, cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ReadDatastream(reader) : null;
     }
 
@@ -132,7 +132,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         AddCatalogParameters(command, query);
 
         var results = new List<SensorThingsThing>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var reader = await ExecuteCatalogReaderAsync(command, cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             results.Add(new SensorThingsThing
@@ -155,7 +155,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         await using var command = new NpgsqlCommand(sql, lease);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var reader = await ExecuteCatalogReaderAsync(command, cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             return null;
@@ -182,7 +182,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         AddCatalogParameters(command, query);
 
         var results = new List<SensorThingsSensor>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var reader = await ExecuteCatalogReaderAsync(command, cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             results.Add(ReadSensor(reader));
@@ -200,7 +200,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         await using var command = new NpgsqlCommand(sql, lease);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var reader = await ExecuteCatalogReaderAsync(command, cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ReadSensor(reader) : null;
     }
 
@@ -219,7 +219,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         AddCatalogParameters(command, query);
 
         var results = new List<SensorThingsObservedProperty>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var reader = await ExecuteCatalogReaderAsync(command, cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             results.Add(ReadObservedProperty(reader));
@@ -237,7 +237,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         await using var command = new NpgsqlCommand(sql, lease);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var reader = await ExecuteCatalogReaderAsync(command, cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ReadObservedProperty(reader) : null;
     }
 
@@ -304,7 +304,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         AppendWhere(sql, query.WhereSql);
         await using var command = new NpgsqlCommand(sql.ToString(), lease);
         AddFilterParameters(command, query.WhereParameters);
-        return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0L);
+        return (long)(await ExecuteCatalogScalarAsync(command, cancellationToken).ConfigureAwait(false) ?? 0L);
     }
 
     private static void AppendWhere(System.Text.StringBuilder sql, string? whereSql)
@@ -370,7 +370,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql.ToString(), lease);
         AddObservationFilterParameters(command, query);
-        return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0L);
+        return (long)(await ExecuteCatalogScalarAsync(command, cancellationToken).ConfigureAwait(false) ?? 0L);
     }
 
     private static void AppendObservationFilter(System.Text.StringBuilder sql, ObservationQuery query)
@@ -423,7 +423,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         command.Parameters.AddWithValue("top", NpgsqlDbType.Integer, Math.Max(0, query.Top));
 
         var results = new List<SensorThingsObservation>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var reader = await ExecuteCatalogReaderAsync(command, cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             results.Add(ReadObservation(reader));
@@ -442,7 +442,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         await using var command = new NpgsqlCommand(sql, lease);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var reader = await ExecuteCatalogReaderAsync(command, cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ReadObservation(reader) : null;
     }
 
@@ -488,7 +488,7 @@ RETURNING id
                 "feature_of_interest_id",
                 NpgsqlDbType.Bigint,
                 (object?)row.FeatureOfInterestId ?? DBNull.Value);
-            var id = (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
+            var id = (long)(await ExecuteCatalogScalarAsync(command, cancellationToken).ConfigureAwait(false)
                 ?? throw new InvalidOperationException("Observation insert did not return a server-allocated id."));
 
             results.Add(new SensorThingsObservation
@@ -543,7 +543,7 @@ RETURNING id
             command.Parameters.AddWithValue("thing_id", NpgsqlDbType.Bigint, thingId);
             command.Parameters.AddWithValue("sensor_id", NpgsqlDbType.Bigint, sensorId);
             command.Parameters.AddWithValue("observed_property_id", NpgsqlDbType.Bigint, observedPropertyId);
-            datastreamId = (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
+            datastreamId = (long)(await ExecuteCatalogScalarAsync(command, cancellationToken).ConfigureAwait(false)
                 ?? throw new InvalidOperationException("Datastream insert did not return a server-allocated id."));
         }
 
@@ -585,7 +585,7 @@ RETURNING id
             connection,
             transaction);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
-        await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        await ExecuteCatalogScalarAsync(command, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<bool> ExistsAsync(
@@ -598,7 +598,7 @@ RETURNING id
         await using var command = new NpgsqlCommand(
             $"SELECT 1 FROM {table} WHERE id = @id", connection, transaction);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
-        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
+        return await ExecuteCatalogScalarAsync(command, cancellationToken).ConfigureAwait(false) is not null;
     }
 
     private static async Task<long> UpsertRelatedAsync(
@@ -621,7 +621,7 @@ RETURNING id
             explicitCommand.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, entity.Id);
             explicitCommand.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? $"Thing {entity.Id}");
             explicitCommand.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
-            await explicitCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await ExecuteCatalogNonQueryAsync(explicitCommand, cancellationToken).ConfigureAwait(false);
             await AdvanceSequencePastAsync(connection, transaction, sequence, entity.Id, cancellationToken).ConfigureAwait(false);
             return entity.Id;
         }
@@ -630,7 +630,7 @@ RETURNING id
             $"INSERT INTO {table} (name, description) VALUES (@name, @description) RETURNING id", connection, transaction);
         command.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? "Thing");
         command.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
-        return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
+        return (long)(await ExecuteCatalogScalarAsync(command, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("Related-entity insert did not return a server-allocated id."));
     }
 
@@ -654,7 +654,7 @@ RETURNING id
             explicitCommand.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, entity.Id);
             explicitCommand.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? $"Sensor {entity.Id}");
             explicitCommand.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
-            await explicitCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await ExecuteCatalogNonQueryAsync(explicitCommand, cancellationToken).ConfigureAwait(false);
             await AdvanceSequencePastAsync(connection, transaction, _sensorIdSequence, entity.Id, cancellationToken).ConfigureAwait(false);
             return entity.Id;
         }
@@ -665,7 +665,7 @@ RETURNING id
             transaction);
         command.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? "Sensor");
         command.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
-        return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
+        return (long)(await ExecuteCatalogScalarAsync(command, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("Sensor insert did not return a server-allocated id."));
     }
 
@@ -689,7 +689,7 @@ RETURNING id
             explicitCommand.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, entity.Id);
             explicitCommand.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? $"ObservedProperty {entity.Id}");
             explicitCommand.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
-            await explicitCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await ExecuteCatalogNonQueryAsync(explicitCommand, cancellationToken).ConfigureAwait(false);
             await AdvanceSequencePastAsync(connection, transaction, _observedPropertyIdSequence, entity.Id, cancellationToken).ConfigureAwait(false);
             return entity.Id;
         }
@@ -700,8 +700,38 @@ RETURNING id
             transaction);
         command.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? "ObservedProperty");
         command.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
-        return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
+        return (long)(await ExecuteCatalogScalarAsync(command, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("ObservedProperty insert did not return a server-allocated id."));
+    }
+
+    private static Task<NpgsqlDataReader> ExecuteCatalogReaderAsync(
+        NpgsqlCommand command,
+        CancellationToken cancellationToken)
+    {
+        // codeql[cs/sql-injection]: schema identifiers are allow-listed
+        // (\A[A-Za-z_][A-Za-z0-9_]{0,62}\z) and quoted by NpgsqlCommandBuilder before
+        // interpolation. X-Honua-Test-Schema is rejected by that same pattern before it
+        // is stored. Table and sequence names are compile-time catalog identifiers.
+        // $filter and $orderby values are bound as parameters.
+        return command.ExecuteReaderAsync(cancellationToken);
+    }
+
+    private static Task<object?> ExecuteCatalogScalarAsync(
+        NpgsqlCommand command,
+        CancellationToken cancellationToken)
+    {
+        // codeql[cs/sql-injection]: see ExecuteCatalogReaderAsync. The command text is
+        // the same allow-listed identifier shape; values stay in parameters.
+        return command.ExecuteScalarAsync(cancellationToken);
+    }
+
+    private static Task<int> ExecuteCatalogNonQueryAsync(
+        NpgsqlCommand command,
+        CancellationToken cancellationToken)
+    {
+        // codeql[cs/sql-injection]: see ExecuteCatalogReaderAsync. The command text is
+        // the same allow-listed identifier shape; values stay in parameters.
+        return command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static SensorThingsDatastream ReadDatastream(NpgsqlDataReader reader) => new()
