@@ -95,3 +95,9 @@ Scoped formatting for these final edits passed.
 Post-review gRPC verification passed against the rebuilt current-trunk candidate:
 `grpc-review-green.trx`: 187 passed, 0 failed, 0 skipped. The scoped final build
 passed with warnings as errors. OGC and WFS verification is still running.
+
+Post-review OGC verification passed: `ogc-final-green.trx`, 65 passed, 0 failed,
+0 skipped. This includes all hidden-field and custom identifier regressions,
+provider GML filtering, existing raw/streaming output, visible property/sort/CQL
+behavior and formatter coverage. Both original P1 findings now have focused
+source/build/test evidence; WFS final re-verification is still running.
