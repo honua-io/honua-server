@@ -229,7 +229,7 @@ internal static class OgcFeaturesUtilities
     /// Determines whether a Metadata V2 field is queryable for simple parameter filtering.
     /// </summary>
     public static bool IsSimpleQueryableField(MetadataV2Field field)
-        => OgcQueryablesUtilities.IsSimpleQueryableField(field);
+        => !field.Hidden && OgcQueryablesUtilities.IsSimpleQueryableField(field);
 
     /// <summary>
     /// Validates items query parameters against the Metadata V2 queryable field set.

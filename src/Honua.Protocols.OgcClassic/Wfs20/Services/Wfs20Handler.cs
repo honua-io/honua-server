@@ -305,6 +305,10 @@ internal sealed partial class Wfs20Handler
 
         // Default filter geometry without an explicit srsName to the queried feature type's
         // storage CRS rather than an unconditional EPSG:4326 assumption (#2737).
+        resource = resource with
+        {
+            SchemaFields = resource.SchemaFields.Where(field => !field.Hidden).ToArray()
+        };
         var defaultSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         var expression = Fes20Parser.ParseFilter(filter, defaultSrid);
         expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(
@@ -1783,7 +1787,7 @@ internal sealed partial class Wfs20Handler
 
     private static IEnumerable<MetadataV2Field> GetVisibleAttributeFields(MetadataV2Resource resource)
         => resource.SchemaFields.Where(field =>
-            field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography));
+            !field.Hidden && field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography));
 
     private static bool HasGeometry(MetadataV2Resource resource)
         => resource.FindPrimaryGeometryField() is not null ||
