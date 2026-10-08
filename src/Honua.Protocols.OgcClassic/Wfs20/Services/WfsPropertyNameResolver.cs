@@ -25,6 +25,10 @@ internal static class WfsPropertyNameResolver
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(requestedName);
 
+        resource = resource with
+        {
+            SchemaFields = resource.SchemaFields.Where(field => !field.Hidden).ToArray()
+        };
         var requested = requestedName.Trim();
         if (requested.Length == 0)
         {
