@@ -221,6 +221,33 @@ public sealed class PrintingToolsGpServerService5546Tests : IAsyncLifetime
         bytes.Take(8).Should().Equal(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Print)]
+    [Endpoint("POST /services/Utilities/PrintingTools/GPServer")]
+    public async Task PrintingTools5546_SoapExecuteWithDefaultEnvironment_ReturnsLayoutTemplates()
+    {
+        var response = await PostSoapAsync(SoapPath, "Execute", $"""
+            <ToolName>Get Layout Templates Info Task</ToolName>
+            <Values />
+            <EnvironmentValues xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:tns="{ArcGisSoapNamespace}">
+              <PropertyArray>
+                <PropertySetProperty>
+                  <Key>outputZFlag</Key>
+                  <Value xsi:type="tns:GPString"><Value>Same As Input</Value></Value>
+                </PropertySetProperty>
+                <PropertySetProperty>
+                  <Key>autoCommit</Key>
+                  <Value xsi:type="tns:GPLong"><Value>1000</Value></Value>
+                </PropertySetProperty>
+              </PropertyArray>
+            </EnvironmentValues>
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, response.Body);
+        response.Document.Descendants().Should().Contain(element =>
+            element.Name.LocalName == "Value" && element.Value.Contains("MAP_ONLY", StringComparison.Ordinal));
+    }
+
     private static string ExportValues()
     {
         const string webMap = """

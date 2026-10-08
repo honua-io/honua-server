@@ -196,6 +196,13 @@ internal static partial class PrintingToolsEndpoints
                 }
 
                 var parameters = GPServerSoapExecution.ReadSubmission(operation, task);
+                var environment = parameters.Keys.FirstOrDefault(key => key.StartsWith("env:", StringComparison.OrdinalIgnoreCase));
+                if (environment is not null)
+                {
+                    throw new GeoprocessingValidationException(
+                        $"PrintingTools does not support the '{environment}' environment setting.");
+                }
+
                 context.Items[SoapParametersItemKey] = parameters;
                 if (name == "Execute" && toolName == PrintingToolsServiceCatalog.LayoutTaskName)
                 {
