@@ -31,9 +31,9 @@ public sealed class OgcProcessesValueContractTests
     [InlineData(true)]
     public async Task Results_SpilledFeatureStream_ReturnsGeoJsonValue(bool raw)
     {
-        var root = Path.Combine(AppContext.BaseDirectory, "ogc-stream-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Join(AppContext.BaseDirectory, "ogc-stream-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        var path = Path.Combine(root, "features.ndjson");
+        var path = Path.Join(root, "features.ndjson");
         const string feature = """{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2,3]},"properties":{"name":"sample","__honua_srid":4326}}""";
         try
         {
@@ -60,15 +60,15 @@ public sealed class OgcProcessesValueContractTests
     [Fact]
     public async Task Results_SpilledFeatureStream_EnforcesActualSizeAndRoot()
     {
-        var root = Path.Combine(AppContext.BaseDirectory, "ogc-stream-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Join(AppContext.BaseDirectory, "ogc-stream-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        var path = Path.Combine(root, "features.ndjson");
+        var path = Path.Join(root, "features.ndjson");
         try
         {
             await File.WriteAllTextAsync(path, new string('x', 2048));
             var reference = FeatureStreamArtifact.BuildStreamReference(path, 1, 0);
             (await RenderResultAsync(reference, root, 1024, raw: false)).Status.Should().Be(413);
-            var outside = await RenderResultAsync(reference, Path.Combine(root, "allowed"), 4096, raw: false);
+            var outside = await RenderResultAsync(reference, Path.Join(root, "allowed"), 4096, raw: false);
             outside.Status.Should().Be(500);
             outside.Body.Should().NotContain(path);
         }
@@ -100,8 +100,8 @@ public sealed class OgcProcessesValueContractTests
     [Fact]
     public async Task OpenApi_RawResults_DeclareNativeFormatsAndSizeLimit()
     {
-        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../.."));
-        using var json = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(root, "src", "Honua.Server", "ogc-processes-openapi.json")));
+        var root = Path.GetFullPath(Path.Join(AppContext.BaseDirectory, "../../../../../.."));
+        using var json = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Join(root, "src", "Honua.Server", "ogc-processes-openapi.json")));
         var resultsPath = json.RootElement.GetProperty("paths").EnumerateObject()
             .Single(path => path.Name.EndsWith("/results", StringComparison.Ordinal)).Value;
         var responses = resultsPath.GetProperty("get").GetProperty("responses");

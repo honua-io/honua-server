@@ -469,9 +469,9 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task ReferenceDocumentation_ExecuteExample_IsRunnableVerbatim()
     {
-        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../.."));
+        var repositoryRoot = Path.GetFullPath(Path.Join(AppContext.BaseDirectory, "../../../../../.."));
         var documentation = await File.ReadAllTextAsync(
-            Path.Combine(repositoryRoot, "docs", "reference", "protocols", "ogc-apis.md"));
+            Path.Join(repositoryRoot, "docs", "reference", "protocols", "ogc-apis.md"));
         const string marker = "In the [API explorer]";
         var exampleStart = documentation.IndexOf(marker, StringComparison.Ordinal);
         exampleStart.Should().BeGreaterThanOrEqualTo(0);

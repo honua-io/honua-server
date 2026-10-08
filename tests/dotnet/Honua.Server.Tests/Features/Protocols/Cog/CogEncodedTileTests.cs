@@ -36,8 +36,8 @@ public sealed class CogEncodedTileTests
     public async Task GetTileAsync_GdalCog_ReturnsImagesWithIndependentGdalSamples(string fixture, int bands, int bits, string georeferencing)
     {
         // These are GDAL-generated TIFFs with paired GDAL-decoded bytes, not Honua snapshots.
-        var directory = Path.Combine(AppContext.BaseDirectory, "CogFixtures");
-        var source = await File.ReadAllBytesAsync(Path.Combine(directory, fixture + ".tif"));
+        var directory = Path.Join(AppContext.BaseDirectory, "CogFixtures");
+        var source = await File.ReadAllBytesAsync(Path.Join(directory, fixture + ".tif"));
         if (georeferencing == "point")
         {
             SetPointGeoreferencing(source);
@@ -46,7 +46,7 @@ public sealed class CogEncodedTileTests
         {
             source = SetMatrixGeoreferencing(source);
         }
-        var expected = await File.ReadAllBytesAsync(Path.Combine(directory, fixture + ".bin"));
+        var expected = await File.ReadAllBytesAsync(Path.Join(directory, fixture + ".bin"));
         var reader = new FixtureReader(source);
         var store = Substitute.For<ICogStore>();
         using var cache = new MemoryCache(new MemoryCacheOptions());
