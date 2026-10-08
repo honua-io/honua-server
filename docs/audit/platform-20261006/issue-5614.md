@@ -4,9 +4,11 @@ Owner: Mike McDougall <mike@honua.io>. One writer, one issue, one PR.
 
 The current issue and trunk were read before editing. No existing PR or recovery
 ref was found; a second search immediately before final verification found no
-competing PR. Starting and reconciled trunk:
-`5d2ffbb7cd34739b76f6326db5991b01ae2079a4`. The final fetch/merge reported
-already up to date before these final protocol runs. The parked cloud packet
+competing PR. Starting trunk: `5d2ffbb7cd34739b76f6326db5991b01ae2079a4`.
+Publication reconciliation merged new trunk
+`e9eee40b5f794c885ae44d98a76fa388443cee8d` cleanly (gated-boot shutdown).
+The packet implementation and tests were unchanged by the merge; the normal
+reference build and the complete focused selections were repeated afterward. The parked cloud packet
 remains historical; READY and historical test claims are not delivery evidence.
 
 ## Dispositions
@@ -59,7 +61,7 @@ All integration receipts use actual local Docker (29.8.0), `WebAppFixture` and
 and seeded rows. Receipts are retained at
 `/home/mike/honua-io/5614-evidence/`; command logs are alongside that directory.
 
-Final current-trunk candidate: **273 passed, 0 failed, 0 skipped**:
+Final reconciled-trunk candidate: **273 passed, 0 failed, 0 skipped**:
 
 - OGC: 65. Hidden output/query/identifier regressions, provider GML filtering,
   existing raw and streaming GeoJSON, formatter and base-builder tests, and
@@ -77,12 +79,21 @@ were checked against each test output before running.
 
 The OGC/gRPC baseline test assemblies reused unchanged starting-trunk production
 binaries; WFS built normal references. Candidate normal-reference Debug builds
-passed with warnings treated as errors. Final changed-project builds also passed
-with warnings as errors, reusing identical unchanged dependency builds. No
+passed with warnings treated as errors. Pre-reconciliation changed-project builds also passed
+with warnings as errors, reusing identical unchanged dependency builds. After
+the new trunk merge, all three protocol test projects and their normal project
+references rebuilt successfully in Debug with warnings treated as errors. No
 Release/full-solution/architecture/CITE pass is claimed. All changed projects
 were formatted with `--include` for changed files, `timeout 20m`, and explicit
 shared-slot admission. All builds/tests used the PATH lane shim, the four shared
 build slots, CPU cap and shared Roslyn compilation. Unrelated holds remain.
+
+A host interruption delayed a requested 20-second wait by over seven minutes.
+The first reconciled OGC run recorded 64 passes and one existing keep-alive test
+HTTP timeout (its unchanged 15-second limit). That failed receipt is retained;
+the unchanged complete 65-case selection subsequently passed. No test timeout,
+assertion, selection or skip setting was relaxed. Earlier green receipts are
+also retained separately from the final reconciled-trunk receipts.
 
 ## Review and recovery
 
@@ -113,20 +124,7 @@ are not local evidence and are not awaited under this packet's delivery contract
 | `ogc-final-green.trx` | 65 | 0 | 0 | `7b7efe604d0bb2abbbcde7a536d074091265d0f012dc7c5bd86af65156afd5db` |
 | `wfs-review-green.trx` | 21 | 0 | 0 | `e251d087e886f50dc9461a766e9e1ed902934e9f2e228d3e81e640b022121c27` |
 | `grpc-review-green.trx` | 187 | 0 | 0 | `9a3b4fb0767553a8cfd863b29e8b21891275fd4b1ac2423c11a97ed28d509644` |
-
-Publication reconciliation found new trunk `e9eee40b5f794c885ae44d98a76fa388443cee8d`
-(server gated-boot shutdown) and merged it cleanly. Earlier 273-case green evidence
-is retained, but current-trunk build/test verification must be repeated before
-publication. No packet implementation changed during that merge.
-
-The latest-trunk normal-reference Debug build passed with warnings as errors.
-A requested 20-second host wait took over seven minutes; all source and the
-merge were already preserved remotely. OGC verification reported socket errors
-after this interruption and is being diagnosed. No failed run is counted green;
-current-trunk protocol verification remains required before publication.
-
-Latest-trunk gRPC passed: `grpc-latest-trunk-green.trx`, 187 passed, 0 failed,
-0 skipped. Interrupted OGC finished with 64 passed, 1 failed, 0 skipped; the
-existing keep-alive test hit its unchanged 15-second HTTP timeout during the
-host interruption. Its receipt is retained as `ogc-latest-trunk-interrupted.trx`.
-The unchanged complete 65-case selection is retrying; WFS remains in progress.
+| `ogc-latest-trunk-interrupted.trx` | 64 | 1 | 0 | `e78a2875554e739c58651a45e653e8629dc4963206799f1f72ef62475574d759` |
+| `ogc-latest-trunk-green.trx` | 65 | 0 | 0 | `159fd7d2dcd88fb98b9a8755f4384391d4699d82087eb6e7324cfe0631a08d48` |
+| `wfs-latest-trunk-green.trx` | 21 | 0 | 0 | `67278d92b505eef83343c1906731f0a09384986b29e8502b183a8107adc9e9d7` |
+| `grpc-latest-trunk-green.trx` | 187 | 0 | 0 | `e55a6d6d72aba674967d7c7b82b0d2bfd907d14c4a7d4a22303c6d9cfde8979a` |
