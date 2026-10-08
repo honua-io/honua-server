@@ -1627,8 +1627,18 @@ Honua.Infrastructure.Logging.Log.ApplicationStarting(app.Logger,
 // create GEOMETRY columns and GiST indexes that require PostGIS to be installed)
 await RunPostGisPreflightCheckAsync();
 
-// Run database migrations on startup
-await RunDatabaseMigrationsAsync();
+// Run database migrations on startup. A migration safety gate refusal is terminal, but it
+// must leave through the host dispose path: an unhandled exception aborts the runtime and
+// native finalizers then run after their modules unload (honua-server#5507).
+try
+{
+    await RunDatabaseMigrationsAsync();
+}
+catch (InvalidOperationException ex) when (Honua.Server.Hosting.GatedBootShutdown.IsContractGateRefusal(ex))
+{
+    await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
+    return;
+}
 
 // Configure health endpoints
 app.MapHealthEndpoints();
