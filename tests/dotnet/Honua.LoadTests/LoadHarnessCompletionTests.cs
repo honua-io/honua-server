@@ -54,6 +54,7 @@ public sealed class LoadHarnessCompletionTests
                 {
                     await Task.Delay(Timeout.InfiniteTimeSpan, context.RequestAborted);
                 }
+                // codeql[cs/empty-catch-block]: the client abort ends the hung body; the fixture must stay up so the harness can record the timeout
                 catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
                 {
                 }

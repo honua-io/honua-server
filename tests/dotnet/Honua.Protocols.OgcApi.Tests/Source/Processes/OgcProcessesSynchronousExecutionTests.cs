@@ -423,6 +423,7 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
     {
         var fetches = _fixture.ReferenceRequestCount;
         var submissions = _fixture.SubmissionCount;
+        // codeql[cs/linq/missed-select]: each unsupported input is its own rejected execution
         foreach (var input in new[]
         {
             """{"value":{"type":"FeatureCollection","features":[]},"mediaType":"text/plain"}""",
@@ -740,6 +741,7 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
             onRequest();
             if (request.RequestUri!.AbsolutePath == "/point.wkb")
             {
+                // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new ByteArrayContent(Convert.FromBase64String("AQEAAAAAAAAAAAAAAAAAAAAAAAAA"))
@@ -748,6 +750,7 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
 
             if (request.RequestUri!.AbsolutePath == "/layer.txt")
             {
+                // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent("7", Encoding.UTF8, "text/plain")
@@ -756,6 +759,7 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
 
             if (request.RequestUri!.AbsolutePath == "/distance")
             {
+                // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new ByteArrayContent(Encoding.UTF8.GetBytes("25.5"))
@@ -765,6 +769,7 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
             var uri = request.RequestUri!.AbsoluteUri;
             if (uri is "https://93.184.216.34/number.txt" or "https://93.184.216.34/name.txt")
             {
+                // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new ByteArrayContent(Encoding.UTF8.GetBytes(
@@ -773,6 +778,7 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
             }
 
             uri.Should().Be("https://93.184.216.34/point.geojson");
+            // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("""{"type":"Point","coordinates":[1,2]}""", Encoding.UTF8, "application/geo+json")

@@ -527,6 +527,7 @@ public sealed class OperationsToolsetTests
         // admin.api-key.list executes directly, so it never reaches the approved-replay branch
         // where scope authority used to be the only thing enforced.
         var handler = new CapturingOperationHandler(_ => Task.FromResult(
+            // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("{\"data\":[]}")
@@ -625,6 +626,7 @@ public sealed class OperationsToolsetTests
         {
             request.Method.Should().Be(HttpMethod.Get);
             request.RequestUri!.AbsolutePath.Should().Be("/api/v1/admin/api-keys");
+            // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("{\"keys\":[]}")
@@ -727,6 +729,7 @@ public sealed class OperationsToolsetTests
         var secretStore = new FailingOperationSecretStore();
         var secret = Guid.NewGuid().ToString("N");
         using var client = new HttpClient(new CapturingOperationHandler(_ => Task.FromResult(
+            // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             new HttpResponseMessage(HttpStatusCode.Created)
             {
                 Content = new StringContent($"{{\"data\":{{\"key\":\"{secret}\"}}}}")
@@ -768,6 +771,7 @@ public sealed class OperationsToolsetTests
             var handler = new CapturingOperationHandler(request =>
             {
                 request.Method.Should().Be(HttpMethod.Post);
+                // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Created)
                 {
                     Content = new StringContent($"{{\"data\":{{\"apiKey\":\"id\",\"key\":\"{secret}\",\"clientSecret\":\"{secret}\"}}}}")
@@ -1507,6 +1511,7 @@ public sealed class OperationsToolsetTests
             var credentialStore = new InMemoryAdminApiKeyStore(TimeProvider.System);
             var caller = await credentialStore.CreateAsync("caller", grants, null, "caller", CancellationToken.None);
             var handler = new CapturingOperationHandler(_ =>
+                // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
                 Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") }));
             var (executor, _) = ConnectImportExecutor(operationId, handler, credentialStore, current =>
             {

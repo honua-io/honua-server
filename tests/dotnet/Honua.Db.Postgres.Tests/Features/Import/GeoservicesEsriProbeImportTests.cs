@@ -167,6 +167,7 @@ public sealed class GeoservicesEsriProbeImportTests(PostgresFixture fixture)
         }
 
         private static Task<HttpResponseMessage> Json(string payload)
+            // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json")
