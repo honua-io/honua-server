@@ -237,6 +237,7 @@ internal static class GrpcConversionHelpers
     /// (honua-server#5330). An attribute whose value differs from the id, such as a
     /// custom string public id, is kept.
     /// </param>
+    /// <param name="hiddenFields">Declared hidden attribute names to omit from protocol output.</param>
     public static Proto.Feature ToProtoFeature(
         Feature feature,
         bool includeGeometry = true,

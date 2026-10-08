@@ -29,6 +29,12 @@ public sealed class OgcFeaturesHiddenFieldTestsFixture : IAsyncLifetime
             Type = MetadataV2FieldType.String,
             Hidden = true
         });
+        App.UpdateV2ResourceSchemaField(0, new MetadataV2Field
+        {
+            Name = "created_at",
+            Type = MetadataV2FieldType.DateTime,
+            Hidden = true
+        });
     }
 
     public Task DisposeAsync() => App.DisposeAsync();
@@ -81,6 +87,8 @@ public sealed class OgcFeaturesHiddenFieldTests : IClassFixture<OgcFeaturesHidde
     [IntegrationTheory]
     [InlineData("properties=category")]
     [InlineData("sortby=category")]
+    [InlineData("sortby=created_at")]
+    [InlineData("sortby=-CREATED_AT")]
     [InlineData("category=test")]
     [InlineData("filter=category%20%3D%20%27test%27")]
     [InlineData("filter-lang=cql2-json&filter=%7B%22op%22%3A%22%3D%22%2C%22args%22%3A%5B%7B%22property%22%3A%22category%22%7D%2C%22test%22%5D%7D")]

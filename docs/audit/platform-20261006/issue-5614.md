@@ -2,57 +2,54 @@
 
 Owner: Mike McDougall <mike@honua.io>. One writer, one issue, one PR.
 
-Current scope was read from issue 5614 on 2026-10-08. No existing PR or remote
-recovery branch was found. Recovery began from trunk
-`5d2ffbb7cd34739b76f6326db5991b01ae2079a4`. The parked cloud packet was retained;
-its READY status and historical test statements were not used as evidence.
+The current issue and trunk were read before editing. No existing PR or recovery
+ref was found. Starting trunk: `5d2ffbb7cd34739b76f6326db5991b01ae2079a4`.
+The parked cloud packet remains historical; READY and historical test claims
+were not treated as delivery or evidence.
 
-## Work in progress
+## Runtime diagnosis
 
-| Finding | Current qualification | Evidence or next action |
+All integration receipts below use actual local Docker, `WebAppFixture` and
+`PostgresFixture`, Testcontainers image `postgis/postgis:18-3.6`, isolated
+schemas and seeded feature rows. Receipts are retained under the local
+workspace `/home/mike/honua-io/5614-evidence/`; command logs are alongside it.
+
+| Finding / path | Starting-trunk disposition | Receipt |
 | --- | --- | --- |
-| SRV-OGC-007 | reproduced; corrections await verification | WFS baseline completed: 7 failed, 1 passed, 0 skipped (8 cases). GML/CSV, DescribeFeatureType, PROPERTYNAME, SORTBY, GetPropertyValue and FES failures support a small WFS correction, now applied but awaiting verification. OGC baseline completed: 13 failed, 2 passed, 0 skipped (15 cases). GML collection/single/stream, CSV collection/single, queryables, properties/sort/queryable/CQL references and both optimized GeoJSON paths reproduced the finding. Their bounded adapter corrections are applied but not yet verified. |
-| SRV-GRPC-003 | baseline building; correction not attempted | Restore and the four missing test-project dependencies are now complete. The focused unary/streaming baseline is building against unchanged gRPC production binaries. |
+| SRV-OGC-007: OGC GML collection, single item and streaming; CSV collection/single; queryables; properties, sort, queryable parameters, CQL text/JSON; optimized raw GeoJSON and bbox point output | Reproduced: 13 failed | `ogc-red.trx`, `5614-ogc-red.log` |
+| Ordinary OGC GeoJSON collection/single output | Already fixed: 2 passed | Same OGC baseline |
+| WFS GML/CSV GetFeature, DescribeFeatureType, PROPERTYNAME, SORTBY, GetPropertyValue and FES reference | Reproduced: 7 failed | `wfs-red.trx`, `5614-wfs-red.log` |
+| WFS GeoJSON output | Already fixed: 1 passed | Same WFS baseline |
+| SRV-GRPC-003: unary/streaming field definitions and attributes, default/wildcard/explicit out-fields | Reproduced: 6 failed | `grpc-red.trx`, `5614-grpc-red.log` |
 
-The tests use `WebAppFixture` and `PostgresFixture` (Testcontainers image
-`postgis/postgis:18-3.6`), an isolated schema and the real seeded feature rows.
-The GML streaming regression inserts 300 additional rows and requires exactly
-300 response members. All build/test commands use PATH's slotted dotnet shim
-with the four-slot admission and MSBuild CPU cap. The completed WFS baseline is preserved in `5614-evidence/wfs-red.trx` and
-`5614-wfs-red.log` under the local workspace. OGC/gRPC runtime results remain
-pending. The queued baseline commands compile their new test assemblies with
-`-p:BuildProjectReferences=false` against already built, unchanged protocol
-dependencies; production verification will build the changed dependencies. An initial compile failure in a new test namespace import was
-corrected before runtime diagnosis.
+No baseline case was skipped. Not reproduced: none of these completed checks.
+The OGC/gRPC baseline test assemblies used `BuildProjectReferences=false`
+against already-built, unchanged starting-trunk production binaries. The WFS
+baseline built normal project references. Candidate verification builds normal
+references with warnings treated as errors.
 
-Remaining steps: baseline reproduction, supported adapter corrections,
-focused verification, project-scoped formatting, latest-trunk reconciliation,
-one self-review and independent review, then normal hosted PR gate admission.
+## Supported corrections in progress
 
-## Completed baseline qualification
+- OGC filters hidden fields from CSV/queryables and raw GeoJSON selection,
+  resolves query references against visible schema, projects visible GML
+  attributes, and defensively removes hidden keys from provider GML results.
+- WFS uses visible schema for output/schema generation and property/FES binding.
+- gRPC excludes hidden response field definitions and removes hidden keys from
+  unary/streaming attributes, including explicitly requested hidden fields.
+- Case-insensitive provider-extra-attribute regressions cover all four GML
+  formatter entrypoints and gRPC conversion. Streaming integration requires
+  exactly 300 GML members after adding 300 rows.
+- An additional OGC declared-hidden built-in sort field regression is pending
+  runtime diagnosis before any further correction.
 
-- WFS GML and CSV GetFeature: reproduced; hidden `category` is present.
-- WFS DescribeFeatureType: reproduced; hidden `category` is advertised.
-- WFS PROPERTYNAME, SORTBY, GetPropertyValue and FES ValueReference: reproduced;
-  requests return HTTP 200 instead of rejecting the hidden field. The
-  PROPERTYNAME response includes `<honua:category>test</honua:category>`.
-- Already fixed on starting trunk: WFS GeoJSON output passes the hidden-field
-  regression through the existing GeoJSON builder.
-- Not reproduced: none of the completed WFS checks.
-- OGC baseline: 13 reproduced failures and 2 already-enforced GeoJSON cases;
-  receipts are `5614-evidence/ogc-red.trx` and `5614-ogc-red.log` in the local
-  workspace. Four provider-returned-extra-attribute serializer cases cover all
-  GML formatter entrypoints and case-insensitive hidden-field matching.
-- Not attempted: completed gRPC runtime qualification, correction verification
-  and review/publication remain pending. Project-scoped formatting is running.
+These changes are unfinished until their candidate tests pass. Scoped formatting
+completed for the changed OGC, WFS and gRPC projects; the additional OGC sort
+regression is being formatted separately. Every build/test/formatter uses the
+shared four slots, PATH dotnet and the MSBuild CPU cap. Unrelated holds remain.
+No credentials, secrets, variables, tests or workflow gates were weakened.
 
-The four shared slots were confirmed unavailable on 2026-10-08. Active holders
-were the release test job and other server test jobs. Their holds were retained.
-The WFS source correction is unfinished until its focused tests pass; this
-checkpoint is not delivery and does not close issue 5614.
-
-OGC production project formatting has completed using a shared slot,
-`dotnet format <project> --include <changed files> --no-restore`, wrapped in
-`timeout 20m`. The remaining affected-project format invocations are pending.
-
-Checkpoint 2026-10-08T16:24Z: Docker-backed gRPC baseline completed with six failures (unary/streaming, default/wildcard/explicit fields). Both field descriptors and attributes exposed hidden category. The supported gRPC output correction and case-insensitive conversion regression are implemented; candidate verification is pending. Scoped OGC, WFS and gRPC formatting completed successfully.
+Not attempted: gRPC where/order hidden-field policy (the issue describes this
+as optional consideration), non-Postgres provider integration and full CITE
+qualification. Focused candidate verification, latest-trunk reconciliation,
+single self-review, independent review and normal hosted admission are pending.
+Issue 5614 remains open while required acceptance is unfinished.
