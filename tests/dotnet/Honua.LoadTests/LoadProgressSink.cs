@@ -31,9 +31,12 @@ internal sealed class LoadProgressSink : IReportingSink
     public Task SaveRealtimeStats(ScenarioStats[] stats)
     {
         // Emit once per minute, including the first interval, to keep a full soak log bounded.
+        // Whole seconds come from ticks. TotalSeconds is a double, so `% 60 == 0`
+        // misses minute boundaries that are not an exact binary multiple of 60.
         foreach (var scenario in stats)
         {
-            if (scenario.Duration.TotalSeconds <= 5 || scenario.Duration.TotalSeconds % 60 == 0)
+            var wholeSeconds = scenario.Duration.Ticks / TimeSpan.TicksPerSecond;
+            if (scenario.Duration <= TimeSpan.FromSeconds(5) || wholeSeconds % 60 == 0)
             {
                 Report($"{scenario.ScenarioName}: elapsed={scenario.Duration}, ok={scenario.Ok.Request.Count}, failed={scenario.Fail.Request.Count}, simulation={scenario.LoadSimulationStats.SimulationName}");
             }

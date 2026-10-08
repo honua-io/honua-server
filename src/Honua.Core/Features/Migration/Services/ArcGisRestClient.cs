@@ -323,6 +323,7 @@ internal sealed partial class ArcGisRestClient
             srid = spatial.LatestWkid > 0 ? spatial.LatestWkid : spatial.Wkid;
         }
 
+        // codeql[cs/equality-on-floats]: all-zero envelope is the empty-answer sentinel, not an extent near the origin
         if (srid <= 0 && extent.Xmin == 0d && extent.Ymin == 0d && extent.Xmax == 0d && extent.Ymax == 0d)
         {
             return null;

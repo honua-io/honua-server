@@ -203,6 +203,10 @@ public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFa
 
         var response = await client.GetAsync("/metrics");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // Read after the scrape so the state machine keeps every observable
+        // probe alive across the await. An empty anchor is valid when the
+        // contract has no observable instruments.
+        observableProbes.Should().OnlyContain(probe => probe is not null);
         var exported = ParseSeriesNames(await response.Content.ReadAsStringAsync());
 
         var drifted = new List<string>();

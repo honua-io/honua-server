@@ -21,7 +21,7 @@ public sealed class CogTiffTileEncoderTests
         {
             for (var col = 0; col < 16; col++)
             {
-                var value = row == 1 && col == 1 ? -9999 : row * 10 + col / 2f;
+                var value = row == 1 && col == 1 ? -9999f : row * 10f + col / 2f;
                 if (littleEndian)
                     BinaryPrimitives.WriteSingleLittleEndian(samples.AsSpan((row * 16 + col) * 4), value);
                 else
@@ -56,7 +56,7 @@ public sealed class CogTiffTileEncoderTests
         {
             for (var col = 0; col < 16; col++)
             {
-                var expected = row == 1 && col == 1 ? -9999 : row * 10 + col / 2f;
+                var expected = row == 1 && col == 1 ? -9999f : row * 10f + col / 2f;
                 BinaryPrimitives.ReadSingleLittleEndian(tiff.AsSpan(tileOffset + (row * 16 + col) * 4))
                     .Should().Be(expected);
             }

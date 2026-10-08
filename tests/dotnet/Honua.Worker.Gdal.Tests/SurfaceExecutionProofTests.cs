@@ -42,6 +42,7 @@ public sealed partial class RasterExecutionProofTests
     {
         // Downslope east/north vector is (-east, south); bearing is clockwise
         // from north. Flat aspect is undefined, represented as nodata -9999.
+        // codeql[cs/equality-on-floats]: flat aspect is exact zero slope; a tolerance would reclassify a real gradient as nodata
         var bearing = east == 0 && south == 0 ? NoData : (Math.Atan2(-east, south) * 180 / Math.PI + 360) % 360;
         var output = await ExecuteRaster("surface.aspect", ("source", SurfaceInput(fixture)));
         AssertSurface(output, 5, 5, Neighborhood(5, 5, hole, (_, _) => bearing));
@@ -109,6 +110,7 @@ public sealed partial class RasterExecutionProofTests
 
         // The substitute is a complete, valid TPI-shaped grid; the peak is byte-identical
         // to a correct result, so only the depression's classification is destroyed.
+        // codeql[cs/equality-on-floats]: NoData is the exact -9999 sentinel; a tolerance would take the absolute value of nodata
         AssertSurface(magnitude, 5, 5, expected.Select(v => v == NoData ? v : Math.Abs(v)).ToArray());
         magnitude.GetProperty("bands")[0].GetProperty("values")[Peak].GetDouble()
             .Should().BeApproximately(10.75, 1e-5, "the peak is indistinguishable from a correct result");

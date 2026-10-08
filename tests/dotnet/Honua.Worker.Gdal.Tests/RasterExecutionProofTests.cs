@@ -125,6 +125,7 @@ public sealed partial class RasterExecutionProofTests : IDisposable
         double[] red = [0.2, 0.1, 0, NoData, 0.3, 0.2, 0.4, 0.1];
         double[] nir = [0.6, 0.5, 0, 0.8, 0.3, 0.8, 0.2, NoData];
         double[] blue = [0.1, 0.05, 2.0 / 15, 0.1, 0.2, 0.1, 0.1, 0.1];
+        // codeql[cs/equality-on-floats]: NoData is the exact -9999 sentinel stored in the fixture, not a computed index
         var expected = Enumerable.Range(0, 8).Select(i => sourceHasNoData && (red[i] == NoData || nir[i] == NoData) ? outputNoData
             : index == "ndvi" ? (nir[i] - red[i]) / (nir[i] + red[i])
             : 2.5 * (nir[i] - red[i]) / (nir[i] + 6 * red[i] - 7.5 * blue[i] + 1)).ToArray();
@@ -163,6 +164,7 @@ public sealed partial class RasterExecutionProofTests : IDisposable
             }
         }
         AssertBand(output, 0, expected, tolerance: 0.003);
+        // codeql[cs/equality-on-floats]: NoData is the exact -9999 sentinel; scaling it would invent a sample
         AssertBand(output, 1, expected.Select(v => v == NoData ? v : v * 10).ToArray(), tolerance: 0.03);
     }
 
@@ -199,9 +201,16 @@ public sealed partial class RasterExecutionProofTests : IDisposable
         var output = await ExecuteRaster("raster.resample", ("source", Input("grid.tif")),
             ("cellSize", "0.5"), ("resampling", resampling));
         AssertGrid(output, 8, 8, 4326, [0, 0.5, 0, 4, 0, -0.5], 2);
-        var expected = Enumerable.Range(0, 64).Select(i => Sample((i % 8 + 0.5) / 2 - 0.5,
-            (i / 8 + 0.5) / 2 - 0.5, resampling)).ToArray();
+        // Row and column are cell indexes. Divide in int first so the later
+        // double conversion does not hide a truncated integer division.
+        var expected = Enumerable.Range(0, 64).Select(i =>
+        {
+            var column = i % 8;
+            var row = i / 8;
+            return Sample((column + 0.5) / 2 - 0.5, (row + 0.5) / 2 - 0.5, resampling);
+        }).ToArray();
         AssertBand(output, 0, expected, tolerance: 1e-5);
+        // codeql[cs/equality-on-floats]: NoData is the exact -9999 sentinel; scaling it would invent a sample
         AssertBand(output, 1, expected.Select(v => v == NoData ? v : v * 10).ToArray(), tolerance: 1e-4);
     }
 
@@ -211,6 +220,7 @@ public sealed partial class RasterExecutionProofTests : IDisposable
     [InlineData(true, 0)]
     public async Task InterpolateIdw_KnownPoints_MatchesInverseDistanceAndEmptySearchCells(bool bounded, double centerValue)
     {
+        // codeql[cs/equality-on-floats]: InlineData 0 selects the valid-zero fixture; a tolerance would load the wrong points
         var inputs = new List<(string, string)> { ("points", Input(centerValue == 0 ? "points-zero.geojson" : "points.geojson")), ("zField", "value"), ("width", "5"), ("height", "5") };
         if (bounded)
         {
@@ -222,8 +232,12 @@ public sealed partial class RasterExecutionProofTests : IDisposable
         var expected = new double[25];
         for (var i = 0; i < 25; i++)
         {
-            var x = (i % 5 + 0.5) * 0.8;
-            var y = 4 - (i / 5 + 0.5) * 0.8;
+            // Row and column are cell indexes. Divide in int first so the later
+            // double conversion does not hide a truncated integer division.
+            var column = i % 5;
+            var row = i / 5;
+            var x = (column + 0.5) * 0.8;
+            var y = 4 - (row + 0.5) * 0.8;
             if (i == 12)
             {
                 expected[i] = centerValue; // Exact source values, including valid zero, take precedence.
@@ -750,6 +764,7 @@ public sealed partial class RasterExecutionProofTests : IDisposable
         var centerX = Math.Clamp((int)Math.Floor(x + 0.5), 0, 3);
         var centerY = Math.Clamp((int)Math.Floor(y + 0.5), 0, 3);
         var center = Grid[centerY * 4 + centerX];
+        // codeql[cs/equality-on-floats]: NoData is the exact -9999 grid sentinel and must not be blended
         if (mode == "nearest" || center == NoData)
         {
             return center;
@@ -760,6 +775,7 @@ public sealed partial class RasterExecutionProofTests : IDisposable
             for (var col = 0; col < 4; col++)
             {
                 var w = Math.Max(0, 1 - Math.Abs(x - col)) * Math.Max(0, 1 - Math.Abs(y - row));
+                // codeql[cs/equality-on-floats]: NoData is the exact -9999 grid sentinel and must not be blended
                 if (Grid[row * 4 + col] != NoData)
                 {
                     sum += Grid[row * 4 + col] * w;
