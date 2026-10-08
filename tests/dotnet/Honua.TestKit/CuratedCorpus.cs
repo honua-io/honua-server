@@ -72,6 +72,7 @@ public sealed class CuratedCorpus
 
         var assetElements = RequireArray(document, "assets");
         var assets = new SortedDictionary<string, CuratedCorpusAsset>(StringComparer.Ordinal);
+        // codeql[cs/linq/missed-select]: throws on a duplicate asset id instead of projecting past it
         foreach (var element in assetElements.EnumerateArray())
         {
             var asset = ParseAsset(element);

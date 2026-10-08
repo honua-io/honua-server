@@ -33,6 +33,7 @@ internal sealed class LoadProgressSink : IReportingSink
         // Emit once per minute, including the first interval, to keep a full soak log bounded.
         // Whole seconds come from ticks. TotalSeconds is a double, so `% 60 == 0`
         // misses minute boundaries that are not an exact binary multiple of 60.
+        // codeql[cs/linq/missed-where]: reports a scenario only on the short-run or whole-minute boundary
         foreach (var scenario in stats)
         {
             var wholeSeconds = scenario.Duration.Ticks / TimeSpan.TicksPerSecond;

@@ -223,6 +223,7 @@ internal sealed partial class GeoservicesImportService
                 continue;
             }
 
+            // codeql[cs/linq/missed-select]: probes layer and table ids and keeps only those present in the source catalog
             foreach (var kind in new[] { "layer", "table" })
             {
                 var candidate = $"{serviceScope}{kind}:{id}";

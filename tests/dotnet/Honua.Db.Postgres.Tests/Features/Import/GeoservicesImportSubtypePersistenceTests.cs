@@ -469,6 +469,7 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFix
             }
             else if (response["features"] is JsonArray features)
             {
+                // codeql[cs/linq/missed-select]: mutates z and m on each canned feature geometry in place
                 foreach (var feature in features)
                 {
                     var geometry = feature!["geometry"]!.AsObject();

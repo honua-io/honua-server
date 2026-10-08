@@ -95,6 +95,7 @@ public sealed class GroundingProcessEntryPointFilterTests
     public static TheoryData<string> NonJobCallableProcessIds()
     {
         var data = new TheoryData<string>();
+        // codeql[cs/linq/missed-where]: fills theory data from the catalog rather than projecting a sequence
         foreach (var process in new BuiltInProcessCatalog().ListProcesses())
         {
             if (!ProcessExecutionEligibility.Declares(process, ProcessEntryPoints.Job))
@@ -126,6 +127,7 @@ public sealed class GroundingProcessEntryPointFilterTests
 
         // Whatever DID rank, it must be a plan the direct-submit runtime accepts on
         // entry-point grounds — the invariant the issue names explicitly.
+        // codeql[cs/linq/missed-select]: builds a plan and asserts each candidate separately
         foreach (var candidate in result.Candidates.Processes)
         {
             var plan = new AnalysisPlan

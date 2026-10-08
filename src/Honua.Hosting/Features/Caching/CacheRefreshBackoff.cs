@@ -99,6 +99,7 @@ internal sealed class CacheRefreshBackoff(TimeProvider timeProvider) : IDisposab
         lock (_sync)
         {
             var nowTicks = timeProvider.GetUtcNow().UtcTicks;
+            // codeql[cs/linq/missed-where]: removes expired deadlines while enumerating the same dictionary
             foreach (var entry in _retryAfterUtcTicks)
             {
                 if (entry.Value <= nowTicks)

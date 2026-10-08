@@ -75,6 +75,7 @@ public class LimitsOptionsValidatorTests
     public void Validate_ReplicaMaxChangesPerLayerOutOfRange_ReturnsFail()
     {
         // The Replica section carries [Range(100, 1000000)]; it must be validated like every other section.
+        // codeql[cs/linq/missed-select]: each out-of-range value is validated on its own options instance
         foreach (var maxChangesPerLayer in new[] { 0, 99, 1_000_001 })
         {
             var options = new LimitsOptions

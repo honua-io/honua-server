@@ -368,6 +368,7 @@ internal sealed class PublishedOperationTool : IMcpTool
         }
 
         var parameters = new Dictionary<string, string?>(StringComparer.Ordinal);
+        // codeql[cs/linq/missed-where]: copies only arguments the caller actually supplied
         foreach (var parameter in _descriptor.InputSchema)
         {
             if (arguments is { ValueKind: JsonValueKind.Object } args && args.TryGetProperty(parameter.Name, out _))
