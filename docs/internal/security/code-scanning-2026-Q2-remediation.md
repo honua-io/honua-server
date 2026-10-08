@@ -526,3 +526,21 @@ CVE-2024-2236): #3416, #3410, #3407, #3405, #3403, #3401, #3398, #3396, #3394,
 #3392, #3391. They were dismissed with reason `won't fix` and a comment that
 the finding was real and is already fixed. The open no-fix OS advisories above
 were not dismissed.
+
+### Code quality
+
+The same change addresses the 260 open findings on the code-quality view
+(5 errors, 101 warnings, 154 notes). The code-quality API is read-only, so
+these close when a later default-branch scan no longer reports them.
+
+114 were fixed in code: `Path.Join` for relative segments, null guards,
+integer cell indexes before a floating conversion, disposal of method-scoped
+resources, pure LINQ projections, and the Python unused-import and string
+concatenation findings. 146 stay as behavior and carry a
+`// codeql[<rule>]` comment on the flagged statement. That set is exact
+numeric sentinels (a tolerance would change raster or geodesy results), loops
+that return early or mutate outer state, resources whose lifetime is longer
+than the declaring method, `catch (Exception)` handlers that must translate
+any failure, and the `GC.Collect` calls in `GatedBootShutdown` that run
+native-handle finalizers before modules unload. Release builds of the changed
+projects were clean with warnings as errors.
