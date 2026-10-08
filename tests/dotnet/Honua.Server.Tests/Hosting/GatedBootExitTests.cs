@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
-using System.Reflection;
 using FluentAssertions;
 using Honua.Server.Hosting;
 using Honua.TestKit.Attributes;
@@ -51,6 +50,9 @@ public sealed class GatedBootExitTests
     [Operation(Operations.ContractTesting)]
     public async Task RefusedContractMigration_ExitsWithRefusalCodeAndWritesNoCrashDump()
     {
+        var serverAssembly = LocateServerAssembly(AppContext.BaseDirectory);
+        var serverDirectory = Path.GetDirectoryName(serverAssembly)!;
+
         await using var container = new PostgreSqlBuilder()
             .WithImage(PostgisImage)
             .WithDatabase("honua_gated_boot")
@@ -70,8 +72,6 @@ public sealed class GatedBootExitTests
 
         await SeedExistingDatabaseAsync(connectionString);
 
-        var serverAssembly = LocateServerAssembly();
-        var serverDirectory = Path.GetDirectoryName(serverAssembly)!;
         File.Exists(Path.Combine(serverDirectory, "appsettings.json")).Should().BeTrue(
             "the server process uses its output directory as the content root ({0})",
             serverDirectory);
@@ -171,37 +171,55 @@ public sealed class GatedBootExitTests
         await command.ExecuteNonQueryAsync();
     }
 
-    private static string LocateServerAssembly()
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("Honua.Server.dll")]
+    [InlineData("Honua.Server.runtimeconfig.json")]
+    [InlineData("Honua.Server.deps.json")]
+    [InlineData("appsettings.json")]
+    public void LocateServerAssembly_IncompleteRuntime_DiagnosesMissingFile(string missingFile)
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+        var runtimeDirectory = Path.Combine(Path.GetTempPath(), "honua-boot-runtime-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(runtimeDirectory);
+        try
         {
-            directory = directory.Parent;
+            foreach (var file in RequiredRuntimeFiles.Where(file => file != missingFile))
+            {
+                File.WriteAllText(Path.Combine(runtimeDirectory, file), "{}");
+            }
+
+            Action locate = () => LocateServerAssembly(runtimeDirectory);
+            locate.Should().Throw<InvalidOperationException>()
+                .WithMessage($"Incomplete server runtime in test output '{runtimeDirectory}': missing '{missingFile}'.");
+        }
+        finally
+        {
+            Directory.Delete(runtimeDirectory, recursive: true);
+        }
+    }
+
+    private static readonly string[] RequiredRuntimeFiles =
+    [
+        "Honua.Server.dll",
+        "Honua.Server.runtimeconfig.json",
+        "Honua.Server.deps.json",
+        "appsettings.json"
+    ];
+
+    private static string LocateServerAssembly(string runtimeDirectory)
+    {
+        // The cached test payload contains the complete server runtime; source bin is not restored.
+        foreach (var file in RequiredRuntimeFiles)
+        {
+            if (!File.Exists(Path.Combine(runtimeDirectory, file)))
+            {
+                throw new InvalidOperationException(
+                    $"Incomplete server runtime in test output '{runtimeDirectory}': missing '{file}'.");
+            }
         }
 
-        if (directory is null)
-        {
-            throw new InvalidOperationException(
-                "Could not locate the repository root from '" + AppContext.BaseDirectory + "'.");
-        }
-
-        var configuration = typeof(GatedBootExitTests).Assembly
-            .GetCustomAttribute<AssemblyConfigurationAttribute>()?.Configuration
-            ?? "Debug";
-        var path = Path.Combine(
-            directory.FullName,
-            "src",
-            "Honua.Server",
-            "bin",
-            configuration,
-            "net10.0",
-            "Honua.Server.dll");
-        if (!File.Exists(path))
-        {
-            throw new InvalidOperationException("Server assembly was not built at '" + path + "'.");
-        }
-
-        return path;
+        return Path.Combine(runtimeDirectory, "Honua.Server.dll");
     }
 
     private static async Task<bool> WaitForExitAsync(Process process, TimeSpan timeout)
