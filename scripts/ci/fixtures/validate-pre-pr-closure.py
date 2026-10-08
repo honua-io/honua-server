@@ -179,6 +179,15 @@ pathlib.Path(out).write_text(json.dumps({'projects': projects}))
         self.write(self.test_path, self.test_source)
         self.assertIn("metadata", self.guard([self.test_path]))
 
+    def test_coverage_attribute_constant_changes_cannot_defer(self):
+        source = self.test_source.replace('"GET /old"', 'Route')
+        source = source.replace('    [Endpoint(', '    private const string Route = "GET /old";\n    [Endpoint(')
+        self.write(self.test_path, source)
+        self.commit()
+        self.base = self.run_command('git', 'rev-parse', 'HEAD').strip()
+        self.write(self.test_path, source.replace('"GET /old"', '"GET /new"'))
+        self.assertIn("metadata", self.guard([self.test_path]))
+
     def test_route_source_and_parity_data_force_catalogue(self):
         self.write("src/Honua.Geometry/Repair.cs", 'internal class Repair { void Route() { app.MapGet("/new", Handler); } }')
         self.assertIn("route/capability", self.guard(["src/Honua.Geometry/Repair.cs"]))

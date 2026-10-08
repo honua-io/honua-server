@@ -100,7 +100,7 @@ def metadata(source: str) -> tuple[list[str], list[str], str]:
         raise ValueError("unbalanced C# bracket")
     masked = "".join(mask)
     headers = [source[match.start():match.end()] for match in re.finditer(
-        r"\b(?:public|protected)\s+[^{};]*(?:\{|;)", masked)]
+        r"\b(?:public|protected|internal|private|const)\s+[^{};]*(?:\{|;)", masked)]
     return brackets, headers, masked
 
 
