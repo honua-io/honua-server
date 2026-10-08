@@ -25,7 +25,9 @@ public sealed class OgcFeaturesHiddenFieldTestsFixture : IAsyncLifetime
         await App.InitializeAsync();
         App.UpdateV2ResourceSchemaField(0, new MetadataV2Field
         {
-            Name = "category", Type = MetadataV2FieldType.String, Hidden = true
+            Name = "category",
+            Type = MetadataV2FieldType.String,
+            Hidden = true
         });
     }
 
@@ -127,7 +129,9 @@ public sealed class OgcFeaturesHiddenFieldTestsRawFixture : IAsyncLifetime
         await App.InitializeAsync();
         App.UpdateV2ResourceSchemaField(0, new MetadataV2Field
         {
-            Name = "category", Type = MetadataV2FieldType.String, Hidden = true
+            Name = "category",
+            Type = MetadataV2FieldType.String,
+            Hidden = true
         });
     }
 

@@ -25,7 +25,9 @@ public sealed class GrpcHiddenFieldTestsFixture : IAsyncLifetime
         await App.InitializeAsync();
         App.UpdateV2ResourceSchemaField(0, new MetadataV2Field
         {
-            Name = "category", Type = MetadataV2FieldType.String, Hidden = true
+            Name = "category",
+            Type = MetadataV2FieldType.String,
+            Hidden = true
         });
     }
 
@@ -66,7 +68,8 @@ public sealed class GrpcHiddenFieldTests : IClassFixture<GrpcHiddenFieldTestsFix
         var headers = new Metadata { { "X-Honua-Test-Schema", _fixture.CurrentSchema! } };
         var request = new Proto.QueryFeaturesRequest
         {
-            ServiceId = WebAppFixture.TestServiceId, LayerId = 0
+            ServiceId = WebAppFixture.TestServiceId,
+            LayerId = 0
         };
         if (outFields != null)
         {

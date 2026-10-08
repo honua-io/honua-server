@@ -241,13 +241,14 @@ internal static class GrpcConversionHelpers
         Feature feature,
         bool includeGeometry = true,
         GeometryLimits? geometryLimits = null,
-        string? objectIdFieldName = null)
+        string? objectIdFieldName = null,
+        IReadOnlySet<string>? hiddenFields = null)
     {
         var proto = new Proto.Feature { Id = feature.Id };
 
         foreach (var (key, value) in feature.Attributes)
         {
-            if (FeatureAttributeVisibility.IsInternalAttribute(key))
+            if (FeatureAttributeVisibility.IsInternalAttribute(key) || hiddenFields?.Contains(key) == true)
             {
                 continue;
             }

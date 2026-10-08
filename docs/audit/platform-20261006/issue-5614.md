@@ -54,3 +54,5 @@ checkpoint is not delivery and does not close issue 5614.
 OGC production project formatting has completed using a shared slot,
 `dotnet format <project> --include <changed files> --no-restore`, wrapped in
 `timeout 20m`. The remaining affected-project format invocations are pending.
+
+Checkpoint 2026-10-08T16:24Z: Docker-backed gRPC baseline completed with six failures (unary/streaming, default/wildcard/explicit fields). Both field descriptors and attributes exposed hidden category. The supported gRPC output correction and case-insensitive conversion regression are implemented; candidate verification is pending. Scoped OGC, WFS and gRPC formatting completed successfully.

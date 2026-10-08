@@ -21,7 +21,9 @@ public sealed class Wfs20HiddenFieldTestsFixture : IAsyncLifetime
         await App.InitializeAsync();
         App.UpdateV2ResourceSchemaField(0, new MetadataV2Field
         {
-            Name = "category", Type = MetadataV2FieldType.String, Hidden = true
+            Name = "category",
+            Type = MetadataV2FieldType.String,
+            Hidden = true
         });
     }
 
