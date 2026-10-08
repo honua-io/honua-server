@@ -857,7 +857,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.DeleteFeature_WithMatchingIfMatch_ReturnsNoContent",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.DeleteFeature_WithStaleIfMatch_Returns412",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.DeleteFeature_WithValidId_ReturnsNoContent",
-        "Honua.Server.Tests.PatchConcurrencyTests.SRV_OGC_015_Delete_WithMaskedSnapshotAndMatchingIfMatch_Succeeds"
+        "Honua.Server.Tests.PatchConcurrencyTests.OgcDelete_ConcurrentMaskedChange_ReturnsPreconditionFailed",
+        "Honua.Server.Tests.PatchConcurrencyTests.SRV_OGC_015_Delete_WithMaskedSnapshot_ValidatesIfMatch"
       ],
       "proof_ledger_surface": "ogc-api-features",
       "maturity": "implemented",

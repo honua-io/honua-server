@@ -3243,7 +3243,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 75,
+      "line": 84,
       "language": "bash"
     },
     {
@@ -3256,7 +3256,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 53,
+      "line": 56,
       "language": "json"
     },
     {
@@ -3269,7 +3269,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 133,
+      "line": 143,
       "language": "bash"
     },
     {
