@@ -92,9 +92,12 @@ public sealed class PostgresSpatialAnalyticsReaderReadPolicyTests
 
         await harness.Reader.QueryClustersAsync(TargetLayerId, new FeatureQuery(), KMeans());
 
-        harness.Sql.Should().Contain("(attributes - $");
+        harness.Sql.Should().Contain("jsonb_each(attributes)")
+            .And.Contain("COALESCE(jsonb_object_agg(masked_attr.key, masked_attr.value), '{}'::jsonb)")
+            .And.Contain("WHERE NOT (UPPER(masked_attr.key) = ANY($")
+            .And.Contain("::text[])");
         harness.Parameters.OfType<string[]>().Should().ContainSingle()
-            .Which.Should().Equal("secret");
+            .Which.Should().Equal("SECRET");
     }
 
     [UnitTest]
@@ -104,9 +107,12 @@ public sealed class PostgresSpatialAnalyticsReaderReadPolicyTests
 
         await harness.Reader.QuerySpatialJoinAsync(TargetLayerId, new FeatureQuery(), Join());
 
-        harness.Sql.Should().Contain("(attributes - $");
+        harness.Sql.Should().Contain("jsonb_each(attributes)")
+            .And.Contain("COALESCE(jsonb_object_agg(masked_attr.key, masked_attr.value), '{}'::jsonb)")
+            .And.Contain("WHERE NOT (UPPER(masked_attr.key) = ANY($")
+            .And.Contain("::text[])");
         harness.Parameters.OfType<string[]>().Should().ContainSingle()
-            .Which.Should().Equal("secret");
+            .Which.Should().Equal("SECRET");
     }
 
     [UnitTest]
