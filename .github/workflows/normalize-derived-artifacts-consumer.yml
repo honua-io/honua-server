@@ -49,6 +49,8 @@ jobs:
 
       - name: Resolve exact PR and download artifact as bytes
         id: artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
         uses: actions/github-script@v9
         with:
           script: |
@@ -81,6 +83,31 @@ jobs:
             });
             if (pr.state !== 'open' || pr.draft || pr.head.sha !== run.head_sha) {
               throw new Error('PR closed, draft, or moved after normalization production.');
+            }
+            // Skipping the untrusted producer leaves no envelope. Independently
+            // prove the exemption using immutable base policy before returning;
+            // a skipped job or missing artifact alone never authorizes it.
+            try {
+              const cp = require('child_process');
+              const base = pr.base.sha;
+              if (!/^[0-9a-f]{40}$/.test(base) || !/^[0-9a-f]{40}$/.test(pr.head.sha)) {
+                throw new Error('Invalid exact PR identity');
+              }
+              cp.execFileSync('git', ['fetch', '--no-tags', '--depth=1', 'origin', base, pr.head.sha]);
+              const policy = path.join(process.env.RUNNER_TEMP, 'generated-output-diff.py');
+              fs.writeFileSync(policy, cp.execFileSync('git', ['show', `${base}:scripts/ci/generated-output-diff.py`]));
+              const event = path.join(process.env.RUNNER_TEMP, 'generated-output-event.json');
+              fs.writeFileSync(event, JSON.stringify({ repository: { full_name: `${context.repo.owner}/${context.repo.repo}` }, pull_request: pr }));
+              const answer = cp.execFileSync('python3', [policy], {
+                env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event },
+              }).toString();
+              if (answer.split('\n').includes('generated_only=true')) {
+                core.setOutput('generated_only', 'true');
+                core.notice('Exact successful nightly producer proof; duplicate normalization skipped.');
+                return;
+              }
+            } catch (error) {
+              core.notice(`Generated-output admission unavailable; normal envelope validation: ${error.message}`);
             }
             const sameRepository = pr.head.repo.full_name === pr.base.repo.full_name;
             const eventBaseSha = eventAssociated[0]?.base?.sha || '';
@@ -126,6 +153,7 @@ jobs:
             core.setOutput('tree_sha', commit.tree.sha);
 
       - name: Validate archive and data envelope with trusted policy
+        if: steps.artifact.outputs.generated_only != 'true'
         env:
           ARCHIVE: ${{ steps.artifact.outputs.archive }}
           BASE_SHA: ${{ steps.artifact.outputs.base_sha }}
@@ -151,6 +179,7 @@ jobs:
             --plan "${RUNNER_TEMP}/normalization-plan.json"
 
       - name: Compare prospective blobs without checking out PR code
+        if: steps.artifact.outputs.generated_only != 'true'
         id: compare
         uses: actions/github-script@v9
         env:
@@ -263,6 +292,7 @@ jobs:
       - name: Mint scoped normalization credential
         id: app-token
         if: >
+          steps.artifact.outputs.generated_only != 'true' &&
           env.NORMALIZATION_MODE == 'enforce' &&
           env.NORMALIZATION_CREDENTIAL_PRESENT == 'true' &&
           steps.artifact.outputs.same_repository == 'true' &&
@@ -277,6 +307,7 @@ jobs:
 
       - name: Advance the same-repository head with validated blobs
         if: >
+          steps.artifact.outputs.generated_only != 'true' &&
           env.NORMALIZATION_MODE == 'enforce' &&
           env.NORMALIZATION_CREDENTIAL_PRESENT == 'true' &&
           steps.artifact.outputs.same_repository == 'true' &&

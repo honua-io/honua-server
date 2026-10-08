@@ -30,6 +30,7 @@ on:
       - '.github/workflows/normalize-derived-artifacts.yml'
 
 permissions:
+  actions: read
   contents: read
   packages: read
 
@@ -48,6 +49,8 @@ jobs:
     if: github.event.action != 'edited' || github.event.changes.base.ref.from != null
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      generated_only: ${{ steps.generated-only.outputs.generated_only }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -57,13 +60,36 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+          fetch-depth: 2
+
+      # Only the immutable base supplies executable classification policy.
+      # A missing/failed classifier leaves the ordinary checks enabled.
+      - name: Classify validated generated-only diff
+        id: generated-only
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          echo 'generated_only=false' >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_EVENT_NAME" == pull_request && "$TRUSTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            if ! git cat-file -e "${TRUSTED_BASE_SHA}^{commit}" 2>/dev/null; then
+              git fetch --no-tags --depth=1 origin "$TRUSTED_BASE_SHA" || exit 0
+            fi
+            policy="${RUNNER_TEMP}/generated-output-diff.py"
+            if git show "${TRUSTED_BASE_SHA}:scripts/ci/generated-output-diff.py" > "$policy"; then
+              python3 "$policy" --github-output
+            fi
+          fi
 
       - name: Setup .NET
+        if: steps.generated-only.outputs.generated_only != 'true'
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Regenerate governed projections
+        if: steps.generated-only.outputs.generated_only != 'true'
         run: |
           bash scripts/generate-feature-catalog.sh --configuration Release -m:1
           bash scripts/generate-admin-operation-parity-exports.sh --configuration Release -m:1 --no-build --no-restore
@@ -72,6 +98,7 @@ jobs:
           python3 scripts/ci/generate-capability-matrix.py
 
       - name: Replay generators and stage only reproducible bounded projections
+        if: steps.generated-only.outputs.generated_only != 'true'
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
@@ -125,6 +152,7 @@ jobs:
           fi
 
       - name: Upload bounded projection data
+        if: steps.generated-only.outputs.generated_only != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: normalization-projections-${{ github.run_id }}-attempt-${{ github.run_attempt }}
@@ -136,6 +164,7 @@ jobs:
   produce:
     name: Produce data-only normalization envelope
     needs: generate
+    if: needs.generate.outputs.generated_only != 'true'
     permissions:
       contents: read
     runs-on: ubuntu-latest

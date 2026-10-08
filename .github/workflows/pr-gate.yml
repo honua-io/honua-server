@@ -20,6 +20,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
   packages: read
   pull-requests: read
@@ -71,22 +72,43 @@ jobs:
 
       # Docs-only exit; see the `Classify docs-only diff` step of the
       # build/test job below.
+      # Only the immutable base supplies executable classification policy.
+      # A missing/failed classifier leaves the ordinary checks enabled.
+      - name: Classify validated generated-only diff
+        id: generated-only
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          echo 'generated_only=false' >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_EVENT_NAME" == pull_request && "$TRUSTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            if ! git cat-file -e "${TRUSTED_BASE_SHA}^{commit}" 2>/dev/null; then
+              git fetch --no-tags --depth=1 origin "$TRUSTED_BASE_SHA" || exit 0
+            fi
+            policy="${RUNNER_TEMP}/generated-output-diff.py"
+            if git show "${TRUSTED_BASE_SHA}:scripts/ci/generated-output-diff.py" > "$policy"; then
+              python3 "$policy" --github-output
+            fi
+          fi
+
       - name: Classify docs-only diff
         id: docs-only
+        if: steps.generated-only.outputs.generated_only != 'true'
         run: scripts/ci/docs-only-diff.sh --github-output
 
       - name: Setup .NET
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         run: scripts/ci/dotnet-restore-retry.sh Honua.sln
 
       - name: Format Check
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: ./.github/actions/format-check
         with:
           format-scope: affected
@@ -211,11 +233,33 @@ jobs:
       # The classifier is PR-authored and decides what this very job skips, so
       # its fixtures run first, the same way the shard selector is validated
       # before it is consumed (offline, seconds).
+      # Only the immutable base supplies executable classification policy.
+      # A missing/failed classifier leaves the ordinary checks enabled.
+      - name: Classify validated generated-only diff
+        id: generated-only
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          echo 'generated_only=false' >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_EVENT_NAME" == pull_request && "$TRUSTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            if ! git cat-file -e "${TRUSTED_BASE_SHA}^{commit}" 2>/dev/null; then
+              git fetch --no-tags --depth=1 origin "$TRUSTED_BASE_SHA" || exit 0
+            fi
+            policy="${RUNNER_TEMP}/generated-output-diff.py"
+            if git show "${TRUSTED_BASE_SHA}:scripts/ci/generated-output-diff.py" > "$policy"; then
+              python3 "$policy" --github-output
+            fi
+          fi
+
       - name: Validate the docs-only classifier before consuming it
+        if: steps.generated-only.outputs.generated_only != 'true'
         run: scripts/ci/fixtures/validate-docs-only-diff.sh
 
       - name: Classify docs-only diff
         id: docs-only
+        if: steps.generated-only.outputs.generated_only != 'true'
         run: scripts/ci/docs-only-diff.sh --github-output
 
       # The lean gate's one documentation check. It scans every *.md for a raw
@@ -229,7 +273,7 @@ jobs:
       # The full-solution Release build can exhaust ubuntu-latest disk once
       # every project writes bin/obj. Best-effort cleanup mirrors ci.yml.
       - name: Free disk space
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         run: |
           sudo rm -rf /usr/local/lib/android || true
           sudo rm -rf /usr/share/swift || true
@@ -238,7 +282,7 @@ jobs:
           df -h / || true
 
       - name: Setup .NET
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
@@ -267,11 +311,11 @@ jobs:
       # existing lean build runs so the required path pays only sidecar startup
       # and migrations, not a cold image fetch.
       - name: Pre-pull Testcontainers PostGIS image (background)
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         run: scripts/ci/prepull-testcontainers-postgis.sh
 
       - name: Lean gate (build + fast unit/architecture smoke)
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: ./.github/actions/lean-gate
         with:
           trx-prefix: pr-gate
@@ -288,7 +332,7 @@ jobs:
           run-format: 'false'
 
       - name: Prove remote source execution with real HTTP and PostGIS
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         timeout-minutes: 10
         run: |
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
@@ -296,7 +340,7 @@ jobs:
             --logger 'trx;LogFileName=remote-source-execution-proof.trx' --results-directory tests/TestResults
 
       - name: Upload remote source execution proof
-        if: always() && steps.docs-only.outputs.docs_only != 'true'
+        if: always() && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: remote-source-execution-proof
@@ -304,7 +348,7 @@ jobs:
 
       - name: Prove raster catalog execution with production GDAL
         id: raster-execution-proof
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         timeout-minutes: 10
         run: |
           image=$(sed -n 's/^ARG GDAL_BASE_IMAGE=//p' docker/worker-gdal/Dockerfile)
@@ -498,7 +542,7 @@ jobs:
         # job uses), with the same counts-based tripwire. HONUA_REQUIRE_GDAL_CLI
         # turns a missing tool into a failure rather than a skip.
         id: gdal-cli-proof
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         timeout-minutes: 10
         env:
           HONUA_REQUIRE_GDAL_CLI: "true"
@@ -552,7 +596,7 @@ jobs:
           fi
 
       - name: Upload imagery classify execution proof
-        if: always() && steps.docs-only.outputs.docs_only != 'true'
+        if: always() && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: imagery-classify-execution-proof
@@ -563,11 +607,11 @@ jobs:
       # archive.ubuntu.com + PDAL compiled from source); see the matching step
       # in ci.yml's Worker GDAL Tests job for why it is never written here.
       - name: Set up Docker Buildx for production PDAL
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
 
       - name: Log in to GHCR for the production PDAL build cache
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.generated-only.outputs.generated_only != 'true'
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:
           registry: ghcr.io
@@ -575,7 +619,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build production PDAL native tools
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         timeout-minutes: 30
         run: |
           docker buildx build --load --target native-tools -f docker/worker-gdal/Dockerfile \
@@ -585,7 +629,7 @@ jobs:
           echo "HONUA_GDAL_PROOF_USER=$(id -u):$(id -g)" >> "$GITHUB_ENV"
 
       - name: Prove point-cloud execution with production PDAL
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         timeout-minutes: 10
         run: |
           dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
@@ -593,14 +637,14 @@ jobs:
             --logger 'trx;LogFileName=pdal-execution-proof.trx' --results-directory tests/TestResults
 
       - name: Upload point-cloud execution proof
-        if: always() && steps.docs-only.outputs.docs_only != 'true'
+        if: always() && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: pdal-execution-proof
           path: tests/TestResults/pdal-execution-proof.trx
 
       - name: Upload raster execution proof
-        if: always() && steps.docs-only.outputs.docs_only != 'true'
+        if: always() && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: raster-execution-proof
@@ -610,7 +654,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Upload layer execution proof
-        if: always() && steps.docs-only.outputs.docs_only != 'true'
+        if: always() && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: layer-execution-proof
@@ -618,7 +662,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Upload protocol-tier execution proof
-        if: always()
+        if: always() && steps.generated-only.outputs.generated_only != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: protocol-tier-execution-proof
@@ -626,13 +670,13 @@ jobs:
           if-no-files-found: warn
 
       - name: Await Testcontainers PostGIS pre-pull
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         env:
           PREPULL_AWAIT_TIMEOUT_SECONDS: '120'
         run: scripts/ci/prepull-testcontainers-postgis.sh --await
 
       - name: Upload copy-features execution proof
-        if: always() && steps.docs-only.outputs.docs_only != 'true'
+        if: always() && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: copy-features-execution-proof
@@ -640,14 +684,14 @@ jobs:
           if-no-files-found: warn
 
       - name: Honua.Server boot + migrations smoke
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         run: timeout 175s scripts/ci/server-boot-smoke.sh
 
       # Exercise all clean and injected-rootfs fixtures here without building a
       # container. The separate serving-image workflow and release/deploy/nightly
       # lanes apply this detector to the final production root filesystems.
       - name: Test serving-image boundary detector
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         run: |
           python3 scripts/ci/fixtures/validate-serving-image-boundary.py
           python3 scripts/ci/fixtures/validate-promote-verified-image.py
@@ -743,8 +787,8 @@ jobs:
     outputs:
       # A docs-only diff skips selection and publishes `skip`, which the
       # aggregate below already reports as a green `skipped` verdict.
-      skip: ${{ steps.docs-only.outputs.docs_only == 'true' && 'true' || steps.select.outputs.skip }}
-      reason: ${{ steps.docs-only.outputs.docs_only == 'true' && 'docs_only' || steps.select.outputs.reason }}
+      skip: ${{ (steps.generated-only.outputs.generated_only == 'true' || steps.docs-only.outputs.docs_only == 'true') && 'true' || steps.select.outputs.skip }}
+      reason: ${{ steps.generated-only.outputs.generated_only == 'true' && 'validated_generated_only' || steps.docs-only.outputs.docs_only == 'true' && 'docs_only' || steps.select.outputs.reason }}
       selected_count: ${{ steps.select.outputs.selected_count }}
       matrix_include: ${{ steps.select.outputs.matrix_include }}
     steps:
@@ -782,17 +826,38 @@ jobs:
       #
       # Docs-only exit; see the `Classify docs-only diff` step of the
       # build/test job above.
+      # Only the immutable base supplies executable classification policy.
+      # A missing/failed classifier leaves the ordinary checks enabled.
+      - name: Classify validated generated-only diff
+        id: generated-only
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          echo 'generated_only=false' >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_EVENT_NAME" == pull_request && "$TRUSTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            if ! git cat-file -e "${TRUSTED_BASE_SHA}^{commit}" 2>/dev/null; then
+              git fetch --no-tags --depth=1 origin "$TRUSTED_BASE_SHA" || exit 0
+            fi
+            policy="${RUNNER_TEMP}/generated-output-diff.py"
+            if git show "${TRUSTED_BASE_SHA}:scripts/ci/generated-output-diff.py" > "$policy"; then
+              python3 "$policy" --github-output
+            fi
+          fi
+
       - name: Classify docs-only diff
         id: docs-only
+        if: steps.generated-only.outputs.generated_only != 'true'
         run: scripts/ci/docs-only-diff.sh --github-output
 
       - name: Validate the shard selector before consuming it
-        if: steps.docs-only.outputs.docs_only != 'true'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         run: python3 scripts/ci/fixtures/validate-affected-shards.py
 
       - name: Select affected shard families
         id: select
-        if: steps.docs-only.outputs.docs_only != 'true'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         env:
           CAP: ${{ env.AFFECTED_SHARDS_CAP }}
         run: |
@@ -804,7 +869,7 @@ jobs:
           cat "${RUNNER_TEMP}/affected-shards.md" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload selection receipt
-        if: always() && steps.docs-only.outputs.docs_only != 'true'
+        if: always() && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: pr-gate-affected-shards-selection
