@@ -313,7 +313,8 @@ internal sealed class InputValidationMiddleware
                     return InputValidationResult.Invalid(geometryError, isSuspicious: false);
                 }
             }
-            else if (value.Length > _options.MaxParameterLength)
+            else if (value.Length > _options.MaxParameterLength &&
+                     !IsGeoServicesProtocolPayloadField(request, paramType, name))
             {
                 return InputValidationResult.Invalid($"Parameter '{name}' exceeds maximum length of {_options.MaxParameterLength}", isSuspicious: false);
             }
@@ -469,6 +470,30 @@ internal sealed class InputValidationMiddleware
         // on unrelated routes. Every OAuth2 route lives under "/sharing/rest/oauth2/" (authorize,
         // callback, token, revoke, introspect).
         return request.Path.Value?.Contains("/sharing/rest/oauth2/", StringComparison.OrdinalIgnoreCase) == true;
+    }
+
+    private static readonly HashSet<string> _geoServicesQueryPayloadFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "objectIds",
+        "outFields"
+    };
+
+    private static bool IsGeoServicesProtocolPayloadField(HttpRequest request, string paramType, string name)
+    {
+        if (IsFeatureEditPayloadField(request, paramType, name))
+        {
+            return true;
+        }
+
+        if (!paramType.Equals("form", StringComparison.Ordinal) ||
+            !_geoServicesQueryPayloadFields.Contains(name))
+        {
+            return false;
+        }
+
+        var path = request.Path.Value;
+        return path?.Contains("/FeatureServer/", StringComparison.OrdinalIgnoreCase) == true ||
+               path?.Contains("/MapServer/", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     private static bool IsFeatureEditPayloadField(HttpRequest request, string paramType, string name)
