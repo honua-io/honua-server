@@ -21,11 +21,12 @@ this journey uses a small synchronous import and does not require durable jobs.
 
 ## Artifact identity and qualification
 
-The commands pin the anonymously published **pre-cut rehearsal** image
-`ghcr.io/honua-io/honua-server@sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39`
-(Docker Desktop Linux containers; this journey selects `linux/amd64`, source `87966c3f7b6c840ffc4d4da0b451714ab717b18a`). Its
-[registry manifest](https://ghcr.io/v2/honua-io/honua-server/manifests/sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39)
-is fetched by `docker pull` below. The control-plane package is
+The commands use the anonymously published 2026.1 release channel image
+`ghcr.io/honua-io/honua-server:2026.1-rc` (`ghcr.io/honua-io/honua-server:2026.1` once 2026.1
+is generally available; only release promotion moves that tag) with Docker Desktop
+Linux containers; this journey selects `linux/amd64`. The exact digest for a release is `server.image` in that release's `customer-install-manifest.json` (honua-release).
+Set `$Image` to that digest to pin an installation exactly; `docker pull` below
+resolves the tag, and the support step records the digest that ran. The control-plane package is
 [honua-admin 0.1.10](https://pypi.org/project/honua-admin/0.1.10/); the data-plane
 package is [honua-sdk 0.1.13](https://pypi.org/project/honua-sdk/0.1.13/).
 The import step invokes Honua's `honua_ingest_dataset` MCP tool using the
@@ -72,7 +73,7 @@ function New-InstallSecret {
     try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
     return ([BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
 }
-$Image = 'ghcr.io/honua-io/honua-server@sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39'
+$Image = 'ghcr.io/honua-io/honua-server:2026.1-rc'
 $Port = 18080
 $KeyringPassword = New-InstallSecret
 @"
@@ -99,7 +100,7 @@ becomes healthy. An existing incompatible database still fails server preflight.
 @'
 services:
   honua:
-    image: ${HONUA_IMAGE:?Set the immutable server digest}
+    image: ${HONUA_IMAGE:?Set the server image}
     platform: linux/amd64
     ports:
       - "127.0.0.1:${HONUA_HTTP_PORT:?Set an unused port}:8080"

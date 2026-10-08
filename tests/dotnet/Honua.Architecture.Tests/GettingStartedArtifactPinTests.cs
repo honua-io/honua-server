@@ -10,7 +10,12 @@ namespace Honua.Architecture.Tests;
 /// </summary>
 public sealed class GettingStartedArtifactPinTests
 {
-    private const string CandidateImage = "ghcr.io/honua-io/honua-server@sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39";
+    // The getting-started pages reference the release channel, which only release promotion
+    // moves (ruling R18). The exact digest for a release is `server.image` in that release's
+    // honua-release `customer-install-manifest.json`; it is never hand-copied into these pages.
+    private const string ReleaseChannelImage = "ghcr.io/honua-io/honua-server:2026.1-rc";
+    private const string DigestSource = "`server.image` in that release's `customer-install-manifest.json`";
+    private const string ServerImageDigestPrefix = "ghcr.io/honua-io/honua-server@sha256:";
 
     [ArchitectureTest]
     public void GettingStartedPages_PinPublishedClientAndServerArtifacts()
@@ -24,12 +29,16 @@ public sealed class GettingStartedArtifactPinTests
         var windowsPackages = Read(root, "docs", "get-started", "windows-packages.md");
         var dotnetGettingStarted = Read(root, "docs", "sdks", "dotnet", "dotnet-getting-started.md");
 
-        quickstart.Should().Contain(CandidateImage);
-        quickstart.Should().Contain("Licensing__Mode: Disabled");
-        linuxPackages.Should().Contain(CandidateImage);
-        linuxPackages.Should().Contain("Licensing__Mode: Disabled");
-        windowsPackages.Should().Contain(CandidateImage);
-        windowsPackages.Should().Contain("Licensing__Mode: Disabled");
+        foreach (var page in new[] { quickstart, linuxPackages, windowsPackages })
+        {
+            page.Should().Contain(ReleaseChannelImage);
+            page.Should().Contain(DigestSource);
+            page.Should().Contain("Licensing__Mode: Disabled");
+        }
+
+        quickstart.Should().Contain("HONUA_IMAGE=" + ReleaseChannelImage);
+        linuxPackages.Should().Contain("HONUA_IMAGE=" + ReleaseChannelImage);
+        windowsPackages.Should().Contain("$Image = '" + ReleaseChannelImage + "'");
         firstDataset.Should().Contain("@honua/sdk-js@0.1.13");
         registryClients.Should().Contain("`@honua/sdk-js@0.1.13`");
         registryClients.Should().Contain("`create-honua-app@0.1.6`");
@@ -41,7 +50,10 @@ public sealed class GettingStartedArtifactPinTests
             registryClients, windowsPackages, dotnetGettingStarted);
         journey.Should().Contain("honua-sdk==0.1.13");
         journey.Should().Contain("honua-admin==0.1.10");
-        journey.Should().NotContain("sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a");
+        journey.Should().NotContain(ServerImageDigestPrefix,
+            "the server image digest lives in the release's customer-install-manifest.json, not in these pages");
+        journey.Should().NotContain("honua-server/manifests/sha256:",
+            "a hand-copied registry manifest link is a server image digest pin");
         journey.Should().NotContain("curl ", "getting-started examples use the supported CLI, SDK, or MCP surfaces");
     }
 

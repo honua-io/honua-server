@@ -16,14 +16,18 @@ else: no repository checkout, no compiler, and **no registry credentials** —
 the server image and both Python clients are public. The 2026.1 release runs
 with licensing disabled, so there is no licence or edition-selection step.
 
-Everything below is pinned so a run is reproducible: server
-`ghcr.io/honua-io/honua-server@sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39`,
-[honua-admin 0.1.10](https://pypi.org/project/honua-admin/0.1.10/), and
+The server image is the 2026.1 release channel
+`ghcr.io/honua-io/honua-server:2026.1-rc` (`ghcr.io/honua-io/honua-server:2026.1` once 2026.1
+is generally available); only release promotion moves that tag.
+The exact digest for a release is `server.image` in that release's `customer-install-manifest.json` (honua-release).
+Set `HONUA_IMAGE` to that digest to make a run byte-for-byte reproducible. The
+clients are pinned:
+[honua-admin 0.1.10](https://pypi.org/project/honua-admin/0.1.10/) and
 [honua-sdk 0.1.13](https://pypi.org/project/honua-sdk/0.1.13/).
 
 For a lasting deployment, continue to
 [production Compose](../guides/deploy/docker-compose.md). For a locked-down
-single-host install of the same pinned image and clients, with startup and
+single-host install of the same image and pinned clients, with startup and
 recovery checks scripted, see [Linux](linux-packages.md) or
 [Windows](windows-packages.md).
 
@@ -34,7 +38,7 @@ Make a directory and put this in it as `compose.yaml`:
 ```yaml
 services:
   honua:
-    image: ${HONUA_IMAGE:?Set the immutable server digest}
+    image: ${HONUA_IMAGE:?Set the server image}
     platform: linux/amd64
     ports:
       - "127.0.0.1:${HONUA_HTTP_PORT:?Set an unused port}:8080"
@@ -117,7 +121,7 @@ than inventing them.
 ```bash
 cat > .env <<EOF
 COMPOSE_PROJECT_NAME=honua-quickstart
-HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39
+HONUA_IMAGE=ghcr.io/honua-io/honua-server:2026.1-rc
 HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(openssl rand -hex 32)
 HONUA_ADMIN_PASSWORD=Aa1!$(openssl rand -hex 32)
@@ -133,7 +137,7 @@ EOF
 function New-Secret { -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) }) }
 @"
 COMPOSE_PROJECT_NAME=honua-quickstart
-HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:3ef3bd41a2f84d1f3a6194c11db496f741cc4d869b54bf57e9d7067dd9cf3d39
+HONUA_IMAGE=ghcr.io/honua-io/honua-server:2026.1-rc
 HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(New-Secret)
 HONUA_ADMIN_PASSWORD=Aa1!$(New-Secret)
