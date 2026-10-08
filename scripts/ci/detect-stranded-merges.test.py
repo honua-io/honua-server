@@ -910,8 +910,7 @@ def test_patch_identity_recognises_a_re_landed_payload_even_after_further_edits(
 
 
 def test_patch_identity_does_not_fire_on_a_different_change_to_the_same_file():
-    def body(root, built):
-        payload, _relanded = built
+    def body(root, _built):
         resolver = _resolver()
         # A payload commit that trunk never took must not be laundered as landed
         # just because trunk edited the same file.
