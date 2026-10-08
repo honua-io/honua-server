@@ -118,3 +118,9 @@ Publication reconciliation found new trunk `e9eee40b5f794c885ae44d98a76fa388443c
 (server gated-boot shutdown) and merged it cleanly. Earlier 273-case green evidence
 is retained, but current-trunk build/test verification must be repeated before
 publication. No packet implementation changed during that merge.
+
+The latest-trunk normal-reference Debug build passed with warnings as errors.
+A requested 20-second host wait took over seven minutes; all source and the
+merge were already preserved remotely. OGC verification reported socket errors
+after this interruption and is being diagnosed. No failed run is counted green;
+current-trunk protocol verification remains required before publication.
