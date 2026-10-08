@@ -273,17 +273,19 @@ public sealed class ImageServerMosaicIntegrationTests
                 insert.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
                 insert.Parameters.AddWithValue("acquired", RasterIntegrationTestData.WestAcquisition.UtcDateTime);
                 await insert.ExecuteNonQueryAsync();
+
+                // honua.raster_data is shared across fixture schemas. Keep the seed lock
+                // through the read so a parallel fixture cannot replace the four-band raster.
+                var geometry = Uri.EscapeDataString(FormattableString.Invariant(
+                    $"{{\"x\":{mercatorX},\"y\":{mercatorY},\"spatialReference\":{{\"wkid\":3857}}}}"));
+                using var json = await IdentifyJsonAsync(fixture, $"geometry={geometry}&geometryType=esriGeometryPoint");
+
+                json.RootElement.GetProperty("value").GetString().Should().Be("17, 22.5, 39, 45");
+                var location = json.RootElement.GetProperty("location");
+                location.GetProperty("x").GetDouble().Should().BeApproximately(mercatorX, 1e-6);
+                location.GetProperty("y").GetDouble().Should().BeApproximately(mercatorY, 1e-6);
+                location.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
             });
-
-            var geometry = Uri.EscapeDataString(FormattableString.Invariant(
-                $"{{\"x\":{mercatorX},\"y\":{mercatorY},\"spatialReference\":{{\"wkid\":3857}}}}"));
-            using var json = await IdentifyJsonAsync(fixture, $"geometry={geometry}&geometryType=esriGeometryPoint");
-
-            json.RootElement.GetProperty("value").GetString().Should().Be("17, 22.5, 39, 45");
-            var location = json.RootElement.GetProperty("location");
-            location.GetProperty("x").GetDouble().Should().BeApproximately(mercatorX, 1e-6);
-            location.GetProperty("y").GetDouble().Should().BeApproximately(mercatorY, 1e-6);
-            location.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
         }
         finally
         {
