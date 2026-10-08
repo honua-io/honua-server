@@ -3,101 +3,113 @@
 Owner: Mike McDougall <mike@honua.io>. One writer, one issue, one PR.
 
 The current issue and trunk were read before editing. No existing PR or recovery
-ref was found. Starting trunk: `5d2ffbb7cd34739b76f6326db5991b01ae2079a4`.
-The parked cloud packet remains historical; READY and historical test claims
-were not treated as delivery or evidence.
+ref was found; a second search immediately before final verification found no
+competing PR. Starting and reconciled trunk:
+`5d2ffbb7cd34739b76f6326db5991b01ae2079a4`. The final fetch/merge reported
+already up to date before these final protocol runs. The parked cloud packet
+remains historical; READY and historical test claims are not delivery evidence.
 
-## Runtime diagnosis
+## Dispositions
 
-All integration receipts below use actual local Docker, `WebAppFixture` and
-`PostgresFixture`, Testcontainers image `postgis/postgis:18-3.6`, isolated
-schemas and seeded feature rows. Receipts are retained under the local
-workspace `/home/mike/honua-io/5614-evidence/`; command logs are alongside it.
-
-| Finding / path | Starting-trunk disposition | Receipt |
+| Finding / path | Starting-trunk evidence | Final disposition |
 | --- | --- | --- |
-| SRV-OGC-007: OGC GML collection, single item and streaming; CSV collection/single; queryables; properties, sort, queryable parameters, CQL text/JSON; optimized raw GeoJSON and bbox point output | Reproduced: 13 failed | `ogc-red.trx`, `5614-ogc-red.log` |
-| Ordinary OGC GeoJSON collection/single output | Already fixed: 2 passed | Same OGC baseline |
-| WFS GML/CSV GetFeature, DescribeFeatureType, PROPERTYNAME, SORTBY, GetPropertyValue and FES reference | Reproduced: 7 failed | `wfs-red.trx`, `5614-wfs-red.log` |
-| WFS GeoJSON output | Already fixed: 1 passed | Same WFS baseline |
-| SRV-GRPC-003: unary/streaming field definitions and attributes, default/wildcard/explicit out-fields | Reproduced: 6 failed | `grpc-red.trx`, `5614-grpc-red.log` |
+| SRV-OGC-007: GML collection/single/stream; CSV collection/single; queryables; properties, sort, queryable parameters, CQL text/JSON; optimized raw GeoJSON and bbox point output | 13 failures in `ogc-red.trx` | Fixed: final OGC regressions pass |
+| Ordinary OGC GeoJSON collection/single | 2 passes in the same baseline | Already fixed; retained regression coverage |
+| WFS GML/CSV GetFeature, DescribeFeatureType, PROPERTYNAME, SORTBY, GetPropertyValue and FES reference | 7 failures in `wfs-red.trx` | Fixed: final WFS regressions pass |
+| WFS GeoJSON | 1 pass in the same baseline | Already fixed; retained regression coverage |
+| SRV-GRPC-003: unary/streaming field definitions and attributes, default/wildcard/explicit out-fields | 6 failures in `grpc-red.trx` | Fixed: final gRPC regressions pass |
 
-No baseline case was skipped. Not reproduced: none of these completed checks.
-The OGC/gRPC baseline test assemblies used `BuildProjectReferences=false`
-against already-built, unchanged starting-trunk production binaries. The WFS
-baseline built normal project references. Candidate verification builds normal
-references with warnings treated as errors.
+Not reproduced: none of the completed original checks. Not attempted: optional
+gRPC where/order hidden-field policy, non-Postgres provider integration and full
+CITE qualification. These limits are separate from the required reproduced
+output/query-binding corrections. The issue remains open until normal delivery
+and merge; required items are not represented as complete by a READY status.
 
-## Supported corrections in progress
+## Supported corrections and compatibility
 
-- OGC filters hidden fields from CSV/queryables and raw GeoJSON selection,
-  resolves query references against visible schema, projects visible GML
-  attributes, and defensively removes hidden keys from provider GML results.
+- OGC selects visible GML/CSV/raw GeoJSON attributes and queryables, binds client
+  property/filter/sort references against visible schema, and defensively removes
+  hidden keys from provider GML results, including streaming output.
+- A candidate run exposed a built-in sort allow-list bypass for hidden
+  `created_at`, including descending uppercase spelling. Both tests first failed
+  and now pass after excluding declared-hidden core fields.
+- The original schema remains available for custom public feature ID binding.
+  A Docker-backed regression first exposed collection ID disagreement and a
+  hidden identifier property. Collection and item IDs now agree; response-owned
+  GeoJSON properties omit the hidden identifier without changing top-level IDs.
+  This correction is in the OGC adapter; the shared builder is untouched.
 - WFS uses visible schema for output/schema generation and property/FES binding.
-- gRPC excludes hidden response field definitions and removes hidden keys from
-  unary/streaming attributes, including explicitly requested hidden fields.
-- Case-insensitive provider-extra-attribute regressions cover all four GML
-  formatter entrypoints and gRPC conversion. Streaming integration requires
-  exactly 300 GML members after adding 300 rows.
-- Candidate OGC run: 19 passed, 2 failed, 0 skipped (`ogc-candidate-core-sort.trx`).
-  Declared-hidden `created_at` still returned HTTP 200 through the built-in sort
-  allow-list, including descending uppercase spelling. The supported correction
-  removes declared-hidden names from that allow-list; verification is pending.
+  A transaction regression first returned HTTP 400 after read filtering also
+  affected input resolution. Explicit transaction binding now preserves declared
+  hidden inputs; the regression verifies the stored value directly in PostGIS.
+- gRPC excludes hidden response field definitions and attribute keys, including
+  explicit out-fields, for unary and streaming responses. Case-insensitive
+  provider-extra-attribute regressions cover gRPC conversion and all four GML
+  formatter entrypoints. The GML streaming integration requires 300 members.
 
-These changes are unfinished until their candidate tests pass. Scoped formatting
-completed for the changed OGC, WFS and gRPC projects; the additional OGC sort
-regression is being formatted separately. Every build/test/formatter uses the
-shared four slots, PATH dotnet and the MSBuild CPU cap. Unrelated holds remain.
-No credentials, secrets, variables, tests or workflow gates were weakened.
+Hidden remains publisher presentation metadata, not field-level access control.
+Existing provider-enforced masks and visible-field behavior remain covered.
+No tests were weakened, skipped or deleted; no credentials, secrets, variables
+or hosted gates changed. All production/test edits are within packet TOUCHES.
 
-Not attempted: gRPC where/order hidden-field policy (the issue describes this
-as optional consideration), non-Postgres provider integration and full CITE
-qualification. Focused candidate verification, latest-trunk reconciliation,
-single self-review, independent review and normal hosted admission are pending.
-Issue 5614 remains open while required acceptance is unfinished.
+## Local verification
 
-## Candidate receipts so far
+All integration receipts use actual local Docker (29.8.0), `WebAppFixture` and
+`PostgresFixture`, Testcontainers image `postgis/postgis:18-3.6`, isolated schemas
+and seeded rows. Receipts are retained at
+`/home/mike/honua-io/5614-evidence/`; command logs are alongside that directory.
 
-- WFS: fixed for reproduced paths. `wfs-green.trx`: 20 passed, 0 failed,
-  0 skipped. Includes 8 hidden-field cases, property resolver tests, visible
-  QName round trip, schema attribute types and wildcard projection.
-- gRPC: fixed for reproduced output paths. `grpc-green.trx`: 187 passed,
-  0 failed, 0 skipped. Includes 6 Docker-backed unary/streaming hidden-field
-  cases, case-insensitive conversion and existing feature-service, conversion
-  and masked-field predicate tests.
-- The normal-reference candidate build passed after adding the required XML
-  parameter documentation. The subsequent supported OGC sort correction is
-  rebuilding normally; final OGC verification remains pending.
+Final current-trunk candidate: **273 passed, 0 failed, 0 skipped**:
 
-Candidate input-preservation diagnosis: `wfs-input-regression-red.trx` has one
-executed failure, HTTP 400 on an authorized update of hidden `category`. The
-initial resolver correction also affected transaction binding. Transactions
-now explicitly retain declared hidden input fields; read resolution remains
-filtered. The regression checks the stored value directly and awaits green
-verification. This preserves Hidden as a presentation rule, not a write ACL.
+- OGC: 65. Hidden output/query/identifier regressions, provider GML filtering,
+  existing raw and streaming GeoJSON, formatter and base-builder tests, and
+  visible property/sort/CQL text/JSON integration.
+- WFS: 21. Hidden output/query/transaction regressions, property resolver tests,
+  visible QName round trip, schema attribute types and wildcard projection.
+- gRPC: 187. Hidden unary/streaming output and conversion regressions, existing
+  feature-service, conversion and masked-field predicate tests.
 
-Final WFS receipt: `wfs-final-green.trx`, 21 passed, 0 failed, 0 skipped.
-The hidden-field transaction update and direct stored-value assertion pass.
-Independent review and the single self-review froze two original P1 findings
-in 203 seconds: retain full schema for public identifier binding, and document
-new public test types. XML summaries are added; a new Docker-backed hidden
-custom identifier regression is running before the binding correction.
-Neither review finding is marked fixed until focused verification passes.
+Commands used PATH `dotnet test <protocol-test-project> --no-build --no-restore
+--filter <selection> --logger trx --results-directory <evidence-directory>`.
+Selections were the named regression classes and existing classes/methods above;
+TRX test definitions retain the exact executed case list. Production DLL hashes
+were checked against each test output before running.
 
-The hidden custom identifier regression reproduced both collection ID binding
-failure and a hidden identifier property in GeoJSON. The correction retains the
-original schema for IDs and removes that hidden property from the response-owned
-feature dictionary in the OGC adapter. All edits remain within packet TOUCHES;
-no shared builder change is needed. Independent review validated these changes
-and the XML summaries in source. Focused green verification is still required.
-Scoped formatting for these final edits passed.
+The OGC/gRPC baseline test assemblies reused unchanged starting-trunk production
+binaries; WFS built normal references. Candidate normal-reference Debug builds
+passed with warnings treated as errors. Final changed-project builds also passed
+with warnings as errors, reusing identical unchanged dependency builds. No
+Release/full-solution/architecture/CITE pass is claimed. All changed projects
+were formatted with `--include` for changed files, `timeout 20m`, and explicit
+shared-slot admission. All builds/tests used the PATH lane shim, the four shared
+build slots, CPU cap and shared Roslyn compilation. Unrelated holds remain.
 
-Post-review gRPC verification passed against the rebuilt current-trunk candidate:
-`grpc-review-green.trx`: 187 passed, 0 failed, 0 skipped. The scoped final build
-passed with warnings as errors. OGC and WFS verification is still running.
+## Review and recovery
 
-Post-review OGC verification passed: `ogc-final-green.trx`, 65 passed, 0 failed,
-0 skipped. This includes all hidden-field and custom identifier regressions,
-provider GML filtering, existing raw/streaming output, visible property/sort/CQL
-behavior and formatter coverage. Both original P1 findings now have focused
-source/build/test evidence; WFS final re-verification is still running.
+The single self-review and independent review froze two original P1 findings in
+203 seconds: retain original schema for public ID binding, and document new
+public test types. Both originals are retained and marked fixed only after the
+final focused tests passed. Independent review also validated response dictionary
+ownership, ID preservation and completed XML summaries. No P0/P1 remains;
+no P2/P3 finding was identified. Original review artifacts remain in
+`/tmp/self-review-fix-5614-hidden-field-local-recovery`.
+
+The initial branch and successive WIP checkpoints were pushed for recovery;
+intermediate work went to `wip/fix/5614-hidden-field-local-recovery`. The PR
+branch receives one consolidated reviewable update after verification. Normal
+hosted admission/build/test/governance gates remain enabled. Hosted gate results
+are not local evidence and are not awaited under this packet's delivery contract.
+
+## Receipt hashes
+
+| Receipt | Passed | Failed | Skipped | SHA-256 |
+| --- | ---: | ---: | ---: | --- |
+| `ogc-red.trx` | 2 | 13 | 0 | `faf627d09ddc0da506d7bd79ef6d8d64de0cbbf7df8b4a9ed5ebc6fcbdb8589a` |
+| `wfs-red.trx` | 1 | 7 | 0 | `306577c6e337c18d404e78065d9cea90fc5d59e60ebc30409609742e44158a9c` |
+| `grpc-red.trx` | 0 | 6 | 0 | `aa7d979856765517383190120f454facdf5bb3a0959ee6fbed0028ec68b46c29` |
+| `ogc-candidate-core-sort.trx` | 19 | 2 | 0 | `3de682d2324d92bdaa033dd09e05118dbabfcddb21b0485583a1657784b20acb` |
+| `wfs-input-regression-red.trx` | 0 | 1 | 0 | `1e06a1706d9ccb32998d65e8bf8d9fa1db22d2eab7241c589cd0ffe429c38dfb` |
+| `ogc-identifier-both-red.trx` | 0 | 1 | 0 | `4f8ba1f49af628a373afe47325aa60299bd6dd43bdbddf630c3ebf159b989fd0` |
+| `ogc-final-green.trx` | 65 | 0 | 0 | `7b7efe604d0bb2abbbcde7a536d074091265d0f012dc7c5bd86af65156afd5db` |
+| `wfs-review-green.trx` | 21 | 0 | 0 | `e251d087e886f50dc9461a766e9e1ed902934e9f2e228d3e81e640b022121c27` |
+| `grpc-review-green.trx` | 187 | 0 | 0 | `9a3b4fb0767553a8cfd863b29e8b21891275fd4b1ac2423c11a97ed28d509644` |
