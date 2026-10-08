@@ -71,7 +71,8 @@ def reason(base: str, paths: list[str]) -> str:
             snapshots = [old, current, git("show", f"HEAD:{path}"), git("show", f":{path}")]
             if path.startswith("src/"):
                 if (not path.startswith(SAFE_SOURCE_ROOTS) or CONTRACT.search("\n".join(snapshots)) or CONTRACT.search(changed)
-                        or TEST_DISCOVERY.search(changed)):
+                        or TEST_DISCOVERY.search(changed)
+                        or re.search(r"\b(?:public|protected)\b|^\s*#", changed, re.M)):
                     return f"route/capability source: {path}"
             elif path.startswith("tests/dotnet/"):
                 # A body-only repair leaves reflected names and coverage metadata
@@ -82,7 +83,8 @@ def reason(base: str, paths: list[str]) -> str:
                        or declarations.findall(old) != declarations.findall(snapshot)
                        for snapshot in snapshots):
                     return f"test discovery/coverage metadata: {path}"
-                if TEST_DISCOVERY.search(changed) or CONTRACT.search(changed):
+                if (TEST_DISCOVERY.search(changed) or CONTRACT.search(changed)
+                        or re.search(r"^\s*#", changed, re.M)):
                     return f"test discovery/coverage metadata: {path}"
             else:
                 return f"unclassified C# input: {path}"
