@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
@@ -73,13 +74,39 @@ public sealed class OgcFeaturesHiddenIdentifierTests : IClassFixture<OgcFeatures
         var singleBody = await singleResponse.Content.ReadAsStringAsync();
         collectionResponse.StatusCode.Should().Be(HttpStatusCode.OK, collectionBody);
         singleResponse.StatusCode.Should().Be(HttpStatusCode.OK, singleBody);
+        using var scope = new AssertionScope();
         using var single = JsonDocument.Parse(singleBody);
         single.RootElement.GetProperty("id").GetString().Should().Be("public-1");
         single.RootElement.GetProperty("properties").TryGetProperty("public_id", out _).Should().BeFalse();
         using var collection = JsonDocument.Parse(collectionBody);
         var features = collection.RootElement.GetProperty("features").EnumerateArray().ToArray();
         features.Should().ContainSingle();
-        features[0].GetProperty("id").GetString().Should().Be("public-1");
-        features[0].GetProperty("properties").TryGetProperty("public_id", out _).Should().BeFalse();
+        if (features.Length == 1)
+        {
+            features[0].GetProperty("id").GetString().Should().Be("public-1");
+            features[0].GetProperty("properties").TryGetProperty("public_id", out _).Should().BeFalse();
+        }
     }
+    [IntegrationTheory]
+    [InlineData("items?ids=public-1")]
+    [InlineData("items/public-1")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task HiddenCustomIdentifier_PreservesPublicIdentity(string suffix)
+    {
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/0/{suffix}");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        var feature = document.RootElement;
+        if (suffix.Contains('?'))
+        {
+            var features = feature.GetProperty("features").EnumerateArray().ToArray();
+            features.Should().ContainSingle();
+            feature = features[0];
+        }
+        feature.GetProperty("id").GetString().Should().Be("public-1");
+        feature.GetProperty("properties").GetProperty("name").GetString().Should().Be("Test Feature");
+    }
+
 }

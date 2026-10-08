@@ -81,13 +81,13 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
         {
             var allowedCoreFields = SortByCoreFields.Except(resource.SchemaFields
                 .Where(field => field.Hidden).Select(field => field.Name));
-            resource = resource with
+            var visibleResource = resource with
             {
                 SchemaFields = resource.SchemaFields.Where(field => !field.Hidden).ToArray()
             };
             var filterResult = await _filterProcessor.ProcessFiltersAsync(
                 parameters.Request,
-                resource,
+                visibleResource,
                 parameters.Filter,
                 parameters.Bbox,
                 parameters.Datetime,
@@ -120,12 +120,12 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
                 return QueryAdapterResult.Failure(idsError ?? "Invalid ids parameter.");
             }
 
-            if (!TryParseProperties(parameters.Properties, resource, out var selectedProperties, out var propertiesError))
+            if (!TryParseProperties(parameters.Properties, visibleResource, out var selectedProperties, out var propertiesError))
             {
                 return QueryAdapterResult.Failure(propertiesError ?? "Invalid properties parameter.");
             }
 
-            if (!TryParseSortBy(parameters.Sortby, resource, allowedCoreFields, out var orderBy, out var sortByError))
+            if (!TryParseSortBy(parameters.Sortby, visibleResource, allowedCoreFields, out var orderBy, out var sortByError))
             {
                 return QueryAdapterResult.Failure(sortByError ?? "Invalid sortby parameter.");
             }

@@ -837,14 +837,14 @@ internal sealed partial class OgcFeaturesQueryHandler(
         ImmutableHashSet<string>? projectedProperties = null,
         ImmutableArray<Link>? links = null,
         GeoJsonFeatureBaseBuilder.PreparedSchema? schema = null)
-        => OgcGeoJsonFeatureBuilder.Create(
+        => OmitHiddenIdentifierProperty(OgcGeoJsonFeatureBuilder.Create(
             feature,
             resource,
             axisOrder,
             geometryServices,
             projectedProperties,
             links: links,
-            schema: schema);
+            schema: schema), resource);
 
     private static GeoJsonFeature ToOgcFeature(
         EncodedGeoJsonFeature feature,
@@ -854,14 +854,26 @@ internal sealed partial class OgcFeaturesQueryHandler(
         ImmutableHashSet<string>? projectedProperties = null,
         ImmutableArray<Link>? links = null,
         GeoJsonFeatureBaseBuilder.PreparedSchema? schema = null)
-        => OgcGeoJsonFeatureBuilder.Create(
+        => OmitHiddenIdentifierProperty(OgcGeoJsonFeatureBuilder.Create(
             feature,
             resource,
             axisOrder,
             geometryServices,
             projectedProperties,
             links: links,
-            schema: schema);
+            schema: schema), resource);
+
+    private static GeoJsonFeature OmitHiddenIdentifierProperty(GeoJsonFeature feature, MetadataV2Resource resource)
+    {
+        // The shared builder preserves custom identifier properties. Publisher visibility
+        // still applies to that attribute; the top-level feature identity remains intact.
+        if (resource.FindPrimaryIdField() is { Hidden: true } identifier)
+        {
+            feature.Properties.Remove(identifier.Name);
+        }
+
+        return feature;
+    }
 
     private static ImmutableHashSet<string> GetHiddenFields(MetadataV2Resource resource)
         => resource.SchemaFields.Where(field => field.Hidden)

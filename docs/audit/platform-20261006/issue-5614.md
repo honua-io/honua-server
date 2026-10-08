@@ -83,3 +83,11 @@ in 203 seconds: retain full schema for public identifier binding, and document
 new public test types. XML summaries are added; a new Docker-backed hidden
 custom identifier regression is running before the binding correction.
 Neither review finding is marked fixed until focused verification passes.
+
+The hidden custom identifier regression reproduced both collection ID binding
+failure and a hidden identifier property in GeoJSON. The correction retains the
+original schema for IDs and removes that hidden property from the response-owned
+feature dictionary in the OGC adapter. All edits remain within packet TOUCHES;
+no shared builder change is needed. Independent review validated these changes
+and the XML summaries in source. Focused green verification is still required.
+Scoped formatting for these final edits passed.
