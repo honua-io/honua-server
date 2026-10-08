@@ -20681,6 +20681,7 @@
         "Honua.Server.Tests.Features.Security.FeatureServerServiceRbacTests.ApplyEdits_WithScopedDataEditor_AllowsMatchingService",
         "Honua.Server.Tests.Features.Security.FeatureServerServiceRbacTests.ApplyEdits_WithScopedDataEditor_DeniesOtherService",
         "Honua.Server.Tests.Features.Security.InputValidationIntegrationTests.ApplyEdits_FormUrlEncoded_AttributeValuesWithSqlMetacharacters_AreNotRejected",
+        "Honua.Server.Tests.Features.Security.InputValidationIntegrationTests.SRV_INF_003_ApplyEdits_WithStructuredPayloadOverGenericLimit_ReachesHandler",
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.CSRF_PostWithoutToken_ShouldBeBlocked",
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.ContentValidation_MalformedJSON_ShouldBeRejected",
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.CorrelationId_CriticalOperations_ReturnsCorrelationId",

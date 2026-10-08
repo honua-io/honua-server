@@ -7756,7 +7756,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 123,
+      "line": 124,
       "language": "bash"
     },
     {
