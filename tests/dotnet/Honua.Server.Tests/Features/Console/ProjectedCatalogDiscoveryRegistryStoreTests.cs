@@ -160,7 +160,17 @@ public sealed class ProjectedCatalogDiscoveryRegistryStoreTests
             scope.Services.GetRequiredService<ILicenseStatusProvider>(),
             Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
         var projected = await GeoServicesCatalogProjection.ReadFeatureMapAsync(scope.Context, snapshot);
-        Assert.Equal(original.Entries.Select(entry => (entry.Name, entry.Type, entry.Url)),
+        // Built-in GP services such as Utilities/PrintingTools stay on the services
+        // directory and off the feature/map projection. Parity is the real
+        // FeatureServer and MapServer entries from that directory.
+        Assert.Contains(original.Entries, entry =>
+            entry.Name == PrintingToolsServiceCatalog.QualifiedName &&
+            entry.Type == ServiceProtocols.GPServer);
+        Assert.DoesNotContain(projected, entry => entry.Type == ServiceProtocols.GPServer);
+        Assert.Equal(
+            original.Entries
+                .Where(entry => entry.Type is ServiceProtocols.FeatureServer or ServiceProtocols.MapServer)
+                .Select(entry => (entry.Name, entry.Type, entry.Url)),
             projected.Select(entry => (entry.Name, entry.Type, entry.Url)));
 
         var detail = await scope.Store.GetEndpointAsync("default", "ESRI");

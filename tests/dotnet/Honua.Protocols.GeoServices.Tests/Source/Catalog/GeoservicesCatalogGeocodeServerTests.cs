@@ -144,12 +144,21 @@ public sealed class GeoservicesCatalogGeocodeServerTests
         using var factory = CreateFactory(restrictedFeatures: true);
         using var client = factory.CreateClient();
         using var rest = await ReadRestAsync(client);
-        rest.RootElement.GetProperty("services").EnumerateArray().Should().ContainSingle()
-            .Which.GetProperty("type").GetString().Should().Be("GeocodeServer");
+        var services = rest.RootElement.GetProperty("services").EnumerateArray().ToArray();
+        services.Should().HaveCount(2);
+        services.Should().Contain(service => service.GetProperty("type").GetString() == "GeocodeServer");
+        services.Should().Contain(service =>
+            service.GetProperty("name").GetString() == "Utilities/PrintingTools"
+            && service.GetProperty("type").GetString() == "GPServer");
+        services.Should().NotContain(service => service.GetProperty("type").GetString() == "FeatureServer");
+        services.Should().NotContain(service => service.GetProperty("type").GetString() == "MapServer");
         var soap = await ReadSoapAsync(client);
-        soap.Descendants().Where(element => element.Name.LocalName == "ServiceDescription")
-            .Should().ContainSingle().Which.Elements().Single(element => element.Name.LocalName == "Type")
-            .Value.Should().Be("GeocodeServer");
+        var descriptions = soap.Descendants().Where(element => element.Name.LocalName == "ServiceDescription").ToArray();
+        descriptions.Should().HaveCount(2);
+        descriptions.Should().Contain(element => element.Elements().Single(child => child.Name.LocalName == "Type").Value == "GeocodeServer");
+        descriptions.Should().Contain(element => element.Elements().Single(child => child.Name.LocalName == "Name").Value == "Utilities/PrintingTools");
+        descriptions.Select(element => element.Elements().Single(child => child.Name.LocalName == "Type").Value)
+            .Should().NotContain("FeatureServer").And.NotContain("MapServer");
         using var feature = await client.GetAsync($"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer?f=json");
         await feature.AssertGeoServicesErrorAsync(499);
         using var folder = await client.GetAsync($"/rest/services/{ServiceRbacTestFixture.AlphaService}?f=json");

@@ -3526,7 +3526,8 @@
       "parentSurfaceId": "gpserver-adapter",
       "endpointPrefixes": [],
       "endpointExactMatches": [
-        "/services/{serviceId}/GPServer"
+        "/services/{serviceId}/GPServer",
+        "/services/Utilities/PrintingTools/GPServer"
       ],
       "endpointContains": [],
       "operationKeys": [
@@ -3585,7 +3586,10 @@
       "endpointPrefixes": [
         "/rest/services/Utilities/PrintingTools/GPServer/"
       ],
-      "endpointExactMatches": [],
+      "endpointExactMatches": [
+        "/rest/services/Utilities/PrintingTools",
+        "/rest/services/Utilities/PrintingTools/GPServer"
+      ],
       "endpointContains": [],
       "operationKeys": [],
       "proofs": [

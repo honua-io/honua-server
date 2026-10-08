@@ -3196,6 +3196,8 @@
         ],
         "code": [
           "src/Honua.Server/Features/PrintingTools/PrintingToolsEndpoints.cs",
+          "src/Honua.Server/Features/PrintingTools/PrintingToolsEndpoints.GpServer.cs",
+          "src/Honua.Protocols.GeoServices/Catalog/PrintingToolsServiceCatalog.cs",
           "src/Honua.Protocols.GeoServices/GPServer/GPServerEndpoints.cs",
           "src/Honua.Protocols.GeoServices/GPServer/GPServerEsriTaskAliases.cs",
           "src/Honua.Protocols.GeoServices/GPServer/GPServerExecutionPolicy.cs",
@@ -3204,6 +3206,7 @@
         ],
         "tests": [
           "tests/dotnet/Honua.Server.Tests/Features/PrintingTools/PrintingToolsEndpointTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/PrintingTools/PrintingToolsGpServerService5546Tests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerEndpointTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerEsriTaskAliasEndpointTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerDurableRuntimeTests.cs",
@@ -3221,13 +3224,15 @@
               "/GPServer"
             ],
             "honuaEndpoints": [
+              "GET /rest/services/Utilities/PrintingTools/GPServer",
               "GET /rest/services/{serviceId}/GPServer",
+              "POST /rest/services/Utilities/PrintingTools/GPServer",
               "POST /rest/services/{serviceId}/GPServer"
             ],
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Returns service metadata and the published task list projected from the built-in IProcessCatalog. Implemented in #723."
+            "notes": "Returns service metadata and the published task list projected from the built-in IProcessCatalog. Implemented in #723. Utilities/PrintingTools publishes its own synchronous service resource on this path, listing Export Web Map Task and Get Layout Templates Info Task."
           },
           {
             "name": "Task Metadata",
@@ -3300,6 +3305,20 @@
               "implemented"
             ],
             "notes": "Asynchronous map export job submission. PrintingTools-specific implementation."
+          },
+          {
+            "name": "Layout template task metadata",
+            "status": "implemented",
+            "esriPaths": [
+              "/GPServer/Get Layout Templates Info Task"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/PrintingTools/GPServer/Get Layout Templates Info Task"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "Returns the task name, display name, and the single Output_JSON output parameter. Served by the PrintingTools endpoints."
           },
           {
             "name": "Template Listing (sync)",
@@ -4029,20 +4048,23 @@
       "drillDownDoc": "docs/reference/compatibility/geoservices-parity.md",
       "implementedSurface": [
         "service directory (/rest/services)",
+        "Utilities folder and the Utilities/PrintingTools service node",
         "REST info (/rest/info) auth-discovery document"
       ],
       "knownGaps": [
         "/rest/info always reports isTokenBasedSecurity=false and omits tokenServicesUrl",
-        "no folders in the catalog response",
+        "the catalog emits the Utilities folder for PrintingTools; other folder hierarchies are not implemented",
         "currentVersion is emitted only by /rest/info; catalogs and service descriptors omit it"
       ],
       "evidence": {
         "code": [
           "src/Honua.Protocols.GeoServices/Catalog/GeoservicesCatalogEndpoints.cs",
-          "src/Honua.Protocols.GeoServices/Catalog/GeoservicesCatalogModels.cs"
+          "src/Honua.Protocols.GeoServices/Catalog/GeoservicesCatalogModels.cs",
+          "src/Honua.Protocols.GeoServices/Catalog/PrintingToolsServiceCatalog.cs"
         ],
         "tests": [
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/PrintingTools/PrintingToolsGpServerService5546Tests.cs"
         ]
       },
       "operations": {
@@ -4060,7 +4082,22 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Graph-backed service directory, RBAC-filtered per principal, listing every service type a publication exposes. Returns 401/403 rather than a misleading empty list when every publication is denied. Does not emit folders; currentVersion is deliberately omitted (see knownLimitations)."
+            "notes": "Graph-backed service directory, RBAC-filtered per principal, listing every service type a publication exposes. Returns 401/403 rather than a misleading empty list when every publication is denied. Emits the Utilities folder for the built-in PrintingTools GPServer; currentVersion is deliberately omitted (see knownLimitations)."
+          },
+          {
+            "name": "PrintingTools service node",
+            "status": "implemented",
+            "esriPaths": [
+              "/rest/services/Utilities/PrintingTools"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/Utilities/PrintingTools",
+              "POST /rest/services/Utilities/PrintingTools"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "GET and POST return the catalog node for the built-in Utilities/PrintingTools GPServer, with an empty folders array and a single GPServer service entry. The node is public even when the graph directory is fully denied, and it does not list denied graph services."
           }
         ],
         "partial": [
@@ -4092,7 +4129,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "GET and POST expose the visible service-type entries for one service name using the same RBAC-filtered projection as the root directory. Supports client traversal through a service\u0027s parent node; nested folder hierarchies are not implemented."
+            "notes": "GET and POST expose the visible service-type entries for one service name using the same RBAC-filtered projection as the root directory. The built-in Utilities folder returns the PrintingTools GPServer entry. Supports client traversal through a service\u0027s parent node; nested folder hierarchies are not implemented."
           }
         ],
         "stub": [
