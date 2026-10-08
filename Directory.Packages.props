@@ -38,21 +38,21 @@
     <PackageVersion Include="FluentAssertions" Version="7.2.2" />
     <PackageVersion Include="FluentAssertions.Json" Version="6.1.0" />
     <PackageVersion Include="FsCheck.Xunit" Version="3.3.2" />
-    <PackageVersion Include="Google.Protobuf" Version="3.35.1" />
-    <PackageVersion Include="Geospatial.Grpc" Version="1.0.0" />
+    <PackageVersion Include="Google.Protobuf" Version="3.36.2" />
+    <PackageVersion Include="Geospatial.Grpc" Version="1.0.2" />
     <PackageVersion Include="Grpc.AspNetCore" Version="2.80.0" />
     <PackageVersion Include="Grpc.AspNetCore.HealthChecks" Version="2.80.0" />
     <PackageVersion Include="Grpc.AspNetCore.Server.Reflection" Version="2.80.0" />
     <PackageVersion Include="Grpc.AspNetCore.Web" Version="2.80.0" />
-    <PackageVersion Include="Grpc.Core.Api" Version="2.80.0" />
+    <PackageVersion Include="Grpc.Core.Api" Version="2.84.0" />
     <PackageVersion Include="Grpc.Net.Client" Version="2.80.0" />
     <PackageVersion Include="Grpc.Net.Client.Web" Version="2.80.0" />
     <!-- Published .NET admin SDK, consumed only by tests that drive server endpoints through the SDK
          a customer installs (#4600 acceptance criterion 7). -->
     <PackageVersion Include="Honua.Sdk.Admin" Version="1.7.0" />
     <!-- Published .NET GeoServices SDK: the protocol client for ArcGIS source reads in the import path
-         (#4599). 1.9.0 adds lossless source metadata reads and nullable/WKT fidelity. -->
-    <PackageVersion Include="Honua.Sdk.GeoServices" Version="1.9.0" />
+         (#4599). 1.10.4 is the published release pin with lossless source metadata and nullable/WKT fidelity. -->
+    <PackageVersion Include="Honua.Sdk.GeoServices" Version="1.10.4" />
     <PackageVersion Include="Mapsui" Version="5.0.2" />
     <!-- Transitive of NBomber.Contracts (tests) and Microsoft.AspNetCore.SignalR.StackExchangeRedis (server
          admin realtime backplane, #2554); pinned directly to clear GHSA-hv8m-jj95-wg3x (NU1903). -->
