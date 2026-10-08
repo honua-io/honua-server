@@ -285,7 +285,7 @@ class WorkflowCompletion(unittest.TestCase):
         self.assertIn("output_tree_sha=git('HEAD^{tree}')", text)
         self.assertNotIn('pull_request:', text)
 
-    def test_codeql_cannot_start_for_any_of_the_four_paths(self):
+    def test_repository_codeql_filter_excludes_the_four_paths(self):
         import yaml
         import fnmatch
         doc = yaml.safe_load((ROOT / '.github/workflows/codeql.yml').read_text())
