@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -9,9 +12,10 @@ using Microsoft.Net.Http.Headers;
 namespace Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 
 /// <summary>
-/// Public range-proxy endpoint that streams byte ranges of a published PMTiles
-/// artifact through the server. Used by deployments that cannot expose object
-/// storage directly to MapLibre/PMTiles browser clients.
+/// Range-proxy endpoint that streams byte ranges of a published PMTiles artifact
+/// through the server for clients that cannot read object storage directly.
+/// Each read checks the source layer's current export policy, matching the COG
+/// range proxy, and a retired or rebound source is not found.
 /// </summary>
 internal static class PMTilesProxyEndpoints
 {
@@ -28,8 +32,11 @@ internal static class PMTilesProxyEndpoints
             .WithName("PMTilesProxy")
             .WithDisplayName("PMTiles Range Proxy")
             .WithSummary("Range-proxied access to a published PMTiles artifact")
-            .WithDescription("Streams a published PMTiles artifact via HTTP range requests for MapLibre/PMTiles browser clients in private-bucket deployments.")
+            .WithDescription("Serves a published PMTiles artifact to callers authorized for its current source layer, with HTTP range support for MapLibre and PMTiles browser clients.")
             .WithTags("Tiles", "PMTiles")
+            // Every read must evaluate the current source policy, including after a
+            // previously public publication becomes restricted or is retired.
+            .CacheOutput(policy => policy.NoCache())
             .ProducesProblem(StatusCodes.Status413PayloadTooLarge);
 
         return endpoints;
@@ -39,6 +46,7 @@ internal static class PMTilesProxyEndpoints
         string artifactId,
         HttpContext context,
         [FromServices] PMTilesProxyService service,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(artifactId))
@@ -53,6 +61,24 @@ internal static class PMTilesProxyEndpoints
         }
 
         var metadata = resolution.Metadata;
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var source = PMTilesProxySourceResolver.Resolve(snapshot, metadata.Metadata);
+        if (source is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context,
+            source.Resource,
+            AuthorizationOperation.Export,
+            source.Service,
+            cancellationToken).ConfigureAwait(false);
+        if (accessError is not null)
+        {
+            return accessError;
+        }
+
         var response = context.Response;
         response.Headers[HeaderNames.AcceptRanges] = "bytes";
         response.Headers[HeaderNames.ETag] = $"\"{metadata.SizeBytes:x}-{metadata.UploadedAt.ToUnixTimeSeconds():x}\"";

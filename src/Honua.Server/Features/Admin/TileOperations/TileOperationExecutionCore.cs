@@ -16,6 +16,7 @@ using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Tiles.PMTiles;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Progress;
+using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -617,6 +618,11 @@ internal sealed partial class TileOperationExecutionCore
 
         var keyAlreadyExisted = await cloudStorage.ExistsAsync(objectKey, cancellationToken).ConfigureAwait(false);
 
+        var publishSnapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var publishSource = PMTilesProxySourceResolver.ResolveForPublish(
+            publishSnapshot,
+            request.ServiceId,
+            layerId);
         var uploadResult = await cloudStorage.UploadAsync(new FileUploadRequest
         {
             Content = archiveStream,
@@ -625,10 +631,12 @@ internal sealed partial class TileOperationExecutionCore
             SizeBytes = build.ArchiveSize,
             TimeToLive = null,
             ObjectKeyOverride = objectKey,
-            Metadata = ImmutableDictionary<string, string>.Empty
-                .Add("jobId", current.JobId)
-                .Add("operation", "publish")
-                .Add("layerId", layerId.ToString(CultureInfo.InvariantCulture))
+            Metadata = PMTilesProxySourceResolver.StampPublishMetadata(
+                ImmutableDictionary<string, string>.Empty
+                    .Add("jobId", current.JobId)
+                    .Add("operation", "publish")
+                    .Add("layerId", layerId.ToString(CultureInfo.InvariantCulture)),
+                publishSource)
         }, cancellationToken).ConfigureAwait(false);
 
         if (!uploadResult.Success || uploadResult.File is null)
