@@ -124,11 +124,13 @@ internal sealed class StaQueryPlan
     public static StaQueryPlanResult Create(
         HttpRequest request,
         StaEntitySchema schema,
-        StaFilterTranslator filterTranslator)
+        StaFilterTranslator filterTranslator,
+        int expansionDepth = 0)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(schema);
         ArgumentNullException.ThrowIfNull(filterTranslator);
+        if (expansionDepth > 10) return StaQueryPlanResult.BadRequest("$expand exceeds the maximum depth.");
 
         var options = StaQueryOptions.FromRequest(request);
 
@@ -190,13 +192,21 @@ internal sealed class StaQueryPlan
         {
             foreach (var item in SplitTopLevel(rawExpand, ','))
             {
-                var expansion = ParseExpansion(schema, item, filterTranslator, out var failure);
+                var expansion = ParseExpansion(schema, item, filterTranslator, expansionDepth, out var failure);
                 if (expansion is null)
                 {
                     return failure!.Value;
                 }
 
-                expansions.Add(expansion);
+                var duplicate = expansions.FindIndex(existing => existing.Navigation == expansion.Navigation);
+                if (duplicate < 0) expansions.Add(expansion);
+                else
+                {
+                    var existing = expansions[duplicate];
+                    if (existing.Skip != expansion.Skip || existing.Top != expansion.Top || existing.Filter != expansion.Filter || existing.OrderBy != expansion.OrderBy || existing.Select != expansion.Select || existing.Count != expansion.Count)
+                        return StaQueryPlanResult.BadRequest($"Conflicting options for expanded navigation '{expansion.Navigation}'.");
+                    expansions[duplicate] = existing with { Expand = string.Join(',', new[] { existing.Expand, expansion.Expand }.Where(value => !string.IsNullOrWhiteSpace(value))) };
+                }
             }
         }
 
@@ -219,6 +229,7 @@ internal sealed class StaQueryPlan
         StaEntitySchema schema,
         string item,
         StaFilterTranslator filterTranslator,
+        int expansionDepth,
         out StaQueryPlanResult? failure)
     {
         failure = null;
@@ -239,6 +250,18 @@ internal sealed class StaQueryPlan
         }
 
         name = name.Trim();
+        var slash = name.IndexOf('/', StringComparison.Ordinal);
+        if (slash >= 0)
+        {
+            var tail = name[(slash + 1)..];
+            if (name.Split('/').Length > 10 || tail.Length == 0)
+            {
+                failure = StaQueryPlanResult.BadRequest("$expand paths require valid navigations and at most ten levels.");
+                return null;
+            }
+            nested = "$expand=" + tail + (nested is null ? string.Empty : "(" + nested + ")");
+            name = name[..slash];
+        }
         if (!schema.IsNavigationProperty(name))
         {
             failure = StaQueryPlanResult.BadRequest(
@@ -246,9 +269,7 @@ internal sealed class StaQueryPlan
             return null;
         }
 
-        // Only the Datastream navigations are materialised. Everything else is declined
-        // rather than dropped, so a client can tell the difference between "no related
-        // entity" and "this server will not expand that".
+        // Validate each path level against the target entity's canonical schema.
         var relationship = SensorThingsRelationships.For(schema.EntitySet).FirstOrDefault(r => r.Key.Equals(name, StringComparison.OrdinalIgnoreCase));
         var expandedSchema = relationship.Value is null ? null : StaEntitySchema.For(relationship.Value.Target);
         name = relationship.Key ?? name;
@@ -342,6 +363,16 @@ internal sealed class StaQueryPlan
         {
             failure = StaQueryPlanResult.BadRequest(nestedOrder.Error ?? "Invalid nested $orderby.");
             return null;
+        }
+        if (nestedSelect is not null || nestedExpand is not null)
+        {
+            var request = new DefaultHttpContext().Request;
+            var options = new Dictionary<string, string?>();
+            if (nestedSelect is not null) options["$select"] = nestedSelect;
+            if (nestedExpand is not null) options["$expand"] = nestedExpand;
+            request.QueryString = QueryString.Create(options);
+            var nestedPlan = Create(request, expandedSchema, filterTranslator, expansionDepth + 1);
+            if (!nestedPlan.IsSuccess) { failure = nestedPlan; return null; }
         }
 
         return new StaExpansion(

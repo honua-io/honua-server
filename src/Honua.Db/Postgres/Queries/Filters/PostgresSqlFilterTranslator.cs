@@ -564,7 +564,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
                 ? $"EXTRACT(MINUTE FROM {args[0]})"
                 : throw new ArgumentException("MINUTE requires one argument"),
             "SECOND" => args.Length == 1
-                ? $"EXTRACT(SECOND FROM {args[0]})"
+                ? $"FLOOR(EXTRACT(SECOND FROM {args[0]}))"
                 : throw new ArgumentException("SECOND requires one argument"),
             "FRACTIONALSECONDS" => args.Length == 1
                 ? $"(EXTRACT(SECOND FROM {args[0]}) - FLOOR(EXTRACT(SECOND FROM {args[0]})))"

@@ -60,9 +60,9 @@ internal sealed partial class PostgresObservationStore : IObservationStore, ISen
         var sql = new System.Text.StringBuilder($"""
 SELECT d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_symbol,
        d.unit_definition, d.thing_id, d.sensor_id, d.observed_property_id,
-       MIN(o.phenomenon_time) AS pt_start, MAX(o.phenomenon_time) AS pt_end
+       MIN(o.phenomenon_time) AS pt_start, MAX(COALESCE(o.phenomenon_time_end,o.phenomenon_time)) AS pt_end
 FROM {_datastreamTable} d
-LEFT JOIN {_observationTable} o ON o.datastream_id = d.id
+LEFT JOIN {_observationTable} o ON o.datastream_reference_id = d.id
 """);
         AppendWhere(sql, query.WhereSql);
         sql.Append("""
@@ -93,9 +93,9 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         var sql = $"""
 SELECT d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_symbol,
        d.unit_definition, d.thing_id, d.sensor_id, d.observed_property_id,
-       MIN(o.phenomenon_time) AS pt_start, MAX(o.phenomenon_time) AS pt_end
+       MIN(o.phenomenon_time) AS pt_start, MAX(COALESCE(o.phenomenon_time_end,o.phenomenon_time)) AS pt_end
 FROM {_datastreamTable} d
-LEFT JOIN {_observationTable} o ON o.datastream_id = d.id
+LEFT JOIN {_observationTable} o ON o.datastream_reference_id = d.id
 WHERE d.id = @id
 GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_symbol,
          d.unit_definition, d.thing_id, d.sensor_id, d.observed_property_id

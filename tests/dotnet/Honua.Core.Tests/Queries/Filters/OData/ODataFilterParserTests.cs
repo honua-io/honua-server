@@ -12,6 +12,36 @@ public class ODataFilterParserTests
 {
     private readonly ODataFilterParser _parser = new();
 
+    [Theory]
+    [InlineData("properties/site/name")]
+    [InlineData("Datastreams/Observations/FeatureOfInterest/id")]
+    [InlineData("unitOfMeasurement/name")]
+    public void Parse_PropertyPath_PreservesAllSegments(string path)
+    {
+        var expression = (UnaryExpression)_parser.Parse(path + " eq null");
+        ((PropertyReference)expression.Operand).PropertyName.Should().Be(path);
+    }
+
+    [Theory]
+    [InlineData("properties//name eq 1")]
+    [InlineData("properties/ eq 1")]
+    [InlineData("properties/1 eq 1")]
+    public void Parse_InvalidPropertyPath_RejectsEmptyOrInvalidSegments(string filter)
+    {
+        Action parse = () => _parser.Parse(filter);
+        parse.Should().Throw<ODataFilterParseException>();
+    }
+
+    [Fact]
+    public void Parse_SubstringOf_SearchesFirstArgumentInsideSecond()
+    {
+        var expression = (BinaryExpression)_parser.Parse("substringof('Sensor Things',description)");
+        var position = (FunctionCall)expression.Left;
+        position.FunctionName.Should().Be("POSITION");
+        ((Literal)position.Arguments[0]).Value.Should().Be("Sensor Things");
+        ((PropertyReference)position.Arguments[1]).PropertyName.Should().Be("description");
+    }
+
     #region Not Operator Precedence
 
     [Fact]

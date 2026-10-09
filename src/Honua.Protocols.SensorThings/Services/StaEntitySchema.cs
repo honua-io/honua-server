@@ -166,6 +166,8 @@ internal sealed class StaEntitySchema
             new StaProperty("unitOfMeasurement/symbol", "d.unit_symbol", StaPropertyType.Text),
             new StaProperty("unitOfMeasurement/definition", "d.unit_definition", StaPropertyType.Text),
             new StaProperty("observedArea", "d.observed_area", StaPropertyType.Json),
+            new StaProperty("phenomenonTime", "d.phenomenon_time", StaPropertyType.Text),
+            new StaProperty("resultTime", "d.result_time", StaPropertyType.Text),
             new StaProperty("properties", "d.properties", StaPropertyType.Json),
         ],
         ["Thing", "Sensor", "ObservedProperty", "Observations"],
@@ -186,14 +188,14 @@ internal sealed class StaEntitySchema
         "phenomenon_time ASC, id ASC");
 
     public static StaEntitySchema Locations { get; } = new("Locations",
-        [.. IdProperties(), new("name", "name", StaPropertyType.Text), new("description", "description", StaPropertyType.Text), new("encodingType", "encoding_type", StaPropertyType.Text), new("location", "location", StaPropertyType.Text), new("properties", "properties", StaPropertyType.Text)],
+        [.. IdProperties(), new("name", "name", StaPropertyType.Text), new("description", "description", StaPropertyType.Text), new("encodingType", "encoding_type", StaPropertyType.Text), new("location", "location", StaPropertyType.Json), new("properties", "properties", StaPropertyType.Json)],
         ["Things", "HistoricalLocations"], "id ASC");
 
     public static StaEntitySchema HistoricalLocations { get; } = new("HistoricalLocations",
         [.. IdProperties(), new("time", "time", StaPropertyType.Timestamp)], ["Thing", "Locations"], "id ASC");
 
     public static StaEntitySchema FeaturesOfInterest { get; } = new("FeaturesOfInterest",
-        [.. IdProperties(), new("name", "name", StaPropertyType.Text), new("description", "description", StaPropertyType.Text), new("encodingType", "encoding_type", StaPropertyType.Text), new("feature", "feature", StaPropertyType.Text), new("properties", "properties", StaPropertyType.Text)],
+        [.. IdProperties(), new("name", "name", StaPropertyType.Text), new("description", "description", StaPropertyType.Text), new("encodingType", "encoding_type", StaPropertyType.Text), new("feature", "feature", StaPropertyType.Json), new("properties", "properties", StaPropertyType.Json)],
         ["Observations"], "id ASC");
 
     public static StaEntitySchema For(string set) => set switch
