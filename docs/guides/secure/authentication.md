@@ -81,6 +81,15 @@ An empty permissions array is normalized to `admin:*` for legacy compatibility a
 therefore grants full admin access; do not use it for CI. Grant only the operations
 the job needs, and prefer a narrower service or layer grant when available.
 
+Data access for a key without a full-admin grant comes only from `read:` grants:
+`read:{service}/{layer}` reads one layer, `read:{service}` or `read:{service}/*`
+reads every layer of a service, and `read:*` reads every service. `admin:read` and
+`admin:approve` on their own grant no service or layer reads. Wildcards are
+accepted only for `read:`; `write:` grants must name their service. Access
+policies, field masks and row-level filters apply to wildcard reads exactly as to
+a named `read:` grant. The full grammar is in
+[Users, roles and licensing](../../reference/admin-api/users-roles-licensing.md#grant-grammar).
+
 For the focused Console read/approve client, mint a named key with:
 
 ```json
@@ -96,7 +105,9 @@ For the focused Console read/approve client, mint a named key with:
 `POST /api/v1/admin/proposals/{proposalId}/reject`. It does not grant other
 mutations. In particular, some read-like workflows use POST and are unavailable
 to this key: `connections/test`, `external-services/discover`, and
-`import/geoservices/start`. This scope ceiling is enforced in both
+`import/geoservices/start`. It also grants no service or layer data reads; add
+`read:{service}` or `read:*` grants if the client must read data. This scope
+ceiling is enforced in both
 authentication modes: enabling OIDC (`Oidc:Enabled=true`) rebuilds the admin
 policies for composite sign-in but preserves scoped API-key permission
 enforcement. Console users who sign in with an operator bearer

@@ -1212,6 +1212,57 @@ public sealed class McpMapToolTests
             "Parcels Dataset", AuthorizationOperation.Metadata, true, Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("admin:read,admin:write,read:*", true)]
+    [InlineData("admin:read,read:*", true)]
+    [InlineData("admin:read,read:Parcels/*", true)]
+    [InlineData("admin:read,read:Other/*", false)]
+    [InlineData("admin:read", false)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_list_layers")]
+    [Endpoint("POST /mcp tools/call honua_render_map")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ScopedAdminKey_ReadWildcardGrant_ListsAndRendersLayers(string grants, bool readable)
+    {
+        var renderer = Substitute.For<IRasterMapRenderer>();
+        renderer.RenderDatasetMapAsync(Arg.Any<int[]>(), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult { Data = [1, 2, 3], ContentType = "image/png", Width = 64, Height = 64 });
+        using var services = BuildServices(renderer: renderer);
+        Claim[] claims =
+        [
+            new(ClaimTypes.Name, "honua-local-agent"),
+            new(ClaimTypes.Role, AdminApiKeyPermission.ScopedAdminRole),
+            new("auth_type", "admin-api-key"),
+            .. grants.Split(',').Select(grant => new Claim("permission", grant)),
+        ];
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = new ClaimsPrincipal(new ClaimsIdentity(claims, "ApiKey")),
+        };
+        var surface = BuildSurface();
+
+        var list = await surface.DispatchAsync(context,
+            ToolCall("scoped-admin-list", ListLayersTool.ToolName, "{}"), CancellationToken.None);
+
+        list!.Error.Should().BeNull();
+        var listed = list.Result!.Value.GetProperty("structuredContent");
+        listed.GetProperty("layers").GetArrayLength().Should().Be(readable ? 1 : 0);
+        listed.GetProperty("totalCount").GetInt32().Should().Be(readable ? 1 : 0);
+
+        var render = await surface.DispatchAsync(context,
+            ToolCall("scoped-admin-render", RenderMapTool.ToolName, $$"""
+                {"layers":[{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}],"bbox":[-10,-10,10,10],"width":64,"height":64}
+                """),
+            CancellationToken.None);
+
+        render!.Result!.Value.GetProperty("isError").GetBoolean().Should().Be(!readable);
+        await renderer.Received(readable ? 1 : 0).RenderDatasetMapAsync(
+            Arg.Any<int[]>(), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>());
+    }
+
     private static IPermissionResolver BuildOperationPermissionResolver(bool metadataAllowed, bool queryAllowed)
     {
         var resolver = Substitute.For<IPermissionResolver>();

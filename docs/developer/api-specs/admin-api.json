@@ -24819,7 +24819,7 @@
           },
           "permissions": {
             "type": "array",
-            "description": "Permission labels assigned to the key. Admin grants are `admin:read` (safe-method reads), `admin:approve` (read plus proposal approve/reject only), `admin:write`/`admin:manage` (write), and `admin:*` (full admin). Layer-scoped write grants use write:{service} or write:{service}/{layer}. The focused Console recipe is [`admin:read`, `admin:approve`].",
+            "description": "Permission labels assigned to the key. Admin grants are `admin:read` (safe-method reads), `admin:approve` (read plus proposal approve/reject only), `admin:write`/`admin:manage` (write), and `admin:*` (full admin). Layer-scoped write grants use write:{service} or write:{service}/{layer}. Data read grants use read:{service}, read:{service}/{layer}, read:{service}/* (every layer of the service) or read:* (every service); a key without a full-admin grant reads no service or layer data without a matching read grant, and wildcards are rejected on write grants. The recommended agent key is [`admin:read`, `admin:write`, `read:*`]. The focused Console recipe is [`admin:read`, `admin:approve`].",
             "items": {
               "type": "string",
               "minLength": 1,
