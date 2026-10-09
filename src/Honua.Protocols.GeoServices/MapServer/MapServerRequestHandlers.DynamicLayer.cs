@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
@@ -149,12 +150,17 @@ internal static partial class MapServerEndpoints
                 joinedFields = BuildJoinedFields(joinRightLayer.Resource, join.RightQualifier);
             }
 
+            var mapExtent = await ResolveCachedExtentAsync(
+                service, [sourceLayer.Resource],
+                context.RequestServices.GetRequiredService<ICoordinateTransformService>(),
+                cancellationToken).ConfigureAwait(false);
             var response = MapLayerToMapServerLayerResponse(
                 service,
                 sourceLayer.Publication,
                 sourceLayer.Resource,
                 snapshot,
                 limitsOptions.Query.MaxRecordCount,
+                mapExtent,
                 drawingInfo,
                 parsedDynamicLayer.Id,
                 parsedDynamicLayer.Name,

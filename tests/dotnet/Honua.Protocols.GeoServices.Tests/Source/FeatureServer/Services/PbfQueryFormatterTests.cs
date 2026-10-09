@@ -637,7 +637,7 @@ public sealed class PbfQueryFormatterTests
         return DecodePackedSInt64Values(packedCoords);
     }
 
-    private static byte[] GetFirstLengthDelimitedField(ReadOnlySpan<byte> message, int fieldNumber, int occurrence = 0)
+    internal static byte[] GetFirstLengthDelimitedField(ReadOnlySpan<byte> message, int fieldNumber, int occurrence = 0)
     {
         var offset = 0;
         while (offset < message.Length)
@@ -682,7 +682,7 @@ public sealed class PbfQueryFormatterTests
         throw new InvalidOperationException($"Field {fieldNumber} was not found.");
     }
 
-    private static ulong GetFirstVarintField(ReadOnlySpan<byte> message, int fieldNumber)
+    internal static ulong GetFirstVarintField(ReadOnlySpan<byte> message, int fieldNumber)
     {
         var offset = 0;
         while (offset < message.Length)

@@ -609,6 +609,12 @@ internal sealed class MapServerLayerResponse
     public EsriSpatialReference? SpatialReference { get; init; }
 
     /// <summary>
+    /// Spatial reference of the source dataset, which can differ from the map CRS.
+    /// </summary>
+    [JsonPropertyName("sourceSpatialReference")]
+    public EsriSpatialReference? SourceSpatialReference { get; init; }
+
+    /// <summary>
     /// Field name used by clients for display.
     /// </summary>
     [JsonPropertyName("displayField")]

@@ -270,6 +270,11 @@ jobs:
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
         run: scripts/ci/prepull-testcontainers-postgis.sh
 
+      - name: Prepare secondary Testcontainers proof images
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
+        timeout-minutes: 10
+        run: scripts/ci/prepull-pr-gate-proof-images.sh
+
       - name: Lean gate (build + fast unit/architecture smoke)
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
         uses: ./.github/actions/lean-gate
@@ -839,7 +844,9 @@ jobs:
       HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=ci-${{ github.run_id }}-${{ github.run_attempt }}"
     services:
       postgres:
-        image: postgis/postgis:16-3.4
+        # Service images pull before checkout; use the verified linux/amd64
+        # Docker Hub manifest from its mirror without changing PostGIS bytes.
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
