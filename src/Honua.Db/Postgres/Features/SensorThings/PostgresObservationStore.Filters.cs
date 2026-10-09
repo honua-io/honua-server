@@ -38,6 +38,16 @@ internal sealed partial class PostgresObservationStore
         private readonly Dictionary<string, (string Set, string Alias, string Path)> _outerReferences = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _typedReferences = new(StringComparer.Ordinal);
 
+        private (string Set, string Alias, string Path) Reference(PropertyReference property, FilterTranslationContext context) =>
+            _outerReferences.TryGetValue(property.PropertyName, out var outer)
+                ? outer : (context.ResourceName, _alias, property.PropertyName);
+
+        private string ResolveReference(PropertyReference property, FilterTranslationContext context, bool rawJson = false)
+        {
+            var reference = Reference(property, context);
+            return Resolve(reference.Set, reference.Path, reference.Alias, 0, rawJson);
+        }
+
         protected override string TranslateProperty(PropertyReference property, FilterTranslationContext context) =>
             _typedReferences.TryGetValue(property.PropertyName, out var typed) ? typed : _outerReferences.TryGetValue(property.PropertyName, out var outer)
                 ? Resolve(outer.Set, outer.Path, outer.Alias, 0)
@@ -200,9 +210,9 @@ internal sealed partial class PostgresObservationStore
         {
             if (unary.Operator is UnaryOperator.IsNull or UnaryOperator.IsNotNull && WrapCollectionPredicate(unary, context) is { } collection) return collection;
             if (unary.Operator is UnaryOperator.IsNull or UnaryOperator.IsNotNull && unary.Operand is PropertyReference property
-                && IsJsonProperty(context.ResourceName, property.PropertyName))
+                && IsJsonProperty(Reference(property, context).Set, Reference(property, context).Path))
             {
-                var value = Resolve(context.ResourceName, property.PropertyName, _alias, 0, true);
+                var value = ResolveReference(property, context, true);
                 return $"({value}) IS {(unary.Operator == UnaryOperator.IsNotNull ? "NOT " : string.Empty)}NULL";
             }
             return base.TranslateUnary(unary, context);
@@ -212,21 +222,41 @@ internal sealed partial class PostgresObservationStore
         {
             if (binary.Operator is not (BinaryOperator.And or BinaryOperator.Or or BinaryOperator.Add or BinaryOperator.Subtract or BinaryOperator.Multiply or BinaryOperator.Divide or BinaryOperator.Modulo or BinaryOperator.Div or BinaryOperator.Power)
                 && WrapCollectionPredicate(binary, context) is { } collection) return collection;
+            if (binary.Left is PropertyReference left && binary.Right is PropertyReference right
+                && binary.Operator is BinaryOperator.Equal or BinaryOperator.NotEqual or BinaryOperator.LessThan or BinaryOperator.LessThanOrEqual or BinaryOperator.GreaterThan or BinaryOperator.GreaterThanOrEqual
+                && (IsJsonProperty(Reference(left, context).Set, Reference(left, context).Path)
+                    || IsJsonProperty(Reference(right, context).Set, Reference(right, context).Path)))
+            {
+                string JsonOperand(PropertyReference operand)
+                {
+                    var reference = Reference(operand, context);
+                    return IsJsonProperty(reference.Set, reference.Path)
+                        ? ResolveReference(operand, context, true)
+                        : $"to_jsonb({ResolveReference(operand, context)})";
+                }
+                var leftJson = JsonOperand(left);
+                var rightJson = JsonOperand(right);
+                var op = binary.Operator switch { BinaryOperator.Equal => "IS NOT DISTINCT FROM", BinaryOperator.NotEqual => "IS DISTINCT FROM", BinaryOperator.LessThan => "<", BinaryOperator.LessThanOrEqual => "<=", BinaryOperator.GreaterThan => ">", _ => ">=" };
+                return binary.Operator is BinaryOperator.Equal or BinaryOperator.NotEqual
+                    ? $"({leftJson} {op} {rightJson})"
+                    : $"(jsonb_typeof({leftJson})=jsonb_typeof({rightJson}) AND {leftJson} {op} {rightJson})";
+            }
             var property = binary.Left as PropertyReference ?? binary.Right as PropertyReference;
             var literal = binary.Right as Literal ?? binary.Left as Literal;
             if (property is not null && literal is not null)
             {
-                var column = LeafColumn(context.ResourceName, property.PropertyName);
+                var reference = Reference(property, context);
+                var column = LeafColumn(reference.Set, reference.Path);
                 if (column?.Type == NpgsqlDbType.TimestampTz && literal.Value is string text)
                 {
                     if (!DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var instant)) throw new SensorThingsValidationException("Time filter requires an ISO 8601 instant.");
                     binary = binary.Left is Literal ? binary with { Left = new Literal(instant, LiteralType.DateTime) } : binary with { Right = new Literal(instant, LiteralType.DateTime) };
                 }
                 if (column?.Type == NpgsqlDbType.Text && literal.Type != LiteralType.Text && literal.Type != LiteralType.Null) throw new SensorThingsValidationException("Text property comparisons require a quoted string.");
-                if (property.PropertyName is "id" or "@iot.id" && literal.Type != LiteralType.Number) throw new SensorThingsValidationException("Identifier comparisons require an integer.");
-                if (IsJsonProperty(context.ResourceName, property.PropertyName) && literal.Type is LiteralType.Text or LiteralType.Boolean)
+                if (reference.Path is "id" or "@iot.id" && literal.Type != LiteralType.Number) throw new SensorThingsValidationException("Identifier comparisons require an integer.");
+                if (IsJsonProperty(reference.Set, reference.Path) && literal.Type is LiteralType.Text or LiteralType.Boolean)
                 {
-                    var json = Resolve(context.ResourceName, property.PropertyName, _alias, 0, true);
+                    var json = ResolveReference(property, context, true);
                     var result = JsonScalar(json, literal.Type);
                     var bound = TranslateExpression(literal, context);
                     var op = binary.Operator switch { BinaryOperator.Equal => "=", BinaryOperator.NotEqual => "<>", BinaryOperator.LessThan => "<", BinaryOperator.LessThanOrEqual => "<=", BinaryOperator.GreaterThan => ">", BinaryOperator.GreaterThanOrEqual => ">=", _ => throw new SensorThingsValidationException("Invalid result comparison.") };
@@ -246,9 +276,10 @@ internal sealed partial class PostgresObservationStore
                 function = function with { Arguments = function.Arguments.Select((argument, index) =>
                     name is "substring" or "substr" && index > 0 ? argument : Rewrite(argument, property =>
                     {
-                        if (!IsJsonProperty(context.ResourceName, property.PropertyName)) return property;
+                        var reference = Reference(property, context);
+                        if (!IsJsonProperty(reference.Set, reference.Path)) return property;
                         var symbol = "__sta_typed_" + _typedReferences.Count.ToString(CultureInfo.InvariantCulture);
-                        _typedReferences[symbol] = JsonScalar(Resolve(context.ResourceName, property.PropertyName, _alias, 0, true), LiteralType.Text);
+                        _typedReferences[symbol] = JsonScalar(ResolveReference(property, context, true), LiteralType.Text);
                         return new PropertyReference(symbol);
                     })).ToArray() };
             }
@@ -271,8 +302,9 @@ internal sealed partial class PostgresObservationStore
         protected override string TranslateGeometryExpression(FilterExpression expression, FilterTranslationContext context)
         {
             if (expression is not PropertyReference property) return base.TranslateGeometryExpression(expression, context);
-            if (!IsSpatialProperty(context.ResourceName, property.PropertyName)) throw new SensorThingsValidationException("Spatial operations require a geometry property.");
-            return Resolve(context.ResourceName, property.PropertyName, _alias, 0);
+            var reference = Reference(property, context);
+            if (!IsSpatialProperty(reference.Set, reference.Path)) throw new SensorThingsValidationException("Spatial operations require a geometry property.");
+            return ResolveReference(property, context);
         }
 
         protected override string TranslateGeographyExpression(FilterExpression expression, FilterTranslationContext context) =>

@@ -760,4 +760,43 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
             finalObservation["result"]!.GetValue<double>().Should().Be(count ? 1 : 1.5);
         }
     }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    public async Task JsonPrimitivePropertyComparisons_RetainTypesWithinAndAcrossCollectionScopes()
+    {
+        var locationBody = Location("JSON comparison");
+        locationBody["properties"] = JsonNode.Parse("""{"label":"Shared","enabled":true}""");
+        var location = await CreateAsync("Locations", locationBody);
+        var thing = await CreateAsync("Things", new JsonObject { ["name"] = "JSON comparison", ["description"] = "Synthetic", ["properties"] = JsonNode.Parse("""{"a":"Shared","b":"Shared","label":"JSON comparison","yes":true,"alsoYes":true,"textYes":"true","empty":null}"""), ["Locations"] = new JsonArray(Reference(Id(location))) });
+        var streamBody = Datastream(Id(thing));
+        streamBody["properties"] = JsonNode.Parse("""{"label":"Shared","enabled":true}""");
+        await CreateAsync("Datastreams", streamBody);
+        using var admin = _fixture.CreateAdminClient();
+        using var patch = await admin.PatchAsync($"/sta/v1.1/Things({Id(thing)})", Body(new JsonObject { ["properties"] = new JsonObject { ["identifier"] = Id(thing) } }));
+        patch.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        foreach (var filter in new[] { "properties/a eq properties/b", "properties/yes eq properties/alsoYes", "properties/yes ne properties/textYes", "properties/label eq name", "name eq properties/label", "properties/identifier eq id", "id eq properties/identifier", "properties/empty eq properties/missing", "properties/missing eq properties/alsoMissing", "properties/a ne properties/empty", "properties/empty ne name", "Datastreams/properties/label eq Locations/properties/label", "Locations/properties/enabled eq Datastreams/properties/enabled" })
+        {
+            var page = await ReadAsync("Things?$filter=" + Uri.EscapeDataString($"id eq {Id(thing)} and ({filter})"));
+            page["value"]!.AsArray().Should().ContainSingle(filter);
+        }
+        var mismatch = await ReadAsync("Things?$filter=" + Uri.EscapeDataString($"id eq {Id(thing)} and properties/yes eq properties/textYes"));
+        mismatch["value"]!.AsArray().Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    public async Task SpatialComparisonAcrossCollections_UsesEachOriginalGeometryScope()
+    {
+        var location = await CreateAsync("Locations", Location("Spatial comparison"));
+        var thing = await CreateAsync("Things", new JsonObject { ["name"] = "Spatial comparison", ["description"] = "Synthetic", ["Locations"] = new JsonArray(Reference(Id(location))) });
+        var stream = await CreateAsync("Datastreams", Datastream(Id(thing)));
+        var feature = await CreateAsync("FeaturesOfInterest", new JsonObject { ["name"] = "Matching feature", ["description"] = "Synthetic", ["encodingType"] = "application/geo+json", ["feature"] = location["location"]!.DeepClone() });
+        await CreateAsync("Observations", new JsonObject { ["result"] = 1, ["Datastream"] = Reference(Id(stream)), ["FeatureOfInterest"] = Reference(Id(feature)) });
+        foreach (var filter in new[] { "st_equals(Locations/location,Datastreams/Observations/FeatureOfInterest/feature)", "st_equals(Datastreams/Observations/FeatureOfInterest/feature,Locations/location)" })
+        {
+            var page = await ReadAsync("Things?$filter=" + Uri.EscapeDataString($"id eq {Id(thing)} and ({filter})"));
+            page["value"]!.AsArray().Should().ContainSingle(filter);
+        }
+    }
 }
