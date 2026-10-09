@@ -354,7 +354,7 @@ public class ImageServerEndpointsTests
     [IntegrationTheory]
     [InlineData("query", "where=1%3D1&outFields=*")]
     [InlineData("100", "")]
-    [InlineData("find", "toGeometry=0,0&maxCount=1")]
+    [InlineData("find", "toGeometry=%7B%22x%22%3A0%2C%22y%22%3A0%7D&maxCount=1")]
     [InlineData("identify", "geometry=0,0&sr=4326&returnCatalogItems=true")]
     [InlineData("measure", "measureOperation=esriMensurationPoint&geometryType=esriGeometryPoint&fromGeometry=0,0")]
     [Operation(Operations.Query)]
@@ -413,7 +413,7 @@ public class ImageServerEndpointsTests
                 image.TryGetProperty("pixelSize", out _).Should().BeFalse();
                 rasters.ClearReceivedCalls();
                 using var oracle = await fixture.Client.GetAsync(
-                    $"/rest/services/{TestLayerId}/ImageServer/find?f=json&toGeometry=0,0&where=Name%20LIKE%20%27a%25%27");
+                    $"/rest/services/{TestLayerId}/ImageServer/find?f=json&toGeometry=%7B%22x%22%3A0%2C%22y%22%3A0%7D&where=Name%20LIKE%20%27a%25%27");
                 oracle.StatusCode.Should().Be(HttpStatusCode.OK);
                 using var oracleJson = JsonDocument.Parse(await oracle.Content.ReadAsStringAsync());
                 oracleJson.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
