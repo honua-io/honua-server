@@ -238,6 +238,14 @@ internal sealed partial class FeatureServerQueryExecutor
 
             writer.WritePropertyName(property.Name);
 
+            // Canonical Boolean storage must match the advertised SmallInteger wire type.
+            if (property.Value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                JsonSerializer.Serialize(writer, GeoServicesAttributeProjection.ToEsriValue(property.Value),
+                    FeatureServerJsonContext.Default.Object);
+                continue;
+            }
+
             // Match the other JSON paths: timestamp epochs and ISO calendar dates.
             // Null and unconvertible values retain their stored representation.
             if (property.Value.ValueKind is not JsonValueKind.Null

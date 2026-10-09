@@ -347,6 +347,7 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
     [Operation(Operations.BulkCreate, Operations.BulkUpdate)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task AddAndUpdateFeatures_NumericBooleanWireValues_PersistBooleansAndPreserveIntegerFields(int initial)
     {
         _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field
@@ -373,6 +374,7 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
         var added = await DeserializeEditsAsync(addedResponse);
         var objectId = added.AddResults.Should().ContainSingle(result => result.Success).Subject.ObjectId!.Value;
         await AssertPersistedBooleanAsync(objectId, initial);
+        await AssertBooleanQueryAsync(objectId, initial);
 
         var updated = 1 - initial;
         using var updateForm = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -385,6 +387,28 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
         var result = await DeserializeEditsAsync(updatedResponse);
         result.UpdateResults.Should().ContainSingle(edit => edit.Success && edit.ObjectId == objectId);
         await AssertPersistedBooleanAsync(objectId, updated);
+        await AssertBooleanQueryAsync(objectId, updated);
+    }
+
+    private async Task AssertBooleanQueryAsync(long objectId, int expected)
+    {
+        // This common compact point query selects the raw PostGIS JSON response path.
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/test/FeatureServer/0/query?f=json&objectIds={objectId}&outFields=*&returnGeometry=true");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        var booleanField = document.RootElement.GetProperty("fields").EnumerateArray()
+            .Single(field => field.GetProperty("name").GetString() == "active");
+        booleanField.GetProperty("type").GetString().Should().Be("esriFieldTypeSmallInteger");
+        var feature = document.RootElement.GetProperty("features").EnumerateArray().Single();
+        var attributes = feature.GetProperty("attributes");
+        attributes.GetProperty("active").ValueKind.Should().Be(JsonValueKind.Number);
+        attributes.GetProperty("active").GetInt32().Should().Be(expected);
+        attributes.GetProperty("rank").ValueKind.Should().Be(JsonValueKind.Number);
+        attributes.GetProperty("rank").GetInt32().Should().Be(expected);
+        feature.GetProperty("geometry").GetProperty("x").GetDouble().Should().BeApproximately(-157.8333, 1e-10);
+        feature.GetProperty("geometry").GetProperty("y").GetDouble().Should().BeApproximately(21.3555, 1e-10);
     }
 
     private async Task AssertPersistedBooleanAsync(long objectId, int expected)
