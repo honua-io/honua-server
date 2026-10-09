@@ -141,7 +141,8 @@ public sealed class MapServerSpatialReferenceTests : MapServerEndpointTestBase
     {
         foreach (var (protocol, extra, srid) in new[]
         {
-            ("MapServer", "", 3857), ("MapServer", "&outSR=4326", 4326), ("FeatureServer", "", 4326)
+            ("MapServer", "", 3857), ("MapServer", "&outSR=4326", 4326),
+            ("FeatureServer", "", 4326), ("FeatureServer", "&outSR=3857", 3857)
         })
         {
             var response = await Fixture.Client.GetAsync(

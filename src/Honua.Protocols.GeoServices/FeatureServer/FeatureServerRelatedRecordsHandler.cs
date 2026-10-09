@@ -23,8 +23,8 @@ namespace Honua.Protocols.GeoServices.FeatureServer;
 /// </summary>
 internal sealed class FeatureServerRelatedRecordsHandler(
     FeatureServerRelatedRecordsDependencies dependencies,
-    IGeometryOperationService geometryOperationService,
-    ILogger<FeatureServerRelatedRecordsHandler> logger)
+    ILogger<FeatureServerRelatedRecordsHandler> logger,
+    IGeometryOperationService? geometryOperationService = null)
 {
     private readonly IResourceValidator _resourceValidator = dependencies?.ResourceValidator
         ?? throw new ArgumentNullException(nameof(dependencies));
@@ -242,13 +242,24 @@ internal sealed class FeatureServerRelatedRecordsHandler(
                 var projected = ImmutableArray.CreateBuilder<Feature>(result.Items.Length);
                 foreach (var feature in result.Items)
                 {
-                    projected.Add(feature.Geometry is { Length: > 0 } geometry
-                        ? feature with
+                    if (feature.Geometry is { Length: > 0 } geometry)
+                    {
+                        if (geometryOperationService is null)
+                        {
+                            return StandardErrorHelpers.CreateBadRequest(httpContext,
+                                "Geometry reprojection is not supported by this data provider.");
+                        }
+
+                        projected.Add(feature with
                         {
                             Geometry = await geometryOperationService.ProjectAsync(
                                 geometry, sourceSpatialReference, outputSrid.Value, cancellationToken).ConfigureAwait(false)
-                        }
-                        : feature);
+                        });
+                    }
+                    else
+                    {
+                        projected.Add(feature);
+                    }
                 }
 
                 result = result with { Items = projected.MoveToImmutable() };
