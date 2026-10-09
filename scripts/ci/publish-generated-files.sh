@@ -21,10 +21,6 @@ source scripts/ci/generated-files.sh
 branch='automation/regenerate-generated-files'
 title='ci: regenerate generated files'
 
-if git diff --quiet HEAD -- "${GENERATED_FILES[@]}"; then
-  echo 'Generated files are up to date; nothing to publish.'
-  exit 0
-fi
 # Validation stays bound to the triggering source even on an old rerun.
 # Capture the branch lease BEFORE observing trunk: a newer publisher racing
 # that observation must never have its automation head overwritten.
@@ -38,6 +34,11 @@ if [[ "$source_sha" != "$remote_trunk" ]]; then
   if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
     echo 'stale_source=true' >> "$GITHUB_OUTPUT"
   fi
+  exit 0
+fi
+# Even a clean old checkout may miss drift introduced by the new trunk.
+if git diff --quiet HEAD -- "${GENERATED_FILES[@]}"; then
+  echo 'Generated files are up to date; nothing to publish.'
   exit 0
 fi
 : "${GH_TOKEN:?MERGE_TRAIN_TOKEN is required to publish a PR and trigger its admission checks}"

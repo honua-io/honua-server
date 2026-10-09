@@ -286,6 +286,18 @@ class GeneratedFilesContracts(unittest.TestCase):
                                                'refs/heads/automation/regenerate-generated-files').stdout)
             self.assertEqual(run('git', 'rev-parse', 'HEAD').stdout.strip(), trunk_before)
 
+            # A clean old checkout is still stale: new source may require new
+            # projections even though generation at this old SHA changed none.
+            run('git', 'reset', '--hard', trunk_before)
+            (base / 'publication-output').unlink()
+            stale_clean = run('bash', 'scripts/ci/publish-generated-files.sh')
+            self.assertEqual((base / 'publication-output').read_text(), 'stale_source=true\n')
+            self.assertIn('No stale projections published', stale_clean.stdout)
+            self.assertFalse(gh_calls.exists())
+            self.assertEqual(branch_before, run('git', '--git-dir', str(remote), 'rev-parse',
+                                               'refs/heads/automation/regenerate-generated-files').stdout)
+            self.assertEqual(run('git', 'rev-parse', 'HEAD').stdout.strip(), trunk_before)
+
             # A newer publisher wins after our trunk observation. The lease
             # must have been captured before that observation, so this push
             # fails instead of overwriting the newer automation head.

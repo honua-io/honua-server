@@ -2266,8 +2266,8 @@
   ],
   "reconciled_at": "2026-10-07T19:28:00Z",
   "counts": {
-    "unresolved": 36,
-    "confirmed-red": 10,
-    "false-red": 5
+    "unresolved": 46,
+    "confirmed-red": 3,
+    "false-red": 2
   }
 }
