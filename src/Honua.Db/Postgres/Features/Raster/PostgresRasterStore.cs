@@ -2542,7 +2542,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         await using var dynCommand = connection.CreateCommand();
 
         // Build a 256Ã—256 reference raster exactly aligned to the WebMercatorQuad tile
-        // envelope (EPSG:3857). ST_Resample reprojects the source raster onto that grid so
+        // envelope (EPSG:3857). Transform directly onto this grid so an intermediate
+        // automatically sized projection cannot discard source cells. The reference grid ensures
         // the output PNG covers exactly ST_TileEnvelope(z,x,y) with nodata for uncovered
         // pixels â€” correcting both the projection and the spatial registration that the
         // previous ST_Clip+ST_Resize approach got wrong (it preserved the clipped source
@@ -2591,7 +2592,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             // No persisted overview: reduce the source toward the tile's ground resolution at low
             // zoom (no-op at native/finer zoom) so wide tiles do not resample full-res pixels.
             var overviewSource = BuildOverviewSourceExpression(level);
-            var sourceResampleExpr = $"ST_Resample(ST_Transform({overviewSource}, 3857), tile_ref.rast)";
+            var sourceResampleExpr = $"ST_Transform({overviewSource}, tile_ref.rast)";
             if (tileStretchBounds is { Count: > 0 })
             {
                 sourceResampleExpr = BuildStretchedRasterExpression(sourceResampleExpr, tileStretchBounds);
@@ -2678,7 +2679,7 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         await using var command = connection.CreateCommand();
         // Same tile-envelope-aligned approach as GetImageTileAsync: build a 256Ã—256
-        // reference raster in EPSG:3857 and use ST_Resample so the mosaic output covers
+        // reference raster in EPSG:3857 and transform each source directly onto it so the mosaic covers
         // exactly ST_TileEnvelope(z,x,y) with nodata for uncovered pixels.
         command.CommandText = $"""
             WITH requested AS (
@@ -2699,7 +2700,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM tile_bounds tb
             ),
             source AS (
-                SELECT ST_Resample(ST_Transform({overviewSource}, 3857), tile_ref.rast) AS rast,
+                SELECT ST_Transform({overviewSource}, tile_ref.rast) AS rast,
                        id,
                        created_at,
                        COALESCE(acquisition_date, created_at) AS effective_acquisition
@@ -2768,9 +2769,9 @@ internal sealed class PostgresRasterStore : IRasterStore
         var tileStretchBounds = BuildAutoTileStretchBounds(tileStats);
 
         // The tile reference raster is aligned to the gridset window bounds in the gridset SRID, so
-        // ST_Resample both reprojects the source into the gridset CRS and spatially registers the
+        // ST_Transform uses that reference directly to reproject into the gridset CRS and register the
         // output onto the exact tile envelope (nodata for uncovered pixels).
-        var resampleExpr = "ST_Resample(ST_Transform(src.rast, @tileSrid), tile_ref.rast)";
+        var resampleExpr = "ST_Transform(src.rast, tile_ref.rast)";
         if (tileStretchBounds is { Count: > 0 })
         {
             resampleExpr = BuildStretchedRasterExpression(resampleExpr, tileStretchBounds);
@@ -2857,7 +2858,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             ),
             {BuildTileWindowCte(window)},
             source AS (
-                SELECT ST_Resample(ST_Transform(raster, @tileSrid), tile_ref.rast) AS rast,
+                SELECT ST_Transform(raster, tile_ref.rast) AS rast,
                        id,
                        created_at,
                        COALESCE(acquisition_date, created_at) AS effective_acquisition
