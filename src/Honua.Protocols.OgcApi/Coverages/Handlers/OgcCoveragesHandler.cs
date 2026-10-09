@@ -1395,7 +1395,7 @@ internal sealed class OgcCoveragesHandler
             return ScalingResult.Successful(query with { OutputWidth = width, OutputHeight = height });
         }
 
-        if (context.Request.Query.ContainsKey("subset") && query.ClipRegion is { } nativeClip &&
+        if (query.ClipRegion is { } nativeClip &&
             (raster.Width > MaxScaleSize || raster.Height > MaxScaleSize))
         {
             var nativeSizeError = await ValidateNativeSubsetSizeAsync(raster, storageSrid, nativeClip, cancellationToken)
