@@ -12,6 +12,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Io.Export;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -422,6 +423,66 @@ public sealed class ExportEndpointTests : IAsyncLifetime
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    public async Task Export_AsyncSubmission_CapturesResolvedTenantAndProjection()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        reader.CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>()).Returns(50_001L);
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("tenant-export");
+        var jobs = new CapturingExportJobService();
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IFeatureReader>();
+            services.AddSingleton(reader);
+            services.RemoveAll<ITenantContext>();
+            services.AddSingleton(tenant);
+            services.RemoveAll<IExportJobService>();
+            services.AddSingleton<IExportJobService>(jobs);
+            services.RemoveAll<ICloudFileStorage>();
+            services.AddSingleton(Substitute.For<ICloudFileStorage>());
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var response = await fixture.Client.GetAsync(
+                "/api/v1/admin/services/test/layers/0/export?format=csv&outFields=name");
+
+            response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
+            jobs.Job.Should().NotBeNull();
+            jobs.Job!.Submitter.Should().NotBeNull();
+            jobs.Job.Submitter!.TenantId.Should().Be("tenant-export");
+            jobs.Job.Query.OutFields!.Value.Should().Equal("name");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private sealed class CapturingExportJobService : IExportJobService
+    {
+        public ExportJob? Job { get; private set; }
+
+        public Task<string> StartAsync(ExportJob job, CancellationToken cancellationToken = default)
+        {
+            Job = job;
+            return Task.FromResult(job.JobId);
+        }
+
+        public async IAsyncEnumerable<string> ReadQueuedJobIdsAsync(
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public Task ProcessQueuedJobAsync(string jobId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 
     private static async IAsyncEnumerable<Feature> EmptyFeatureStream(

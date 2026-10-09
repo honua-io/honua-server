@@ -1,10 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Net;
+using System.Collections.Immutable;
 using System.IO.Compression;
+using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -347,6 +349,92 @@ public class ImageServerEndpointsTests
         store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<long, RasterSensorMetadata>());
         return store;
+    }
+
+    [IntegrationTheory]
+    [InlineData("query", "where=1%3D1&outFields=*")]
+    [InlineData("100", "")]
+    [InlineData("find", "toGeometry=0,0&maxCount=1")]
+    [InlineData("identify", "geometry=0,0&sr=4326&returnCatalogItems=true")]
+    [InlineData("measure", "measureOperation=esriMensurationPoint&geometryType=esriGeometryPoint&fromGeometry=0,0")]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/find")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/identify")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/query")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}")]
+    public async Task CatalogSecondaryRead_MaskedFields_AreAbsent(string operation, string query)
+    {
+        var masks = Substitute.For<IFieldMaskSource>();
+        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create("nAmE", "ACQUISITIONdate", "centerX", "MAXps"));
+        var rasters = CreateRasterStoreSubstitute();
+        rasters.IdentifyAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<double>(), Arg.Any<double>(),
+                Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns(new PixelValueResult
+            {
+                X = 0, Y = 0, Srid = 4326, HasData = true,
+                BandValues = new Dictionary<int, object?> { [1] = 42d }
+            });
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.AddSingleton(rasters);
+            services.AddSingleton(masks);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/{operation}?f=json&{query}");
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+            using var json = JsonDocument.Parse(content);
+            var root = json.RootElement;
+            if (operation is "query" or "100")
+            {
+                var feature = operation == "query" ? root.GetProperty("features")[0] : root;
+                var attributes = feature.GetProperty("attributes");
+                attributes.TryGetProperty("Name", out _).Should().BeFalse();
+                attributes.TryGetProperty("AcquisitionDate", out _).Should().BeFalse();
+                attributes.GetProperty("OBJECTID").GetInt64().Should().Be(100);
+                if (operation == "query")
+                {
+                    root.GetProperty("fields").EnumerateArray()
+                        .Select(field => field.GetProperty("name").GetString())
+                        .Should().NotContain(["Name", "AcquisitionDate"]);
+                }
+            }
+            else if (operation == "find")
+            {
+                var image = root.GetProperty("images")[0];
+                image.TryGetProperty("uri", out _).Should().BeFalse();
+                image.TryGetProperty("acquisitionDate", out _).Should().BeFalse();
+                image.TryGetProperty("center", out _).Should().BeFalse();
+                image.TryGetProperty("pixelSize", out _).Should().BeFalse();
+                rasters.ClearReceivedCalls();
+                using var oracle = await fixture.Client.GetAsync(
+                    $"/rest/services/{TestLayerId}/ImageServer/find?f=json&toGeometry=0,0&where=Name%20LIKE%20%27a%25%27");
+                oracle.StatusCode.Should().Be(HttpStatusCode.OK);
+                using var oracleJson = JsonDocument.Parse(await oracle.Content.ReadAsStringAsync());
+                oracleJson.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
+                await rasters.DidNotReceive().QueryCatalogAsync(
+                    Arg.Any<int>(), Arg.Any<RasterCatalogQuery>(), Arg.Any<CancellationToken>());
+            }
+            else
+            {
+                root.TryGetProperty("name", out _).Should().BeFalse();
+                if (operation == "identify")
+                {
+                    var attributes = root.GetProperty("catalogItems").GetProperty("features")[0].GetProperty("attributes");
+                    attributes.TryGetProperty("Name", out _).Should().BeFalse();
+                    attributes.GetProperty("OBJECTID").GetInt64().Should().Be(100);
+                }
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     private static async Task<WebAppFixture> CreateFixtureAsync(IRasterStore rasterStore)

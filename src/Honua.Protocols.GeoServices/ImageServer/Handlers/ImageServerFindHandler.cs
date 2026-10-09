@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
@@ -60,7 +61,7 @@ internal sealed class ImageServerFindHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context) is null)
+            if (ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context) is not { } resolved)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -72,9 +73,13 @@ internal sealed class ImageServerFindHandler
                 return StandardErrorHelpers.CreateBadRequest(context, parseError ?? "Invalid find parameter.");
             }
 
+            var maskedFields = await ImageServerCatalogSecurity.ResolveMasksAsync(
+                context, resolved.Resource, cancellationToken).ConfigureAwait(false);
+            query.EnforcedMaskedFields = maskedFields;
             ImageServerCatalogPage page;
             try
             {
+                ImageServerCatalogSecurity.Validate(query, maskedFields);
                 page = await _catalogReader.ReadAsync(layerId, query, cancellationToken).ConfigureAwait(false);
             }
             catch (ImageServerCatalogFilterException ex)
@@ -101,7 +106,7 @@ internal sealed class ImageServerFindHandler
 
             var images = ordered
                 .Take(maxCount)
-                .Select(BuildImage)
+                .Select(item => BuildImage(item, maskedFields))
                 .ToArray();
 
             stopwatch.Stop();
@@ -328,17 +333,22 @@ internal sealed class ImageServerFindHandler
         return true;
     }
 
-    private static ImageServerFindImage BuildImage(ImageServerCatalogItem item)
+    private static ImageServerFindImage BuildImage(ImageServerCatalogItem item, ImmutableArray<string> maskedFields)
     {
-        var pixelSize = item.MinPixelSize > 0 ? item.MinPixelSize :
-            item.MaxPixelSize > 0 ? item.MaxPixelSize : (double?)null;
+        var pixelSize = ImageServerCatalogSecurity.IsMasked(maskedFields, "MinPS") ||
+            ImageServerCatalogSecurity.IsMasked(maskedFields, "MaxPS")
+                ? null
+                : item.MinPixelSize > 0 ? item.MinPixelSize :
+                    item.MaxPixelSize > 0 ? item.MaxPixelSize : (double?)null;
 
         return new ImageServerFindImage
         {
             Id = item.ObjectId,
-            Uri = item.Name,
-            AcquisitionDate = item.AcquisitionDate?.ToUnixTimeMilliseconds(),
-            Center = new ImageServerFindPoint
+            Uri = ImageServerCatalogSecurity.IsMasked(maskedFields, "Name") ? null : item.Name,
+            AcquisitionDate = ImageServerCatalogSecurity.IsMasked(maskedFields, "AcquisitionDate")
+                ? null : item.AcquisitionDate?.ToUnixTimeMilliseconds(),
+            Center = ImageServerCatalogSecurity.IsMasked(maskedFields, "CenterX") ||
+                ImageServerCatalogSecurity.IsMasked(maskedFields, "CenterY") ? null : new ImageServerFindPoint
             {
                 X = item.CenterX,
                 Y = item.CenterY,
