@@ -1166,11 +1166,19 @@ public class ImageServerEndpointsTests
         var store = CreateSamplingRasterStoreSubstitute();
         store.IdentifyAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<double>(), Arg.Any<double>(),
                 Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
-            .Returns(empty ? null : new PixelValueResult
+            .Returns(new PixelValueResult
             {
-                X = 0, Y = 0, Srid = 3857, HasData = hasData,
+                X = 0,
+                Y = 0,
+                Srid = 3857,
+                HasData = hasData,
                 BandValues = new Dictionary<int, object?> { [1] = hasData ? 33.5 : null, [2] = double.NaN }
             });
+        if (empty)
+        {
+            store.QueryRastersAsync(Arg.Any<int>(), Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>())
+                .Returns(Array.Empty<RasterInfo>());
+        }
         var fixture = await CreateFixtureAsync(store);
         try
         {

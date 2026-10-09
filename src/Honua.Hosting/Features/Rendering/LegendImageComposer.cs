@@ -58,7 +58,7 @@ internal static class LegendImageComposer
             }, SKEncodedImageFormat.Png);
 
     private static byte[] ComposeRows(
-        IReadOnlyList<string> labels,
+        string[] labels,
         int swatchWidth,
         int swatchHeight,
         Action<SKCanvas, int> drawSwatch,
@@ -78,7 +78,7 @@ internal static class LegendImageComposer
 
         using var textPaint = new SKPaint { Color = SKColors.Black, IsAntialias = true };
 
-        for (var i = 0; i < labels.Count; i++)
+        for (var i = 0; i < labels.Length; i++)
         {
             var rowTop = OuterPadding + (i * rowHeight);
 
@@ -122,7 +122,7 @@ internal static class LegendImageComposer
     }
 
     private static (int Width, int Height) Measure(
-        IReadOnlyList<string> labels,
+        string[] labels,
         int swatchWidth,
         int swatchHeight,
         SKFont? font)
@@ -139,7 +139,7 @@ internal static class LegendImageComposer
         var imageWidth = (int)Math.Ceiling(
             (OuterPadding * 2) + swatchWidth + (labelWidth > 0 ? SwatchLabelGap + labelWidth : 0));
         var imageHeight = (int)Math.Ceiling(
-            (OuterPadding * 2) + (GetRowHeight(swatchHeight, font) * labels.Count));
+            (OuterPadding * 2) + (GetRowHeight(swatchHeight, font) * labels.Length));
 
         return (Math.Max(imageWidth, 1), Math.Max(imageHeight, 1));
     }

@@ -510,11 +510,17 @@ public static partial class OgcMapsEndpoints
         int? LayerId,
         IResult? Error);
 
+    private static Task<MapsCollectionResolution> ResolveCollectionAsync(
+        HttpContext context,
+        string value,
+        CancellationToken cancellationToken)
+        => ResolveCollectionAsync(context, value, null, cancellationToken);
+
     private static async Task<MapsCollectionResolution> ResolveCollectionAsync(
         HttpContext context,
         string value,
-        CancellationToken cancellationToken,
-        MetadataV2GraphSnapshot? snapshot = null)
+        MetadataV2GraphSnapshot? snapshot,
+        CancellationToken cancellationToken)
     {
         snapshot ??= await context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>()
             .GetCurrentAsync(cancellationToken).ConfigureAwait(false);

@@ -59,7 +59,7 @@ public static partial class OgcMapsEndpoints
         cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var snapshot = await context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>()
             .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var resolution = await ResolveCollectionAsync(context, collectionId, cancellationToken, snapshot);
+        var resolution = await ResolveCollectionAsync(context, collectionId, snapshot, cancellationToken);
         if (resolution.Error is not null)
         {
             return resolution.Error;
@@ -67,7 +67,7 @@ public static partial class OgcMapsEndpoints
 
         var collection = await BuildCollectionInfoAsync(
             context, resolution.Resource!, resolution.Publication!, BuildMapCollectionIds(snapshot)[resolution.Publication!.Metadata.Id], outputFormat,
-            coordinateTransformService, cancellationToken, preserveQuery: true).ConfigureAwait(false);
+            coordinateTransformService, true, cancellationToken).ConfigureAwait(false);
         return OgcCommon.OgcCommonUtilities.FormatMetadataResponse(
             collection,
             OgcJsonContext.Default.CollectionInfo,
@@ -112,13 +112,13 @@ public static partial class OgcMapsEndpoints
             }
 
             var id = collectionIds[publication.Metadata.Id];
-            var resolution = await ResolveCollectionAsync(context, id, cancellationToken, snapshot).ConfigureAwait(false);
+            var resolution = await ResolveCollectionAsync(context, id, snapshot, cancellationToken).ConfigureAwait(false);
             if (resolution.Error is null && resolution.Resource?.Metadata.Id == resource.Metadata.Id &&
                 seenResources.Add(resource.Metadata.Id))
             {
                 collections.Add(await BuildCollectionInfoAsync(
                     context, resolution.Resource!, resolution.Publication!, id, OgcCommon.MediaTypes.Json,
-                    coordinateTransformService, cancellationToken).ConfigureAwait(false));
+                    coordinateTransformService, false, cancellationToken).ConfigureAwait(false));
             }
         }
 
@@ -145,8 +145,8 @@ public static partial class OgcMapsEndpoints
         string canonicalId,
         string outputFormat,
         ICoordinateTransformService coordinateTransformService,
-        CancellationToken cancellationToken,
-        bool preserveQuery = false)
+        bool preserveQuery,
+        CancellationToken cancellationToken)
     {
         var title = publication.TitleOverride
             ?? resource.Metadata.Title

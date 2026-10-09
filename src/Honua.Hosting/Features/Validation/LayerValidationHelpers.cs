@@ -346,23 +346,35 @@ internal static class LayerValidationHelpers
     /// Storage-keyed surfaces can opt into numeric storage-layer identity; their
     /// discovery and detail routes then share publication selection and access checks.
     /// </summary>
-    /// <param name="context">The current request context.</param>
-    /// <param name="collectionId">The collection identifier or alias.</param>
-    /// <param name="scope">The requested access scope.</param>
-    /// <param name="requiredProtocol">The protocol that must be enabled.</param>
-    /// <param name="cancellationToken">The cancellation token.</param>
-    /// <param name="snapshot">An already captured snapshot to keep discovery and validation consistent.</param>
-    /// <param name="preferExactPublicationId">Whether a stable publication ID takes precedence over matching aliases.</param>
     public static Task<MetadataV2ValidationResult> ValidateCollectionWithAccessV2Async(
         HttpContext context,
         string collectionId,
         AccessScope scope = AccessScope.Read,
         string? requiredProtocol = MetadataV2ServiceProtocols.OgcFeatures,
-        CancellationToken cancellationToken = default,
-        MetadataV2GraphSnapshot? snapshot = null,
-        bool preferExactPublicationId = false)
+        CancellationToken cancellationToken = default)
         => ValidateCollectionWithAccessV2CoreAsync(
-            context, collectionId, false, scope, requiredProtocol, cancellationToken, snapshot, preferExactPublicationId);
+            context, collectionId, false, scope, requiredProtocol, cancellationToken: cancellationToken);
+
+    /// <summary>
+    /// Validates a collection using a captured snapshot, optionally preferring its stable publication ID.
+    /// </summary>
+    /// <param name="context">The current request context.</param>
+    /// <param name="collectionId">The collection identifier or alias.</param>
+    /// <param name="snapshot">The captured snapshot used for validation.</param>
+    /// <param name="preferExactPublicationId">Whether a stable publication ID takes precedence over aliases.</param>
+    /// <param name="scope">The requested access scope.</param>
+    /// <param name="requiredProtocol">The protocol that must be enabled.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    public static Task<MetadataV2ValidationResult> ValidateCollectionWithAccessV2Async(
+        HttpContext context,
+        string collectionId,
+        MetadataV2GraphSnapshot snapshot,
+        bool preferExactPublicationId = false,
+        AccessScope scope = AccessScope.Read,
+        string? requiredProtocol = MetadataV2ServiceProtocols.OgcFeatures,
+        CancellationToken cancellationToken = default)
+        => ValidateCollectionWithAccessV2CoreAsync(
+            context, collectionId, false, scope, requiredProtocol, snapshot, preferExactPublicationId, cancellationToken);
 
     /// <summary>
     /// Validates numeric collection IDs as storage identities, sharing publication
@@ -375,7 +387,7 @@ internal static class LayerValidationHelpers
         string? requiredProtocol = null,
         CancellationToken cancellationToken = default)
         => ValidateCollectionWithAccessV2CoreAsync(
-            context, collectionId, true, scope, requiredProtocol, cancellationToken);
+            context, collectionId, true, scope, requiredProtocol, cancellationToken: cancellationToken);
 
     private static async Task<MetadataV2ValidationResult> ValidateCollectionWithAccessV2CoreAsync(
         HttpContext context,
@@ -383,9 +395,9 @@ internal static class LayerValidationHelpers
         bool resolveByStorageLayerId,
         AccessScope scope = AccessScope.Read,
         string? requiredProtocol = MetadataV2ServiceProtocols.OgcFeatures,
-        CancellationToken cancellationToken = default,
         MetadataV2GraphSnapshot? snapshot = null,
-        bool preferExactPublicationId = false)
+        bool preferExactPublicationId = false,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(collectionId))
         {

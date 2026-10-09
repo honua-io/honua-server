@@ -545,7 +545,7 @@ internal static class ImageServerEndpoints
             .WithSummary("Get raster legend swatches")
             .WithDescription("Returns Esri-compatible legend swatches or a composed PNG with f=png for the layer's primary raster")
             .Produces<LegendResponse>(StatusCodes.Status200OK, JsonContentType)
-            .Produces(StatusCodes.Status200OK, "image/png")
+            .Produces(StatusCodes.Status200OK, contentType: "image/png")
             .Produces(400)
             .Produces(404);
 
@@ -557,7 +557,7 @@ internal static class ImageServerEndpoints
             .WithSummary("Get raster legend swatches using POST")
             .WithDescription("POST equivalent of the ArcGIS ImageServer legend endpoint")
             .Produces<LegendResponse>(StatusCodes.Status200OK, JsonContentType)
-            .Produces(StatusCodes.Status200OK, "image/png")
+            .Produces(StatusCodes.Status200OK, contentType: "image/png")
             .Produces(400)
             .Produces(404);
 
@@ -1136,7 +1136,7 @@ internal static class ImageServerEndpoints
             .WithName("GetImageServerLegendByService")
             .WithSummary("Get raster legend swatches")
             .Produces<LegendResponse>(StatusCodes.Status200OK, JsonContentType)
-            .Produces(StatusCodes.Status200OK, "image/png")
+            .Produces(StatusCodes.Status200OK, contentType: "image/png")
             .Produces(400)
             .Produces(404);
 
@@ -1146,7 +1146,7 @@ internal static class ImageServerEndpoints
             .WithSummary("Get raster legend swatches using POST")
             .WithDescription("POST equivalent of the ArcGIS ImageServer legend endpoint")
             .Produces<LegendResponse>(StatusCodes.Status200OK, JsonContentType)
-            .Produces(StatusCodes.Status200OK, "image/png")
+            .Produces(StatusCodes.Status200OK, contentType: "image/png")
             .Produces(400)
             .Produces(404);
 
