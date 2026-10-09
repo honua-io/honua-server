@@ -124,6 +124,37 @@ To upgrade the platform, an agent reads `honua_platform_release_status` and `GET
 
 `honua_apply_style_preset` applies a catalog style to a layer. It requires admin write access in addition to the published-service publish grant, uses the `style.apply-preset` operation, and honors operator approval and `Operations:Policy` rules before changing the layer. An approval-required result has `approvalRequired: true`; when a durable proposal is created, use its returned `proposalId` and resource URI to track approval. Only a completed application returns `applied: true`. Set `dryRun: true` to validate without changing the layer; a completed preview returns `dryRun: true` and `applied: false`. Approval plans pin the service, layer, preset, publication, resource and storage binding; replay refuses a rebound target and requires a new approval request. If the binding commits but metadata reconciliation fails, the result keeps `applied: true` with a `warning`; re-apply the preset to retry.
 
+Every completed result, including a dry run, carries the `style.apply-preset` operation handle in the same shape as `honua_publish_service`: `status`, `operationId`, `operationInstanceId` (also as `handleId`), `correlationId` and `auditId`, with `createdAt`, `updatedAt`, `authorizationOutcome` and `policyOutcome`. Use these to join the style change to its audit record.
+
+### Render the applied style
+
+`honua_render_map` draws each layer with the style currently applied to it: the primary catalog style that `honua_apply_style_preset` (or the OGC API - Styles surface) bound. A layer with no applied catalog style draws with its stored default style. Each entry in the result's `layers` array reports what was drawn:
+
+| `styleRendering` | Meaning |
+| --- | --- |
+| `applied` | The applied style was drawn; `styleId` names it. |
+| `default` | No catalog style is applied; the layer's stored default style was drawn and `styleId` is `null`. |
+| `unsupported-style-construct` | The applied style contains constructs the server rasterizer cannot draw. `unsupportedStyleConstructs` lists them. The drawable parts of the style still render, and the stored default style is never substituted. |
+
+The server rasterizes MapLibre `circle`, `line` and `fill` style layers with `filter`, `minzoom`/`maxzoom` and data-driven expressions. It honours these properties:
+
+- `circle`: `circle-radius`, `circle-color`, `circle-opacity`, `circle-stroke-color`, `circle-stroke-opacity` and `circle-stroke-width`.
+- `line`: `line-color`, `line-width`, `line-opacity`, `line-dasharray`, and the layout properties `line-cap` and `line-join`.
+- `fill`: `fill-color`, `fill-opacity`, `fill-outline-color` and `fill-antialias`.
+- Every type: the layout property `visibility`.
+
+A `circle` draws point geometry, a `line` draws line or polygon outlines, and a `fill` draws polygons. Anything else is reported as an unsupported construct, and `applied` is reported only when every construct was drawn. That includes:
+
+- any other paint or layout property, such as `fill-pattern`, `line-gradient`, `*-translate` or `circle-blur`;
+- a style layer with no paint, which the server draws with its own default symbology;
+- other layer types: `symbol`, `heatmap`, `fill-extrusion`, `raster`, `hillshade` and `background`;
+- a style layer whose type does not draw the layer's geometry;
+- a vector style bound to a raster coverage.
+
+An applied style with no style layers draws nothing for that layer. The caption repeats each layer's style and any unsupported constructs.
+
+`honua_render_map` refuses two kinds of request with `invalid_argument`. One mixes raster coverage layers with vector layers, because the renderer cannot composite them. The other includes two layers that resolve to the same storage layer through different published resources. Render those layers in separate calls.
+
 ### Compose Studio drafts
 
 The nineteen `honua_studio_*` tools compose the same server-resident draft the Studio UI observes: create, read and update a draft; add and remove layers, widgets, controls and interaction bindings; set styles, visibility and the view; validate and preview; save an immutable version; reopen a version as a new draft; and propose a saved version for governed publication. The tool table is in [Studio MCP tools](../../studio/mcp-tools.md).
