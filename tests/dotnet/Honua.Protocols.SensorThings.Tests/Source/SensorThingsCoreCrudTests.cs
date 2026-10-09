@@ -43,6 +43,7 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
         return JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
     }
     private static long Id(JsonObject entity) => entity["@iot.id"]!.GetValue<long>();
+    private static DateTimeOffset ParseInstant(string value) => DateTimeOffset.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
     private async Task<JsonObject> ReadAsync(string path)
     {
         using var response = await _fixture.Client.GetAsync("/sta/v1.1/" + path);
@@ -664,10 +665,10 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
             observations.Add(Id(await CreateAsync("Observations", new JsonObject { ["result"] = 1, ["phenomenonTime"] = time, ["resultTime"] = resultTime, ["Datastream"] = Reference(Id(stream)), ["FeatureOfInterest"] = Reference(Id(feature)) })));
         }
         var populated = await ReadAsync($"Datastreams({Id(stream)})?$select=phenomenonTime,resultTime,observedArea");
-        var phenomenon = populated["phenomenonTime"]!.GetValue<string>().Split('/').Select(DateTimeOffset.Parse).ToArray();
-        phenomenon.Should().BeEquivalentTo(new[] { DateTimeOffset.Parse("2026-01-01T00:00:00Z"), DateTimeOffset.Parse("2026-01-04T00:00:00Z") }, options => options.WithStrictOrdering());
-        var result = populated["resultTime"]!.GetValue<string>().Split('/').Select(DateTimeOffset.Parse).ToArray();
-        result.Should().BeEquivalentTo(new[] { DateTimeOffset.Parse("2026-01-02T00:00:00Z"), DateTimeOffset.Parse("2026-01-05T00:00:00Z") }, options => options.WithStrictOrdering());
+        var phenomenon = populated["phenomenonTime"]!.GetValue<string>().Split('/').Select(ParseInstant).ToArray();
+        phenomenon.Should().BeEquivalentTo(new[] { ParseInstant("2026-01-01T00:00:00Z"), ParseInstant("2026-01-04T00:00:00Z") }, options => options.WithStrictOrdering());
+        var result = populated["resultTime"]!.GetValue<string>().Split('/').Select(ParseInstant).ToArray();
+        result.Should().BeEquivalentTo(new[] { ParseInstant("2026-01-02T00:00:00Z"), ParseInstant("2026-01-05T00:00:00Z") }, options => options.WithStrictOrdering());
         populated["observedArea"]!["type"]!.GetValue<string>().Should().Be("Polygon");
         populated["observedArea"]!["coordinates"]![0]!.ToJsonString().Should().Be("[[10,20],[10,40],[30,40],[30,20],[10,20]]");
         var filtered = await ReadAsync("Datastreams?$filter=" + Uri.EscapeDataString($"id eq {Id(stream)} and st_contains(observedArea,geography'POINT(20 30)')"));
@@ -676,12 +677,12 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
         using var patch = await admin.PatchAsync($"/sta/v1.1/Observations({observations[0]})", Body(new JsonObject { ["phenomenonTime"] = "2026-01-01T00:00:00Z/2026-01-02T00:00:00Z" }));
         patch.StatusCode.Should().Be(HttpStatusCode.NoContent);
         var changed = (await ReadAsync($"Datastreams({Id(stream)})"))["phenomenonTime"]!.GetValue<string>().Split('/');
-        DateTimeOffset.Parse(changed[1]).Should().Be(DateTimeOffset.Parse("2026-01-03T00:00:00Z"));
+        ParseInstant(changed[1]).Should().Be(ParseInstant("2026-01-03T00:00:00Z"));
         var other = await CreateAsync("Datastreams", Datastream(1));
         using var reparent = await admin.PatchAsync($"/sta/v1.1/Observations({observations[1]})", Body(new JsonObject { ["Datastream"] = Reference(Id(other)) }));
         reparent.StatusCode.Should().Be(HttpStatusCode.NoContent);
         changed = (await ReadAsync($"Datastreams({Id(stream)})"))["phenomenonTime"]!.GetValue<string>().Split('/');
-        DateTimeOffset.Parse(changed[1]).Should().Be(DateTimeOffset.Parse("2026-01-02T00:00:00Z"));
+        ParseInstant(changed[1]).Should().Be(ParseInstant("2026-01-02T00:00:00Z"));
         using var delete = await admin.DeleteAsync($"/sta/v1.1/Observations({observations[0]})");
         delete.StatusCode.Should().Be(HttpStatusCode.NoContent);
         var cleared = await ReadAsync($"Datastreams({Id(stream)})");
