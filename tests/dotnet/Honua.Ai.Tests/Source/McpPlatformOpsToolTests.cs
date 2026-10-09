@@ -110,6 +110,43 @@ public sealed class McpPlatformOpsToolTests
         reader.RollbackArgument.ParameterOverrides.Should().Contain("activePort", "5102");
     }
 
+    [UnitTest]
+    public void ProposePlatformReleaseConvergenceTool_Describe_AdvertisesOptionalTargetVersion()
+    {
+        var descriptor = new ProposePlatformReleaseConvergenceTool(
+            NullLogger<ProposePlatformReleaseConvergenceTool>.Instance).Describe();
+
+        var properties = descriptor.InputSchema.GetProperty("properties");
+        var targetVersion = properties.GetProperty("targetVersion");
+        targetVersion.GetProperty("type").GetString().Should().Be("string");
+        targetVersion.GetProperty("maxLength").GetInt32().Should().Be(128);
+        descriptor.InputSchema.TryGetProperty("required", out _).Should().BeFalse("targetVersion is optional");
+        descriptor.InputSchema.GetProperty("additionalProperties").GetBoolean().Should().BeFalse();
+        var output = descriptor.OutputSchema!.Value.GetProperty("properties");
+        output.TryGetProperty("code", out _).Should().BeTrue();
+        output.TryGetProperty("declaredVersion", out _).Should().BeTrue();
+        output.TryGetProperty("servingArtifactReference", out _).Should().BeTrue();
+        output.TryGetProperty("isCoVersioned", out _).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task ProposePlatformReleaseConvergenceTool_Invoke_PassesTargetVersionAndReturnsTypedMismatch()
+    {
+        var reader = new FakePlatformOpsReader();
+        var context = BuildContext(reader);
+        var tool = new ProposePlatformReleaseConvergenceTool(NullLogger<ProposePlatformReleaseConvergenceTool>.Instance);
+
+        var result = await tool.InvokeAsync(context, Json("""{"targetVersion":"2026.1-rc.9"}"""), CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        reader.ConvergenceArgument!.TargetVersion.Should().Be("2026.1-rc.9");
+        var content = result.StructuredContent!.Value;
+        content.GetProperty("outcome").GetString().Should().Be("rejected");
+        content.GetProperty("code").GetString().Should().Be("platform_release_version_mismatch");
+        content.GetProperty("declaredVersion").GetString().Should().Be("2026.1-rc.3");
+        content.GetProperty("isCoVersioned").GetBoolean().Should().BeTrue();
+    }
+
     private static DefaultHttpContext BuildContext(IMcpPlatformOpsReader reader)
     {
         var services = new ServiceCollection();
@@ -199,8 +236,22 @@ public sealed class McpPlatformOpsToolTests
         public Task<McpProposeOperationOutput> ProposeDeployOperationAsync(ClaimsPrincipal principal, McpDeployMutationArgument argument, CancellationToken cancellationToken)
             => Proposal(principal);
 
+        public McpPlatformReleaseConvergenceArgument? ConvergenceArgument { get; private set; }
+
         public Task<McpProposeOperationOutput> ProposePlatformReleaseConvergenceAsync(ClaimsPrincipal principal, McpPlatformReleaseConvergenceArgument argument, CancellationToken cancellationToken)
-            => Proposal(principal);
+        {
+            LastPrincipal = principal;
+            ConvergenceArgument = argument;
+            return Task.FromResult(new McpProposeOperationOutput
+            {
+                Outcome = "rejected",
+                Code = "platform_release_version_mismatch",
+                DeclaredVersion = "2026.1-rc.3",
+                TargetVersion = argument.TargetVersion,
+                ServingArtifactReference = "ghcr.io/honua/server@sha256:abc",
+                IsCoVersioned = true,
+            });
+        }
 
         private Task<McpProposeOperationOutput> Proposal(ClaimsPrincipal principal)
         {

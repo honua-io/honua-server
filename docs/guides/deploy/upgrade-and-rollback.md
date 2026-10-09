@@ -147,7 +147,7 @@ Deploy targets are configured under `ControlPlane__DeployTargets__*` with a back
 
 ### Converge the whole platform release in one call
 
-When you declare a versioned platform release under `ControlPlane__PlatformRelease__*` (a `Version`, a `ServingArtifactReference`, and one or more `Workers`), `POST /api/v1/admin/platform-release/converge` actuates the serving plane onto it in a single call — no per-target scripting. It takes **no version argument**: it always converges to the currently declared release, and it validates co-versioning first (a release must bind both planes), returning `400` if the declaration is missing or one-sided.
+When you declare a versioned platform release under `ControlPlane__PlatformRelease__*` (a `Version`, a `ServingArtifactReference`, and one or more `Workers`), `POST /api/v1/admin/platform-release/converge` actuates the serving plane onto it in a single call — no per-target scripting. It never takes a version to *resolve*: it always converges to the currently declared release, and it validates co-versioning first (a release must bind both planes), returning `400` if the declaration is missing or one-sided. You may send an optional `targetVersion` (for example `{"targetVersion":"2026.1-rc.3"}`) to assert which release you expect; if it does not name the declared release, converge returns `409` `application/problem+json` with `code: platform_release_version_mismatch` and echoes `declaredVersion`, `targetVersion`, `servingArtifactReference` and the preflight `isCoVersioned` summary, and nothing is actuated. The comparison trims whitespace, ignores case, strips a leading `honua-` tag prefix and a leading `v`, and treats a zero patch as absent, so `honua-2026.1-rc.3`, `v2026.1.0-rc.3` and `2026.1-rc.3` all name the same release; any other difference (another pre-release, a non-zero patch, leading zeros) is a mismatch.
 
 Per-target behaviour follows a fixed divergence contract:
 
@@ -160,6 +160,18 @@ Per-target behaviour follows a fixed divergence contract:
 Every created deploy is routed through the same guardrail gateway and approval flow as any other deploy (Enterprise editions land the deploys as approval proposals in the console inbox, not a direct execute), and each is keyed by `converge:{version}:{targetId}` so re-invoking converge folds onto the in-flight operations rather than creating duplicates. The response lists the per-target outcome (with the created operation or proposal id).
 
 **Workers are not deployed by converge.** The geoprocessing worker images converge on the next GP dispatch via the release projection; the converge response states this explicitly (`workersDeferred: true`).
+
+### Agent-driven upgrade over MCP
+
+An MCP agent follows the same path with a human approval in the middle; it never resolves a version to an image itself:
+
+1. `honua_platform_release_status` — read the declared release (`releaseVersion`), the serving/execution projections and `isCoVersioned`.
+2. `GET /api/v1/admin/deploy/preflight` — confirm readiness, pending migrations and database compatibility (its `platformRelease` block is the same projection).
+3. `honua_propose_platform_release_convergence` with `{"targetVersion":"2026.1-rc.N"}` — when the version names the declared release, the server seals one deploy proposal per divergent serving target (the same contract as converge above). When it does not, the tool returns `outcome: "rejected"`, `code: "platform_release_version_mismatch"`, `declaredVersion`, `servingArtifactReference` and `isCoVersioned`, so the agent can explain that the server has not been re-provisioned with that release yet. A tenant-bound key still gets `platform_admin_required` before any version comparison.
+4. A separate authorized principal approves each proposal in the Console inbox or with the Admin CLI; the agent polls the returned `honua://proposals/{proposalId}`.
+5. `honua_propose_rollback` — if the observation window regresses, propose rolling the target back to its prior succeeded revision (again approved by a human).
+
+Version-to-digest resolution lives in the signed release lock published with each Honua release, not in the server. The provisioning executor writes the lock's resolved artifacts into `ControlPlane__PlatformRelease__Version`, `ControlPlane__PlatformRelease__ServingArtifactReference` and `ControlPlane__PlatformRelease__Workers__*`; to move to another release, re-provision with that release's lock and then propose convergence.
 
 ### Synthetic health-probe gate
 

@@ -160,6 +160,46 @@ public sealed class PlatformReleaseConvergeEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/platform-release/converge")]
+    public async Task Converge_TargetVersionDiffersFromDeclared_Returns409MismatchProblemWithoutActuation()
+    {
+        _ladder.Tier = GuardrailTier.DirectExecute;
+        SeedSucceededDeploy("srv-divergent", "ghcr.io/honua/server:2026.06.0");
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/platform-release/converge", new { targetVersion = "honua-2026.08-rc.1" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        root.GetProperty("code").GetString().Should().Be("platform_release_version_mismatch");
+        root.GetProperty("declaredVersion").GetString().Should().Be(DeclaredVersion);
+        root.GetProperty("targetVersion").GetString().Should().Be("honua-2026.08-rc.1");
+        root.GetProperty("servingArtifactReference").GetString().Should().Be(DeclaredServingArtifact);
+        // srv-pinned diverges from the release, so the preflight is not co-versioned.
+        root.GetProperty("isCoVersioned").GetBoolean().Should().BeFalse();
+        _workflowStore.CreatedDeployTargets.Should().BeEmpty("a mismatched targetVersion must never actuate");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/platform-release/converge")]
+    public async Task Converge_TargetVersionNamesDeclaredRelease_ConvergesAsToday()
+    {
+        _ladder.Tier = GuardrailTier.DirectExecute;
+        SeedSucceededDeploy("srv-divergent", "ghcr.io/honua/server:2026.06.0");
+
+        // honua- tag prefix, v prefix and a zero patch all normalize onto the declared "2026.07.0".
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/platform-release/converge", new { targetVersion = "honua-v2026.07" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("releaseVersion").GetString().Should().Be(DeclaredVersion);
+        _workflowStore.CreatedDeployTargets.Should().Contain("srv-divergent");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/platform-release/converge")]
     public async Task Converge_WhenNoReleaseDeclared_ReturnsBadRequest()
     {
         var noReleaseFixture = new WebAppFixture()

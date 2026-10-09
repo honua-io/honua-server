@@ -219,6 +219,15 @@ internal sealed class McpMetadataReleaseMutationArgument
 
 internal sealed class McpPlatformReleaseConvergenceArgument
 {
+    /// <summary>
+    /// Optional release the agent intends to converge to (for example <c>2026.1-rc.3</c>). When set
+    /// and it does not name the declared <c>ControlPlane:PlatformRelease:Version</c> (compared with
+    /// <c>PlatformReleaseVersion.Normalize</c>), the proposal is rejected with
+    /// <c>platform_release_version_mismatch</c> instead of sealing a convergence to a different release.
+    /// </summary>
+    [JsonPropertyName("targetVersion")]
+    public string? TargetVersion { get; set; }
+
     [JsonPropertyName("reason")]
     public string? Reason { get; set; }
 
@@ -265,6 +274,26 @@ internal sealed class McpProposeOperationOutput
 
     [JsonPropertyName("targets")]
     public McpConvergenceTargetOutput[]? Targets { get; set; }
+
+    /// <summary>Stable machine-readable rejection code (for example <c>platform_release_version_mismatch</c>).</summary>
+    [JsonPropertyName("code")]
+    public string? Code { get; set; }
+
+    /// <summary>Declared platform-release version, echoed on a platform-release version mismatch.</summary>
+    [JsonPropertyName("declaredVersion")]
+    public string? DeclaredVersion { get; set; }
+
+    /// <summary>The requested target version, echoed on a platform-release version mismatch.</summary>
+    [JsonPropertyName("targetVersion")]
+    public string? TargetVersion { get; set; }
+
+    /// <summary>Declared serving artifact reference, echoed on a platform-release version mismatch.</summary>
+    [JsonPropertyName("servingArtifactReference")]
+    public string? ServingArtifactReference { get; set; }
+
+    /// <summary>Deploy-preflight co-versioning summary, echoed on a platform-release version mismatch.</summary>
+    [JsonPropertyName("isCoVersioned")]
+    public bool? IsCoVersioned { get; set; }
 }
 
 internal sealed class McpConvergenceTargetOutput
