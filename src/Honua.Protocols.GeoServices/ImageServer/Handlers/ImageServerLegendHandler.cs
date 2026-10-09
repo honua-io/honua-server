@@ -8,6 +8,7 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Rendering;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -64,7 +65,8 @@ internal sealed class ImageServerLegendHandler
         HttpContext context,
         int layerId,
         CancellationToken cancellationToken,
-        string? renderingRule = null)
+        string? renderingRule = null,
+        bool asPng = false)
     {
         using var scope = HonuaTelemetryScope.StartFeature(
             "legend",
@@ -131,6 +133,14 @@ internal sealed class ImageServerLegendHandler
 
             ImageServerLog.LegendGenerated(_logger, layerId, swatches.Length);
             scope.SetSuccess(swatches.Length);
+
+            if (asPng)
+            {
+                var image = LegendImageComposer.ComposeSwatches(
+                    swatches.Select(entry => (entry.Label, Convert.FromBase64String(entry.ImageData))).ToArray(),
+                    ImageServerLegendSwatchBuilder.SwatchWidth, ImageServerLegendSwatchBuilder.SwatchHeight);
+                return Results.Bytes(image, "image/png");
+            }
 
             return Results.Json(response, ImageServerJsonContext.Default.LegendResponse);
         }

@@ -35,7 +35,7 @@ public class OgcMapsConformanceHandlerTests
         var result = await _handler.GetConformanceAsync();
 
         result.ConformsTo.Should().Contain(
-            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/core");
+            "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/core");
     }
 
     [UnitTest]
@@ -45,7 +45,7 @@ public class OgcMapsConformanceHandlerTests
         var result = await _handler.GetConformanceAsync();
 
         result.ConformsTo.Should().Contain(
-            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/collection-map");
+            "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/collection-map");
     }
 
     [UnitTest]
@@ -55,7 +55,7 @@ public class OgcMapsConformanceHandlerTests
         var result = await _handler.GetConformanceAsync();
 
         result.ConformsTo.Should().Contain(
-            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/styled-map");
+            "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/styled-map");
     }
 
     [UnitTest]
@@ -65,7 +65,7 @@ public class OgcMapsConformanceHandlerTests
         var result = await _handler.GetConformanceAsync();
 
         result.ConformsTo.Should().Contain(
-            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/dataset-map");
+            "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/dataset-map");
     }
 
     [UnitTest]
@@ -75,7 +75,7 @@ public class OgcMapsConformanceHandlerTests
         var result = await _handler.GetConformanceAsync();
 
         result.ConformsTo.Should().NotContain(
-            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/background");
+            "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/background");
     }
 
     [UnitTest]
@@ -85,7 +85,7 @@ public class OgcMapsConformanceHandlerTests
         var result = await _handler.GetConformanceAsync();
 
         result.ConformsTo.Should().Contain(
-            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/collections-selection");
+            "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/collections-selection");
     }
 
     [UnitTest]
@@ -95,7 +95,7 @@ public class OgcMapsConformanceHandlerTests
         var result = await _handler.GetConformanceAsync();
 
         result.ConformsTo.Should().Contain(
-            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/datetime");
+            "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/datetime");
     }
 
     [UnitTest]
@@ -105,11 +105,11 @@ public class OgcMapsConformanceHandlerTests
         var result = await _handler.GetConformanceAsync();
 
         result.ConformsTo.Should().Contain(
-            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/png");
+            "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/png");
         result.ConformsTo.Should().Contain(
-            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/jpeg");
+            "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/jpeg");
         result.ConformsTo.Should().Contain(
-            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/tiff");
+            "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/tiff");
     }
 
     [UnitTest]
@@ -119,12 +119,12 @@ public class OgcMapsConformanceHandlerTests
         var result = await _handler.GetConformanceAsync();
 
         result.ConformsTo.Should().Contain(
-            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/crs");
+            "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/crs");
         result.ConformsTo.Should().NotContain(
-            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/bbox");
+            "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/bbox");
         result.ConformsTo.Should().NotContain(
-            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/spatial-subsetting");
+            "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/spatial-subsetting");
         result.ConformsTo.Should().Contain(
-            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/scaling");
+            "http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/scaling");
     }
 }

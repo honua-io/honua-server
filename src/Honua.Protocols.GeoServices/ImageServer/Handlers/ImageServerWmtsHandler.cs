@@ -9,6 +9,7 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -17,6 +18,7 @@ using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Services;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
@@ -621,7 +623,14 @@ internal sealed class ImageServerWmtsHandler(
             }
         }
 
-        return BuildFeatureInfoResult(infoFormat, advertisedLayerIdentifier, worldX, worldY, locationSrid, pixel);
+        (double X, double Y)? geoJsonPoint = null;
+        if (pixel is not null && !string.Equals(infoFormat, XmlInfoFormat, StringComparison.Ordinal))
+        {
+            geoJsonPoint = await context.RequestServices.GetRequiredService<ICoordinateTransformService>()
+                .TransformPointAsync(worldX, worldY, locationSrid, 4326, cancellationToken).ConfigureAwait(false);
+        }
+
+        return BuildFeatureInfoResult(infoFormat, advertisedLayerIdentifier, worldX, worldY, locationSrid, pixel, geoJsonPoint);
     }
 
     private static bool TryParseTilePixel(string raw, string locator, int tilePixels, out int value, out IResult? error)
@@ -692,7 +701,8 @@ internal sealed class ImageServerWmtsHandler(
         double x,
         double y,
         int srid,
-        PixelValueResult? pixel)
+        PixelValueResult? pixel,
+        (double X, double Y)? geoJsonPoint)
     {
         var hasData = pixel is { HasData: true } p && p.BandValues.Count > 0;
         if (string.Equals(infoFormat, XmlInfoFormat, StringComparison.Ordinal))
@@ -700,15 +710,50 @@ internal sealed class ImageServerWmtsHandler(
             return Results.Content(BuildFeatureInfoXml(layerIdentifier, x, y, srid, pixel, hasData), "text/xml", Encoding.UTF8, StatusCodes.Status200OK);
         }
 
-        return Results.Content(BuildFeatureInfoJson(layerIdentifier, x, y, srid, pixel, hasData), JsonInfoFormat, Encoding.UTF8, StatusCodes.Status200OK);
+        return Results.Content(BuildFeatureInfoJson(layerIdentifier, x, y, srid, pixel, hasData, geoJsonPoint), JsonInfoFormat, Encoding.UTF8, StatusCodes.Status200OK);
     }
 
-    private static string BuildFeatureInfoJson(string layerIdentifier, double x, double y, int srid, PixelValueResult? pixel, bool hasData)
+    private static string BuildFeatureInfoJson(string layerIdentifier, double x, double y, int srid, PixelValueResult? pixel, bool hasData, (double X, double Y)? geoJsonPoint)
     {
         var buffer = new ArrayBufferWriter<byte>(256);
         using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
+            writer.WriteString("type", "FeatureCollection");
+            writer.WriteStartArray("features");
+            if (pixel is { } identified)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("type", "Feature");
+                // GeoJSON uses longitude/latitude, even when the tile grid is projected.
+                if (geoJsonPoint is { } point)
+                {
+                    var (longitude, latitude) = point;
+                    writer.WriteStartObject("geometry");
+                    writer.WriteString("type", "Point");
+                    writer.WriteStartArray("coordinates");
+                    writer.WriteNumberValue(longitude);
+                    writer.WriteNumberValue(latitude);
+                    writer.WriteEndArray();
+                    writer.WriteEndObject();
+                }
+                else
+                {
+                    writer.WriteNull("geometry");
+                }
+                writer.WriteStartObject("properties");
+                writer.WriteString("layer", layerIdentifier);
+                writer.WriteBoolean("hasData", hasData);
+                foreach (var band in identified.BandValues.OrderBy(static band => band.Key))
+                {
+                    WriteBandJsonValue(writer, identified.HasData ? band.Value : null,
+                        $"band{band.Key.ToString(CultureInfo.InvariantCulture)}");
+                }
+                writer.WriteEndObject();
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            // Preserve the original pixel receipt as GeoJSON foreign members.
             writer.WriteString("layer", layerIdentifier);
             writer.WriteStartObject("location");
             writer.WriteNumber("x", x);
@@ -737,33 +782,52 @@ internal sealed class ImageServerWmtsHandler(
         return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
-    private static void WriteBandJsonValue(Utf8JsonWriter writer, object? value)
+    private static void WriteBandJsonValue(Utf8JsonWriter writer, object? value, string propertyName = "value")
     {
         switch (value)
         {
             case null:
-                writer.WriteNull("value");
+                writer.WriteNull(propertyName);
+                break;
+            case double d when !double.IsFinite(d):
+            case float f when !float.IsFinite(f):
+                writer.WriteNull(propertyName);
                 break;
             case double d:
-                writer.WriteNumber("value", d);
+                writer.WriteNumber(propertyName, d);
                 break;
             case float f:
-                writer.WriteNumber("value", f);
+                writer.WriteNumber(propertyName, f);
                 break;
             case int n:
-                writer.WriteNumber("value", n);
+                writer.WriteNumber(propertyName, n);
                 break;
             case long l:
-                writer.WriteNumber("value", l);
+                writer.WriteNumber(propertyName, l);
+                break;
+            case decimal n:
+                writer.WriteNumber(propertyName, n);
+                break;
+            case ulong n:
+                writer.WriteNumber(propertyName, n);
+                break;
+            case uint n:
+                writer.WriteNumber(propertyName, n);
+                break;
+            case ushort n:
+                writer.WriteNumber(propertyName, n);
+                break;
+            case sbyte n:
+                writer.WriteNumber(propertyName, n);
                 break;
             case short s:
-                writer.WriteNumber("value", s);
+                writer.WriteNumber(propertyName, s);
                 break;
             case byte b:
-                writer.WriteNumber("value", b);
+                writer.WriteNumber(propertyName, b);
                 break;
             default:
-                writer.WriteString("value", Convert.ToString(value, CultureInfo.InvariantCulture));
+                writer.WriteString(propertyName, Convert.ToString(value, CultureInfo.InvariantCulture));
                 break;
         }
     }
@@ -858,6 +922,10 @@ internal sealed class ImageServerWmtsHandler(
         sb.Append("      <ows:Identifier>").Append(escapedLayer).AppendLine("</ows:Identifier>");
         sb.AppendLine("""      <Style isDefault="true">""");
         sb.AppendLine("        <ows:Identifier>default</ows:Identifier>");
+        var legendUrl = BaseUrlResolver.PreserveToken(context.Request,
+            $"{wmtsBaseUrl[..^5]}/legend?f=png");
+        sb.Append("        <LegendURL format=\"image/png\" xlink:href=\"")
+            .Append(EscapeXml(legendUrl)).AppendLine("\" />");
         sb.AppendLine("      </Style>");
         sb.AppendLine("      <Format>image/png</Format>");
         sb.AppendLine("      <Format>image/jpeg</Format>");

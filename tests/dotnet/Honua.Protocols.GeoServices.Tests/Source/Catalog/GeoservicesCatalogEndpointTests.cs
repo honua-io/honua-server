@@ -434,6 +434,41 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptionsEx")]
+    [Endpoint("POST /services")]
+    public async Task PostSoapCatalog_UtilitiesWithFailedRasterStore_ReturnsOnlyPrintingToolsWithoutProbing()
+    {
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<RasterInfo?>(new InvalidOperationException("raster store unavailable")));
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+        await fixture.InitializeAsync();
+        try
+        {
+            rasterStore.ClearReceivedCalls();
+            using var response = await PostSoapOperationAsync(fixture.Client, "/services",
+                """
+                <GetServiceDescriptionsEx xmlns="http://www.esri.com/schemas/ArcGIS/10.8">
+                  <FolderName>Utilities</FolderName>
+                </GetServiceDescriptionsEx>
+                """);
+
+            response.Be200Ok();
+            var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+            var description = payload.Descendants().Single(element => element.Name.LocalName == "ServiceDescription");
+            description.Elements().Single(element => element.Name.LocalName == "Name").Value
+                .Should().Be("Utilities/PrintingTools");
+            description.Elements().Single(element => element.Name.LocalName == "Type").Value.Should().Be("GPServer");
+            await rasterStore.DidNotReceive().GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptions")]
     [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptionsEx")]
     [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetFolders")]

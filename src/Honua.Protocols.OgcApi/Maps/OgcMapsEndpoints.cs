@@ -72,6 +72,13 @@ public static partial class OgcMapsEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .CacheOutput("OgcMapsOpenApi");
 
+        group.MapGet("/collections", GetCollections)
+            .WithDisplayName("Get Maps Collections")
+            .WithName("GetMapsCollections")
+            .WithSummary("List accessible collections that serve maps")
+            .Produces<Collections>(StatusCodes.Status200OK, MediaTypes.Json)
+            .Produces<string>(StatusCodes.Status200OK, MediaTypes.Html);
+
         // Collection description - map clients read it before requesting the map
         group.MapGet("/collections/{collectionId}", GetCollection)
             .WithDisplayName("Get Maps Collection")
@@ -176,6 +183,17 @@ public static partial class OgcMapsEndpoints
             rel: RelationTypes.Map,
             type: "image/png",
             title: "Dataset map"));
+
+        links.Add(Link.Create(
+            href: BaseUrlResolver.PreserveToken(context.Request, $"{basePath}/map"),
+            rel: RegisteredMapRelation,
+            type: MediaTypes.Png,
+            title: "Dataset map"));
+        links.Add(Link.Create(
+            href: BaseUrlResolver.PreserveToken(context.Request, $"{basePath}/collections"),
+            rel: RelationTypes.Data,
+            type: MediaTypes.Json,
+            title: "Map collections"));
 
         var landingPage = new LandingPage
         {
@@ -492,11 +510,20 @@ public static partial class OgcMapsEndpoints
         int? LayerId,
         IResult? Error);
 
-    private static async Task<MapsCollectionResolution> ResolveCollectionAsync(
+    private static Task<MapsCollectionResolution> ResolveCollectionAsync(
         HttpContext context,
         string value,
         CancellationToken cancellationToken)
+        => ResolveCollectionAsync(context, value, null, cancellationToken);
+
+    private static async Task<MapsCollectionResolution> ResolveCollectionAsync(
+        HttpContext context,
+        string value,
+        MetadataV2GraphSnapshot? snapshot,
+        CancellationToken cancellationToken)
     {
+        snapshot ??= await context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>()
+            .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         // Resolve the publication (not just the resource) so map rendering can fall back to
         // the publication-scoped storage binding. The previous implementation resolved only
         // the resource and called ResolveStorageLayerId(resource), which returns null whenever
@@ -510,7 +537,7 @@ public static partial class OgcMapsEndpoints
             context,
             value,
             requiredProtocol: ServiceProtocols.OgcApiMaps,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+            cancellationToken: cancellationToken, snapshot: snapshot, preferExactPublicationId: true).ConfigureAwait(false);
         // A protected collection answers with the access-policy refusal (401/403), as the
         // Features and Tiles collection routes do, so an anonymous client learns it must
         // authenticate instead of concluding the collection does not exist (#4991).
@@ -528,8 +555,6 @@ public static partial class OgcMapsEndpoints
                 StandardErrorHelpers.CreateNotFound(context, $"Collection '{value}' not found."));
         }
 
-        var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
-        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var layerId = snapshot.ResolveStorageLayerId(validation.Publication, validation.Resource);
         return layerId.HasValue
             ? new MapsCollectionResolution(validation.Publication, validation.Resource, layerId, null)

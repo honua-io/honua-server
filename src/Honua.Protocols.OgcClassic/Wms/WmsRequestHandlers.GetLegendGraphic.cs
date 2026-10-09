@@ -31,7 +31,7 @@ internal static partial class WmsRequestHandlers
     /// map never renders.
     /// </summary>
     private static bool IsLegendRenderableStyleLayer(MapLibreStyleLayer styleLayer)
-        => styleLayer.Type is "fill" or "line" or "circle";
+        => LegendImageComposer.IsRenderableStyleLayer(styleLayer);
 
     /// <summary>
     /// Whether a layer's resolved style plan can produce a legend that matches GetMap.
@@ -40,8 +40,7 @@ internal static partial class WmsRequestHandlers
     /// is unpainted (symbol/background only) does not.
     /// </summary>
     private static bool SupportsLegend(RasterStylePlan stylePlan)
-        => stylePlan.StyleLayers.Length == 0 ||
-           stylePlan.StyleLayers.Any(IsLegendRenderableStyleLayer);
+        => LegendImageComposer.SupportsStylePlan(stylePlan);
 
     private static async Task<IResult> HandleWmsGetLegendGraphic(
         HttpContext context,
