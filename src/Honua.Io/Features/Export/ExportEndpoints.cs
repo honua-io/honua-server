@@ -1,23 +1,26 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
-using System.Collections.Immutable;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
-using Honua.Io.Export.Writers;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Security;
+using Honua.Io.Export.Writers;
 using Honua.Plugins.Abstractions;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Io.Export;
 
@@ -202,8 +205,12 @@ internal static class ExportEndpoints
             }
 
             var jobId = Guid.NewGuid().ToString("N");
+            var submitter = JobSecurityContextCapture.Capture(
+                httpContext.User,
+                httpContext.RequestServices.GetRequiredService<IOptions<RbacOptions>>().Value,
+                httpContext.RequestServices.GetService<ITenantContext>());
             var job = new ExportJob(jobId, serviceName, layerId, layerName, format,
-                query, selectedFields, outputSrid, count, geometryType);
+                query, selectedFields, outputSrid, count, geometryType, submitter);
 
             try
             {
@@ -585,4 +592,5 @@ internal sealed record ExportJob(
     ExportField[] Fields,
     int OutputSrid,
     long TotalFeatures,
-    ExportGeometryType GeometryType);
+    ExportGeometryType GeometryType,
+    JobSecurityContext? Submitter = null);

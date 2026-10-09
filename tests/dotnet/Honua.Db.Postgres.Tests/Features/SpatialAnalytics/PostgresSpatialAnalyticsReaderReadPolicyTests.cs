@@ -10,6 +10,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Core.Queries.Filters;
+using Honua.Db.Postgres.Features.FeatureStore;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.SpatialAnalytics;
 using Honua.TestKit.Attributes;
@@ -29,6 +30,20 @@ public sealed class PostgresSpatialAnalyticsReaderReadPolicyTests
 {
     internal const int TargetLayerId = 7;
     internal const int JoinLayerId = 9;
+
+    [UnitTheory]
+    [InlineData("secret")]
+    [InlineData("SeCrEt")]
+    public async Task ManagedFeatureStore_TemporalExtentOfMaskedField_IsAbsentWithoutDatabaseRead(string field)
+    {
+        var harness = new Harness().WithMaskedFields(TargetLayerId, "SECRET");
+
+        var extent = await harness.FeatureStore.GetTemporalExtentAsync(
+            TargetLayerId, field, TemporalPropertyType.DateTime);
+
+        extent.Should().BeNull();
+        harness.TemporalReadCount.Should().Be(0);
+    }
 
     [UnitTest]
     public async Task QueryClustersAsync_WithRowPolicy_FiltersSourceRows()
@@ -301,6 +316,12 @@ public sealed class PostgresSpatialAnalyticsReaderReadPolicyTests
                 "\"analytics-read-policy\"",
                 DateTimeOffset.UnixEpoch);
 
+            FeatureStore = new PostgresFeatureStoreRefactored(
+                CreateQueryBuilder(schemaName), _dataAccess, cacheManager,
+                connectionProvider: null, dictionaryPool: null, connectionEncryptionService: null,
+                v2Provider: new FixedMetadataV2GraphProvider(snapshot),
+                rlsFilterSource: _rowPolicies, fieldMaskSource: _fieldMasks);
+
             Reader = new PostgresSpatialAnalyticsReader(
                 CreateQueryBuilder(schemaName),
                 _dataAccess,
@@ -312,6 +333,10 @@ public sealed class PostgresSpatialAnalyticsReaderReadPolicyTests
         }
 
         public PostgresSpatialAnalyticsReader Reader { get; }
+
+        public PostgresFeatureStoreRefactored FeatureStore { get; }
+
+        public int TemporalReadCount => _dataAccess.TemporalReadCount;
 
         public string Sql => _dataAccess.Executed?.Sql ?? throw new InvalidOperationException("No query was executed.");
 
@@ -356,6 +381,8 @@ public sealed class PostgresSpatialAnalyticsReaderReadPolicyTests
         public FeatureQuery? ExecutedQuery { get; private set; }
 
         public int StatisticsCallCount { get; private set; }
+
+        public int TemporalReadCount { get; private set; }
 
         public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsQueryAsync(
             ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
@@ -423,7 +450,10 @@ public sealed class PostgresSpatialAnalyticsReaderReadPolicyTests
             => Task.FromResult<FeatureExtent?>(null);
 
         public Task<TemporalExtentResult?> GetTemporalExtentAsync(int layerId, ParameterizedQuery? query, CancellationToken cancellationToken)
-            => Task.FromResult<TemporalExtentResult?>(null);
+        {
+            TemporalReadCount++;
+            return Task.FromResult<TemporalExtentResult?>(TemporalExtentResult.Create(DateTimeOffset.UnixEpoch, DateTimeOffset.UtcNow));
+        }
 
         public Task<byte[]?> GetMvtTileAsync(int layerId, ParameterizedQuery query, long maxTileSize, CancellationToken cancellationToken)
             => Task.FromResult<byte[]?>(null);

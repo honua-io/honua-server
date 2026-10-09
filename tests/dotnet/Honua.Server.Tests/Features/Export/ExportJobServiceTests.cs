@@ -7,20 +7,22 @@ using System.Reflection;
 using System.Text.Json;
 using System.Threading.Channels;
 using FluentAssertions;
-using Honua.Core.Features.Licensing.Abstractions;
-using Honua.Server.Startup;
-using Microsoft.Extensions.Configuration;
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Io.Export;
 using Honua.Infrastructure.Progress;
+using Honua.Io.Export;
+using Honua.Server.Startup;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -208,16 +210,58 @@ public sealed class ExportJobServiceTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public void ExportJob_DurableRoundTrip_PreservesSubmitterIdentity()
+    {
+        var submitter = new JobSecurityContext("subject-a", "tenant-a",
+            [new JobSecurityClaim("custom-role", "reader"), new JobSecurityClaim("region", "west")], "custom-role");
+        var request = new ExportJobService.PersistedExportJobRequest
+        {
+            Job = CreateJob("secured-export") with { Submitter = submitter }
+        };
+
+        var serialized = JsonSerializer.Serialize(request, ExportJsonContext.Default.PersistedExportJobRequest);
+        var restored = JsonSerializer.Deserialize(serialized, ExportJsonContext.Default.PersistedExportJobRequest);
+
+        restored!.Job.Submitter.Should().BeEquivalentTo(submitter);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ProcessQueuedJobAsync_LegacyRequestWithoutIdentity_FailsBeforeReadingFeatures()
+    {
+        var progressStore = new InMemoryUniversalProgressStore();
+        var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var streamingStore = Substitute.For<IStreamingFeatureStore>();
+        using var services = new ServiceCollection()
+            .AddSingleton(streamingStore)
+            .AddSingleton<ICrsRegistry>(new NullCrsRegistry())
+            .AddSingleton(Substitute.For<ICloudFileStorage>())
+            .BuildServiceProvider();
+        var sut = new ExportJobService(progressStore, requestCache, Channel.CreateUnbounded<string>(),
+            services.GetRequiredService<IServiceScopeFactory>(), NullLogger<ExportJobService>.Instance);
+        var job = CreateJob("legacy-export") with { Submitter = null };
+        await sut.StartAsync(job);
+
+        await sut.ProcessQueuedJobAsync(job.JobId);
+
+        (await progressStore.GetProgressAsync<ExportProgress>(job.JobId))!.Status.Should().Be(OperationStatus.Failed);
+        streamingStore.DidNotReceive().StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        JobSecurityScope.Current.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ProcessQueuedJobAsync_WhenJobCompletes_RemovesPersistedRequestAndCompletesProgress()
     {
         var progressStore = new InMemoryUniversalProgressStore();
         var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
         var channel = Channel.CreateUnbounded<string>();
 
+        JobSecurityContext? observedSubmitter = null;
         var streamingStore = Substitute.For<IStreamingFeatureStore>();
         streamingStore
             .StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(CreateFeatures());
+            .Returns(_ => ObserveSecurityContext());
 
         var crsRegistry = new NullCrsRegistry();
 
@@ -252,7 +296,11 @@ public sealed class ExportJobServiceTests
         var job = CreateJob("complete-export");
         await sut.StartAsync(job);
 
-        await sut.ProcessQueuedJobAsync(job.JobId);
+        // A fresh worker must restore security from the durable request, without the
+        // submitting service's in-memory request or an ambient HTTP principal.
+        var recoveredWorker = new ExportJobService(progressStore, requestCache, Channel.CreateUnbounded<string>(),
+            services.GetRequiredService<IServiceScopeFactory>(), NullLogger<ExportJobService>.Instance);
+        await recoveredWorker.ProcessQueuedJobAsync(job.JobId);
 
         var persistedRequest = await requestCache.GetStringAsync("export:request:complete-export");
         persistedRequest.Should().BeNull();
@@ -261,6 +309,18 @@ public sealed class ExportJobServiceTests
         progress.Should().NotBeNull();
         progress!.Status.Should().Be(OperationStatus.Completed);
         progress.DownloadUrl.Should().Be("https://example.test/export.csv");
+        observedSubmitter.Should().BeEquivalentTo(job.Submitter);
+        JobSecurityScope.Current.Should().BeNull();
+
+        async IAsyncEnumerable<Feature> ObserveSecurityContext()
+        {
+            await Task.Yield();
+            observedSubmitter = JobSecurityScope.Current?.Submitter;
+            await foreach (var feature in CreateFeatures())
+            {
+                yield return feature;
+            }
+        }
     }
 
     [UnitTest]
@@ -948,7 +1008,8 @@ public sealed class ExportJobServiceTests
             [],
             4326,
             1,
-            ExportGeometryType.None);
+            ExportGeometryType.None,
+            new JobSecurityContext("subject-a", "tenant-a", [new JobSecurityClaim("role", "reader")]));
 
     private sealed class InMemoryUniversalProgressStore : IUniversalProgressStore
     {

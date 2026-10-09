@@ -3,16 +3,17 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using Honua.Core.Features.Licensing.Abstractions;
 using System.Text.Json;
 using System.Threading.Channels;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Io.Export.Writers;
+using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Progress;
+using Honua.Io.Export.Writers;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;
@@ -258,6 +259,7 @@ internal sealed class ExportJobService(
             activity?.SetTag("export.layer_id", job.LayerId);
             activity?.SetTag("export.total_features", job.TotalFeatures);
 
+            using var securityScope = JobSecurityScope.Begin(job.Submitter);
             await using var scope = _scopeFactory.CreateAsyncScope();
             var cloudStorage = scope.ServiceProvider.GetRequiredService<ICloudFileStorage>();
             string? uploadedFileId = null;
@@ -270,6 +272,11 @@ internal sealed class ExportJobService(
                     userCancellation.Cancel();
                 }
                 processingToken.ThrowIfCancellationRequested();
+                if (job.Submitter is null)
+                {
+                    throw new InvalidOperationException("Export request has no captured submitter identity.");
+                }
+
                 var streamingStore = scope.ServiceProvider.GetRequiredService<IStreamingFeatureStore>();
                 var crsRegistry = scope.ServiceProvider.GetRequiredService<ICrsRegistry>();
 

@@ -1,17 +1,19 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.DependencyInjection;
@@ -989,6 +991,10 @@ public class ImageServerIdentifyHandlerTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(NullLoggerFactory.Instance);
+        var masks = Substitute.For<IFieldMaskSource>();
+        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray<string>.Empty);
+        services.AddSingleton(masks);
 
         var context = new DefaultHttpContext();
         context.RequestServices = services.BuildServiceProvider();
