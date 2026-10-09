@@ -14,6 +14,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 using Honua.Core.Features.Forms.Packages;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
@@ -216,10 +217,20 @@ internal sealed class FormSubmissionService
             var optimized = _editProcessor.OptimizeEdit(editRequest, targetMetadata.Resource);
             var batch = _editProcessor.ToFeatureEditBatch(optimized, targetMetadata.Resource);
             // From this point onward the writer may have committed even when it throws (for
-            // example, when the commit acknowledgement is lost). Never release the idempotency
-            // claim after crossing this boundary.
+            // example, when the commit acknowledgement is lost). Retain the idempotency
+            // claim unless the provider explicitly guarantees that no write occurred.
             editMayHaveCommitted = true;
-            var editResult = await _featureWriter.ApplyEditsAsync(storageLayerId, batch, postClaimToken).ConfigureAwait(false);
+            FeatureEditResult editResult;
+            try
+            {
+                editResult = await _featureWriter.ApplyEditsAsync(storageLayerId, batch, postClaimToken).ConfigureAwait(false);
+            }
+            catch (ReadOnlyFeatureWriteException)
+            {
+                // This provider contract guarantees that no mutation was dispatched.
+                editMayHaveCommitted = false;
+                throw;
+            }
             committedEditResult = editResult;
             var targetFeatureId = ResolveTargetFeatureId(request, editResult);
             committedTargetFeatureId = targetFeatureId;
@@ -951,19 +962,26 @@ internal sealed class FormSubmissionService
             TargetFeatureId = targetFeatureId ?? request.TargetFeatureId,
             EditOutcome = new FormEditOutcome
             {
-                Succeeded = false,
+                Succeeded = editResult?.IsSuccess ?? false,
                 Created = editResult?.CreatedCount ?? 0,
                 Updated = editResult?.UpdatedCount ?? 0,
                 Deleted = editResult?.DeletedCount ?? 0,
-                Error = editMayHaveCommitted
-                    ? "The feature edit outcome may have committed; the submission will not be re-executed."
-                    : "Submission could not be applied."
+                Error = editResult is not null
+                    ? editResult.HasErrors ? "One or more feature edits failed." : null
+                    : editMayHaveCommitted
+                        ? "The feature edit may have committed; its outcome could not be confirmed."
+                        : "Submission could not be applied."
             },
             Retry = new FormSubmissionRetryGuidance
             {
                 Retryable = !editMayHaveCommitted,
                 Reason = editMayHaveCommitted
-                    ? "The feature edit may have committed. Reuse this idempotency key to retrieve the terminal result; do not create a new submission."
+                    ? (editResult is not null
+                        ? "The feature edit completed, but the submission could not finish. "
+                        : "The feature edit may have committed. ") +
+                      (string.IsNullOrWhiteSpace(request.IdempotencyKey)
+                        ? "No idempotency key was supplied, so replay protection is unavailable. Reconcile the target feature before submitting again."
+                        : "Reuse this idempotency key to retrieve the terminal result; do not create a new submission.")
                     : retryReason
             }
         };

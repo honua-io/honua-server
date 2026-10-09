@@ -112,7 +112,7 @@ public sealed class GrpcFeatureServiceTests
 
     [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
-    public async Task SRV_GRPC_001_QueryFeatures_SourceBackedPublication_UsesRoutedReader()
+    public async Task SRV_GRPC_001_SourceBackedPublication_UsesValidatedSnapshotAndAuthorizesBeforeStorageCheck()
     {
         var routedReader = Substitute.For<IFeatureReader>();
         routedReader.QueryAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
@@ -154,7 +154,8 @@ public sealed class GrpcFeatureServiceTests
             DateTimeOffset.UtcNow);
         var graphProvider = Substitute.For<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>();
 #pragma warning disable CA2012 // NSubstitute setup for a ValueTask-returning member.
-        graphProvider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(new ValueTask<MetadataV2GraphSnapshot>(snapshot));
+        graphProvider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+            throw new InvalidOperationException("Metadata changed after validation; use the validated snapshot."));
 #pragma warning restore CA2012
         var router = new FeatureProviderQueryRouter(
             Substitute.For<ISecureConnectionRegistry>(),
@@ -163,7 +164,8 @@ public sealed class GrpcFeatureServiceTests
         validator.ValidateServiceLayerV2Async("source", 0, Arg.Any<CancellationToken>())
             .Returns(ResourceValidationResult.Success(new MetadataV2ServiceLayerTriple(service, publication, resource)
             {
-                StorageLayerId = 7
+                StorageLayerId = 7,
+                Snapshot = snapshot
             }));
         var sut = new HonuaFeatureService(
             validator, _featureReader, _featureWriter, _streamingStore,
@@ -188,9 +190,22 @@ public sealed class GrpcFeatureServiceTests
         await routedReader.Received(1).QueryAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
         await _featureReader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
 
-        var edit = async () => await sut.ApplyEdits(
-            new Proto.ApplyEditsRequest { ServiceId = "source", LayerId = 0 },
-            CreateCallContext(user: null, tenantId: null, resolverGrants: null, AddRouting));
+        var editRequest = new Proto.ApplyEditsRequest { ServiceId = "source", LayerId = 0 };
+        editRequest.Adds.Add(new Proto.Feature());
+        foreach (var (user, status) in new[]
+        {
+            (CreateAnonymousUser(), StatusCode.Unauthenticated),
+            (CreateAuthenticatedUser("viewer"), StatusCode.PermissionDenied)
+        })
+        {
+            var denied = async () => await sut.ApplyEdits(editRequest,
+                CreateCallContext(user, tenantId: null, resolverGrants: null, AddRouting));
+            var deniedException = await denied.Should().ThrowAsync<RpcException>();
+            deniedException.Which.StatusCode.Should().Be(status);
+        }
+
+        var edit = async () => await sut.ApplyEdits(editRequest,
+            CreateCallContext(CreateAuthenticatedUser("data-editor"), tenantId: null, resolverGrants: null, AddRouting));
         var exception = await edit.Should().ThrowAsync<RpcException>();
         exception.Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
         _featureWriter.ReceivedCalls()
