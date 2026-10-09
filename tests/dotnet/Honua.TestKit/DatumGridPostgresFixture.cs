@@ -26,7 +26,7 @@ public sealed class DatumGridPostgresFixture : IAsyncDisposable
         // Pin both the PROJ operation database and its available grids. In particular,
         // CI's shared PostGIS database may carry a legacy conus grid that changes
         // the default operation; neither profile may inherit it or download grids.
-        const string image = "postgis/postgis:18-3.6@sha256:60f6ad1d21ea86a67d47780b9a0d1e1d200500f62b19293fa834d0dea80b8677";
+        const string image = "mirror.gcr.io/postgis/postgis:18-3.6@sha256:60f6ad1d21ea86a67d47780b9a0d1e1d200500f62b19293fa834d0dea80b8677";
         var builder = new PostgreSqlBuilder().WithImage(image)
             .WithDatabase("datum_fixture").WithUsername("test").WithPassword("test")
             .WithEnvironment("PROJ_DATA", "/opt/honua-datum-proj")
