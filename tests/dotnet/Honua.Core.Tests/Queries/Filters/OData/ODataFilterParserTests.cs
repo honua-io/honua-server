@@ -579,6 +579,30 @@ public class ODataFilterParserTests
 
     #endregion
 
+    [Theory]
+    [InlineData("field ge null")]
+    [InlineData("null ge field")]
+    [InlineData("field le null")]
+    [InlineData("null le field")]
+    public void Parse_InclusiveComparisonWithNull_PreservesBothNullEquality(string filter)
+    {
+        var parsed = _parser.Parse(filter).Should().BeOfType<UnaryExpression>().Which;
+        parsed.Operator.Should().Be(UnaryOperator.IsNull);
+        parsed.Operand.Should().BeOfType<PropertyReference>().Which.PropertyName.Should().Be("field");
+    }
+
+    [Theory]
+    [InlineData("field gt null")]
+    [InlineData("null gt field")]
+    [InlineData("field lt null")]
+    [InlineData("null lt field")]
+    public void Parse_StrictComparisonWithNull_IsFalse(string filter)
+    {
+        var parsed = _parser.Parse(filter).Should().BeOfType<Literal>().Which;
+        parsed.Type.Should().Be(LiteralType.Boolean);
+        parsed.Value.Should().Be(false);
+    }
+
     #region Geo Functions
 
     [Fact]

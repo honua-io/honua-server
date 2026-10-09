@@ -794,8 +794,10 @@ public sealed class ODataFilterParser
                     : new UnaryExpression(UnaryOperator.IsNotNull, operand);
             }
 
-            // OData v4.01 §5.1.1.1.3–5.1.1.1.6: if any operand of a relational
-            // operator (gt/ge/lt/le) is null, the operator returns false.
+            // OData §5.1.1.1.4/.6: inclusive comparisons are true when both
+            // operands are null. Strict comparisons are false for any null.
+            if (op is BinaryOperator.GreaterThanOrEqual or BinaryOperator.LessThanOrEqual)
+                return new UnaryExpression(UnaryOperator.IsNull, left is Literal { Type: LiteralType.Null } ? right : left);
             return new Literal(false, LiteralType.Boolean);
         }
 

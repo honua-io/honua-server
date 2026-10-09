@@ -237,9 +237,10 @@ internal sealed partial class PostgresObservationStore
                 var leftJson = JsonOperand(left);
                 var rightJson = JsonOperand(right);
                 var op = binary.Operator switch { BinaryOperator.Equal => "IS NOT DISTINCT FROM", BinaryOperator.NotEqual => "IS DISTINCT FROM", BinaryOperator.LessThan => "<", BinaryOperator.LessThanOrEqual => "<=", BinaryOperator.GreaterThan => ">", _ => ">=" };
-                return binary.Operator is BinaryOperator.Equal or BinaryOperator.NotEqual
+                var comparison = binary.Operator is BinaryOperator.Equal or BinaryOperator.NotEqual
                     ? $"({leftJson} {op} {rightJson})"
                     : $"(jsonb_typeof({leftJson})=jsonb_typeof({rightJson}) AND {leftJson} {op} {rightJson})";
+                return ComparisonNullSemantics(binary, context, comparison);
             }
             var property = binary.Left as PropertyReference ?? binary.Right as PropertyReference;
             var literal = binary.Right as Literal ?? binary.Left as Literal;
@@ -260,10 +261,24 @@ internal sealed partial class PostgresObservationStore
                     var result = JsonScalar(json, literal.Type);
                     var bound = TranslateExpression(literal, context);
                     var op = binary.Operator switch { BinaryOperator.Equal => "=", BinaryOperator.NotEqual => "<>", BinaryOperator.LessThan => "<", BinaryOperator.LessThanOrEqual => "<=", BinaryOperator.GreaterThan => ">", BinaryOperator.GreaterThanOrEqual => ">=", _ => throw new SensorThingsValidationException("Invalid result comparison.") };
-                    return binary.Left is PropertyReference ? $"({result} {op} {bound})" : $"({bound} {op} {result})";
+                    var comparison = binary.Left is PropertyReference ? $"({result} {op} {bound})" : $"({bound} {op} {result})";
+                    return ComparisonNullSemantics(binary, context, comparison);
                 }
             }
-            return base.TranslateBinary(binary, context);
+            return ComparisonNullSemantics(binary, context, base.TranslateBinary(binary, context));
+        }
+
+        private string ComparisonNullSemantics(BinaryExpression binary, FilterTranslationContext context, string comparison)
+        {
+            if (binary.Operator is not (BinaryOperator.Equal or BinaryOperator.NotEqual or BinaryOperator.LessThan or BinaryOperator.LessThanOrEqual or BinaryOperator.GreaterThan or BinaryOperator.GreaterThanOrEqual))
+                return comparison;
+            var nonNullComparison = $"COALESCE({comparison},FALSE)";
+            if (binary.Operator is BinaryOperator.Equal or BinaryOperator.NotEqual or BinaryOperator.LessThan or BinaryOperator.GreaterThan
+                || binary.Left is Literal { Type: not LiteralType.Null } || binary.Right is Literal { Type: not LiteralType.Null })
+                return nonNullComparison;
+            string Operand(FilterExpression expression) => expression is PropertyReference property
+                ? ResolveReference(property, context, true) : TranslateExpression(expression, context);
+            return $"({nonNullComparison} OR ({Operand(binary.Left)} IS NULL AND {Operand(binary.Right)} IS NULL))";
         }
 
         protected override string TranslateFunction(FunctionCall function, FilterTranslationContext context)

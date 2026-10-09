@@ -799,4 +799,36 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
             page["value"]!.AsArray().Should().ContainSingle(filter);
         }
     }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    public async Task NullableComparisons_FollowODataTruthTablesIncludingNegationAndNativeProperties()
+    {
+        var stream = await CreateAsync("Datastreams", Datastream(1));
+        var feature = await SensorThingsTestData.CreateFeatureAsync(_fixture);
+        var observation = await CreateAsync("Observations", new JsonObject { ["result"] = 1, ["phenomenonTime"] = "2026-01-01T00:00:00Z", ["parameters"] = JsonNode.Parse("""{"a":null,"b":null,"number":1}"""), ["Datastream"] = Reference(Id(stream)), ["FeatureOfInterest"] = Reference(feature) });
+        (string Filter, bool Matches)[] cases =
+        [
+            ("parameters/a ge parameters/b", true), ("parameters/a le parameters/missing", true),
+            ("parameters/a gt parameters/b", false), ("parameters/a lt parameters/missing", false),
+            ("parameters/missing ge parameters/otherMissing", true), ("parameters/a ge parameters/number", false),
+            ("parameters/number le parameters/a", false), ("not (parameters/a gt parameters/b)", true),
+            ("not (parameters/a ge parameters/b)", false), ("not (parameters/a ge parameters/number)", true),
+            ("parameters/a ge null", true), ("null le parameters/missing", true), ("null ge null", true),
+            ("parameters/number ge null", false), ("parameters/a gt null", false), ("not (parameters/a gt null)", true),
+            ("resultTime ge resultTime", true), ("resultTime le parameters/a", true), ("parameters/a ge resultTime", true),
+            ("resultTime gt resultTime", false), ("not (resultTime lt resultTime)", true),
+            ("resultTime ge phenomenonTime", false), ("not (resultTime ge phenomenonTime)", true),
+            ("resultTime ge null", true), ("null le resultTime", true), ("phenomenonTime le null", false),
+            ("not (resultTime gt phenomenonTime)", true), ("resultTime eq resultTime", true),
+            ("resultTime ne resultTime", false), ("not (resultTime ne resultTime)", true),
+            ("resultTime eq phenomenonTime", false), ("not (resultTime eq phenomenonTime)", true),
+            ("parameters/a eq 'text'", false), ("not (parameters/a eq 'text')", true)
+        ];
+        foreach (var (filter, matches) in cases)
+        {
+            var page = await ReadAsync("Observations?$filter=" + Uri.EscapeDataString($"id eq {Id(observation)} and ({filter})"));
+            page["value"]!.AsArray().Count.Should().Be(matches ? 1 : 0, filter);
+        }
+    }
 }
