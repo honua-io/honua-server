@@ -30,7 +30,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 378,
-      "provingTestCount": 1330,
+      "provingTestCount": 1336,
       "maturity": {
         "implemented": 375,
         "preview": 2,
@@ -842,7 +842,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 7,
-      "provingTestCount": 150,
+      "provingTestCount": 151,
       "maturity": {
         "implemented": 7
       },
@@ -1355,10 +1355,10 @@
       "category": "Printing",
       "edition": "Pro",
       "status": null,
-      "entryCount": 8,
-      "provingTestCount": 22,
+      "entryCount": 13,
+      "provingTestCount": 28,
       "maturity": {
-        "implemented": 8
+        "implemented": 13
       },
       "noSurface": null,
       "cite": [],
@@ -1373,10 +1373,10 @@
       "category": "Process",
       "edition": "Community",
       "status": null,
-      "entryCount": 15,
-      "provingTestCount": 165,
+      "entryCount": 16,
+      "provingTestCount": 169,
       "maturity": {
-        "implemented": 15
+        "implemented": 16
       },
       "noSurface": null,
       "cite": [],
@@ -1819,7 +1819,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 143,
-      "provingTestCount": 442,
+      "provingTestCount": 447,
       "maturity": {
         "preview": 143
       },
@@ -1912,7 +1912,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 15,
-      "provingTestCount": 95,
+      "provingTestCount": 96,
       "maturity": {
         "implemented": 15
       },
@@ -2095,7 +2095,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 19,
-      "provingTestCount": 315,
+      "provingTestCount": 325,
       "maturity": {
         "implemented": 19
       },
@@ -2345,7 +2345,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 131,
+      "provingTestCount": 134,
       "maturity": {
         "implemented": 2
       },
