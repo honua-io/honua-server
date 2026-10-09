@@ -38,7 +38,7 @@ internal sealed class OgcCoveragesHandler
     private const string CoveragesProtocol = "OGC-API-Coverages";
 
     private static readonly ImmutableHashSet<string> MetadataQueryParameters =
-        ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f");
+        ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f", "token");
 
     private static readonly ImmutableHashSet<string> OpenApiQueryParameters =
         ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f");
@@ -783,6 +783,7 @@ internal sealed class OgcCoveragesHandler
     private static CoverageDomainSet? CreateDomainSet(RasterInfo raster, int storageSrid)
     {
         if (raster.Extent is not { } extent || raster.Width <= 0 || raster.Height <= 0 ||
+            // codeql[cs/equality-on-floats]: exact zero shear means an axis-aligned grid; a tolerance would serve a rotated grid as north-up
             (raster.GeoTransform is { Length: >= 6 } transform && (transform[2] != 0 || transform[4] != 0)))
         {
             return null;
@@ -1430,6 +1431,7 @@ internal sealed class OgcCoveragesHandler
         var error = $"Native subset must not exceed {MaxScaleSize.ToString(CultureInfo.InvariantCulture)} pixels on either axis. Select a smaller subset or use scale-size to bound the output.";
         if (raster.Extent is not { } extent || extent.Srid.GetValueOrDefault(storageSrid) != storageSrid ||
             raster.Width <= 0 || raster.Height <= 0 ||
+            // codeql[cs/equality-on-floats]: exact zero shear means an axis-aligned grid; a tolerance would serve a rotated grid as north-up
             (raster.GeoTransform is { Length: >= 6 } transform && (transform[2] != 0 || transform[4] != 0)))
         {
             // A rotated or unknown native grid cannot safely establish the output

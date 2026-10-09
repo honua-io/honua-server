@@ -619,6 +619,7 @@ internal static partial class FeatureServerEndpoints
         out long narrowedThrough)
     {
         narrowedThrough = currentThrough;
+        // codeql[cs/linq/missed-where]: narrows one shared cursor when a layer exceeds the per-layer change cap
         foreach (var generations in deliverableGenerationsByLayer)
         {
             if (generations.Length > maxChangesPerLayer)
@@ -656,6 +657,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         var publicByStorage = new Dictionary<long, long>();
+        // codeql[cs/linq/missed-where]: builds a storage-to-public id map and skips changes that have no public id
         foreach (var change in changes)
         {
             if (change.PublicObjectId is { } publicObjectId)

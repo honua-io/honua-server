@@ -984,12 +984,9 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 return false;
             }
 
-            if (strict)
+            if (strict && !MapLibreStyleNormalizer.TryValidateStandalone(root, out error))
             {
-                if (!MapLibreStyleNormalizer.TryValidateStandalone(root, out error))
-                {
-                    return false;
-                }
+                return false;
             }
 
             return true;

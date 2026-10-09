@@ -40,10 +40,14 @@ public sealed class RedisAdminApiKeyStoreConcurrencyTests
         await transaction.Received(allowed ? 2 : 1).ExecuteAsync();
         if (allowed)
         {
-            Assert.NotNull(result);
-            Assert.Equal(original.Id, result.Record.Id);
-            Assert.Equal(now, result.Record.LastUsedAt);
-            Assert.Equal(current!.Permissions, result.Record.Permissions);
+            if (result is not { } validated)
+            {
+                throw new InvalidOperationException("validation result was missing");
+            }
+
+            Assert.Equal(original.Id, validated.Record.Id);
+            Assert.Equal(now, validated.Record.LastUsedAt);
+            Assert.Equal(current!.Permissions, validated.Record.Permissions);
         }
     }
 

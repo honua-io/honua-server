@@ -15,6 +15,7 @@ inputs still fail. Generator implementation and serialization are unchanged.
 | --- | --- | --- |
 | `docs/gis/data/feature-catalog.json` | `scripts/generate-feature-catalog.sh` → `FeatureCatalogEmitter` / `FeatureCatalogGenerator` | Nightly / on demand |
 | `docs/gis/data/admin-openapi-operation-ids.json` and `admin-mcp-projection-manifest.json` | `scripts/generate-admin-operation-parity-exports.sh` → `AdminOperationParityExportTests` | Nightly / on demand |
+| `docs/gis/data/mcp-tool-roster.v1.json` (schema `mcp-tool-roster.v1.schema.json`) | `scripts/generate-mcp-tool-roster.sh` → `McpToolRosterDriftTests` (after the admin exports; `serverSha` restamps only when the roster body changes) | Nightly / on demand |
 | `docs/gis/data/geoservices-rest-parity.json` | `scripts/generate-geoservices-parity.sh` → `GeoServicesParityEmitter` / `GeoServicesParityGenerator` | Nightly / on demand |
 | `docs/gis/data/capability-matrix.v1.json` | `scripts/ci/generate-capability-matrix.py` (after catalog and parity) | Nightly / on demand |
 | `docs/okf/capabilities` | `scripts/ci/generate-capability-concepts.py` (after the capability matrix) | Nightly / on demand |
@@ -78,7 +79,11 @@ rate-limit error while REST quota remained (#4732).
 
 Before committing a diff, publication compares that validated source with
 remote trunk. If trunk has already advanced, it reports both identities and leaves the
-automation PR untouched. Validation still proves the triggering source; it
+automation PR untouched. A scheduled run dispatches a fresh-trunk retry, with
+at most two successors in the nightly chain. Each successor checks out its own
+trigger SHA and reruns generation and validation. Retries stop at the UTC date
+boundary; manual runs without a retry date and reruns do not extend the chain.
+Validation still proves the triggering source; it
 does not check out or certify the later trunk revision. A new source/workflow
 fix requires a new imaged release candidate and certification at that identity.
 Network failures reading remote refs fail publication rather than masquerading
@@ -87,7 +92,8 @@ credential helper; no PAT is persisted in the checkout. The automation-branch
 lease is captured before observing trunk, so a racing newer publisher cannot
 be overwritten. This is not an atomic trunk-freshness/admission guarantee:
 trunk can advance during publication or review. As in #4695, these are ordinary
-reviewed maintenance PRs and subsequent trunk pushes schedule another refresh.
+reviewed maintenance PRs; the next nightly run or an explicit dispatch refreshes
+any drift remaining after the bounded retries.
 The source trailer and triggering-SHA validation identify exactly what was
 validated; neither claims that trunk stopped moving.
 

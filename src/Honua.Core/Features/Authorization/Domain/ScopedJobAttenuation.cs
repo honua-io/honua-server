@@ -41,6 +41,12 @@ public static class ScopedJobAttenuation
     public const string ReadGrantPrefix = "read:";
 
     /// <summary>
+    /// Wildcard accepted only in read grants: <c>read:*</c> reaches every service and
+    /// <c>read:{service}/*</c> every layer of one service. Write grants have no wildcard.
+    /// </summary>
+    public const string ReadWildcard = "*";
+
+    /// <summary>
     /// Computes the effective (intersected) scope: every requested entry the owner
     /// could actually reach at the requested access level, clamped to the owner's
     /// reachable access. An entry the owner could only read but the request asked
@@ -208,6 +214,8 @@ public static class ScopedJobAttenuation
     private sealed class OwnerReach
     {
         private readonly bool _isAdminOrGlobalEditor;
+
+        private bool _readsEveryService;
         // service (lower) -> max access for the whole service
         private readonly Dictionary<string, JobResourceAccess> _serviceAccess = new(StringComparer.OrdinalIgnoreCase);
         // "service/layer" (lower) -> max access for that layer
@@ -310,13 +318,25 @@ public static class ScopedJobAttenuation
                     var sep = target.IndexOf('/');
                     if (sep < 0)
                     {
+                        // read:* reaches every service at read level; there is no write wildcard.
+                        if (access == JobResourceAccess.Read && target == ReadWildcard)
+                        {
+                            reach._readsEveryService = true;
+                            continue;
+                        }
+
                         reach.AddServiceAccess(target, access);
                     }
                     else
                     {
                         var svc = target[..sep].Trim();
                         var layer = target[(sep + 1)..].Trim();
-                        if (svc.Length > 0 && layer.Length > 0)
+                        if (access == JobResourceAccess.Read && layer == ReadWildcard && svc.Length > 0 && svc != ReadWildcard)
+                        {
+                            // read:{service}/* is the service-wide read:{service} grant.
+                            reach.AddServiceAccess(svc, access);
+                        }
+                        else if (svc.Length > 0 && layer.Length > 0)
                         {
                             reach.AddLayerAccess(svc, layer, access);
                         }
@@ -356,7 +376,7 @@ public static class ScopedJobAttenuation
                 return JobResourceAccess.Write;
             }
 
-            JobResourceAccess? best = null;
+            JobResourceAccess? best = _readsEveryService ? JobResourceAccess.Read : null;
 
             if (_serviceAccess.TryGetValue(service, out var svcAccess))
             {

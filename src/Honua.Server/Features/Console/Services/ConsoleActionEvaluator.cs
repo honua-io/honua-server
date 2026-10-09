@@ -257,14 +257,10 @@ internal sealed class ConsoleActionEvaluator(
         var isAdmin = roles.Any(role =>
             string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase));
 
-        foreach (var claim in principal.Claims)
-        {
-            if (string.Equals(claim.Type, rbacOptions.Value.WorkspaceScopeClaimType, StringComparison.OrdinalIgnoreCase)
+        teamScopes.AddRange(principal.Claims
+            .Where(claim => string.Equals(claim.Type, rbacOptions.Value.WorkspaceScopeClaimType, StringComparison.OrdinalIgnoreCase)
                 && !string.IsNullOrWhiteSpace(claim.Value))
-            {
-                teamScopes.Add(claim.Value);
-            }
-        }
+            .Select(claim => claim.Value));
 
         var capabilities = new HashSet<string>(StringComparer.Ordinal);
 

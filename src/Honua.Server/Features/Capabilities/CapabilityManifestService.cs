@@ -607,6 +607,7 @@ internal sealed class CapabilityManifestService(
                 requiresDurableJobStore: spec.RequiresDurableJobStore));
         }
 
+        // codeql[cs/linq/missed-where]: adds a capability only when that id is not already present
         foreach (var capability in BuildOperationCapabilities(context, operationCapabilities))
         {
             if (capabilities.All(existing => !string.Equals(existing.Id, capability.Id, StringComparison.Ordinal)))
@@ -624,6 +625,14 @@ internal sealed class CapabilityManifestService(
         =>
         [
             Capability("ops.findings", "operate", context, requiresAuthentication: true),
+            // The governed proposal/approval control plane (honua_admin_* approval-gated tools,
+            // /api/v1/admin/proposals, Studio drafts) persists in the Redis-backed durable store.
+            // The tools advertise on every topology; this entry is what tells an agent, before it
+            // calls one, that a Redis-off host refuses with the typed capability-unavailable
+            // receipt (dependency-unavailable; license-required when Redis is unentitled).
+            Capability(OperationsProposalsCapabilityId, "operate", context,
+                requiresAuthentication: true,
+                requiresDurableJobStore: true),
             Capability("ops.autonomy", "operate", context,
                 configured: operationCapabilities.HasAutonomyPolicyStore,
                 requiresAuthentication: true),
@@ -728,6 +737,7 @@ internal sealed class CapabilityManifestService(
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
             ["operate.status"] = new() { RequiresAuthentication = true },
             ["ops.findings"] = new() { RequiresAuthentication = true },
+            [OperationsProposalsCapabilityId] = new() { RequiresAuthentication = true, RequiresDurableJobStore = true },
             ["ops.autonomy"] = new()
             {
                 Configured = operationCapabilities.HasAutonomyPolicyStore,
@@ -1498,6 +1508,12 @@ internal sealed class CapabilityManifestService(
         bool SupportsCancellation,
         bool SupportsProgressPolling);
 
+    /// <summary>
+    /// Manifest id (and Community capability key) for the governed proposal/approval control
+    /// plane. Unavailable wherever the Redis-backed durable store is not composed.
+    /// </summary>
+    internal const string OperationsProposalsCapabilityId = CapabilityUnavailableCodes.ControlPlaneProposalsCapability;
+
     private const string RollbackExecutable = "rollback.executable";
     private const string RollbackHandoffOnly = "rollback.handoff-only";
     private const string RollbackBackendMissing = "rollback.backend-missing";
@@ -1532,7 +1548,7 @@ internal static class CapabilityReasonCodes
     /// <summary>
     /// The capability is supported and configured, but an infrastructure dependency the install
     /// never composed makes it unusable (honua-release#202). Today the only such dependency is
-    /// the Redis-backed durable job store behind <c>jobs.runner</c>: Redis is optional for a
+    /// the Redis-backed durable store behind <c>jobs.runner</c> and <c>operations.proposals</c>: Redis is optional for a
     /// local install, so its absence must read as an honest degraded posture, not as an
     /// available capability whose every operation 503s.
     /// </summary>

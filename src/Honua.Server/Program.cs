@@ -713,6 +713,19 @@ if (connectedRedis != null && redisCacheEntitled)
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutorCatalog,
         Honua.ControlPlane.OperationExecutorCatalog>();
 }
+else
+{
+    // Redis-off (or unentitled) topology: compose the fail-closed proposal placeholder so the
+    // governed admin catalogs (AddOperationsToolset gates them on a proposal store) still
+    // register and advertise their honua_admin_* tools. Without it the full MCP catalog silently
+    // lost exactly the 20 AdminApiOperationCatalog tools on Redis-off cells (2026.1 rc.3, J1/S1).
+    // IOperationGateway is deliberately NOT registered: approval-gated calls then refuse through
+    // the existing typed capability-unavailable paths (approval bridge, ProposalEndpoints,
+    // McpPlatformOpsReader), and direct-execute operations run unchanged. The durable runtime
+    // validator and proposal reconcilers stay gated on a real store.
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore,
+        Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore>();
+}
 
 // Pending-approval notification channel (#1695): emitted from the gateway/store
 // boundary, not per-endpoint. Safe to register regardless of Redis availability.

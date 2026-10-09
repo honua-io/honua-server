@@ -472,11 +472,21 @@ public sealed class RollbackDeployOperationRequest
 
 /// <summary>
 /// Request payload for converging the running serving targets onto the declared platform release
-/// (ADR-0060 WS2). The endpoint takes <b>no version argument</b>: it always converges to the release
-/// declared in <c>ControlPlane:PlatformRelease</c>. Only optional operator metadata is accepted.
+/// (ADR-0060 WS2). The endpoint always converges to the release declared in
+/// <c>ControlPlane:PlatformRelease</c>; it never resolves a version to an artifact. An optional
+/// <see cref="TargetVersion"/> lets the caller assert which release it expects, and a mismatch is
+/// rejected with a 409 <c>platform_release_version_mismatch</c> problem.
 /// </summary>
 public sealed class PlatformReleaseConvergeRequest
 {
+    /// <summary>
+    /// Optional release the caller expects to converge to (for example <c>2026.1-rc.3</c>; <c>honua-</c>
+    /// and <c>v</c> prefixes and a zero patch are normalized). When it does not name the declared
+    /// release the converge is rejected with 409 <c>platform_release_version_mismatch</c>.
+    /// </summary>
+    [JsonPropertyName("targetVersion")]
+    public string? TargetVersion { get; init; }
+
     /// <summary>
     /// Optional operator reason recorded on every deploy operation the converge creates.
     /// </summary>

@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -54,22 +55,24 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
     /// The wire tests below prove the refusal fires when the durable control plane is absent, but
     /// they cannot distinguish "absent because <c>Program.cs</c> gated the registration" from
     /// "absent because something else failed". The refusal is reached only through the handlers'
-    /// optional <c>[FromServices] IOperationProposalStore? = null</c> parameters, which resolve to
-    /// null strictly when the service is UNREGISTERED. Registering
-    /// <c>RedisOperationProposalStore</c> outside the <c>if (connectedRedis != null)</c> gate would
-    /// therefore not make these routes return the typed refusal — it would make DI activation throw
-    /// on the unresolvable <c>IConnectionMultiplexer</c> and hand the caller an unhandled
-    /// <c>500</c> naming an internal DI type, which is exactly the shape #3599 reported from a
-    /// pinned candidate image. Asserting absence here fails the moment that registration moves back
-    /// out of the gate, instead of waiting for a release candidate to surface it.
+    /// optional <c>[FromServices] IOperationProposalStore? = null</c> parameters, which treat both
+    /// an unregistered store and the fail-closed <see cref="UnavailableOperationProposalStore"/>
+    /// placeholder as absent. Registering <c>RedisOperationProposalStore</c> outside the
+    /// <c>if (connectedRedis != null)</c> gate would not make these routes return the typed
+    /// refusal — it would make DI activation throw on the unresolvable
+    /// <c>IConnectionMultiplexer</c> and hand the caller an unhandled <c>500</c> naming an internal
+    /// DI type, which is exactly the shape #3599 reported from a pinned candidate image. Since
+    /// 2026.1 rc.3 (J1/S1) the no-Redis branch registers the placeholder so the governed admin
+    /// tools still advertise; asserting that the resolved store is never a durable one fails the
+    /// moment the Redis registration moves back out of the gate.
     /// </remarks>
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/proposals")]
-    public void Composition_WithoutRedis_RegistersNeitherProposalStoreNorGateway()
+    public void Composition_WithoutRedis_RegistersNeitherDurableProposalStoreNorGateway()
     {
-        _fixture.Services.GetService<IOperationProposalStore>().Should().BeNull(
-            "the only implementation is Redis-backed and hard-depends on IConnectionMultiplexer, so "
-            + "registering it on a Redis-less host trades a typed 503 for an unhandled 500");
+        _fixture.Services.GetService<IOperationProposalStore>().Should().BeOfType<UnavailableOperationProposalStore>(
+            "the only durable implementation is Redis-backed and hard-depends on IConnectionMultiplexer, so "
+            + "a Redis-less host composes only the fail-closed placeholder");
         _fixture.Services.GetService<IOperationGateway>().Should().BeNull(
             "the gateway constructor-injects IOperationProposalStore, so it cannot be composed "
             + "wherever the store is not");
@@ -221,8 +224,8 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
         root.GetProperty("remediation").GetString().Should().NotContain("Set ConnectionStrings__Redis");
         root.GetProperty("remediationRef").GetString()
             .Should().Be(CapabilityUnavailableCodes.EntitlementRemediationRef);
-        root.TryGetProperty("capability", out _).Should().BeFalse(
-            "the manifest has no capability id covering the proposal/approval control plane");
+        root.GetProperty("capability").GetString()
+            .Should().Be(CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
     }
 
     private static async Task AssertCapabilityUnavailableAsync(HttpResponseMessage response)
@@ -239,9 +242,9 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
         root.GetProperty("status").GetInt32().Should().Be(503);
         root.GetProperty("code").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
         root.GetProperty("missingDependency").GetString().Should().Be(CapabilityUnavailableCodes.RedisDependency);
-        root.TryGetProperty("capability", out _).Should().BeFalse(
-            "the manifest has no capability id covering the proposal/approval control plane, and "
-            + "naming an unrelated one would point a client at a claim that contradicts the refusal");
+        root.GetProperty("capability").GetString().Should().Be(
+            CapabilityUnavailableCodes.ControlPlaneProposalsCapability,
+            "the refusal joins the operations.proposals manifest entry that reports the same surface unavailable");
         root.GetProperty("remediation").GetString().Should().NotBeNullOrWhiteSpace();
         root.GetProperty("remediationRef").GetString().Should().Be(CapabilityUnavailableCodes.RedisRemediationRef);
     }

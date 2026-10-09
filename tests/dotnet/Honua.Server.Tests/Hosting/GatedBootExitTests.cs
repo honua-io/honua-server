@@ -80,13 +80,13 @@ public sealed class GatedBootExitTests
 
         await SeedExistingDatabaseAsync(connectionString);
 
-        File.Exists(Path.Combine(serverDirectory, "appsettings.json")).Should().BeTrue(
+        File.Exists(Path.Join(serverDirectory, "appsettings.json")).Should().BeTrue(
             "the server process uses its output directory as the content root ({0})",
             serverDirectory);
 
-        var dumpDirectory = Path.Combine(Path.GetTempPath(), "honua-gated-boot-" + Guid.NewGuid().ToString("N"));
+        var dumpDirectory = Path.Join(Path.GetTempPath(), "honua-gated-boot-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dumpDirectory);
-        var dumpPath = Path.Combine(dumpDirectory, "gated-boot.dmp");
+        var dumpPath = Path.Join(dumpDirectory, "gated-boot.dmp");
         var dumpsBefore = SnapshotCrashDumps(serverDirectory, dumpDirectory);
 
         var start = new ProcessStartInfo
@@ -186,13 +186,13 @@ public sealed class GatedBootExitTests
     [InlineData("appsettings.json")]
     public void LocateServerAssembly_IncompleteRuntime_DiagnosesMissingFile(string missingFile)
     {
-        var runtimeDirectory = Path.Combine(Path.GetTempPath(), "honua-boot-runtime-" + Guid.NewGuid().ToString("N"));
+        var runtimeDirectory = Path.Join(Path.GetTempPath(), "honua-boot-runtime-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(runtimeDirectory);
         try
         {
             foreach (var file in RequiredRuntimeFiles.Where(file => file != missingFile))
             {
-                File.WriteAllText(Path.Combine(runtimeDirectory, file), "{}");
+                File.WriteAllText(Path.Join(runtimeDirectory, file), "{}");
             }
 
             Action locate = () => LocateServerAssembly(runtimeDirectory);
@@ -210,14 +210,14 @@ public sealed class GatedBootExitTests
         // The cached test payload contains the complete server runtime; source bin is not restored.
         foreach (var file in RequiredRuntimeFiles)
         {
-            if (!File.Exists(Path.Combine(runtimeDirectory, file)))
+            if (!File.Exists(Path.Join(runtimeDirectory, file)))
             {
                 throw new InvalidOperationException(
                     $"Incomplete server runtime in test output '{runtimeDirectory}': missing '{file}'.");
             }
         }
 
-        return Path.Combine(runtimeDirectory, "Honua.Server.dll");
+        return Path.Join(runtimeDirectory, "Honua.Server.dll");
     }
 
     private static async Task<bool> WaitForExitAsync(Process process, TimeSpan timeout)

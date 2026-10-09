@@ -203,23 +203,27 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
                 query.Parameters.AddWithValue("label", label);
                 workspaceId = await query.ExecuteScalarAsync() as string;
             }
-            workspaceId.Should().NotBeNullOrWhiteSpace();
-            var before = await fixture.GetService<IArtifactStore>().ListByWorkspaceAsync(workspaceId!);
+            if (string.IsNullOrWhiteSpace(workspaceId))
+            {
+                throw new InvalidOperationException("workspace id was not stored");
+            }
+
+            var before = await fixture.GetService<IArtifactStore>().ListByWorkspaceAsync(workspaceId);
             var original = before.Should().ContainSingle().Subject;
             AssertArea(original.Uri!, 12);
 
             await fixture.RestartHostAsync();
-            var reopened = await fixture.GetService<IWorkspaceStore>().GetAsync(workspaceId!);
+            var reopened = await fixture.GetService<IWorkspaceStore>().GetAsync(workspaceId);
             reopened.Should().NotBeNull();
             reopened!.Label.Should().Be(label);
             reopened.Artifacts.Should().ContainSingle().Which.Should().BeEquivalentTo(original);
 
             await RunAreaAsync(5, overwrite: false, expectSuccess: false);
-            var denied = await fixture.GetService<IArtifactStore>().ListByWorkspaceAsync(workspaceId!);
+            var denied = await fixture.GetService<IArtifactStore>().ListByWorkspaceAsync(workspaceId);
             denied.Should().ContainSingle().Which.Should().BeEquivalentTo(original);
 
             await RunAreaAsync(5, overwrite: true, expectSuccess: true);
-            var replaced = await fixture.GetService<IArtifactStore>().ListByWorkspaceAsync(workspaceId!);
+            var replaced = await fixture.GetService<IArtifactStore>().ListByWorkspaceAsync(workspaceId);
             var replacement = replaced.Should().ContainSingle().Subject;
             replacement.ArtifactId.Should().NotBe(original.ArtifactId);
             AssertArea(replacement.Uri!, 20);

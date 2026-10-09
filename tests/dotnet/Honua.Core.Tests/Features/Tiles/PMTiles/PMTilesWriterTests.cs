@@ -310,7 +310,7 @@ public class PMTilesWriterTests
             writer.AddTile(8, x, 0, CreateFakeTileData(tileSize));
         }
 
-        var outputPath = Path.Combine(Path.GetTempPath(), $"honua-pmtiles-test-{Guid.NewGuid():N}.pmtiles");
+        var outputPath = Path.Join(Path.GetTempPath(), $"honua-pmtiles-test-{Guid.NewGuid():N}.pmtiles");
         try
         {
             await using var stream = new FileStream(outputPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);

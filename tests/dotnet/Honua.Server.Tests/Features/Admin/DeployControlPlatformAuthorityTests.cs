@@ -105,6 +105,24 @@ public sealed class DeployControlPlatformAuthorityTests
     }
 
     [Theory]
+    [InlineData(TenantAdmin)]
+    [InlineData(ApprovedTenantCredential)]
+    public async Task McpConvergence_TenantBoundAdminWithMismatchedTargetVersion_IsDeniedBeforeVersionComparison(string scenario)
+    {
+        var harness = McpHarness.Create(scenario);
+
+        // A tenant-bound key must learn platform_admin_required, never the declared release (#5654).
+        var act = () => harness.InvokeAsync(
+            ProposePlatformReleaseConvergenceTool.ToolName, """{"targetVersion":"1999.1-rc.1"}""");
+
+        var denial = (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>()).Which;
+        var error = McpErrorMapper.Map(denial);
+        error.Data!.StudioAuthorizationCode.Should().Be("platform_admin_required");
+        error.Message.Should().NotContain("platform_release_version_mismatch");
+        await harness.AssertNothingProposedAsync();
+    }
+
+    [Theory]
     [MemberData(nameof(AllowedMcpCases))]
     public async Task McpProposal_PlatformAdminUnboundAdminOrSingleTenant_SealsApprovalProposal(
         string toolName, string scenario)
@@ -374,7 +392,7 @@ public sealed class DeployControlPlatformAuthorityTests
             return new McpHarness(Principal(scenario), gateway, findings, services);
         }
 
-        public async Task<McpToolsCallResult> InvokeAsync(string toolName)
+        public async Task<McpToolsCallResult> InvokeAsync(string toolName, string? argumentsOverride = null)
         {
             IMcpTool tool = toolName switch
             {
@@ -386,7 +404,7 @@ public sealed class DeployControlPlatformAuthorityTests
                     NullLogger<ProposePlatformReleaseConvergenceTool>.Instance),
                 _ => throw new ArgumentOutOfRangeException(nameof(toolName)),
             };
-            var arguments = toolName switch
+            var arguments = argumentsOverride ?? toolName switch
             {
                 ProposeFindingTool.ToolName => """{"findingId":"deployment-fixture","candidateId":"serving-us-west"}""",
                 ProposeRollbackTool.ToolName => """{"targetId":"serving-us-west","toRevision":"rev-1"}""",

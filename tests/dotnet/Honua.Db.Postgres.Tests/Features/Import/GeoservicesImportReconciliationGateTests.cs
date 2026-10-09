@@ -252,6 +252,7 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
                 body = """{"features":[],"exceededTransferLimit":false}""";
             }
 
+            // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json")

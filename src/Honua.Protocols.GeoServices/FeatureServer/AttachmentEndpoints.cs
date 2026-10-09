@@ -314,6 +314,10 @@ internal static partial class AttachmentEndpoints
 
         var layerId = resource.Value.StorageLayerId;
         var form = await TryReadAttachmentFormAsync(context);
+        // codeql[cs/user-controlled-bypass]: a missing form fails closed (the reader
+        // already wrote the media-type error). Layer write authorization is
+        // TryValidateLayerAccessAsync above, which returns before this check. Supplying
+        // a form cannot skip that decision or the owner-edit check below.
         if (form == null)
         {
             return;
@@ -420,6 +424,10 @@ internal static partial class AttachmentEndpoints
 
         var layerId = resource.Value.StorageLayerId;
         var form = await TryReadAttachmentFormAsync(context);
+        // codeql[cs/user-controlled-bypass]: a missing form fails closed (the reader
+        // already wrote the media-type error). Layer write authorization is
+        // TryValidateLayerAccessAsync above, which returns before this check. Supplying
+        // a form cannot skip that decision or the owner-edit check below.
         if (form == null)
         {
             return;
@@ -522,6 +530,10 @@ internal static partial class AttachmentEndpoints
         }
 
         var form = await TryReadAttachmentFormAsync(context);
+        // codeql[cs/user-controlled-bypass]: a missing form fails closed (the reader
+        // already wrote the media-type error). Layer write authorization is
+        // TryValidateLayerAccessAsync above, which returns before this check. Supplying
+        // a form cannot skip that decision or the owner-edit check below.
         if (form == null)
         {
             return;

@@ -359,6 +359,7 @@ internal sealed class OrdinaryKriging
                 var factor = matrix[(row * size) + column] / diagonal;
                 matrix[(row * size) + column] = factor;
                 // Skip only exact zero: all nonzero factors, however small, must be applied.
+                // codeql[cs/equality-on-floats]: a tolerance would drop small elimination factors and change the kriging solution
                 if (factor == 0d)
                 {
                     continue;

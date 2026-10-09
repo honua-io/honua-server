@@ -272,7 +272,7 @@ public sealed class PostgresWorkspaceStoreTests(PostgresFixture fixture)
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresWorkspaceStoreTests));
         try
         {
-            var migration = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", "119_CreateGeoprocessingWorkspaces.sql"));
+            var migration = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory, "Migrations", "119_CreateGeoprocessingWorkspaces.sql"));
             var upgrader = DeployChanges.To.PostgresqlDatabase(fixture.ConnectionString)
                 .JournalTo(new NullJournal())
                 .WithScript("119_CreateGeoprocessingWorkspaces.sql", migration)

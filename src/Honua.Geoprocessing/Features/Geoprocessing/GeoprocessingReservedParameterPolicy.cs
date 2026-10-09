@@ -93,15 +93,7 @@ internal static class GeoprocessingReservedParameterPolicy
             return null;
         }
 
-        foreach (var key in protocolMetadata.Keys)
-        {
-            if (IsReserved(key, inheritedSubmitterLane))
-            {
-                return key;
-            }
-        }
-
-        return null;
+        return protocolMetadata.Keys.FirstOrDefault(key => IsReserved(key, inheritedSubmitterLane));
     }
 
     /// <summary>

@@ -295,7 +295,7 @@ public sealed class ConfigurationValidationServiceTests
 
     private static string WriteKeyRingMaterialJson(string material)
     {
-        var file = Path.Combine(
+        var file = Path.Join(
             Path.GetTempPath(), $"honua-keyring-validation-{Guid.NewGuid():N}.json");
         File.WriteAllText(file, JsonSerializer.Serialize(new
         {

@@ -155,6 +155,7 @@ public sealed class CatalogExecutableConformanceTests
 
                 foreach (var choice in allowed)
                 {
+                    // codeql[cs/linq/missed-select]: translates and validates each casing of the allowed choice
                     foreach (var casing in new[] { choice, choice.ToUpperInvariant(), choice.ToLowerInvariant() })
                     {
                         var translated = GPServerParameterTranslation.TranslateInbound(

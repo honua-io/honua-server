@@ -5,6 +5,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
@@ -106,6 +107,7 @@ internal static class ProposalEndpoints
                 missingDependency: null,
                 CapabilityUnavailableCodes.EntitlementRemediation,
                 CapabilityUnavailableCodes.EntitlementRemediationRef,
+                CapabilityUnavailableCodes.ControlPlaneProposalsCapability,
                 errorCode: CapabilityUnavailableCodes.EntitlementErrorCode,
                 missingEntitlement: CapabilityUnavailableCodes.RedisCacheEntitlement)
             : ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
@@ -113,7 +115,8 @@ internal static class ProposalEndpoints
                 CapabilityUnavailableCodes.DurableControlPlaneDetail,
                 CapabilityUnavailableCodes.RedisDependency,
                 CapabilityUnavailableCodes.RedisRemediation,
-                CapabilityUnavailableCodes.RedisRemediationRef);
+                CapabilityUnavailableCodes.RedisRemediationRef,
+                CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
     }
 
     private static async Task<IResult> HandleListProposals(
@@ -124,7 +127,7 @@ internal static class ProposalEndpoints
         [FromServices] IOperationProposalStore? proposalStore = null,
         [FromServices] ITenantContext? tenantContext = null)
     {
-        if (proposalStore is null)
+        if (!UnavailableOperationProposalStore.IsDurable(proposalStore))
         {
             return ControlPlaneUnavailable(context);
         }
@@ -174,7 +177,7 @@ internal static class ProposalEndpoints
         [FromServices] IOperationProposalStore? proposalStore = null,
         [FromServices] ITenantContext? tenantContext = null)
     {
-        if (proposalStore is null)
+        if (!UnavailableOperationProposalStore.IsDurable(proposalStore))
         {
             return ControlPlaneUnavailable(context);
         }
@@ -196,7 +199,7 @@ internal static class ProposalEndpoints
         [FromServices] IEnumerable<CanonicalOperationExecutor>? operationExecutors = null,
         [FromServices] ITenantContext? tenantContext = null)
     {
-        if (gateway is null || proposalStore is null)
+        if (gateway is null || !UnavailableOperationProposalStore.IsDurable(proposalStore))
         {
             return ControlPlaneUnavailable(context);
         }
@@ -274,7 +277,7 @@ internal static class ProposalEndpoints
         [FromServices] IOperationProposalStore? proposalStore = null,
         [FromServices] ITenantContext? tenantContext = null)
     {
-        if (gateway is null || proposalStore is null)
+        if (gateway is null || !UnavailableOperationProposalStore.IsDurable(proposalStore))
         {
             return ControlPlaneUnavailable(context);
         }

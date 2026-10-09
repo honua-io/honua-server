@@ -261,6 +261,25 @@ internal sealed class McpPlatformOpsReader(
         var options = _controlPlaneOptions.CurrentValue;
         var release = options.PlatformRelease.ToDefinition() ?? throw new GeoprocessingPreconditionFailedException("A platform release is not declared.");
         var desiredRevision = Clean(release.ServingArtifactReference) ?? throw new GeoprocessingPreconditionFailedException("The platform release has no serving artifact.");
+        var targetVersion = Clean(argument.TargetVersion);
+        if (targetVersion is not null && !PlatformReleaseVersion.Matches(release.Version, targetVersion))
+        {
+            // R13 "minimum honest" update path: the server converges only to the release declared in
+            // ControlPlane:PlatformRelease (written from the signed release lock by the provisioning
+            // executor). A different requested release is a typed rejection, never a sealed proposal.
+            return new McpProposeOperationOutput
+            {
+                Outcome = "rejected",
+                Code = PlatformReleaseVersionMismatch.Code,
+                DeclaredVersion = release.Version,
+                TargetVersion = targetVersion,
+                ServingArtifactReference = desiredRevision,
+                IsCoVersioned = PlatformReleaseSkewProjector.Build(options).IsCoVersioned,
+                SupportedKinds = ResolveSupportedKinds(),
+                Message = PlatformReleaseVersionMismatch.Describe(targetVersion, release.Version),
+            };
+        }
+
         var targets = options.DeployTargets.Where(candidate => !string.IsNullOrWhiteSpace(candidate.TargetId)).ToArray();
         if (targets.Length == 0) throw new GeoprocessingPreconditionFailedException("No serving deploy target is configured.");
         var outcomes = new List<McpConvergenceTargetOutput>();

@@ -68,8 +68,11 @@ internal sealed class ProposalStatusResource : IMcpResource
         var proposalId = uri[McpResourceUris.ProposalsPrefix.Length..];
         McpLog.ResourceRead(_logger, Family, uri);
 
-        var store = httpContext.RequestServices.GetService<IOperationProposalStore>()
-            ?? throw new InvalidOperationException("The operation proposal store is unavailable (durable storage is not configured).");
+        var store = httpContext.RequestServices.GetService<IOperationProposalStore>();
+        if (!Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore.IsDurable(store))
+        {
+            throw new InvalidOperationException("The operation proposal store is unavailable (durable storage is not configured).");
+        }
 
         var proposal = await store.GetAsync(proposalId, cancellationToken).ConfigureAwait(false)
             ?? throw new KeyNotFoundException($"Proposal '{proposalId}' was not found.");

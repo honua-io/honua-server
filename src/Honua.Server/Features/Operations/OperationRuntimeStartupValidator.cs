@@ -26,7 +26,8 @@ public sealed class OperationRuntimeStartupValidator(IServiceScopeFactory scopeF
                 "Production operation runtime requires a durable IOperationInstanceStore.");
         }
 
-        if (services.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>() is null)
+        if (!Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore.IsDurable(
+                services.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>()))
         {
             throw new InvalidOperationException(
                 "Production operation runtime requires a durable IOperationProposalStore.");

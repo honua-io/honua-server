@@ -189,7 +189,14 @@ COPY --from=build /app /var/task
 # this catches missing libraries and symbols while the image is built, rather than
 # after a customer requests the first map. libatomic1 is required by ParquetSharpNative,
 # the GeoParquet f=parquet encoder: without it every export answered 501 (honua-server#4912).
-RUN apt-get update && \
+# The digest-pinned runtime-deps base lags Ubuntu security pockets. Upgrade here so
+# openssl/libssl CVE-2026-84782 (fix 3.0.13-0ubuntu3.16) does not wait on a base refresh.
+# The revision is echoed so a bump invalidates the cached apt layer.
+ARG RUNTIME_PACKAGE_REVISION=20261008
+# hadolint ignore=DL3008,DL3005
+RUN echo "runtime package revision ${RUNTIME_PACKAGE_REVISION}" && \
+    apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends libatomic1 libgssapi-krb5-2 fonts-dejavu-core && \
     rm -rf /var/lib/apt/lists/* && \
     test -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf && \

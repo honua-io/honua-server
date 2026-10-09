@@ -95,6 +95,7 @@ internal static class DeployControlEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<PlatformReleaseConvergeResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
@@ -794,6 +795,25 @@ internal static class DeployControlEndpoints
         // Co-versioning validation guarantees a serving artifact is declared.
         var declaredServing = release.ServingArtifactReference!;
         var declaredVersion = release.Version;
+
+        // S3 / R13: an optional targetVersion must name the declared release. A different release is a
+        // typed 409 rather than a convergence to whatever the server currently declares.
+        var targetVersion = request?.TargetVersion?.Trim();
+        if (!string.IsNullOrEmpty(targetVersion) && !PlatformReleaseVersion.Matches(declaredVersion, targetVersion))
+        {
+            return Results.Problem(
+                title: PlatformReleaseVersionMismatch.Title,
+                detail: PlatformReleaseVersionMismatch.Describe(targetVersion, declaredVersion),
+                statusCode: StatusCodes.Status409Conflict,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["code"] = PlatformReleaseVersionMismatch.Code,
+                    ["declaredVersion"] = declaredVersion,
+                    ["targetVersion"] = targetVersion,
+                    ["servingArtifactReference"] = declaredServing,
+                    ["isCoVersioned"] = PlatformReleaseSkewProjector.Build(options).IsCoVersioned,
+                });
+        }
 
         // Converge routes through the guardrail gateway like any Deploy (no direct-execute bypass). The
         // gateway is only registered when durable control-plane storage is configured.

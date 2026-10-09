@@ -141,7 +141,8 @@ internal sealed class GlobalExceptionMiddleware(
                     capabilityException.Message,
                     capabilityException.MissingDependency,
                     capabilityException.Remediation,
-                    capabilityException.RemediationRef)
+                    capabilityException.RemediationRef,
+                    capabilityException.Capability)
                 .ExecuteAsync(context)
                 .ConfigureAwait(false);
             return;

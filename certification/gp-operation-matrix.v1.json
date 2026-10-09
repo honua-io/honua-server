@@ -7,7 +7,8 @@
     "catalogSourceRevision": "14d101ec17f4b7ccdc6106ee2cb5bd4d621d779f",
     "candidateBinding": "https://github.com/honua-io/honua-server/issues/3848",
     "layerReceiptEnforcement": "PR Gate step 'Prove the layer execution cases ran, not skipped' reads back layer-execution-proof.trx and fails unless every evidence test these rows still call proven in the Category=LayerExecutionProof files reports its own Passed receipt: source.honua-layer, source.esri-featureserver and sink.honua-layer. dotnet test exits 0 on a filter that matches nothing and on a cleanly-skipping fixture, so the step count alone could not tell a real PostGIS run from no run at all.",
-    "catalogSourceContentDigest": "sha256:5b6d0f3787d3f288919a1abdc2f6419e4e95c82d8c8165e43a1ef571b18696e6",
+    "catalogSourceContentDigest": "sha256:59c1cc480d57a5eeda728ac9475d6d46d2030cebc68ed5b4c842e90a270eca7f",
+    "securityRemediationAudit": "certification/gp-security-remediation-audit-20261009.md",
     "importPublishingScopeAudit": "docs/audit/platform-20261006/issue-5622.md",
     "workspaceRetryAudit": "certification/gp-workspace-retry-audit-20260914.md",
     "workspaceStoreAudit": "certification/gp-workspace-store-audit-20260914.md",
@@ -583,7 +584,7 @@
           "test": "Aspect_PlanarAndFlatDem_MatchesDownslopeAzimuthAndNoData",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
           "assertion": "Required PR Gate executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
-          "bodyDigest": "sha256:a94a6d24fdca5483f1b9d41d7b339f2dadc5972895bc9be151695fdbc7247cc0"
+          "bodyDigest": "sha256:4f89e7ccb165881b8421ea90219ed23293323fc656524527496eebc0beb93f06"
         }
       ]
     },
@@ -709,7 +710,7 @@
           "test": "Reproject_GeographicToMercator_MatchesAnalyticalGridAndInverseMappedSamples",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
           "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
-          "bodyDigest": "sha256:13120163f127e0e87d9444a3ab019c3d4805a056b29ff1397751c121ff3d7737"
+          "bodyDigest": "sha256:39c790c4f8178bcefa89e824e05443963b5e311a78d42d44642e0412233b5027"
         }
       ]
     },
@@ -821,7 +822,7 @@
           "test": "Resample_HalfSizeCells_MatchesNearestOrBilinearWeightsAndNoData",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
           "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
-          "bodyDigest": "sha256:a5ca4118fca9172dedb440e756c38953e4de5136fb9c028ba4dded263f06d926"
+          "bodyDigest": "sha256:23d32a4c467b6ea9b702f922268dc908c8ef4d1a012feae4f28193030d802ddd"
         }
       ]
     },
@@ -835,7 +836,7 @@
           "test": "InterpolateIdw_KnownPoints_MatchesInverseDistanceAndEmptySearchCells",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
           "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
-          "bodyDigest": "sha256:4a02a85998fd18b83d343b7430bb8b466cc8dffbfd505395e879e12de8d3a0de"
+          "bodyDigest": "sha256:435c2fa4163378c8c173005d88dc605d3ff10441a829fa09bda069a30cb6e4ec"
         }
       ]
     },
@@ -919,7 +920,7 @@
           "test": "SpectralIndex_ReflectanceBands_MatchFormulaIncludingUndefinedAndNoData",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
           "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
-          "bodyDigest": "sha256:4913b7209539b7600a01d8d681d3c77996fcf762b0ee18cfe202dee49090881d"
+          "bodyDigest": "sha256:eb570c9b4b65cc9fdef5f173568631a4348c950c45cc0c3679aae5cfd518bde6"
         }
       ]
     },
@@ -1044,7 +1045,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
           "test": "Reproject_GeographicToMercator_MatchesAnalyticalGridAndInverseMappedSamples",
           "assertion": "Real pinned gdalwarp through conversion process ID; analytical EPSG:3857 grid and inverse nearest/bilinear sample oracle for every cell, both bands, nodata and masks.",
-          "bodyDigest": "sha256:13120163f127e0e87d9444a3ab019c3d4805a056b29ff1397751c121ff3d7737"
+          "bodyDigest": "sha256:39c790c4f8178bcefa89e824e05443963b5e311a78d42d44642e0412233b5027"
         }
       ]
     },
@@ -1097,7 +1098,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Rasterize.cs",
           "test": "Rasterize_CellSizeMode_CentresTheGridOnTheLayerEnvelope",
           "assertion": "cellSize path pins the half-cell-expanded grid, the burn-value domain and strictly interior/exterior cells.",
-          "bodyDigest": "sha256:4170b4fc1a8a80e1907609d1c14a47f5841919832c4ea06e1be286727260ca85"
+          "bodyDigest": "sha256:dd6d42ac8e12be3a0b00f9b4beeab49ae5d697b7002096054694a7d036677b49"
         },
         {
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Rasterize.cs",
@@ -1563,7 +1564,7 @@
           "test": "Reproject_GeographicToMercator_MatchesAnalyticalGridAndInverseMappedSamples",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof/grid.tif",
           "assertion": "Required real GDAL execution: analytical Mercator grid/inverse-mapped pixels, CRS, bounds, transform, dimensions, bands, dtype and nodata/mask. The same oracle rejects a changed pixel in a valid GeoTIFF.",
-          "bodyDigest": "sha256:13120163f127e0e87d9444a3ab019c3d4805a056b29ff1397751c121ff3d7737"
+          "bodyDigest": "sha256:39c790c4f8178bcefa89e824e05443963b5e311a78d42d44642e0412233b5027"
         }
       ]
     },
@@ -1604,7 +1605,7 @@
           "test": "Translate_RealLas_PreservesPointsAttributesPrecisionAndCrs",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/PointCloudProof",
           "assertion": "Required production-pinned PDAL and real LAS: independent binary decode asserts uncompressed LAS, count, all XYZ/attributes, scale, bounds, writer header metadata, CRS pass-through and analytical reprojection to EPSG:4979; oracle rejects changed intensity in valid LAS.",
-          "bodyDigest": "sha256:1976a0b54c2e93ed461222c180ee3017da3f6481512fea1405f14c1cb3905db6"
+          "bodyDigest": "sha256:608bcc5d8798b42213fb01c31a760b9f67f5288bdc9089d3ca39e2ea9acb311d"
         }
       ]
     }

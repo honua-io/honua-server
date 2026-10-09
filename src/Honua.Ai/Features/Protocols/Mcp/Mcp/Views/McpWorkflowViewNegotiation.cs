@@ -155,15 +155,7 @@ internal static class McpWorkflowViewNegotiation
 
     private static string? FirstSet(params string?[] candidates)
     {
-        foreach (var candidate in candidates)
-        {
-            if (!string.IsNullOrWhiteSpace(candidate))
-            {
-                return candidate;
-            }
-        }
-
-        return null;
+        return candidates.FirstOrDefault(candidate => !string.IsNullOrWhiteSpace(candidate));
     }
 
     private static bool TryReadName(

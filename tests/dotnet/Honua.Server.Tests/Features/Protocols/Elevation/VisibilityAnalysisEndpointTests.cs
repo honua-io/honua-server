@@ -481,6 +481,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
                 "the ray fan must be evenly spaced over the full circle");
         }
 
+        // codeql[cs/linq/missed-select]: asserts sample spacing independently on each azimuth ray
         foreach (var azimuth in azimuths)
         {
             var ray = samples

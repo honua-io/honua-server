@@ -6,9 +6,11 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Styling.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Services;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -25,7 +27,12 @@ namespace Honua.Ai.Protocols.Mcp.MapTools;
 /// renderer the OGC API Maps / MapServer export / WMS GetMap surfaces drive —
 /// so no rasterization or styling logic is reimplemented here. Layers are
 /// resolved through the same Metadata v2 snapshot the GeoServices surfaces use
-/// and passed bottom-to-top, each rendering with its primary/default style.
+/// and passed bottom-to-top. Each layer renders with its currently applied style:
+/// the primary binding in the styleId-keyed style catalog (what
+/// <c>honua_apply_style_preset</c> writes), or the layer's stored default style when
+/// no catalog style is applied. Style constructs the server rasterizer cannot draw
+/// are reported per layer as <c>unsupported-style-construct</c> rather than silently
+/// replaced by the default style.
 /// </summary>
 internal sealed class RenderMapTool : IMcpTool
 {
@@ -51,7 +58,8 @@ internal sealed class RenderMapTool : IMcpTool
         Description = "Render a map image (PNG) for one or more published layers over a bbox. Layers draw bottom-to-top. Width/height are capped at 1024 px. "
             + "By default the result is a fetchable artifact reference (resource_link href) with the image dimensions and byte size in text — NOT an inline base64 image — so a multi-megabyte render never floods the model context. "
             + "Set maxInlineBytes to opt into inlining the base64 PNG when the encoded image is at or below that size. "
-            + "Each layer renders with its primary/default style, which the caption reports; change a layer's style first with honua_apply_style_preset (discover presets with honua_get_style) and re-render to reflect it. "
+            + "Each layer renders with its currently applied style (the primary style bound by honua_apply_style_preset; discover presets with honua_get_style), or its stored default style when none is applied. "
+            + "Each entry in layers reports styleId and styleRendering: 'applied' (the applied style was drawn), 'default' (no applied style; stored default drawn), or 'unsupported-style-construct' (unsupportedStyleConstructs lists what was not drawn; the server rasterizes MapLibre fill, line, and circle layers). "
             + "To render analysis results as a styled map: run the analysis, then honua_publish_result to promote the result to a serviceId/layerId, then optionally honua_apply_style_preset, then render that layer here.",
         InputSchema = MapToolSchemas.RenderMapArgumentSchema,
         OutputSchema = McpToolOutputSchemas.RenderMapOutputSchema,
@@ -92,30 +100,63 @@ internal sealed class RenderMapTool : IMcpTool
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         // The styleId-keyed catalog is the canonical binding honua_apply_style_preset
-        // writes and the /ogc/styles surface authors. Resolving each layer's primary
-        // style here makes the applied preset observable in a subsequent render (the
-        // caption reports it). Rasterizing vector styles at the IRasterMapRenderer
-        // seam is not yet supported (RenderStyledMapAsync throws) and is out of scope
-        // for this tool; the pixels come from the raster mosaic path.
+        // writes and the /ogc/styles surface authors. Each layer's primary catalog style
+        // is resolved here and handed to the renderer (AppliedStyleJsonByLayerId), so the
+        // shared styled-vector path draws the applied style instead of the layer's stored
+        // default. The per-layer styleRendering outcome reports what was actually drawn.
         var styleCatalog = httpContext.RequestServices.GetService<IStyleCatalog>();
 
         var storageLayerIds = new int[argument.Layers.Count];
-        var effectiveStyleIds = new string?[argument.Layers.Count];
         var renderedLayers = new McpRenderedLayer[argument.Layers.Count];
+        var resolvedLayers = new ResolvedMapLayer[argument.Layers.Count];
+        var appliedStyleJson = new Dictionary<int, string>();
+        var hasRasterCoverage = false;
+        var hasVectorLayer = false;
         for (var i = 0; i < argument.Layers.Count; i++)
         {
             var layerRef = argument.Layers[i];
             var resolved = await MapToolLayerResolver.ResolveForReadAsync(
                 httpContext, snapshot, layerRef.ServiceId, layerRef.LayerId, AuthorizationOperation.Query, cancellationToken)
                 .ConfigureAwait(false);
+            EnsureDistinctStorageIdentity(resolvedLayers, i, resolved);
             storageLayerIds[i] = resolved.StorageLayerId;
-            effectiveStyleIds[i] = await ResolveEffectiveStyleIdAsync(styleCatalog, resolved.StorageLayerId, cancellationToken)
+            resolvedLayers[i] = new ResolvedMapLayer(resolved.StorageLayerId, resolved.Resource.Metadata.Id);
+            if (IsRasterCoverage(resolved.Resource))
+            {
+                hasRasterCoverage = true;
+            }
+            else
+            {
+                hasVectorLayer = true;
+            }
+
+            if (hasRasterCoverage && hasVectorLayer)
+            {
+                // The renderer returns raster coverage pixels as soon as any requested layer
+                // has coverage and never composites vector layers over them, so a mixed
+                // request would silently drop the vector layers.
+                throw new GeoprocessingValidationException(
+                    "'layers' mixes raster coverage layers with vector feature layers, which honua_render_map cannot composite in one image. "
+                    + "Render the raster coverage layers and the vector layers in separate honua_render_map calls.");
+            }
+
+            var appliedStyle = await ResolveAppliedStyleAsync(styleCatalog, resolved.StorageLayerId, cancellationToken)
                 .ConfigureAwait(false);
+            if (appliedStyle is not null)
+            {
+                // Forwarded even when the document has no style layers: the renderer then
+                // draws nothing for the layer rather than the stored default style.
+                appliedStyleJson[resolved.StorageLayerId] = appliedStyle.MapLibreStyleJson ?? string.Empty;
+            }
+
+            var (styleRendering, unsupported) = ClassifyStyleRendering(resolved.Resource, appliedStyle);
             renderedLayers[i] = new McpRenderedLayer
             {
                 ServiceId = resolved.Service.Metadata.Id,
                 LayerId = layerRef.LayerId!.Value,
-                StyleId = effectiveStyleIds[i]
+                StyleId = appliedStyle?.StyleId,
+                StyleRendering = styleRendering,
+                UnsupportedStyleConstructs = unsupported
             };
         }
 
@@ -127,7 +168,9 @@ internal sealed class RenderMapTool : IMcpTool
             BoundingBoxCrs = bboxSrid,
             Crs = bboxSrid,
             Format = RasterFormat.PNG,
-            Transparent = argument.Transparent ?? false
+            Transparent = argument.Transparent ?? false,
+            ResolvedLayers = resolvedLayers,
+            AppliedStyleJsonByLayerId = appliedStyleJson.Count > 0 ? appliedStyleJson : null
         };
 
         var renderer = httpContext.RequestServices.GetRequiredService<IRasterMapRenderer>();
@@ -163,7 +206,7 @@ internal sealed class RenderMapTool : IMcpTool
 
         // The effective per-layer styles are reported on both result shapes so an
         // applied preset (honua_apply_style_preset) stays observable in the caption.
-        var styleNote = BuildStyleNote(effectiveStyleIds);
+        var styleNote = BuildStyleNote(renderedLayers);
 
         // Default: hand back a fetchable artifact href instead of inlining a
         // multi-megabyte base64 PNG into the model context. Inline only when the
@@ -317,7 +360,7 @@ internal sealed class RenderMapTool : IMcpTool
         return [minX, minY, maxX, maxY];
     }
 
-    private static async Task<string?> ResolveEffectiveStyleIdAsync(
+    private static async Task<StyleCatalogRecord?> ResolveAppliedStyleAsync(
         IStyleCatalog? styleCatalog,
         int storageLayerId,
         CancellationToken cancellationToken)
@@ -329,25 +372,82 @@ internal sealed class RenderMapTool : IMcpTool
 
         var styles = await styleCatalog.GetStylesForLayerAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
         // Ordinal 0 (first) is the primary/default style by convention.
-        return styles.Count > 0 ? styles[0].StyleId : null;
+        return styles.Count > 0 ? styles[0] : null;
     }
 
-    private static string? BuildStyleNote(string?[] effectiveStyleIds)
+    private static (string StyleRendering, IReadOnlyList<string>? Unsupported) ClassifyStyleRendering(
+        MetadataV2Resource resource,
+        StyleCatalogRecord? appliedStyle)
     {
-        if (effectiveStyleIds.Length == 0 || Array.TrueForAll(effectiveStyleIds, id => id is null))
+        if (appliedStyle is null)
+        {
+            return (AppliedStyleRenderSupport.Default, null);
+        }
+
+        var geometryType = resource.ReadGeometryType();
+        if (IsRasterCoverage(resource))
+        {
+            // A raster coverage renders its native pixels; a vector style bound to it is not drawn.
+            return (AppliedStyleRenderSupport.UnsupportedStyleConstruct,
+                ["the applied vector style is not drawn on a raster coverage layer (coverage pixels render natively)"]);
+        }
+
+        var unsupported = AppliedStyleRenderSupport.FindUnsupportedConstructs(appliedStyle.MapLibreStyleJson, geometryType);
+        return unsupported.Count == 0
+            ? (AppliedStyleRenderSupport.Applied, null)
+            : (AppliedStyleRenderSupport.UnsupportedStyleConstruct, unsupported);
+    }
+
+    // Mirrors the vector-aware renderer's geometry test: a resource without a geometry
+    // type or geometry field renders from raster coverage pixels.
+    private static bool IsRasterCoverage(MetadataV2Resource resource)
+        => resource.ReadGeometryType() == MetadataV2GeometryType.None && resource.FindPrimaryGeometryField() is null;
+
+    // The renderer resolves each layer's resource by storage layer id, so two requested
+    // layers sharing a storage layer id but bound to different Metadata v2 resources
+    // would both render with the first resource's identity.
+    private static void EnsureDistinctStorageIdentity(
+        ResolvedMapLayer[] resolvedSoFar,
+        int count,
+        MapToolLayerContext resolved)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            var earlier = resolvedSoFar[i];
+            if (earlier.LayerId == resolved.StorageLayerId &&
+                !string.Equals(earlier.ResourceId, resolved.Resource.Metadata.Id, StringComparison.Ordinal))
+            {
+                throw new GeoprocessingValidationException(
+                    $"'layers' entries {i} and {count} resolve to the same storage layer ({resolved.StorageLayerId.ToString(CultureInfo.InvariantCulture)}) "
+                    + "through different published resources, which cannot be rendered with distinct identities in one image. "
+                    + "Render them in separate honua_render_map calls.");
+            }
+        }
+    }
+
+    private static string? BuildStyleNote(McpRenderedLayer[] layers)
+    {
+        if (layers.Length == 0 || Array.TrueForAll(layers, layer => layer.StyleId is null))
         {
             return null;
         }
 
         var builder = new StringBuilder("Layer styles: ");
-        for (var i = 0; i < effectiveStyleIds.Length; i++)
+        for (var i = 0; i < layers.Length; i++)
         {
             if (i > 0)
             {
                 builder.Append(", ");
             }
 
-            builder.Append(effectiveStyleIds[i] ?? "(default)");
+            var layer = layers[i];
+            builder.Append(layer.StyleId ?? "(default)");
+            if (string.Equals(layer.StyleRendering, AppliedStyleRenderSupport.UnsupportedStyleConstruct, StringComparison.Ordinal))
+            {
+                builder.Append(" [unsupported-style-construct: ");
+                builder.AppendJoin("; ", layer.UnsupportedStyleConstructs ?? []);
+                builder.Append(']');
+            }
         }
 
         builder.Append('.');

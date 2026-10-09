@@ -26,9 +26,11 @@ tags. Tags are discovery pointers; the release pins
 `oci://ghcr.io/honua-io/honua-server@sha256:<index-digest>`.
 `deploy-platform-images.yml` also enables and verifies these attestations for
 its published Lambda and Functions AOT candidates. It retains the Lambda parent
-in each registry under `attested-lambda-aot-arm64-<full-source-sha>` and publishes
-the verified arm64 serving child under its existing Lambda deployment tags.
-Final Lambda aliases use `--prefer-index=false` to preserve the child digest.
+in each registry under `attested-lambda-aot-<arch>-<full-source-sha>` for both
+`amd64` and `arm64`, and publishes each verified serving child under its
+`-lambda-aot-<arch>` deployment tags. The unsuffixed `-lambda-aot` and `-lambda`
+aliases use `--prefer-index=false` to copy the amd64 (`x86_64`) child, the
+architecture the release manifest pins, preserving its digest.
 Scan-only local images do
 not supply immutable registry evidence.
 
