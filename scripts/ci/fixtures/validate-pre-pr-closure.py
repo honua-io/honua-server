@@ -139,6 +139,7 @@ pathlib.Path(out).write_text(json.dumps({'projects': projects}))
         self.assertNotIn("   tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj", output)
         self.assertNotIn("   tests/dotnet/Honua.Protocols.GeoServices.Tests/", output)
         self.assertIn("Format dependency closure: 2 projects", output)
+        self.assertIn("0 test projects; evaluated Debug graph", output)
         self.assertIn("Format workspace: 1 owning project", output)
 
     def test_default_preserves_transitive_test_closure(self):

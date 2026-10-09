@@ -563,12 +563,12 @@ test_project_kept() {
 }
 
 evaluate_dependency_graph() {
-    local target="$1" graph
+    local target="$1" configuration="${2:-Release}" graph
     graph="$(mktemp -p "${REPO_ROOT}" --suffix=.dependency-graph.json)"
     CLEANUP_PATHS+=("${graph}")
     # GenerateRestoreGraphFile evaluates imports/conditional ProjectReferences,
     # including Directory.Build.props's analyzer. It downloads/builds nothing.
-    dotnet msbuild "${target}" -t:GenerateRestoreGraphFile -p:Configuration=Release \
+    dotnet msbuild "${target}" -t:GenerateRestoreGraphFile -p:Configuration="${configuration}" \
         -p:RestoreGraphOutputPath="${graph}" /v:quiet
     DEPENDENCY_GRAPH="${graph}"
 }
@@ -750,8 +750,8 @@ else
         FORMAT_TARGET=("${FORMAT_SLNF}")
         format_scope_args=(--include "${changed_arr[@]}")
         echo "   Format workspace: $(jq '.solution.projects|length' "${FORMAT_SLNF}") owning project(s)."
-        evaluate_dependency_graph "${FORMAT_SLNF}"
-        "${PYTHON_BIN}" scripts/ci/pre-pr-dependency-plan.py --root "${REPO_ROOT}" --label Format "${DEPENDENCY_GRAPH}"
+        evaluate_dependency_graph "${FORMAT_SLNF}" Debug
+        "${PYTHON_BIN}" scripts/ci/pre-pr-dependency-plan.py --root "${REPO_ROOT}" --label Format --configuration Debug "${DEPENDENCY_GRAPH}"
     fi
 fi
 if [[ ${#FORMAT_TARGET[@]} -eq 0 ]]; then

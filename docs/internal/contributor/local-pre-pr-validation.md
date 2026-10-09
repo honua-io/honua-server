@@ -4,7 +4,8 @@
 Use `--dry-run` to inspect its selection before compiling. The plan distinguishes
 solution-filter **roots** from the **evaluated dependency closure**: removing a
 root does not remove a project referenced by another root. MSBuild's
-`GenerateRestoreGraphFile` evaluates Release imports and conditional references,
+`GenerateRestoreGraphFile` evaluates imports and conditional references (Release
+for builds, Debug for the formatter's default workspace),
 including the analyzer reference in `Directory.Build.props`; graph evaluation
 requires the SDK and build-slot admission, but downloads no packages and compiles
 no code.
