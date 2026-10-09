@@ -124,7 +124,7 @@ jobs:
                 exclude_slow: "false",
                 exclude_fast: "false",
                 test_timeout_minutes: $budget,
-                job_timeout_minutes: ([($budget * $iterations + 25), 350] | min)
+                job_timeout_minutes: ($budget * $iterations + 25)
               }]}')"
             window="ad-hoc: ${IN_PROJECT} [${adhoc_filter}]"
           else
@@ -168,9 +168,20 @@ jobs:
                 exclude_fast: "true",
                 test_timeout_minutes: .test_timeout_minutes,
                 # Room for every iteration plus checkout, setup, restore and
-                # build. Capped because a GitHub job may not exceed 360 minutes.
-                job_timeout_minutes: ([(.test_timeout_minutes * $iterations + 25), 350] | min)
+                # build. Oversized plans are rejected below, never silently capped.
+                job_timeout_minutes: (.test_timeout_minutes * $iterations + 25)
               } ]}' <<<"${selected}")"
+          fi
+
+          # Reserve the full setup/reporting allowance even for long shards.
+          # Reject an impossible dispatch before allocating any test runners.
+          oversized="$(jq -r --argjson iterations "${iterations}" '
+            .include[] | select(.job_timeout_minutes > 350)
+            | "\(.shard_name): \($iterations) iterations need \(.job_timeout_minutes)m; maximum iterations at this budget: \(((350 - 25) / .test_timeout_minutes | floor))"
+            ' <<<"${matrix}")"
+          if [[ -n "${oversized}" ]]; then
+            echo "::error::Flake-hunt plan exceeds the 350-minute job cap (including 25 minutes for setup/reporting): ${oversized}" >&2
+            exit 1
           fi
 
           {
