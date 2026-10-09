@@ -50,7 +50,7 @@ internal static partial class FeatureServerEndpoints
         int layerId,
         HttpContext context,
         FeatureServerRelatedRecordsHandler relatedRecordsHandler)
-        => HandleQueryRelatedRecordsGetCore(serviceId, layerId, context, relatedRecordsHandler, Honua.Core.Features.Metadata.Domain.V2.ProtocolNames.MapServer);
+        => HandleQueryRelatedRecordsGetCore(serviceId, layerId, context, relatedRecordsHandler, "MapServer");
 
     /// <summary>
     /// MapServer adapter entry point that reuses the FeatureServer
@@ -61,5 +61,5 @@ internal static partial class FeatureServerEndpoints
         int layerId,
         HttpContext context,
         FeatureServerRelatedRecordsHandler relatedRecordsHandler)
-        => HandleQueryRelatedRecordsPostCore(serviceId, layerId, context, relatedRecordsHandler, Honua.Core.Features.Metadata.Domain.V2.ProtocolNames.MapServer);
+        => HandleQueryRelatedRecordsPostCore(serviceId, layerId, context, relatedRecordsHandler, "MapServer");
 }

@@ -52,8 +52,8 @@ internal static partial class FeatureServerEndpoints
             serviceId,
             layerId,
             queryParams,
-            cancellationToken,
-            requiredProtocol);
+            requiredProtocol,
+            cancellationToken);
     }
 
     private static Task<IResult> HandleQueryRelatedRecordsPost(
@@ -107,8 +107,8 @@ internal static partial class FeatureServerEndpoints
             serviceId,
             layerId,
             queryParams,
-            cancellationToken,
-            requiredProtocol);
+            requiredProtocol,
+            cancellationToken);
     }
 
     private static bool TryParseRelatedRecordsParameters(

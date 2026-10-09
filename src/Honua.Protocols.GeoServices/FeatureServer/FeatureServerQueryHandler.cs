@@ -311,8 +311,8 @@ internal sealed partial class FeatureServerQueryHandler(
                 validatedParams,
                 queryLimits,
                 "json",
-                cancellationToken,
-                requiredProtocol).ConfigureAwait(false);
+                requiredProtocol,
+                cancellationToken).ConfigureAwait(false);
             if (preparationError != null)
             {
                 return (null, preparationError);
@@ -612,8 +612,8 @@ internal sealed partial class FeatureServerQueryHandler(
                 validatedParams,
                 queryLimits,
                 format,
-                cancellationToken,
-                requiredProtocol).ConfigureAwait(false);
+                requiredProtocol,
+                cancellationToken).ConfigureAwait(false);
             if (preparationError != null)
             {
                 return preparationError;
@@ -1396,8 +1396,8 @@ internal sealed partial class FeatureServerQueryHandler(
         QueryParameters validatedParams,
         QueryLimits queryLimits,
         string format,
-        CancellationToken cancellationToken,
-        string? requiredProtocol)
+        string? requiredProtocol,
+        CancellationToken cancellationToken)
     {
         // MapServer advertises the map/cache CRS; source storage CRS is separately
         // exposed by sourceSpatialReference. FeatureServer keeps its layer default.
