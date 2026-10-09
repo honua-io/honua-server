@@ -6,6 +6,8 @@ bash scripts/generate-feature-catalog.sh "$@"
 # Architecture.Tests references Server.Tests; the first invocation builds both.
 bash scripts/generate-admin-operation-parity-exports.sh "$@" --no-build --no-restore
 python3 scripts/ci/verify-admin-operation-parity.py
+# Reads the admin projection manifest above; builds Honua.Ai.Tests.
+bash scripts/generate-mcp-tool-roster.sh "$@"
 bash scripts/generate-geoservices-parity.sh "$@" --no-build --no-restore
 python3 scripts/ci/generate-capability-matrix.py
 python3 scripts/ci/generate-capability-concepts.py

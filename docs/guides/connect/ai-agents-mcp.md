@@ -174,6 +174,20 @@ Studio composition and lifecycle members also carry server-owned routing metadat
 
 Membership is derived from the live catalog, so an eligible server operation that appears (or disappears) at runtime joins or leaves the view with no client or SDK source-list edit. Runtime-published members are appended after the static ones so a mid-conversation `notifications/tools/list_changed` refresh does not re-sort the `tools` array and invalidate a host's prompt cache.
 
+## The canonical tool roster
+
+The server publishes its `/mcp` tool roster as a generated file, [`docs/gis/data/mcp-tool-roster.v1.json`](../../gis/data/mcp-tool-roster.v1.json) (schema: [`mcp-tool-roster.v1.schema.json`](../../gis/data/mcp-tool-roster.v1.schema.json)). It lists:
+
+- `static`: the hand-authored `honua_*` tools.
+- `projectedAdmin`: the `honua_admin_*` tools that the default composition publishes. These are the audited Admin projection plus the closed operator roster, minus the audited secret and browser-session exclusions.
+- `requiresDurableControlPlane`: the projected Admin tools that register only when a durable operation-proposal store is configured.
+- `views`: the members of the `default`, `setup`, `configure`, `operate` and `analyze` workflow views.
+- `retired`: tool names the server no longer advertises, such as `honua_propose_operation`.
+
+`serverSha` records the commit the roster was last regenerated from. To regenerate the file, run `bash scripts/generate-mcp-tool-roster.sh`. The nightly generated-files job also regenerates it. `McpToolRosterDriftTests` fails when the committed file no longer matches the composed server.
+
+The roster is for build-time parity gates, not for runtime discovery. A running agent still discovers tools with `tools/list` and `honua_list_capabilities`. Downstream catalogs gate on the roster at their pinned server commit instead of keeping their own lists. These include sdk-js MCP certification (`roster-parity`), honua-release `e2e/drivers/mcp/expected-tools.json`, and the geospatial-mcp `index.json` reference tool names. A consumer that names a `retired` tool, or a tool missing from the roster, is stale.
+
 ## Pagination
 
 The list methods (`tools/list`, `resources/list`, `resources/templates/list`, `prompts/list`) are paginated per MCP 2025-03-26: when more entries remain the result carries an opaque `nextCursor`; pass it back as `params.cursor` to fetch the next page. A single-page result omits `nextCursor`. Treat cursors as opaque and echo them verbatim; an invalid or expired cursor returns JSON-RPC `-32602` invalid-params. Large `resources/read` documents (job results, catalogs) are chunked the same way — each page's `text` concatenates per `uri` to rebuild the full document, with `nextCursor` pointing at the next chunk.
