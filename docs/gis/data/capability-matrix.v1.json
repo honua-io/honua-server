@@ -30,11 +30,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 378,
-<<<<<<< HEAD
-      "provingTestCount": 1343,
-=======
       "provingTestCount": 1344,
->>>>>>> origin/trunk
       "maturity": {
         "implemented": 375,
         "preview": 2,
@@ -1823,11 +1819,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 143,
-<<<<<<< HEAD
-      "provingTestCount": 449,
-=======
-      "provingTestCount": 450,
->>>>>>> origin/trunk
+      "provingTestCount": 454,
       "maturity": {
         "preview": 143
       },
@@ -2067,11 +2059,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 8,
-<<<<<<< HEAD
       "provingTestCount": 50,
-=======
-      "provingTestCount": 49,
->>>>>>> origin/trunk
       "maturity": {
         "preview": 8
       },
