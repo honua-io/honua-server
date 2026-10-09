@@ -155,7 +155,8 @@ public sealed class GrpcFeatureServiceTests
         var graphProvider = Substitute.For<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>();
 #pragma warning disable CA2012 // NSubstitute setup for a ValueTask-returning member.
         graphProvider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(_ =>
-            throw new InvalidOperationException("Metadata changed after validation; use the validated snapshot."));
+            ValueTask.FromException<MetadataV2GraphSnapshot>(
+                new InvalidOperationException("Metadata changed after validation; use the validated snapshot.")));
 #pragma warning restore CA2012
         var router = new FeatureProviderQueryRouter(
             Substitute.For<ISecureConnectionRegistry>(),
