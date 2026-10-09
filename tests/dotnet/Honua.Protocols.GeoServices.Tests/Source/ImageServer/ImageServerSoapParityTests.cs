@@ -500,6 +500,22 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         int.Parse(PropertyText(document, "BandCount"), CultureInfo.InvariantCulture)
             .Should().Be(json.GetProperty("BandCount").GetInt32());
         var bands = json.GetProperty("BandProperties").EnumerateArray().ToArray();
+        var bandProperty = document.Descendants().Single(element =>
+            element.Name.LocalName == "PropertySetProperty"
+            && element.Elements().Any(child => child.Name.LocalName == "Key" && child.Value == "BandProperties"));
+        var bandValues = Child(bandProperty, "Value");
+        // ArcGIS SOAP serializes IArray values as ArrayOfArgument, including
+        // GetKeyPropertiesX in the 10.8 namespace used by stock ArcGIS Pro.
+        bandValues.Attribute(XName.Get("type", XsiNamespace))!.Value.Should().Be("tns:ArrayOfArgument");
+        bandValues.Elements().Should().HaveCount(bands.Length);
+        foreach (var argument in bandValues.Elements())
+        {
+            argument.Name.LocalName.Should().Be("Argument");
+            argument.Attribute(XName.Get("type", XsiNamespace))!.Value.Should().Be("tns:PropertySet");
+            Child(argument, "PropertyArray").Attribute(XName.Get("type", XsiNamespace))!.Value
+                .Should().Be("tns:ArrayOfPropertySetProperty");
+        }
+
         var soapBands = document.Descendants()
             .Where(element => element.Name.LocalName == "Key" && element.Value == "BandName")
             .Select(element => element.Parent!)
