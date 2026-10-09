@@ -167,6 +167,7 @@ internal static class McpErrorMapper
                 Code = Codes.Unavailable,
                 Retryable = false,
                 MissingDependency = capabilityEx.MissingDependency,
+                Capability = capabilityEx.Capability,
                 Remediation = capabilityEx.Remediation,
                 RemediationRef = capabilityEx.RemediationRef,
             }

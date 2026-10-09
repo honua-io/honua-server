@@ -4,6 +4,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using System.Text.Json;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -562,6 +563,10 @@ internal static class StudioPackageEndpoints
                 StudioApiJsonContext.Default.ApiResponseStudioPackageDraft,
                 statusCode: StatusCodes.Status201Created);
         }
+        catch (CapabilityUnavailableException ex)
+        {
+            return CapabilityUnavailable(context, ex);
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(context, ex.Message);
@@ -758,6 +763,10 @@ internal static class StudioPackageEndpoints
                 ApiResponse<StudioPackageDraft>.CreateSuccess(draft),
                 StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
         }
+        catch (CapabilityUnavailableException ex)
+        {
+            return CapabilityUnavailable(context, ex);
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(context, ex.Message);
@@ -818,6 +827,10 @@ internal static class StudioPackageEndpoints
                     ApiResponse<object>.SuccessWithMessage("Studio package draft deleted."),
                     StudioApiJsonContext.Default.ApiResponseObject)
                 : NotFound(context, "Studio package draft was not found.");
+        }
+        catch (CapabilityUnavailableException ex)
+        {
+            return CapabilityUnavailable(context, ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -931,6 +944,10 @@ internal static class StudioPackageEndpoints
                 ApiResponse<StudioValidationSummary>.CreateSuccess(validation),
                 StudioApiJsonContext.Default.ApiResponseStudioValidationSummary);
         }
+        catch (CapabilityUnavailableException ex)
+        {
+            return CapabilityUnavailable(context, ex);
+        }
         catch (InvalidOperationException ex)
         {
             return Conflict(context, ex.Message);
@@ -988,6 +1005,10 @@ internal static class StudioPackageEndpoints
             return Results.Json(
                 ApiResponse<StudioPreviewPlan>.CreateSuccess(plan),
                 StudioApiJsonContext.Default.ApiResponseStudioPreviewPlan);
+        }
+        catch (CapabilityUnavailableException ex)
+        {
+            return CapabilityUnavailable(context, ex);
         }
         catch (InvalidOperationException ex)
         {
@@ -1084,6 +1105,10 @@ internal static class StudioPackageEndpoints
                 ApiResponse<StudioContentVersion>.CreateSuccess(version),
                 StudioApiJsonContext.Default.ApiResponseStudioContentVersion,
                 statusCode: StatusCodes.Status201Created);
+        }
+        catch (CapabilityUnavailableException ex)
+        {
+            return CapabilityUnavailable(context, ex);
         }
         catch (ArgumentException ex)
         {
@@ -1687,6 +1712,10 @@ internal static class StudioPackageEndpoints
                 StudioApiJsonContext.Default.ApiResponseStudioPublicationRequest,
                 statusCode: StatusCodes.Status201Created);
         }
+        catch (CapabilityUnavailableException ex)
+        {
+            return CapabilityUnavailable(context, ex);
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(context, ex.Message);
@@ -1808,6 +1837,10 @@ internal static class StudioPackageEndpoints
                 StudioApiJsonContext.Default.ApiResponseStudioPackageDraft,
                 statusCode: StatusCodes.Status201Created);
         }
+        catch (CapabilityUnavailableException ex)
+        {
+            return CapabilityUnavailable(context, ex);
+        }
         catch (InvalidOperationException ex)
         {
             return Conflict(context, ex.Message);
@@ -1906,6 +1939,10 @@ internal static class StudioPackageEndpoints
                 ApiResponse<StudioRollbackRequest>.CreateSuccess(rollback),
                 StudioApiJsonContext.Default.ApiResponseStudioRollbackRequest,
                 statusCode: StatusCodes.Status201Created);
+        }
+        catch (CapabilityUnavailableException ex)
+        {
+            return CapabilityUnavailable(context, ex);
         }
         catch (ArgumentException ex)
         {
@@ -2077,6 +2114,20 @@ internal static class StudioPackageEndpoints
 
     private static IResult Conflict(HttpContext context, string detail)
         => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status409Conflict, "Conflict", detail);
+
+    // honua-server#5733: a Redis-off host composes draft state (volatile outside Production) but
+    // not the governed proposal control plane. A mutation that needs it -- publish-request's
+    // separate-principal approval, or any mutation on a fail-closed Production store -- refuses
+    // with the shared typed capability-unavailable problem, never a 409 or 500 that drops the
+    // missingDependency receipt.
+    private static IResult CapabilityUnavailable(HttpContext context, CapabilityUnavailableException exception)
+        => ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
+            context,
+            exception.Message,
+            exception.MissingDependency,
+            exception.Remediation,
+            exception.RemediationRef,
+            exception.Capability);
 
     private static IResult ServerError(HttpContext context, string detail)
         => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status500InternalServerError, "Internal Server Error", detail);
