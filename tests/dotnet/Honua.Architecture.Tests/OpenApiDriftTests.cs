@@ -365,6 +365,7 @@ public sealed class OpenApiDriftTests
             .EnumerateArray().Select(alternative => alternative.GetProperty("$ref").GetString())
             .Should().BeEquivalentTo(["#/components/schemas/Results", "#/components/schemas/RawJsonValue"],
                 "JSON results must describe both the document map and the native raw value");
+        // codeql[cs/linq/missed-select]: asserts each binary media type schema independently
         foreach (var mediaType in new[] { "image/tiff", "image/png", "image/jpeg",
             "application/geopackage+sqlite3", "application/vnd.las", "text/csv",
             "application/octet-stream", "multipart/related" })

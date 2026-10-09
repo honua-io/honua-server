@@ -307,6 +307,7 @@ internal static class NAServerMetadata
     {
         var features = new JsonArray();
         var objectId = 1;
+        // codeql[cs/linq/missed-select]: assigns incrementing object ids while building the travel-mode record set
         foreach (var name in capabilities.SupportedTravelModes)
         {
             var mode = BuildTravelMode(name, dataset);
@@ -428,17 +429,10 @@ internal static class NAServerMetadata
             }
         }
 
-        foreach (var layer in Layers)
-        {
-            if (!string.IsNullOrWhiteSpace(serviceName)
-                && (layer.EsriServiceName.Equals(serviceName, StringComparison.OrdinalIgnoreCase)
-                    || layer.Name.Equals(serviceName, StringComparison.OrdinalIgnoreCase)))
-            {
-                return layer;
-            }
-        }
-
-        return null;
+        return Layers.FirstOrDefault(layer =>
+            !string.IsNullOrWhiteSpace(serviceName)
+            && (layer.EsriServiceName.Equals(serviceName, StringComparison.OrdinalIgnoreCase)
+                || layer.Name.Equals(serviceName, StringComparison.OrdinalIgnoreCase)));
     }
 
     /// <summary>

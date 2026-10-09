@@ -193,6 +193,7 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
             GeometrySrid = 4326,
             Geometry = new NetTopologySuite.IO.WKTReader().Read("MULTIPOLYGON(((0 0,0 2,2 2,2 0,0 0)))").AsBinary()
         });
+        // codeql[cs/linq/missed-select]: each mutation request must be rejected without changing the stored rule
         foreach (var createRequest in new Func<HttpRequestMessage>[]
         {
             () => new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/alerts/rules") { Content = JsonContent.Create(RulePayload("new", null)) },

@@ -823,6 +823,7 @@ internal static class AccessPolicyHelpers
         var requiresAuth = false;
         var hasDenied = false;
 
+        // codeql[cs/linq/missed-select]: returns on the first allow and accumulates denial flags across the rest
         foreach (var resource in resources)
         {
             var decision = evaluate(resource);

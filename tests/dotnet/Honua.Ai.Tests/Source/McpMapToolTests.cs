@@ -1166,11 +1166,17 @@ public sealed class McpMapToolTests
             CancellationToken.None);
 
         var allowed = metadataAllowed && (!includeRowCount || queryAllowed);
-        response!.Error.Should().BeNull();
-        response.Result!.Value.GetProperty("isError").GetBoolean().Should().Be(!allowed);
+        if (response is not { } call)
+        {
+            throw new InvalidOperationException("MCP response was missing");
+        }
+
+        call.Error.Should().BeNull();
+        var result = call.Result ?? throw new InvalidOperationException("MCP result was missing");
+        result.GetProperty("isError").GetBoolean().Should().Be(!allowed);
         if (allowed && includeRowCount)
         {
-            response.Result.Value.GetProperty("structuredContent").GetProperty("rowCount").GetInt64().Should().Be(42);
+            result.GetProperty("structuredContent").GetProperty("rowCount").GetInt64().Should().Be(42);
             await reader.Received(1).CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
         }
         else

@@ -80,14 +80,19 @@ public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
             "the archive job must reach Completed — a failed job must fail this test, not skip its " +
             $"assertions: {lastJson?.RootElement.GetRawText()}");
 
-        var root = lastJson!.RootElement;
+        if (lastJson is not { } archiveStatus)
+        {
+            throw new InvalidOperationException("archive job status was not captured");
+        }
+
+        var root = archiveStatus.RootElement;
         GetPropertyCaseInsensitive(root, "operation").GetString().Should().Be("archive");
 
         GetPropertyCaseInsensitive(root, "archiveSizeBytes").GetInt64()
             .Should().BeGreaterThan(0, "completed archive should have non-zero size");
         GetPropertyCaseInsensitive(root, "archiveFileId").GetString().Should().NotBeNullOrWhiteSpace();
 
-        lastJson.Dispose();
+        archiveStatus.Dispose();
     }
 
     [IntegrationTest]

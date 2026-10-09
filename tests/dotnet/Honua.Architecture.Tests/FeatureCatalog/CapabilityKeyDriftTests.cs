@@ -257,7 +257,7 @@ public sealed class CapabilityKeyDriftTests
             "tenant administration may never be emitted as a GA-shaped control-plane surface; "
             + "it exists only as the internal admin.multi-tenancy surface");
 
-        var matrixPath = Path.Combine(ArchitectureTestHelpers.ResolveRepositoryRoot(),
+        var matrixPath = Path.Join(ArchitectureTestHelpers.ResolveRepositoryRoot(),
             "docs", "gis", "data", "capability-matrix.v1.json");
         using var matrix = JsonDocument.Parse(File.ReadAllText(matrixPath));
         var tenancy = matrix.RootElement.GetProperty("capabilities").EnumerateArray()
@@ -268,7 +268,7 @@ public sealed class CapabilityKeyDriftTests
         tenancy.GetProperty("maturity").EnumerateObject().Should().OnlyContain(tier => tier.Name == "internal",
             "a future GA-shaped tenancy claim in the generated matrix must fail the build");
 
-        var published = Path.Combine(ArchitectureTestHelpers.ResolveRepositoryRoot(),
+        var published = Path.Join(ArchitectureTestHelpers.ResolveRepositoryRoot(),
             "docs", "okf", "capabilities", "admin.multi-tenancy.md");
         File.Exists(published).Should().BeFalse(
             "an internal capability is never published as customer documentation; a generated "

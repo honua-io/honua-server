@@ -92,6 +92,7 @@ public sealed class StudioMcpToolContractTests
     {
         var tools = BuildAllTools().OfType<StudioCompositionToolBase>().Cast<IMcpTool>().ToArray();
         tools.Should().HaveCount(11);
+        // codeql[cs/linq/missed-select]: asserts each tool descriptor mentions dashboard
         foreach (var tool in tools)
         {
             var descriptor = tool.Describe();

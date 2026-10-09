@@ -58,6 +58,7 @@ internal sealed class SavedMapOperationAppendCoordinator : IDisposable
         _stripes = new SemaphoreSlim[StripeCount];
         for (var i = 0; i < StripeCount; i++)
         {
+            // codeql[cs/local-not-disposed]: stripe gates live on the coordinator and are disposed in Dispose
             _stripes[i] = new SemaphoreSlim(1, 1);
         }
     }

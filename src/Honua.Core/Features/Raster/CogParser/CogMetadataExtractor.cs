@@ -224,9 +224,13 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                 if (modelTransformation is { Length: 16 })
                 {
                     if (modelTransformation.Any(value => !double.IsFinite(value))
+                        // codeql[cs/equality-on-floats]: exact TIFF model-transform slot; a tolerance would accept a rotated grid as north-up
                         || modelTransformation[1] != 0 || modelTransformation[4] != 0
+                        // codeql[cs/equality-on-floats]: exact TIFF model-transform slot; a tolerance would accept a rotated grid as north-up
                         || modelTransformation[2] != 0 || modelTransformation[6] != 0
+                        // codeql[cs/equality-on-floats]: exact TIFF model-transform slot; a tolerance would accept a rotated grid as north-up
                         || modelTransformation[12] != 0 || modelTransformation[13] != 0
+                        // codeql[cs/equality-on-floats]: homogeneous coordinate must be exact 1; a tolerance would accept a projective transform
                         || modelTransformation[14] != 0 || modelTransformation[15] != 1
                         || modelTransformation[0] <= 0
                         || modelTransformation[5] >= 0)

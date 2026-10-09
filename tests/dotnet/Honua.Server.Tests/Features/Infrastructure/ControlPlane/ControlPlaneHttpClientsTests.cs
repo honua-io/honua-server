@@ -108,6 +108,7 @@ public sealed class ControlPlaneHttpClientsTests
             _requests.AddOrUpdate(path, 1, static (_, count) => count + 1);
             if (path.StartsWith("/healthz", StringComparison.Ordinal))
             {
+                // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
                 {
                     Content = new StringContent("Not Ready", Encoding.UTF8, "text/plain")
@@ -115,6 +116,7 @@ public sealed class ControlPlaneHttpClientsTests
             }
 
             var observedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+            // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(

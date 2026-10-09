@@ -470,11 +470,13 @@ internal static partial class GPServerSoapExecution
         {
             var wkid = ReadWkid(set) ?? throw Invalid($"Output '{output.ParamName}' has no spatial reference WKID.");
             encoding = new GeometryEncoding(geometryType, hasZ, hasM);
-            shapeName = "Shape";
-            while (fields.Any(field => string.Equals(field.Name, shapeName, StringComparison.OrdinalIgnoreCase)))
+            var shape = new StringBuilder("Shape");
+            while (fields.Any(field => string.Equals(field.Name, shape.ToString(), StringComparison.OrdinalIgnoreCase)))
             {
-                shapeName = "_" + shapeName;
+                shape.Insert(0, '_');
             }
+
+            shapeName = shape.ToString();
             fieldElements.Add(new XElement("Field", new XAttribute(Xsi + "type", "tns:Field"),
                 new XElement("Name", shapeName),
                 new XElement("Type", "esriFieldTypeGeometry"),

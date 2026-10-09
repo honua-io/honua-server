@@ -280,6 +280,7 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             // HttpClient transfers ownership of the returned response to the import caller.
+            // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(GeoJson, Encoding.UTF8, "application/geo+json"),

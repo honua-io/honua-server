@@ -720,6 +720,7 @@ internal static partial class ImageServerSoapEndpoints
             !raster.NoDataValue.HasValue ||
             !string.Equals(raster.PixelType, "8BUI", StringComparison.OrdinalIgnoreCase) ||
             raster.NoDataValue.Value is < byte.MinValue or > byte.MaxValue ||
+            // codeql[cs/equality-on-floats]: U8 nodata must be an exact integer; a tolerance would admit a different stored byte
             raster.NoDataValue.Value != Math.Truncate(raster.NoDataValue.Value))
         {
             return false;

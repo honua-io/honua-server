@@ -28,7 +28,7 @@ public sealed class LoadHarnessCompletionTests
     [InlineData(3)]
     public async Task Cli_CompletesWindow_ReportsMeasuredSuccessesAndFailures(int failureMode)
     {
-        var directory = Path.Combine(Path.GetTempPath(), $"honua-load-completion-{Guid.NewGuid():N}");
+        var directory = Path.Join(Path.GetTempPath(), $"honua-load-completion-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
@@ -54,6 +54,7 @@ public sealed class LoadHarnessCompletionTests
                 {
                     await Task.Delay(Timeout.InfiniteTimeSpan, context.RequestAborted);
                 }
+                // codeql[cs/empty-catch-block]: the client abort ends the hung body; the fixture must stay up so the harness can record the timeout
                 catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
                 {
                 }
@@ -67,7 +68,7 @@ public sealed class LoadHarnessCompletionTests
         await app.StartAsync();
         var address = app.Services.GetRequiredService<IServer>().Features
             .Get<IServerAddressesFeature>()!.Addresses.Single();
-        var statsPath = Path.Combine(directory, "stats.json");
+        var statsPath = Path.Join(directory, "stats.json");
         await File.WriteAllTextAsync(statsPath, "stale statistics from an earlier run");
         var start = new ProcessStartInfo("dotnet")
         {

@@ -181,7 +181,7 @@ internal sealed class ApplyStylePresetTool : IMcpTool
             StyleVersion = preset.StyleVersion,
             Applied = !argument.DryRun,
             DryRun = argument.DryRun,
-            Warning = operation.Result?.Details?.ContainsKey("metadataReconciliationPending") == true
+            Warning = (operation.Result?.Details?.ContainsKey("metadataReconciliationPending") ?? false)
                 ? operation.Reason : null,
         };
         return McpToolHelpers.SuccessResult(output, MapToolJsonContext.Default.McpApplyStylePresetOutput);

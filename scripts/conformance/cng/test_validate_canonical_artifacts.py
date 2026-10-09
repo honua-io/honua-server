@@ -5,6 +5,7 @@ import copy
 import json
 import tempfile
 import unittest
+import unittest.mock
 from argparse import Namespace
 from pathlib import Path
 
@@ -903,7 +904,6 @@ class GeoParquetConsumerMetadataTests(unittest.TestCase):
         import subprocess
         import sys
         import types
-        from unittest import mock
 
         geopandas = types.ModuleType("geopandas")
         geopandas.read_parquet = lambda path: _FakeFrame()
@@ -930,9 +930,9 @@ class GeoParquetConsumerMetadataTests(unittest.TestCase):
 
         env = {key: value for key, value in MODULE.os.environ.items()
                if key != "HONUA_CNG_GDAL_IMAGE"}
-        with mock.patch.dict(sys.modules, stubs), \
-                mock.patch.dict(MODULE.os.environ, env, clear=True), \
-                mock.patch.object(MODULE, "_run", fake_run):
+        with unittest.mock.patch.dict(sys.modules, stubs), \
+                unittest.mock.patch.dict(MODULE.os.environ, env, clear=True), \
+                unittest.mock.patch.object(MODULE, "_run", fake_run):
             rows = MODULE.validate_geoparquet(Path("cng.parquet"), args())
 
         by_client = {row["canonical_client"]: row for row in rows}
@@ -1002,7 +1002,6 @@ class FlatGeobufConsumerMetadataTests(unittest.TestCase):
                 self.assertEqual(expected, MODULE._pmtiles_tile_type(raw))
 
     def test_javascript_metadata_survives_collection_without_invented_transfer(self):
-        from unittest import mock
         import subprocess
 
         payload = [{
@@ -1010,13 +1009,12 @@ class FlatGeobufConsumerMetadataTests(unittest.TestCase):
             "client_version": "4.4.0", "lane": "node-flatgeobuf", "result": "pass",
             "observed_metadata": {"feature_count": 5, "crs": "EPSG:3857"},
         }]
-        with mock.patch.object(MODULE, "_run", return_value=subprocess.CompletedProcess([], 0, json.dumps(payload), "")):
+        with unittest.mock.patch.object(MODULE, "_run", return_value=subprocess.CompletedProcess([], 0, json.dumps(payload), "")):
             rows = MODULE.validate_javascript(Path("artifacts"), args())
         self.assertEqual(payload[0]["observed_metadata"], rows[0]["observed_metadata"])
         self.assertNotIn("observed_transfer", rows[0])
 
     def test_javascript_whole_object_response_survives_collection_and_fails_unchanged_budget(self):
-        from unittest import mock
         import subprocess
 
         payload = [{
@@ -1027,7 +1025,7 @@ class FlatGeobufConsumerMetadataTests(unittest.TestCase):
             "serving_source": {"provider_environment": "localstack", "publication_api_proven": False},
             "http_responses": [{"status": 206, "bytes": 1107, "content_range": "bytes 0-1106/1107"}],
         }]
-        with mock.patch.object(MODULE, "_run", return_value=subprocess.CompletedProcess([], 0, json.dumps(payload), "")):
+        with unittest.mock.patch.object(MODULE, "_run", return_value=subprocess.CompletedProcess([], 0, json.dumps(payload), "")):
             rows = MODULE.validate_javascript(Path("artifacts"), args())
         for key in ("observed_transfer", "serving_source", "http_responses"):
             self.assertEqual(payload[0][key], rows[0][key])

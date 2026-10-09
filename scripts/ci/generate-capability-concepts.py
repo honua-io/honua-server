@@ -297,8 +297,7 @@ def render_index(entries: list[tuple[str, str, str, str, str]]) -> str:
         "---",
         "type: index",
         'title: "Capability concepts"',
-        'description: "One concept per entry in the server capability registry: what it is, '
-        'which edition carries it, and how mature its surfaces are."',
+        'description: "One concept per entry in the server capability registry: what it is, which edition carries it, and how mature its surfaces are."',
         "tags: [capability, registry, generated]",
         "---",
         GENERATED,

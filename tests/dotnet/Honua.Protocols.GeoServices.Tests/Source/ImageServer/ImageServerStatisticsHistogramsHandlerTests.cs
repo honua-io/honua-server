@@ -491,6 +491,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
     {
         // 2147483647 is a valid Int32 but has no 1-based store band: the 0-based shift would wrap
         // to int.MinValue and reach the raster store as a negative band.
+        // codeql[cs/linq/missed-select]: each bandIds spelling is a separate rejected request
         foreach (var bandIds in new[] { "2147483647", "[2147483647]", "0,2147483647" })
         {
             var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)

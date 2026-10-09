@@ -163,6 +163,7 @@ public sealed class OgcFeaturesGeometryServicesTests
         {
             foreach (var includeSrid in new[] { true, false })
             {
+                // codeql[cs/linq/missed-select]: asserts parser isolation for every endian, SRID and format variant
                 foreach (var wkt in formats)
                 {
                     var geometry = textReader.Read(wkt);

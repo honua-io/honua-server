@@ -376,6 +376,7 @@ internal sealed partial class StreamingFileImportService
                 {
                     await DropStagingTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
                 }
+                // codeql[cs/catch-of-all-exceptions]: cleanup failure must not mask the original replace error, which is rethrown below
                 catch (Exception cleanupEx)
                 {
                     ImportLog.StagingTableCleanupFailed(_logger, cleanupEx, targetSchema, allowedTableName);

@@ -275,6 +275,7 @@ public sealed class OgcProcessesReferenceAuthorizationTests
                     fixture.OnPayload?.Invoke();
                 }
 
+                // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(identifier ? fixture.Identifier

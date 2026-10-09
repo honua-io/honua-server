@@ -607,6 +607,7 @@ internal sealed class CapabilityManifestService(
                 requiresDurableJobStore: spec.RequiresDurableJobStore));
         }
 
+        // codeql[cs/linq/missed-where]: adds a capability only when that id is not already present
         foreach (var capability in BuildOperationCapabilities(context, operationCapabilities))
         {
             if (capabilities.All(existing => !string.Equals(existing.Id, capability.Id, StringComparison.Ordinal)))

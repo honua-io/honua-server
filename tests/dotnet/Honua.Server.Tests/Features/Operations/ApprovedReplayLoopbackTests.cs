@@ -55,6 +55,7 @@ public sealed class ApprovedReplayLoopbackTests
         {
             Uri = request.RequestUri;
             Host = request.Headers.Host;
+            // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") });
         }
     }

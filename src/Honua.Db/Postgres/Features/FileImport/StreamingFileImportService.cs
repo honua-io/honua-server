@@ -190,6 +190,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         double? south = null;
         double? east = null;
         double? north = null;
+        // codeql[cs/linq/missed-select]: folds feature envelopes into one extent and skips null geometry
         foreach (var feature in features)
         {
             var envelope = feature.Geometry?.EnvelopeInternal;
