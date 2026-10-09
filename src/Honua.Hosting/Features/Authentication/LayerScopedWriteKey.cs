@@ -6,7 +6,8 @@ using System.Security.Claims;
 namespace Honua.Infrastructure.Authentication;
 
 /// <summary>
-/// Grammar and helpers for layer-scoped write API keys (#1637).
+/// Grammar and helpers for layer-scoped write API keys (#1637) and the
+/// resource grants (<c>read:</c> / <c>write:</c>) carried by scoped API keys.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -27,6 +28,17 @@ namespace Honua.Infrastructure.Authentication;
 /// write key: it is authenticated as a non-admin principal and is enforced by
 /// the shared write-authorization pipeline rather than by caller discipline.
 /// </para>
+/// <para>
+/// Read grammar for scope-governed keys (same normalization):
+/// <list type="bullet">
+///   <item><c>read:{service}</c> or <c>read:{service}/*</c> — reads any layer of the named service.</item>
+///   <item><c>read:{service}/{layer}</c> — reads a single named layer.</item>
+///   <item><c>read:*</c> — reads any layer of any service.</item>
+/// </list>
+/// The wildcard forms exist only for <c>read:</c>; <c>write:</c> grants must
+/// always name their service. Wildcard reads still pass through the same field
+/// mask, row-level and tenant filters as a named <c>read:</c> grant.
+/// </para>
 /// </remarks>
 internal static class LayerScopedWriteKey
 {
@@ -35,7 +47,16 @@ internal static class LayerScopedWriteKey
     /// </summary>
     public const string WritePermissionPrefix = "write:";
 
-    private const string ReadPermissionPrefix = "read:";
+    /// <summary>
+    /// Prefix that identifies a scoped read permission grant.
+    /// </summary>
+    public const string ReadPermissionPrefix = "read:";
+
+    /// <summary>
+    /// Wildcard token accepted in <c>read:</c> grants: <c>read:*</c> (any service)
+    /// and <c>read:{service}/*</c> (any layer of the service).
+    /// </summary>
+    public const string ReadWildcard = "*";
 
     /// <summary>
     /// Exact full-administration grants. A key carrying any of these is NOT scoped
@@ -197,7 +218,7 @@ internal static class LayerScopedWriteKey
         var service = serviceName.Trim();
         var layer = layerName?.Trim();
         return principal.FindAll("permission")
-            .Any(claim => GrantMatchesResource(claim.Value, ReadPermissionPrefix, service, layer));
+            .Any(claim => GrantMatchesResource(claim.Value, ReadPermissionPrefix, service, layer, allowWildcard: true));
     }
 
     /// <summary>
@@ -228,9 +249,66 @@ internal static class LayerScopedWriteKey
     }
 
     private static bool GrantAllowsWrite(string? grant, string service, string? layer)
-        => GrantMatchesResource(grant, WritePermissionPrefix, service, layer);
+        => GrantMatchesResource(grant, WritePermissionPrefix, service, layer, allowWildcard: false);
 
-    private static bool GrantMatchesResource(string? grant, string prefix, string service, string? layer)
+    /// <summary>
+    /// Determines whether a <c>read:</c> or <c>write:</c> grant fails to name a valid
+    /// target. Read grants accept <c>read:*</c> and <c>read:{service}/*</c>; write
+    /// grants accept no wildcard. Grants with other prefixes are not resource grants
+    /// and are never reported as malformed.
+    /// </summary>
+    /// <param name="grant">The permission grant.</param>
+    /// <returns><see langword="true"/> when the grant is a malformed resource grant.</returns>
+    public static bool IsMalformedResourceGrant(string? grant)
+    {
+        var trimmed = grant?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            return false;
+        }
+
+        bool allowWildcard;
+        string scope;
+        if (trimmed.StartsWith(ReadPermissionPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            allowWildcard = true;
+            scope = trimmed[ReadPermissionPrefix.Length..].Trim();
+        }
+        else if (trimmed.StartsWith(WritePermissionPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            allowWildcard = false;
+            scope = trimmed[WritePermissionPrefix.Length..].Trim();
+        }
+        else
+        {
+            return false;
+        }
+
+        if (scope.Length == 0)
+        {
+            return true;
+        }
+
+        var separatorIndex = scope.IndexOf('/', StringComparison.Ordinal);
+        var service = separatorIndex < 0 ? scope : scope[..separatorIndex].Trim();
+        var layer = separatorIndex < 0 ? null : scope[(separatorIndex + 1)..].Trim();
+        if (service.Length == 0 || layer is { Length: 0 })
+        {
+            return true;
+        }
+
+        var serviceIsWildcard = string.Equals(service, ReadWildcard, StringComparison.Ordinal);
+        var layerIsWildcard = string.Equals(layer, ReadWildcard, StringComparison.Ordinal);
+        if (!allowWildcard)
+        {
+            return serviceIsWildcard || layerIsWildcard;
+        }
+
+        // read:* is the only service wildcard; read:*/{layer} and read:*/* are not grammar.
+        return serviceIsWildcard && layer is not null;
+    }
+
+    private static bool GrantMatchesResource(string? grant, string prefix, string service, string? layer, bool allowWildcard)
     {
         var trimmed = grant?.Trim();
         if (string.IsNullOrEmpty(trimmed) ||
@@ -248,7 +326,13 @@ internal static class LayerScopedWriteKey
         var separatorIndex = scope.IndexOf('/');
         if (separatorIndex < 0)
         {
-            // Service-wide grant: write:{service} authorizes any layer of the service.
+            // read:* authorizes any layer of any service (read grants only).
+            if (allowWildcard && string.Equals(scope, ReadWildcard, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            // Service-wide grant: {prefix}{service} authorizes any layer of the service.
             return string.Equals(scope, service, StringComparison.OrdinalIgnoreCase);
         }
 
@@ -258,6 +342,13 @@ internal static class LayerScopedWriteKey
         if (!string.Equals(grantService, service, StringComparison.OrdinalIgnoreCase))
         {
             return false;
+        }
+
+        // read:{service}/* is equivalent to the service-wide read:{service} grant,
+        // including service-level checks that carry no target layer.
+        if (allowWildcard && string.Equals(grantLayer, ReadWildcard, StringComparison.Ordinal))
+        {
+            return true;
         }
 
         // A layer-specific grant requires a known target layer that matches.

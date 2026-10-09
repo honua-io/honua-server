@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Infrastructure.Authentication;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
@@ -89,5 +90,38 @@ public sealed class LayerScopedWriteKeyTests
         var permissions = new[] { "read:layers" };
         LayerScopedWriteKey.IsScopedWriteKey(permissions).Should().BeFalse();
         LayerScopedWriteKey.ConfersFullAdmin(permissions).Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData("read:*", false)]
+    [InlineData("read:catalog", false)]
+    [InlineData("read:catalog/*", false)]
+    [InlineData("read:catalog/roads", false)]
+    [InlineData(" READ:Catalog/* ", false)]
+    [InlineData("write:catalog", false)]
+    [InlineData("write:catalog/roads", false)]
+    [InlineData("admin:read", false)]
+    [InlineData("ops:read", false)]
+    [InlineData("read:", true)]
+    [InlineData("read:catalog/", true)]
+    [InlineData("read:/roads", true)]
+    [InlineData("read:*/roads", true)]
+    [InlineData("read:*/*", true)]
+    [InlineData("write:", true)]
+    [InlineData("write:catalog/", true)]
+    [InlineData("write:/roads", true)]
+    [InlineData("write:*", true)]
+    [InlineData("write:catalog/*", true)]
+    public void IsMalformedResourceGrant_EnforcesReadWildcardGrammar(string grant, bool malformed)
+    {
+        LayerScopedWriteKey.IsMalformedResourceGrant(grant).Should().Be(malformed);
+    }
+
+    [UnitTest]
+    public void ReadWildcardGrant_DoesNotMakeKeyScopedWriteOrFullAdmin()
+    {
+        LayerScopedWriteKey.IsScopedWriteKey(["read:*"]).Should().BeFalse();
+        LayerScopedWriteKey.ConfersFullAdmin(["read:*"]).Should().BeFalse();
+        LayerScopedWriteKey.ConfersFullAdmin(["admin:read", "read:*"]).Should().BeFalse();
     }
 }

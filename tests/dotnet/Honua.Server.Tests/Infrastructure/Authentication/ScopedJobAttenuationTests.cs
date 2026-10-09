@@ -248,4 +248,27 @@ public sealed class ScopedJobAttenuationTests
         within.Should().BeTrue();
         unreachable.Should().BeNull();
     }
+
+    [UnitTest]
+    public void Intersect_ReadWildcardGrants_ReachReadOnly()
+    {
+        IReadOnlyList<JobResourceScopeEntry> requested =
+        [
+            new("parcels", "lots", JobResourceAccess.Write),
+            new("zoning", null, JobResourceAccess.Read),
+        ];
+
+        var everyService = ScopedJobAttenuation.Intersect(["scoped-api-key"], ["read:*"], null, requested);
+        everyService.Should().BeEquivalentTo(new JobResourceScopeEntry[]
+        {
+            new("parcels", "lots", JobResourceAccess.Read),
+            new("zoning", null, JobResourceAccess.Read),
+        });
+
+        var oneService = ScopedJobAttenuation.Intersect(["scoped-api-key"], ["read:zoning/*"], null, requested);
+        oneService.Should().BeEquivalentTo(new JobResourceScopeEntry[] { new("zoning", null, JobResourceAccess.Read) });
+
+        ScopedJobAttenuation.Intersect(["scoped-api-key"], ["write:*", "write:parcels/*"], null, requested)
+            .Should().BeEmpty();
+    }
 }

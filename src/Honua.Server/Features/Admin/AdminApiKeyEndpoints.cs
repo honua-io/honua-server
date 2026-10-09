@@ -199,45 +199,21 @@ internal static partial class AdminApiKeyEndpoints
             return false;
         }
 
-        // Layer-scoped write grants (#1637) must name a target. Reject a bare
-        // "write:" (or "write:{service}/" / "write:/{layer}") so an operator cannot
-        // accidentally mint a key that authenticates but matches no resource.
-        if (request.Permissions.Any(static permission => IsMalformedWriteGrant(permission)))
+        // Resource grants must name a target. Reject a bare "write:"/"read:" (or
+        // "{prefix}{service}/" / "{prefix}/{layer}") so an operator cannot mint a key
+        // that authenticates but matches no resource. Only read grants accept the
+        // "read:*" and "read:{service}/*" wildcards; write grants never do (#1637).
+        if (request.Permissions.Any(static permission => LayerScopedWriteKey.IsMalformedResourceGrant(permission)))
         {
             validationMessage =
-                "Validation failed: layer-scoped write grants must be 'write:{service}' or 'write:{service}/{layer}'";
+                "Validation failed: resource grants must be 'write:{service}', 'write:{service}/{layer}', " +
+                "'read:{service}', 'read:{service}/{layer}', 'read:{service}/*' or 'read:*'";
             return false;
         }
 
         permissions = request.Permissions;
         validationMessage = string.Empty;
         return true;
-    }
-
-    private static bool IsMalformedWriteGrant(string permission)
-    {
-        var trimmed = permission?.Trim();
-        if (string.IsNullOrEmpty(trimmed) ||
-            !trimmed.StartsWith(LayerScopedWriteKey.WritePermissionPrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var scope = trimmed[LayerScopedWriteKey.WritePermissionPrefix.Length..].Trim();
-        if (scope.Length == 0)
-        {
-            return true;
-        }
-
-        var separatorIndex = scope.IndexOf('/');
-        if (separatorIndex < 0)
-        {
-            return false;
-        }
-
-        var service = scope[..separatorIndex].Trim();
-        var layer = scope[(separatorIndex + 1)..].Trim();
-        return service.Length == 0 || layer.Length == 0;
     }
 
     private static AdminApiKeyResponse ToResponse(AdminApiKeyRecord record) => new()

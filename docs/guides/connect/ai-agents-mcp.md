@@ -35,6 +35,18 @@ Layer references also require tenant-visible publications and shared resource ac
 }
 ```
 
+**Agent API key.** In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with this body:
+
+```json
+{
+  "name": "honua-local-agent",
+  "permissions": ["admin:read", "admin:write", "read:*"],
+  "expiresAt": null
+}
+```
+
+`admin:read` and `admin:write` cover the administrative tools; `read:*` grants data reads (`honua_list_layers`, `honua_query_features`, `honua_render_map`, catalog grounding) across every service. Name the data authority explicitly: a key without a full-admin grant is scope-governed, and `admin:read` alone cannot read any layer — resource access then requires a matching `read:` grant and is otherwise denied, so `tools/call honua_list_layers` returns an empty list. For a read-only agent use `["admin:read", "read:*"]`; to confine data reads, replace `read:*` with `read:{service}`, `read:{service}/*` or `read:{service}/{layer}` grants. Access policies, field masks and row-level filters still apply. See the [grant grammar](../../reference/admin-api/users-roles-licensing.md#grant-grammar).
+
 **Claude Desktop** launches MCP servers over stdio, so it reaches a deployment through the `honua-mcp-proxy` bridge shipped in `@honua/mcp-server`. The configuration is in [Drive Studio from Claude Desktop](../../studio/drive-from-claude-desktop.md).
 
 **Any other client** that speaks the MCP HTTP transport works the same way: send credentials as the `X-API-Key` header (or your deployment's bearer token) on every request. The initialize handshake is the standard one:

@@ -100,6 +100,15 @@ public sealed class CredentialAudit5623Tests
     [InlineData("read:catalog", "catalog", "roads", AccessScope.Read, true)]
     [InlineData("write:catalog/roads", "catalog", "roads", AccessScope.Write, true)]
     [InlineData("write:catalog", "catalog", "roads", AccessScope.Write, true)]
+    [InlineData("read:*", "catalog", "roads", AccessScope.Read, true)]
+    [InlineData("read:*", "other", "parcels", AccessScope.Read, true)]
+    [InlineData("read:*", "catalog", "roads", AccessScope.Write, false)]
+    [InlineData("read:catalog/*", "catalog", "roads", AccessScope.Read, true)]
+    [InlineData("read:catalog/*", "other", "roads", AccessScope.Read, false)]
+    [InlineData("read:catalog/*", "catalog", "roads", AccessScope.Write, false)]
+    [InlineData("read:*/roads", "catalog", "roads", AccessScope.Read, false)]
+    [InlineData("write:*", "catalog", "roads", AccessScope.Write, false)]
+    [InlineData("write:catalog/*", "catalog", "roads", AccessScope.Write, false)]
     public async Task ScopedGrants_AgreeAcrossResourceAccessPaths(
         string permission, string serviceName, string layerName, AccessScope scope, bool allowed)
     {
@@ -129,6 +138,9 @@ public sealed class CredentialAudit5623Tests
     [InlineData("read:catalog", "catalog", true)]
     [InlineData("read:catalog", "other", false)]
     [InlineData("read:catalog/roads", "catalog", false)]
+    [InlineData("read:catalog/*", "catalog", true)]
+    [InlineData("read:catalog/*", "other", false)]
+    [InlineData("read:*", "catalog", true)]
     public async Task ScopedReadGrants_ServiceAccessRequiresServiceWideGrant(string permission, string serviceName, bool allowed)
     {
         await using var services = new ServiceCollection()
@@ -147,6 +159,37 @@ public sealed class CredentialAudit5623Tests
                 .Should().Be(serviceName == "catalog");
         }
         (await AccessPolicyHelpers.RequireServiceAccessAsync(context, service, AuthorizationOperation.Update)).Should().NotBeNull();
+    }
+
+    [UnitTheory]
+    [InlineData("read:*")]
+    [InlineData("read:private-service/*")]
+    public async Task ScopedAdministrativeKey_WithReadWildcard_ReadsButNeverWrites(string readGrant)
+    {
+        await using var services = new ServiceCollection()
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>().BuildServiceProvider();
+        var principal = ScopedKey("admin:read", AdminApiKeyPermission.ScopedAdminRole, "admin-api-key");
+        ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim("permission", readGrant));
+        var context = new DefaultHttpContext { RequestServices = services, User = principal };
+        var service = Service("private-service");
+        var resource = Resource("sensitive-layer");
+
+        AccessPolicyHelpers.RequireResourceAccess(context, resource, service).Should().BeNull();
+        AccessPolicyHelpers.RequireServiceAccess(context, service).Should().BeNull();
+        foreach (var operation in new[] { AuthorizationOperation.Query, AuthorizationOperation.Read, AuthorizationOperation.Metadata, AuthorizationOperation.Export })
+        {
+            (await AccessPolicyHelpers.EvaluateResourceAccessAsync(context, resource, service, operation))
+                .IsAllowed.Should().BeTrue();
+        }
+
+        foreach (var operation in new[] { AuthorizationOperation.Insert, AuthorizationOperation.Update, AuthorizationOperation.Delete, AuthorizationOperation.Admin })
+        {
+            (await AccessPolicyHelpers.EvaluateResourceAccessAsync(context, resource, service, operation))
+                .IsAllowed.Should().BeFalse();
+        }
+
+        // A wildcard read grant is still resource-aware: the coarse resource-less path stays closed.
+        AccessPolicyHelpers.EvaluateAccess(context, null, null).IsAllowed.Should().BeFalse();
     }
 
     private static ClaimsPrincipal ScopedKey(string permission, string role, string authType) => new(

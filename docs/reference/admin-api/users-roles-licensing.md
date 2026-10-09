@@ -22,6 +22,25 @@ All endpoints require admin authentication — see [Authentication](../../guides
 
 In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with `{"name":"ci-publisher","permissions":["admin:write"]}`. The body takes `name`, `permissions` and an optional `expiresAt`; an empty `permissions` list grants full admin access.
 
+### Grant grammar
+
+Grants are case-insensitive and trimmed. A key may combine grants; its authority is the union.
+
+| Grant | Authority |
+|---|---|
+| `admin`, `*`, `admin:*` | Full admin: every admin endpoint, plus data access governed by access policies. |
+| `admin:write`, `admin:manage` | Full admin write (implies admin read). |
+| `admin:read` | Admin read only (safe HTTP methods). Grants **no** service or layer data access on its own. |
+| `admin:approve` | Admin read plus proposal approve/reject. Grants no data access on its own. |
+| `ops:read`, `ops:reader`, `ops:*` | Read-only operational surfaces (operate status, ops health, findings, alerts). No data access. |
+| `write:{service}` | Write any layer of the named service. No read or admin authority. |
+| `write:{service}/{layer}` | Write the single named layer. |
+| `read:{service}`, `read:{service}/*` | Read (query, metadata, export, render) any layer of the named service. |
+| `read:{service}/{layer}` | Read the single named layer. |
+| `read:*` | Read any layer of any service. |
+
+A key without a full-admin grant (for example `admin:read` or `admin:approve`) is scope-governed: service and layer reads are allowed only when one of its `read:` grants matches the target, and denied otherwise. Wildcards exist only for `read:`; `write:*` and `write:{service}/*` are rejected, as are grants with an empty service or layer (`read:`, `read:{service}/`, `read:*/{layer}`). A wildcard read is evaluated through the same path as a named `read:` grant, so access policies, field masks, row-level filters and tenant visibility apply to it unchanged. `GET /api/v1/admin/api-keys/{id}/effective-permissions` reports the grants exactly as stored, including wildcards.
+
 ## Roles and permissions
 
 | Method | Path | Purpose |
