@@ -316,8 +316,8 @@ if [[ "${FULL}" != "1" ]]; then
         echo "    (Deliberate. '.github/workflows/' stays on this list because the shard"
         echo "     selectors — the 'changes' and 'targeted-shards' jobs — live INSIDE"
         echo "     ci.yml, so a path-based 'it is only a workflow file' exemption would"
-        echo "     exempt the file that hosts the selectors. Use --fast for a quick loop"
-        echo "     while iterating on workflow YAML.)"
+        echo "     exempt the file that hosts the selectors. Run --dry-run to inspect"
+        echo "     this scope before compiling.)"
         FULL=1
     fi
 fi
