@@ -20,7 +20,7 @@ namespace Honua.Db.Postgres.Queries.Filters;
 /// this subclass owns the Postgres / PostGIS specifics (JSONB attribute access,
 /// PostGIS function names, geography casts, range types).
 /// </summary>
-internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISqlFilterTranslator
+internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISqlFilterTranslator
 {
     // MaxExpressionDepth is inherited from SqlFilterExpressionVisitorBase.
 
@@ -294,7 +294,8 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
     private static bool IsLikelyGeographicSrid(int srid)
         => GeographicSridClassifier.IsGeodesicDistanceSafeSrid(srid);
 
-    private string TranslateGeometryExpression(FilterExpression expression, FilterTranslationContext context)
+    /// <summary>Resolves a spatial operand, allowing entity adapters to supply canonical geometry properties.</summary>
+    protected virtual string TranslateGeometryExpression(FilterExpression expression, FilterTranslationContext context)
     {
         switch (expression)
         {
@@ -565,6 +566,15 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
             "SECOND" => args.Length == 1
                 ? $"EXTRACT(SECOND FROM {args[0]})"
                 : throw new ArgumentException("SECOND requires one argument"),
+            "FRACTIONALSECONDS" => args.Length == 1
+                ? $"(EXTRACT(SECOND FROM {args[0]}) - FLOOR(EXTRACT(SECOND FROM {args[0]})))"
+                : throw new ArgumentException("FRACTIONALSECONDS requires one argument"),
+            "DATE" => args.Length == 1 ? $"({args[0]})::date" : throw new ArgumentException("DATE requires one argument"),
+            "TIME" => args.Length == 1 ? $"({args[0]})::time" : throw new ArgumentException("TIME requires one argument"),
+            "TOTALOFFSETMINUTES" => args.Length == 1 ? $"(EXTRACT(TIMEZONE FROM {args[0]}) / 60)" : throw new ArgumentException("TOTALOFFSETMINUTES requires one argument"),
+            "MINDATETIME" => args.Length == 0 ? "'-infinity'::timestamptz" : throw new ArgumentException("MINDATETIME requires no arguments"),
+            "MAXDATETIME" => args.Length == 0 ? "'infinity'::timestamptz" : throw new ArgumentException("MAXDATETIME requires no arguments"),
+            "ST_RELATE" => TranslateSpatialFunction("ST_Relate", args, 3),
 
             // Extended EXTRACT fields (#1865). The field token is fixed by the parser's
             // allowlist (never user text), so it is interpolated while the source operand
@@ -853,7 +863,8 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
     private static bool CanTranslateAsGeography(FilterExpression expression)
         => expression is GeometryLiteral or PropertyReference;
 
-    private string TranslateGeographyExpression(FilterExpression expression, FilterTranslationContext context)
+    /// <summary>Resolves an operand for shared WGS84 geodesic operations.</summary>
+    protected virtual string TranslateGeographyExpression(FilterExpression expression, FilterTranslationContext context)
     {
         switch (expression)
         {
