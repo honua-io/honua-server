@@ -1444,7 +1444,7 @@ internal static class WmtsRequestHandlers
                 var tileTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png{dimensionTemplateSuffix}");
                 var featureInfoTextTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.txt{dimensionTemplateSuffix}");
                 var featureInfoJsonTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.json{dimensionTemplateSuffix}");
-                var legendHref = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}?SERVICE=WMTS&REQUEST=GetTile&VERSION={WmtsVersion}&LAYER={layerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0{legendDimensionSuffix}");
+                var legendHref = BaseUrlResolver.PreserveToken(request, $"{normalizedBaseUrl}/rest/services/{serviceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER={Uri.EscapeDataString(GetWmsLayerName(layer.Resource, layer.Publication))}&STYLE=default&FORMAT=image/png{legendDimensionSuffix}");
 
                 sb.AppendLine("    <Layer>");
                 var layerTitle = layer.Resource.Metadata.Title
@@ -1456,13 +1456,14 @@ internal static class WmtsRequestHandlers
                     .ConfigureAwait(false);
                 sb.AppendLine("      <Style isDefault=\"true\">");
                 sb.AppendLine("        <ows:Identifier>default</ows:Identifier>");
-                sb.Append("        <LegendURL format=\"image/png\" xlink:href=\"")
-                    .Append(EscapeXml(legendHref))
-                    .Append("\" width=\"")
-                    .Append(TileSize.ToString(CultureInfo.InvariantCulture))
-                    .Append("\" height=\"")
-                    .Append(TileSize.ToString(CultureInfo.InvariantCulture))
-                    .AppendLine("\" />");
+                // A legend is a swatch and label, never a world map tile. Reuse the
+                // service's existing legend surface only when that protocol is enabled.
+                if (IsProtocolEnabled(service, "Wms"))
+                {
+                    sb.Append("        <LegendURL format=\"image/png\" xlink:href=\"")
+                        .Append(EscapeXml(legendHref))
+                        .AppendLine("\" />");
+                }
                 sb.AppendLine("      </Style>");
                 sb.AppendLine("      <Format>image/png</Format>");
                 if (isQueryable)

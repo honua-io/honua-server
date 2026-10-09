@@ -346,14 +346,21 @@ internal static class LayerValidationHelpers
     /// Storage-keyed surfaces can opt into numeric storage-layer identity; their
     /// discovery and detail routes then share publication selection and access checks.
     /// </summary>
+    /// <param name="context">The current request context.</param>
+    /// <param name="collectionId">The collection identifier or alias.</param>
+    /// <param name="scope">The requested access scope.</param>
+    /// <param name="requiredProtocol">The protocol that must be enabled.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <param name="snapshot">An already captured snapshot to keep discovery and validation consistent.</param>
     public static Task<MetadataV2ValidationResult> ValidateCollectionWithAccessV2Async(
         HttpContext context,
         string collectionId,
         AccessScope scope = AccessScope.Read,
         string? requiredProtocol = MetadataV2ServiceProtocols.OgcFeatures,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        MetadataV2GraphSnapshot? snapshot = null)
         => ValidateCollectionWithAccessV2CoreAsync(
-            context, collectionId, false, scope, requiredProtocol, cancellationToken);
+            context, collectionId, false, scope, requiredProtocol, cancellationToken, snapshot);
 
     /// <summary>
     /// Validates numeric collection IDs as storage identities, sharing publication
@@ -374,7 +381,8 @@ internal static class LayerValidationHelpers
         bool resolveByStorageLayerId,
         AccessScope scope = AccessScope.Read,
         string? requiredProtocol = MetadataV2ServiceProtocols.OgcFeatures,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        MetadataV2GraphSnapshot? snapshot = null)
     {
         if (string.IsNullOrWhiteSpace(collectionId))
         {
@@ -386,7 +394,7 @@ internal static class LayerValidationHelpers
                 StandardErrorHelpers.CreateBadRequest(context, "Collection id is required."));
         }
 
-        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        snapshot ??= await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
 
         if (resolveByStorageLayerId &&
             int.TryParse(collectionId, NumberStyles.None, CultureInfo.InvariantCulture, out var storageLayerId))

@@ -543,8 +543,9 @@ internal static class ImageServerEndpoints
             .WithDisplayName("Get Image Server Legend")
             .WithName("GetImageServerLegend")
             .WithSummary("Get raster legend swatches")
-            .WithDescription("Returns Esri-compatible legend swatches for the layer's primary raster")
+            .WithDescription("Returns Esri-compatible legend swatches or a composed PNG with f=png for the layer's primary raster")
             .Produces<LegendResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(StatusCodes.Status200OK, "image/png")
             .Produces(400)
             .Produces(404);
 
@@ -556,6 +557,7 @@ internal static class ImageServerEndpoints
             .WithSummary("Get raster legend swatches using POST")
             .WithDescription("POST equivalent of the ArcGIS ImageServer legend endpoint")
             .Produces<LegendResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(StatusCodes.Status200OK, "image/png")
             .Produces(400)
             .Produces(404);
 
@@ -1134,6 +1136,7 @@ internal static class ImageServerEndpoints
             .WithName("GetImageServerLegendByService")
             .WithSummary("Get raster legend swatches")
             .Produces<LegendResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(StatusCodes.Status200OK, "image/png")
             .Produces(400)
             .Produces(404);
 
@@ -1143,6 +1146,7 @@ internal static class ImageServerEndpoints
             .WithSummary("Get raster legend swatches using POST")
             .WithDescription("POST equivalent of the ArcGIS ImageServer legend endpoint")
             .Produces<LegendResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(StatusCodes.Status200OK, "image/png")
             .Produces(400)
             .Produces(404);
 
@@ -3351,7 +3355,7 @@ internal static class ImageServerEndpoints
         ImageServerLegendHandler handler,
         CancellationToken cancellationToken = default)
     {
-        if (!IsSupportedJsonResponseFormat(f))
+        if (!IsSupportedJsonResponseFormat(f) && !string.Equals(f, "png", StringComparison.OrdinalIgnoreCase))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
@@ -3362,7 +3366,7 @@ internal static class ImageServerEndpoints
             return layerError;
         }
 
-        return await handler.GetLegendAsync(context, id, cancellationToken);
+        return await handler.GetLegendAsync(context, id, cancellationToken, asPng: string.Equals(f, "png", StringComparison.OrdinalIgnoreCase));
     }
 
     private static async Task<IResult> GetLegendByService(
@@ -3399,12 +3403,14 @@ internal static class ImageServerEndpoints
         }
 
         var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
-        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        var format = GetString(merged, "f");
+        if (!IsSupportedJsonResponseFormat(format) && !string.Equals(format, "png", StringComparison.OrdinalIgnoreCase))
         {
             return CreateUnsupportedJsonFormatResult(context);
         }
 
-        return await handler.GetLegendAsync(context, id, cancellationToken, GetString(merged, "renderingRule"));
+        return await handler.GetLegendAsync(context, id, cancellationToken, GetString(merged, "renderingRule"),
+            asPng: string.Equals(format, "png", StringComparison.OrdinalIgnoreCase));
     }
 
     private static async Task<IResult> GetLegendPostByService(

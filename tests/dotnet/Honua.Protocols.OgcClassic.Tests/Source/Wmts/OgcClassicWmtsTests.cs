@@ -64,6 +64,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         content.Should().Contain("<Capabilities");
+        content.Should().NotContain("LegendURL", "the WMS legend route is disabled");
     }
 
     [IntegrationTest]
@@ -431,6 +432,26 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         var themesIndex = content.IndexOf("<Themes>", StringComparison.Ordinal);
         var serviceMetadataIndex = content.IndexOf("<ServiceMetadataURL ", StringComparison.Ordinal);
         serviceMetadataIndex.Should().BeGreaterThan(themesIndex);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetCapabilities_AdvertisedLegend_ReturnsSwatchInsteadOfWorldTile()
+    {
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var capabilities = XDocument.Parse(await response.Content.ReadAsStringAsync());
+        var legendUrl = capabilities.Descendants().First(element => element.Name.LocalName == "LegendURL")
+            .Attribute(XName.Get("href", "http://www.w3.org/1999/xlink"))!.Value;
+        legendUrl.Should().Contain("REQUEST=GetLegendGraphic").And.NotContain("GetTile");
+        using var legend = await _fixture.Client.GetAsync(new Uri(legendUrl).PathAndQuery);
+        legend.StatusCode.Should().Be(HttpStatusCode.OK);
+        legend.Content.Headers.ContentType!.MediaType.Should().Be("image/png");
+        using var bitmap = SKBitmap.Decode(await legend.Content.ReadAsByteArrayAsync());
+        bitmap.Should().NotBeNull();
+        bitmap.Height.Should().BeLessThan(256, "a single default symbol legend has no tile-matrix canvas");
     }
 
     [IntegrationTest]

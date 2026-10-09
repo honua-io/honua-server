@@ -36,6 +36,33 @@
         }
       }
     },
+    "/ogc/maps/collections": {
+      "get": {
+        "summary": "List accessible collections that serve maps",
+        "description": "Returns map collection descriptions filtered by the caller's tenant, access policy and enabled protocols.",
+        "parameters": [
+          { "name": "f", "in": "query", "schema": { "type": "string", "enum": ["json", "html"] } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accessible map collections",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["collections", "links"],
+                  "properties": {
+                    "collections": { "type": "array", "items": { "$ref": "#/components/schemas/MapsCollection" } },
+                    "links": { "type": "array", "items": { "$ref": "#/components/schemas/Link" } }
+                  }
+                }
+              },
+              "text/html": { "schema": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
     "/ogc/maps/conformance": {
       "get": {
         "summary": "Get OGC API Maps conformance declaration",

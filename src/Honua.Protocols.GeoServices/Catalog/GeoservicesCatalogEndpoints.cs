@@ -616,6 +616,14 @@ internal static class GeoservicesCatalogEndpoints
         ILogger logger,
         string? folderName)
     {
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+        // The built-in Utilities folder is public even when the root directory is denied,
+        // and it must not include denied graph services.
+        if (PrintingToolsServiceCatalog.IsFolder(folderName))
+        {
+            return [CreateSoapServiceDescription(baseUrl, PrintingToolsServiceCatalog.CreateEntry(baseUrl))];
+        }
+
         var projection = await BuildServiceDirectoryProjectionAsync(
             context,
             graphProvider,
@@ -625,14 +633,6 @@ internal static class GeoservicesCatalogEndpoints
         if (projection.AllImageServerProbesFailed)
         {
             throw new InvalidOperationException("All eligible ImageServer raster catalog probes failed.");
-        }
-
-        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        // The built-in Utilities folder is public even when the root directory is denied,
-        // and it must not include denied graph services.
-        if (PrintingToolsServiceCatalog.IsFolder(folderName))
-        {
-            return [CreateSoapServiceDescription(baseUrl, PrintingToolsServiceCatalog.CreateEntry(baseUrl))];
         }
 
         if (projection.AccessError is not null)

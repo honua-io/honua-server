@@ -65,6 +65,59 @@ public class OgcMapsBasicTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /ogc/maps")]
+    [Endpoint("GET /ogc/maps/collections")]
+    [Operation(Operations.Metadata)]
+    public async Task GetLandingPage_DiscoveryLinks_EnumerateResolvableMapCollections()
+    {
+        using var landing = await _fixture.Client.GetAsync("/ogc/maps");
+        landing.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var landingJson = JsonDocument.Parse(await landing.Content.ReadAsStringAsync());
+        var links = landingJson.RootElement.GetProperty("links").EnumerateArray().ToArray();
+        links.Should().Contain(link => link.GetProperty("rel").GetString() ==
+            "http://www.opengis.net/def/rel/ogc/1.0/map");
+        var dataLink = links.Single(link => link.GetProperty("rel").GetString() == "data");
+        using var response = await _fixture.Client.GetAsync(new Uri(dataLink.GetProperty("href").GetString()!).PathAndQuery);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var collections = json.RootElement.GetProperty("collections").EnumerateArray().ToArray();
+        collections.Should().NotBeEmpty();
+        collections.Select(collection => collection.GetProperty("id").GetString()).Should().OnlyHaveUniqueItems();
+        foreach (var collection in collections)
+        {
+            var self = collection.GetProperty("links").EnumerateArray()
+                .Single(link => link.GetProperty("rel").GetString() == "self");
+            using var detail = await _fixture.Client.GetAsync(new Uri(self.GetProperty("href").GetString()!).PathAndQuery);
+            detail.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var detailJson = JsonDocument.Parse(await detail.Content.ReadAsStringAsync());
+            detailJson.RootElement.GetProperty("id").GetString().Should().Be(collection.GetProperty("id").GetString());
+            detailJson.RootElement.GetProperty("extent").GetRawText().Should().Be(collection.GetProperty("extent").GetRawText());
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/collections")]
+    [Operation(Operations.Metadata)]
+    public async Task GetCollections_ProtectedResource_IsOmittedForAnonymousCaller()
+    {
+        await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
+        await fixture.InitializeAsync();
+        fixture.UpdateV2ResourceMetadata(TestLayerId,
+            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["maps-reader"] });
+        using var anonymousClient = fixture.CreateClient();
+        using var response = await anonymousClient.GetAsync("/ogc/maps/collections");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("collections").EnumerateArray()
+            .Should().NotContain(collection => collection.GetProperty("id").GetString() == "0");
+        response.Headers.Age.Should().BeNull();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps")]
     [Operation(Operations.Metadata)]
     public async Task GetLandingPage_BasicRequest_ReturnsLandingPage()
     {
@@ -259,6 +312,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
 
         json.RootElement.GetProperty("openapi").GetString().Should().NotBeNullOrWhiteSpace();
         json.RootElement.GetProperty("paths").TryGetProperty("/ogc/maps", out _).Should().BeTrue();
+        json.RootElement.GetProperty("paths").TryGetProperty("/ogc/maps/collections", out _).Should().BeTrue();
     }
 
     [IntegrationTest]
