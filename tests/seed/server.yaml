@@ -1,5 +1,5 @@
 version: 1
-embeddedMigrations:
+embedded_migrations:
   - Honua.Server.Migrations.126_CompleteSensorThingsSensing.sql
 sql:
   - "CREATE SCHEMA IF NOT EXISTS honua;"

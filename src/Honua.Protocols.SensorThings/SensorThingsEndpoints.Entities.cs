@@ -209,7 +209,11 @@ internal static partial class SensorThingsEndpoints
             var nestedQuery = ExpansionQuery(expansion);
             nestedRequest.QueryString = new QueryString(QueryHelpers.AddQueryString(string.Empty, nestedQuery));
             var nestedResult = StaQueryPlan.Create(nestedRequest, StaEntitySchema.For(relationship.Target), translator);
-            if (!nestedResult.IsSuccess) throw new SensorThingsValidationException(nestedResult.Error ?? "Invalid nested query.");
+            if (!nestedResult.IsSuccess)
+            {
+                if (nestedResult.StatusCode == StatusCodes.Status501NotImplemented) throw new UnsupportedQueryOptionException(nestedResult.Error ?? "Unsupported nested query.");
+                throw new SensorThingsValidationException(nestedResult.Error ?? "Invalid nested query.");
+            }
             var nestedPlan = nestedResult.Plan!;
             var page = await store.QueryEntitiesAsync(relationship.Target, new(expansion.WhereSql, expansion.WhereParameters, expansion.OrderBySql,
                 expansion.Skip, expansion.Top == 0 ? 0 : expansion.Top + 1, set, id, expansion.Navigation), context.RequestAborted).ConfigureAwait(false);

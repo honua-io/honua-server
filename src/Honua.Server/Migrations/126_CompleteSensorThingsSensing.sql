@@ -76,6 +76,8 @@ CREATE INDEX IF NOT EXISTS ix_sta_observation_foi ON $HonuaSchema$.sta_observati
 -- Valid parent FKs work on PostgreSQL 16 and protect existing and future partitions.
 ALTER TABLE $HonuaSchema$.sta_observation ADD COLUMN IF NOT EXISTS datastream_reference_id bigint;
 ALTER TABLE $HonuaSchema$.sta_observation ADD COLUMN IF NOT EXISTS feature_of_interest_reference_id bigint;
+CREATE INDEX IF NOT EXISTS ix_sta_observation_datastream_reference_time ON $HonuaSchema$.sta_observation(datastream_reference_id,phenomenon_time,id);
+CREATE INDEX IF NOT EXISTS ix_sta_observation_feature_reference ON $HonuaSchema$.sta_observation(feature_of_interest_reference_id);
 UPDATE $HonuaSchema$.sta_observation o SET datastream_reference_id=o.datastream_id
     FROM $HonuaSchema$.sta_datastream d WHERE d.id=o.datastream_id;
 -- The new FoI table starts empty: legacy references never become associations merely

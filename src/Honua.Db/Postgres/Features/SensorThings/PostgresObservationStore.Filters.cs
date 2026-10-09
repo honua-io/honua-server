@@ -54,6 +54,14 @@ internal sealed partial class PostgresObservationStore
         {
             if (depth > 10) throw new SensorThingsValidationException("Navigation filter exceeds maximum depth.");
             if (name is "id" or "@iot.id") return alias + ".id";
+            if (set == "Datastreams" && name is "phenomenonTime" or "resultTime")
+            {
+                var start = name == "phenomenonTime" ? "o.phenomenon_time" : "o.result_time";
+                var end = name == "phenomenonTime" ? "COALESCE(o.phenomenon_time_end,o.phenomenon_time)" : "o.result_time";
+                return $"(SELECT (to_jsonb(min({start})) #>> '{{}}') || '/' || (to_jsonb(max({end})) #>> '{{}}') FROM {store.EntityTable("Observations")} o WHERE o.datastream_reference_id={alias}.id)";
+            }
+            if (set == "Datastreams" && name == "observedArea")
+                return GeoJsonGeometrySql($"(({store.EntityJsonSql(set, alias)}) -> 'computed_observed_area')");
             var column = Columns(set).FirstOrDefault(c => c.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
             if (column is not null)
             {
@@ -62,9 +70,7 @@ internal sealed partial class PostgresObservationStore
                 if (column.Type == NpgsqlDbType.Jsonb && column.Name is not ("location" or "feature" or "observedArea")) return rawJsonProperties ? $"NULLIF({sql},'null'::jsonb)" : JsonScalar(sql, null);
                 if (column.Name is "location" or "feature" or "observedArea")
                 {
-                    var geometry = $"CASE WHEN {sql}->>'type'='Feature' THEN {sql}->'geometry' WHEN {sql}->>'type'='FeatureCollection' THEN jsonb_build_object('type','GeometryCollection','geometries',COALESCE((SELECT jsonb_agg(f->'geometry') FROM jsonb_array_elements({sql}->'features') f WHERE f->'geometry' IS NOT NULL AND f->'geometry'<>'null'::jsonb),'[]'::jsonb)) ELSE {sql} END";
-                    if (column.Name is "location" or "feature") geometry = $"CASE WHEN lower({alias}.encoding_type) IN ('application/vnd.geo+json','application/geo+json') THEN {geometry} END";
-                    return $"ST_SetSRID(ST_GeomFromGeoJSON(NULLIF({geometry},'null'::jsonb)),4326)";
+                    return GeoJsonGeometrySql(sql, column.Name is "location" or "feature" ? alias + ".encoding_type" : null);
                 }
                 return sql;
             }
@@ -74,7 +80,10 @@ internal sealed partial class PostgresObservationStore
             {
                 var parts = jsonParts;
                 if (parts.Any(p => p.Length == 0)) throw new SensorThingsValidationException("Invalid JSON property path.");
-                var json = alias + "." + jsonColumn.Column + " #> ARRAY[" + string.Join(",", parts.Skip(1).Select(p => "'" + p.Replace("'", "''", StringComparison.Ordinal) + "'")) + "]";
+                var root = set == "Datastreams" && jsonColumn.Name == "observedArea"
+                    ? $"(({store.EntityJsonSql(set, alias)}) -> 'computed_observed_area')"
+                    : alias + "." + jsonColumn.Column;
+                var json = root + " #> ARRAY[" + string.Join(",", parts.Skip(1).Select(p => "'" + p.Replace("'", "''", StringComparison.Ordinal) + "'")) + "]";
                 return rawResult || rawJsonProperties ? $"NULLIF({json},'null'::jsonb)" : JsonScalar(json, null);
             }
             var slash = name.IndexOf('/', StringComparison.Ordinal);

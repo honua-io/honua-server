@@ -2,9 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.SensorThings.Abstractions;
+using Honua.Core.Features.SensorThings.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
@@ -44,6 +48,26 @@ public sealed class SensorThingsMigrationPreservationTests : IAsyncLifetime
                 """, schema);
             await using (var unresolved = new NpgsqlCommand("SELECT feature_of_interest_reference_id FROM sta_observation WHERE id=1", connection))
                 (await unresolved.ExecuteScalarAsync()).Should().Be(DBNull.Value, "an unrelated matching ID must not reconcile a legacy observation");
+            await _postgres.ExecuteAsync("""
+                INSERT INTO sta_datastream(id,name,description,observation_type,unit_name,unit_symbol,unit_definition,thing_id,sensor_id,observed_property_id)
+                    VALUES (9001,'Unrelated new datastream','Synthetic','http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_TruthObservation',NULL,NULL,NULL,1,1,1);
+                """, schema);
+            var fixture = new WebAppFixture().ConfigureServices(services => services.AddScoped<ISchemaContext>(_ => new FixedSchema(schema)));
+            try
+            {
+                await fixture.InitializeAsync();
+                var store = fixture.GetService<IObservationStore>();
+                var datastream = await store.GetDatastreamAsync(9001, CancellationToken.None);
+                datastream.Should().NotBeNull();
+                datastream!.PhenomenonTimeStart.Should().BeNull("an unresolved legacy datastream ID must not link to a later matching catalog ID");
+                datastream.PhenomenonTimeEnd.Should().BeNull();
+                datastream.UnitName.Should().BeNull();
+                datastream.UnitSymbol.Should().BeNull();
+                datastream.UnitDefinition.Should().BeNull();
+                var listed = (await store.ListDatastreamsAsync(CatalogQuery.Page(0, 100), CancellationToken.None)).Single(item => item.Id == 9001);
+                listed.PhenomenonTimeStart.Should().BeNull();
+            }
+            finally { await fixture.DisposeAsync(); }
             await _postgres.ExecuteDdlUnderLockAsync($"CREATE TABLE {schema}.sta_observation_future PARTITION OF {schema}.sta_observation FOR VALUES FROM ('2030-01-01') TO ('2031-01-01')", schema);
             await using (var insert = new NpgsqlCommand("INSERT INTO sta_observation(id,datastream_id,phenomenon_time,result,feature_of_interest_id) VALUES (9002,1,'2030-02-01',17,@feature)", connection))
             {
@@ -82,5 +106,10 @@ public sealed class SensorThingsMigrationPreservationTests : IAsyncLifetime
     {
         await using var command = new NpgsqlCommand("SELECT jsonb_agg(to_jsonb(v) ORDER BY id)::text FROM (SELECT id,datastream_id,phenomenon_time,result_time,result,feature_of_interest_id FROM sta_observation) v", connection);
         return (string)(await command.ExecuteScalarAsync())!;
+    }
+
+    private sealed class FixedSchema(string schema) : ISchemaContext
+    {
+        public string? CurrentSchema => schema;
     }
 }

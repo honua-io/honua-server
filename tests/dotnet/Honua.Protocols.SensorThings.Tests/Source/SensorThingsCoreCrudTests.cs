@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
@@ -16,7 +17,11 @@ namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
 {
     private static readonly string[] RequiredTables = ["sta_thing", "sta_location", "sta_historical_location", "sta_datastream", "sta_sensor", "sta_observed_property", "sta_observation", "sta_feature_of_interest"];
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureWebHost(builder =>
+    {
+        builder.UseSetting("HONUA_DEV_AUTH", "false");
+        builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+    });
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
@@ -519,5 +524,169 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
         unit.Select(member => member.Value).Should().OnlyContain(value => value == null);
         var matches = await ReadAsync("Datastreams?$filter=" + Uri.EscapeDataString("unitOfMeasurement/name eq null"));
         matches["value"]!.AsArray().Select(node => Id(node!.AsObject())).Should().Contain(Id(stream));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    public async Task ObservationReparentAndDatastreamTypePatch_RejectIncompatibleExistingResultsAtomically()
+    {
+        var categoryBody = Datastream(1);
+        categoryBody["observationType"] = "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_CategoryObservation";
+        var category = await CreateAsync("Datastreams", categoryBody);
+        var measurement = await CreateAsync("Datastreams", Datastream(1));
+        var feature = await SensorThingsTestData.CreateFeatureAsync(_fixture);
+        var observation = await CreateAsync("Observations", new JsonObject { ["result"] = "cloudy", ["Datastream"] = Reference(Id(category)), ["FeatureOfInterest"] = Reference(feature) });
+        using var admin = _fixture.CreateAdminClient();
+        using var reparent = await admin.PatchAsync($"/sta/v1.1/Datastreams({Id(measurement)})", Body(new JsonObject { ["name"] = "Must roll back", ["Observations"] = new JsonArray(Reference(Id(observation))) }));
+        reparent.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await ReadAsync($"Datastreams({Id(measurement)})"))["name"]!.GetValue<string>().Should().Be("Measurement");
+        Id(await ReadAsync($"Observations({Id(observation)})/Datastream")).Should().Be(Id(category));
+        using var typeChange = await admin.PatchAsync($"/sta/v1.1/Datastreams({Id(category)})", Body(new JsonObject { ["observationType"] = measurement["observationType"]!.DeepClone() }));
+        typeChange.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await ReadAsync($"Datastreams({Id(category)})"))["observationType"]!.GetValue<string>().Should().EndWith("OM_CategoryObservation");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    public async Task SlashExpansionsMergeCommonPrefixes_AndNestedUnsupportedOptionsRetain501()
+    {
+        var stream = await CreateAsync("Datastreams", Datastream(1));
+        var feature = await SensorThingsTestData.CreateFeatureAsync(_fixture);
+        await CreateAsync("Observations", new JsonObject { ["result"] = 1, ["Datastream"] = Reference(Id(stream)), ["FeatureOfInterest"] = Reference(feature) });
+        var thing = await ReadAsync("Things(1)?$expand=Datastreams/ObservedProperty,Datastreams/Observations/FeatureOfInterest");
+        var expanded = thing["Datastreams"]!.AsArray().Single(node => Id(node!.AsObject()) == Id(stream))!.AsObject();
+        expanded["ObservedProperty"]!.AsObject()["definition"].Should().NotBeNull();
+        Id(expanded["Observations"]![0]!["FeatureOfInterest"]!.AsObject()).Should().Be(feature);
+        var selected = await ReadAsync($"Datastreams({Id(stream)})?$select=id&$expand=Observations/FeatureOfInterest");
+        selected["Observations"]!.AsArray().Should().ContainSingle();
+        using var unsupported = await _fixture.Client.GetAsync("/sta/v1.1/Things(1)?$expand=Datastreams($expand=Observations($search=x))");
+        unsupported.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    public async Task JsonPropertiesOnLocationsAndFeatures_SupportNestedSelectAndPropertyReads()
+    {
+        foreach (var set in new[] { "Locations", "FeaturesOfInterest" })
+        {
+            var body = Location("Nested " + set);
+            if (set == "FeaturesOfInterest") { body["feature"] = body["location"]!.DeepClone(); body.Remove("location"); }
+            body["properties"] = JsonNode.Parse("""{"site":{"name":"Harbour","floor":2},"unselected":true}""");
+            var entity = await CreateAsync(set, body);
+            var selected = await ReadAsync($"{set}({Id(entity)})?$select=properties/site/name");
+            selected["properties"]!["site"]!.AsObject().Should().ContainSingle();
+            selected["properties"]!["site"]!["name"]!.GetValue<string>().Should().Be("Harbour");
+            var property = await ReadAsync($"{set}({Id(entity)})/properties/site/name");
+            property["name"]!.GetValue<string>().Should().Be("Harbour");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    public async Task AnonymousWritesAreDeniedOnLiteralAndCatchAllRoutes_BeforeValidationOrMutation()
+    {
+        using var anonymous = _fixture.CreateClient();
+        foreach (var (method, path) in new[] { (HttpMethod.Post, "Locations"), (HttpMethod.Post, "Things(1)/Locations"), (HttpMethod.Patch, "Things(1)"), (HttpMethod.Delete, "Things(1)"), (HttpMethod.Patch, "Datastreams(1)/Thing") })
+        {
+            using var request = new HttpRequestMessage(method, "/sta/v1.1/" + path) { Content = new StringContent("{", Encoding.UTF8, "application/json") };
+            using var response = await anonymous.SendAsync(request);
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, method + " " + path);
+        }
+        (await ReadAsync("Things(1)"))["@iot.id"]!.GetValue<long>().Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    public async Task MandatoryTable23Functions_ExecuteAgainstTypedCatalogTimeResultAndGeometry()
+    {
+        var thing = await CreateAsync("Things", new JsonObject { ["name"] = "Functions", ["description"] = "Sensor Things" });
+        var stream = await CreateAsync("Datastreams", Datastream(Id(thing)));
+        var feature = await SensorThingsTestData.CreateFeatureAsync(_fixture);
+        var observation = await CreateAsync("Observations", new JsonObject { ["result"] = 32.6, ["phenomenonTime"] = "2026-01-02T12:34:56.25Z", ["resultTime"] = "2026-01-02T12:34:56.25Z", ["Datastream"] = Reference(Id(stream)), ["FeatureOfInterest"] = Reference(feature) });
+        string[] strings = ["substringof('Sensor Things',description)", "endswith(description,'Things')", "startswith(description,'Sensor')", "length(description) eq 13", "indexof(description,'Things') eq 7", "substring(description,1) eq 'ensor Things'", "substring(description,2,4) eq 'nsor'", "tolower(description) eq 'sensor things'", "toupper(description) eq 'SENSOR THINGS'", "trim(concat(' ',concat(description,' '))) eq 'Sensor Things'", "concat(name,description) eq 'FunctionsSensor Things'"];
+        string[] timesAndMath = ["year(resultTime) eq 2026", "month(resultTime) eq 1", "day(resultTime) eq 2", "hour(resultTime) eq 12", "minute(resultTime) eq 34", "second(resultTime) eq 56", "fractionalseconds(resultTime) eq 0.25", "date(resultTime) eq date(phenomenonTime)", "time(resultTime) eq time(phenomenonTime)", "totaloffsetminutes(resultTime) eq 0", "resultTime lt now()", "resultTime gt mindatetime()", "resultTime lt maxdatetime()", "round(result) eq 33", "floor(result) eq 32", "ceiling(result) eq 33"];
+        foreach (var (set, id, filters) in new[] { ("Things", Id(thing), strings), ("Observations", Id(observation), timesAndMath) })
+            foreach (var filter in filters)
+            {
+                var page = await ReadAsync(set + "?$filter=" + Uri.EscapeDataString($"id eq {id} and ({filter})"));
+                page["value"]!.AsArray().Should().ContainSingle(filter);
+            }
+        var locationBody = Location("Spatial functions");
+        locationBody["location"] = JsonNode.Parse("""{"type":"Point","coordinates":[30,10]}""");
+        var location = await CreateAsync("Locations", locationBody);
+        var point = "geography'POINT(30 10)'";
+        var polygon = "geography'POLYGON((29 9,31 9,31 11,29 11,29 9))'";
+        string[] spatial = [$"geo.distance(location,{point}) eq 0", "geo.length(geography'LINESTRING(30 10,31 10)') gt 0", $"geo.intersects(location,{polygon})", $"st_equals(location,{point})", $"not st_disjoint(location,{polygon})", $"not st_touches(location,{polygon})", $"st_within(location,{polygon})", $"not st_overlaps(location,{polygon})", $"not st_crosses(location,{polygon})", $"st_intersects(location,{polygon})", $"st_contains(location,{point})", $"st_relate(location,{point},'T********')"];
+        foreach (var filter in spatial)
+        {
+            var page = await ReadAsync("Locations?$filter=" + Uri.EscapeDataString($"id eq {Id(location)} and ({filter})"));
+            page["value"]!.AsArray().Should().ContainSingle(filter);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    public async Task ConcurrentLocationEncodingPatchAndThingBinding_CannotCommitDuplicateCurrentEncodings()
+    {
+        using var admin = _fixture.CreateAdminClient();
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var first = await CreateAsync("Locations", Location("Current " + attempt));
+            var candidateBody = Location("Candidate " + attempt);
+            candidateBody["encodingType"] = "application/vnd.honua.test-location+json";
+            var candidate = await CreateAsync("Locations", candidateBody);
+            var thing = await CreateAsync("Things", new JsonObject { ["name"] = "Concurrent " + attempt, ["description"] = "Synthetic", ["Locations"] = new JsonArray(Reference(Id(first))) });
+            var patchEncoding = admin.PatchAsync($"/sta/v1.1/Locations({Id(candidate)})", Body(new JsonObject { ["encodingType"] = "application/geo+json" }));
+            var bind = admin.PatchAsync($"/sta/v1.1/Things({Id(thing)})", Body(new JsonObject { ["Locations"] = new JsonArray(Reference(Id(candidate))) }));
+            var responses = await Task.WhenAll(patchEncoding, bind);
+            try { responses.Select(response => response.StatusCode).Should().BeEquivalentTo(new[] { HttpStatusCode.NoContent, HttpStatusCode.BadRequest }); }
+            finally { foreach (var response in responses) response.Dispose(); }
+            var locations = (await ReadAsync($"Things({Id(thing)})/Locations"))["value"]!.AsArray();
+            locations.Select(location => location!["encodingType"]!.GetValue<string>()).Should().OnlyHaveUniqueItems();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    public async Task DatastreamExtents_UseValidatedRelationsFullIntervalsAndActualFeatureBounds()
+    {
+        var body = Datastream(1);
+        body["observedArea"] = JsonNode.Parse("""{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}""");
+        var stream = await CreateAsync("Datastreams", body);
+        var empty = await ReadAsync($"Datastreams({Id(stream)})");
+        empty.ContainsKey("phenomenonTime").Should().BeFalse();
+        empty.ContainsKey("resultTime").Should().BeFalse();
+        empty.ContainsKey("observedArea").Should().BeFalse();
+        var observations = new List<long>();
+        foreach (var (coordinate, time, resultTime) in new[] { ("[10,20]", "2026-01-01T00:00:00Z/2026-01-04T00:00:00Z", "2026-01-02T00:00:00Z"), ("[30,40]", "2026-01-03T00:00:00Z", "2026-01-05T00:00:00Z") })
+        {
+            var feature = await CreateAsync("FeaturesOfInterest", new JsonObject { ["name"] = "Bounds " + coordinate, ["description"] = "Synthetic", ["encodingType"] = "application/geo+json", ["feature"] = JsonNode.Parse("{\"type\":\"Point\",\"coordinates\":" + coordinate + "}") });
+            observations.Add(Id(await CreateAsync("Observations", new JsonObject { ["result"] = 1, ["phenomenonTime"] = time, ["resultTime"] = resultTime, ["Datastream"] = Reference(Id(stream)), ["FeatureOfInterest"] = Reference(Id(feature)) })));
+        }
+        var populated = await ReadAsync($"Datastreams({Id(stream)})?$select=phenomenonTime,resultTime,observedArea");
+        var phenomenon = populated["phenomenonTime"]!.GetValue<string>().Split('/').Select(DateTimeOffset.Parse).ToArray();
+        phenomenon.Should().BeEquivalentTo(new[] { DateTimeOffset.Parse("2026-01-01T00:00:00Z"), DateTimeOffset.Parse("2026-01-04T00:00:00Z") }, options => options.WithStrictOrdering());
+        var result = populated["resultTime"]!.GetValue<string>().Split('/').Select(DateTimeOffset.Parse).ToArray();
+        result.Should().BeEquivalentTo(new[] { DateTimeOffset.Parse("2026-01-02T00:00:00Z"), DateTimeOffset.Parse("2026-01-05T00:00:00Z") }, options => options.WithStrictOrdering());
+        populated["observedArea"]!["type"]!.GetValue<string>().Should().Be("Polygon");
+        populated["observedArea"]!["coordinates"]![0]!.ToJsonString().Should().Be("[[10,20],[10,40],[30,40],[30,20],[10,20]]");
+        var filtered = await ReadAsync("Datastreams?$filter=" + Uri.EscapeDataString($"id eq {Id(stream)} and st_contains(observedArea,geography'POINT(20 30)')"));
+        filtered["value"]!.AsArray().Should().ContainSingle("filter geometry must match the computed response geometry");
+        using var admin = _fixture.CreateAdminClient();
+        using var patch = await admin.PatchAsync($"/sta/v1.1/Observations({observations[0]})", Body(new JsonObject { ["phenomenonTime"] = "2026-01-01T00:00:00Z/2026-01-02T00:00:00Z" }));
+        patch.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var changed = (await ReadAsync($"Datastreams({Id(stream)})"))["phenomenonTime"]!.GetValue<string>().Split('/');
+        DateTimeOffset.Parse(changed[1]).Should().Be(DateTimeOffset.Parse("2026-01-03T00:00:00Z"));
+        var other = await CreateAsync("Datastreams", Datastream(1));
+        using var reparent = await admin.PatchAsync($"/sta/v1.1/Observations({observations[1]})", Body(new JsonObject { ["Datastream"] = Reference(Id(other)) }));
+        reparent.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        changed = (await ReadAsync($"Datastreams({Id(stream)})"))["phenomenonTime"]!.GetValue<string>().Split('/');
+        DateTimeOffset.Parse(changed[1]).Should().Be(DateTimeOffset.Parse("2026-01-02T00:00:00Z"));
+        using var delete = await admin.DeleteAsync($"/sta/v1.1/Observations({observations[0]})");
+        delete.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var cleared = await ReadAsync($"Datastreams({Id(stream)})");
+        cleared.ContainsKey("phenomenonTime").Should().BeFalse();
+        cleared.ContainsKey("resultTime").Should().BeFalse();
+        cleared.ContainsKey("observedArea").Should().BeFalse("a supplied stale area must not resurface after the last observation disappears");
     }
 }

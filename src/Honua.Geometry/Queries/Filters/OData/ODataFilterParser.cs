@@ -365,6 +365,7 @@ public sealed class ODataFilterParser
         return name switch
         {
             "contains" => BuildContainsExpression(args, identifier),
+            "substringof" => BuildSubstringOfExpression(args, identifier),
             "startswith" => BuildStartsWithExpression(args, identifier),
             "endswith" => BuildEndsWithExpression(args, identifier),
             "substring" => BuildSubstringExpression(args, identifier),
@@ -418,6 +419,12 @@ public sealed class ODataFilterParser
     {
         EnsureArgumentCount(identifier, args, 3);
         return new FunctionCall("ST_RELATE", args);
+    }
+
+    private static BinaryExpression BuildSubstringOfExpression(IReadOnlyList<FilterExpression> args, string identifier)
+    {
+        EnsureArgumentCount(identifier, args, 2);
+        return BuildContainsExpression([args[1], args[0]], identifier);
     }
 
     private static BinaryExpression BuildContainsExpression(IReadOnlyList<FilterExpression> args, string identifier)

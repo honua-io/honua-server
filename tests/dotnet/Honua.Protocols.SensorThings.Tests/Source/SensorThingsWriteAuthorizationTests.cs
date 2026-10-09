@@ -50,10 +50,8 @@ public sealed class SensorThingsWriteAuthorizationTests : IAsyncLifetime
     public async Task PostObservation_WithAdminApiKeyWhenAnonymousWritesDisabled_CreatesObservation()
     {
         using var adminClient = _fixture.CreateAdminClient();
-        using var payload = new StringContent(
-            """{ "result": 8.25, "Datastream": { "@iot.id": 1 } }""",
-            Encoding.UTF8,
-            "application/json");
+        var feature = await SensorThingsTestData.CreateFeatureAsync(_fixture);
+        using var payload = SensorThingsTestData.ObservationJson("""{ "result": 8.25, "Datastream": { "@iot.id": 1 } }""", feature);
 
         var response = await adminClient.PostAsync("/sta/v1.1/Observations", payload);
 
@@ -93,10 +91,8 @@ public sealed class SensorThingsAnonymousWriteOptInTests : IAsyncLifetime
     [Trait("Tier", "Fast")]
     public async Task PostObservation_WhenAnonymousWritesDangerouslyEnabled_AllowsAnonymousWrite()
     {
-        using var payload = new StringContent(
-            """{ "result": 9.5, "Datastream": { "@iot.id": 1 } }""",
-            Encoding.UTF8,
-            "application/json");
+        var feature = await SensorThingsTestData.CreateFeatureAsync(_fixture);
+        using var payload = SensorThingsTestData.ObservationJson("""{ "result": 9.5, "Datastream": { "@iot.id": 1 } }""", feature);
 
         var response = await _fixture.Client.PostAsync("/sta/v1.1/Observations", payload);
 
