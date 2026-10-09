@@ -386,11 +386,38 @@ public sealed class ODataFilterParser
             "hour" => BuildUnaryFunction("HOUR", args, identifier),
             "minute" => BuildUnaryFunction("MINUTE", args, identifier),
             "second" => BuildUnaryFunction("SECOND", args, identifier),
+            "fractionalseconds" => BuildUnaryFunction("FRACTIONALSECONDS", args, identifier),
+            "date" => BuildUnaryFunction("DATE", args, identifier),
+            "time" => BuildUnaryFunction("TIME", args, identifier),
+            "totaloffsetminutes" => BuildUnaryFunction("TOTALOFFSETMINUTES", args, identifier),
+            "mindatetime" => BuildZeroArgFunction("MINDATETIME", args, identifier),
+            "maxdatetime" => BuildZeroArgFunction("MAXDATETIME", args, identifier),
             "geo.distance" => BuildGeoDistanceExpression(args, identifier),
             "geo.length" => BuildGeoLengthExpression(args, identifier),
             "geo.intersects" => BuildGeoIntersectsExpression(args, identifier),
+            "st_equals" => BuildSpatialRelation(args, identifier, SpatialOperator.Equals),
+            "st_disjoint" => BuildSpatialRelation(args, identifier, SpatialOperator.Disjoint),
+            "st_touches" => BuildSpatialRelation(args, identifier, SpatialOperator.Touches),
+            "st_within" => BuildSpatialRelation(args, identifier, SpatialOperator.Within),
+            "st_overlaps" => BuildSpatialRelation(args, identifier, SpatialOperator.Overlaps),
+            "st_crosses" => BuildSpatialRelation(args, identifier, SpatialOperator.Crosses),
+            "st_intersects" => BuildSpatialRelation(args, identifier, SpatialOperator.Intersects),
+            "st_contains" => BuildSpatialRelation(args, identifier, SpatialOperator.Contains),
+            "st_relate" => BuildStaRelate(args, identifier),
             _ => throw new ODataFilterParseException($"Unsupported function '{identifier}'", Previous().Position)
         };
+    }
+
+    private static SpatialPredicate BuildSpatialRelation(IReadOnlyList<FilterExpression> args, string identifier, SpatialOperator op)
+    {
+        EnsureArgumentCount(identifier, args, 2);
+        return new SpatialPredicate(op, args[0], args[1]);
+    }
+
+    private static FunctionCall BuildStaRelate(IReadOnlyList<FilterExpression> args, string identifier)
+    {
+        EnsureArgumentCount(identifier, args, 3);
+        return new FunctionCall("ST_RELATE", args);
     }
 
     private static BinaryExpression BuildContainsExpression(IReadOnlyList<FilterExpression> args, string identifier)
