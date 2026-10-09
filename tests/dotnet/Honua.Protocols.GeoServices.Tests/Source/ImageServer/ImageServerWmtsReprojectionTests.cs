@@ -21,6 +21,10 @@ public sealed class ImageServerWmtsReprojectionTests
 {
     private const double MercatorLimit = 20037508.342789244;
     private const double TileSpan = 2 * MercatorLimit / 128;
+    private static readonly int[] MercatorRows = [48, 49];
+    private static readonly int[] MercatorColumns = [19, 20];
+    private static readonly int[] GeographicRows = [35, 36];
+    private static readonly int[] GeographicColumns = [39, 40];
     private static readonly double?[,] SourceValues =
     {
         { 17, 0, 33, 8 },
@@ -50,8 +54,8 @@ public sealed class ImageServerWmtsReprojectionTests
             {
                 await SeedAsync(fixture, mosaic, geographic);
                 var grid = SourceGrid(geographic);
-                var rows = geographic ? new[] { 35, 36 } : new[] { 48, 49 };
-                var cols = geographic ? new[] { 39, 40 } : new[] { 19, 20 };
+                var rows = geographic ? GeographicRows : MercatorRows;
+                var cols = geographic ? GeographicColumns : MercatorColumns;
                 var span = geographic ? 180.0 / 128 : TileSpan;
                 var originX = geographic ? -180 : -MercatorLimit;
                 var originY = geographic ? 90 : MercatorLimit;
