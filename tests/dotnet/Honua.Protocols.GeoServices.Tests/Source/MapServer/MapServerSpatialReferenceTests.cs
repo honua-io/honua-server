@@ -2,6 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Collections.Immutable;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 using System.Text.Json;
 using Apache.Arrow;
 using Apache.Arrow.Ipc;
@@ -18,6 +23,19 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 [Protocol(TestProtocols.MapServer)]
 public sealed class MapServerSpatialReferenceTests : MapServerEndpointTestBase
 {
+    public MapServerSpatialReferenceTests()
+    {
+        // The default TestFeatureStore returns no related records. Supply an actual
+        // geographic point while retaining the real handler/geometry transformer.
+        var store = Substitute.For<IRelationshipStore>();
+        var geometry = new WKBWriter().Write(new NetTopologySuite.Geometries.Point(-122.5, 37.5));
+        var feature = Feature.Create(501, geometry, ImmutableDictionary<string, object?>.Empty
+            .Add("objectid", 501).Add("related_id", 1));
+        store.QueryRelatedAsync(Arg.Any<int>(), Arg.Any<RelatedQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(QueryResult<Feature>.Create(1, [feature])));
+        Fixture.ConfigureServices(services => services.AddSingleton(store));
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}/query")]
@@ -131,7 +149,15 @@ public sealed class MapServerSpatialReferenceTests : MapServerEndpointTestBase
             response.StatusCode.Should().Be(HttpStatusCode.OK, content);
             using var document = JsonDocument.Parse(content);
             document.RootElement.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(srid);
-            document.RootElement.GetProperty("relatedRecordGroups").GetArrayLength().Should().Be(1);
+            var groups = document.RootElement.GetProperty("relatedRecordGroups");
+            groups.GetArrayLength().Should().Be(1);
+            var records = groups[0].GetProperty("relatedRecords");
+            records.GetArrayLength().Should().Be(1);
+            var geometry = records[0].GetProperty("geometry");
+            var x = srid == 4326 ? -122.5 : 6378137 * -122.5 * Math.PI / 180;
+            var y = srid == 4326 ? 37.5 : 6378137 * Math.Log(Math.Tan(Math.PI / 4 + 37.5 * Math.PI / 360));
+            geometry.GetProperty("x").GetDouble().Should().BeApproximately(x, 0.01);
+            geometry.GetProperty("y").GetDouble().Should().BeApproximately(y, 0.01);
         }
     }
 
