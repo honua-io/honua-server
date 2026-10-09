@@ -466,9 +466,9 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
     public async Task Wmts_GetCapabilities_UnpaintedStyle_OmitsLegendUrl(string styleType)
     {
-        await _fixture.GetService<ILayerStyleCatalog>().SetMapLibreStyleAsync(WebAppFixture.TestLayerId, $$"""
+        await _fixture.GetService<ILayerStyleCatalog>().SetMapLibreStyleAsync(WebAppFixture.TestLayerId, $$$$"""
             {"version":8,"sources":{"honua":{"type":"geojson","data":{"type":"FeatureCollection","features":[]}}},
-             "layers":[{"id":"unpainted","type":"{{styleType}}","source":"honua"}]}
+             "layers":[{"id":"unpainted","type":"{{{{styleType}}}}","source":"honua"}]}
             """);
         using var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0");
