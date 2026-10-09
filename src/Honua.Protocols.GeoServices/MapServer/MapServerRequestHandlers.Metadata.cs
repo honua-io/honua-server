@@ -36,7 +36,7 @@ internal static partial class MapServerEndpoints
     /// Spatial reference of the WebMercatorQuad cache advertised by every MapServer.
     /// Service <c>spatialReference</c>, extents, and omitted export SR parameters use it.
     /// </summary>
-    private const int CachedMapSpatialReferenceId = 3857;
+    internal const int CachedMapSpatialReferenceId = 3857;
 
     private sealed record MapServerMetadataLayerDescriptor(
         int PublicLayerId,
@@ -220,12 +220,17 @@ internal static partial class MapServerEndpoints
                 logger,
                 cancellationToken).ConfigureAwait(false);
 
+            var mapExtent = await ResolveCachedExtentAsync(
+                service, [resource],
+                context.RequestServices.GetRequiredService<ICoordinateTransformService>(),
+                cancellationToken).ConfigureAwait(false);
             var response = MapLayerToMapServerLayerResponse(
                 service,
                 publication,
                 resource,
                 snapshot,
                 limitsOptions.Query.MaxRecordCount,
+                mapExtent,
                 drawingInfo,
                 timeInfo: timeInfo);
 
@@ -431,6 +436,7 @@ internal static partial class MapServerEndpoints
         MetadataV2Resource resource,
         MetadataV2GraphSnapshot snapshot,
         int maxRecordCount,
+        EsriExtent mapExtent,
         JsonElement? drawingInfo = null,
         int? publicLayerIdOverride = null,
         string? layerNameOverride = null,
@@ -451,8 +457,6 @@ internal static partial class MapServerEndpoints
             : layerNameOverride;
         var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var displayField = ResolveDisplayField(resource, objectIdField);
-        var serviceLayers = ResolveMapServerMetadataLayers(snapshot, service);
-        var serviceExtent = ResolveServiceExtent(serviceLayers, ResolveServiceSpatialReference(service, serviceLayers));
         var layerCapabilities = BuildMapServerLayerCapabilities(resource);
         var hasGeometry = HasMapServerGeometry(resource);
         var governance = resource.Metadata.WithServiceGovernanceFallbacks(service.Metadata);
@@ -472,8 +476,9 @@ internal static partial class MapServerEndpoints
             Publisher = governance.Publisher,
             Links = GeoServicesGovernanceProjection.ProjectLinks(governance),
             GeometryType = hasGeometry ? MapGeometryTypeToEsri(resource.ReadGeometryType()) : null,
-            SpatialReference = ToEsriSpatialReference(ResolveLayerSpatialReference(resource)),
-            Extent = ResolveLayerExtent(resource, serviceExtent),
+            SpatialReference = mapExtent.SpatialReference,
+            SourceSpatialReference = ToEsriSpatialReference(ResolveLayerSpatialReference(resource)),
+            Extent = mapExtent,
             DisplayField = displayField,
             ObjectIdField = objectIdField,
             Fields =
@@ -656,6 +661,14 @@ internal static partial class MapServerEndpoints
         IReadOnlyList<MapServerMetadataLayerDescriptor> layers,
         ICoordinateTransformService transformService,
         CancellationToken cancellationToken)
+        => await ResolveCachedExtentAsync(service, layers.Select(static layer => layer.Resource),
+            transformService, cancellationToken).ConfigureAwait(false);
+
+    private static async Task<EsriExtent> ResolveCachedExtentAsync(
+        MetadataV2Service service,
+        IEnumerable<MetadataV2Resource> resources,
+        ICoordinateTransformService transformService,
+        CancellationToken cancellationToken)
     {
         var spatialReference = new EsriSpatialReference
         {
@@ -663,7 +676,7 @@ internal static partial class MapServerEndpoints
             LatestWkid = CachedMapSpatialReferenceId
         };
         var projected = await VectorTileServerExtentResolver.ResolveAsync(
-            layers.Select(static layer => layer.Resource),
+            resources,
             service.SpatialReference,
             new VectorTileSpatialReference
             {

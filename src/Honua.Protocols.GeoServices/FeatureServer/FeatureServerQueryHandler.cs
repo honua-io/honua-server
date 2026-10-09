@@ -27,6 +27,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
+using Honua.Protocols.GeoServices.MapServer;
 using Honua.Infrastructure.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
@@ -310,7 +311,8 @@ internal sealed partial class FeatureServerQueryHandler(
                 validatedParams,
                 queryLimits,
                 "json",
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                requiredProtocol).ConfigureAwait(false);
             if (preparationError != null)
             {
                 return (null, preparationError);
@@ -610,7 +612,8 @@ internal sealed partial class FeatureServerQueryHandler(
                 validatedParams,
                 queryLimits,
                 format,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                requiredProtocol).ConfigureAwait(false);
             if (preparationError != null)
             {
                 return preparationError;
@@ -1393,8 +1396,14 @@ internal sealed partial class FeatureServerQueryHandler(
         QueryParameters validatedParams,
         QueryLimits queryLimits,
         string format,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? requiredProtocol)
     {
+        // MapServer advertises the map/cache CRS; source storage CRS is separately
+        // exposed by sourceSpatialReference. FeatureServer keeps its layer default.
+        int? mapSpatialReference = string.Equals(requiredProtocol, MapServerProtocol, StringComparison.OrdinalIgnoreCase)
+            ? MapServerEndpoints.CachedMapSpatialReferenceId
+            : null;
         GeoServicesGeometry? parsedGeometry = null;
         if (!GeoServicesGeometryParser.TryParseGeoServicesGeometry(validatedParams.Geometry, validatedParams.GeometryType, out parsedGeometry, out var geometryError))
         {
@@ -1413,7 +1422,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
         if (parsedGeometry != null && !inputSrid.HasValue)
         {
-            inputSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+            inputSrid = mapSpatialReference ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         }
 
         if (parsedGeometry != null && inputSrid.HasValue)
@@ -1519,6 +1528,8 @@ internal sealed partial class FeatureServerQueryHandler(
 
             outputSrid ??= wgs84Srid;
         }
+
+        outputSrid ??= mapSpatialReference;
 
         FilterExpression? filterExpression = null;
         if (!string.IsNullOrWhiteSpace(validatedParams.Where))

@@ -39,7 +39,8 @@ internal sealed class FeatureServerRelatedRecordsHandler(
         string serviceId,
         int layerId,
         QueryRelatedRecordsParameters queryParams,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? requiredProtocol = null)
     {
         try
         {
@@ -189,7 +190,9 @@ internal sealed class FeatureServerRelatedRecordsHandler(
                     [$"Unsupported outSR value: {validatedParams.OutSr}"]);
             }
 
-            outputSrid ??= resolvedRelatedResource.ReadSrid();
+            outputSrid ??= string.Equals(requiredProtocol, ProtocolNames.MapServer, StringComparison.OrdinalIgnoreCase)
+                ? Honua.Protocols.GeoServices.MapServer.MapServerEndpoints.CachedMapSpatialReferenceId
+                : resolvedRelatedResource.ReadSrid();
 
             SqlFragment? sqlFilter = null;
             if (!string.IsNullOrWhiteSpace(validatedParams.Where))

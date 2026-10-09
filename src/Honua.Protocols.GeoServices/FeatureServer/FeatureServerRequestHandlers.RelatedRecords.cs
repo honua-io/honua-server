@@ -15,11 +15,19 @@ internal static partial class FeatureServerEndpoints
 {
     private const int MaxRelatedRecordsObjectIdCountUpperBound = 1000;
 
-    private static async Task<IResult> HandleQueryRelatedRecordsGet(
+    private static Task<IResult> HandleQueryRelatedRecordsGet(
         string serviceId,
         int layerId,
         HttpContext context,
         FeatureServerRelatedRecordsHandler relatedRecordsHandler)
+        => HandleQueryRelatedRecordsGetCore(serviceId, layerId, context, relatedRecordsHandler, null);
+
+    private static async Task<IResult> HandleQueryRelatedRecordsGetCore(
+        string serviceId,
+        int layerId,
+        HttpContext context,
+        FeatureServerRelatedRecordsHandler relatedRecordsHandler,
+        string? requiredProtocol)
     {
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
         if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.QueryRelatedRecords, out var error))
@@ -44,14 +52,23 @@ internal static partial class FeatureServerEndpoints
             serviceId,
             layerId,
             queryParams,
-            cancellationToken);
+            cancellationToken,
+            requiredProtocol);
     }
 
-    private static async Task<IResult> HandleQueryRelatedRecordsPost(
+    private static Task<IResult> HandleQueryRelatedRecordsPost(
         string serviceId,
         int layerId,
         HttpContext context,
         FeatureServerRelatedRecordsHandler relatedRecordsHandler)
+        => HandleQueryRelatedRecordsPostCore(serviceId, layerId, context, relatedRecordsHandler, null);
+
+    private static async Task<IResult> HandleQueryRelatedRecordsPostCore(
+        string serviceId,
+        int layerId,
+        HttpContext context,
+        FeatureServerRelatedRecordsHandler relatedRecordsHandler,
+        string? requiredProtocol)
     {
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
         if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.QueryRelatedRecords, out var error))
@@ -90,7 +107,8 @@ internal static partial class FeatureServerEndpoints
             serviceId,
             layerId,
             queryParams,
-            cancellationToken);
+            cancellationToken,
+            requiredProtocol);
     }
 
     private static bool TryParseRelatedRecordsParameters(
