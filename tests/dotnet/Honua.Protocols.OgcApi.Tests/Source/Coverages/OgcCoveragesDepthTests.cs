@@ -315,6 +315,26 @@ public sealed class OgcCoveragesOversizeDepthTests : IClassFixture<OgcCoveragesO
         scaledResponse.StatusCode.Should().Be(HttpStatusCode.OK, scaledContent);
     }
 
+    [IntegrationTheory]
+    [InlineData("-122.5,37.7,-122.3,37.9")]
+    [InlineData("-180,-90,180,90")]
+    [InlineData("-122.5,37.79,-122.3,37.81")]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
+    public async Task Coverage_NativeBbox_RejectsOversizeGridBeforeExport(string bbox)
+    {
+        _fixture.ExportQueries.Clear();
+        using var response = await _fixture.App.Client.GetAsync($"{CoveragePath}?bbox={bbox}");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
+        _fixture.ExportQueries.Should().BeEmpty();
+
+        using var downsampled = await _fixture.App.Client.GetAsync($"{CoveragePath}?bbox={bbox}&scale-size=128,64");
+        downsampled.StatusCode.Should().Be(HttpStatusCode.OK, await downsampled.Content.ReadAsStringAsync());
+        _fixture.ExportQueries.Should().ContainSingle();
+        _fixture.ExportQueries[0].OutputWidth.Should().Be(128);
+        _fixture.ExportQueries[0].OutputHeight.Should().Be(64);
+    }
+
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]

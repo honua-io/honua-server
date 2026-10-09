@@ -1819,7 +1819,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 143,
-      "provingTestCount": 450,
+      "provingTestCount": 454,
       "maturity": {
         "preview": 143
       },
@@ -2059,7 +2059,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 8,
-      "provingTestCount": 49,
+      "provingTestCount": 50,
       "maturity": {
         "preview": 8
       },
