@@ -81,7 +81,9 @@ public sealed class MapServerOptionalProjectionTests : MapServerEndpointTestBase
         using var document = JsonDocument.Parse(content);
         var error = document.RootElement.GetProperty("error");
         error.GetProperty("code").GetInt32().Should().Be(400);
-        error.GetProperty("message").GetString().Should().Contain("reprojection");
+        error.GetProperty("message").GetString().Should().Be("Bad Request");
+        error.GetProperty("details").EnumerateArray().Select(detail => detail.GetString()).Should()
+            .Contain("Geometry reprojection is not supported by this data provider.");
         document.RootElement.TryGetProperty("relatedRecordGroups", out _).Should().BeFalse();
     }
 
