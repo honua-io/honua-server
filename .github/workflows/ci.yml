@@ -1370,7 +1370,6 @@ jobs:
           # Only these current shard filters select explicit Redis fixtures.
           images=()
           case "${SERVER_SHARD}" in
-            'Core and Cloud Contracts'| \
             'Admin & Infrastructure'| \
             'Migration'| \
             'FeatureServer Endpoints Query Services and Replication'| \
@@ -1391,6 +1390,10 @@ jobs:
           esac
           if [[ "${SERVER_SHARD}" == 'Operator Eval Harness' ]]; then
             images+=(postgis17)
+          fi
+          # These real-process/seed proofs create their own PostGIS containers.
+          if [[ "${SERVER_SHARD}" == 'Core and Cloud Contracts' ]]; then
+            images+=(postgis16 postgis18)
           fi
           if (( ${#images[@]} > 0 )); then
             scripts/ci/prepare-testcontainer-images.sh ryuk "${images[@]}"
@@ -1688,6 +1691,8 @@ jobs:
     timeout-minutes: 25
     env:
       TESTCONTAINERS_RYUK_DISABLED: false
+      # testcontainers-python uses this override rather than the .NET variable.
+      RYUK_CONTAINER_IMAGE: 'mirror.gcr.io/testcontainers/ryuk:0.14.0@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0'
       TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
       HONUA_TEST_CONFIGURATION: Release
     steps:
@@ -1729,9 +1734,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r tests/python/requirements.txt
 
-      - name: Prepare Python PostGIS image
-        timeout-minutes: 5
-        run: scripts/ci/prepare-testcontainer-images.sh postgis18
+      - name: Prepare Python Testcontainers images
+        timeout-minutes: 7
+        run: scripts/ci/prepare-testcontainer-images.sh ryuk postgis18
 
       - name: Prove GeoParquet independent-consumer execution
         # GeoParquet GA evidence requires every cell: skips and collection errors fail.

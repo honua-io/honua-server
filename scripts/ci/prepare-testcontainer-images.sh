@@ -30,10 +30,10 @@ prepare_image() {
   docker image inspect "${target}" >/dev/null
 }
 
-[[ "$#" -gt 0 ]] || { echo "Usage: $0 {ryuk|postgis18|postgis17|redis|mysql|postgres16} ..." >&2; exit 2; }
+[[ "$#" -gt 0 ]] || { echo "Usage: $0 {ryuk|postgis18|postgis17|postgis16|redis|mysql|postgres16} ..." >&2; exit 2; }
 # Reject unknown inputs before mutating the image cache.
 for image in "$@"; do
-  case "${image}" in ryuk|postgis18|postgis17|redis|mysql|postgres16) ;; *) echo "Unknown test image: ${image}" >&2; exit 2 ;; esac
+  case "${image}" in ryuk|postgis18|postgis17|postgis16|redis|mysql|postgres16) ;; *) echo "Unknown test image: ${image}" >&2; exit 2 ;; esac
 done
 for image in "$@"; do
   case "${image}" in
@@ -46,6 +46,7 @@ for image in "$@"; do
       ;;
     postgis18) prepare_image 'postgis/postgis:18-3.6' 'mirror.gcr.io/postgis/postgis:18-3.6' 'docker.io/postgis/postgis:18-3.6' 'sha256:7e00e8c3539fdd43f513b98806c8204714dcd09dea683c259e333d7690317119' ;;
     postgis17) prepare_image 'postgis/postgis:17-3.5' 'mirror.gcr.io/postgis/postgis:17-3.5' 'docker.io/postgis/postgis:17-3.5' 'sha256:8dfee83d8bd4c2873dc4a233c13ba2799a44f2edb16a0552d58715917fac32ba' ;;
+    postgis16) prepare_image 'postgis/postgis:16-3.4' 'mirror.gcr.io/postgis/postgis:16-3.4' 'docker.io/postgis/postgis:16-3.4' 'sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5' ;;
     redis) prepare_image 'redis:7.2-alpine' 'public.ecr.aws/docker/library/redis:7.2-alpine' 'docker.io/library/redis:7.2-alpine' 'sha256:84bab713067f5494d94c24e99ae3fa3ae2388c037152edcbcf301f7cfaeb3048' ;;
     mysql) prepare_image 'mysql:8.0.36' 'public.ecr.aws/docker/library/mysql:8.0.36' 'docker.io/library/mysql:8.0.36' 'sha256:65ce0889751900d2dd5fc5aa5a5fb59073d401fc43df2eae6bd6afb18e7626dd' ;;
     postgres16) prepare_image 'postgres:16-alpine' 'public.ecr.aws/docker/library/postgres:16-alpine' 'docker.io/library/postgres:16-alpine' 'sha256:1a66d744c1b459e13b05a8fca341da84cb63383e99ce262210efee5a319d4551' ;;

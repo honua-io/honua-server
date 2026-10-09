@@ -24,6 +24,10 @@ for name in ("ci.yml", "pr-gate.yml"):
     assert "TESTCONTAINERS_RYUK_CONTAINER_IMAGE: '" + RYUK + "'" in content
     assert not re.search(r"TESTCONTAINERS_RYUK_DISABLED:\s*['\"]?true", content)
 assert RYUK in SCRIPT.read_text(encoding="utf-8")
+python_job = re.split(r"(?m)^  [a-z][a-z0-9-]*:\n", workflow.split("  python-integration-tests:\n", 1)[1], maxsplit=1)[0]
+assert "RYUK_CONTAINER_IMAGE: '" + RYUK + "'" in python_job
+assert "run: scripts/ci/prepare-testcontainer-images.sh ryuk postgis18" in python_job
+assert "if [[ \"${SERVER_SHARD}\" == 'Core and Cloud Contracts' ]]; then\n            images+=(postgis16 postgis18)" in workflow
 datum = (ROOT / "tests/dotnet/Honua.TestKit/DatumGridPostgresFixture.cs").read_text(encoding="utf-8")
 assert 'const string image = "mirror.gcr.io/postgis/postgis:18-3.6@sha256:60f6ad1d21ea86a67d47780b9a0d1e1d200500f62b19293fa834d0dea80b8677";' in datum
 for block in re.split(r"(?m)^      - ", workflow):
@@ -64,7 +68,7 @@ esac
 '''
 
 cases = [
-    ("success", ["postgis18", "postgis17", "redis", "mysql", "postgres16", "ryuk"], 0, 6),
+    ("success", ["postgis18", "postgis17", "postgis16", "redis", "mysql", "postgres16", "ryuk"], 0, 7),
     ("retry", ["redis"], 0, 2),
     ("fallback", ["postgis17", "redis"], 0, 6),
     ("exhausted", ["redis"], 1, 4),
@@ -98,7 +102,7 @@ with tempfile.TemporaryDirectory(prefix="ci-image-fixtures-") as directory:
         assert all(line.startswith("timeout 60s docker pull ") for line in calls if line.startswith("timeout "))
         if index == 0:
             assert [line.split()[-1] for line in calls if line.startswith("tag ")] == [
-                "postgis/postgis:18-3.6", "postgis/postgis:17-3.5", "redis:7.2-alpine",
+                "postgis/postgis:18-3.6", "postgis/postgis:17-3.5", "postgis/postgis:16-3.4", "redis:7.2-alpine",
                 "mysql:8.0.36", "postgres:16-alpine"]
         print(f"PASS: {mode} {args} (exit {expected}, {pulls} pulls)")
 print("Required-image fixtures: 10 passed, 0 failed")
