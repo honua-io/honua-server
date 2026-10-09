@@ -445,6 +445,8 @@ internal static partial class ImageServerSoapEndpoints
     private static XElement BuildKeyPropertiesResult(KeyPropertiesResponse properties)
     {
         XNamespace xsi = XmlSchemaInstanceNamespace;
+        // ArcGIS SOAP exposes the band-property IArray as ArrayOfArgument;
+        // each Argument remains a typed PropertySet for native deserialization.
         var items = new List<XElement>
         {
             new(
@@ -453,7 +455,7 @@ internal static partial class ImageServerSoapEndpoints
                 new XElement("Key", "BandProperties"),
                 new XElement(
                     "Value",
-                    new XAttribute(xsi + "type", "tns:ArrayOfPropertySet"),
+                    new XAttribute(xsi + "type", "tns:ArrayOfArgument"),
                     properties.BandProperties.Select(BuildBandPropertySet))),
         };
         AddDoubleProperty(items, "LowCellSize", properties.LowCellSize, xsi);
@@ -482,7 +484,7 @@ internal static partial class ImageServerSoapEndpoints
     {
         XNamespace xsi = XmlSchemaInstanceNamespace;
         return new XElement(
-            "PropertySet",
+            "Argument",
             new XAttribute(xsi + "type", "tns:PropertySet"),
             new XElement(
                 "PropertyArray",
