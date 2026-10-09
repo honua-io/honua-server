@@ -351,11 +351,15 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
     {
         _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field
         {
-            Name = "active", Type = MetadataV2FieldType.Boolean, Nullable = false
+            Name = "active",
+            Type = MetadataV2FieldType.Boolean,
+            Nullable = false
         });
         _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field
         {
-            Name = "rank", Type = MetadataV2FieldType.Integer, Nullable = false
+            Name = "rank",
+            Type = MetadataV2FieldType.Integer,
+            Nullable = false
         });
 
         // Stock QGIS sends form-encoded GeoServices small-integer Boolean values.
