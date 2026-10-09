@@ -107,6 +107,7 @@ internal static class ProposalEndpoints
                 missingDependency: null,
                 CapabilityUnavailableCodes.EntitlementRemediation,
                 CapabilityUnavailableCodes.EntitlementRemediationRef,
+                CapabilityUnavailableCodes.ControlPlaneProposalsCapability,
                 errorCode: CapabilityUnavailableCodes.EntitlementErrorCode,
                 missingEntitlement: CapabilityUnavailableCodes.RedisCacheEntitlement)
             : ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
@@ -114,7 +115,8 @@ internal static class ProposalEndpoints
                 CapabilityUnavailableCodes.DurableControlPlaneDetail,
                 CapabilityUnavailableCodes.RedisDependency,
                 CapabilityUnavailableCodes.RedisRemediation,
-                CapabilityUnavailableCodes.RedisRemediationRef);
+                CapabilityUnavailableCodes.RedisRemediationRef,
+                CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
     }
 
     private static async Task<IResult> HandleListProposals(

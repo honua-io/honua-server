@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Exceptions;
+using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
@@ -42,6 +45,16 @@ internal sealed partial class AdminOperationApprovalBridge(
         var gateway = services.GetService<IOperationGateway>();
         if (gateway is null)
         {
+            if (!UnavailableOperationProposalStore.IsDurable(services.GetService<IOperationProposalStore>()))
+            {
+                // Redis-off host (honua-server#5733): the operation record may live in the volatile
+                // Development/Test store, but the proposal/approval control plane was never
+                // composed. Refuse with the same typed capability-unavailable receipt the rest of
+                // the Redis-off surface emits, instead of a non-durable failure every adapter
+                // would otherwise project as an untyped 500.
+                throw ControlPlaneUnavailable();
+            }
+
             return Failure("Approval is required, but the durable proposal gateway is unavailable.");
         }
 
@@ -107,6 +120,14 @@ internal sealed partial class AdminOperationApprovalBridge(
             return Failure("Approval is required, but durable proposal infrastructure failed.");
         }
     }
+
+    private static CapabilityUnavailableException ControlPlaneUnavailable()
+        => new(
+            CapabilityUnavailableCodes.DurableControlPlaneDetail,
+            CapabilityUnavailableCodes.RedisDependency,
+            CapabilityUnavailableCodes.RedisRemediation,
+            CapabilityUnavailableCodes.RedisRemediationRef,
+            CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
 
     private static OperationApprovalBridgeResult Failure(string reason) => new()
     {

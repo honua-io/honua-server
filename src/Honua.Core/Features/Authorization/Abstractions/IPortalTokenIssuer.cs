@@ -7,7 +7,7 @@ namespace Honua.Core.Features.Authorization.Abstractions;
 
 /// <summary>
 /// Issues and verifies opaque ArcGIS-compatible portal tokens that bind a request
-/// principal to a referer or client IP for the lifetime of the token.
+/// principal to a referer or client IP, or issues an unbound native OAuth bearer token.
 /// </summary>
 /// <remarks>
 /// Tokens are short-lived bearer credentials backed by the distributed cache; the
@@ -125,8 +125,8 @@ public sealed record PortalTokenIntrospection(
 /// <param name="DisplayName">Optional display name surfaced through the hydrated principal.</param>
 /// <param name="TenantId">Tenant the token is scoped to, or <see langword="null"/> for the tenant-less default.</param>
 /// <param name="Roles">Roles granted to the principal for the lifetime of the token.</param>
-/// <param name="ClientType">Whether the binding is a referer or an IP address.</param>
-/// <param name="BindingValue">Bound referer URL or client IP address.</param>
+/// <param name="ClientType">Whether the token binds to a referer, an IP address, or is a native OAuth bearer.</param>
+/// <param name="BindingValue">Bound referer URL or client IP address; empty for a native OAuth bearer.</param>
 /// <param name="ExpiresAt">Absolute expiry instant for the token.</param>
 /// <param name="RolesRequireClaimsMappingEntitlement">
 /// Whether <paramref name="Roles"/> depend on the Enterprise <c>identity.claims-mapping</c>
@@ -241,4 +241,10 @@ public enum PortalTokenClientType
     /// Bind to a client IP address. The token is honored only from that address.
     /// </summary>
     Ip = 1,
+
+    /// <summary>
+    /// Native OAuth bearer token. No Referer or client IP is required; expiry,
+    /// revocation and principal validation still apply. Not a generateToken client mode.
+    /// </summary>
+    Bearer = 2,
 }

@@ -74,10 +74,13 @@ or swallowed an advisory test failure is insufficient. The tool checks
 identifiers and evidence-link shape, but a reviewer must verify the linked
 trailing job actually belongs to the stated merge and shard. A green rerun
 after a code fix cannot establish that the earlier failure was false.
-Superseded heads need explicit evidence: unchanged shard inputs can establish
-equivalence, or the same named test still failing on the landed revision can
-confirm a red. Store that proof with the decision. Otherwise leave the head
-unresolved, even if the later revision passes.
+Superseded heads need explicit evidence: unchanged relevant inputs can establish
+equivalence, or matching assertion and failure-cause evidence can confirm the
+same red across changed inputs. A matching test name alone is insufficient.
+Store that proof with the decision. If the tested trunk SHA differs from the
+merge SHA, establish equivalence across that interval too; ancestry alone is
+insufficient. Otherwise leave the head unresolved, whether the later run passes
+or fails.
 Unmerged heads remain unresolved when no equivalent trailing result exists.
 Duplicate, stale-attempt, wrong-head, and unmatched reconciliations are rejected.
 
@@ -165,138 +168,86 @@ remaining archives reproduce 56 native heads and the same savings shortfalls,
 but cannot reproduce the original zero-integrity result without the expired
 bytes. Archive expiry after the original audit is not a new emission failure.
 
-## Reconciliation follow-up on 2026-10-07
+## Reconciliation follow-up, corrected on 2026-10-08
 
-**Decision: keep `AFFECTED_SHARDS_MODE: report`.** Five proven false-red runs
-already exceed the strict 2% limit: **5 / 206 = 2.43%**. The exact rate remains
-unknown because some heads have no valid trailing comparison. Its bounds are
-**2.43%–17.48%**; the lower bound alone rejects global promotion. Do not add
-`PR Gate / Affected shards` to branch protection for this report-only rollout.
-That remains the exact context to require after a successful future promotion.
+**Decision: keep `AFFECTED_SHARDS_MODE: report`.** The corrected evidence does
+not establish a false-red rate below 2%. Two proven false-red runs give a
+**2 / 206 = 0.97%** lower bound; 39 unresolved red runs give a **19.90%** upper
+bound. The exact rate remains unknown. The lower bound does **not** by itself
+reject promotion; unresolved comparisons and one unfinished run prevent it.
+Do not add `PR Gate / Affected shards` to branch protection on this evidence.
 
-The follow-up examines **every one of the original 47 unresolved shard
-verdicts** and retains the original four decisions. It resolves 11 additional
-verdicts across nine runs. The remaining 36 cannot honestly be called either
-false reds or confirmed reds using the required evidence:
+The prior follow-up accepted 15 shard verdicts, including superseded heads
+based on overlapping failing test names and later trunk results based only on
+ancestry. Review of #5701 and #5702 found those standards insufficient. The
+corrected record retains all observations and comparison metadata, but accepts
+only five verdicts with the required evidence:
 
-| Measurement | Follow-up result |
+| Measurement | Corrected result |
 |---|---:|
 | Fixed original window / executed samples | Seven days / 206 |
-| False-red runs / shard verdicts | 5 / 5 |
-| Confirmed-red runs / shard verdicts | 7 / 10 |
-| Unresolved runs / shard verdicts | 31 / 36 |
-| False-red rate lower / upper bound | 2.43% / 17.48% |
+| False-red runs / shard verdicts | 2 / 2 |
+| Confirmed-red runs / shard verdicts | 2 / 3 |
+| Unresolved runs / shard verdicts | 39 / 46 |
+| False-red rate lower / upper bound | 0.97% / 19.90% |
 | Promotion ready | No |
 
-The original observation snapshot still has one unfinished run and retains its
-206-run denominator. Even adding that run as another green sample would leave
-five false reds at 5 / 207 = 2.42%, above the threshold. It cannot reverse this
-decision. The later trunk comparisons may fall after the observation window;
-they reconcile heads already sampled and do not add samples.
-
 The [complete reconciliation record](affected-shards-reconciliation-20261007.json)
-contains all 51 shard verdicts, including run/attempt/head, PR, landed head,
+retains all 51 shard verdicts, including run/attempt/head, PR, landed head,
 merge SHA, tested trunk SHA, trunk run/job, test-step conclusion, named failing
-tests, verdict and reason. Null trunk evidence is explicit. The
+tests, verdict and reason. The
 [accepted adjudications](affected-shards-adjudications-20261007.json) contain
-only the 15 proven verdicts; the
+only the five supported verdicts. The
 [replayed audit](affected-shards-audit-20261007.json) preserves uncertainty and
-returns `promotion_ready: false`. The replay command above still exits 1.
+returns `promotion_ready: false`; the replay command above exits 1.
 
-The comparison used current-attempt, fully paged jobs and test-step outcomes.
-For next-full-matrix comparisons, the trunk run contains the merge commit by
-Git ancestry in complete, unshallow history. Skipped tests, partial matrices,
-and green advisory jobs with failed test steps do not establish a false red.
-The retained proof uses protocol test names and identities; raw logs remain
-outside the public documentation.
+### Comparisons requiring more evidence
 
-Two superseded heads have explicit input-equivalence proofs. For run
-37117187230 (PR 5384), the only subsequent changes are certification documents.
-For run 37108636224 (PR 5381), only `Theory` → `UnitTheory` attributes change in
-two tests outside the failing shard: one in another project, and one in the
-PrintingTools namespace explicitly excluded by the shard filter. Production,
-shared harness, shard configuration and runner-script Git objects are identical
-for both comparisons. The first is a false red; the second remains red on its
-merge commit and is confirmed red. The proofs and complete changed-path lists
-are retained with their decisions. Superseded STAC and ImageServer heads are
-confirmed only where the same named failing tests remain red on the landed
-revision, with overlapping test names retained in the evidence.
+Run 37490646062 tested trunk `3beef35b`, four commits after merge `8fabbf25`.
+The intervening diff includes production, tests and `.github/ci-shards.json`.
+Its later passing test step cannot establish that the earlier red was false.
+The complete changed-path list is retained with the comparison.
 
-### False-red shards ranked by count
+The superseded STAC runs 37533561480 and 37569461538 and ImageServer run
+37529226693 have overlapping failing test names on the landed revision, but
+changed implementation or tests. A test can fail at a different assertion or
+for another cause after such changes. Without input equivalence or matching
+failure-cause evidence, those five shard verdicts remain unresolved.
 
-Counts are affected-shard **runs**, not individual test failures. Tied shards
-are ordered by name. These are the proven false reds; uncertainty is excluded.
+The same merge-to-tested-trunk rule applies to runs 37607358792, 37298392860,
+37118682741 and 37117187230. Their later comparisons also include intervening
+production or shared-input changes without a retained equivalence proof for
+that interval. They now remain unresolved. The pre-landing equivalence proof
+for 37117187230 does not establish equivalence after the merge. Changed-path
+lists and all previous comparison metadata remain available for further audit.
 
-| Shard | False-red count | Failing test | PR-head run IDs |
-|---|---:|---|---|
-| Server Features Miscellaneous | 2 | `TileExportDurableRecoveryRedisTests.Retry_WithFreshKey_ReusesCompletedPackageCheckpoint` | 37117187230, 37118682741 |
-| gRPC Protocol and Scene | 2 | `GrpcApplyEditsDistributedIdempotencyTests.WriteOutlastingTheReservationWindow_KeepsIt_AndAnotherReplicaReplaysTheResult` | 37441285627, 37490646062 |
-| GeoServices Catalog and ImageServer Support | 1 | `ImageServerMosaicIntegrationTests.Identify_MultiBandRasterAtProjectedPoint_ReturnsEsriValueAndLocationSpatialReference` | 37206830900 |
+Run 37108636224 retains its confirmed-red classification: its comparison tests
+the exact merge commit, and its pre-landing proof records identical production,
+shared harness, routing and runner inputs. Only two attributes outside the
+failing shard changed. The two exact-landed-head STAC verdicts for run
+37614307268 also remain confirmed red at their exact merge commit.
 
-Cut one flaky-test investigation packet per row, using the PR and trailing job
-links in the reconciliation record. The tile-export test repeats completed
-package work; the gRPC test loses its edit reservation; ImageServer identify
-returns a no-data result where the raster fixture expects band values. Keep
-assertions and the existing capacity/time budgets intact while reproducing
-and repairing each failure. The misc shard also has one confirmed red and one
-unresolved older head; ImageServer has two confirmed reds and one unmerged
-head. Those observations are separate from the proven false-red count.
+### Proven false-red shards
 
-### Remaining evidence gaps
-
-| Reason | Shard verdicts | PRs |
+| Shard | False-red count | PR-head run ID |
 |---|---:|---|
-| PR still open; no merge commit | 13 | 5428, 5641, 5644, 5652, 5655, 5669 |
-| PR closed without merging | 4 | 5653, 5657, 5660, 5661 |
-| Superseded head; production, tests or shared inputs changed before the later passing result | 17 | 5355, 5396, 5486, 5518, 5526, 5543 |
-| No completed same-shard comparison on the merge or a subsequent full trunk matrix at collection time | 2 | 5664 |
+| GeoServices Catalog and ImageServer Support | 1 | 37206830900 |
+| gRPC Protocol and Scene | 1 | 37441285627 |
 
-Every row has the individual run identity, failing test names (or an explicit
-shard timeout), and its available comparison in the JSON record. A later fixed
-revision cannot retroactively prove a false red. For example, the nine caching
-shard reds in PR 5355 fail `SiteRoot RedirectsToTheServicesDirectory`; the
-landed revision changes the site-root endpoint. Its green matrix is therefore
-not nine flakes. The MapServer export and capability-manifest heads similarly
-change relevant implementation/tests before passing. Preserve these evidence
-gaps rather than replacing them with invented outcomes. A complete numeric
-false-red rate would require equivalent trailing results for these old heads;
-some unmerged heads will never acquire them through normal landing.
+Both comparisons have a successful same-shard test step at the exact merge
+commit and an audited head matching the landed head. These remain candidates
+for focused flaky-test investigations. Unresolved rows are excluded from this
+count, rather than assigned a guessed outcome.
 
-### Proposed per-shard enforcement
+### Enforcement and validation
 
-The current workflow has **one global mode and no enforcement allowlist**.
-The shard selection allowlist chooses which tests run; it cannot choose which
-red receipts fail the aggregate. Setting `enforce` today would enforce every
-selected shard, including the three proven false-red families.
+Withdraw the proposed OData/STAC enforcement allowlist: those families now
+have unresolved red comparisons. The current workflow retains one global
+`report` mode. Any future per-shard enforcement proposal needs new evidence
+and explicit handling of missing receipts; this correction changes no shard
+selection, assertion, timeout, mode or branch-protection setting.
 
-Propose an initial enforcement allowlist of **OData Core, STAC Protocol, and
-STAC Items and Collections**. These are the families with observed reds, zero
-false reds, and no remaining unresolved red verdicts in this window: one OData
-verdict and three verdicts in each STAC family, all confirmed red. Other
-families with zero proven false reds still have unresolved reds; green-only
-families have no retained per-shard exposure counts, so zero observations do
-not prove a per-shard rate.
-
-A separate workflow change would need an explicit list of stable shard names
-at the aggregate verdict boundary. Continue selecting/running the same shards
-and publishing every verdict. Fail the aggregate only for non-passing receipts
-in the enforcement list. Carry selected shard identities from the selector so
-missing receipts for enforced families fail closed, and reject invalid list
-entries; receipt count alone cannot identify which family is missing. Keep
-selector/configuration failure fail-closed while that mixed mode is required.
-Test enforced reds, report-only reds, mixed outcomes, missing enforced receipts,
-and docs-only skips. After that implementation lands, require the exact
-`PR Gate / Affected shards` context through the operator's branch-protection
-change. No allowlist, selection, capacity, timeout or workflow-mode change is
-made by this evidence follow-up.
-
-### Follow-up validation
-
-The eight offline auditor tests and the real affected-shard selector/verdict
-fixture pass. The focused `docs/ci/` link check passes all five targets with
-its rot allowlist restricted to that same directory. An independent consistency
-check matches all 51 unique run/attempt/head/shard identities to the original
-annotations, matches all 15 accepted decisions to their evidence rows, checks
-false/confirmed reds against successful/failed test steps, and reproduces the
-retained audit byte-for-byte as JSON values. No .NET project changes require
-formatting or a solution build.
+The offline auditor and selector/verdict fixtures validate the replay. A
+consistency check matches all 51 unique run/attempt/head/shard identities to
+the original observations, matches the five accepted decisions to their
+reconciliation rows, and reproduces the retained audit as JSON values.

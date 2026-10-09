@@ -247,8 +247,8 @@
       "trunk_head_sha": "31617a93b9c6b2934876b1f779d6248f8169465c",
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37620570415/job/112793735473",
       "test_step_conclusion": "failure",
-      "verdict": "confirmed-red",
-      "reason": "Audited head matches the landed PR head; same shard test step failure on the first subsequent completed full trunk matrix containing the merge (git ancestry verified).",
+      "verdict": "unresolved",
+      "reason": "The comparison tests a later trunk revision with intervening production or shared-input changes. No merge-to-tested-trunk input-equivalence or matching failure-cause proof is retained. Any pre-landing equivalence proof and overlapping test names remain diagnostic only; ancestry alone cannot classify this head.",
       "trailing_job_conclusion": "failure",
       "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37607358792/job/112746357277",
       "failing_tests": [
@@ -262,7 +262,20 @@
         "KeyPropertiesSoap MatchesRestKeyProperties"
       ],
       "head_comparison_url": "https://github.com/honua-io/honua-server/compare/55e116d2e4044d93b75103cd1636597606d5db8c..55e116d2e4044d93b75103cd1636597606d5db8c",
-      "trailing_shard_outcome": "red"
+      "trailing_shard_outcome": "red",
+      "changed_paths_after_merge": [
+        "docs/audit/platform-20261006/issue-5621.md",
+        "docs/audit/platform-20261006/issue-5632.md",
+        "src/Honua.Hosting/Features/Filtering/Cql2FilterProcessor.cs",
+        "src/Honua.Protocols.Stac/ItemEndpoints.cs",
+        "src/Honua.Protocols.Stac/SearchEndpoints.cs",
+        "src/Honua.Protocols.Stac/Services/StacBoundItemQueryExecutor.cs",
+        "src/Honua.Protocols.Stac/Services/StacItemIdWhereBuilder.cs",
+        "src/Honua.Protocols.Stac/Services/StacMappingService.cs",
+        "src/Honua.Server/Features/Protocols/Grpc/HonuaFeatureService.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/GrpcFeatureServiceTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Stac/StacItemIdentifierAuditTests.cs"
+      ]
     },
     {
       "run_id": 37606750322,
@@ -414,8 +427,8 @@
       "trunk_head_sha": "31617a93b9c6b2934876b1f779d6248f8169465c",
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37620570415/job/112793739557",
       "test_step_conclusion": "failure",
-      "verdict": "confirmed-red",
-      "reason": "The audited PR head was superseded, but the same named failing test(s) remain red in the same shard on the landed revision; no later green is used to classify this red.",
+      "verdict": "unresolved",
+      "reason": "The audited head was superseded by changes to production or tests. Overlapping failing test names are retained as diagnostics, but neither unchanged relevant inputs nor matching assertion/cause evidence has been established; the later failure cannot classify this head.",
       "trailing_job_conclusion": "failure",
       "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37569461538/job/112624763638",
       "failing_tests": [
@@ -544,8 +557,8 @@
       "trunk_head_sha": "31617a93b9c6b2934876b1f779d6248f8169465c",
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37620570415/job/112793739443",
       "test_step_conclusion": "failure",
-      "verdict": "confirmed-red",
-      "reason": "The audited PR head was superseded, but the same named failing test(s) remain red in the same shard on the landed revision; no later green is used to classify this red.",
+      "verdict": "unresolved",
+      "reason": "The audited head was superseded by changes to production or tests. Overlapping failing test names are retained as diagnostics, but neither unchanged relevant inputs nor matching assertion/cause evidence has been established; the later failure cannot classify this head.",
       "trailing_job_conclusion": "failure",
       "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37569461538/job/112624763575",
       "failing_tests": [
@@ -639,8 +652,8 @@
       "trunk_head_sha": "31617a93b9c6b2934876b1f779d6248f8169465c",
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37620570415/job/112793739557",
       "test_step_conclusion": "failure",
-      "verdict": "confirmed-red",
-      "reason": "The audited PR head was superseded, but the same named failing test(s) remain red in the same shard on the landed revision; no later green is used to classify this red.",
+      "verdict": "unresolved",
+      "reason": "The audited head was superseded by changes to production or tests. Overlapping failing test names are retained as diagnostics, but neither unchanged relevant inputs nor matching assertion/cause evidence has been established; the later failure cannot classify this head.",
       "trailing_job_conclusion": "failure",
       "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37533561480/job/112514429338",
       "failing_tests": [
@@ -772,8 +785,8 @@
       "trunk_head_sha": "31617a93b9c6b2934876b1f779d6248f8169465c",
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37620570415/job/112793739443",
       "test_step_conclusion": "failure",
-      "verdict": "confirmed-red",
-      "reason": "The audited PR head was superseded, but the same named failing test(s) remain red in the same shard on the landed revision; no later green is used to classify this red.",
+      "verdict": "unresolved",
+      "reason": "The audited head was superseded by changes to production or tests. Overlapping failing test names are retained as diagnostics, but neither unchanged relevant inputs nor matching assertion/cause evidence has been established; the later failure cannot classify this head.",
       "trailing_job_conclusion": "failure",
       "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37533561480/job/112514428905",
       "failing_tests": [
@@ -893,8 +906,8 @@
       "trunk_head_sha": "31617a93b9c6b2934876b1f779d6248f8169465c",
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37620570415/job/112793735473",
       "test_step_conclusion": "failure",
-      "verdict": "confirmed-red",
-      "reason": "The audited PR head was superseded, but the same named failing test(s) remain red in the same shard on the landed revision; no later green is used to classify this red.",
+      "verdict": "unresolved",
+      "reason": "The audited head was superseded by changes to production or tests. Overlapping failing test names are retained as diagnostics, but neither unchanged relevant inputs nor matching assertion/cause evidence has been established; the later failure cannot classify this head.",
       "trailing_job_conclusion": "failure",
       "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37529226693/job/112497615482",
       "failing_tests": [
@@ -912,7 +925,20 @@
       ],
       "changed_path_count_before_landing": 2,
       "head_comparison_url": "https://github.com/honua-io/honua-server/compare/239c25a093f1a50a7e965ede74ba31eb61d7d2ee..55e116d2e4044d93b75103cd1636597606d5db8c",
-      "trailing_shard_outcome": "red"
+      "trailing_shard_outcome": "red",
+      "changed_paths_after_merge": [
+        "docs/audit/platform-20261006/issue-5621.md",
+        "docs/audit/platform-20261006/issue-5632.md",
+        "src/Honua.Hosting/Features/Filtering/Cql2FilterProcessor.cs",
+        "src/Honua.Protocols.Stac/ItemEndpoints.cs",
+        "src/Honua.Protocols.Stac/SearchEndpoints.cs",
+        "src/Honua.Protocols.Stac/Services/StacBoundItemQueryExecutor.cs",
+        "src/Honua.Protocols.Stac/Services/StacItemIdWhereBuilder.cs",
+        "src/Honua.Protocols.Stac/Services/StacMappingService.cs",
+        "src/Honua.Server/Features/Protocols/Grpc/HonuaFeatureService.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/GrpcFeatureServiceTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Stac/StacItemIdentifierAuditTests.cs"
+      ]
     },
     {
       "run_id": 37527864478,
@@ -1166,8 +1192,8 @@
       "trunk_head_sha": "3beef35bdbb767910cfae908e01a46c9949a1127",
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37498211090/job/112432952961",
       "test_step_conclusion": "success",
-      "verdict": "false-red",
-      "reason": "Audited head matches the landed PR head; same shard test step success on the first subsequent completed full trunk matrix containing the merge (git ancestry verified).",
+      "verdict": "unresolved",
+      "reason": "The successful trailing run tested 3beef35b, four commits after merge 8fabbf25. Production, tests and .github/ci-shards.json changed in that interval. Git ancestry alone cannot establish input equivalence; retain this head as unresolved.",
       "trailing_job_conclusion": "success",
       "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37490646062/job/112362613893",
       "failing_tests": [
@@ -1175,7 +1201,49 @@
       ],
       "changed_paths_before_landing": [],
       "head_comparison_url": "https://github.com/honua-io/honua-server/compare/87ba84298cfe0782a885182fb70ee1463806b8ef..87ba84298cfe0782a885182fb70ee1463806b8ef",
-      "trailing_shard_outcome": "green"
+      "trailing_shard_outcome": "green",
+      "changed_paths_after_merge": [
+        ".github/ci-shards.json",
+        ".github/workflows/cite-conformance-common.yml",
+        ".github/workflows/cite-conformance.yml",
+        ".github/workflows/release-bundle.yml",
+        "certification/gp-operation-matrix.v1.json",
+        "docs/gis/data/capability-matrix.v1.json",
+        "docs/gis/data/feature-catalog.json",
+        "docs/okf/capabilities/import.file.md",
+        "scripts/release/dispatch-and-wait.sh",
+        "src/Honua.Core/Features/ControlPlane/Abstractions/IJobExecutor.cs",
+        "src/Honua.Core/Features/ControlPlane/Domain/OperationModels.cs",
+        "src/Honua.Db/Postgres/Features/FileImport/StreamingFileImportService.Streaming.cs",
+        "src/Honua.Db/Postgres/Features/FileImport/StreamingFileImportService.cs",
+        "src/Honua.Geoprocessing/Features/Geoprocessing/Execution/ExternalPostgisSinkExecutor.cs",
+        "src/Honua.Geoprocessing/Features/Geoprocessing/Execution/HonuaLayerSinkExecutor.cs",
+        "src/Honua.Geoprocessing/Features/Geoprocessing/Execution/WorkspaceRoutingJobExecutionContext.cs",
+        "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingJobDispatcher.cs",
+        "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingJobService.cs",
+        "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingResultPackageFactory.cs",
+        "src/Honua.Hosting/Features/Collaboration/FeatureLockEnforcingFeatureWriter.cs",
+        "src/Honua.Jobs/Features/ControlPlane/ExecutionJobSubmissionHelper.cs",
+        "src/Honua.Jobs/Features/ControlPlane/JobExecutionService.cs",
+        "src/Honua.Jobs/Features/ControlPlane/JobReconciliationService.cs",
+        "src/Honua.Jobs/Features/ControlPlane/RedisJobQueue.cs",
+        "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Transaction.cs",
+        "src/Honua.Worker.Gdal/Execution/GdalStagedOutputContext.cs",
+        "tests/dotnet/Honua.ReleaseWorkflows.Tests/DispatchBindingTests.cs",
+        "tests/dotnet/Honua.ReleaseWorkflows.Tests/Fixtures/github.py",
+        "tests/dotnet/Honua.ReleaseWorkflows.Tests/Honua.ReleaseWorkflows.Tests.csproj",
+        "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ExternalPostgisSinkExecutorTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/HonuaLayerSinkExecutorTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSinkExecutionProofTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GeoprocessingJobServiceTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GeoprocessingResultPackageFactoryOutputTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Import/ReplaceCompletenessParserSkipTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/JobExecutionContextPublishFencingTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/JobExecutionServiceTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/JobReconciliationServiceTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/RedisExecutionSubstrateIntegrationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Wfs/WfsMultiLayerTransactionLockTests.cs"
+      ]
     },
     {
       "run_id": 37452265576,
@@ -1211,7 +1279,26 @@
       ],
       "changed_path_count_before_landing": 6,
       "head_comparison_url": "https://github.com/honua-io/honua-server/compare/3575d7810dc1514d1ab95f1224a79f5f1457a22f..7e8bc2b1e9c6e56078a0d5bea9954d144ef2c88f",
-      "trailing_shard_outcome": "green"
+      "trailing_shard_outcome": "green",
+      "changed_paths_after_merge": [
+        "docs/audit/platform-20261006/issue-5618.md",
+        "docs/gis/data/feature-catalog.json",
+        "scripts/conformance/ogcapi/requirements-conformance.txt",
+        "src/Honua.Db/Postgres/Features/FeatureStore/Services/PostgresStorageMappedFeatureReader.cs",
+        "src/Honua.Hosting/Features/Helpers/BaseUrlResolver.cs",
+        "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerWmtsHandler.cs",
+        "src/Honua.Protocols.OgcClassic/Wcs20/Wcs10Responder.cs",
+        "src/Honua.Protocols.OgcClassic/Wcs20/Wcs20Handler.cs",
+        "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Capabilities.cs",
+        "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Legacy.cs",
+        "src/Honua.Protocols.OgcClassic/Wms/WmsRequestHandlers.GetCapabilities.cs",
+        "src/Honua.Protocols.OgcClassic/Wmts/WmtsRequestHandlers.cs",
+        "tests/dotnet/Honua.Db.Postgres.Tests/Features/FeatureStore/PostgresStorageMappedFeatureReaderSqlTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerEndpointsTests.cs",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/Wcs10EndpointsTests.cs",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/Wcs20ParameterValidationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Infrastructure/Middleware/ArcGisPathBaseTests.cs"
+      ]
     },
     {
       "run_id": 37441285627,
@@ -1277,7 +1364,35 @@
         "docs/okf/capabilities/admin.control-plane.md"
       ],
       "head_comparison_url": "https://github.com/honua-io/honua-server/compare/f6974805dda6298b41c6d519878a883641574f32..8275aaabe0dbe5d4ca84b0cadf03b0c22a0d45e3",
-      "trailing_shard_outcome": "green"
+      "trailing_shard_outcome": "green",
+      "changed_paths_after_merge": [
+        "README.md",
+        "docs/archive/role-indexes/operator-README.md",
+        "docs/concepts/architecture.md",
+        "docs/guides/publish/serve-existing-databases.md",
+        "docs/internal/contributor/ARCHITECTURE.md",
+        "docs/llms.txt",
+        "docs/reference/configuration/data-sources/README.md",
+        "docs/reference/configuration/data-sources/mysql-mariadb.md",
+        "docs/reference/configuration/data-sources/oracle.md",
+        "src/Honua.Core/Features/FileImport/Services/InMemoryImportJobService.cs",
+        "src/Honua.Core/Features/FileImport/Services/UniversalImportJobService.cs",
+        "src/Honua.Core/Features/Raster/Domain/RasterInfo.cs",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Db/MySql/Features/FeatureStore/Services/MySqlFeatureQueryBuilder.cs",
+        "src/Honua.Db/MySql/MySqlEngineFlavor.cs",
+        "src/Honua.Db/Oracle/Features/FeatureStore/Services/OracleFeatureQueryBuilder.cs",
+        "src/Honua.Db/Oracle/Features/Security/OracleConnectionDriver.cs",
+        "src/Honua.Db/Postgres/Features/Raster/PostgresRasterStore.cs",
+        "src/Honua.Db/SqlServer/Features/FeatureStore/Services/SqlServerFeatureQueryBuilder.cs",
+        "src/Honua.Protocols.GeoServices/ImageServer/ImageServerSoapEndpoints.cs",
+        "tests/dotnet/Honua.Core.Tests/Features/Import/ImportJobServiceCancellationLifetimeTests.cs",
+        "tests/dotnet/Honua.Db.MySql.Tests/MySqlFeatureQueryBuilderTests.cs",
+        "tests/dotnet/Honua.Db.Oracle.Tests/OracleConnectionDriverTests.cs",
+        "tests/dotnet/Honua.Db.Oracle.Tests/OracleFeatureQueryBuilderTests.cs",
+        "tests/dotnet/Honua.Db.SqlServer.Tests/SqlServerFeatureQueryBuilderTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerRawPixelExportTests.cs"
+      ]
     },
     {
       "run_id": 37409340963,
@@ -1314,7 +1429,26 @@
       ],
       "changed_path_count_before_landing": 7,
       "head_comparison_url": "https://github.com/honua-io/honua-server/compare/cf511184af6234a6cd9e3eb012c1a6de36fc254e..7e8bc2b1e9c6e56078a0d5bea9954d144ef2c88f",
-      "trailing_shard_outcome": "green"
+      "trailing_shard_outcome": "green",
+      "changed_paths_after_merge": [
+        "docs/audit/platform-20261006/issue-5618.md",
+        "docs/gis/data/feature-catalog.json",
+        "scripts/conformance/ogcapi/requirements-conformance.txt",
+        "src/Honua.Db/Postgres/Features/FeatureStore/Services/PostgresStorageMappedFeatureReader.cs",
+        "src/Honua.Hosting/Features/Helpers/BaseUrlResolver.cs",
+        "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerWmtsHandler.cs",
+        "src/Honua.Protocols.OgcClassic/Wcs20/Wcs10Responder.cs",
+        "src/Honua.Protocols.OgcClassic/Wcs20/Wcs20Handler.cs",
+        "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Capabilities.cs",
+        "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Legacy.cs",
+        "src/Honua.Protocols.OgcClassic/Wms/WmsRequestHandlers.GetCapabilities.cs",
+        "src/Honua.Protocols.OgcClassic/Wmts/WmtsRequestHandlers.cs",
+        "tests/dotnet/Honua.Db.Postgres.Tests/Features/FeatureStore/PostgresStorageMappedFeatureReaderSqlTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerEndpointsTests.cs",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/Wcs10EndpointsTests.cs",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/Wcs20ParameterValidationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Infrastructure/Middleware/ArcGisPathBaseTests.cs"
+      ]
     },
     {
       "run_id": 37403007675,
@@ -1368,8 +1502,8 @@
       "trunk_head_sha": "ce0f773a8e948c5df48c508c3660d85e31880997",
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37302910314/job/111792698310",
       "test_step_conclusion": "failure",
-      "verdict": "confirmed-red",
-      "reason": "Audited head matches the landed PR head; same shard test step failure on the first subsequent completed full trunk matrix containing the merge (git ancestry verified).",
+      "verdict": "unresolved",
+      "reason": "The comparison tests a later trunk revision with intervening production or shared-input changes. No merge-to-tested-trunk input-equivalence or matching failure-cause proof is retained. Any pre-landing equivalence proof and overlapping test names remain diagnostic only; ancestry alone cannot classify this head.",
       "trailing_job_conclusion": "failure",
       "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37298392860/job/111725329337",
       "failing_tests": [
@@ -1383,7 +1517,14 @@
         "Features WithLargeTop UsesStreamingResponse"
       ],
       "head_comparison_url": "https://github.com/honua-io/honua-server/compare/70755d13331e4cdeebb782d57fc62a8747b625f8..70755d13331e4cdeebb782d57fc62a8747b625f8",
-      "trailing_shard_outcome": "red"
+      "trailing_shard_outcome": "red",
+      "changed_paths_after_merge": [
+        "src/Honua.Core/Features/FeatureStore/Services/FeatureQuerySecurity.cs",
+        "src/Honua.Server/Features/Protocols/Grpc/HonuaFeatureService.cs",
+        "tests/dotnet/Honua.Core.Tests/Features/FeatureStore/MaskedFieldPredicateAstTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/GrpcFeatureServiceTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/GrpcMaskedFieldPredicateTests.cs"
+      ]
     },
     {
       "run_id": 37269071213,
@@ -1418,7 +1559,19 @@
       ],
       "changed_path_count_before_landing": 6,
       "head_comparison_url": "https://github.com/honua-io/honua-server/compare/de70fd3885143d66d51c5a1fe76069a165553f8b..ddeb2f803bd6c2b41800a58a2daf04f41b36ac24",
-      "trailing_shard_outcome": "green"
+      "trailing_shard_outcome": "green",
+      "changed_paths_after_merge": [
+        ".github/ci-shards.json",
+        "docs/gis/data/capability-matrix.v1.json",
+        "docs/gis/data/feature-catalog.json",
+        "docs/okf/capabilities/import.file.md",
+        "src/Honua.Db/Postgres/Features/FileImport/StreamingFileImportService.Streaming.cs",
+        "src/Honua.Db/Postgres/Features/FileImport/StreamingFileImportService.cs",
+        "src/Honua.Hosting/Features/Collaboration/FeatureLockEnforcingFeatureWriter.cs",
+        "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Transaction.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Import/ReplaceCompletenessParserSkipTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Wfs/WfsMultiLayerTransactionLockTests.cs"
+      ]
     },
     {
       "run_id": 37266203051,
@@ -1453,7 +1606,19 @@
       ],
       "changed_path_count_before_landing": 7,
       "head_comparison_url": "https://github.com/honua-io/honua-server/compare/d2fdcdc9a8cc5784a015a6183571f412a46500a2..ddeb2f803bd6c2b41800a58a2daf04f41b36ac24",
-      "trailing_shard_outcome": "green"
+      "trailing_shard_outcome": "green",
+      "changed_paths_after_merge": [
+        ".github/ci-shards.json",
+        "docs/gis/data/capability-matrix.v1.json",
+        "docs/gis/data/feature-catalog.json",
+        "docs/okf/capabilities/import.file.md",
+        "src/Honua.Db/Postgres/Features/FileImport/StreamingFileImportService.Streaming.cs",
+        "src/Honua.Db/Postgres/Features/FileImport/StreamingFileImportService.cs",
+        "src/Honua.Hosting/Features/Collaboration/FeatureLockEnforcingFeatureWriter.cs",
+        "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Transaction.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Import/ReplaceCompletenessParserSkipTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Wfs/WfsMultiLayerTransactionLockTests.cs"
+      ]
     },
     {
       "run_id": 37266203051,
@@ -1489,7 +1654,19 @@
       ],
       "changed_path_count_before_landing": 7,
       "head_comparison_url": "https://github.com/honua-io/honua-server/compare/d2fdcdc9a8cc5784a015a6183571f412a46500a2..ddeb2f803bd6c2b41800a58a2daf04f41b36ac24",
-      "trailing_shard_outcome": "green"
+      "trailing_shard_outcome": "green",
+      "changed_paths_after_merge": [
+        ".github/ci-shards.json",
+        "docs/gis/data/capability-matrix.v1.json",
+        "docs/gis/data/feature-catalog.json",
+        "docs/okf/capabilities/import.file.md",
+        "src/Honua.Db/Postgres/Features/FileImport/StreamingFileImportService.Streaming.cs",
+        "src/Honua.Db/Postgres/Features/FileImport/StreamingFileImportService.cs",
+        "src/Honua.Hosting/Features/Collaboration/FeatureLockEnforcingFeatureWriter.cs",
+        "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Transaction.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Import/ReplaceCompletenessParserSkipTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Wfs/WfsMultiLayerTransactionLockTests.cs"
+      ]
     },
     {
       "run_id": 37240661117,
@@ -1778,8 +1955,8 @@
       "trunk_head_sha": "0ad3d71ca96bdf5967878891fc6e79a22bb98083",
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37128843002/job/111227990731",
       "test_step_conclusion": "success",
-      "verdict": "false-red",
-      "reason": "Audited head matches the landed PR head; same shard test step success on the first subsequent completed full trunk matrix containing the merge (git ancestry verified).",
+      "verdict": "unresolved",
+      "reason": "The comparison tests a later trunk revision with intervening production or shared-input changes. No merge-to-tested-trunk input-equivalence or matching failure-cause proof is retained. Any pre-landing equivalence proof and overlapping test names remain diagnostic only; ancestry alone cannot classify this head.",
       "trailing_job_conclusion": "success",
       "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37118682741/job/111190669240",
       "failing_tests": [
@@ -1787,7 +1964,11 @@
       ],
       "changed_paths_before_landing": [],
       "head_comparison_url": "https://github.com/honua-io/honua-server/compare/99dc6bd4bd80544654ba3f17d05e3c175c45c521..99dc6bd4bd80544654ba3f17d05e3c175c45c521",
-      "trailing_shard_outcome": "green"
+      "trailing_shard_outcome": "green",
+      "changed_paths_after_merge": [
+        "src/Honua.Db/Postgres/Features/Migration/PostgresOgcApiFeaturesCollectionSink.cs",
+        "tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/PostgresOgcApiFeaturesCollectionSinkTests.cs"
+      ]
     },
     {
       "run_id": 37117187230,
@@ -1805,8 +1986,8 @@
       "trunk_head_sha": "0ad3d71ca96bdf5967878891fc6e79a22bb98083",
       "trailing_job_url": "https://github.com/honua-io/honua-server/actions/runs/37128843002/job/111227990731",
       "test_step_conclusion": "success",
-      "verdict": "false-red",
-      "reason": "Audited head and landed head have identical production, shared harness, routing and CI-runner inputs. Only certification documentation changes. The same shard test step success on the trailing matrix.",
+      "verdict": "unresolved",
+      "reason": "The comparison tests a later trunk revision with intervening production or shared-input changes. No merge-to-tested-trunk input-equivalence or matching failure-cause proof is retained. Any pre-landing equivalence proof and overlapping test names remain diagnostic only; ancestry alone cannot classify this head.",
       "trailing_job_conclusion": "success",
       "pr_job_url": "https://github.com/honua-io/honua-server/actions/runs/37117187230/job/111186466988",
       "failing_tests": [
@@ -1831,7 +2012,11 @@
       },
       "changed_path_count_before_landing": 2,
       "head_comparison_url": "https://github.com/honua-io/honua-server/compare/b955930d85efcb251dbd064693cb5ff4fea03d7e..99dc6bd4bd80544654ba3f17d05e3c175c45c521",
-      "trailing_shard_outcome": "green"
+      "trailing_shard_outcome": "green",
+      "changed_paths_after_merge": [
+        "src/Honua.Db/Postgres/Features/Migration/PostgresOgcApiFeaturesCollectionSink.cs",
+        "tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/PostgresOgcApiFeaturesCollectionSinkTests.cs"
+      ]
     },
     {
       "run_id": 37113635222,
@@ -2081,8 +2266,8 @@
   ],
   "reconciled_at": "2026-10-07T19:28:00Z",
   "counts": {
-    "unresolved": 36,
-    "confirmed-red": 10,
-    "false-red": 5
+    "unresolved": 46,
+    "confirmed-red": 3,
+    "false-red": 2
   }
 }

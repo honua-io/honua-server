@@ -284,20 +284,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         var layer = await ValidateGrpcLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
 
-        var metadataGraphProvider = context.GetHttpContext().RequestServices.GetService<IMetadataV2GraphProvider>();
-        if (metadataGraphProvider is not null)
-        {
-            var snapshot = await metadataGraphProvider.GetCurrentAsync(context.CancellationToken).ConfigureAwait(false);
-            var storageBinding = snapshot.ResolveStorageBinding(layer.Publication)
-                ?? throw new RpcException(new Status(StatusCode.FailedPrecondition, "The layer has no resolvable storage binding."));
-            if (!FeatureStorageMapping.FromMetadata(layer.Resource, storageBinding).SupportsManagedWrites)
-            {
-                throw new RpcException(new Status(
-                    StatusCode.FailedPrecondition,
-                    "The layer's storage binding does not support managed writes."));
-            }
-        }
-
         // gRPC ApplyEdits is an open-protocol edit surface and remains Community (#1591).
         // Validation, authz, eventing, and telemetry still run through the shared edit pipeline.
 
@@ -312,6 +298,18 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         }
 
         await EnsureWriteAccessAsync(context, layer.Service, layer.Resource, editBatch).ConfigureAwait(false);
+
+        if (layer.Snapshot is { } snapshot)
+        {
+            var storageBinding = snapshot.ResolveStorageBinding(layer.Publication)
+                ?? throw new RpcException(new Status(StatusCode.FailedPrecondition, "The layer has no resolvable storage binding."));
+            if (!FeatureStorageMapping.FromMetadata(layer.Resource, storageBinding).SupportsManagedWrites)
+            {
+                throw new RpcException(new Status(
+                    StatusCode.FailedPrecondition,
+                    "The layer's storage binding does not support managed writes."));
+            }
+        }
 
         var idempotencyKey = request.IdempotencyKey?.Trim();
         GrpcApplyEditsIdempotencyStore.Lease? idempotencyLease = null;
@@ -423,15 +421,13 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         CancellationToken cancellationToken)
     {
         var providerQueryRouter = requestServices.GetService<FeatureProviderQueryRouter>();
-        var metadataGraphProvider = requestServices.GetService<IMetadataV2GraphProvider>();
-        if (providerQueryRouter is null || metadataGraphProvider is null)
+        if (providerQueryRouter is null || layer.Snapshot is null)
         {
             return _featureReader;
         }
 
-        var snapshot = await metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         return await providerQueryRouter.ResolveReaderAsync(
-            snapshot,
+            layer.Snapshot,
             layer.Service,
             layer.Resource,
             layer.Publication,
@@ -631,14 +627,15 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                 $"Layer {layerId} is not bound to feature storage."));
         }
 
-        return CreateLayerContext(service, triple.Publication, triple.Resource, storageLayerId.Value);
+        return CreateLayerContext(service, triple.Publication, triple.Resource, storageLayerId.Value, triple.Snapshot);
     }
 
     private static GrpcLayerContext CreateLayerContext(
         MetadataV2Service service,
         MetadataV2Publication publication,
         MetadataV2Resource resource,
-        int storageLayerId)
+        int storageLayerId,
+        MetadataV2GraphSnapshot? snapshot)
     {
         var spatialReference = ToSpatialReference(resource);
         var geometryType = resource.ReadGeometryType();
@@ -652,6 +649,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             publication,
             resource,
             storageLayerId,
+            snapshot,
             spatialReference,
             geometryType,
             attributeFields,
@@ -1061,6 +1059,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         MetadataV2Publication Publication,
         MetadataV2Resource Resource,
         int StorageLayerId,
+        MetadataV2GraphSnapshot? Snapshot,
         SpatialReference SpatialReference,
         MetadataV2GeometryType GeometryType,
         IReadOnlyList<MetadataV2Field> AttributeFields,

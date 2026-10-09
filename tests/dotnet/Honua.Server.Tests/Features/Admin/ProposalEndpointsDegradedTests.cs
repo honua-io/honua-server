@@ -224,8 +224,8 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
         root.GetProperty("remediation").GetString().Should().NotContain("Set ConnectionStrings__Redis");
         root.GetProperty("remediationRef").GetString()
             .Should().Be(CapabilityUnavailableCodes.EntitlementRemediationRef);
-        root.TryGetProperty("capability", out _).Should().BeFalse(
-            "the manifest has no capability id covering the proposal/approval control plane");
+        root.GetProperty("capability").GetString()
+            .Should().Be(CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
     }
 
     private static async Task AssertCapabilityUnavailableAsync(HttpResponseMessage response)
@@ -242,9 +242,9 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
         root.GetProperty("status").GetInt32().Should().Be(503);
         root.GetProperty("code").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
         root.GetProperty("missingDependency").GetString().Should().Be(CapabilityUnavailableCodes.RedisDependency);
-        root.TryGetProperty("capability", out _).Should().BeFalse(
-            "the manifest has no capability id covering the proposal/approval control plane, and "
-            + "naming an unrelated one would point a client at a claim that contradicts the refusal");
+        root.GetProperty("capability").GetString().Should().Be(
+            CapabilityUnavailableCodes.ControlPlaneProposalsCapability,
+            "the refusal joins the operations.proposals manifest entry that reports the same surface unavailable");
         root.GetProperty("remediation").GetString().Should().NotBeNullOrWhiteSpace();
         root.GetProperty("remediationRef").GetString().Should().Be(CapabilityUnavailableCodes.RedisRemediationRef);
     }

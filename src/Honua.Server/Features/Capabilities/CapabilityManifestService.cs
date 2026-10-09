@@ -1512,7 +1512,7 @@ internal sealed class CapabilityManifestService(
     /// Manifest id (and Community capability key) for the governed proposal/approval control
     /// plane. Unavailable wherever the Redis-backed durable store is not composed.
     /// </summary>
-    internal const string OperationsProposalsCapabilityId = "operations.proposals";
+    internal const string OperationsProposalsCapabilityId = CapabilityUnavailableCodes.ControlPlaneProposalsCapability;
 
     private const string RollbackExecutable = "rollback.executable";
     private const string RollbackHandoffOnly = "rollback.handoff-only";

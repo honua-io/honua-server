@@ -537,6 +537,7 @@
         "GET /ogc/maps",
         "GET /ogc/maps/conformance",
         "GET /ogc/maps/openapi.json",
+        "GET /ogc/maps/collections",
         "GET /ogc/maps/collections/{collectionId}",
         "GET /ogc/maps/collections/{collectionId}/map/tiles",
         "GET /ogc/maps/collections/{collectionId}/map/tiles/{tileMatrixSetId}"
@@ -550,7 +551,7 @@
       },
       "responseKind": "OGC API Maps JSON metadata and tileset metadata; rendered maps are binary outputs outside this metadata row.",
       "paginationFiltering": "No metadata paging. Render endpoints use bbox, crs, datetime, collections, style, width/height, and format parameters.",
-      "testExpectation": "OGC Maps tests cover landing, conformance, OpenAPI, collection map tileset metadata, links, and SDK metadata parsing."
+      "testExpectation": "OGC Maps tests cover landing, conformance, OpenAPI, access-filtered collection discovery, collection detail and map tileset metadata, links, and SDK metadata parsing."
     },
     {
       "id": "ogc-api-tiles-metadata",

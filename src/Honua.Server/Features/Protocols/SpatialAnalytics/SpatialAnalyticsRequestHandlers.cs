@@ -422,7 +422,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
 
     /// <summary>
     /// Validates the OGC-style (collectionId) resource bundle and checks that
-    /// the caller can read the layer. Mirrors <see cref="LayerValidationHelpers.ValidateCollectionWithAccessV2Async"/>.
+    /// the caller can read the layer. Mirrors <see cref="LayerValidationHelpers.ValidateCollectionWithAccessV2Async(HttpContext, string, AccessScope, string, CancellationToken)"/>.
     /// </summary>
     private static async Task<(int LayerId, MetadataV2Resource? Resource, IResult? Error)> ValidateOgcResourceAsync(
         HttpContext context, string collectionId, CancellationToken cancellationToken)

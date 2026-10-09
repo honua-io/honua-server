@@ -334,6 +334,7 @@ internal sealed partial class PortalTokenIssuer(
     {
         return record.ClientType switch
         {
+            PortalTokenClientType.Bearer => true,
             PortalTokenClientType.Referer => string.Equals(
                 record.BindingValue,
                 NormalizeRefererValue(binding.Referer ?? string.Empty),

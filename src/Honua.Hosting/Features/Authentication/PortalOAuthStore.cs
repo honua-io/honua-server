@@ -508,6 +508,15 @@ internal sealed class PortalOAuthAuthorizationCode : PortalOAuthRecord
 /// <summary>Refresh token bound to a verified named user.</summary>
 internal sealed class PortalOAuthRefreshToken : PortalOAuthRecord
 {
+    /// <summary>
+    /// Binding mode chosen from the verified authorization-code redirect. Null keeps
+    /// legacy records on the referer-bound path rather than upgrading them to bearer.
+    /// </summary>
+    public PortalTokenClientType? ClientType { get; init; }
+
+    /// <summary>Original binding preserved on refresh; absent on legacy records.</summary>
+    public string? BindingValue { get; init; }
+
     /// <summary>ArcGIS client identifier the refresh token was issued to.</summary>
     public required string ClientId { get; init; }
 

@@ -6,6 +6,7 @@ using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Health;
@@ -15,6 +16,7 @@ using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -128,10 +130,12 @@ public sealed class RedisOffGovernedControlPlaneTests
     }
 
     [UnitTest]
-    public async Task RedisOffComposition_ApprovalBridge_RefusesWithoutFabricatingAProposal()
+    public async Task RedisOffComposition_ApprovalBridge_RefusesWithTypedRedisDependency()
     {
-        // Even where the operation record itself is volatile (Development/Test), an approval-gated
-        // call must not invent a proposal: there is no gateway, so the bridge refuses non-durably.
+        // honua-server#5733: even where the operation record itself is volatile (Development/Test),
+        // an approval-gated call must not invent a proposal, and must not degrade to a non-durable
+        // failure every adapter projects as an untyped 500. The bridge refuses with the typed
+        // capability-unavailable receipt the rest of the Redis-off surface emits.
         var services = ComposeRedisOff("Test");
         await using var provider = services.BuildServiceProvider();
         await using var scope = provider.CreateAsyncScope();
@@ -140,24 +144,59 @@ public sealed class RedisOffGovernedControlPlaneTests
         descriptor.Should().NotBeNull("the governed descriptor is composed on Redis-off hosts");
         var bridge = scope.ServiceProvider.GetRequiredService<IOperationApprovalBridge>();
 
-        var result = await bridge.CreateProposalAsync(
+        var refusal = await Assert.ThrowsAsync<CapabilityUnavailableException>(() => bridge.CreateProposalAsync(
             descriptor!,
-            new OperationRequest
-            {
-                OperationId = "admin.layer.filter.set",
-                Parameters = new Dictionary<string, string?>(StringComparer.Ordinal) { ["layerId"] = "1" },
-            },
+            LayerFilterRequest(),
             new OperationPolicyContext
             {
                 OperationInstanceId = "opinst-redis-off",
                 CorrelationId = "corr-redis-off",
             },
+            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval }));
+
+        refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.RedisDependency);
+        refusal.Capability.Should().Be(CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
+        refusal.RemediationRef.Should().Be(CapabilityUnavailableCodes.RedisRemediationRef);
+        var mcpError = McpErrorMapper.Map(refusal);
+        mcpError.Data!.Code.Should().Be(McpErrorMapper.Codes.Unavailable);
+        mcpError.Data.Capability.Should().Be(CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
+    }
+
+    [UnitTest]
+    public async Task ApprovalBridge_DurableStoreWithoutGateway_FailsNonDurablyWithoutClaimingRedisIsMissing()
+    {
+        // A real proposal store with no gateway is a composition defect, not a Redis-off host, so
+        // the bridge keeps its fail-closed non-durable result instead of naming Redis.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(Substitute.For<IAuditLog>());
+        services.AddSingleton(Substitute.For<IOperationProposalStore>());
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns("Test");
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+        services.RemoveAll<IOperationGateway>();
+        await using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var descriptor = await scope.ServiceProvider.GetRequiredService<IOperationCatalog>()
+            .GetDescriptorAsync("admin.layer.filter.set");
+        var bridge = scope.ServiceProvider.GetRequiredService<IOperationApprovalBridge>();
+
+        var result = await bridge.CreateProposalAsync(
+            descriptor!,
+            LayerFilterRequest(),
+            new OperationPolicyContext { OperationInstanceId = "opinst-1", CorrelationId = "corr-1" },
             new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
 
         result.IsDurable.Should().BeFalse();
         result.ProposalId.Should().BeNull();
         result.Reason.Should().Contain("durable proposal gateway is unavailable");
     }
+
+    private static OperationRequest LayerFilterRequest() => new()
+    {
+        OperationId = "admin.layer.filter.set",
+        Parameters = new Dictionary<string, string?>(StringComparer.Ordinal) { ["layerId"] = "1" },
+    };
 
     [UnitTest]
     public async Task UnavailableOperationProposalStore_RefusesWithTypedRedisDependency()
@@ -167,6 +206,7 @@ public sealed class RedisOffGovernedControlPlaneTests
         var refusal = await Assert.ThrowsAsync<CapabilityUnavailableException>(() => store.GetAsync("proposal-1"));
 
         refusal.MissingDependency.Should().Be("redis");
+        refusal.Capability.Should().Be(CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
         UnavailableOperationProposalStore.IsDurable(store).Should().BeFalse();
         UnavailableOperationProposalStore.IsDurable(null).Should().BeFalse();
         UnavailableOperationProposalStore.IsDurable(Substitute.For<IOperationProposalStore>()).Should().BeTrue();

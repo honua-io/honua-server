@@ -306,7 +306,8 @@ public sealed class ResourceValidator : IResourceValidator
             return ResourceValidationResult.Success(
                 new MetadataV2ServiceLayerTriple(service, candidate.Publication, candidate.Resource!)
                 {
-                    StorageLayerId = snapshot.ResolveStorageLayerId(candidate.Publication, candidate.Resource)
+                    StorageLayerId = snapshot.ResolveStorageLayerId(candidate.Publication, candidate.Resource),
+                    Snapshot = snapshot
                 });
         }
         return ResourceValidationResult.NotFound<MetadataV2ServiceLayerTriple>(
