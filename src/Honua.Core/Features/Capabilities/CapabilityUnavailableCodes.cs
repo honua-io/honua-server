@@ -59,6 +59,13 @@ public static class CapabilityUnavailableCodes
     /// <summary>The capability-manifest id the durable job substrate backs.</summary>
     public const string DurableJobsCapability = "jobs.runner";
 
+    /// <summary>
+    /// The capability-manifest id the governed operation proposal/approval control plane backs
+    /// (honua-server#5733). Carried on every control-plane capability-unavailable refusal so a
+    /// client can join it to the manifest entry that reports the same surface unavailable.
+    /// </summary>
+    public const string ControlPlaneProposalsCapability = "operations.proposals";
+
     /// <summary>Operator-facing remediation for a server started without Redis.</summary>
     public const string RedisRemediation =
         "Set ConnectionStrings__Redis to a reachable Redis instance and restart the server. " +
@@ -122,8 +129,8 @@ public static class CapabilityUnavailableCodes
     /// <c>caching.redis</c> entitlement is not, so "configure Redis" would be the wrong fix.
     /// </summary>
     /// <remarks>
-    /// Like <see cref="DurableControlPlaneDetail"/>, refusals on this path carry no
-    /// <c>capability</c> member — see that constant's remarks.
+    /// Like <see cref="DurableControlPlaneDetail"/>, refusals on this path carry
+    /// <see cref="ControlPlaneProposalsCapability"/> as their <c>capability</c> member.
     /// </remarks>
     public const string UnentitledControlPlaneDetail =
         "The operation proposal and approval control plane requires the Pro 'caching.redis' " +
@@ -160,11 +167,9 @@ public static class CapabilityUnavailableCodes
 
     /// <summary>Detail sentence for a refusal caused by the absent durable control plane.</summary>
     /// <remarks>
-    /// Refusals on this path deliberately carry no <c>capability</c> member: the manifest has no
-    /// capability id covering the proposal/approval control plane, and naming an unrelated id
-    /// (<c>operate.status</c>, which stays available) would send a client to a claim that
-    /// contradicts the refusal. Omitting the field is the honest answer until the manifest gains
-    /// an id for this surface.
+    /// Refusals on this path carry <see cref="ControlPlaneProposalsCapability"/> as their
+    /// <c>capability</c> member: the manifest reports <c>operations.proposals</c> unavailable
+    /// with reason code <c>dependency-unavailable</c> on the same hosts that emit this refusal.
     /// </remarks>
     public const string DurableControlPlaneDetail =
         "The operation proposal and approval control plane requires a Redis-backed durable " +

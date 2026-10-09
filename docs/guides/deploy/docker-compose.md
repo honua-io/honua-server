@@ -127,6 +127,12 @@ style and render. It cannot persist the following, and refuses them with a typed
 - durable geoprocessing jobs and workflows (`jobs.runner`);
 - Studio drafts.
 
+On a Development or Test host without Redis, Studio drafts still compose against a
+volatile operation store (create, validate, preview-plan and save a content version
+succeed), but a publish-request that needs separate-principal approval is refused with
+the same typed receipt: HTTP 503 `capability-unavailable` with `missingDependency: "redis"`
+and `capability: "operations.proposals"`, and the draft is left unchanged.
+
 The governed tools are still advertised on a Redis-off host, so an agent sees the
 same catalog everywhere. The capability manifest (`GET /api/v1/capabilities/manifest`)
 tells it in advance which ones will refuse: `operations.proposals` and

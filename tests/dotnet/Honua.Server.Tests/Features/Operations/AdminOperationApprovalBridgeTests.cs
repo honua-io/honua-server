@@ -2,6 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Exceptions;
+using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
@@ -66,9 +69,13 @@ public sealed class AdminOperationApprovalBridgeTests
     }
 
     [UnitTest]
-    public async Task CreateProposalAsync_MissingGateway_ReturnsNonDurableFailure()
+    public async Task CreateProposalAsync_DurableStoreWithoutGateway_ReturnsNonDurableFailure()
     {
-        var bridge = CreateBridge(new ServiceCollection().BuildServiceProvider());
+        // A real proposal store with no gateway is a composition defect, not a Redis-off host:
+        // the bridge keeps its fail-closed non-durable result rather than naming Redis (#5733).
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IOperationProposalStore>());
+        var bridge = CreateBridge(services.BuildServiceProvider());
 
         var result = await bridge.CreateProposalAsync(
             Descriptor(),
@@ -80,6 +87,27 @@ public sealed class AdminOperationApprovalBridgeTests
         result.ProposalId.Should().BeNull();
         result.AuditId.Should().BeNull();
         result.Reason.Should().Contain("gateway is unavailable");
+    }
+
+    [UnitTest]
+    public async Task CreateProposalAsync_NoDurableControlPlane_RefusesWithTypedRedisDependency()
+    {
+        // No gateway and no durable proposal store (absent, or the Redis-off placeholder): the
+        // control plane was never composed, so the bridge refuses with the typed receipt (#5733).
+        foreach (var services in new[]
+                 {
+                     new ServiceCollection(),
+                     new ServiceCollection().AddSingleton<IOperationProposalStore, UnavailableOperationProposalStore>(),
+                 })
+        {
+            var bridge = CreateBridge(services.BuildServiceProvider());
+
+            var refusal = await Assert.ThrowsAsync<CapabilityUnavailableException>(
+                () => bridge.CreateProposalAsync(Descriptor(), Request(), Context(), Decision()));
+
+            refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.RedisDependency);
+            refusal.Capability.Should().Be(CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
+        }
     }
 
     [UnitTest]
