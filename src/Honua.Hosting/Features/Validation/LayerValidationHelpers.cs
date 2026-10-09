@@ -352,15 +352,17 @@ internal static class LayerValidationHelpers
     /// <param name="requiredProtocol">The protocol that must be enabled.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <param name="snapshot">An already captured snapshot to keep discovery and validation consistent.</param>
+    /// <param name="preferExactPublicationId">Whether a stable publication ID takes precedence over matching aliases.</param>
     public static Task<MetadataV2ValidationResult> ValidateCollectionWithAccessV2Async(
         HttpContext context,
         string collectionId,
         AccessScope scope = AccessScope.Read,
         string? requiredProtocol = MetadataV2ServiceProtocols.OgcFeatures,
         CancellationToken cancellationToken = default,
-        MetadataV2GraphSnapshot? snapshot = null)
+        MetadataV2GraphSnapshot? snapshot = null,
+        bool preferExactPublicationId = false)
         => ValidateCollectionWithAccessV2CoreAsync(
-            context, collectionId, false, scope, requiredProtocol, cancellationToken, snapshot);
+            context, collectionId, false, scope, requiredProtocol, cancellationToken, snapshot, preferExactPublicationId);
 
     /// <summary>
     /// Validates numeric collection IDs as storage identities, sharing publication
@@ -382,7 +384,8 @@ internal static class LayerValidationHelpers
         AccessScope scope = AccessScope.Read,
         string? requiredProtocol = MetadataV2ServiceProtocols.OgcFeatures,
         CancellationToken cancellationToken = default,
-        MetadataV2GraphSnapshot? snapshot = null)
+        MetadataV2GraphSnapshot? snapshot = null,
+        bool preferExactPublicationId = false)
     {
         if (string.IsNullOrWhiteSpace(collectionId))
         {
@@ -445,7 +448,16 @@ internal static class LayerValidationHelpers
                 TenantScopeHelpers.IsPublicationVisible(context, p, matchedResource, matchedService);
         }
 
-        if (!string.IsNullOrWhiteSpace(requiredProtocol))
+        // Stable IDs must remain addressable even when another publication's display
+        // alias matches the ID. Access and protocol checks below still apply to the
+        // exact publication; a denied exact ID must never fall through to an alias.
+        if (preferExactPublicationId)
+        {
+            publication = snapshot.Graph.Publications.FirstOrDefault(p =>
+                string.Equals(p.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase) && IsTenantVisible(p));
+        }
+
+        if (publication is null && !string.IsNullOrWhiteSpace(requiredProtocol))
         {
             var protocolMatches = snapshot.Graph.Publications.Where(p =>
                 MatchesCollectionId(p) &&

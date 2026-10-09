@@ -129,12 +129,14 @@ public sealed class OgcMapsDuplicateStorageBindingEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
+    [InlineData(false, false, false)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, true)]
+    [InlineData(true, false, true)]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /ogc/maps/collections")]
-    public async Task GetCollections_DuplicateLocalIds_UsesResolvableIdsAndExcludesDeniedResources(bool denyFirst, bool collideWithName)
+    public async Task GetCollections_DuplicateLocalIds_UsesResolvableIdsAndExcludesDeniedResources(bool denyFirst, bool collideWithName, bool collideWithPublicationId)
     {
         var graph = new TestMetadataV2GraphBuilder()
             .AddResource("first-resource", collideWithName ? "0" : "First", MetadataV2ResourceType.FeatureDataset,
@@ -150,6 +152,16 @@ public sealed class OgcMapsDuplicateStorageBindingEndpointTests : IAsyncLifetime
             .AddPublication("second-publication", "second-service", "second-resource",
                 serviceLocalId: "0", storageBindingId: "second-binding")
             .Build();
+        if (collideWithPublicationId)
+        {
+            graph = graph with
+            {
+                Resources = graph.Resources.Select(resource => resource.Metadata.Id == "first-resource"
+                    ? resource with { Metadata = resource.Metadata with { Title = "second-publication" } }
+                    : resource).ToArray()
+            };
+        }
+
         var graphProvider = Substitute.For<IMetadataV2GraphProvider>();
         graphProvider.GetCurrentAsync(Arg.Any<CancellationToken>())
             .Returns(new MetadataV2GraphSnapshot(graph, "\"discovery-test\"", DateTimeOffset.UtcNow));

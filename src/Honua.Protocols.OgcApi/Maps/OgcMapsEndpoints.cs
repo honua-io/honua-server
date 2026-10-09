@@ -531,7 +531,7 @@ public static partial class OgcMapsEndpoints
             context,
             value,
             requiredProtocol: ServiceProtocols.OgcApiMaps,
-            cancellationToken: cancellationToken, snapshot: snapshot).ConfigureAwait(false);
+            cancellationToken: cancellationToken, snapshot: snapshot, preferExactPublicationId: true).ConfigureAwait(false);
         // A protected collection answers with the access-policy refusal (401/403), as the
         // Features and Tiles collection routes do, so an anonymous client learns it must
         // authenticate instead of concluding the collection does not exist (#4991).
