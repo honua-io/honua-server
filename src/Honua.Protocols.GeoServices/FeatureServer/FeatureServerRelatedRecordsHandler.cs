@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -22,6 +23,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer;
 /// </summary>
 internal sealed class FeatureServerRelatedRecordsHandler(
     FeatureServerRelatedRecordsDependencies dependencies,
+    IGeometryOperationService geometryOperationService,
     ILogger<FeatureServerRelatedRecordsHandler> logger)
 {
     private readonly IResourceValidator _resourceValidator = dependencies?.ResourceValidator
@@ -229,6 +231,28 @@ internal sealed class FeatureServerRelatedRecordsHandler(
 
             // Execute related query
             QueryResult<Feature> result = await _relatedRecordsService.ExecuteRelatedQueryAsync(sourceStorageLayerId.Value, relatedQuery, cancellationToken);
+
+            // Related storage queries return source coordinates. Reproject the WKB,
+            // rather than only labeling those coordinates with the requested outSR.
+            var sourceSrid = resolvedRelatedResource.ReadSrid();
+            if (validatedParams.ReturnGeometry && !validatedParams.ReturnCountOnly &&
+                sourceSrid is int sourceSpatialReference &&
+                outputSrid.HasValue && outputSrid.Value != sourceSpatialReference)
+            {
+                var projected = ImmutableArray.CreateBuilder<Feature>(result.Items.Length);
+                foreach (var feature in result.Items)
+                {
+                    projected.Add(feature.Geometry is { Length: > 0 } geometry
+                        ? feature with
+                        {
+                            Geometry = await geometryOperationService.ProjectAsync(
+                                geometry, sourceSpatialReference, outputSrid.Value, cancellationToken).ConfigureAwait(false)
+                        }
+                        : feature);
+                }
+
+                result = result with { Items = projected.MoveToImmutable() };
+            }
 
             // Group results by origin object ID
             var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resolvedRelatedResource);
