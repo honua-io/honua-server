@@ -230,11 +230,18 @@ public static partial class OgcMapsEndpoints
             }
         }
 
+        // Exact publication IDs take precedence across the entire graph, including
+        // other protocols and retired publications. Never emit another publication's
+        // ID as this collection's alias.
+        var publicationIds = snapshot.Graph.Publications.Select(publication => publication.Metadata.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         return publications.ToDictionary(publication => publication.Metadata.Id, publication =>
         {
             var resource = snapshot.ResolveResource(publication)!;
             var alias = publication.ServiceLocalId ?? publication.Path ?? resource.Metadata.Name;
-            return aliases[alias].Count > 1 ? publication.Metadata.Id : alias;
+            var shadowsPublicationId = publicationIds.Contains(alias) &&
+                !string.Equals(alias, publication.Metadata.Id, StringComparison.OrdinalIgnoreCase);
+            return shadowsPublicationId || aliases[alias].Count > 1 ? publication.Metadata.Id : alias;
         }, StringComparer.Ordinal);
     }
 

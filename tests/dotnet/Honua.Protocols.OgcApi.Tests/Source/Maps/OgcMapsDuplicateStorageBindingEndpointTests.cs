@@ -129,16 +129,17 @@ public sealed class OgcMapsDuplicateStorageBindingEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [InlineData(false, false, false)]
-    [InlineData(true, false, false)]
-    [InlineData(false, true, false)]
-    [InlineData(false, false, true)]
-    [InlineData(true, false, true)]
+    [InlineData(false, false, false, false)]
+    [InlineData(true, false, false, false)]
+    [InlineData(false, true, false, false)]
+    [InlineData(false, false, true, false)]
+    [InlineData(true, false, true, false)]
+    [InlineData(false, false, false, true)]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /ogc/maps/collections")]
-    public async Task GetCollections_DuplicateLocalIds_UsesResolvableIdsAndExcludesDeniedResources(bool denyFirst, bool collideWithName, bool collideWithPublicationId)
+    public async Task GetCollections_DuplicateLocalIds_UsesResolvableIdsAndExcludesDeniedResources(bool denyFirst, bool collideWithName, bool collideWithPublicationId, bool collideWithForeignPublication)
     {
-        var graph = new TestMetadataV2GraphBuilder()
+        var graphBuilder = new TestMetadataV2GraphBuilder()
             .AddResource("first-resource", collideWithName ? "0" : "First", MetadataV2ResourceType.FeatureDataset,
                 accessPolicy: new AccessPolicy { AllowAnonymous = !denyFirst })
             .AddResource("second-resource", "Second", MetadataV2ResourceType.FeatureDataset,
@@ -150,8 +151,15 @@ public sealed class OgcMapsDuplicateStorageBindingEndpointTests : IAsyncLifetime
             .AddPublication("first-publication", "first-service", "first-resource",
                 serviceLocalId: collideWithName ? "first" : "0", storageBindingId: "first-binding")
             .AddPublication("second-publication", "second-service", "second-resource",
-                serviceLocalId: "0", storageBindingId: "second-binding")
-            .Build();
+                serviceLocalId: collideWithForeignPublication ? "foreign-publication" : "0", storageBindingId: "second-binding");
+        if (collideWithForeignPublication)
+        {
+            graphBuilder.AddService("foreign-service", "foreign", protocols: ["FeatureServer"])
+                .AddPublication("foreign-publication", "foreign-service", "first-resource",
+                    serviceLocalId: "foreign", storageBindingId: "first-binding");
+        }
+
+        var graph = graphBuilder.Build();
         if (collideWithPublicationId)
         {
             graph = graph with
@@ -183,7 +191,11 @@ public sealed class OgcMapsDuplicateStorageBindingEndpointTests : IAsyncLifetime
         foreach (var collection in collections)
         {
             var id = collection.GetProperty("id").GetString();
-            id.Should().NotBe("0");
+            if (!collideWithForeignPublication)
+            {
+                id.Should().NotBe("0");
+            }
+            id.Should().NotBe("foreign-publication");
             graphProvider.ClearReceivedCalls();
             using var detail = await client.GetAsync($"/ogc/maps/collections/{id}?f=json");
             detail.StatusCode.Should().Be(HttpStatusCode.OK);
