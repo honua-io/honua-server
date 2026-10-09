@@ -313,7 +313,15 @@ internal static class McpToolOutputSchemas
                   "message": { "type": ["string", "null"] }
                 }
               }
-            }
+            },
+            "code": {
+              "type": ["string", "null"],
+              "description": "Stable rejection code, e.g. platform_release_version_mismatch when a convergence targetVersion differs from the declared release."
+            },
+            "declaredVersion": { "type": ["string", "null"] },
+            "targetVersion": { "type": ["string", "null"] },
+            "servingArtifactReference": { "type": ["string", "null"] },
+            "isCoVersioned": { "type": ["boolean", "null"] }
           }
         }
         """);

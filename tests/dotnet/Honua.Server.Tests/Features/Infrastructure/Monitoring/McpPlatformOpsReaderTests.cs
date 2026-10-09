@@ -550,6 +550,85 @@ public sealed class McpPlatformOpsReaderTests
         gateway.RouteCalls.Should().Be(0);
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposePlatformReleaseConvergence_TargetVersionMismatch_RejectsWithTypedCodeAndPreflightEcho()
+    {
+        var gateway = ConvergenceGateway();
+        using var services = CreateServices(gateway);
+        var reader = CreateReader(services: services);
+
+        var output = await reader.ProposePlatformReleaseConvergenceAsync(
+            CreatePrincipal(),
+            new McpPlatformReleaseConvergenceArgument { TargetVersion = " 2026.1-rc.3 " },
+            CancellationToken.None);
+
+        output.Outcome.Should().Be("rejected");
+        output.Code.Should().Be("platform_release_version_mismatch");
+        output.RequiresApproval.Should().BeFalse();
+        output.ProposalId.Should().BeNull();
+        output.Targets.Should().BeNull();
+        output.DeclaredVersion.Should().Be("2026.07.01");
+        output.TargetVersion.Should().Be("2026.1-rc.3");
+        output.ServingArtifactReference.Should().Be("ghcr.io/honua/server:2026.07.01");
+        output.IsCoVersioned.Should().BeFalse("the fixture's serving-pinned target diverges from the release");
+        output.Message.Should().Contain("2026.1-rc.3").And.Contain("2026.07.01");
+        gateway.ProposalCalls.Should().Be(0);
+        gateway.RouteCalls.Should().Be(0);
+        await services.GetRequiredService<IOperationEnvelopeFactory>().DidNotReceiveWithAnyArgs()
+            .CreateAcceptedAsync(default!, default!, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposePlatformReleaseConvergence_TargetVersionMatchesDeclared_SealsProposalAsToday()
+    {
+        var gateway = ConvergenceGateway();
+        using var services = CreateServices(gateway);
+        var reader = CreateReader(services: services);
+
+        var output = await reader.ProposePlatformReleaseConvergenceAsync(
+            CreatePrincipal(),
+            new McpPlatformReleaseConvergenceArgument { TargetVersion = "honua-v2026.07.01" },
+            CancellationToken.None);
+
+        output.Outcome.Should().Be("completed");
+        output.Code.Should().BeNull();
+        output.RequiresApproval.Should().BeTrue();
+        output.Targets.Should().ContainSingle(target => target.TargetId == "serving-us-west" && target.ProposalId == "proposal-converge");
+        output.Targets.Should().ContainSingle(target => target.TargetId == "serving-pinned" && target.Outcome == "skipped-pinned");
+        gateway.ProposalCalls.Should().Be(1);
+        gateway.RouteCalls.Should().Be(0);
+        gateway.LastRequest!.IdempotencyKey.Should().Be("converge:2026.07.01:serving-us-west");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposePlatformReleaseConvergence_NoDeclaredRelease_KeepsTheExistingPreconditionOutcome()
+    {
+        var gateway = ConvergenceGateway();
+        using var services = CreateServices(gateway);
+        var options = CreateOptions();
+        options.PlatformRelease = new PlatformReleaseOptions();
+        var reader = CreateReader(options: options, services: services);
+
+        var act = () => reader.ProposePlatformReleaseConvergenceAsync(
+            CreatePrincipal(),
+            new McpPlatformReleaseConvergenceArgument { TargetVersion = "2026.1-rc.3" },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<Honua.Geoprocessing.GeoprocessingPreconditionFailedException>()
+            .WithMessage("A platform release is not declared.");
+        gateway.ProposalCalls.Should().Be(0);
+    }
+
+    private static RecordingGateway ConvergenceGateway() => new(new OperationGatewayResult
+    {
+        Outcome = OperationGatewayOutcome.ProposalCreated,
+        Decision = new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, HonuaEdition.Pro, "test"),
+        ProposalId = "proposal-converge",
+    });
+
     [Theory]
     [InlineData("stale", "unavailable")]
     [InlineData("partial", "partial")]

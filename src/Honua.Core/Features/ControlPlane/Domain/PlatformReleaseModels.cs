@@ -369,3 +369,71 @@ public static class PlatformReleaseValidation
         }
     }
 }
+
+/// <summary>
+/// Comparison rule for an agent- or operator-supplied platform-release version against the declared
+/// <see cref="PlatformReleaseDefinition.Version"/> (rc.3 fix unit S3). The rule is deliberately small:
+/// <list type="number">
+/// <item>trim surrounding whitespace and compare case-insensitively;</item>
+/// <item>strip one leading <c>honua-</c> prefix (the release tag form, e.g. <c>honua-2026.1-rc.3</c>);</item>
+/// <item>strip one leading <c>v</c>/<c>V</c> when it is followed by a digit (e.g. <c>v2026.1-rc.3</c>);</item>
+/// <item>drop a zero patch component from a three-part numeric core, so <c>2026.1.0-rc.3</c> equals
+/// <c>2026.1-rc.3</c> (the pre-release/build suffix after the first <c>-</c> or <c>+</c> is kept verbatim).</item>
+/// </list>
+/// Nothing else is rewritten: leading zeros, a non-zero patch, or a different pre-release label all
+/// remain distinct versions. Version-to-digest resolution is not performed here; it lives in the signed
+/// release lock that the provisioning executor writes into <c>ControlPlane:PlatformRelease</c>.
+/// </summary>
+public static class PlatformReleaseVersion
+{
+    private const string TagPrefix = "honua-";
+
+    /// <summary>
+    /// Normalizes a platform-release version into its comparison form, or returns null when the input
+    /// is null or whitespace.
+    /// </summary>
+    /// <param name="version">Version as supplied (release tag, <c>v</c>-prefixed, or server form).</param>
+    /// <returns>The lower-cased comparison form, or null.</returns>
+    public static string? Normalize(string? version)
+    {
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            return null;
+        }
+
+        var value = version.Trim();
+        if (value.StartsWith(TagPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            value = value[TagPrefix.Length..];
+        }
+
+        if (value.Length > 1 && (value[0] == 'v' || value[0] == 'V') && char.IsAsciiDigit(value[1]))
+        {
+            value = value[1..];
+        }
+
+        var suffixStart = value.IndexOfAny(['-', '+']);
+        var core = suffixStart < 0 ? value : value[..suffixStart];
+        var suffix = suffixStart < 0 ? string.Empty : value[suffixStart..];
+        var parts = core.Split('.');
+        if (parts.Length == 3 && parts[2] == "0")
+        {
+            core = string.Concat(parts[0], ".", parts[1]);
+        }
+
+        return string.Concat(core, suffix).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Whether two versions name the same platform release under <see cref="Normalize"/>. Two empty
+    /// values never match.
+    /// </summary>
+    /// <param name="declaredVersion">The declared release version.</param>
+    /// <param name="targetVersion">The requested target version.</param>
+    /// <returns><see langword="true"/> when both normalize to the same non-empty form.</returns>
+    public static bool Matches(string? declaredVersion, string? targetVersion)
+    {
+        var declared = Normalize(declaredVersion);
+        return declared is not null && string.Equals(declared, Normalize(targetVersion), StringComparison.Ordinal);
+    }
+}
