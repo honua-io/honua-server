@@ -38,7 +38,7 @@ internal sealed class OgcCoveragesHandler
     private const string CoveragesProtocol = "OGC-API-Coverages";
 
     private static readonly ImmutableHashSet<string> MetadataQueryParameters =
-        ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f");
+        ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f", "token");
 
     private static readonly ImmutableHashSet<string> OpenApiQueryParameters =
         ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f");

@@ -134,6 +134,21 @@ public sealed class PortalTokenIssuerTests
     }
 
     [UnitTest]
+    public async Task NativeBearerToken_ValidatesWithoutBinding_AndHonorsRevocation()
+    {
+        var issuer = CreateIssuer();
+        var token = await issuer.IssueAsync(new PortalTokenIssueRequest(
+            "native-user", null, null, ["reader"], PortalTokenClientType.Bearer,
+            string.Empty, DateTimeOffset.UtcNow.AddMinutes(5)), CancellationToken.None);
+        var validation = await issuer.ValidateAsync(token.Token, new PortalTokenBinding(null, null), CancellationToken.None);
+        validation.Should().NotBeNull();
+        validation!.Principal.IsInRole("reader").Should().BeTrue();
+        await issuer.RevokeAsync(token.Token, CancellationToken.None);
+        (await issuer.ValidateAsync(token.Token, new PortalTokenBinding(null, null), CancellationToken.None))
+            .Should().BeNull();
+    }
+
+    [UnitTest]
     public async Task ValidateAsync_RefererMismatch_ReturnsNull()
     {
         var issuer = CreateIssuer();
