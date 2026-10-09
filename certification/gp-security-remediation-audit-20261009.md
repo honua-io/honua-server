@@ -30,6 +30,27 @@ records are retained.
 - The proximity proof adds a sentinel comment inside the same method. Its exact
   nodata/allocation checks and approximate-distance checks remain.
 
+## Re-audit results
+
+- All existing catalog and method digests reproduced from the trunk baseline,
+  using the unchanged architecture guard's own digest and Roslyn method resolver.
+- Reversing only the reviewed edits restored the complete baseline content of
+  all six changed pinned source/proof files. No additional change was accepted.
+- Native C# comparisons found all 64 resampling and 25 IDW cell coordinates
+  bit-identical between the original expressions and the named row/column form.
+- Refreshed one catalog digest and seven distinct method digests across nine
+  evidence receipts. Operation statuses, entry points, assertions, fixture paths,
+  summaries and gap issues are unchanged.
+- Native Windows SDK 10.0.100 compiled the focused architecture project and its
+  required references in Release, with one MSBuild worker. Before the repair,
+  the class executed four tests: two passed and the same two CI guards failed.
+  After the repair, all four passed; none failed or skipped.
+
+Executed after the initial Release build:
+
+```powershell
+dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj --no-build --no-restore --configuration Release --filter FullyQualifiedName~GeoprocessingOperationEvidenceMatrixTests
+```
 ## Verification boundary
 
 The required pre-PR script has only a Bash entry point. This Windows repair packet
