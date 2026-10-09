@@ -42,6 +42,7 @@ Confirm effective values at runtime with `GET /api/v1/admin/config` (admin auth)
 Secrets don't have to be inlined. Two mechanisms exist:
 
 1. **Connection-string references** — `ConnectionStrings__DefaultConnection` accepts provider-prefixed references such as `aws:secretsmanager:...` or `env:...`, resolved at startup before migrations run.
+   `env:NAME` and the URI form `env://NAME` both read the process environment variable `NAME`; a missing or empty variable is a resolution failure, and the value is never logged. Use the `env` provider for harness/dev hosts and CI-injected secrets, and a managed store (`aws:secretsmanager:`, `azure:keyvault:`) in production.
 2. **Metadata secret references** — connection metadata stores a structured reference instead of a value: `{"provider": "env", "ref": "MY_DB_PASSWORD"}` (optional `version`), with providers like `env`, `azure-key-vault`, or `connection-registry`.
 
 ### References supplied in a request
