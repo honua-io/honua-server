@@ -32,7 +32,11 @@ jobs:
     name: Build & Push ${{ matrix.image_name }} (${{ matrix.arch }})
     if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk' || inputs.scan_only == true
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 140
+    # 180, matching nightly-container-build.yml: a COLD native-AOT build (the amd64 Lambda AOT
+    # leg included) does not fit in 140 minutes once boundary verification, SBOM, two Trivy
+    # scans and cross-registry promotion follow it, and a timeout here skips every release
+    # manifest publication downstream.
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -295,6 +299,10 @@ jobs:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: ${{ matrix.platform }}
+          # Stamp the source revision the way the nightly AOT builds do: the build context
+          # excludes .git, so without this the image reports a null deployment revision.
+          build-args: |
+            HONUA_GIT_SHA=${{ github.sha }}
           outputs: type=image,name=${{ steps.targets.outputs.scan_image }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           secrets: |
