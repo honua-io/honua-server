@@ -30,6 +30,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # Keep Testcontainers cleanup enabled with its identical upstream index.
+  TESTCONTAINERS_RYUK_CONTAINER_IMAGE: 'mirror.gcr.io/testcontainers/ryuk:0.14.0@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0'
   DOTNET_VERSION: '10.0.x'
   # Reuse the persistent MSBuild server across this job's restore, gate build,
   # and no-build test invocations; Roslyn shared compilation stays enabled.

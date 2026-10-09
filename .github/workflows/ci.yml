@@ -103,6 +103,8 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/trunk' }}
 
 env:
+  # Preserve the upstream reaper index while avoiding Docker Hub authentication.
+  TESTCONTAINERS_RYUK_CONTAINER_IMAGE: 'mirror.gcr.io/testcontainers/ryuk:0.14.0@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0'
   DOTNET_VERSION: '10.0.x'
   # Keep one persistent MSBuild server alive across restore/build/test calls in
   # each job. Roslyn shared compilation remains enabled by default.
@@ -421,8 +423,8 @@ jobs:
           set -euo pipefail
           # PRs and selective batches run the complete compatibility suite without
           # coverage instrumentation; scheduled/manual full CI remains authoritative.
-          POSTGRES_BASELINE='[{"pg_image":"postgis/postgis:16-3.4","pg_suffix":"16","collect_coverage":false}]'
-          POSTGRES_FULL='[{"pg_image":"postgis/postgis:16-3.4","pg_suffix":"16","collect_coverage":true},{"pg_image":"postgis/postgis:17-3.5","pg_suffix":"17","collect_coverage":false},{"pg_image":"postgis/postgis:18-3.6","pg_suffix":"18","collect_coverage":false}]'
+          POSTGRES_BASELINE='[{"pg_image":"postgis/postgis:16-3.4","pg_service_image":"mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5","pg_suffix":"16","collect_coverage":false}]'
+          POSTGRES_FULL='[{"pg_image":"postgis/postgis:16-3.4","pg_service_image":"mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5","pg_suffix":"16","collect_coverage":true},{"pg_image":"postgis/postgis:17-3.5","pg_service_image":"mirror.gcr.io/postgis/postgis:17-3.5@sha256:8dfee83d8bd4c2873dc4a233c13ba2799a44f2edb16a0552d58715917fac32ba","pg_suffix":"17","collect_coverage":false},{"pg_image":"postgis/postgis:18-3.6","pg_service_image":"mirror.gcr.io/postgis/postgis:18-3.6@sha256:7e00e8c3539fdd43f513b98806c8204714dcd09dea683c259e333d7690317119","pg_suffix":"18","collect_coverage":false}]'
 
           # Fail safe: if the diff range cannot be computed (e.g. no merge-base after a
           # full base fetch), run the full build/integration lane rather than silently
@@ -853,7 +855,7 @@ jobs:
             timeout_minutes: 30
     services:
       postgres:
-        image: postgis/postgis:16-3.4
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
@@ -914,6 +916,19 @@ jobs:
         run: |
           bash scripts/ci/regenerate-generated-files.sh --configuration Release --no-build --no-restore
           bash scripts/ci/report-generated-file-drift.sh
+
+      - name: Prepare foundation Testcontainers images
+        if: matrix.family != 'core'
+        timeout-minutes: 12
+        shell: bash
+        env:
+          FOUNDATION_FAMILY: ${{ matrix.family }}
+        run: |
+          case "${FOUNDATION_FAMILY}" in
+            server|protocols) scripts/ci/prepare-testcontainer-images.sh ryuk postgis18 redis ;;
+            providers) scripts/ci/prepare-testcontainer-images.sh ryuk mysql ;;
+            *) echo "::error::Unknown container-consuming foundation family"; exit 2 ;;
+          esac
 
       - name: Run foundation family tests
         timeout-minutes: 45
@@ -1104,7 +1119,7 @@ jobs:
       HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=ci-${{ github.run_id }}-${{ github.run_attempt }}"
     services:
       postgres:
-        image: postgis/postgis:16-3.4
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1346,6 +1361,41 @@ jobs:
             echo "- Package / save: \`${package_ms} / ${SAVE_MS:-0} ms\`"
           } >> "${GITHUB_STEP_SUMMARY}"
 
+      - name: Prepare shard Testcontainers images
+        timeout-minutes: 12
+        shell: bash
+        env:
+          SERVER_SHARD: ${{ matrix.shard_name }}
+        run: |
+          # Only these current shard filters select explicit Redis fixtures.
+          images=()
+          case "${SERVER_SHARD}" in
+            'Core and Cloud Contracts'| \
+            'Admin & Infrastructure'| \
+            'Migration'| \
+            'FeatureServer Endpoints Query Services and Replication'| \
+            'OGC API Tiles Coverages and Processes'| \
+            'GeoServices GPServer and NAServer'| \
+            'Caching File Storage Styling and Infrastructure'| \
+            'Operator Eval Harness'| \
+            'gRPC Protocol and Scene'| \
+            'MCP and Sessions'| \
+            'Server Features Admin Runtime Operations'| \
+            'Server Features Admin Authorization'| \
+            'Server Features Admin Network and Jobs'| \
+            'Server Features Admin Integrations and Automation'| \
+            'Server Features Streaming Snapshot and Conformance'| \
+            'Server Features Data Enrichment and Capabilities'| \
+            'Server Features Miscellaneous'| \
+            'Server Features Studio Packaging') images+=(redis) ;;
+          esac
+          if [[ "${SERVER_SHARD}" == 'Operator Eval Harness' ]]; then
+            images+=(postgis17)
+          fi
+          if (( ${#images[@]} > 0 )); then
+            scripts/ci/prepare-testcontainer-images.sh ryuk "${images[@]}"
+          fi
+
       - name: Run server test shard
         # Advisory shards (matrix.advisory==true) swallow their test failure HERE so
         # the job concludes success and the PR stays CLEAN (see job comment above).
@@ -1548,6 +1598,10 @@ jobs:
           echo "HONUA_PDAL_PROOF_IMAGE=$(docker image inspect --format '{{.Id}}' honua-pdal-proof)" >> "$GITHUB_ENV"
           echo "HONUA_GDAL_PROOF_USER=$(id -u):$(id -g)" >> "$GITHUB_ENV"
 
+      - name: Prepare GDAL Testcontainers images
+        timeout-minutes: 12
+        run: scripts/ci/prepare-testcontainer-images.sh ryuk postgis18 redis
+
       - name: Run Worker GDAL tests
         id: run-tests
         timeout-minutes: 10
@@ -1675,6 +1729,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r tests/python/requirements.txt
 
+      - name: Prepare Python PostGIS image
+        timeout-minutes: 5
+        run: scripts/ci/prepare-testcontainer-images.sh postgis18
+
       - name: Prove GeoParquet independent-consumer execution
         # GeoParquet GA evidence requires every cell: skips and collection errors fail.
         working-directory: tests/python
@@ -1768,7 +1826,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgis/postgis:16-3.4
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
@@ -1898,7 +1956,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgis/postgis:16-3.4
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
@@ -2014,7 +2072,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgis/postgis:16-3.4
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
@@ -2144,7 +2202,7 @@ jobs:
         transport: [grpc-web, rest]
     services:
       postgres:
-        image: postgis/postgis:16-3.4
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
@@ -2246,7 +2304,7 @@ jobs:
     timeout-minutes: 10
     services:
       postgres:
-        image: postgis/postgis:16-3.4
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
@@ -2345,7 +2403,7 @@ jobs:
         include: ${{ fromJson(needs.changes.outputs.postgres_matrix) }}
     services:
       postgres:
-        image: ${{ matrix.pg_image }}
+        image: ${{ matrix.pg_service_image }}
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
@@ -2380,6 +2438,10 @@ jobs:
         # (Server, DuckDB, SqlServer, MySql, Worker.Gdal, samples,
         # benchmarks, sibling test projects) stay out of the build graph.
         run: dotnet build tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj --configuration Release --no-restore
+
+      - name: Prepare optional-raster Testcontainers images
+        timeout-minutes: 8
+        run: scripts/ci/prepare-testcontainer-images.sh ryuk postgres16
 
       - name: Run Postgres compatibility tests
         env:
@@ -2627,7 +2689,7 @@ jobs:
       packages: write
     services:
       postgres:
-        image: postgis/postgis:16-3.4
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
