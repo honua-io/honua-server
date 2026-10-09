@@ -16,9 +16,9 @@ Export print jobs as PDF files.
 | Capability key | `printing.pdf-output` |
 | Category | Printing |
 | Edition | Pro |
-| Surface maturity | 8 implemented |
-| Registry entries | 8 |
-| Proving tests | 22 |
+| Surface maturity | 13 implemented |
+| Registry entries | 13 |
+| Proving tests | 28 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
