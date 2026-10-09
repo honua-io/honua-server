@@ -168,8 +168,12 @@ internal sealed class DuckDBFeatureStore :
     public async Task<TemporalExtentResult?> GetTemporalExtentAsync(
         int layerId, string fieldName, TemporalPropertyType propertyType, CancellationToken cancellationToken = default)
     {
-        await EnsureRowAndFieldPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var temporalQuery = _queryBuilder.BuildTemporalExtentQuery(layerId, fieldName, propertyType);
+        var query = await ApplyPermanentFilterAsync(layerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
+        var temporalQuery = query.EnforcedSqlFilter is not null
+            ? _queryBuilder is DuckDBFeatureQueryBuilder duckDbQueryBuilder
+                ? duckDbQueryBuilder.BuildTemporalExtentQuery(layerId, fieldName, propertyType, query)
+                : throw new NotSupportedException("The query builder cannot enforce the temporal extent's permanent filter.")
+            : _queryBuilder.BuildTemporalExtentQuery(layerId, fieldName, propertyType);
         return await _dataAccess.GetTemporalExtentAsync(layerId, temporalQuery, cancellationToken).ConfigureAwait(false);
     }
 

@@ -11,8 +11,8 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
-using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
@@ -597,6 +597,12 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         // Enforce the layer's permanent (row-visibility) filter so hidden rows do
         // not leak their min/max temporal values through the extent.
         var query = await ApplyPermanentFilterAsync(layerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
+        if (query.EnforcedMaskedFields is { IsDefaultOrEmpty: false } maskedFields &&
+            maskedFields.Contains(fieldName, StringComparer.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
         var temporalQuery = query.EnforcedSqlFilter is not null && _queryBuilder is FeatureQueryBuilder postgresQueryBuilder
             ? postgresQueryBuilder.BuildTemporalExtentQuery(layerId, fieldName, propertyType, query)
             : _queryBuilder.BuildTemporalExtentQuery(layerId, fieldName, propertyType);

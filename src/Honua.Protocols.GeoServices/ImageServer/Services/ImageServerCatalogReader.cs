@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -115,6 +116,9 @@ internal sealed record ImageServerCatalogItem
 /// </summary>
 internal sealed class ImageServerCatalogQuery
 {
+    /// <summary>Resolved request policy, enforced before any catalog predicate is evaluated.</summary>
+    public ImmutableArray<string> EnforcedMaskedFields { get; set; }
+
     public string? Where { get; init; }
 
     public IReadOnlyList<long>? ObjectIds { get; init; }
@@ -230,6 +234,7 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
         // Esri `where` evaluation and computed-field `orderByFields` ordering are not part of the
         // neutral contract, so when either is present we finish those steps in memory over the
         // (already spatially bounded) provider result — a declared bounded fallback for those shapes.
+        ImageServerCatalogSecurity.Validate(query, query.EnforcedMaskedFields);
         var hasWhere = !string.IsNullOrWhiteSpace(query.Where);
         var hasCustomOrder = query.OrderBy is { Count: > 0 };
         var pushPaging = !hasWhere && !hasCustomOrder && !query.ReturnIdsOnly;
