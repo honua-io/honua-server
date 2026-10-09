@@ -110,19 +110,43 @@ internal sealed class RenderMapTool : IMcpTool
         var renderedLayers = new McpRenderedLayer[argument.Layers.Count];
         var resolvedLayers = new ResolvedMapLayer[argument.Layers.Count];
         var appliedStyleJson = new Dictionary<int, string>();
+        var hasRasterCoverage = false;
+        var hasVectorLayer = false;
         for (var i = 0; i < argument.Layers.Count; i++)
         {
             var layerRef = argument.Layers[i];
             var resolved = await MapToolLayerResolver.ResolveForReadAsync(
                 httpContext, snapshot, layerRef.ServiceId, layerRef.LayerId, AuthorizationOperation.Query, cancellationToken)
                 .ConfigureAwait(false);
+            EnsureDistinctStorageIdentity(resolvedLayers, i, resolved);
             storageLayerIds[i] = resolved.StorageLayerId;
             resolvedLayers[i] = new ResolvedMapLayer(resolved.StorageLayerId, resolved.Resource.Metadata.Id);
+            if (IsRasterCoverage(resolved.Resource))
+            {
+                hasRasterCoverage = true;
+            }
+            else
+            {
+                hasVectorLayer = true;
+            }
+
+            if (hasRasterCoverage && hasVectorLayer)
+            {
+                // The renderer returns raster coverage pixels as soon as any requested layer
+                // has coverage and never composites vector layers over them, so a mixed
+                // request would silently drop the vector layers.
+                throw new GeoprocessingValidationException(
+                    "'layers' mixes raster coverage layers with vector feature layers, which honua_render_map cannot composite in one image. "
+                    + "Render the raster coverage layers and the vector layers in separate honua_render_map calls.");
+            }
+
             var appliedStyle = await ResolveAppliedStyleAsync(styleCatalog, resolved.StorageLayerId, cancellationToken)
                 .ConfigureAwait(false);
-            if (appliedStyle is not null && !string.IsNullOrWhiteSpace(appliedStyle.MapLibreStyleJson))
+            if (appliedStyle is not null)
             {
-                appliedStyleJson[resolved.StorageLayerId] = appliedStyle.MapLibreStyleJson;
+                // Forwarded even when the document has no style layers: the renderer then
+                // draws nothing for the layer rather than the stored default style.
+                appliedStyleJson[resolved.StorageLayerId] = appliedStyle.MapLibreStyleJson ?? string.Empty;
             }
 
             var (styleRendering, unsupported) = ClassifyStyleRendering(resolved.Resource, appliedStyle);
@@ -361,7 +385,7 @@ internal sealed class RenderMapTool : IMcpTool
         }
 
         var geometryType = resource.ReadGeometryType();
-        if (geometryType == MetadataV2GeometryType.None && resource.FindPrimaryGeometryField() is null)
+        if (IsRasterCoverage(resource))
         {
             // A raster coverage renders its native pixels; a vector style bound to it is not drawn.
             return (AppliedStyleRenderSupport.UnsupportedStyleConstruct,
@@ -372,6 +396,33 @@ internal sealed class RenderMapTool : IMcpTool
         return unsupported.Count == 0
             ? (AppliedStyleRenderSupport.Applied, null)
             : (AppliedStyleRenderSupport.UnsupportedStyleConstruct, unsupported);
+    }
+
+    // Mirrors the vector-aware renderer's geometry test: a resource without a geometry
+    // type or geometry field renders from raster coverage pixels.
+    private static bool IsRasterCoverage(MetadataV2Resource resource)
+        => resource.ReadGeometryType() == MetadataV2GeometryType.None && resource.FindPrimaryGeometryField() is null;
+
+    // The renderer resolves each layer's resource by storage layer id, so two requested
+    // layers sharing a storage layer id but bound to different Metadata v2 resources
+    // would both render with the first resource's identity.
+    private static void EnsureDistinctStorageIdentity(
+        ResolvedMapLayer[] resolvedSoFar,
+        int count,
+        MapToolLayerContext resolved)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            var earlier = resolvedSoFar[i];
+            if (earlier.LayerId == resolved.StorageLayerId &&
+                !string.Equals(earlier.ResourceId, resolved.Resource.Metadata.Id, StringComparison.Ordinal))
+            {
+                throw new GeoprocessingValidationException(
+                    $"'layers' entries {i} and {count} resolve to the same storage layer ({resolved.StorageLayerId.ToString(CultureInfo.InvariantCulture)}) "
+                    + "through different published resources, which cannot be rendered with distinct identities in one image. "
+                    + "Render them in separate honua_render_map calls.");
+            }
+        }
     }
 
     private static string? BuildStyleNote(McpRenderedLayer[] layers)

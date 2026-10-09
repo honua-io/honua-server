@@ -241,9 +241,17 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
             var layerStyleJson = explicitStyleJson;
             if (layerStyleJson is null &&
                 request.AppliedStyleJsonByLayerId is { } appliedStyles &&
-                appliedStyles.TryGetValue(layerId, out var appliedStyleJson) &&
-                !string.IsNullOrWhiteSpace(appliedStyleJson))
+                appliedStyles.TryGetValue(layerId, out var appliedStyleJson))
             {
+                if (StyleTranslator.ParseStyleLayers(appliedStyleJson).Length == 0)
+                {
+                    // An applied style with no (parseable) style layers has nothing to draw.
+                    // The pipeline would substitute its generic default paints for a
+                    // zero-layer plan, so the layer is skipped instead: the pixels match
+                    // the applied style, and the caller reports the layer as not drawn.
+                    continue;
+                }
+
                 layerStyleJson = appliedStyleJson;
             }
 

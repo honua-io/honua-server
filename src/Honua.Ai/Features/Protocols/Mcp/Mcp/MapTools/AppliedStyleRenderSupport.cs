@@ -9,11 +9,15 @@ namespace Honua.Ai.Protocols.Mcp.MapTools;
 /// <summary>
 /// Classifies how <c>honua_render_map</c> renders a layer's applied style, so the
 /// tool reports a typed outcome instead of silently drawing something else. The
-/// shared Skia vector rasterizer draws MapLibre <c>fill</c>, <c>line</c>, and
-/// <c>circle</c> layers (colour, width, opacity, stroke, dash, filters, zoom ranges
-/// and data-driven expressions); every other construct is reported as an
-/// <see cref="UnsupportedStyleConstruct"/> and is not drawn.
+/// shared Skia vector rasterizer (<c>StyleTranslator</c>) draws MapLibre
+/// <c>fill</c>, <c>line</c>, and <c>circle</c> layers honouring exactly the paint and
+/// layout properties listed here, plus <c>filter</c>, <c>minzoom</c>/<c>maxzoom</c> and
+/// data-driven expressions; every other construct is reported as an
+/// <see cref="UnsupportedStyleConstruct"/>, so <see cref="Applied"/> means every
+/// construct of the style was drawn.
 /// </summary>
+/// <remarks>Keep the property sets in step with <c>StyleTranslator.ResolveFillStyle</c>,
+/// <c>ResolveLineStyle</c>, <c>ResolveCircleStyle</c>, and <c>IsLayerVisible</c>.</remarks>
 internal static class AppliedStyleRenderSupport
 {
     /// <summary>The layer rendered with its applied catalog style; every style layer was drawable.</summary>
@@ -28,6 +32,24 @@ internal static class AppliedStyleRenderSupport
     /// substituted for them.
     /// </summary>
     public const string UnsupportedStyleConstruct = "unsupported-style-construct";
+
+    private static readonly Dictionary<string, HashSet<string>> HonouredPaint = new(StringComparer.Ordinal)
+    {
+        ["fill"] = new(StringComparer.Ordinal) { "fill-color", "fill-opacity", "fill-outline-color", "fill-antialias" },
+        ["line"] = new(StringComparer.Ordinal) { "line-color", "line-width", "line-opacity", "line-dasharray" },
+        ["circle"] = new(StringComparer.Ordinal)
+        {
+            "circle-radius", "circle-color", "circle-opacity",
+            "circle-stroke-color", "circle-stroke-opacity", "circle-stroke-width",
+        },
+    };
+
+    private static readonly Dictionary<string, HashSet<string>> HonouredLayout = new(StringComparer.Ordinal)
+    {
+        ["fill"] = new(StringComparer.Ordinal) { "visibility" },
+        ["line"] = new(StringComparer.Ordinal) { "visibility", "line-cap", "line-join" },
+        ["circle"] = new(StringComparer.Ordinal) { "visibility" },
+    };
 
     private static readonly string[] PointLayerTypes = ["circle"];
     private static readonly string[] LineLayerTypes = ["line"];
@@ -44,7 +66,7 @@ internal static class AppliedStyleRenderSupport
     {
         if (string.IsNullOrWhiteSpace(mapLibreStyleJson))
         {
-            return ["the applied style has no MapLibre style document"];
+            return ["the applied style has no MapLibre style document; nothing was drawn for this layer"];
         }
 
         JsonDocument document;
@@ -54,7 +76,7 @@ internal static class AppliedStyleRenderSupport
         }
         catch (JsonException)
         {
-            return ["the applied style is not a valid MapLibre style document"];
+            return ["the applied style is not a valid MapLibre style document; nothing was drawn for this layer"];
         }
 
         using (document)
@@ -62,7 +84,7 @@ internal static class AppliedStyleRenderSupport
             var layers = ReadStyleLayers(document.RootElement);
             if (layers.Count == 0)
             {
-                return ["the applied style has no style layers"];
+                return ["the applied style has no style layers; nothing was drawn for this layer"];
             }
 
             var drawable = DrawableLayerTypes(geometryType);
@@ -88,9 +110,44 @@ internal static class AppliedStyleRenderSupport
                 {
                     unsupported.Add($"{label} type '{type}' does not draw {geometryType.ToString().ToLowerInvariant()} geometry");
                 }
+                else
+                {
+                    AddIgnoredProperties(layer, type, label, unsupported);
+                }
             }
 
             return unsupported;
+        }
+    }
+
+    private static void AddIgnoredProperties(JsonElement layer, string type, string label, List<string> unsupported)
+    {
+        var hasPaint = layer.TryGetProperty("paint", out var paint) && paint.ValueKind == JsonValueKind.Object;
+        if (!hasPaint || !paint.EnumerateObject().Any())
+        {
+            // StyleTranslator substitutes its own default symbology for a layer without paint.
+            unsupported.Add($"{label} has no paint properties; the server substitutes its default symbology");
+        }
+        else
+        {
+            foreach (var property in paint.EnumerateObject())
+            {
+                if (!HonouredPaint[type].Contains(property.Name))
+                {
+                    unsupported.Add($"{label} paint property '{property.Name}' is not rendered by the server renderer");
+                }
+            }
+        }
+
+        if (layer.TryGetProperty("layout", out var layout) && layout.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in layout.EnumerateObject())
+            {
+                if (!HonouredLayout[type].Contains(property.Name))
+                {
+                    unsupported.Add($"{label} layout property '{property.Name}' is not rendered by the server renderer");
+                }
+            }
         }
     }
 

@@ -196,6 +196,45 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
             "the centre pixel must carry the applied preset colour, not the layer's stored default style");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("POST /mcp tools/call honua_render_map")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task AppliedZeroLayerPreset_DrawsNothingInsteadOfTheStoredDefault()
+    {
+        using var client = _fixture.CreateAdminClient();
+        await SeedTestLayerStyleAsync(client);
+        using var scope = _fixture.Services.CreateScope();
+        var layerStyles = scope.ServiceProvider.GetRequiredService<ILayerStyleCatalog>();
+        (await layerStyles.SetMapLibreStyleAsync(WebAppFixture.TestLayerId, CircleStyle("#0000ff"))).Should().NotBeNull();
+        var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        var presetId = $"empty-preset-{Guid.NewGuid():N}";
+        (await catalog.CreateStyleAsync(presetId, """{"version":8,"sources":{},"layers":[]}""")).Should().NotBeNull();
+        await InsertPointFeatureAsync(WebAppFixture.TestLayerId, EmptyCentreX, EmptyCentreY);
+
+        var session = await InitializeMcpSessionAsync(client);
+        (await CallMcpStyleAsync(client, session, "honua_apply_style_preset", presetId))
+            .GetProperty("applied").GetBoolean().Should().BeTrue();
+
+        var rendered = await CallMcpToolAsync(client, session, "honua_render_map", $$"""
+            {"layers":[{"serviceId":"{{WebAppFixture.TestServiceId}}","layerId":{{WebAppFixture.TestLayerId}}}],
+             "bbox":[{{EmptyCentreX - 2}},{{EmptyCentreY - 2}},{{EmptyCentreX + 2}},{{EmptyCentreY + 2}}],"bboxSrid":4326,
+             "width":128,"height":128,"transparent":true,"maxInlineBytes":1048576}
+            """);
+        var layer = rendered.GetProperty("layers")[0];
+        layer.GetProperty("styleRendering").GetString().Should().Be("unsupported-style-construct");
+        layer.GetProperty("unsupportedStyleConstructs")[0].GetString().Should().Contain("nothing was drawn");
+
+        var png = Convert.FromBase64String(rendered.GetProperty("image").GetProperty("base64").GetString()!);
+        using var bitmap = SKBitmap.Decode(png);
+        bitmap.Should().NotBeNull();
+        bitmap.GetPixel(64, 64).Alpha.Should().Be(0,
+            "an applied style with nothing drawable must not fall back to the stored default or generic paints");
+    }
+
+    private const int EmptyCentreX = -40;
+    private const int EmptyCentreY = 30;
+
     private const int CentreX = 40;
     private const int CentreY = -30;
 

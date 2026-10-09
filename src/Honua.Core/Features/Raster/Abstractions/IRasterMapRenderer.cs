@@ -144,7 +144,8 @@ public readonly record struct MapRenderRequest
     /// layer (its primary binding in the styleId-keyed style catalog, as written by
     /// <c>style.apply-preset</c> or the OGC API - Styles authoring surface). When an
     /// entry is present, the styled vector path renders the layer with this document
-    /// instead of the layer's stored default style. <see langword="null"/> (or a missing
+    /// instead of the layer's stored default style; an entry whose document has no
+    /// style layers draws nothing for that layer. <see langword="null"/> (or a missing
     /// entry) preserves rendering with the layer's stored default style.
     /// </summary>
     public IReadOnlyDictionary<int, string>? AppliedStyleJsonByLayerId { get; init; }

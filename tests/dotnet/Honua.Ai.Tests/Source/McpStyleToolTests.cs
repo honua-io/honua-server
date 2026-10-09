@@ -871,18 +871,124 @@ public sealed class McpStyleToolTests
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
-    [InlineData(MetadataV2GeometryType.Point, "{\"layers\":[{\"id\":\"p\",\"type\":\"circle\"}]}", 0)]
-    [InlineData(MetadataV2GeometryType.Polygon, "[{\"id\":\"a\",\"type\":\"fill\"},{\"id\":\"b\",\"type\":\"line\"}]", 0)]
-    [InlineData(MetadataV2GeometryType.LineString, "{\"id\":\"l\",\"type\":\"line\"}", 0)]
-    [InlineData(MetadataV2GeometryType.Point, "{\"layers\":[{\"id\":\"h\",\"type\":\"heatmap\"}]}", 1)]
-    [InlineData(MetadataV2GeometryType.Point, "{\"version\":8,\"layers\":[]}", 1)]
-    [InlineData(MetadataV2GeometryType.Point, "not json", 1)]
+    [InlineData(MetadataV2GeometryType.Point, "{\"layers\":[{\"id\":\"p\",\"type\":\"circle\",\"paint\":{\"circle-color\":\"#f00\",\"circle-radius\":4,\"circle-stroke-width\":1}}]}", null)]
+    [InlineData(MetadataV2GeometryType.Polygon, "[{\"id\":\"a\",\"type\":\"fill\",\"paint\":{\"fill-color\":\"#f00\",\"fill-opacity\":0.5}},{\"id\":\"b\",\"type\":\"line\",\"paint\":{\"line-width\":2},\"layout\":{\"line-cap\":\"round\",\"visibility\":\"visible\"}}]", null)]
+    [InlineData(MetadataV2GeometryType.LineString, "{\"id\":\"l\",\"type\":\"line\",\"paint\":{\"line-color\":\"#00f\",\"line-dasharray\":[2,1]}}", null)]
+    [InlineData(MetadataV2GeometryType.Polygon, "{\"layers\":[{\"id\":\"a\",\"type\":\"fill\",\"paint\":{\"fill-color\":\"#f00\",\"fill-pattern\":\"hatch\"}}]}", "paint property 'fill-pattern'")]
+    [InlineData(MetadataV2GeometryType.LineString, "{\"layers\":[{\"id\":\"l\",\"type\":\"line\",\"paint\":{\"line-color\":\"#00f\",\"line-gradient\":[\"interpolate\",[\"linear\"],[\"line-progress\"],0,\"blue\",1,\"red\"]}}]}", "paint property 'line-gradient'")]
+    [InlineData(MetadataV2GeometryType.Polygon, "{\"layers\":[{\"id\":\"a\",\"type\":\"fill\",\"paint\":{\"fill-color\":\"#f00\",\"fill-translate\":[2,2]}}]}", "paint property 'fill-translate'")]
+    [InlineData(MetadataV2GeometryType.Point, "{\"layers\":[{\"id\":\"p\",\"type\":\"circle\",\"paint\":{\"circle-color\":\"#f00\",\"circle-blur\":1}}]}", "paint property 'circle-blur'")]
+    [InlineData(MetadataV2GeometryType.Point, "{\"layers\":[{\"id\":\"p\",\"type\":\"circle\",\"paint\":{\"circle-color\":\"#f00\"},\"layout\":{\"circle-sort-key\":1}}]}", "layout property 'circle-sort-key'")]
+    [InlineData(MetadataV2GeometryType.Polygon, "{\"layers\":[{\"id\":\"a\",\"type\":\"fill\"}]}", "has no paint properties")]
+    [InlineData(MetadataV2GeometryType.Point, "{\"layers\":[{\"id\":\"h\",\"type\":\"heatmap\",\"paint\":{}}]}", "type 'heatmap'")]
+    [InlineData(MetadataV2GeometryType.Point, "{\"version\":8,\"layers\":[]}", "nothing was drawn")]
+    [InlineData(MetadataV2GeometryType.Point, "not json", "nothing was drawn")]
     [Operation(Operations.Render)]
     public void AppliedStyleRenderSupport_ClassifiesRasterizableConstructs(
-        MetadataV2GeometryType geometryType, string styleJson, int expectedUnsupported)
+        MetadataV2GeometryType geometryType, string styleJson, string? expectedUnsupported)
     {
-        AppliedStyleRenderSupport.FindUnsupportedConstructs(styleJson, geometryType)
-            .Should().HaveCount(expectedUnsupported);
+        var unsupported = AppliedStyleRenderSupport.FindUnsupportedConstructs(styleJson, geometryType);
+        if (expectedUnsupported is null)
+        {
+            unsupported.Should().BeEmpty("every construct of the style is drawn, so the render reports 'applied'");
+        }
+        else
+        {
+            unsupported.Should().ContainSingle().Which.Should().Contain(expectedUnsupported);
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_render_map")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_RenderMap_ZeroLayerAppliedStyle_IsForwardedAndReportedNotDrawn()
+    {
+        const string emptyStyle = """{"version":8,"layers":[]}""";
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.GetStylesForLayerAsync(StorageLayerId, Arg.Any<CancellationToken>())
+            .Returns(new[] { Preset() with { MapLibreStyleJson = emptyStyle } });
+        var renderer = RendererReturningPng(out var captured);
+
+        var response = await DispatchAsync(
+            RenderMapTool.ToolName,
+            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}], "bbox":[-10,-10,10,10] }""",
+            catalog: catalog,
+            renderer: renderer);
+
+        response!.Error.Should().BeNull();
+        captured[0].AppliedStyleJsonByLayerId![StorageLayerId].Should().Be(emptyStyle,
+            "the renderer must receive the empty applied style so it draws nothing instead of the stored default");
+        var layer = response.Result!.Value.GetProperty("structuredContent").GetProperty("layers")[0];
+        layer.GetProperty("styleRendering").GetString().Should().Be(AppliedStyleRenderSupport.UnsupportedStyleConstruct);
+        layer.GetProperty("unsupportedStyleConstructs")[0].GetString().Should().Contain("nothing was drawn");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_render_map")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_RenderMap_MixedRasterAndVectorLayers_IsRefusedBeforeRendering()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource(ResourceId, "Parcels Dataset", spatial: new MetadataV2ResourceSpatial
+            {
+                GeometryType = MetadataV2GeometryType.Polygon,
+                SpatialReference = new MetadataV2SpatialReference { Srid = 4326 },
+            })
+            .AddStorageBinding("bind-parcels", ResourceId, "public.parcels", storageLayerId: StorageLayerId)
+            .AddResource("res-dem", "Elevation", type: MetadataV2ResourceType.RasterDataset)
+            .AddStorageBinding("bind-dem", "res-dem", "raster.dem", storageLayerId: StorageLayerId + 1)
+            .AddService(ServiceId, ServiceName)
+            .AddPublication("pub-parcels", ServiceId, ResourceId, layerIndex: 0, storageBindingId: "bind-parcels")
+            .AddPublication("pub-dem", ServiceId, "res-dem", layerIndex: 1, storageBindingId: "bind-dem")
+            .BuildProvider();
+        var renderer = RendererReturningPng(out var captured);
+
+        var response = await DispatchAsync(
+            RenderMapTool.ToolName,
+            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","layerId":1},{"serviceId":"{{ServiceId}}","layerId":0}], "bbox":[-10,-10,10,10] }""",
+            renderer: renderer,
+            graphProvider: graph);
+
+        var result = response!.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue(result.ToString());
+        result.ToString().Should().Contain("separate honua_render_map calls");
+        captured.Should().BeEmpty("a mixed request must not render vector layers that would be silently dropped");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_render_map")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_RenderMap_SharedStorageLayerWithDifferentResources_IsRefused()
+    {
+        var spatial = new MetadataV2ResourceSpatial
+        {
+            GeometryType = MetadataV2GeometryType.Polygon,
+            SpatialReference = new MetadataV2SpatialReference { Srid = 4326 },
+        };
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource(ResourceId, "Parcels Dataset", spatial: spatial)
+            .AddStorageBinding("bind-parcels", ResourceId, "public.parcels", storageLayerId: StorageLayerId)
+            .AddResource("res-parcels-view", "Parcels view", spatial: spatial)
+            .AddStorageBinding("bind-parcels-view", "res-parcels-view", "public.parcels_view", storageLayerId: StorageLayerId)
+            .AddService(ServiceId, ServiceName)
+            .AddPublication("pub-parcels", ServiceId, ResourceId, layerIndex: 0, storageBindingId: "bind-parcels")
+            .AddPublication("pub-parcels-view", ServiceId, "res-parcels-view", layerIndex: 1, storageBindingId: "bind-parcels-view")
+            .BuildProvider();
+        var renderer = RendererReturningPng(out var captured);
+
+        var response = await DispatchAsync(
+            RenderMapTool.ToolName,
+            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","layerId":0},{"serviceId":"{{ServiceId}}","layerId":1}], "bbox":[-10,-10,10,10] }""",
+            renderer: renderer,
+            graphProvider: graph);
+
+        var result = response!.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue(result.ToString());
+        result.ToString().Should().Contain("same storage layer");
+        captured.Should().BeEmpty();
     }
 
     private static IRasterMapRenderer RendererReturningPng(out List<MapRenderRequest> captured)
