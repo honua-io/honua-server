@@ -17098,6 +17098,8 @@
         "Honua.Server.Tests.Features.Admin.PlatformReleaseConvergeEndpointTests.Converge_ClassifiesEachTargetAgainstTheDivergenceContract",
         "Honua.Server.Tests.Features.Admin.PlatformReleaseConvergeEndpointTests.Converge_IsIdempotent_DoubleConvergeFoldsOntoOneOperation",
         "Honua.Server.Tests.Features.Admin.PlatformReleaseConvergeEndpointTests.Converge_RoutesThroughApprovalGateway_WithoutDirectExecuteBypass",
+        "Honua.Server.Tests.Features.Admin.PlatformReleaseConvergeEndpointTests.Converge_TargetVersionDiffersFromDeclared_Returns409MismatchProblemWithoutActuation",
+        "Honua.Server.Tests.Features.Admin.PlatformReleaseConvergeEndpointTests.Converge_TargetVersionNamesDeclaredRelease_ConvergesAsToday",
         "Honua.Server.Tests.Features.Admin.PlatformReleaseConvergeEndpointTests.Converge_WhenNoReleaseDeclared_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.PlatformReleaseConvergeEndpointTests.Converge_WithoutAdminAuthorization_IsRejected"
       ],
