@@ -639,6 +639,7 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
 
         mismatchedResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
+        // codeql[cs/linq/missed-select]: each mixed drawingInfo is submitted as its own request
         foreach (var mixedDrawingInfo in new[]
                  {
                      "{\"renderer\":{\"type\":\"uniqueValue\",\"defaultSymbol\":{\"type\":\"esriSFS\"},\"uniqueValueInfos\":[{\"value\":\"a\",\"symbol\":{\"type\":\"esriSMS\"}}]}}",
@@ -689,6 +690,7 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
             (await client.SendAsync(missingEntrySymbolRequest)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
+        // codeql[cs/linq/missed-select]: each malformed drawingInfo is submitted as its own request
         foreach (var malformedClassificationDrawingInfo in new[]
                  {
                      "{\"renderer\":{\"type\":\"uniqueValue\",\"field1\":\"category\",\"defaultSymbol\":{\"type\":\"esriSMS\",\"color\":[1,2,3,255]},\"uniqueValueInfos\":[{\"value\":\"a\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[4,5,6,255]}},{\"symbol\":{\"type\":\"esriSMS\",\"color\":[7,8,9,255]}}]}}",
@@ -946,12 +948,14 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         collectionsResponse.Be200Ok();
         using var collectionsDocument = JsonDocument.Parse(await collectionsResponse.Content.ReadAsStringAsync());
         var advertised = new List<(string CollectionId, Uri Stylesheet)>();
+        // codeql[cs/linq/missed-select]: fetches each collection document before reading its stylesheet links
         foreach (var collection in collectionsDocument.RootElement.GetProperty("collections").EnumerateArray())
         {
             var collectionId = collection.GetProperty("id").GetString()!;
             using var detail = await client.GetAsync($"/ogc/features/collections/{Uri.EscapeDataString(collectionId)}");
             detail.Be200Ok();
             using var detailDocument = JsonDocument.Parse(await detail.Content.ReadAsStringAsync());
+            // codeql[cs/linq/missed-where]: asserts the stylesheet media type while collecting advertised links
             foreach (var link in detailDocument.RootElement.GetProperty("links").EnumerateArray())
             {
                 if (link.GetProperty("rel").GetString() == "stylesheet")

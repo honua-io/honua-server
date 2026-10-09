@@ -175,6 +175,13 @@
       "reason": "The durable job substrate is a background runtime behind the import, tile, geoprocessing and workflow routes rather than a route of its own; those routes are catalogued against their own capabilities. It is advertised as jobs.runner on the capability manifest and named by typed dependency-unavailable refusals, which is why it needs a key a client can resolve."
     },
     {
+      "capability": "operations.proposals",
+      "category": "ControlPlane",
+      "edition": "Community",
+      "reasonCode": "cross-cutting-gate",
+      "reason": "The proposal/approval control plane is a durable-persistence posture across existing routes (the /api/v1/admin/proposals review routes and the approval-gated admin operations are catalogued against admin.control-plane) rather than a route of its own. It is advertised as operations.proposals on the capability manifest so an agent can learn, before calling a governed honua_admin_* tool, that a Redis-off host refuses it with a typed capability-unavailable receipt."
+    },
+    {
       "capability": "plugin.sdk",
       "reasonCode": "sdk-only",
       "reason": "Server plugin/extension SDK is a compile-time, AOT-safe registration surface, not an HTTP route.",

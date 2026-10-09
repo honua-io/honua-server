@@ -161,6 +161,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
                 ? values.Single()
                 : null;
 
+            // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(responseBody, Encoding.UTF8, "application/json")
@@ -178,6 +179,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
         {
             var index = Interlocked.Increment(ref _requestCount) - 1;
             var body = responseBodies[Math.Min(index, responseBodies.Length - 1)];
+            // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json")
@@ -197,6 +199,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
         {
             if (Interlocked.Increment(ref _requestCount) == 1)
             {
+                // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
                 var throttled = new HttpResponseMessage((HttpStatusCode)429);
                 throttled.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(
                     TimeSpan.FromSeconds(1));
@@ -207,6 +210,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
                 return Task.FromResult(throttled);
             }
 
+            // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(

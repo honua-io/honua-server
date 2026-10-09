@@ -187,6 +187,7 @@ internal sealed class OidcClaimsTransformation(
         // without changing the existing transformation order.
         if (claimsMappingEntitled && !identity.HasClaim(claim => claim.Type == ClaimTypes.Role))
         {
+            // codeql[cs/linq/missed-select]: adds a mapped role only when that role is not already present
             foreach (var mapping in _options.ClaimsMapping.CustomMappings.Where(
                          static mapping => string.Equals(
                              mapping.Value, ClaimTypes.Role, StringComparison.Ordinal)))

@@ -92,7 +92,7 @@ def _project(crs: str, lon: float, lat: float) -> tuple[float, float]:
 
 
 def _sorted_matrix_ids(tile_matrix_set) -> list[str]:
-    return sorted(tile_matrix_set.tilematrix, key=lambda value: int(value))
+    return sorted(tile_matrix_set.tilematrix, key=int)
 
 
 def _png(response) -> tuple[Image.Image, bytes]:

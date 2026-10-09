@@ -39,7 +39,9 @@ public static class CogTileEncoder
         if (metadata.NoData is not null)
         {
             if (!double.TryParse(metadata.NoData, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
-                || !double.IsFinite(value) || value < 0 || value > maximum || value != Math.Truncate(value))
+                || !double.IsFinite(value) || value < 0 || value > maximum
+                // codeql[cs/equality-on-floats]: PNG nodata must be an exact integer sample; a tolerance would encode a different index
+                || value != Math.Truncate(value))
             {
                 return null;
             }

@@ -1166,11 +1166,11 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
             result.Width.Should().Be(40);
             result.Height.Should().Be(40);
             result.Srid.Should().Be(4326);
-            result.Extent.Should().NotBeNull();
-            result.Extent!.Value.XMin.Should().BeApproximately(-10, 1e-9);
-            result.Extent.Value.YMin.Should().BeApproximately(-10, 1e-9);
-            result.Extent.Value.XMax.Should().BeApproximately(10, 1e-9);
-            result.Extent.Value.YMax.Should().BeApproximately(10, 1e-9);
+            var extent = result.Extent ?? throw new InvalidOperationException("export extent was not produced");
+            extent.XMin.Should().BeApproximately(-10, 1e-9);
+            extent.YMin.Should().BeApproximately(-10, 1e-9);
+            extent.XMax.Should().BeApproximately(10, 1e-9);
+            extent.YMax.Should().BeApproximately(10, 1e-9);
 
             var probe = await ProbeExportedRasterAsync(
                 schemaName,
@@ -1192,8 +1192,9 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
             // Without CoverClipExtent the store keeps trim semantics (WCS/Coverages): the output is
             // the bbox-raster intersection only.
             var trimmed = await store.ExportImageAsync(LayerId, rasterId, query with { CoverClipExtent = false }).ConfigureAwait(false);
-            trimmed.Extent!.Value.XMin.Should().BeApproximately(0, 1e-9);
-            trimmed.Extent.Value.YMin.Should().BeApproximately(0, 1e-9);
+            var trimmedExtent = trimmed.Extent ?? throw new InvalidOperationException("trimmed export extent was not produced");
+            trimmedExtent.XMin.Should().BeApproximately(0, 1e-9);
+            trimmedExtent.YMin.Should().BeApproximately(0, 1e-9);
         }
         finally
         {
@@ -1311,11 +1312,11 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
 
             result.Width.Should().Be(12);
             result.Height.Should().Be(12);
-            result.Extent.Should().NotBeNull();
-            result.Extent!.Value.XMin.Should().BeApproximately(3, 1e-9);
-            result.Extent.Value.YMin.Should().BeApproximately(3, 1e-9);
-            result.Extent.Value.XMax.Should().BeApproximately(9, 1e-9);
-            result.Extent.Value.YMax.Should().BeApproximately(9, 1e-9);
+            var extent = result.Extent ?? throw new InvalidOperationException("export extent was not produced");
+            extent.XMin.Should().BeApproximately(3, 1e-9);
+            extent.YMin.Should().BeApproximately(3, 1e-9);
+            extent.XMax.Should().BeApproximately(9, 1e-9);
+            extent.YMax.Should().BeApproximately(9, 1e-9);
 
             var probe = await ProbeExportedRasterAsync(
                 schemaName,

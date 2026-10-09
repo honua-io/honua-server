@@ -81,6 +81,15 @@ An empty permissions array is normalized to `admin:*` for legacy compatibility a
 therefore grants full admin access; do not use it for CI. Grant only the operations
 the job needs, and prefer a narrower service or layer grant when available.
 
+Data access for a key without a full-admin grant comes only from `read:` grants:
+`read:{service}/{layer}` reads one layer, `read:{service}` or `read:{service}/*`
+reads every layer of a service, and `read:*` reads every service. `admin:read` and
+`admin:approve` on their own grant no service or layer reads. Wildcards are
+accepted only for `read:`; `write:` grants must name their service. Access
+policies, field masks and row-level filters apply to wildcard reads exactly as to
+a named `read:` grant. The full grammar is in
+[Users, roles and licensing](../../reference/admin-api/users-roles-licensing.md#grant-grammar).
+
 For the focused Console read/approve client, mint a named key with:
 
 ```json
@@ -96,7 +105,9 @@ For the focused Console read/approve client, mint a named key with:
 `POST /api/v1/admin/proposals/{proposalId}/reject`. It does not grant other
 mutations. In particular, some read-like workflows use POST and are unavailable
 to this key: `connections/test`, `external-services/discover`, and
-`import/geoservices/start`. This scope ceiling is enforced in both
+`import/geoservices/start`. It also grants no service or layer data reads; add
+`read:{service}` or `read:*` grants if the client must read data. This scope
+ceiling is enforced in both
 authentication modes: enabling OIDC (`Oidc:Enabled=true`) rebuilds the admin
 policies for composite sign-in but preserves scoped API-key permission
 enforcement. Console users who sign in with an operator bearer
@@ -159,6 +170,15 @@ from constrained keys and require affected clients to authenticate again. Upgrad
 all token-issuance nodes before resuming those exchanges.
 
 The response is `{ "token": "...", "expires": ..., "ssl": true }`. Tokens are opaque, cached server-side (Redis when enabled), and bound either to the supplied referer (`client=referer`, the default) or to the request's client IP (`client=ip` or `client=requestip`, the Esri SDK default for IP-bound tokens) — a mismatched binding fails validation. Use them on `/rest/services/...` via `?token=`, `Authorization: Bearer`, `X-Esri-Authorization: Bearer`, or a form-encoded POST `token` field. An API key is accepted on the same transports, on the GeoServices surfaces and on every other surface that honours the `token` query parameter (OGC services included), so a client that sends a key as its `token` works without custom headers. The key keeps its own scope, exactly as in `X-API-Key`, and is recorded as an API-key credential; the Admin API still requires `X-API-Key`. Issuance is HTTPS-only by default; expiry is clamped to `Authentication__PortalToken__MaxExpirationMinutes` (default 14400) **and to the expiry of the credential the token was issued from**, so a key that expires in five minutes never yields a ten-day token. The issued token is also tied to that credential for its whole life: revoking or rotating the API key it came from, or rotating the admin password, stops it on the next request without needing the token value. The credential is re-read at most once per `Authentication__PortalToken__SourceRevalidationSeconds` (default 10) per instance, which is also the worst-case delay before a revocation takes effect; set it to `0` to re-read on every request. Tokens issued before an upgrade to this behaviour carry no credential reference and are refused — affected clients simply call `generateToken` again. An opt-in OAuth2 bridge (`/sharing/rest/oauth2/*`) brokers named-user sign-in to your OIDC provider — register every redirect URI in `Authentication__PortalToken__OAuth2__AllowedRedirectUris` before enabling it.
+
+Named-user OAuth authorization-code tokens for registered native redirects (loopback
+HTTP URLs or custom app schemes) work with `Authorization: Bearer` without a
+`Referer` header. PKCE and the exact registered redirect still protect code
+redemption. Refreshes preserve this bearer mode, including refresh-token rotation.
+Browser redirects retain their original referer binding across refreshes. Existing
+refresh tokens created before this behavior retain their legacy binding; native
+clients should sign in again after upgrading. The explicit `generateToken`
+`client=referer` and `client=ip` modes keep their binding requirements.
 
 For non-interactive service-to-service clients, an opt-in OAuth2 `client_credentials` grant (off by default) exchanges an existing API key for an OAuth2 access token. Enable it with `Authentication__PortalToken__OAuth2__EnableClientCredentials=true`, then `POST /sharing/rest/oauth2/token` with `grant_type=client_credentials`, `client_id=<key-name>`, and `client_secret=<api-key>` (or HTTP Basic). The returned `access_token` is the same opaque, IP-bound portal token and has no refresh token (the client re-requests with its secret). With the flag off the grant is rejected with `unsupported_grant_type` — no behaviour change for existing deployments.
 

@@ -11,6 +11,10 @@ internal static class SqlServerConnectionSecurity
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
+        // codeql[cs/insecure-sql-connection]: every incoming string, including one that
+        // sets Encrypt=false, is re-parsed here and Encrypt is forced true before any
+        // SqlConnection is opened. CodeQL traces the pre-rewrite test value into this
+        // builder and does not model the object-initializer assignment.
         var builder = new SqlConnectionStringBuilder(connectionString)
         {
             Encrypt = true

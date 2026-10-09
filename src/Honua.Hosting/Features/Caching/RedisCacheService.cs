@@ -1423,7 +1423,9 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                 _writeMetadata.Clear();
                 foreach (var semaphore in _keyLocks.Values)
                 {
-                    semaphore.Dispose();
+                    using (semaphore)
+                    {
+                    }
                 }
                 _keyLocks.Clear();
             }

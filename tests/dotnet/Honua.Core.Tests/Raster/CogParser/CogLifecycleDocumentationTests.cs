@@ -13,7 +13,7 @@ public sealed class CogLifecycleDocumentationTests
     [InlineData("docs/guides/publish/publish-rasters.md")]
     public void CloudCogDocs_DeclareGaTileWorkflowAndRestrictions(string path)
     {
-        var text = File.ReadAllText(Path.Combine(FindRepositoryRoot(), path));
+        var text = File.ReadAllText(Path.Join(FindRepositoryRoot(), path));
         text.Should().Contain("ImageServer tile fallback");
         text.Should().Contain("COG is a 2026.1 GA target");
         text.Should().Contain("lossless PNG");
@@ -28,7 +28,7 @@ public sealed class CogLifecycleDocumentationTests
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
         {
-            if (File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+            if (File.Exists(Path.Join(directory.FullName, "Honua.sln")))
             {
                 return directory.FullName;
             }

@@ -102,13 +102,13 @@ public sealed class TierTraitEnforcementTests
     [ArchitectureTest]
     public void TierTraitBaselineGrowth_RejectsNewFactEvenWhenItsNameIsAddedToTheBaseline()
     {
-        var root = Path.Combine(Path.GetTempPath(), $"honua-tier-baseline-{Guid.NewGuid():N}");
-        var path = Path.Combine(root, TierTraitBaseline.RelativePath);
+        var root = Path.Join(Path.GetTempPath(), $"honua-tier-baseline-{Guid.NewGuid():N}");
+        var path = Path.Join(root, TierTraitBaseline.RelativePath);
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             TierTraitBaseline.RunGit(root, "init", "-q");
-            File.WriteAllText(Path.Combine(root, "README"), "initial\n");
+            File.WriteAllText(Path.Join(root, "README"), "initial\n");
             TierTraitBaseline.RunGit(root, "add", "README");
             TierTraitBaseline.RunGit(root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "initial");
 

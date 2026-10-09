@@ -36,6 +36,7 @@ public sealed class StacFilterHelpersTests
             "{\"type\":\"FeatureCollection\",\"features\":[]}"
         };
 
+        // codeql[cs/linq/missed-select]: asserts each invalid geometry container is rejected
         foreach (var geoJson in containers)
         {
             var accepted = StacFilterHelpers.TryCreateIntersectsSpatialFilter(

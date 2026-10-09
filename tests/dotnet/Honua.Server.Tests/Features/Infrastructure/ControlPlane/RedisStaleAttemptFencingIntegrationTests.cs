@@ -54,6 +54,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
         var rejectedKey = $"controlplane:test:3851:rejected:{operationId}";
         var releaseKey = $"controlplane:test:3851:release:{operationId}";
         var schema = await database.CreateIsolatedSchemaAsync(nameof(RedisStaleAttemptFencingIntegrationTests));
+        // codeql[cs/missed-using-statement]: assigned after startup and disposed in the finally once Kill has finished; a using variable cannot be reassigned
         Process? staleWorker = null;
         var receipt = new JsonObject
         {

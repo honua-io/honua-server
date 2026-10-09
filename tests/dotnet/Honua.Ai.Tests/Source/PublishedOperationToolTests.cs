@@ -108,6 +108,7 @@ public sealed class PublishedOperationToolTests
             "evidenceRefs"
         };
 
+        // codeql[cs/linq/missed-select]: asserts every schema carries the canonical envelope fields
         foreach (var schema in schemas)
         {
             var properties = schema.GetProperty("properties");

@@ -495,7 +495,12 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         }
         finally
         {
-            foreach (var response in responses) response.Dispose();
+            foreach (var response in responses)
+            {
+                using (response)
+                {
+                }
+            }
         }
         MutationCount.Should().Be(before + 1);
         receipts.Add(ToReceipt("concurrent-approval", "at-most-once", context.Proposal, 1));

@@ -649,6 +649,9 @@ class SoakDriver:
             self._stop.set()
             for task in tasks:
                 with contextlib.suppress(asyncio.CancelledError):
+                    # codeql[py/ineffectual-statement]: awaiting waits until the
+                    # probe finishes or observes the stop signal. The result is
+                    # None, and a test double may return a sentinel.
                     await task
 
             for reader in self._subscription_readers:

@@ -32,8 +32,10 @@ namespace Honua.Infrastructure.Rendering;
 /// (<see cref="RasterMapRenderingPipeline.RenderBoundStyleVectorLayersAsync"/>), applying
 /// each layer's bound MapLibre/drawingInfo style — the same styled draw path WMS GetMap,
 /// MapServer export, and OGC API Maps use. This is the render path the MCP
-/// <c>honua_render_map</c> tool drives, so an <c>honua_apply_style_preset</c> binding is now
-/// visibly reflected in the rendered pixels on the default (Postgres) profile.</para>
+/// <c>honua_render_map</c> tool drives; the tool passes each layer's applied primary catalog
+/// style through <see cref="MapRenderRequest.AppliedStyleJsonByLayerId"/>, so an
+/// <c>honua_apply_style_preset</c> binding is reflected in the rendered pixels rather than the
+/// layer's stored default style.</para>
 /// <para>Styled vector output is encoded by Skia and therefore limited to PNG/JPEG; a TIFF
 /// (or otherwise non-Skia) request that would fall back to the vector path returns an empty
 /// result rather than mislabeled bytes, preserving the raster path's honest content typing.</para>
@@ -233,11 +235,31 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
                 request.TemporalFiltersByResourceId.TryGetValue(resource.Metadata.Id, out var resolvedTemporalFilter)
                     ? resolvedTemporalFilter
                     : (TemporalFilter?)null;
+            // An explicit styleId (OGC styled-map route) wins; otherwise a caller-resolved
+            // applied style (the layer's primary catalog binding, e.g. a preset applied
+            // through style.apply-preset) replaces the stored default style.
+            var layerStyleJson = explicitStyleJson;
+            if (layerStyleJson is null &&
+                request.AppliedStyleJsonByLayerId is { } appliedStyles &&
+                appliedStyles.TryGetValue(layerId, out var appliedStyleJson))
+            {
+                if (StyleTranslator.ParseStyleLayers(appliedStyleJson).Length == 0)
+                {
+                    // An applied style with no (parseable) style layers has nothing to draw.
+                    // The pipeline would substitute its generic default paints for a
+                    // zero-layer plan, so the layer is skipped instead: the pixels match
+                    // the applied style, and the caller reports the layer as not drawn.
+                    continue;
+                }
+
+                layerStyleJson = appliedStyleJson;
+            }
+
             layers.Add(new RasterMapRenderingPipeline.BoundStyleVectorLayer(
                 layerId,
                 geometryType,
                 storageSrid,
-                explicitStyleJson,
+                layerStyleJson,
                 temporalFilter));
         }
 

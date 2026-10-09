@@ -374,6 +374,47 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("GET /api/v1/admin/api-keys/{id}/effective-permissions")]
+    public async Task CreateApiKey_WithReadWildcardGrants_RoundTripsThroughEffectivePermissions()
+    {
+        string[] grants = ["admin:read", "admin:write", "read:*", "read:catalog/*"];
+        var created = await CreateApiKeyAsync("agent-read-wildcard-key", permissions: grants);
+        Assert.Equal(grants, created.ApiKey.Permissions);
+
+        var response = await _client.GetAsync($"/api/v1/admin/api-keys/{created.ApiKey.Id}/effective-permissions");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var effective = JsonSerializer.Deserialize<ApiResponse<AdminApiKeyEffectivePermissionsResponse>>(
+            await response.Content.ReadAsStringAsync(),
+            _jsonOptions);
+        Assert.NotNull(effective);
+        Assert.NotNull(effective.Data);
+        Assert.True(effective.Data.CanAuthenticate);
+        Assert.Equal(grants, effective.Data.Permissions);
+
+        using var agentClient = CreateApiKeyClient(created.Key);
+        var adminRead = await agentClient.GetAsync("/api/v1/admin/api-keys");
+        Assert.Equal(HttpStatusCode.OK, adminRead.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    public async Task CreateApiKey_WithMalformedResourceGrant_ReturnsBadRequest()
+    {
+        foreach (var grant in new[] { "read:", "read:*/roads", "read:catalog/", "write:*", "write:catalog/*" })
+        {
+            var response = await _client.PostAsJsonAsync(
+                "/api/v1/admin/api-keys",
+                new CreateAdminApiKeyRequest { Name = "malformed-grant-key", Permissions = ["admin:read", grant] },
+                _jsonOptions);
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Contains("read:*", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+    }
+
     private async Task<AdminApiKeySecretResponse> CreateApiKeyAsync(
         string name,
         DateTimeOffset? expiresAt = null,

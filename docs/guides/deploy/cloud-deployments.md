@@ -32,8 +32,8 @@ ref policy, and [deployment presets](https://github.com/honua-io/honua-iac/blob/
 
 | Pattern | Best for | Image family | Rollout mechanism | honua-iac module |
 |---|---|---|---|---|
-| AWS ECS/Fargate + ALB | Steady production traffic | `*-ecs-aot` (arm64) | ALB weighted target groups (canary) | `aws-ecs` |
-| AWS Lambda | Spiky/low traffic, scale-to-zero | `*-lambda-aot` (arm64) | Alias weighted versions (canary) | `aws-serverless` |
+| AWS ECS/Fargate + ALB | Steady production traffic | generic web image (multi-arch index; runs `x86_64`) | ALB weighted target groups (canary) | `aws-ecs` |
+| AWS Lambda | Spiky/low traffic, scale-to-zero | `*-lambda-aot` (single-arch `x86_64`/amd64) | Alias weighted versions (canary) | `aws-serverless` |
 | Azure Container Apps | Steady production traffic on Azure | generic web image | Revision traffic splitting (canary) | `azure-aca` |
 | Azure Functions | Spiky/low traffic on Azure | `*-functions-aot` (amd64) | Staging slot swap (atomic) | `azure-functions` |
 | Kubernetes (EKS/AKS) | Existing cluster estate | generic web image (multi-arch) | See [Deploy on Kubernetes](kubernetes.md) | `aws-eks`, `azure-aks` |
@@ -62,7 +62,10 @@ On the generic web image (Docker Hub + GHCR), tags have distinct contracts. Pick
 
 > **No `v*` release tag has been cut yet**, so no `vX.Y.Z` image exists and `latest` has
 > never moved. Until the first release, pin a digest or a dated `nightly-YYYYMMDD`
-> tag — both are immutable, and the quickstart pins a digest for this reason.
+> tag — both are immutable. The getting-started pages use the 2026.1 release channel
+> `ghcr.io/honua-io/honua-server:rc` (`:ga` and `:latest` at GA), which only release
+> promotion moves; the exact digest for a release is `server.image` in that release's
+> `customer-install-manifest.json` (honua-release).
 
 - **Production / demos**: pull `latest` (or a pinned `vX.Y.Z`). Both are native AOT. `latest` deliberately tracks the latest *release*, not trunk, so it never silently advances to an unreleased build.
 - **Trunk-following consumers** (certification harnesses, "test against current trunk" CI, bleeding-edge previews): pull `trunk`. It is the documented native-AOT moving tag for the head of the default branch. Do **not** reach for `latest` expecting trunk — it can lag a release cycle behind.
@@ -76,9 +79,13 @@ On the generic web image (Docker Hub + GHCR), tags have distinct contracts. Pick
 
 ## AWS ECS/Fargate
 
-The default AWS runtime target is arm64 Fargate behind an ALB.
+The release-certified AWS runtime target is `x86_64` Fargate behind an ALB. The release
+manifest (`platform-manifest.yaml` in honua-release) pins the generic multi-arch web image
+index — not an `*-ecs-aot` tag — with `awsEcsArchitecture: x86_64`, and the `aws-ecs`
+module defaults to `X86_64` to match. ARM64 Fargate is not certified for 2026.1: it stays
+excluded until it is re-established on a live Fargate task (honua-release#98).
 
-- Use the `vX.Y.Z-ecs-aot` tag from ECR; container ports 8080 (HTTP) and 8081 (h2c gRPC).
+- Use the generic web image at the release digest (mirrored to ECR if your account requires it), with the task definition's `runtimePlatform.cpuArchitecture` set to `X86_64`; container ports 8080 (HTTP) and 8081 (h2c gRPC).
 - Health checks: ALB target group on `/healthz/ready`; container health on `/healthz/live`.
 - Inject secrets via ECS task-definition `secrets` from Secrets Manager or SSM Parameter Store.
 - Canary rollouts: provision a stable and a canary ECS service on two ALB target groups, then drive weighted traffic shifts through Honua's deploy API (backend `honua-aws-ecs-alb`) with an automatic telemetry gate — see [Upgrade and roll back](upgrade-and-rollback.md).
@@ -92,7 +99,7 @@ aws ecs describe-services --cluster honua-prod --services honua-server \
 
 Lambda production images are built from [`docker/Dockerfile.lambda.aot`](../../../docker/Dockerfile.lambda.aot); the explicitly suffixed JIT debug image uses [`docker/Dockerfile.lambda`](../../../docker/Dockerfile.lambda). The `docker/Dockerfile.lambda.aot.simple` variant is a local diagnostic fallback and is not published. The Lambda host shim lives in [`docker/cloud`](../../../docker/cloud).
 
-- Use the `vX.Y.Z-lambda-aot` tag (arm64) from ECR behind API Gateway or a function URL.
+- Use the single-architecture `x86_64` (amd64) `*-lambda-aot` image from same-region ECR behind API Gateway or a function URL, with the function's architecture set to `x86_64`. The release manifest pins `awsLambdaArchitecture: x86_64`, and the 2026.1 Lambda GA bill rejects any other Lambda architecture.
 - Set `HONUA_SKIP_MIGRATIONS=true` and run migrations out-of-band — concurrent cold starts must not race migrations.
 - Publish numeric versions and route traffic through an alias; canary weight shifting and automatic promote/rollback use the deploy backend `honua-gitops-aws-lambda`.
 - `v*` release tags publish the Lambda AOT image as `vX.Y.Z-lambda-aot-amd64` (the `x86_64` variant, which the unsuffixed `vX.Y.Z-lambda-aot` tag also resolves to) alongside an uncertified `vX.Y.Z-lambda-aot-arm64`, matching the nightly `nightly-lambda-aot-<sha7>-amd64` shape.

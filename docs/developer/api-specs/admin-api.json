@@ -20548,7 +20548,7 @@
           "Platform Release"
         ],
         "summary": "Converge Platform Release",
-        "description": "Converges every configured serving deploy target onto the declared platform-release serving artifact. Co-versioning is validated first: an undeclared or invalid `ControlPlane:PlatformRelease` returns 400. Each target is classified as `already-converged` (last-applied revision matches; never actuated), `skipped-pinned` (config pins a different artifact, which cannot be cleared at runtime), `operation-created`, `unknown-treated-divergent`, or `blocked`. Deploys are routed through the guardrail gateway, so a target may yield a proposal id instead of an operation id. Geoprocessing worker images are deliberately not deployed here. When durable control-plane storage is not configured the gateway is absent and the call returns 503.",
+        "description": "Converges every configured serving deploy target onto the declared platform-release serving artifact. Co-versioning is validated first: an undeclared or invalid `ControlPlane:PlatformRelease` returns 400. Each target is classified as `already-converged` (last-applied revision matches; never actuated), `skipped-pinned` (config pins a different artifact, which cannot be cleared at runtime), `operation-created`, `unknown-treated-divergent`, or `blocked`. Deploys are routed through the guardrail gateway, so a target may yield a proposal id instead of an operation id. Geoprocessing worker images are deliberately not deployed here. An optional `targetVersion` asserts the release the caller expects; when it does not name the declared release (after trimming, case folding, stripping a leading `honua-`/`v`, and treating a zero patch as absent) the call returns 409 with `code: platform_release_version_mismatch` and actuates nothing. When durable control-plane storage is not configured the gateway is absent and the call returns 503.",
         "operationId": "convergePlatformRelease",
         "requestBody": {
           "required": false,
@@ -20579,6 +20579,16 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "The requested `targetVersion` does not name the declared platform release. The problem carries `code: platform_release_version_mismatch`, `declaredVersion`, `targetVersion`, `servingArtifactReference`, and the preflight `isCoVersioned` summary.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           },
           "503": {
             "description": "Deploy control is unavailable because durable control-plane storage is not configured."
@@ -24819,7 +24829,7 @@
           },
           "permissions": {
             "type": "array",
-            "description": "Permission labels assigned to the key. Admin grants are `admin:read` (safe-method reads), `admin:approve` (read plus proposal approve/reject only), `admin:write`/`admin:manage` (write), and `admin:*` (full admin). Layer-scoped write grants use write:{service} or write:{service}/{layer}. The focused Console recipe is [`admin:read`, `admin:approve`].",
+            "description": "Permission labels assigned to the key. Admin grants are `admin:read` (safe-method reads), `admin:approve` (read plus proposal approve/reject only), `admin:write`/`admin:manage` (write), and `admin:*` (full admin). Layer-scoped write grants use write:{service} or write:{service}/{layer}. Data read grants use read:{service}, read:{service}/{layer}, read:{service}/* (every layer of the service) or read:* (every service); a key without a full-admin grant reads no service or layer data without a matching read grant, and wildcards are rejected on write grants. The recommended agent key is [`admin:read`, `admin:write`, `read:*`]. The focused Console recipe is [`admin:read`, `admin:approve`].",
             "items": {
               "type": "string",
               "minLength": 1,
@@ -47677,6 +47687,11 @@
       "PlatformReleaseConvergePayload": {
         "type": "object",
         "properties": {
+          "targetVersion": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional release the caller expects to converge to (for example `2026.1-rc.3`). `honua-` and `v` prefixes and a zero patch are normalized. A value that does not name the declared release returns 409 `platform_release_version_mismatch`."
+          },
           "reason": {
             "type": "string",
             "nullable": true,

@@ -463,14 +463,8 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
             }
         }
 
-        var unconvertedLosses = 0;
-        foreach (var targetId in census.UnconvertedTargetFeatureIds)
-        {
-            if (!wellFormedIds.Contains(targetId))
-            {
-                unconvertedLosses++;
-            }
-        }
+        var unconvertedLosses = census.UnconvertedTargetFeatureIds.Count(
+            targetId => !wellFormedIds.Contains(targetId));
 
         var migrationLosses = unconvertedLosses + sampledLosses;
         var ratio = sampledPresent == 0

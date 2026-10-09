@@ -35,6 +35,7 @@ internal sealed class ApplyStylePresetTool : IMcpTool
         + "The applied style persists through the canonical OGC API - Styles pipeline (styleId-keyed catalog + Metadata v2 graph), so a subsequent honua_render_map for the layer resolves the new style. "
         + "Requires admin write authorization and passes through operator approval and operation policy; approval-required calls do not change the layer. "
         + "Set dryRun=true to validate a preset application without changing metadata; a successful preview returns applied=false. "
+        + "The result carries the canonical style.apply-preset operation handle (operationId, operationInstanceId, correlationId, auditId), in the same shape as honua_publish_service. "
         + "It authors presentation metadata only and never edits feature records. Re-applying the same preset is a no-op (idempotent). "
         + "Styled-map arc: query/analyze -> honua_publish_result (analysis result -> serviceId/layerId) -> honua_apply_style_preset -> honua_render_map.";
 
@@ -174,6 +175,16 @@ internal sealed class ApplyStylePresetTool : IMcpTool
 
         var output = new McpApplyStylePresetOutput
         {
+            Status = operation.Status.ToString(),
+            OperationId = operation.OperationId,
+            OperationInstanceId = operation.OperationInstanceId,
+            HandleId = operation.HandleId,
+            CorrelationId = operation.CorrelationId,
+            AuditId = operation.AuditId,
+            CreatedAt = operation.CreatedAt,
+            UpdatedAt = operation.UpdatedAt,
+            AuthorizationOutcome = operation.AuthorizationOutcome,
+            PolicyOutcome = operation.PolicyDecision?.ToString(),
             ServiceId = layer.Service.Metadata.Id,
             LayerId = argument.LayerId!.Value,
             StyleId = preset.StyleId,
@@ -181,7 +192,7 @@ internal sealed class ApplyStylePresetTool : IMcpTool
             StyleVersion = preset.StyleVersion,
             Applied = !argument.DryRun,
             DryRun = argument.DryRun,
-            Warning = operation.Result?.Details?.ContainsKey("metadataReconciliationPending") == true
+            Warning = (operation.Result?.Details?.ContainsKey("metadataReconciliationPending") ?? false)
                 ? operation.Reason : null,
         };
         return McpToolHelpers.SuccessResult(output, MapToolJsonContext.Default.McpApplyStylePresetOutput);

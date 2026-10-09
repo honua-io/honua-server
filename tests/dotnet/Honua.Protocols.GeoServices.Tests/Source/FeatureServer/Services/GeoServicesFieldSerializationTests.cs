@@ -367,6 +367,7 @@ public sealed class GeoServicesFieldSerializationTests
             JsonSerializer.SerializeToElement("2024-02-29"),
             "2024-02-29T00:00:00+14:00", epoch
         ];
+        // codeql[cs/linq/missed-select]: each calendar value is serialized through the selected response path and then asserted
         foreach (var value in calendarValues)
         {
             var feature = Feature.Create(1, null, new Dictionary<string, object?>

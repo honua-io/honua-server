@@ -106,6 +106,12 @@ public readonly record struct MetadataV2ServiceLayerTriple(
     /// Null means the publication has no feature storage binding.
     /// </summary>
     public int? StorageLayerId { get; init; }
+
+    /// <summary>
+    /// Immutable metadata snapshot used to validate and resolve this triple.
+    /// Provider routing must use this snapshot to avoid concurrent publication rebinds.
+    /// </summary>
+    public MetadataV2GraphSnapshot? Snapshot { get; init; }
 }
 
 /// <summary>

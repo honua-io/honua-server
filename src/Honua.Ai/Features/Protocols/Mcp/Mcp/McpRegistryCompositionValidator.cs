@@ -89,6 +89,7 @@ internal static class McpRegistryCompositionValidator
             .Where(d => d.McpToolName is not null)
             .Select(d => d.McpToolName!)
             .ToHashSet(StringComparer.Ordinal);
+        // codeql[cs/linq/missed-where]: awaits the live tool list and records problems for undescribed tools
         foreach (var tool in await surface.GetAllToolsAsync(cancellationToken).ConfigureAwait(false))
         {
             // A tool projected from the canonical operation catalog (#2483,

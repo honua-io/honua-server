@@ -420,6 +420,7 @@ internal static partial class FeatureServerEndpoints
         // selected layer also needs Query access, the gate extractChanges applies. A write-only credential
         // must not bulk-read a layer it may not query.
         var queryAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
+        // codeql[cs/linq/missed-select]: returns the first create-layer access error and does not evaluate the remaining layers
         foreach (var layer in createLayers)
         {
             var queryAccessError = queryAccess.RequireAccess(layer.Resource);
@@ -1112,6 +1113,7 @@ internal static partial class FeatureServerEndpoints
         if (isDownloadDirection)
         {
             var queryAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
+            // codeql[cs/linq/missed-select]: returns the first layer access error and does not evaluate the remaining layers
             foreach (var layer in replicaLayers)
             {
                 var queryAccessError = queryAccess.RequireAccess(layer.Resource);

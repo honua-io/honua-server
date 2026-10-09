@@ -463,6 +463,7 @@ public sealed class ImageServerRawPixelExportTests
             valid.Count(static bit => bit).Should().Be(validCount);
             var values = new double[pixels];
             var raw = new byte[pixels * bytesPerSample];
+            // codeql[cs/equality-on-floats]: mirrors the encoder's exact constant-band check; a tolerance would expect samples the blob does not store
             if (validCount > 0 && zMin == zMax)
             {
                 position.Should().Be(blobSize, "a constant band carries no samples");

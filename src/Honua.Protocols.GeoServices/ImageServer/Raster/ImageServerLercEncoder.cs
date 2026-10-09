@@ -132,6 +132,7 @@ internal static class ImageServerLercEncoder
         }
 
         var maskRuns = validCount is 0 || validCount == pixels ? [] : EncodeRuns(mask);
+        // codeql[cs/equality-on-floats]: constant band means every sample is the same value; a tolerance would drop distinct samples
         var writeSamples = validCount > 0 && zMin != zMax;
         var blobLength = HeaderLength + sizeof(int) + maskRuns.Length +
             (writeSamples ? 1 + (validCount * bytesPerSample) : 0);

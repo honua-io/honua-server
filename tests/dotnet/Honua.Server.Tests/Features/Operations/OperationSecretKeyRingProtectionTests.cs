@@ -47,7 +47,7 @@ public sealed class OperationSecretKeyRingProtectionTests
     [UnitTest]
     public void Resolve_WithPkcs12Certificate_ReturnsPrivateKeyCertificate()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"honua-operation-secrets-{Guid.NewGuid():N}.pfx");
+        var path = Path.Join(Path.GetTempPath(), $"honua-operation-secrets-{Guid.NewGuid():N}.pfx");
         const string password = "test-password";
         try
         {

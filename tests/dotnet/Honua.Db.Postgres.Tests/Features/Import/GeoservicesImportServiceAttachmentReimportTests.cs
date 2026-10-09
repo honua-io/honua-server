@@ -402,7 +402,7 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), storage_path TEXT NOT NULL, keywords TEXT);
             """, connection);
         await create.ExecuteNonQueryAsync();
-        var migration = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", "125_AddImportedAttachmentIdentity.sql"));
+        var migration = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory, "Migrations", "125_AddImportedAttachmentIdentity.sql"));
         await using var migrate = new NpgsqlCommand(migration.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal), connection);
         await migrate.ExecuteNonQueryAsync();
         return new PostgresAttachmentStore(new FixtureConnectionProvider(fixture), storage.Mock.Object,

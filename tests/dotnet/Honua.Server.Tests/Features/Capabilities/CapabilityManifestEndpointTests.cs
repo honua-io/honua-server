@@ -1095,6 +1095,16 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
 
         root.GetProperty("limits").GetProperty("job").GetProperty("durableJobRuntimeAvailable")
             .GetBoolean().Should().BeFalse();
+
+        // 2026.1 rc.3 J1/S1: the governed proposal/approval control plane shares the Redis-backed
+        // substrate. Its honua_admin_* tools advertise everywhere, so the manifest is what tells an
+        // agent in advance that a Redis-off host refuses proposal-requiring calls.
+        var proposals = GetCapability(root, "operations.proposals");
+        proposals.GetProperty("supported").GetBoolean().Should().BeTrue();
+        proposals.GetProperty("available").GetBoolean().Should().BeFalse();
+        proposals.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
+        proposals.GetProperty("messageKey").GetString()
+            .Should().Be($"capabilities.operations.proposals.{CapabilityUnavailableCodes.ErrorCode}");
     }
 
     [IntegrationTest]
@@ -1112,6 +1122,10 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
         var jobsRunner = GetCapability(document.RootElement, "jobs.runner");
         jobsRunner.GetProperty("available").GetBoolean().Should().BeFalse();
         jobsRunner.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
+
+        var proposals = GetCapability(document.RootElement, "operations.proposals");
+        proposals.GetProperty("available").GetBoolean().Should().BeFalse();
+        proposals.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
     }
 
     [IntegrationTest]
@@ -1158,6 +1172,11 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
 
             root.GetProperty("limits").GetProperty("job").GetProperty("durableJobRuntimeAvailable")
                 .GetBoolean().Should().BeTrue();
+
+            var proposals = GetCapability(root, "operations.proposals");
+            proposals.GetProperty("available").GetBoolean().Should().BeTrue(
+                "an entitled, attested Redis composes the durable proposal store");
+            proposals.TryGetProperty("reasonCode", out _).Should().BeFalse();
         }
         finally
         {
@@ -1232,6 +1251,10 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             jobsRunner.GetProperty("reasonCode").GetString()
                 .Should().NotBe(CapabilityUnavailableCodes.ErrorCode,
                     "an unentitled but present Redis is not a missing dependency");
+
+            var proposals = GetCapability(document.RootElement, "operations.proposals");
+            proposals.GetProperty("available").GetBoolean().Should().BeFalse();
+            proposals.GetProperty("reasonCode").GetString().Should().Be("license-required");
         }
         finally
         {

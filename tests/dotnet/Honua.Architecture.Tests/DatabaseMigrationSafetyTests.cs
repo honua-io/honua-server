@@ -18,14 +18,14 @@ public sealed class DatabaseMigrationSafetyTests
     public void MigrationScripts_AfterReaderBaseline_MustRemainExpandOnly()
     {
         var root = FindProjectRoot(Directory.GetCurrentDirectory());
-        var baselineJson = File.ReadAllText(Path.Combine(root, "certification", "schema-reader-baseline.json"));
+        var baselineJson = File.ReadAllText(Path.Join(root, "certification", "schema-reader-baseline.json"));
         MigrationHash(baselineJson).Should().Be("4534DC4F439A70DCE9A50F2DA0C82EDBB1F0A551BC9BFE1E4AE44EF6F2B8A33B",
             "the reader baseline is frozen at 977a1c630; new migrations belong in the ongoing ledger, not this review record");
         var baseline = JsonSerializer.Deserialize<Dictionary<string, string>>(baselineJson)!;
         var scripts = EnumerateMigrationFiles().ToDictionary(
             path => Path.GetRelativePath(root, path).Replace('\\', '/'), File.ReadAllText);
         var hashes = JsonSerializer.Deserialize<Dictionary<string, string>>(
-            File.ReadAllText(Path.Combine(root, "certification", "schema-migration-hashes.json")))!;
+            File.ReadAllText(Path.Join(root, "certification", "schema-migration-hashes.json")))!;
         RollingUpgradeViolations(scripts, baseline, hashes).Should().BeEmpty(
             "the supported rolling update retains the previous reader's schema; a review annotation does not permit a contraction");
     }
@@ -112,7 +112,7 @@ public sealed class DatabaseMigrationSafetyTests
     {
         var root = FindProjectRoot(Directory.GetCurrentDirectory());
         const string name = "003_CreateRelationshipsTable.sql";
-        var sql = File.ReadAllText(Path.Combine(root, "src", "Honua.Server", "Migrations", name));
+        var sql = File.ReadAllText(Path.Join(root, "src", "Honua.Server", "Migrations", name));
         MigrationSafetyClassifier.Classify(name, sql).Classification.Should().Be(MigrationSafetyClassification.ContractAnnotated);
         MigrationSafetyClassifier.Classify("Honua.Server.Migrations." + name, sql).Classification.Should()
             .Be(MigrationSafetyClassification.ContractAnnotated);

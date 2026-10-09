@@ -369,12 +369,11 @@ public sealed class StudioBridgedFamilyEndpointsTests : IAsyncLifetime
 
     private async Task<FormPackageVersion> CreateNativeFormDraftAsync(FormPackageDocument document)
     {
-        var response = await _client.PostAsync(
-            "/api/v1/admin/forms/packages",
-            new StringContent(
-                JsonSerializer.Serialize(document, FormPackageJsonContext.Default.FormPackageDocument),
-                Encoding.UTF8,
-                "application/json"));
+        using var content = new StringContent(
+            JsonSerializer.Serialize(document, FormPackageJsonContext.Default.FormPackageDocument),
+            Encoding.UTF8,
+            "application/json");
+        using var response = await _client.PostAsync("/api/v1/admin/forms/packages", content);
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         return await ReadNativeJsonAsync(response, FormPackageJsonContext.Default.FormPackageVersion);
     }
