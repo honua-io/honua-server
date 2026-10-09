@@ -32,7 +32,7 @@ public sealed record ObservationStreamFrame
 
     /// <summary>The numeric measurement result.</summary>
     [JsonPropertyName("result")]
-    public double Result { get; init; }
+    public System.Text.Json.JsonElement Result { get; init; }
 
     /// <summary>Builds a frame from a persisted observation.</summary>
     public static ObservationStreamFrame FromObservation(SensorThingsObservation observation) => new()
@@ -43,7 +43,7 @@ public sealed record ObservationStreamFrame
         PhenomenonTime = observation.PhenomenonTime
             .ToUniversalTime()
             .ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture),
-        Result = observation.Result
+        Result = Services.StaEntityMapper.ResultValue(observation)
     };
 
     /// <summary>Builds a keep-alive heartbeat frame.</summary>

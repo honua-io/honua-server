@@ -55,11 +55,18 @@ internal static class StaEntityMapper
         {
             IotId = observation.Id,
             IotSelfLink = $"{staBase}/Observations({observation.Id})",
-            PhenomenonTime = Iso(observation.PhenomenonTime),
+            PhenomenonTime = observation.PhenomenonTimeEnd is { } end ? $"{Iso(observation.PhenomenonTime)}/{Iso(end)}" : Iso(observation.PhenomenonTime),
             ResultTime = observation.ResultTime is { } rt ? Iso(rt) : null,
-            Result = observation.Result,
+            Result = ResultValue(observation),
             DatastreamNavigationLink = $"{staBase}/Observations({observation.Id})/Datastream"
         };
+    }
+
+    internal static System.Text.Json.JsonElement ResultValue(SensorThingsObservation observation)
+    {
+        if (observation.JsonResult is { } result) return result;
+        using var document = System.Text.Json.JsonDocument.Parse(observation.Result?.ToString("R", CultureInfo.InvariantCulture) ?? "null");
+        return document.RootElement.Clone();
     }
 
     public static StaDatastream MapDatastream(
