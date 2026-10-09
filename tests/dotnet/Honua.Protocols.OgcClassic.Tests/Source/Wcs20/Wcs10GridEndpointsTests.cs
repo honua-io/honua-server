@@ -6,7 +6,6 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Npgsql;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
 
@@ -20,12 +19,11 @@ public sealed class Wcs10GridEndpointsTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        await using var connection = new NpgsqlConnection(_fixture.DatabaseConnectionProvider.GetConnectionString());
-        await connection.OpenAsync();
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            DELETE FROM raster_data WHERE layer_id = 0;
-            INSERT INTO raster_data (layer_id, name, raster, acquisition_date, created_at)
+            DELETE FROM honua.raster_data WHERE layer_id = 0;
+            INSERT INTO honua.raster_data (layer_id, name, raster, acquisition_date, created_at)
             SELECT 0, 'wcs-grid-regression',
                 ST_SetValues(ST_SetValues(
                     ST_AddBand(ST_AddBand(ST_MakeEmptyRaster(4, 3, -124, 40, 0.25, -0.5, 0, 0, 4326),
@@ -59,8 +57,7 @@ public sealed class Wcs10GridEndpointsTests : IAsyncLifetime
         var bytes = await response.Content.ReadAsByteArrayAsync();
 
         // Decode the returned file independently of RasterResult's metadata.
-        await using var connection = new NpgsqlConnection(_fixture.DatabaseConnectionProvider.GetConnectionString());
-        await connection.OpenAsync();
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             WITH decoded AS (SELECT ST_FromGDALRaster(@bytes) AS rast)
