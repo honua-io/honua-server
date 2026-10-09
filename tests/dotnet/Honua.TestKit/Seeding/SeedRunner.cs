@@ -162,6 +162,13 @@ internal static class SeedRunner
             await ExecuteSqlAsync(connection, sql).ConfigureAwait(false);
         }
 
+        // Apply production-owned DDL under the same transaction and advisory lock
+        // as the legacy seed. Repeated fixture resets retain the migration journal.
+        foreach (var migration in seed.EmbeddedMigrations ?? [])
+        {
+            await ApplyEmbeddedMigrationAsync(connection, migration, schemaName ?? "honua").ConfigureAwait(false);
+        }
+
         foreach (var feature in seed.Features)
         {
             if (!collectionLookup.TryGetValue(feature.Collection, out var collection))
@@ -481,6 +488,32 @@ internal static class SeedRunner
         await command.ExecuteNonQueryAsync().ConfigureAwait(false);
     }
 
+    private static async Task ApplyEmbeddedMigrationAsync(NpgsqlConnection connection, string migration, string schemaName)
+    {
+        ValidateIdentifier(schemaName, "schema");
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"CREATE TABLE IF NOT EXISTS {schemaName}.test_seed_migrations (name text PRIMARY KEY);";
+        await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+        command.CommandText = $"SELECT EXISTS (SELECT 1 FROM {schemaName}.test_seed_migrations WHERE name = @name);";
+        command.Parameters.AddWithValue("name", migration);
+        if ((bool)(await command.ExecuteScalarAsync().ConfigureAwait(false))!)
+        {
+            return;
+        }
+
+        var assembly = typeof(Program).Assembly;
+        await using var stream = assembly.GetManifestResourceStream(migration)
+            ?? throw new InvalidOperationException($"Embedded seed migration '{migration}' was not found.");
+        using var reader = new StreamReader(stream);
+        command.Parameters.Clear();
+        command.CommandText = (await reader.ReadToEndAsync().ConfigureAwait(false))
+            .Replace("$HonuaSchema$", schemaName, StringComparison.Ordinal);
+        await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+        command.CommandText = $"INSERT INTO {schemaName}.test_seed_migrations (name) VALUES (@name);";
+        command.Parameters.AddWithValue("name", migration);
+        await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+    }
+
     private static string ValidateIdentifier(string name, string label)
     {
         if (string.IsNullOrWhiteSpace(name) || !_identifierRegex.IsMatch(name))
@@ -631,6 +664,7 @@ internal sealed class SeedDefinition
     public List<SeedCollection> Collections { get; init; } = [];
     public List<SeedFeature> Features { get; init; } = [];
     public List<string>? Sql { get; init; }
+    public List<string>? EmbeddedMigrations { get; init; }
 }
 
 internal sealed class SeedProfile

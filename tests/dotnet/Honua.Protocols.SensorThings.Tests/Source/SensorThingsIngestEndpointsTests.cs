@@ -21,11 +21,16 @@ public sealed class SensorThingsIngestEndpointsTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
+    private long _featureId;
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _featureId = await SensorThingsTestData.CreateFeatureAsync(_fixture);
+    }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    private static StringContent Json(string body) => new(body, Encoding.UTF8, "application/json");
+    private StringContent Json(string body) => SensorThingsTestData.ObservationJson(body, _featureId);
 
     [IntegrationTest]
     [Operation(Operations.Create)]
@@ -93,14 +98,14 @@ public sealed class SensorThingsIngestEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /sta/v1.1/Observations")]
-    public async Task PostObservation_MissingDatastream_Returns404()
+    public async Task PostObservation_MissingDatastream_Returns400()
     {
         using var adminClient = _fixture.CreateAdminClient();
         var payload = Json("""{ "result": 1.0, "Datastream": { "@iot.id": 999999 } }""");
 
         var response = await adminClient.PostAsync("/sta/v1.1/Observations", payload);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
@@ -114,10 +119,11 @@ public sealed class SensorThingsIngestEndpointsTests : IAsyncLifetime
             {
               "name": "Test Wind Speed",
               "description": "Created by the ingest integration test",
+              "observationType":"http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
               "unitOfMeasurement": { "name": "metre per second", "symbol": "m/s", "definition": "http://unitsofmeasure.org/ucum.html#para-30" },
               "Thing": { "name": "Test Station", "description": "test" },
-              "Sensor": { "name": "Anemometer", "description": "test" },
-              "ObservedProperty": { "name": "Wind Speed", "description": "test" }
+              "Sensor": { "name": "Anemometer", "description": "test" , "encodingType":"application/pdf", "metadata":"https://example.org/test-sensor.pdf" },
+              "ObservedProperty": { "name": "Wind Speed", "description": "test" , "definition":"https://example.org/observed-property" }
             }
             """);
 
