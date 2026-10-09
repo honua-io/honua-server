@@ -2,6 +2,7 @@
 """Workflow contracts and real-Git no-op/publish/branch-reuse tests (no network/build)."""
 from pathlib import Path
 import os
+import datetime
 import shutil
 import stat
 import subprocess
@@ -104,6 +105,44 @@ class GeneratedFilesContracts(unittest.TestCase):
             result = subprocess.run(['bash', 'scripts/ci/regenerate-generated-files.sh'], cwd=repo)
             self.assertEqual(result.returncode, 23)
             self.assertFalse((repo / 'should-not-run').exists())
+
+    def test_stale_nightly_retry_is_bounded_and_never_retries_manual_runs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            calls = base / "dispatches"
+            gh = base / "gh"
+            gh.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$CALLS"\n')
+            gh.chmod(0o755)
+            today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+            defaults = dict(os.environ, PATH=f"{base}:{os.environ['PATH']}",
+                            GH_TOKEN="test", GITHUB_REPOSITORY="honua-io/honua-server",
+                            GITHUB_REF="refs/heads/trunk", GITHUB_RUN_ATTEMPT="1",
+                            GITHUB_EVENT_NAME="workflow_dispatch", CALLS=str(calls),
+                            RETRY_COUNT="0", RETRY_DATE="")
+            def run(**overrides):
+                calls.unlink(missing_ok=True)
+                result = subprocess.run(['bash', str(ROOT / 'scripts/ci/retry-generated-files.sh')],
+                                        env=dict(defaults, **overrides), text=True, capture_output=True)
+                return result, calls.read_text() if calls.exists() else ""
+            result, call = run(GITHUB_EVENT_NAME="schedule")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("-f ref=trunk", call)
+            self.assertIn("inputs[retry_count]=1", call)
+            self.assertIn(f"inputs[retry_date]={today}", call)
+            result, call = run(RETRY_DATE=today, RETRY_COUNT="1")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("inputs[retry_count]=2", call)
+            for overrides in ({}, {"RETRY_DATE": today, "RETRY_COUNT": "2"},
+                              {"RETRY_DATE": "2000-01-01", "RETRY_COUNT": "1"},
+                              {"GITHUB_EVENT_NAME": "schedule", "GITHUB_RUN_ATTEMPT": "2"},
+                              {"GITHUB_EVENT_NAME": "schedule", "GITHUB_REF": "refs/heads/feature"}):
+                with self.subTest(overrides=overrides):
+                    result, call = run(**overrides)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(call, "")
+            result, call = run(RETRY_DATE=today, RETRY_COUNT="invalid")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(call, "")
 
     def test_real_git_publish_creates_then_reuses_the_branch(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -238,7 +277,9 @@ class GeneratedFilesContracts(unittest.TestCase):
             branch_before = run('git', '--git-dir', str(remote), 'rev-parse',
                                 'refs/heads/automation/regenerate-generated-files').stdout
             gh_calls.unlink()
+            env['GITHUB_OUTPUT'] = str(base / 'publication-output')
             stale = run('bash', 'scripts/ci/publish-generated-files.sh')
+            self.assertEqual((base / 'publication-output').read_text(), 'stale_source=true\n')
             self.assertIn('No stale projections published', stale.stdout)
             self.assertFalse(gh_calls.exists())
             self.assertEqual(branch_before, run('git', '--git-dir', str(remote), 'rev-parse',

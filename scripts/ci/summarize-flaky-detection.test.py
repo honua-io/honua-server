@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
+import subprocess
+import textwrap
 import tempfile
 import unittest
 from pathlib import Path
@@ -153,6 +157,51 @@ class FlakyDetectionTests(unittest.TestCase):
             problems = MODULE.coverage_problems(report, expect_shards=6, expect_iterations=2)
             self.assertTrue(problems)
             self.assertIn("Incomplete evidence", MODULE.render_markdown(report, problems))
+
+
+class FlakeHuntPlanTests(unittest.TestCase):
+    def plan(self, iterations, shards="WFS", project="", budget="45"):
+        root = Path(__file__).resolve().parents[2]
+        workflow = (root / ".github/workflows/flaky-detection.yml").read_text()
+        start = workflow.index("        run: |", workflow.index("      - id: plan"))
+        script = textwrap.dedent(workflow[start:].split("\n", 1)[1].split("\n  flake-hunt:", 1)[0])
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp) / "output"
+            env = dict(os.environ, IN_ITERATIONS=str(iterations), IN_SHARD_COUNT="6",
+                       IN_SHARDS=shards, IN_PROJECT=project, IN_FILTER="",
+                       IN_ADHOC_TIMEOUT=budget, GITHUB_OUTPUT=str(output),
+                       GITHUB_STEP_SUMMARY=str(Path(temp) / "summary"))
+            result = subprocess.run(["bash", "-c", script], cwd=root, env=env,
+                                    capture_output=True, text=True)
+            values = dict(line.split("=", 1) for line in output.read_text().splitlines()) if output.exists() else {}
+            return result, values
+
+    def test_wfs_five_iterations_rejected_before_allocating_jobs(self):
+        result, outputs = self.plan(5)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("maximum iterations at this budget: 4", result.stderr)
+        self.assertEqual(outputs, {})
+
+    def test_wfs_four_iterations_preserve_setup_allowance(self):
+        result, outputs = self.plan(4)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        row = json.loads(outputs["matrix"])["include"][0]
+        self.assertEqual(row["job_timeout_minutes"], 305)
+
+    def test_adhoc_over_cap_rejected_but_exact_cap_allowed(self):
+        project = "tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj"
+        result, _ = self.plan(5, project=project, budget="66")
+        self.assertNotEqual(result.returncode, 0)
+        result, outputs = self.plan(5, project=project, budget="65")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(outputs["matrix"])["include"][0]["job_timeout_minutes"], 350)
+
+    def test_default_rotation_fits_every_selected_budget(self):
+        result, outputs = self.plan("", shards="")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for row in json.loads(outputs["matrix"])["include"]:
+            self.assertLessEqual(row["job_timeout_minutes"], 350)
+            self.assertEqual(row["job_timeout_minutes"], row["test_timeout_minutes"] * 2 + 25)
 
 
 if __name__ == "__main__":
