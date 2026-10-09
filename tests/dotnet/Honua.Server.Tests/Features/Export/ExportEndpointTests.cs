@@ -443,6 +443,8 @@ public sealed class ExportEndpointTests : IAsyncLifetime
             services.AddSingleton(tenant);
             services.RemoveAll<IExportJobService>();
             services.AddSingleton<IExportJobService>(jobs);
+            services.RemoveAll<IJobCancellationNotifier>();
+            services.AddSingleton(Substitute.For<IJobCancellationNotifier>());
             services.RemoveAll<ICloudFileStorage>();
             services.AddSingleton(Substitute.For<ICloudFileStorage>());
         });
