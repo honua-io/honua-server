@@ -69,6 +69,7 @@ public sealed class ResourceValidatorTests
         result.IsValid.Should().BeTrue();
         result.Resource.Resource.Metadata.Id.Should().Be("res-feature");
         result.Resource.Publication.PublicationType.Should().Be(MetadataV2PublicationType.EsriFeatureLayer);
+        result.Resource.Snapshot.Should().BeSameAs(await provider.GetCurrentAsync());
     }
 
     [UnitTest]

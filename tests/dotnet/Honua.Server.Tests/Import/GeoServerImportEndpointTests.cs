@@ -394,9 +394,12 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
         }
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
     [Endpoint("POST /api/v1/admin/import/geoserver/jobs/{jobId}/cancel")]
-    public async Task CancelJob_AfterDequeueBeforeRequestRead_PreservesCancelledWithoutImporting()
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelJob_AfterDequeueBeforeRequestRead_PreservesCancelledWithoutImporting(bool universalCancel)
     {
         var underlying = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
         var store = Substitute.For<IUniversalProgressStore>();
@@ -442,7 +445,10 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             // Drive exactly the dequeue -> first-read boundary without scheduler delays.
             processing = ProcessDequeuedJobAsync(fixture, jobId);
             await snapshotRead.Task.WaitAsync(TimeSpan.FromSeconds(20));
-            var cancel = await fixture.Client.PostAsync($"/api/v1/admin/import/geoserver/jobs/{jobId}/cancel", null);
+            var cancelPath = universalCancel
+                ? $"/api/v1/admin/operations/{jobId}/cancel"
+                : $"/api/v1/admin/import/geoserver/jobs/{jobId}/cancel";
+            var cancel = await fixture.Client.PostAsync(cancelPath, null);
             cancel.StatusCode.Should().Be(HttpStatusCode.OK);
             releaseRead.SetResult();
             await processing.WaitAsync(TimeSpan.FromSeconds(20));
