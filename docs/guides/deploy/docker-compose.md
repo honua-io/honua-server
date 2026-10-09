@@ -113,6 +113,26 @@ proxy and deployment host.
 
 PostGIS owns the catalog, layer metadata and feature data and is required.
 
+Redis is optional for **serving**, but it is required for the **governed control
+plane**. Without Redis, a host still serves every protocol, and the admin REST API
+and Console still connect sources, import, publish layers, configure services,
+style and render. It cannot persist the following, and refuses them with a typed
+`dependency-unavailable` receipt naming `redis`:
+
+- governed operation proposals and approvals (`/api/v1/admin/proposals`,
+  `honua_propose_*`);
+- typed operations invoked through MCP (the `honua_admin_*` tools,
+  `honua_publish_service`, `honua_apply_style_preset`), whose durable operation
+  record is also Redis-backed in Production;
+- durable geoprocessing jobs and workflows (`jobs.runner`);
+- Studio drafts.
+
+The governed tools are still advertised on a Redis-off host, so an agent sees the
+same catalog everywhere. The capability manifest (`GET /api/v1/capabilities/manifest`)
+tells it in advance which ones will refuse: `operations.proposals` and
+`jobs.runner` report `available: false` with `reasonCode: "dependency-unavailable"`
+(or `"license-required"` when Redis is configured but not entitled).
+
 ### Redis is configured but not entitled
 
 Redis is included with persistent storage, but installing Redis does not grant
