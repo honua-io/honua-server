@@ -31,6 +31,7 @@ using Honua.Infrastructure.Services;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.MapTools;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
@@ -38,6 +39,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json.Schema;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
@@ -727,6 +730,184 @@ public sealed class McpStyleToolTests
         var content = response.Result!.Value.GetProperty("content").EnumerateArray().ToArray();
         var caption = content.First(b => b.GetProperty("type").GetString() == "text").GetProperty("text").GetString();
         caption.Should().Contain(PresetStyleId, "render_map reports each layer's effective (applied) style");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /mcp tools/call honua_apply_style_preset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_ApplyStylePreset_ReturnsCanonicalOperationHandleMatchingOutputSchema()
+    {
+        // Terminal journey stage 4 joins the style change to its operation evidence, so the
+        // tool must project the style.apply-preset OperationHandle the way
+        // honua_publish_service does (operationInstanceId / correlationId / auditId).
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
+        catalog.AssociateLayerAsync(StorageLayerId, PresetStyleId, 0, Arg.Any<CancellationToken>()).Returns(true);
+
+        var response = await DispatchAsync(
+            ApplyStylePresetTool.ToolName,
+            $$"""{ "serviceId": "{{ServiceId}}", "layerId": {{LayerIndex}}, "styleId": "{{PresetStyleId}}" }""",
+            catalog: catalog);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeFalse(result.ToString());
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("applied").GetBoolean().Should().BeTrue();
+        structured.GetProperty("styleId").GetString().Should().Be(PresetStyleId);
+        structured.GetProperty("status").GetString().Should().Be(nameof(OperationHandleStatus.Completed));
+        structured.GetProperty("operationId").GetString().Should().Be(StylePresetOperation.OperationId);
+        var operationInstanceId = structured.GetProperty("operationInstanceId").GetString();
+        operationInstanceId.Should().NotBeNullOrWhiteSpace();
+        structured.GetProperty("handleId").GetString().Should().Be(operationInstanceId);
+        structured.GetProperty("correlationId").GetString().Should().NotBeNullOrWhiteSpace();
+        structured.TryGetProperty("auditId", out _).Should().BeTrue("the audit identity is always projected, null only when no audit was written");
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.ApplyStylePresetOutputSchema);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_render_map")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_RenderMap_PassesAppliedPresetToRendererAndReportsApplied()
+    {
+        const string fillStyle = """
+            {"version":8,"sources":{},"layers":[{"id":"parcels","type":"fill","source":"s","paint":{"fill-color":"#ff0000","fill-opacity":1}}]}
+            """;
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.GetStylesForLayerAsync(StorageLayerId, Arg.Any<CancellationToken>())
+            .Returns(new[] { Preset() with { MapLibreStyleJson = fillStyle } });
+        var renderer = RendererReturningPng(out var captured);
+
+        var response = await DispatchAsync(
+            RenderMapTool.ToolName,
+            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}], "bbox":[-10,-10,10,10] }""",
+            catalog: catalog,
+            renderer: renderer);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeFalse(result.ToString());
+        captured.Should().ContainSingle();
+        captured[0].AppliedStyleJsonByLayerId.Should().NotBeNull(
+            "the applied catalog style must reach the renderer, not only the caption");
+        captured[0].AppliedStyleJsonByLayerId![StorageLayerId].Should().Be(fillStyle);
+        captured[0].ResolvedLayers.Should().ContainSingle()
+            .Which.Should().Be(new ResolvedMapLayer(StorageLayerId, ResourceId));
+
+        var layer = result.GetProperty("structuredContent").GetProperty("layers")[0];
+        layer.GetProperty("styleId").GetString().Should().Be(PresetStyleId);
+        layer.GetProperty("styleRendering").GetString().Should().Be(AppliedStyleRenderSupport.Applied);
+        layer.TryGetProperty("unsupportedStyleConstructs", out _).Should().BeFalse();
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.RenderMapOutputSchema);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_render_map")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_RenderMap_UnsupportedAppliedConstructs_AreReportedNotSilentlyDefaulted()
+    {
+        const string mixedStyle = """
+            {"version":8,"sources":{},"layers":[
+              {"id":"parcels","type":"fill","source":"s","paint":{"fill-color":"#00ff00"}},
+              {"id":"labels","type":"symbol","source":"s","layout":{"text-field":"{name}"}},
+              {"id":"dots","type":"circle","source":"s","paint":{"circle-color":"#0000ff"}}
+            ]}
+            """;
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.GetStylesForLayerAsync(StorageLayerId, Arg.Any<CancellationToken>())
+            .Returns(new[] { Preset() with { MapLibreStyleJson = mixedStyle } });
+        var renderer = RendererReturningPng(out var captured);
+
+        var response = await DispatchAsync(
+            RenderMapTool.ToolName,
+            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}], "bbox":[-10,-10,10,10] }""",
+            catalog: catalog,
+            renderer: renderer);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        captured[0].AppliedStyleJsonByLayerId![StorageLayerId].Should().Be(mixedStyle,
+            "the drawable part of the applied style still renders instead of the stored default");
+        var layer = result.GetProperty("structuredContent").GetProperty("layers")[0];
+        layer.GetProperty("styleRendering").GetString().Should().Be(AppliedStyleRenderSupport.UnsupportedStyleConstruct);
+        var constructs = layer.GetProperty("unsupportedStyleConstructs").EnumerateArray()
+            .Select(item => item.GetString()).ToArray();
+        constructs.Should().HaveCount(2);
+        constructs.Should().Contain(item => item!.Contains("'labels'") && item.Contains("'symbol'"));
+        constructs.Should().Contain(item => item!.Contains("'dots'") && item.Contains("polygon"));
+        var caption = result.GetProperty("content").EnumerateArray()
+            .First(block => block.GetProperty("type").GetString() == "text").GetProperty("text").GetString();
+        caption.Should().Contain("unsupported-style-construct");
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.RenderMapOutputSchema);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_render_map")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_RenderMap_NoAppliedStyle_RendersStoredDefaultAndSaysSo()
+    {
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.GetStylesForLayerAsync(StorageLayerId, Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<StyleCatalogRecord>());
+        var renderer = RendererReturningPng(out var captured);
+
+        var response = await DispatchAsync(
+            RenderMapTool.ToolName,
+            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}], "bbox":[-10,-10,10,10] }""",
+            catalog: catalog,
+            renderer: renderer);
+
+        response!.Error.Should().BeNull();
+        captured[0].AppliedStyleJsonByLayerId.Should().BeNull();
+        var layer = response.Result!.Value.GetProperty("structuredContent").GetProperty("layers")[0];
+        layer.GetProperty("styleRendering").GetString().Should().Be(AppliedStyleRenderSupport.Default);
+        StructuredContentShouldMatchOutputSchema(response.Result!.Value, McpToolOutputSchemas.RenderMapOutputSchema);
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(MetadataV2GeometryType.Point, "{\"layers\":[{\"id\":\"p\",\"type\":\"circle\"}]}", 0)]
+    [InlineData(MetadataV2GeometryType.Polygon, "[{\"id\":\"a\",\"type\":\"fill\"},{\"id\":\"b\",\"type\":\"line\"}]", 0)]
+    [InlineData(MetadataV2GeometryType.LineString, "{\"id\":\"l\",\"type\":\"line\"}", 0)]
+    [InlineData(MetadataV2GeometryType.Point, "{\"layers\":[{\"id\":\"h\",\"type\":\"heatmap\"}]}", 1)]
+    [InlineData(MetadataV2GeometryType.Point, "{\"version\":8,\"layers\":[]}", 1)]
+    [InlineData(MetadataV2GeometryType.Point, "not json", 1)]
+    [Operation(Operations.Render)]
+    public void AppliedStyleRenderSupport_ClassifiesRasterizableConstructs(
+        MetadataV2GeometryType geometryType, string styleJson, int expectedUnsupported)
+    {
+        AppliedStyleRenderSupport.FindUnsupportedConstructs(styleJson, geometryType)
+            .Should().HaveCount(expectedUnsupported);
+    }
+
+    private static IRasterMapRenderer RendererReturningPng(out List<MapRenderRequest> captured)
+    {
+        var requests = new List<MapRenderRequest>();
+        captured = requests;
+        var renderer = Substitute.For<IRasterMapRenderer>();
+        renderer.RenderDatasetMapAsync(Arg.Any<int[]>(), Arg.Do<MapRenderRequest>(requests.Add), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = Encoding.ASCII.GetBytes("PNGDATA"),
+                ContentType = "image/png",
+                Width = 256,
+                Height = 256
+            });
+        return renderer;
+    }
+
+    private static void StructuredContentShouldMatchOutputSchema(JsonElement result, JsonElement outputSchema)
+    {
+        var schema = JSchema.Parse(outputSchema.GetRawText());
+        var payload = JToken.Parse(result.GetProperty("structuredContent").GetRawText());
+        payload.IsValid(schema, out IList<string> errors).Should().BeTrue(
+            "structuredContent must match the advertised outputSchema. Errors: {0}",
+            string.Join("; ", errors));
     }
 
     // ---------------------------------------------------------------
