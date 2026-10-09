@@ -567,7 +567,7 @@ internal sealed partial class PostgresObservationStore
         }
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await lease.Connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        if (entitySet != "Observations") await LockCatalogRelationshipsAsync(lease.Connection, transaction, cancellationToken).ConfigureAwait(false);
+        await LockCatalogRelationshipsAsync(lease.Connection, transaction, cancellationToken).ConfigureAwait(false);
         if (!await ExistsAsync(lease.Connection, transaction, EntityTable(entitySet), id, cancellationToken).ConfigureAwait(false)) return false;
         await using (var current = new NpgsqlCommand($"SELECT to_jsonb(d)::text FROM {EntityTable(entitySet)} d WHERE id=@id FOR UPDATE", lease.Connection, transaction))
         {

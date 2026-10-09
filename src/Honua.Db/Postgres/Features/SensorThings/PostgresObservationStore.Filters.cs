@@ -47,7 +47,7 @@ internal sealed partial class PostgresObservationStore
         {
             LiteralType.Text => $"CASE WHEN jsonb_typeof({json})='string' THEN {json} #>> '{{}}' END",
             LiteralType.Boolean => $"CASE WHEN jsonb_typeof({json})='boolean' THEN ({json} #>> '{{}}')::boolean END",
-            _ => $"CASE WHEN jsonb_typeof({json})='number' THEN ({json} #>> '{{}}')::double precision END"
+            _ => $"CASE WHEN jsonb_typeof({json})='number' THEN ({json} #>> '{{}}')::numeric END"
         };
 
         private string Resolve(string set, string name, string alias, int depth, bool rawResult = false)
@@ -123,29 +123,35 @@ internal sealed partial class PostgresObservationStore
         private string? WrapCollectionPredicate(FilterExpression expression, FilterTranslationContext context)
         {
             string? navigation = null;
+            var sourceSet = context.ResourceName;
+            var sourceAlias = _alias;
             foreach (var property in Properties(expression))
             {
-                if (_outerReferences.ContainsKey(property.PropertyName)) continue;
-                var parts = property.PropertyName.Split('/');
-                var set = context.ResourceName;
+                var reference = _outerReferences.TryGetValue(property.PropertyName, out var outer)
+                    ? outer : (Set: context.ResourceName, Alias: _alias, Path: property.PropertyName);
+                var parts = reference.Path.Split('/');
+                var set = reference.Set;
                 foreach (var part in parts.Take(parts.Length - 1))
                 {
                     if (!SensorThingsRelationships.For(set).TryGetValue(part, out var relation)) break;
-                    if (relation.Many) { navigation = parts[0]; break; }
+                    if (relation.Many) { navigation = parts[0]; sourceSet = reference.Set; sourceAlias = reference.Alias; break; }
                     set = relation.Target;
                 }
                 if (navigation is not null) break;
             }
             if (navigation is null) return null;
-            var target = SensorThingsRelationships.For(context.ResourceName)[navigation].Target;
+            var target = SensorThingsRelationships.For(sourceSet)[navigation].Target;
             var prefix = navigation + "/";
             var outerAlias = _alias;
             var innerAlias = "q" + (++_scopeIndex).ToString(CultureInfo.InvariantCulture);
-            var predicate = store.RelationshipPredicate(context.ResourceName, navigation, innerAlias, outerAlias + ".id");
+            var predicate = store.RelationshipPredicate(sourceSet, navigation, innerAlias, sourceAlias + ".id");
             var rewritten = Rewrite(expression, property =>
             {
+                var reference = _outerReferences.TryGetValue(property.PropertyName, out var outer)
+                    ? outer : (Set: context.ResourceName, Alias: outerAlias, Path: property.PropertyName);
+                if (reference.Set == sourceSet && reference.Alias == sourceAlias && reference.Path.StartsWith(prefix, StringComparison.Ordinal))
+                    return new PropertyReference(reference.Path[prefix.Length..]);
                 if (_outerReferences.ContainsKey(property.PropertyName)) return property;
-                if (property.PropertyName.StartsWith(prefix, StringComparison.Ordinal)) return new PropertyReference(property.PropertyName[prefix.Length..]);
                 var symbol = "__sta_outer_" + _outerReferences.Count.ToString(CultureInfo.InvariantCulture);
                 _outerReferences[symbol] = (context.ResourceName, outerAlias, property.PropertyName);
                 return new PropertyReference(symbol);
