@@ -15,6 +15,12 @@
     <Compile Remove="Topology/**/*.cs" />
   </ItemGroup>
 
+  <!-- Hosted/default builds must also compile the FAST adapter. Its assembly has
+       the same trait identity, so it must not become an assembly reference. -->
+  <ItemGroup>
+    <ProjectReference Include="Topology/Honua.Architecture.Topology.Tests.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />

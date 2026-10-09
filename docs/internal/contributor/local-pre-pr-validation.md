@@ -20,6 +20,9 @@ The independent topology project links the original module-dependency,
 cross-protocol isolation, and infrastructure back-edge assertions. It retains
 the repository analyzers and has no runtime or integration-test project
 references. The full suite still compiles and runs those same assertions.
+The full architecture project also builds the standalone adapter through a
+`ReferenceOutputAssembly="false"` project reference, so hosted CI checks its
+project configuration without loading two assemblies with the same identity.
 
 FAST explicitly defers all remaining architecture tests, including route and
 operation coverage, catalogue emission/drift, parity, capability and proof-ledger
