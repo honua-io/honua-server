@@ -262,6 +262,37 @@ public sealed class PortalOAuthRaceConditionTests
 
     // ─── Helpers ────────────────────────────────────────────────────────────────
 
+    [UnitTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RefreshToken_NativeBearerBinding_PersistsWithOrWithoutRotation(bool rotate)
+    {
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var store = new PortalOAuthStore(cache, NullLogger<PortalOAuthStore>.Instance);
+        var issuer = new PortalTokenIssuer(cache, NullLogger<PortalTokenIssuer>.Instance);
+        var service = BuildService(store, issuer, rotate);
+        var token = await store.CreateRefreshTokenAsync(new PortalOAuthRefreshToken
+        {
+            ClientId = "native-client", Principal = TestPrincipal(),
+            ClientType = PortalTokenClientType.Bearer, BindingValue = string.Empty,
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
+        }, CancellationToken.None);
+
+        for (var iteration = 0; iteration < 2; iteration++)
+        {
+            var result = await service.ExchangeAsync(RefreshTokenRequest(token, "native-client"),
+                "https://server.example/", CancellationToken.None);
+            result.Succeeded.Should().BeTrue();
+            var validation = await issuer.ValidateAsync(result.AccessToken!, new PortalTokenBinding(null, null), CancellationToken.None);
+            validation.Should().NotBeNull();
+            if (rotate)
+            {
+                result.RefreshToken.Should().NotBe(token);
+                token = result.RefreshToken!;
+            }
+        }
+    }
+
     private static PortalOAuthStore CreateStore()
     {
         var memoryCache = new MemoryCache(new MemoryCacheOptions());

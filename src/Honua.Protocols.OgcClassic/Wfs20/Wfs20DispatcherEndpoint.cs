@@ -4,6 +4,7 @@
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -113,8 +114,8 @@ internal static class Wfs20DispatcherEndpoint
         // immediately: the WFS 2.0 ETS transaction tests delete or replace a feature and then read it
         // back via GetFeatureById, and a cached pre-mutation response makes the feature still appear
         // present (DeleteTests) or omit the replaced property (ReplaceTests). GetCapabilities is the
-        // only cacheable operation here and is cheap to regenerate from the already-cached catalog,
-        // so disabling caching for the whole dispatcher keeps reads correct without a measurable cost.
+        // cheapest operation here and regenerates from the already-cached catalog. Its content
+        // also depends on credentials, so the dispatcher prevents client storage for every caller.
         // Mirrors the WMTS and WCS classic endpoints, which opt out the same way.
         endpoints.MapMethods("/wfs", SupportedHttpMethods, HandleWfsRequest)
             .WithMetadata(new HeadRequestRejectedEndpointMetadata(SupportedHttpMethods, ShouldRejectHead))
@@ -153,6 +154,10 @@ internal static class Wfs20DispatcherEndpoint
         Wfs20Handler handler,
         ILogger<Wfs20Endpoints.Wfs20EndpointsLog> logger)
     {
+        // Discovery and data representations depend on the caller's credentials even
+        // when anonymous. Client caches must not reuse an anonymous document after
+        // the user signs in; disabling server output caching alone does not prevent it.
+        AuthenticationResponseCachePolicy.PreventStorage(context);
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         try
         {
