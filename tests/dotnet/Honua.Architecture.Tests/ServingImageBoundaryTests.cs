@@ -91,6 +91,16 @@ public sealed class ServingImageBoundaryTests
         platform.Should().Contain("docker buildx imagetools create --prefer-index=false",
             "final Lambda aliases must preserve the runnable child manifest");
 
+        // The 2026.1 release manifest pins awsLambdaArchitecture: x86_64, so v* tags must
+        // publish an amd64 Lambda AOT leg and point the unsuffixed Lambda aliases at it.
+        var normalizedPlatform = platform.ReplaceLineEndings("\n");
+        normalizedPlatform.Should().Contain(
+            "tag_suffix: -lambda-aot\n            cache_scope: honua-lambda-aot\n            sarif_output: trivy-results-lambda-aot\n            sarif_category: trivy-lambda-aot\n            arch: amd64\n            platform: linux/amd64",
+            "release tags must publish the x86_64 Lambda AOT image the release manifest consumes");
+        normalizedPlatform.Should().Contain(
+            "tag_suffix: -lambda-aot\n            source_arches: \"amd64\"",
+            "the single-child Lambda aliases must resolve to the certified x86_64 architecture");
+
         var nightly = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/nightly-container-build.yml"));
         nightly.Should().Contain("format('/proof-{0}', github.run_id)",
             "branch proof mirrors must not overwrite shared trunk base-image tags");

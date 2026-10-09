@@ -151,6 +151,7 @@ public static class InMemoryFilterEvaluator
         }
 
         var hasNull = false;
+        // codeql[cs/linq/missed-select]: returns on the first match and remembers a null element for three-valued logic
         foreach (var item in valueList.Values)
         {
             var itemValue = ResolveValue(item, props);

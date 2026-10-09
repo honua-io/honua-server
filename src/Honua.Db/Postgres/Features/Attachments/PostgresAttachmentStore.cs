@@ -285,6 +285,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
                         $"superseded-object delete was canceled after the metadata update committed ({ex.GetType().Name})").ConfigureAwait(false);
                     throw;
                 }
+                // codeql[cs/catch-of-all-exceptions]: any storage failure becomes an orphan record so the committed metadata update is not rolled back
                 catch (Exception ex)
                 {
                     AttachmentLog.AttachmentFileDeleteFailed(_logger, ex, existing.StoragePath);
@@ -365,6 +366,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
                 $"storage delete was canceled after the metadata row was committed away ({ex.GetType().Name})").ConfigureAwait(false);
             throw;
         }
+        // codeql[cs/catch-of-all-exceptions]: any storage failure becomes an orphan record so the committed metadata delete is not rolled back
         catch (Exception ex)
         {
             AttachmentLog.AttachmentFileDeleteFailed(_logger, ex, storagePath);

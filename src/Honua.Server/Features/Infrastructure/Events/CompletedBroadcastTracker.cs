@@ -42,6 +42,7 @@ internal sealed class CompletedBroadcastTracker(TimeSpan retention, TimeProvider
     internal void RemoveExpired()
     {
         var now = _timeProvider.GetUtcNow();
+        // codeql[cs/linq/missed-where]: removes expired entries while enumerating the concurrent dictionary
         foreach (var entry in _completed)
         {
             if (entry.Value <= now)

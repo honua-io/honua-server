@@ -276,6 +276,7 @@ public sealed class OperationSecretDurableStoreEvidenceTests(RedisFixture redis)
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
+            // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Created)
             {
                 Content = new StringContent(

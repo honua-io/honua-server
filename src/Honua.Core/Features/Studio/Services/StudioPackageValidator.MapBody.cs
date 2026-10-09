@@ -115,6 +115,7 @@ public sealed partial class StudioPackageValidator
         if (TryGetMapMember(binding, "metadata", path, required: false, diagnostics, out var metadata)
             && MapObject(metadata, $"{path}/metadata", "metadata", diagnostics))
         {
+            // codeql[cs/linq/missed-where]: records a diagnostic for every non-string metadata value
             foreach (var entry in metadata.EnumerateObject())
             {
                 if (entry.Value.ValueKind != JsonValueKind.String)

@@ -142,12 +142,10 @@ internal sealed partial class DeployWorkflowReconciler(
                 updated = ClearProtectionOnSettledRollback(updated);
             }
 
-            if (!Equals(updated, operation))
+            if (!Equals(updated, operation)
+                && await workflowStore.TrySetAsync(updated, cancellationToken: reconciliationCancellation.Token).ConfigureAwait(false))
             {
-                if (await workflowStore.TrySetAsync(updated, cancellationToken: reconciliationCancellation.Token).ConfigureAwait(false))
-                {
-                    Log.WorkflowOperationReconciled(logger, operationId, updated.Status.ToString());
-                }
+                Log.WorkflowOperationReconciled(logger, operationId, updated.Status.ToString());
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -399,6 +397,7 @@ internal sealed partial class DeployWorkflowReconciler(
                 string.IsNullOrWhiteSpace(rollbackReason) &&
                 promotionRecommended &&
                 current.Status == WorkflowOperationStatus.Reconciling &&
+                // codeql[cs/constant-condition]: Protection is nullable; null means no observation window is open
                 current.Deploy?.Protection == null)
             {
                 current = await AdvanceOrPromoteAsync(current, backend, cancellationToken).ConfigureAwait(false);

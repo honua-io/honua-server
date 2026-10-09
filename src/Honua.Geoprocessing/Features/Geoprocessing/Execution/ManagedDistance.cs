@@ -15,8 +15,10 @@ internal static class ManagedDistance
             return false;
         }
 
+        // codeql[cs/equality-on-floats]: zero distance is exact coincidence; a tolerance would change which points match
         if (distance == 0)
         {
+            // codeql[cs/equality-on-floats]: a zero-distance hit is only the exact point, including negative zero
             return dx == 0 && dy == 0;
         }
 

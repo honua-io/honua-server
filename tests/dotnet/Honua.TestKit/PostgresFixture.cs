@@ -87,6 +87,7 @@ public sealed class PostgresFixture : IAsyncLifetime
                         // production DDL once under the shared initialization lock
                         // so registered providers have their required tables.
                         var assembly = typeof(Program).Assembly;
+                        // codeql[cs/linq/missed-select]: executes each embedded migration before the next script is read
                         foreach (var filename in SharedStoreMigrations)
                         {
                             var migration = assembly.GetManifestResourceNames().Single(name =>

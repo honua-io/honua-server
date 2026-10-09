@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
@@ -60,6 +61,7 @@ internal static class GPServerEsriOutputTranslation
         using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
+            // codeql[cs/linq/missed-where]: copies inferred properties except the features and fields arrays
             foreach (var property in inferred.EnumerateObject())
             {
                 if (property.Name is not ("features" or "fields"))
@@ -73,6 +75,7 @@ internal static class GPServerEsriOutputTranslation
                 writer.WritePropertyName("geometryType");
                 type.WriteTo(writer);
             }
+            // codeql[cs/linq/missed-where]: copies hasZ or hasM only when inference left that flag out
             foreach (var dimension in new[] { "hasZ", "hasM" })
             {
                 if (!inferred.TryGetProperty(dimension, out _) &&
@@ -124,6 +127,7 @@ internal static class GPServerEsriOutputTranslation
             ? root.GetProperty("features").EnumerateArray().ToArray()
             : [root];
         var fields = new Dictionary<string, string>(StringComparer.Ordinal);
+        // codeql[cs/linq/missed-where]: merges property types across features and lets a later non-null replace null
         foreach (var feature in features)
         {
             if (feature.TryGetProperty("properties", out var properties) && properties.ValueKind == JsonValueKind.Object)
@@ -155,11 +159,13 @@ internal static class GPServerEsriOutputTranslation
                 }
             }
         }
-        var oidName = "OBJECTID";
-        while (fields.Keys.Contains(oidName, StringComparer.OrdinalIgnoreCase))
+        var oidNameBuilder = new StringBuilder("OBJECTID");
+        while (fields.Keys.Contains(oidNameBuilder.ToString(), StringComparer.OrdinalIgnoreCase))
         {
-            oidName = "_" + oidName;
+            oidNameBuilder.Insert(0, '_');
         }
+
+        var oidName = oidNameBuilder.ToString();
 
         var geometries = new List<GeoServicesGeometry?>(features.Length);
         string? geometryType = features.Length == 0 && schema is { } shape && shape.TryGetProperty("geometryType", out var declaredType)

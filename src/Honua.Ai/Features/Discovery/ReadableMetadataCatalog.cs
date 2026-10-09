@@ -46,6 +46,7 @@ internal static class ReadableMetadataCatalog
         CancellationToken cancellationToken)
     {
         var services = new List<MetadataV2Service>();
+        // codeql[cs/linq/missed-where]: awaits an access check before keeping the service
         foreach (var service in publications.Select(entry => entry.Service).DistinctBy(service => service.Metadata.Id))
         {
             if (await AccessPolicyHelpers.RequireServiceAccessAsync(

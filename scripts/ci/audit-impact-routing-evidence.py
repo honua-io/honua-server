@@ -1741,8 +1741,8 @@ def markdown(ledger: dict[str, Any]) -> str:
         + "are validated by the native policy.",
         "A successful observer shell without one exact stable-name receipt is never counted. ",
         "Reuse is *build* reuse only: the GDAL worker's Trivy scan is re-run on every head "
-        "because its verdict depends on the vulnerability database at scan time, never on a "
-        "previous head's attestation.",
+        + "because its verdict depends on the vulnerability database at scan time, never on a "
+        + "previous head's attestation.",
         "Native decisions are countable only when every required exact-head legacy image workflow has a successful outcome.",
         "",
     ])

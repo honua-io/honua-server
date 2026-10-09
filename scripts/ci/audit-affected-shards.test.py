@@ -2,6 +2,8 @@
 """Offline failure injections for the affected-shard promotion measurement."""
 
 import importlib.util
+import json
+from collections import Counter
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -41,6 +43,12 @@ def red(shard="STAC"):
 
 
 class AuditTests(unittest.TestCase):
+    def test_checked_in_reconciliation_counts_match_all_verdicts(self):
+        path = Path(__file__).resolve().parents[2] / "docs/ci/affected-shards-reconciliation-20261007.json"
+        reconciliation = json.loads(path.read_text())
+        self.assertEqual(reconciliation["counts"],
+                         dict(Counter(row["verdict"] for row in reconciliation["rows"])))
+
     def test_floor_is_executed_samples_not_successful_shells(self):
         runs = [run(index) for index in range(1, 60)]
         runs += [run(70, []), run(71, ["HONUA_AFFECTED_SHARD_UNAVAILABLE no timing receipt"])]

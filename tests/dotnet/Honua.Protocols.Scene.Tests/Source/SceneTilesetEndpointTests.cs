@@ -200,9 +200,9 @@ public sealed class SceneTilesetEndpointTests : IAsyncLifetime
             missingHttp.Headers.Age.Should().BeNull();
             missingHttps.Headers.Age.Should().BeNull();
 
-            var assetFile = Path.Combine(assetRoot, assetPath);
+            var assetFile = Path.Join(assetRoot, assetPath);
             Directory.CreateDirectory(Path.GetDirectoryName(assetFile)!);
-            File.Copy(Path.Combine(_fixtureRoot, assetPath), assetFile);
+            File.Copy(Path.Join(_fixtureRoot, assetPath), assetFile);
 
             using var internalResponse = await fixture.Client.GetAsync($"http://honua:5000{path}");
             using var advertisedHttp = await fixture.Client.GetAsync($"http://host.docker.internal:18443{path}");

@@ -112,6 +112,7 @@ public sealed class WfsExecutionProofTests
     // Remap only the HTTP transport to the real local fixture server. The production
     // executor's SSRF validation still runs against a public numeric address, with no
     // live DNS or remote WFS dependency and no private-network opt-out in production.
+    // codeql[cs/local-not-disposed]: DelegatingHandler owns and disposes the inner handler
     private sealed class FixtureTransport(Uri server) : DelegatingHandler(new HttpClientHandler { UseProxy = false })
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

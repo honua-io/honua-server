@@ -198,6 +198,7 @@ internal sealed partial class RedisCacheIndexMaintenance : IAsyncDisposable
             _database.Database, "SCAN", [_serverCursor, "MATCH", _pattern, "COUNT", PageSize, "TYPE", "set"],
             CommandFlags.None).ConfigureAwait(false));
         _serverCursor = result.Cursor;
+        // codeql[cs/linq/missed-where]: enqueues only the scope index keys on this scan page
         foreach (var value in result.Items.Select(key => (string?)key))
         {
             if (value is not null && value.StartsWith(_prefix + "scope:", StringComparison.Ordinal) &&

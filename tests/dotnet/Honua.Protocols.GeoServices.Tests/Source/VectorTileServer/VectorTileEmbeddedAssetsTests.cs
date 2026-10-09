@@ -87,6 +87,11 @@ public sealed class VectorTileEmbeddedAssetsTests
             }
         }
 
+        if (name is null || range is null)
+        {
+            throw new InvalidOperationException("font stack name and range were not decoded");
+        }
+
         name.Should().Be("Arial Regular");
         range.Should().Be("0-255");
         var printable = Enumerable.Range(0x20, 0x7F - 0x20).Concat(Enumerable.Range(0xA0, 0x100 - 0xA0));

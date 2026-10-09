@@ -107,6 +107,7 @@ internal static class ArcGisSoapProtocol
     /// </remarks>
     internal static XElement BindArgumentsByLocalName(XElement operation)
     {
+        // codeql[cs/linq/missed-where]: renames namespaced arguments in place on the same element tree
         foreach (var argument in operation.Descendants())
         {
             if (argument.Name.Namespace != XNamespace.None)

@@ -141,6 +141,7 @@ public sealed partial class RasterExecutionProofTests
 
         var cells = band.GetProperty("values").EnumerateArray().Select(value => value.GetDouble()).ToArray();
         cells.Should().HaveCount(24);
+        // codeql[cs/equality-on-floats]: burn values are the exact samples 0 and 5, not a rounded range
         cells.Should().OnlyContain(value => value == 0 || value == 5,
             "burnValue mode may only write the fixed value or leave the background");
 

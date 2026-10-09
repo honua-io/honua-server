@@ -280,6 +280,7 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
                 .Where(value => value.ValueKind == JsonValueKind.Number)
                 .Select(value => value.GetDouble()).ToArray();
             return endpoints.Length == 2 && double.IsFinite(endpoints[0]) && double.IsFinite(endpoints[1]) &&
+                // codeql[cs/equality-on-floats]: equal parsed endpoints mean the axis direction is unknown; a tolerance would hide a real span
                 endpoints[0] != endpoints[1] ? endpoints[1] > endpoints[0] : null;
         }
         catch (JsonException)
