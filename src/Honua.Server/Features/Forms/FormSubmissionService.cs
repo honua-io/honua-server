@@ -967,7 +967,7 @@ internal sealed class FormSubmissionService
                 Updated = editResult?.UpdatedCount ?? 0,
                 Deleted = editResult?.DeletedCount ?? 0,
                 Error = editResult is not null
-                    ? editResult.HasErrors ? "One or more feature edits failed." : null
+                    ? editResult.Value.HasErrors ? "One or more feature edits failed." : null
                     : editMayHaveCommitted
                         ? "The feature edit may have committed; its outcome could not be confirmed."
                         : "Submission could not be applied."
