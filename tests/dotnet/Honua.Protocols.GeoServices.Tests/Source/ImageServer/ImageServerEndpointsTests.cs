@@ -373,7 +373,10 @@ public class ImageServerEndpointsTests
                 Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
             .Returns(new PixelValueResult
             {
-                X = 0, Y = 0, Srid = 4326, HasData = true,
+                X = 0,
+                Y = 0,
+                Srid = 4326,
+                HasData = true,
                 BandValues = new Dictionary<int, object?> { [1] = 42d }
             });
         var fixture = new WebAppFixture().ConfigureServices(services =>

@@ -206,7 +206,10 @@ public class ImageServerCatalogQueryHandlerTests
         reader.ReadAsync(Arg.Any<int>(), Arg.Any<ImageServerCatalogQuery>(), Arg.Any<CancellationToken>())
             .Returns(new ImageServerCatalogPage
             {
-                Items = [], TotalCount = 0, ExceededTransferLimit = false, AggregateExtent = null
+                Items = [],
+                TotalCount = 0,
+                ExceededTransferLimit = false,
+                AggregateExtent = null
             });
         var masks = Substitute.For<IFieldMaskSource>();
         masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())

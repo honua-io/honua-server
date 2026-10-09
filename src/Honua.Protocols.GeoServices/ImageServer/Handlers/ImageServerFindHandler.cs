@@ -349,13 +349,13 @@ internal sealed class ImageServerFindHandler
                 ? null : item.AcquisitionDate?.ToUnixTimeMilliseconds(),
             Center = ImageServerCatalogSecurity.IsMasked(maskedFields, "CenterX") ||
                 ImageServerCatalogSecurity.IsMasked(maskedFields, "CenterY") ? null : new ImageServerFindPoint
-            {
-                X = item.CenterX,
-                Y = item.CenterY,
-                SpatialReference = item.FootprintSrid.HasValue
+                {
+                    X = item.CenterX,
+                    Y = item.CenterY,
+                    SpatialReference = item.FootprintSrid.HasValue
                     ? new SpatialReference { Wkid = item.FootprintSrid.Value, LatestWkid = item.FootprintSrid.Value }
                     : null,
-            },
+                },
             PixelSize = pixelSize,
             Rows = item.Height,
             Cols = item.Width,
