@@ -919,7 +919,7 @@ internal static class LayerValidationHelpers
     }
 
     /// <summary>
-    /// Combines <see cref="ValidateCollectionWithAccessV2Async"/> with the V2 RBAC data-editor
+    /// Combines <see cref="ValidateCollectionWithAccessV2Async(HttpContext, string, AccessScope, string, CancellationToken)"/> with the V2 RBAC data-editor
     /// helper so OGC API Features CRUD/Transaction handlers can run a single check.
     /// Returns the matched publication + resource + service plus an
     /// <see cref="IResult"/> error when validation or authorization fails.
