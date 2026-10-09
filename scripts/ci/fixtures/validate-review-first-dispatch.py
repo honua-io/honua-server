@@ -148,12 +148,14 @@ def main() -> None:
     # parallel format), the two production PDAL proof steps, and the docs-only
     # exit's own gating of each. The Buildx setup that feeds the PDAL build its
     # registry cache stays attempt-2-only but is never docs-gated (it is cheap
-    # and warms the cache even on a docs-only diff). All seventeen conditions
+    # and warms the cache even on a docs-only diff). The secondary proof-image
+    # preparation is also gated. All eighteen conditions
     # (bare attempt-2-only plus docs-gated attempt-2-only) must remain
     # attempt-2-only in review-first enforcement.
-    if pr_gate.count(full_condition) + pr_gate.count(docs_gated_condition) != 17:
+    if pr_gate.count(full_condition) + pr_gate.count(docs_gated_condition) != 18:
         raise AssertionError("every expensive PR Gate step must be attempt-2-only in enforce mode")
     for name, message in [
+        ("Prepare secondary Testcontainers proof images", "secondary proof-image preparation must remain behind exact-head review"),
         ("Prove raster catalog execution with production GDAL", "real raster execution must remain behind exact-head review"),
         ("Prove remote source execution with real HTTP and PostGIS", "real remote-source execution must remain behind exact-head review"),
         ("Prove the real-GDAL CLI cases run on the required gate", "real GDAL CLI execution must remain behind exact-head review"),

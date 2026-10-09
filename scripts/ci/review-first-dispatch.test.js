@@ -35,6 +35,7 @@ function job(overrides = {}) {
       { name: 'Await exact-head review', conclusion: 'failure' },
       { name: 'Free disk space', conclusion: 'skipped' },
       { name: 'Setup .NET', conclusion: 'skipped' },
+      { name: 'Prepare secondary Testcontainers proof images', conclusion: 'skipped' },
       { name: 'Lean gate (build + fast unit/architecture smoke)', conclusion: 'skipped' },
       { name: 'Test serving-image boundary detector', conclusion: 'skipped' },
     ],
@@ -77,6 +78,14 @@ test('admission failure without a receipt is never promoted', () => {
   const failedJob = job({ steps: [{ name: 'Verify admission policy', conclusion: 'failure' }] });
   assert.match(evaluate({ jobs: [failedJob] }).reason, /admission receipt/);
   assert.equal(evaluate({ jobs: [failedJob] }).action, 'block');
+});
+
+test('secondary proof-image downloads during admission fail closed', () => {
+  const badJob = job();
+  badJob.steps.find(step => step.name === 'Prepare secondary Testcontainers proof images').conclusion = 'success';
+  const result = evaluate({ jobs: [badJob] });
+  assert.equal(result.action, 'block');
+  assert.match(result.reason, /expensive step ran during admission: Prepare secondary Testcontainers proof images/);
 });
 
 test('expensive attempt-one work fails closed', () => {
