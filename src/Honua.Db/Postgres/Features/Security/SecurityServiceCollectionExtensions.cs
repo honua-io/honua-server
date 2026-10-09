@@ -93,7 +93,9 @@ internal static class SecurityServiceCollectionExtensions
         services.AddScoped<ISecureConnectionRegistry, PostgresSecureConnectionRegistry>();
 
         // Register secure connection resolver as scoped (combines registry + encryption + secrets)
-        services.AddScoped<ISecureConnectionResolver, SecureConnectionResolver>();
+        services.AddScoped<SecureConnectionResolver>();
+        services.AddScoped<ISecureConnectionResolver>(provider => provider.GetRequiredService<SecureConnectionResolver>());
+        services.AddScoped<IResolvedConnectionStringValidator>(provider => provider.GetRequiredService<SecureConnectionResolver>());
 
         return services;
     }
