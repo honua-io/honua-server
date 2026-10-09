@@ -273,8 +273,10 @@ public sealed class PortalOAuthRaceConditionTests
         var service = BuildService(store, issuer, rotate);
         var token = await store.CreateRefreshTokenAsync(new PortalOAuthRefreshToken
         {
-            ClientId = "native-client", Principal = TestPrincipal(),
-            ClientType = PortalTokenClientType.Bearer, BindingValue = string.Empty,
+            ClientId = "native-client",
+            Principal = TestPrincipal(),
+            ClientType = PortalTokenClientType.Bearer,
+            BindingValue = string.Empty,
             ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
         }, CancellationToken.None);
 

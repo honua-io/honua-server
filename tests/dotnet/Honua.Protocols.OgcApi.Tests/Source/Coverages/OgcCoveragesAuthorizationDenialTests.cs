@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -138,7 +139,7 @@ public sealed class OgcCoveragesAuthorizationDenialTests
                 using var document = JsonDocument.Parse(deniedBody);
                 document.RootElement.GetProperty("collections").EnumerateArray()
                     .Select(item => item.GetProperty("id").GetString()).Should()
-                    .NotContain(WebAppFixture.TestLayerId.ToString());
+                    .NotContain(WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture));
             }
             else
             {
