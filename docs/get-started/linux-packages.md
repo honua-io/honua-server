@@ -15,6 +15,7 @@ selects `linux/amd64`; use an amd64 host for this rehearsal.
 The server image is the 2026.1 release channel `ghcr.io/honua-io/honua-server:2026.1-rc`
 (`ghcr.io/honua-io/honua-server:2026.1` once 2026.1 is generally available); only
 release promotion moves that tag. The exact digest for a release is `server.image` in that release's `customer-install-manifest.json` (honua-release).
+The `2026.1-rc` tag is created when the first certified lock (`2026.1-rc.3`) is promoted; until then pull the server by the digest in `customer-install-manifest.json`.
 Set `HONUA_IMAGE` in `.env` to that digest to pin an installation exactly.
 
 ## Create an isolated installation

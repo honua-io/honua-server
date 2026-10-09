@@ -25,6 +25,7 @@ The commands use the anonymously published 2026.1 release channel image
 `ghcr.io/honua-io/honua-server:2026.1-rc` (`ghcr.io/honua-io/honua-server:2026.1` once 2026.1
 is generally available; only release promotion moves that tag) with Docker Desktop
 Linux containers; this journey selects `linux/amd64`. The exact digest for a release is `server.image` in that release's `customer-install-manifest.json` (honua-release).
+The `2026.1-rc` tag is created when the first certified lock (`2026.1-rc.3`) is promoted; until then pull the server by the digest in `customer-install-manifest.json`.
 Set `$Image` to that digest to pin an installation exactly; `docker pull` below
 resolves the tag, and the support step records the digest that ran. The control-plane package is
 [honua-admin 0.1.10](https://pypi.org/project/honua-admin/0.1.10/); the data-plane
