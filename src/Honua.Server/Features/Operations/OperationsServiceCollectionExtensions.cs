@@ -55,7 +55,8 @@ internal static class OperationsServiceCollectionExtensions
         // final composition lacks the store get the fail-closed verifier: replay can
         // never verify without the durable authority (ruling 4).
         services.TryAddScoped<IOperationApprovalReplayVerifier>(sp =>
-            sp.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>() is { } proposalStore
+            sp.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>() is { } proposalStore &&
+            Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore.IsDurable(proposalStore)
                 ? new OperationApprovalReplayVerifier(proposalStore)
                 : new UnavailableOperationApprovalReplayVerifier());
         services.TryAddEnumerable(
@@ -94,8 +95,13 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetService<IConnectionMultiplexer>() is { } redis
                     ? new RedisOperationInstanceStore(redis)
                     : new UnavailableOperationInstanceStore());
+            // The durable-runtime validator and proposal reconcilers stay gated on a REAL
+            // proposal store: a Redis-off host composes the fail-closed placeholder only so
+            // the governed admin catalogs advertise (J1/S1), not to claim a durable runtime.
             if (services.Any(descriptor => descriptor.ServiceType ==
-                    typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore)))
+                    typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore) &&
+                    descriptor.ImplementationType != typeof(Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore) &&
+                    descriptor.ImplementationInstance is not Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore))
             {
                 services.AddHostedService<OperationRuntimeStartupValidator>();
                 services.AddHostedService<PlannedProposalReconciler>();
@@ -134,6 +140,10 @@ internal static class OperationsServiceCollectionExtensions
         services.TryAddDeferredOperationExecutor<CoordinatedReleaseRollbackOperationExecutor>(WorkflowRollbackOperations.CoordinatedRelease);
         services.TryAddScoped<IStudioDraftMutationRuntime, StudioDraftMutationRuntime>();
 
+        // True on every production topology: Redis-on hosts register the durable store and
+        // Redis-off hosts register UnavailableOperationProposalStore, so the governed admin
+        // tools advertise everywhere and approval-gated calls refuse at call time with the
+        // typed capability-unavailable outcome (the approval bridge finds no gateway).
         var hasProposalStore = services.Any(descriptor => descriptor.ServiceType ==
             typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore));
         if (hasProposalStore &&
@@ -255,7 +265,8 @@ internal static class OperationsServiceCollectionExtensions
                 environment.IsDevelopment() || environment.IsEnvironment("Test")
                     ? new VolatileOperationAuditLog()
                     : sp.GetRequiredService<Honua.Core.Features.AuditLog.Abstractions.IAuditLog>(),
-                sp.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>() is null
+                !Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore.IsDurable(
+                    sp.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>())
                     ? null
                     : sp.GetRequiredService<IOperationApprovalReplayVerifier>()));
 

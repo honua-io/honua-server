@@ -6,6 +6,7 @@ resource: "honua://capability/ai.mcp-discovery"
 resources:
   - "honua://capability/ai.agent-operations"
   - "honua://capability/ai.approval-workflows"
+  - "honua://capability/operations.proposals"
 ---
 # Connect AI agents to Honua over MCP
 
@@ -275,6 +276,8 @@ A second, independent axis *does* change the advertised roster: several tools an
 | Dataset ingest (`honua_ingest_dataset`) | Import service composed | Advertised | Omitted without an import-capable provider |
 | Platform-ops observability + deploy tools (`honua_ops_health`, `honua_ops_findings`, `honua_deploy_operations`, …) | Ops-observability / platform-ops readers composed | Advertised | Omitted in minimal hosts |
 
+**The governed `honua_admin_*` tools advertise on every topology, including hosts without Redis.** Advertisement does not depend on whether the durable control plane is composed; execution does. Approval-gated admin operations persist a proposal, and every typed operation persists a durable operation record, in the Redis-backed store. On a Production host without Redis (or without the `caching.redis` entitlement) a call therefore refuses with a typed capability-unavailable error (`code: "unavailable"`, `retryable: false`, `missingDependency: "redis"`) instead of creating a proposal; the proposal tools (`honua_propose_*`) return `outcome: "unavailable"`. The same changes remain available through the admin REST API and Console. Check before calling: the capability manifest (`GET /api/v1/capabilities/manifest`) reports `operations.proposals` with `available: false` and `reasonCode: "dependency-unavailable"` when Redis is absent, or `"license-required"` when Redis is present but unentitled. A Redis-off host is a serving, configure and style/render topology; see [Redis is optional; PostGIS is not](../deploy/docker-compose.md#redis-is-optional-postgis-is-not).
+
 The `honua_plan_analysis`, `honua_validate_plan`, `honua_dry_run_plan`, `honua_execute_plan`, `honua_cancel_job`, `honua_list_jobs`, grounding, and `honua_list_capabilities` tools, plus the job/workspace/process-catalog/feature-catalog resources, are advertised in **every** composition — they depend only on the job runtime and embedded catalogs that are always present.
 
 Layer discovery, layer descriptions, feature pages, and counts use the shared REST resource-access gate, including service/layer policies and per-operation grants. Discovery and schema descriptions require metadata access; feature queries and descriptions that include a row count additionally require query access. Discovery filters inaccessible layers before calculating pagination totals.
@@ -287,6 +290,7 @@ Layer discovery, layer descriptions, feature pages, and counts use the shared RE
 - **HTTP 202 with an empty body** — not an error: MCP notifications (`notifications/*` without an `id`) are acknowledged with 202 by design.
 - **`invalid_request` (-32600)** — malformed JSON-RPC envelope; common causes are a missing `id` on a non-notification method or batching the `initialize` call (it must be sent alone).
 - **Agent "succeeds" but reports a tool error** — tool failures are returned inside `result` with `isError: true` and a structured `code` (`invalid_argument`, `not_found`, `failed_precondition`, …) per the MCP error contract; read the embedded message.
+- **A `honua_admin_*` or `honua_propose_*` call returns `unavailable` with `missingDependency: "redis"`** — the host has no Redis-backed durable control plane, so governed proposals cannot be persisted. The tool is still listed by design. Configure Redis (and the `caching.redis` entitlement) to enable proposals and approvals; the capability manifest's `operations.proposals` entry reports this before any call.
 - **A Studio tool returns `unavailable`** — the host has not composed Studio persistence; the tools are still listed so clients can discover them, but calls fail with a structured, retryable error.
 
 ## Next steps
