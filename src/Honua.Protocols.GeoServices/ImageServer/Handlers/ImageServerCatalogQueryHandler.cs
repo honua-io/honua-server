@@ -85,6 +85,19 @@ internal sealed class ImageServerCatalogQueryHandler
                     parseError ?? "Invalid query parameter.");
             }
 
+            var maskResource = resolved.Resource
+                ?? throw new InvalidOperationException("ImageServer resource metadata is unavailable.");
+            var maskedFields = await _fieldMaskSource.ResolveAsync(maskResource, cancellationToken).ConfigureAwait(false);
+            query.EnforcedMaskedFields = maskedFields;
+            try
+            {
+                ImageServerCatalogSecurity.Validate(query, maskedFields);
+            }
+            catch (ImageServerCatalogFilterException)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Invalid ImageServer catalog query filter.");
+            }
+
             var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, query.Time);
             if (editionError != null)
             {
@@ -101,16 +114,6 @@ internal sealed class ImageServerCatalogQueryHandler
                 ImageServerLog.InvalidCatalogQueryParameters(_logger, layerId, ex.Message);
                 return StandardErrorHelpers.CreateBadRequest(context, "Invalid ImageServer catalog query filter.");
             }
-
-            // RBAC field-level masking (#2159): drop attribute (field) names the
-            // principal's role is not permitted to see. This is the ImageServer
-            // companion to the FeatureServer column masking (#2108): the same policy
-            // source (IFieldMaskSource) and the same masked representation (the field
-            // is absent), enforced server-side before serialization so a masked column
-            // never leaks — even when the caller explicitly requests it via outFields.
-            var maskedFields = resolved.Resource is { } maskResource
-                ? await _fieldMaskSource.ResolveAsync(maskResource, cancellationToken).ConfigureAwait(false)
-                : ImmutableArray<string>.Empty;
 
             ImageServerLog.CatalogQueryCompleted(_logger, layerId, page.Items.Count, page.TotalCount);
 
@@ -164,8 +167,12 @@ internal sealed class ImageServerCatalogQueryHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
+            var resource = resolved.Resource
+                ?? throw new InvalidOperationException("ImageServer resource metadata is unavailable.");
+            var maskedFields = await _fieldMaskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
             var query = new ImageServerCatalogQuery
             {
+                EnforcedMaskedFields = maskedFields,
                 ObjectIds = [rasterId],
                 Limit = 1,
                 ReturnGeometry = true,
@@ -177,9 +184,6 @@ internal sealed class ImageServerCatalogQueryHandler
                 return StandardErrorHelpers.CreateNotFound(context, $"Raster catalog item {rasterId} not found.");
             }
 
-            var maskedFields = resolved.Resource is { } resource
-                ? await _fieldMaskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false)
-                : ImmutableArray<string>.Empty;
             var feature = BuildFeature(item, query, maskedFields);
 
             scope.SetSuccess(1);

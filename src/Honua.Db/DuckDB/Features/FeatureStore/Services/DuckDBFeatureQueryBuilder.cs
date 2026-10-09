@@ -7,11 +7,11 @@ using System.Text.RegularExpressions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Queries.Filters;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Core.Features.Tiles;
+using Honua.Core.Queries.Filters;
 using Honua.Db.DuckDB.Features.Infrastructure;
 
 namespace Honua.Db.DuckDB.Features.FeatureStore.Services;
@@ -272,6 +272,13 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         int layerId,
         string fieldName,
         TemporalPropertyType propertyType)
+        => BuildTemporalExtentQuery(layerId, fieldName, propertyType, new FeatureQuery());
+
+    public ParameterizedQuery BuildTemporalExtentQuery(
+        int layerId,
+        string fieldName,
+        TemporalPropertyType propertyType,
+        FeatureQuery query)
     {
         var mapping = _layerRegistry.GetRequiredMapping(layerId);
         ValidateFieldName(fieldName);
@@ -286,7 +293,10 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             WHERE {fieldExpression} IS NOT NULL
             """);
 
-        return new ParameterizedQuery(sb.ToString(), []);
+        var parameters = new List<object>();
+        var paramIndex = 1;
+        AppendWhereClause(sb, mapping, query, ref paramIndex, parameters);
+        return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
     /// <inheritdoc />

@@ -528,6 +528,9 @@ internal sealed partial class Wcs20Handler
         var rasterQuery = new RasterQuery
         {
             ClipRegion = CreateClipRegion(envelope, requestSrid),
+            // BBOX and WIDTH/HEIGHT define the output grid, including NoData
+            // padding outside the coverage and samples inside a source cell.
+            CoverClipExtent = true,
             OutputSrid = responseSrid,
             OutputFormat = outputFormat,
             OutputWidth = width,

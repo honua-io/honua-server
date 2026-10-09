@@ -7,7 +7,6 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.Services;
@@ -16,6 +15,7 @@ using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.DependencyInjection;
@@ -190,6 +190,44 @@ public class ImageServerCatalogQueryHandlerTests
         jsonResult.Value!.Features[0].Attributes.Should().NotContainKey("PixelType");
         jsonResult.Value.Features[0].Attributes.Should().ContainKey("Name");
         jsonResult.Value.Fields.Select(f => f.Name).Should().NotContain("PixelType");
+    }
+
+    [UnitTheory]
+    [Operation(Operations.Query)]
+    [InlineData("where", "Name = 'scene-a'", "returnCountOnly")]
+    [InlineData("where", "AcquisitionDate IS NOT NULL", "returnIdsOnly")]
+    [InlineData("orderByFields", "Name DESC", "returnExtentOnly")]
+    [InlineData("time", "1767225600000", "returnCountOnly")]
+    public async Task QueryCatalogAsync_MaskedPredicateOrOrdering_RefusesBeforeCatalogRead(
+        string parameter, string value, string responseMode)
+    {
+        SetupLayerWithRasters([CreateRaster(100, "scene-a")]);
+        var reader = Substitute.For<IImageServerCatalogReader>();
+        reader.ReadAsync(Arg.Any<int>(), Arg.Any<ImageServerCatalogQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new ImageServerCatalogPage
+            {
+                Items = [],
+                TotalCount = 0,
+                ExceededTransferLimit = false,
+                AggregateExtent = null
+            });
+        var masks = Substitute.For<IFieldMaskSource>();
+        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create("nAmE", "acquisitionDATE"));
+        var handler = new ImageServerCatalogQueryHandler(_graphProvider, reader, masks,
+            NullLogger<ImageServerCatalogQueryHandler>.Instance);
+        var context = CreateImageServerContext();
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            [parameter] = value,
+            [responseMode] = "true"
+        };
+
+        var result = await handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+        await reader.DidNotReceive().ReadAsync(Arg.Any<int>(), Arg.Any<ImageServerCatalogQuery>(),
+            Arg.Any<CancellationToken>());
     }
 
     private ImageServerCatalogQueryHandler BuildHandlerWithMaskedFields(params string[] maskedFields)

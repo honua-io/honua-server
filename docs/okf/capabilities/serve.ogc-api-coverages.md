@@ -18,7 +18,11 @@ Serve coverage data through OGC API - Coverages.
 | Edition | Community |
 | Surface maturity | 8 preview |
 | Registry entries | 8 |
+<<<<<<< HEAD
 | Proving tests | 50 |
+=======
+| Proving tests | 49 |
+>>>>>>> origin/trunk
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

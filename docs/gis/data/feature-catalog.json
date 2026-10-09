@@ -4088,6 +4088,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_AsyncProgressPersistenceFails_DoesNotQueueHeadlessBackgroundJob",
+        "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_AsyncSubmission_CapturesResolvedTenantAndProjection",
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_CsvFormat_ReturnsValidCsvWithWktGeometry",
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_DeclaredWriterGap_RejectsBeforeLayerLookup",
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_GeoPackageFormat_ReturnsValidGpkg",
@@ -9334,6 +9335,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.CatalogSecondaryRead_MaskedFields_AreAbsent",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Find_GetAndPost_ReturnsImagesContainingTargetGeometry",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Find_MissingToGeometry_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Find_WithOrientationMetadata_RanksByOffNadirAngle"
@@ -9382,6 +9384,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.Identify_WithValidPoint_ReturnsIdentifyResult",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.CatalogSecondaryRead_MaskedFields_AreAbsent",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerErrorHandlingTests.Identify_InvalidFormat_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerErrorHandlingTests.Identify_InvalidJsonGeometry_ReturnsBadRequestOrNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerErrorHandlingTests.Identify_MissingGeometry_ReturnsBadRequest",
@@ -9499,6 +9502,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.CatalogSecondaryRead_MaskedFields_AreAbsent",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_AreaAndPerimeterEnvelope_ReturnsBasicMensuration",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_AreaAndPerimeter_AntimeridianPolygon_ReturnsFiniteArea",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_Centroid_AntimeridianRing_LandsOnCorrectSide",
@@ -9560,6 +9564,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerClientCompatibilityTests.TypedClient_ReadsMetadataCatalogAndLegend",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.CatalogSecondaryRead_MaskedFields_AreAbsent",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.QueryCatalog_Get_OrderByFieldsDescending_SortsFeatures",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.QueryCatalog_Get_OutFieldsUnknownField_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.QueryCatalog_Get_OutFields_ProjectsAttributes",
@@ -9674,6 +9679,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.CatalogSecondaryRead_MaskedFields_AreAbsent",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterCatalogItem_ExistingRaster_ReturnsFeature",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterCatalogItem_UnknownRaster_ReturnsNotFoundError"
       ],

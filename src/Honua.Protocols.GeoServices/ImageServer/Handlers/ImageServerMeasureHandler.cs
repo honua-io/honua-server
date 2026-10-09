@@ -16,8 +16,8 @@ using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
-using MeasureSpace = Honua.Protocols.GeoServices.ImageServer.Services.ImageServerMensurationMath.MeasureSpace;
 using IGeographicSridClassifier = Honua.Core.Features.Shared.Models.IGeographicSridClassifier;
+using MeasureSpace = Honua.Protocols.GeoServices.ImageServer.Services.ImageServerMensurationMath.MeasureSpace;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
@@ -105,6 +105,10 @@ internal sealed class ImageServerMeasureHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
+            var maskedFields = await ImageServerCatalogSecurity.ResolveMasksAsync(
+                context, layerId, cancellationToken).ConfigureAwait(false);
+            var rasterName = ImageServerCatalogSecurity.IsMasked(maskedFields, "Name") ? null : raster.Name;
+
             if (!TryParseRequest(values, raster.Srid, out var operation, out var fromGeometry, out var toGeometry, out var error))
             {
                 ImageServerLog.InvalidMeasureParameters(_logger, layerId, error ?? "Invalid measure parameter.");
@@ -121,7 +125,7 @@ internal sealed class ImageServerMeasureHandler
             if (normalizedOperation == "esrimensurationheightfrombaseandtop" && toGeometry is not null)
             {
                 return await MeasureDemHeightAsync(
-                    context, layerId, raster, fromGeometry.Points[0], toGeometry.Value.Points[0],
+                    context, layerId, raster, rasterName, fromGeometry.Points[0], toGeometry.Value.Points[0],
                     GetString(values, "linearUnit") ?? "esriMeters", cancellationToken).ConfigureAwait(false);
             }
 
@@ -134,7 +138,7 @@ internal sealed class ImageServerMeasureHandler
                 && toGeometry is not null)
             {
                 return await MeasureShadowHeightAsync(
-                    context, layerId, raster, fromGeometry.Points[0], toGeometry.Value.Points[0],
+                    context, layerId, raster, rasterName, fromGeometry.Points[0], toGeometry.Value.Points[0],
                     operation, GetString(values, "linearUnit") ?? "esriMeters", cancellationToken).ConfigureAwait(false);
             }
 
@@ -151,13 +155,13 @@ internal sealed class ImageServerMeasureHandler
 
             var response = operation.ToLowerInvariant() switch
             {
-                "esrimensurationpoint" => BuildPointResponse(raster.Name, fromGeometry.Points[0]),
+                "esrimensurationpoint" => BuildPointResponse(rasterName, fromGeometry.Points[0]),
                 "esrimensurationdistanceandangle" => await BuildDistanceResponseAsync(
-                    raster.Name, fromGeometry.Points[0], toGeometry!.Value.Points[0], linearUnit, angularUnit, cancellationToken).ConfigureAwait(false),
+                    rasterName, fromGeometry.Points[0], toGeometry!.Value.Points[0], linearUnit, angularUnit, cancellationToken).ConfigureAwait(false),
                 "esrimensurationareaandperimeter" => await BuildAreaResponseAsync(
-                    raster.Name, fromGeometry, linearUnit, areaUnit, cancellationToken).ConfigureAwait(false),
+                    rasterName, fromGeometry, linearUnit, areaUnit, cancellationToken).ConfigureAwait(false),
                 "esrimensurationcentroid" => BuildPointResponse(
-                    raster.Name,
+                    rasterName,
                     CalculateCentroid(
                         fromGeometry,
                         fromGeometry.Srid is int centroidSrid
@@ -386,7 +390,7 @@ internal sealed class ImageServerMeasureHandler
         }
     }
 
-    private static ImageServerMeasureResponse BuildPointResponse(string name, MeasurePoint point)
+    private static ImageServerMeasureResponse BuildPointResponse(string? name, MeasurePoint point)
         => new()
         {
             Name = name,
@@ -394,7 +398,7 @@ internal sealed class ImageServerMeasureHandler
         };
 
     private async ValueTask<ImageServerMeasureResponse> BuildDistanceResponseAsync(
-        string name,
+        string? name,
         MeasurePoint from,
         MeasurePoint to,
         string linearUnit,
@@ -460,6 +464,7 @@ internal sealed class ImageServerMeasureHandler
         HttpContext context,
         int layerId,
         RasterInfo raster,
+        string? rasterName,
         MeasurePoint from,
         MeasurePoint to,
         string operation,
@@ -485,7 +490,7 @@ internal sealed class ImageServerMeasureHandler
 
         var response = new ImageServerMeasureResponse
         {
-            Name = raster.Name,
+            Name = rasterName,
             SensorName = resolvedSensor.SensorName ?? "Unknown",
             Height = CreateValue(height, unit),
         };
@@ -495,7 +500,7 @@ internal sealed class ImageServerMeasureHandler
     }
 
     private async ValueTask<ImageServerMeasureResponse> BuildAreaResponseAsync(
-        string name,
+        string? name,
         MeasureGeometry geometry,
         string linearUnit,
         string areaUnit,
@@ -541,6 +546,7 @@ internal sealed class ImageServerMeasureHandler
         HttpContext context,
         int layerId,
         RasterInfo raster,
+        string? rasterName,
         MeasurePoint basePoint,
         MeasurePoint topPoint,
         string linearUnit,
@@ -597,7 +603,7 @@ internal sealed class ImageServerMeasureHandler
         var sensorName = sensor!.SensorName ?? "Unknown";
         var response = new ImageServerMeasureResponse
         {
-            Name = raster.Name,
+            Name = rasterName,
             SensorName = sensorName,
             Height = CreateValue(height, unit),
         };
