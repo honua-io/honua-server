@@ -105,9 +105,9 @@ public sealed class StudioPublishRequestRedisOffTests : IAsyncLifetime
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created, await createResponse.Content.ReadAsStringAsync());
         var draft = await ReadAsync(createResponse, StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
 
-        (await client.PostAsync($"/api/v1/studio/package-drafts/{draft.DraftId:D}/validate", EmptyJson()))
+        (await PostEmptyJsonAsync(client, $"/api/v1/studio/package-drafts/{draft.DraftId:D}/validate"))
             .StatusCode.Should().Be(HttpStatusCode.OK);
-        (await client.PostAsync($"/api/v1/studio/package-drafts/{draft.DraftId:D}/preview-plan", EmptyJson()))
+        (await PostEmptyJsonAsync(client, $"/api/v1/studio/package-drafts/{draft.DraftId:D}/preview-plan"))
             .StatusCode.Should().Be(HttpStatusCode.OK);
 
         var saveResponse = await PostAsync(
@@ -198,10 +198,17 @@ public sealed class StudioPublishRequestRedisOffTests : IAsyncLifetime
         return await ReadAsync(response, StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
     }
 
-    private static Task<HttpResponseMessage> PostAsync<T>(HttpClient client, string path, T body, JsonTypeInfo<T> typeInfo)
-        => client.PostAsync(path, new StringContent(JsonSerializer.Serialize(body, typeInfo), Encoding.UTF8, JsonMediaType));
+    private static async Task<HttpResponseMessage> PostAsync<T>(HttpClient client, string path, T body, JsonTypeInfo<T> typeInfo)
+    {
+        using var content = new StringContent(JsonSerializer.Serialize(body, typeInfo), Encoding.UTF8, JsonMediaType);
+        return await client.PostAsync(path, content);
+    }
 
-    private static StringContent EmptyJson() => new("{}", Encoding.UTF8, JsonMediaType);
+    private static async Task<HttpResponseMessage> PostEmptyJsonAsync(HttpClient client, string path)
+    {
+        using var content = new StringContent("{}", Encoding.UTF8, JsonMediaType);
+        return await client.PostAsync(path, content);
+    }
 
     private static async Task<T> ReadAsync<T>(HttpResponseMessage response, JsonTypeInfo<ApiResponse<T>> typeInfo)
     {
