@@ -38,7 +38,8 @@ public sealed class UnavailableOperationProposalStore : IOperationProposalStore
             CapabilityUnavailableCodes.DurableControlPlaneDetail,
             CapabilityUnavailableCodes.RedisDependency,
             CapabilityUnavailableCodes.RedisRemediation,
-            CapabilityUnavailableCodes.RedisRemediationRef);
+            CapabilityUnavailableCodes.RedisRemediationRef,
+            CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
 
     /// <inheritdoc />
     public Task<bool> TryCreateAsync(OperationProposal proposal, TimeSpan? ttl = null, CancellationToken cancellationToken = default)

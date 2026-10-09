@@ -12,6 +12,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
@@ -1420,6 +1421,21 @@ internal static class WmtsRequestHandlers
             var wmtsTemporalRanges = await PrefetchWmtsTemporalRangesAsync(
                 visibleLayers, featureReader, logger, cancellationToken).ConfigureAwait(false);
 
+            var legendLayers = new HashSet<int>();
+            var styleCatalog = request.HttpContext.RequestServices.GetService<ILayerStyleCatalog>();
+            if (IsProtocolEnabled(service, "Wms") && styleCatalog is not null)
+            {
+                var supportedLegends = await Task.WhenAll(visibleLayers.Select(layer =>
+                    ResolveWmtsLegendSupportAsync(styleCatalog, layer, logger, cancellationToken))).ConfigureAwait(false);
+                for (var index = 0; index < visibleLayers.Count; index++)
+                {
+                    if (supportedLegends[index])
+                    {
+                        legendLayers.Add(visibleLayers[index].StorageLayerId);
+                    }
+                }
+            }
+
             foreach (var layer in visibleLayers)
             {
                 var layerId = layer.Identifier;
@@ -1444,7 +1460,7 @@ internal static class WmtsRequestHandlers
                 var tileTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png{dimensionTemplateSuffix}");
                 var featureInfoTextTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.txt{dimensionTemplateSuffix}");
                 var featureInfoJsonTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.json{dimensionTemplateSuffix}");
-                var legendHref = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}?SERVICE=WMTS&REQUEST=GetTile&VERSION={WmtsVersion}&LAYER={layerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0{legendDimensionSuffix}");
+                var legendHref = BaseUrlResolver.PreserveToken(request, $"{normalizedBaseUrl}/rest/services/{serviceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER={Uri.EscapeDataString(GetWmsLayerName(layer.Resource, layer.Publication))}&STYLE=default&FORMAT=image/png{legendDimensionSuffix}");
 
                 sb.AppendLine("    <Layer>");
                 var layerTitle = layer.Resource.Metadata.Title
@@ -1456,13 +1472,14 @@ internal static class WmtsRequestHandlers
                     .ConfigureAwait(false);
                 sb.AppendLine("      <Style isDefault=\"true\">");
                 sb.AppendLine("        <ows:Identifier>default</ows:Identifier>");
-                sb.Append("        <LegendURL format=\"image/png\" xlink:href=\"")
-                    .Append(EscapeXml(legendHref))
-                    .Append("\" width=\"")
-                    .Append(TileSize.ToString(CultureInfo.InvariantCulture))
-                    .Append("\" height=\"")
-                    .Append(TileSize.ToString(CultureInfo.InvariantCulture))
-                    .AppendLine("\" />");
+                // A legend is a swatch and label, never a world map tile. Reuse the
+                // service's legend surface only when WMS can paint this style's swatches.
+                if (legendLayers.Contains(layer.StorageLayerId))
+                {
+                    sb.Append("        <LegendURL format=\"image/png\" xlink:href=\"")
+                        .Append(EscapeXml(legendHref))
+                        .AppendLine("\" />");
+                }
                 sb.AppendLine("      </Style>");
                 sb.AppendLine("      <Format>image/png</Format>");
                 if (isQueryable)
@@ -1726,6 +1743,34 @@ internal static class WmtsRequestHandlers
         }
 
         return resolved;
+    }
+
+    /// <summary>
+    /// Resolves optional legend support without failing capabilities when a style is unavailable.
+    /// </summary>
+    private static async Task<bool> ResolveWmtsLegendSupportAsync(
+        ILayerStyleCatalog styleCatalog,
+        WmtsLayer layer,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var plan = await GetRasterStylePlanAsync(styleCatalog, layer.StorageLayerId, cancellationToken)
+                .ConfigureAwait(false);
+            return LegendImageComposer.SupportsStylePlan(plan);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Legend metadata is optional; an unavailable style must not remove the
+            // layer or prevent clients from discovering otherwise usable map tiles.
+            OgcClassicLog.LegendSkipped(logger, layer.StorageLayerId, layer.Identifier, ex);
+            return false;
+        }
     }
 
     /// <summary>

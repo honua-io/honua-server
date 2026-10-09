@@ -793,11 +793,17 @@ internal static class McpToolOutputSchemas
               "type": "array",
               "items": {
                 "type": "object",
-                "required": ["serviceId", "layerId"],
+                "required": ["serviceId", "layerId", "styleRendering"],
                 "properties": {
                   "serviceId": { "type": "string" },
                   "layerId": { "type": "integer" },
-                  "styleId": { "type": ["string", "null"] }
+                  "styleId": { "type": ["string", "null"], "description": "The layer's applied (primary) catalog style; null when the stored default style rendered." },
+                  "styleRendering": {
+                    "type": "string",
+                    "enum": ["applied", "default", "unsupported-style-construct"],
+                    "description": "applied: the applied style was drawn. default: no applied style, the stored default style was drawn. unsupported-style-construct: unsupportedStyleConstructs lists what the server rasterizer did not draw (the default style is never substituted)."
+                  },
+                  "unsupportedStyleConstructs": { "type": "array", "items": { "type": "string" } }
                 }
               }
             },
@@ -947,8 +953,18 @@ internal static class McpToolOutputSchemas
         """
         {
           "type": "object",
-          "required": ["serviceId", "layerId", "styleId", "applied"],
+          "required": ["serviceId", "layerId", "styleId", "applied", "status", "operationId", "operationInstanceId", "handleId", "correlationId", "createdAt", "updatedAt"],
           "properties": {
+            "status": { "type": "string", "description": "Canonical operation handle status (Completed for an applied or previewed preset)." },
+            "operationId": { "type": "string", "const": "style.apply-preset" },
+            "operationInstanceId": { "type": "string", "minLength": 1 },
+            "handleId": { "type": "string", "minLength": 1 },
+            "correlationId": { "type": "string", "minLength": 1 },
+            "auditId": { "type": ["string", "null"], "description": "Durable audit identity of the style.apply-preset operation." },
+            "createdAt": { "type": "string", "format": "date-time" },
+            "updatedAt": { "type": "string", "format": "date-time" },
+            "authorizationOutcome": { "type": ["string", "null"] },
+            "policyOutcome": { "type": ["string", "null"] },
             "serviceId": { "type": "string" },
             "layerId": { "type": "integer" },
             "styleId": { "type": "string", "description": "The selected preset; bound as primary only when applied=true." },

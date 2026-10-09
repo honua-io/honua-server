@@ -18,7 +18,7 @@ Serve map images, identify, and export through the Esri GeoServices MapServer su
 | Edition | Community |
 | Surface maturity | 45 implemented, 2 preview |
 | Registry entries | 47 |
-| Proving tests | 391 |
+| Proving tests | 394 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

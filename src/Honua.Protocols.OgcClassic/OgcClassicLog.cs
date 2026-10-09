@@ -39,4 +39,10 @@ internal static partial class OgcClassicLog
         Level = LogLevel.Error,
         Message = "OGC WMTS failed: {ServiceId}: {ErrorMessage}")]
     public static partial void WmtsFailed(ILogger logger, string serviceId, string errorMessage, Exception? exception = null);
+
+    [LoggerMessage(
+        EventId = 5645,
+        Level = LogLevel.Warning,
+        Message = "OGC WMTS capabilities: skipping legend for layer {LayerId} ({LayerName}); style resolution failed")]
+    public static partial void LegendSkipped(ILogger logger, int layerId, string layerName, Exception? exception = null);
 }

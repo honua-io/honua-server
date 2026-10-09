@@ -361,7 +361,8 @@ internal sealed class PortalOAuthTokenService(
             record.ClientId,
             record.Principal,
             record.ExpirationMinutes,
-            requestBinding,
+            IsNativeRedirect(record.RedirectUri) ? PortalTokenClientType.Bearer : PortalTokenClientType.Referer,
+            IsNativeRedirect(record.RedirectUri) ? string.Empty : requestBinding,
             request.IncludeRefreshToken,
             cancellationToken).ConfigureAwait(false);
     }
@@ -413,7 +414,8 @@ internal sealed class PortalOAuthTokenService(
                 record.ClientId,
                 record.Principal,
                 requestedMinutes: null,
-                requestBinding,
+                record.ClientType ?? PortalTokenClientType.Referer,
+                record.BindingValue ?? requestBinding,
                 includeRefreshToken: false,
                 cancellationToken).ConfigureAwait(false);
         }
@@ -439,7 +441,8 @@ internal sealed class PortalOAuthTokenService(
                 consumed.ClientId,
                 consumed.Principal,
                 requestedMinutes: null,
-                requestBinding,
+                consumed.ClientType ?? PortalTokenClientType.Referer,
+                consumed.BindingValue ?? requestBinding,
                 includeRefreshToken: true,
                 cancellationToken).ConfigureAwait(false);
         }
@@ -466,6 +469,7 @@ internal sealed class PortalOAuthTokenService(
         string clientId,
         PortalOAuthPrincipal principal,
         int? requestedMinutes,
+        PortalTokenClientType clientType,
         string requestBinding,
         bool includeRefreshToken,
         CancellationToken cancellationToken)
@@ -479,10 +483,9 @@ internal sealed class PortalOAuthTokenService(
                 DisplayName: principal.DisplayName,
                 TenantId: principal.TenantId,
                 Roles: principal.Roles,
-                // OAuth2 bridge tokens are bound to the requesting client's referer
-                // (the redirect host) so they behave like a generateToken referer
-                // token rather than an IP-bound one.
-                ClientType: PortalTokenClientType.Referer,
+                // Browser clients retain the redirect-origin binding. Native clients
+                // use a bearer token because their HTTP stack has no browser Referer.
+                ClientType: clientType,
                 BindingValue: requestBinding,
                 ExpiresAt: expiresAt,
                 RolesRequireClaimsMappingEntitlement: principal.RolesRequireClaimsMappingEntitlement,
@@ -498,6 +501,8 @@ internal sealed class PortalOAuthTokenService(
                 {
                     ClientId = clientId,
                     Principal = principal,
+                    ClientType = clientType,
+                    BindingValue = requestBinding,
                     ExpiresAt = DateTimeOffset.UtcNow.Add(RefreshTokenLifetime),
                 },
                 cancellationToken).ConfigureAwait(false);
@@ -522,6 +527,15 @@ internal sealed class PortalOAuthTokenService(
         return requested is null
             ? Math.Min(defaultMinutes, maxMinutes)
             : Math.Min(requested.Value, maxMinutes);
+    }
+
+    private static bool IsNativeRedirect(string? redirectUri)
+    {
+        // The broker allowlists this redirect and the code exchange verifies exact
+        // equality before reaching this decision. Never select bearer mode from an
+        // unverified refresh request's redirect_uri or Referer header.
+        return Uri.TryCreate(redirectUri, UriKind.Absolute, out var uri) &&
+            (uri.IsLoopback || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps));
     }
 
     private static bool VerifyPkce(string? challenge, string? method, string? verifier)

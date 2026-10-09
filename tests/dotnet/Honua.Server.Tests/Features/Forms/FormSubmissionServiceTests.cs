@@ -14,6 +14,7 @@ using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 using Honua.Core.Features.Forms.Packages;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -347,8 +348,97 @@ public sealed class FormSubmissionServiceTests
         store.CompletedResponse!.Retry!.Retryable.Should().BeFalse();
     }
 
+    [UnitTheory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task SubmitAsync_UnknownOutcomeWithoutUsableKey_DoesNotPromiseReplay(string? idempotencyKey)
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore();
+        var writer = new FakeFeatureWriter
+        {
+            OnApplyEdits = () => throw new OperationCanceledException("Lost acknowledgement.")
+        };
+        var service = CreateService(store, writer);
+        var context = CreateContext(CreateSubmission(idempotencyKey), requestServices);
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        var body = ReadResponseBody(context);
+        body.Retry!.Retryable.Should().BeFalse();
+        body.Retry.Reason.Should().Contain("replay protection is unavailable").And.Contain("Reconcile");
+        body.Retry.Reason.Should().NotContain("Reuse this idempotency key");
+        body.EditOutcome!.Error.Should().NotContain("will not be re-executed");
+        store.GetSubmissionByIdempotencyCalls.Should().Be(0);
+        writer.ApplyEditsCalls.Should().Be(1);
+    }
+
     [UnitTest]
-    public async Task SubmitAsync_WhenUnhandledExceptionOccurs_DeletesClaimAndReturns500WithoutPersistingReplay()
+    public async Task SubmitAsync_AttachmentCancellationAfterSuccessfulEdit_PreservesKnownResultOnReplay()
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore(includeAttachment: true, attachmentFieldRequired: false);
+        var writer = new FakeFeatureWriter();
+        var attachments = new RecordingAttachmentStore
+        {
+            OnUpload = () => throw new OperationCanceledException("Attachment timed out.")
+        };
+        var service = CreateService(store, writer, attachments);
+        var request = CreateSubmission("attachment-timeout", includeAttachment: true);
+        var context = CreateMultipartContext(request, requestServices, CreateFormFile());
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        var body = ReadResponseBody(context);
+        body.Status.Should().Be("failed");
+        body.EditOutcome!.Succeeded.Should().BeTrue();
+        body.EditOutcome.Created.Should().Be(1);
+        body.EditOutcome.Error.Should().BeNull();
+        body.TargetFeatureId.Should().Be(101);
+        body.Retry!.Reason.Should().Contain("feature edit completed").And.NotContain("may have committed");
+        store.DeleteCalls.Should().Be(0);
+
+        var replayContext = CreateMultipartContext(request, requestServices, CreateFormFile());
+        var replay = await service.SubmitAsync(replayContext, store.PackageVersion.FormId);
+        await replay.ExecuteAsync(replayContext);
+        var replayBody = ReadResponseBody(replayContext);
+        replayBody.IdempotentReplay.Should().BeTrue();
+        replayBody.EditOutcome.Should().BeEquivalentTo(body.EditOutcome);
+        writer.ApplyEditsCalls.Should().Be(1);
+        attachments.UploadCalls.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_ReadOnlyProviderRejectsWrite_ReleasesClaimWithoutTerminalReplay()
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore();
+        var writer = new FakeFeatureWriter
+        {
+            OnApplyEdits = () => throw new ReadOnlyFeatureWriteException("Provider is read-only.")
+        };
+        var service = CreateService(store, writer);
+        var context = CreateContext(CreateSubmission("readonly-retry"), requestServices);
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        var body = ReadResponseBody(context);
+        body.Retry!.Retryable.Should().BeTrue();
+        body.EditOutcome!.Succeeded.Should().BeFalse();
+        body.EditOutcome.Error.Should().Be("Submission could not be applied.");
+        store.DeleteCalls.Should().Be(1);
+        store.CompleteCalls.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_WhenWriterOutcomeIsUnknown_PreservesClaimAndReturns500()
     {
         using var requestServices = CreateRequestServices();
         var store = new FakeFormPackageStore();
@@ -626,7 +716,7 @@ public sealed class FormSubmissionServiceTests
         };
 
     private static FormSubmissionRequest CreateSubmission(
-        string idempotencyKey,
+        string? idempotencyKey,
         string operation = FormSubmissionOperations.Create,
         bool includeAttachment = false,
         long? targetFeatureId = null,
@@ -858,6 +948,16 @@ public sealed class FormSubmissionServiceTests
             CancellationToken cancellationToken = default)
         {
             GetSubmissionByIdempotencyCalls++;
+            if (CompletedResponse is not null)
+            {
+                return Task.FromResult<FormSubmissionRecord?>(new FormSubmissionRecord
+                {
+                    SubmissionId = CompletedResponse.SubmissionId,
+                    RequestHash = LastRequestHash ?? string.Empty,
+                    Status = CompletedResponse.Status,
+                    Response = CompletedResponse
+                });
+            }
             if (GetSubmissionByIdempotencyCalls == 1)
             {
                 return Task.FromResult<FormSubmissionRecord?>(null);
@@ -994,6 +1094,8 @@ public sealed class FormSubmissionServiceTests
 
         public int UploadCalls { get; private set; }
 
+        public Action? OnUpload { get; init; }
+
         public Task<Attachment?> GetAsync(int layerId, long featureId, long attachmentId, CancellationToken cancellationToken = default)
             => Task.FromResult<Attachment?>(null);
 
@@ -1036,6 +1138,7 @@ public sealed class FormSubmissionServiceTests
             CancellationToken cancellationToken = default)
         {
             UploadCalls++;
+            OnUpload?.Invoke();
             return Task.FromResult(Attachment.Create(
                 UploadCalls,
                 featureId,

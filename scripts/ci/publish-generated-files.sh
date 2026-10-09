@@ -21,10 +21,6 @@ source scripts/ci/generated-files.sh
 branch='automation/regenerate-generated-files'
 title='ci: regenerate generated files'
 
-if git diff --quiet HEAD -- "${GENERATED_FILES[@]}"; then
-  echo 'Generated files are up to date; nothing to publish.'
-  exit 0
-fi
 # Validation stays bound to the triggering source even on an old rerun.
 # Capture the branch lease BEFORE observing trunk: a newer publisher racing
 # that observation must never have its automation head overwritten.
@@ -35,6 +31,14 @@ remote_trunk="$(git ls-remote --exit-code origin refs/heads/trunk)"
 remote_trunk="${remote_trunk%%[[:space:]]*}"
 if [[ "$source_sha" != "$remote_trunk" ]]; then
   echo "Validated source $source_sha; trunk is now $remote_trunk. No stale projections published."
+  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+    echo 'stale_source=true' >> "$GITHUB_OUTPUT"
+  fi
+  exit 0
+fi
+# Even a clean old checkout may miss drift introduced by the new trunk.
+if git diff --quiet HEAD -- "${GENERATED_FILES[@]}"; then
+  echo 'Generated files are up to date; nothing to publish.'
   exit 0
 fi
 : "${GH_TOKEN:?MERGE_TRAIN_TOKEN is required to publish a PR and trigger its admission checks}"
@@ -59,8 +63,8 @@ git -c user.name='Mike McDougall' \
 # allowlist -- that is exactly how a disguised trunk push would read. Keep
 # this literal in sync with `branch` above by hand.
 # Use the lease captured before the freshness observation. This is a CAS of
-# the automation branch, not a lock on trunk. A later trunk push schedules its
-# own refresh through the same reviewed maintenance path as #4695.
+# the automation branch, not a lock on trunk. A stale nightly source schedules
+# a bounded fresh-head retry through the same reviewed maintenance path.
 # Credentials are resolved only for this push and never stored by checkout.
 git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
   push --force-with-lease="refs/heads/automation/regenerate-generated-files:${remote_branch}" \

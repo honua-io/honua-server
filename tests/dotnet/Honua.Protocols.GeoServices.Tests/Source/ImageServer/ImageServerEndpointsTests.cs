@@ -1155,6 +1155,97 @@ public class ImageServerEndpointsTests
         }
     }
 
+    [IntegrationTheory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WMTS")]
+    [Operation(Operations.Identify)]
+    public async Task Wmts_GetFeatureInfo_JsonIsGeoJsonForDataNoDataAndEmpty(bool hasData, bool empty)
+    {
+        var store = CreateSamplingRasterStoreSubstitute();
+        store.IdentifyAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<double>(), Arg.Any<double>(),
+                Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns(new PixelValueResult
+            {
+                X = 0,
+                Y = 0,
+                Srid = 3857,
+                HasData = hasData,
+                BandValues = new Dictionary<int, object?> { [1] = hasData ? 33.5 : null, [2] = double.NaN }
+            });
+        if (empty)
+        {
+            store.QueryRastersAsync(Arg.Any<int>(), Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>())
+                .Returns(Array.Empty<RasterInfo>());
+        }
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            using var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetFeatureInfo&VERSION=1.0.0&LAYER={TestLayerId}&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&I=128&J=128&INFOFORMAT=application/json");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = json.RootElement;
+            root.GetProperty("type").GetString().Should().Be("FeatureCollection");
+            var features = root.GetProperty("features");
+            features.GetArrayLength().Should().Be(empty ? 0 : 1);
+            if (!empty)
+            {
+                var feature = features[0];
+                feature.GetProperty("type").GetString().Should().Be("Feature");
+                feature.GetProperty("geometry").GetProperty("type").GetString().Should().Be("Point");
+                var coordinates = feature.GetProperty("geometry").GetProperty("coordinates");
+                coordinates[0].GetDouble().Should().BeInRange(-180, 180);
+                coordinates[1].GetDouble().Should().BeInRange(-90, 90);
+                var properties = feature.GetProperty("properties");
+                properties.GetProperty("band2").ValueKind.Should().Be(JsonValueKind.Null);
+                if (hasData)
+                {
+                    properties.GetProperty("band1").GetDouble().Should().Be(33.5);
+                }
+                else
+                {
+                    properties.GetProperty("band1").ValueKind.Should().Be(JsonValueKind.Null);
+                }
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WMTS")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/legend")]
+    [Operation(Operations.GetMetadata)]
+    public async Task Wmts_GetCapabilities_AdvertisedLegend_ResolvesToPngWithLegendSwatches()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            using var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var capabilities = System.Xml.Linq.XDocument.Parse(await response.Content.ReadAsStringAsync());
+            var legendUrl = capabilities.Descendants().Single(element => element.Name.LocalName == "LegendURL")
+                .Attribute(System.Xml.Linq.XName.Get("href", "http://www.w3.org/1999/xlink"))!.Value;
+            legendUrl.Should().Contain("/legend?f=png").And.NotContain("GetTile");
+            using var legend = await fixture.Client.GetAsync(new Uri(legendUrl).PathAndQuery);
+            legend.StatusCode.Should().Be(HttpStatusCode.OK);
+            legend.Content.Headers.ContentType!.MediaType.Should().Be("image/png");
+            using var bitmap = SkiaSharp.SKBitmap.Decode(await legend.Content.ReadAsByteArrayAsync());
+            bitmap.Should().NotBeNull();
+            bitmap.Height.Should().BeLessThan(256);
+            bitmap.GetPixel(10, 10).Alpha.Should().BeGreaterThan(0);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/WMTS")]
     [Operation(Operations.Identify)]

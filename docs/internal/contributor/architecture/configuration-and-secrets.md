@@ -32,6 +32,7 @@ plaintext value (allowed in development) or one of these reference forms:
 | Form | Backend |
 | --- | --- |
 | `env:NAME` | Environment variable |
+| `env://NAME` | Environment variable (URI form, same resolution as `env:NAME`); for harness/dev hosts and CI-injected secrets |
 | `azure:keyvault:<vault>:<secret>` | Azure Key Vault |
 | `aws:secretsmanager:<secret-id>` | AWS Secrets Manager |
 

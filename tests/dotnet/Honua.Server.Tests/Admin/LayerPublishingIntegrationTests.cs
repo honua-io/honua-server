@@ -13,6 +13,8 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Models;
 using Honua.TestKit;
@@ -56,11 +58,14 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     private string _serviceName = string.Empty;
     private string? _retainedSourceServiceName;
     private int? _layerId;
+    private bool _missingLayerSrid;
     private string? _importedTableName;
     private string? _importedTableSchema;
 
     public async Task InitializeAsync()
     {
+        _fixture.DecorateService<IFeatureCacheManager>(inner =>
+            new MissingSridCacheManager(inner, layerId => _missingLayerSrid && layerId == _layerId));
         await _fixture.InitializeAsync();
         _client = _fixture.CreateAdminClient();
         _schema = PublishSchema;
@@ -1571,6 +1576,26 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
             Capabilities = ["Query", "Create", "Update", "Delete"]
         });
         _layerId = publishedLayer.LayerId;
+
+        // Model a missing catalog SRID without altering the shared catalog's NOT NULL
+        // constraint. The stored row and transform expression index still require a
+        // valid SRID even for an attribute-only UPDATE.
+        _missingLayerSrid = true;
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync())
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                CREATE INDEX "idx_srid_{_layerId}" ON "{_fixture.CurrentSchema}".features
+                    USING gist (ST_Transform(geometry, 3857)) WHERE layer_id = {_layerId};
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+        using (var scope = _fixture.Services.CreateScope())
+        {
+            var cache = scope.ServiceProvider.GetRequiredService<IFeatureCacheManager>();
+            cache.InvalidateLayerCache(publishedLayer.LayerId);
+            (await cache.GetLayerSridAsync(publishedLayer.LayerId, CancellationToken.None)).Should().BeNull();
+        }
 
         var queryPath = $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true";
         using var beforeResponse = await _client.GetAsync(queryPath);
@@ -3529,5 +3554,29 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
             DELETE FROM honua.layers;
             DELETE FROM honua.services;
             """);
+    }
+
+    private sealed class MissingSridCacheManager(
+        IFeatureCacheManager inner,
+        Func<int, bool> missingSrid) : IFeatureCacheManager
+    {
+        public Task<int?> GetLayerSridAsync(int layerId, CancellationToken cancellationToken)
+            => missingSrid(layerId) ? Task.FromResult<int?>(null) : inner.GetLayerSridAsync(layerId, cancellationToken);
+
+        public Task<GeometryStorageType> GetGeometryStorageTypeAsync(CancellationToken cancellationToken)
+            => inner.GetGeometryStorageTypeAsync(cancellationToken);
+
+        public Task<bool> IsLayerCatalogAvailableAsync(CancellationToken cancellationToken)
+            => inner.IsLayerCatalogAvailableAsync(cancellationToken);
+
+        public void RecordQueryMetrics(string operationType, long executionTimeMs, int? resultCount = null)
+            => inner.RecordQueryMetrics(operationType, executionTimeMs, resultCount);
+
+        public Dictionary<string, DatabaseOperationMetricsSnapshot> GetPerformanceStatistics()
+            => inner.GetPerformanceStatistics();
+
+        public void CleanupExpiredCacheEntries() => inner.CleanupExpiredCacheEntries();
+
+        public void InvalidateLayerCache(int layerId) => inner.InvalidateLayerCache(layerId);
     }
 }

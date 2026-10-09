@@ -32,7 +32,11 @@ jobs:
     name: Build & Push ${{ matrix.image_name }} (${{ matrix.arch }})
     if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk' || inputs.scan_only == true
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 140
+    # 180, matching nightly-container-build.yml: a COLD native-AOT build (the amd64 Lambda AOT
+    # leg included) does not fit in 140 minutes once boundary verification, SBOM, two Trivy
+    # scans and cross-registry promotion follow it, and a timeout here skips every release
+    # manifest publication downstream.
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -83,6 +87,24 @@ jobs:
             arch: arm64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
+            provenance: mode=max
+            sbom: true
+          # x86_64 is the release-certified Lambda architecture: the 2026.1 release
+          # manifest pins `awsLambdaArchitecture: x86_64` (honua-release
+          # platform-manifest.yaml) and the Lambda GA bill rejects any other
+          # architecture. This leg publishes `<tag>-lambda-aot-amd64`, the same
+          # per-architecture shape the nightly publishes as
+          # `nightly-lambda-aot-<sha7>-amd64`; arm64 above stays for parity with it.
+          - image_key: lambda-aot
+            image_name: Lambda AOT Image
+            dockerfile: docker/Dockerfile.lambda.aot
+            tag_suffix: -lambda-aot
+            cache_scope: honua-lambda-aot
+            sarif_output: trivy-results-lambda-aot
+            sarif_category: trivy-lambda-aot
+            arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
             provenance: mode=max
             sbom: true
           - image_key: functions-jit
@@ -277,6 +299,10 @@ jobs:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: ${{ matrix.platform }}
+          # Stamp the source revision the way the nightly AOT builds do: the build context
+          # excludes .git, so without this the image reports a null deployment revision.
+          build-args: |
+            HONUA_GIT_SHA=${{ github.sha }}
           outputs: type=image,name=${{ steps.targets.outputs.scan_image }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           secrets: |
@@ -324,7 +350,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends skopeo
           if [[ "${{ matrix.image_key }}" == "lambda-aot" ]]; then
             # Retain the attested parent in every target registry, but keep Lambda
-            # deployment tags as runnable, digest-preserved arm64 child manifests.
+            # deployment tags as runnable, digest-preserved per-architecture child
+            # manifests (`-lambda-aot-amd64`, `-lambda-aot-arm64`).
             evidence_tags="$(while IFS= read -r tag; do
               [ -n "$tag" ] || continue
               printf '%s:attested-lambda-aot-${{ matrix.arch }}-${{ github.sha }}\n' "${tag%:*}"
@@ -523,9 +550,13 @@ jobs:
             tag_suffix: -lambda-jit
             source_arches: "arm64"
             publish_aot_alias: false
+          # The unsuffixed `-lambda-aot` (and `-lambda`) tags are a single runnable
+          # child copied with --prefer-index=false, so they name exactly one
+          # architecture: x86_64, the only certified Lambda architecture. arm64 stays
+          # reachable under its explicit `-lambda-aot-arm64` tag.
           - image_name: Lambda AOT Image
             tag_suffix: -lambda-aot
-            source_arches: "arm64"
+            source_arches: "amd64"
             publish_aot_alias: true
           - image_name: Functions Development JIT Image
             tag_suffix: -functions-jit

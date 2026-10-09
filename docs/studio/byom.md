@@ -87,7 +87,10 @@ Configure signing separately from provider credentials:
 The reference must resolve through the server's secret provider to a
 base64-encoded 32-byte Ed25519 seed. Keep that seed in server-controlled secret
 storage; never place it in browser configuration, task environment variables,
-Terraform inputs/state, logs, or receipts. Inline signing material and failed
+Terraform inputs/state, logs, or receipts. A harness or CI host can supply the seed as a runner-injected secret with
+`PrivateKeyReference: env://NAME` (for example the terminal-model canary's
+`env://HONUA_CANARY_TRANSCRIPT_SIGNING_SEED`); production hosts should keep the
+seed in a managed secret store. Inline signing material and failed
 secret resolution produce `studio_ai/provenance_signing_unavailable` before a
 provider call. Provider or transcript-validation failures do not produce a
 successful signed transcript.
