@@ -7285,9 +7285,26 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetLandingPage_AdvertisesTheSeededDatasetExtent",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetLandingPage_BasicRequest_ReturnsLandingPage",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetLandingPage_DiscoveryLinks_EnumerateResolvableMapCollections",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetLandingPage_LinkObjects_OmitNullOptionalFields",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetLandingPage_MixedCrsExtent_AgreesWithPostGisBoundaryOracle",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetLandingPage_SecondAnonymousRead_IsNotASharedCacheReplay"
+      ],
+      "proof_ledger_surface": "ogc-api-maps-and-static-rendering",
+      "maturity": "implemented",
+      "capability": "serve.ogc-api-maps"
+    },
+    {
+      "id": "get-ogc-maps-collections",
+      "route": "/ogc/maps/collections",
+      "method": "GET",
+      "family": "OGC API Maps",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetCollections_ProtectedResource_IsOmittedForAnonymousCaller",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetLandingPage_DiscoveryLinks_EnumerateResolvableMapCollections",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsDuplicateStorageBindingEndpointTests.GetCollections_DuplicateLocalIds_UsesResolvableIdsAndExcludesDeniedResources"
       ],
       "proof_ledger_surface": "ogc-api-maps-and-static-rendering",
       "maturity": "implemented",
@@ -9038,8 +9055,10 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetCapabilities_AdvertisedLegend_ResolvesToPngWithLegendSwatches",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetCapabilities_ReturnsImageServerCapabilities",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetCapabilities_TemporalLayer_AdvertisesTimeDimension",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetFeatureInfo_JsonIsGeoJsonForDataNoDataAndEmpty",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetFeatureInfo_ReturnsPixelValueAtTilePixel",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetFeatureInfo_WithOutOfRangePixel_ReturnsException",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetTile_JpegFormat_RoutesJpegToTileHandler",
@@ -9455,7 +9474,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerClientCompatibilityTests.TypedClient_ReadsMetadataCatalogAndLegend",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetLegend_Get_ReturnsSwatches",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetLegend_InvalidFormat_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetLegend_WithColormapRenderingRule_ReflectsColormapStops"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetLegend_WithColormapRenderingRule_ReflectsColormapStops",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetCapabilities_AdvertisedLegend_ResolvesToPngWithLegendSwatches"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "preview",
@@ -11830,6 +11850,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTemporalTests.Wmts_GetTile_TimeAwareLayer_WithTimeIso8601_ReturnsTile",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTemporalTests.Wmts_GetTile_TimeAwareLayer_WithoutTime_ReturnsTile",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_GetCapabilities_AcceptFormatsTextXml_ReturnsTextXml",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_GetCapabilities_AdvertisedLegend_ReturnsSwatchInsteadOfWorldTile",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_GetCapabilities_AdvertisesCorrectTileMatrixLimitsAndSupportedCrs",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_GetCapabilities_AdvertisesOptionalMetadata",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_GetCapabilities_AdvertisesWorldCrs84QuadTileMatrixSet",
@@ -11844,6 +11865,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_GetCapabilities_SectionsContents_ExcludesServiceMetadataUrl",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_GetCapabilities_SectionsMissingValue_ReturnsMissingParameterValue",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_GetCapabilities_SectionsThemes_ReturnsThemesOnly",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_GetCapabilities_StyleLookupFails_PreservesLayersWithoutLegendUrls",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_GetCapabilities_UnpaintedStyle_OmitsLegendUrl",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_GetCapabilities_UpdateSequenceCurrent_ReturnsWellFormedMinimalCapabilities",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_GetCapabilities_UpdateSequenceHigher_ReturnsInvalidUpdateSequenceWithoutLocator",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_GetCapabilities_WithExplicitlyRejectedXmlAccept_ReturnsNotAcceptable",
@@ -22530,6 +22553,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_RequiresTokens_EmitsOperationTelemetry",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_Soap12_UsesSoap12EnvelopeAndContentType",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_SupportedOperations_ReturnExpectedResultWrapper",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_UtilitiesWithFailedRasterStore_ReturnsOnlyPrintingToolsWithoutProbing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoap_UnsupportedOperations_DoNotCreateAttackerControlledTelemetry",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapCatalog_DtdPayload_ReturnsClientFault",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogGeocodeServerTests.Catalogs_ConfiguredLocator_AdvertiseCanonicalReachableMetadata",
