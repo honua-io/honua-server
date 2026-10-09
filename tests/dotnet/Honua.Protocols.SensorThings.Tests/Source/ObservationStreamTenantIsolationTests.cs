@@ -78,7 +78,7 @@ public sealed class ObservationStreamTenantIsolationTests
     {
         Assert.Equal(49, frame.IotId);
         Assert.Equal(1, frame.DatastreamId);
-        Assert.Equal(expected, frame.Result);
+        Assert.Equal(expected, frame.Result.GetDouble());
         Assert.Equal("2026-09-05T01:02:03.000Z", frame.PhenomenonTime);
         // Internal routing information is never part of the public observation payload.
         var json = JsonSerializer.Serialize(frame, ObservationStreamJsonContext.Default.ObservationStreamFrame);

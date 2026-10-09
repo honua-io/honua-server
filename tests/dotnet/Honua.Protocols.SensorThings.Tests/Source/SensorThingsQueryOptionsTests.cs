@@ -31,11 +31,16 @@ public sealed class SensorThingsQueryOptionsTests : IAsyncLifetime
 
     private readonly WebAppFixture _fixture = new();
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
+    private long _featureId;
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _featureId = await SensorThingsTestData.CreateFeatureAsync(_fixture);
+    }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    private static StringContent Json(string body) => new(body, Encoding.UTF8, "application/json");
+    private StringContent Json(string body) => SensorThingsTestData.ObservationJson(body, _featureId);
 
     /// <summary>The seeded result for observation <paramref name="id"/>, computed here.</summary>
     private static double SeededResult(int id) => 15.0d + (10.0d * Math.Sin(id));
@@ -403,10 +408,10 @@ public sealed class SensorThingsQueryOptionsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /sta/v1.1/Things")]
-    public async Task Things_ExpandDatastreams_Returns501RatherThanIgnoringTheOption()
+    public async Task Things_ExpandDatastreams_ReturnsRelatedEntities()
     {
-        (await GetStatusAsync("/sta/v1.1/Things?$expand=Datastreams"))
-            .Should().Be(HttpStatusCode.NotImplemented);
+        using var document = await GetOkAsync("/sta/v1.1/Things?$expand=Datastreams");
+        document.RootElement.GetProperty("value")[0].GetProperty("Datastreams").GetArrayLength().Should().Be(1);
     }
 
     [IntegrationTest]
@@ -421,10 +426,12 @@ public sealed class SensorThingsQueryOptionsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /sta/v1.1/Datastreams({id})")]
-    public async Task Datastream_ExpandWithAnUnsupportedNestedOption_Returns501()
+    public async Task Datastream_ExpandWithNestedSelect_ProjectsRelatedEntities()
     {
-        (await GetStatusAsync($"/sta/v1.1/Datastreams(1)?$expand={Escape("Observations($select=result)")}"))
-            .Should().Be(HttpStatusCode.NotImplemented);
+        using var document = await GetOkAsync($"/sta/v1.1/Datastreams(1)?$expand={Escape("Observations($select=result)")}");
+        var observation = document.RootElement.GetProperty("Observations")[0];
+        observation.TryGetProperty("result", out _).Should().BeTrue();
+        observation.TryGetProperty("phenomenonTime", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
