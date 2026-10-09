@@ -1,15 +1,16 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Protocols.GeoServices.ImageServer.Models;
-using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
+using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -88,6 +89,9 @@ internal sealed class ImageServerIdentifyHandler
                 return StandardErrorHelpers.CreateBadRequest(context, "Invalid geometry coordinates");
             }
 
+            var maskedFields = await ImageServerCatalogSecurity.ResolveMasksAsync(
+                context, resolved.Resource, cancellationToken).ConfigureAwait(false);
+
             if (!ImageServerMultidimensionalDefinition.TryParse(
                     request.MultidimensionalDefinition, out var dimensionConstraints, out var multidimensionalError))
             {
@@ -108,6 +112,7 @@ internal sealed class ImageServerIdentifyHandler
                         layerId,
                         request,
                         resolved.DisplayName,
+                        maskedFields,
                         x.Value,
                         y.Value,
                         srid,
@@ -155,6 +160,21 @@ internal sealed class ImageServerIdentifyHandler
                     : StandardErrorHelpers.CreateBadRequest(context, mosaicRuleError);
             }
 
+            try
+            {
+                ImageServerCatalogSecurity.Validate(new ImageServerCatalogQuery
+                {
+                    Time = timestamp,
+                    TimeStart = timeStart,
+                    OrderBy = string.IsNullOrWhiteSpace(request.MosaicRule) || string.IsNullOrWhiteSpace(mosaicRule.SortField)
+                        ? [] : [new ImageServerCatalogOrderBy(mosaicRule.SortField, !mosaicRule.Ascending)]
+                }, maskedFields);
+            }
+            catch (ImageServerCatalogFilterException)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Identify references a masked catalog field.");
+            }
+
             var mergeStrategy = mosaicRule.Operation
                 ?? ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
             var isLockRaster = mosaicRule.Method == MosaicMethod.LockRaster;
@@ -186,7 +206,7 @@ internal sealed class ImageServerIdentifyHandler
                 var noDataResponse = new IdentifyResponse
                 {
                     ObjectId = null,
-                    Name = resolved.DisplayName,
+                    Name = ImageServerCatalogSecurity.IsMasked(maskedFields, "Name") ? null : resolved.DisplayName,
                     Value = "NoData",
                     // No raster was sampled, and raster selection reads an sr-less geometry in each
                     // raster's own CRS, so the reference is only stated when the request supplied one.
@@ -246,7 +266,8 @@ internal sealed class ImageServerIdentifyHandler
             var response = new IdentifyResponse
             {
                 ObjectId = selectedRasters.Length == 1 ? selectedRasters[0].Id : null,
-                Name = selectedRasters.Length == 1 ? selectedRasters[0].Name : $"{resolved.DisplayName} mosaic",
+                Name = ImageServerCatalogSecurity.IsMasked(maskedFields, "Name")
+                    ? null : selectedRasters.Length == 1 ? selectedRasters[0].Name : $"{resolved.DisplayName} mosaic",
                 Value = FormatPixelValues(pixelResult.BandValues),
                 Location = new Point
                 {
@@ -256,7 +277,7 @@ internal sealed class ImageServerIdentifyHandler
                 },
                 Properties = CreateProperties(pixelResult, request.PixelSize),
                 CatalogItems = request.ReturnCatalogItems == true
-                    ? BuildCatalogItems(selectedRasters, includeFootprint)
+                    ? BuildCatalogItems(selectedRasters, includeFootprint, maskedFields)
                     : null
             };
 
@@ -285,6 +306,7 @@ internal sealed class ImageServerIdentifyHandler
         int layerId,
         IdentifyRequest request,
         string displayName,
+        ImmutableArray<string> maskedFields,
         double x,
         double y,
         int? srid,
@@ -346,7 +368,7 @@ internal sealed class ImageServerIdentifyHandler
         var response = new IdentifyResponse
         {
             ObjectId = null,
-            Name = read.Variable ?? displayName,
+            Name = ImageServerCatalogSecurity.IsMasked(maskedFields, "Name") ? null : read.Variable ?? displayName,
             Value = hasData ? value.ToString(CultureInfo.InvariantCulture) : "NoData",
             // The slice reader samples an sr-less point in the coverage's native CRS, so the
             // location reference is only stated when the request supplied one.
@@ -533,7 +555,7 @@ internal sealed class ImageServerIdentifyHandler
         return properties;
     }
 
-    private static IdentifyCatalogItems BuildCatalogItems(RasterInfo[] rasters, bool returnGeometry)
+    private static IdentifyCatalogItems BuildCatalogItems(RasterInfo[] rasters, bool returnGeometry, ImmutableArray<string> maskedFields)
     {
         // Footprints are in each raster's own CRS, independently of the identify point.
         // Only advertise a shared reference when all catalog features agree.
@@ -547,7 +569,8 @@ internal sealed class ImageServerIdentifyHandler
                 {
                     ["OBJECTID"] = raster.Id,
                     ["Name"] = raster.Name
-                },
+                }.Where(attribute => !ImageServerCatalogSecurity.IsMasked(maskedFields, attribute.Key))
+                    .ToDictionary(attribute => attribute.Key, attribute => attribute.Value, StringComparer.OrdinalIgnoreCase),
                 Geometry = returnGeometry ? BuildFootprint(raster) : null
             }).ToArray()
         };

@@ -66,7 +66,9 @@ public static class CoverageScaling
             return false;
         }
 
-        return TryCreate(ScaleDimension(baseWidth, factor), ScaleDimension(baseHeight, factor), out result);
+        return TryScaleDimension(baseWidth, factor, out var width) &&
+            TryScaleDimension(baseHeight, factor, out var height) &&
+            TryCreate(width, height, out result);
     }
 
     /// <summary>
@@ -103,9 +105,9 @@ public static class CoverageScaling
             return false;
         }
 
-        var width = xFactor.HasValue ? ScaleDimension(baseWidth, xFactor.Value) : baseWidth;
-        var height = yFactor.HasValue ? ScaleDimension(baseHeight, yFactor.Value) : baseHeight;
-        return TryCreate(width, height, out result);
+        return TryScaleDimension(baseWidth, xFactor ?? 1, out var width) &&
+            TryScaleDimension(baseHeight, yFactor ?? 1, out var height) &&
+            TryCreate(width, height, out result);
     }
 
     /// <summary>
@@ -148,8 +150,18 @@ public static class CoverageScaling
 
     private static bool IsPositiveFactor(double factor) => double.IsFinite(factor) && factor > 0;
 
-    private static int ScaleDimension(int baseSize, double factor)
-        => Math.Max(1, (int)Math.Round(baseSize * factor, MidpointRounding.AwayFromZero));
+    private static bool TryScaleDimension(int baseSize, double factor, out int dimension)
+    {
+        dimension = 0;
+        var scaled = Math.Round(baseSize * factor, MidpointRounding.AwayFromZero);
+        if (!double.IsFinite(scaled) || scaled > int.MaxValue)
+        {
+            return false;
+        }
+
+        dimension = Math.Max(1, (int)scaled);
+        return true;
+    }
 
     private static bool TryCreate(int width, int height, out CoverageScalingResult result)
     {

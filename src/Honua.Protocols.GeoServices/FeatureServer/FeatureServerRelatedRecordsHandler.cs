@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -22,7 +23,8 @@ namespace Honua.Protocols.GeoServices.FeatureServer;
 /// </summary>
 internal sealed class FeatureServerRelatedRecordsHandler(
     FeatureServerRelatedRecordsDependencies dependencies,
-    ILogger<FeatureServerRelatedRecordsHandler> logger)
+    ILogger<FeatureServerRelatedRecordsHandler> logger,
+    IGeometryOperationService? geometryOperationService = null)
 {
     private readonly IResourceValidator _resourceValidator = dependencies?.ResourceValidator
         ?? throw new ArgumentNullException(nameof(dependencies));
@@ -39,6 +41,7 @@ internal sealed class FeatureServerRelatedRecordsHandler(
         string serviceId,
         int layerId,
         QueryRelatedRecordsParameters queryParams,
+        string? requiredProtocol = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -189,7 +192,9 @@ internal sealed class FeatureServerRelatedRecordsHandler(
                     [$"Unsupported outSR value: {validatedParams.OutSr}"]);
             }
 
-            outputSrid ??= resolvedRelatedResource.ReadSrid();
+            outputSrid ??= string.Equals(requiredProtocol, "MapServer", StringComparison.OrdinalIgnoreCase)
+                ? Honua.Protocols.GeoServices.MapServer.MapServerEndpoints.CachedMapSpatialReferenceId
+                : resolvedRelatedResource.ReadSrid();
 
             SqlFragment? sqlFilter = null;
             if (!string.IsNullOrWhiteSpace(validatedParams.Where))
@@ -226,6 +231,39 @@ internal sealed class FeatureServerRelatedRecordsHandler(
 
             // Execute related query
             QueryResult<Feature> result = await _relatedRecordsService.ExecuteRelatedQueryAsync(sourceStorageLayerId.Value, relatedQuery, cancellationToken);
+
+            // Related storage queries return source coordinates. Reproject the WKB,
+            // rather than only labeling those coordinates with the requested outSR.
+            var sourceSrid = resolvedRelatedResource.ReadSrid();
+            if (validatedParams.ReturnGeometry && !validatedParams.ReturnCountOnly &&
+                sourceSrid is int sourceSpatialReference &&
+                outputSrid.HasValue && outputSrid.Value != sourceSpatialReference)
+            {
+                var projected = ImmutableArray.CreateBuilder<Feature>(result.Items.Length);
+                foreach (var feature in result.Items)
+                {
+                    if (feature.Geometry is { Length: > 0 } geometry)
+                    {
+                        if (geometryOperationService is null)
+                        {
+                            return StandardErrorHelpers.CreateBadRequest(httpContext,
+                                "Geometry reprojection is not supported by this data provider.");
+                        }
+
+                        projected.Add(feature with
+                        {
+                            Geometry = await geometryOperationService.ProjectAsync(
+                                geometry, sourceSpatialReference, outputSrid.Value, cancellationToken).ConfigureAwait(false)
+                        });
+                    }
+                    else
+                    {
+                        projected.Add(feature);
+                    }
+                }
+
+                result = result with { Items = projected.MoveToImmutable() };
+            }
 
             // Group results by origin object ID
             var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resolvedRelatedResource);

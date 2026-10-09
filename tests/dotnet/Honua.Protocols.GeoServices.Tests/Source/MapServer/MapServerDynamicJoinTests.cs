@@ -6,6 +6,8 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
@@ -245,6 +247,7 @@ public sealed class MapServerDynamicJoinTests
         {
             builder.ConfigureTestServices(services =>
             {
+                services.AddSingleton<ICoordinateTransformService, WellKnownCoordinateTransformService>();
                 if (temporalFields)
                 {
                     // Keep seeded temporal values visible to the HTTP request's scope.
