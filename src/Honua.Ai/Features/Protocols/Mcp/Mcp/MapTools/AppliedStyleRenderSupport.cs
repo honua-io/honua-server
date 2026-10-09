@@ -130,24 +130,16 @@ internal static class AppliedStyleRenderSupport
         }
         else
         {
-            foreach (var property in paint.EnumerateObject())
-            {
-                if (!HonouredPaint[type].Contains(property.Name))
-                {
-                    unsupported.Add($"{label} paint property '{property.Name}' is not rendered by the server renderer");
-                }
-            }
+            unsupported.AddRange(paint.EnumerateObject()
+                .Where(property => !HonouredPaint[type].Contains(property.Name))
+                .Select(property => $"{label} paint property '{property.Name}' is not rendered by the server renderer"));
         }
 
         if (layer.TryGetProperty("layout", out var layout) && layout.ValueKind == JsonValueKind.Object)
         {
-            foreach (var property in layout.EnumerateObject())
-            {
-                if (!HonouredLayout[type].Contains(property.Name))
-                {
-                    unsupported.Add($"{label} layout property '{property.Name}' is not rendered by the server renderer");
-                }
-            }
+            unsupported.AddRange(layout.EnumerateObject()
+                .Where(property => !HonouredLayout[type].Contains(property.Name))
+                .Select(property => $"{label} layout property '{property.Name}' is not rendered by the server renderer"));
         }
     }
 
@@ -196,12 +188,6 @@ internal static class AppliedStyleRenderSupport
 
     private static void AddObjects(JsonElement array, List<JsonElement> layers)
     {
-        foreach (var item in array.EnumerateArray())
-        {
-            if (item.ValueKind == JsonValueKind.Object)
-            {
-                layers.Add(item);
-            }
-        }
+        layers.AddRange(array.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.Object));
     }
 }
