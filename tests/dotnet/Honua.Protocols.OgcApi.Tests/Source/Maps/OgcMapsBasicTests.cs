@@ -81,6 +81,8 @@ public class OgcMapsBasicTests : IAsyncLifetime
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var collections = json.RootElement.GetProperty("collections").EnumerateArray().ToArray();
         collections.Should().NotBeEmpty();
+        collections.Count(collection => collection.TryGetProperty("extent", out _)).Should().BeGreaterThan(0,
+            "the seeded layer declares a bounding box, so extent parity must exercise a present extent");
         collections.Select(collection => collection.GetProperty("id").GetString()).Should().OnlyHaveUniqueItems();
         foreach (var collection in collections)
         {
@@ -90,7 +92,12 @@ public class OgcMapsBasicTests : IAsyncLifetime
             detail.StatusCode.Should().Be(HttpStatusCode.OK);
             using var detailJson = JsonDocument.Parse(await detail.Content.ReadAsStringAsync());
             detailJson.RootElement.GetProperty("id").GetString().Should().Be(collection.GetProperty("id").GetString());
-            detailJson.RootElement.GetProperty("extent").GetRawText().Should().Be(collection.GetProperty("extent").GetRawText());
+            var hasExtent = collection.TryGetProperty("extent", out var listedExtent);
+            detailJson.RootElement.TryGetProperty("extent", out var detailExtent).Should().Be(hasExtent);
+            if (hasExtent)
+            {
+                detailExtent.GetRawText().Should().Be(listedExtent.GetRawText());
+            }
         }
     }
 

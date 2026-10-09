@@ -23,6 +23,14 @@ internal static class LegendImageComposer
     /// </summary>
     internal readonly record struct LegendImageEntry(MapLibreStyleLayer StyleLayer, LegendClass Class);
 
+    /// <summary>Whether the shared raster renderer paints this style layer's symbology.</summary>
+    internal static bool IsRenderableStyleLayer(MapLibreStyleLayer styleLayer)
+        => styleLayer.Type is "fill" or "line" or "circle";
+
+    /// <summary>Whether the resolved map style has swatches the shared legend renderer can paint.</summary>
+    internal static bool SupportsStylePlan(RasterMapRenderingPipeline.RasterStylePlan stylePlan)
+        => stylePlan.StyleLayers.Length == 0 || stylePlan.StyleLayers.Any(IsRenderableStyleLayer);
+
     /// <summary>
     /// Renders stacked swatch/label rows into one image.
     ///

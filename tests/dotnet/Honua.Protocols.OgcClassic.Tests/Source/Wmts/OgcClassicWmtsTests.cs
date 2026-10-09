@@ -17,6 +17,7 @@ using Honua.TestKit.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SkiaSharp;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts;
 
@@ -432,6 +433,51 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         var themesIndex = content.IndexOf("<Themes>", StringComparison.Ordinal);
         var serviceMetadataIndex = content.IndexOf("<ServiceMetadataURL ", StringComparison.Ordinal);
         serviceMetadataIndex.Should().BeGreaterThan(themesIndex);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetCapabilities_StyleLookupFails_PreservesLayersWithoutLegendUrls()
+    {
+        var catalog = Substitute.For<ILayerStyleCatalog>();
+        catalog.GetLayerStyleAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns<Honua.Core.Features.Styling.Domain.LayerStyleDefinition?>(_ =>
+                throw new InvalidOperationException("Style catalog unavailable."));
+        await using var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<ILayerStyleCatalog>();
+            services.AddSingleton(catalog);
+        });
+        await fixture.InitializeAsync();
+        using var response = await fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var capabilities = XDocument.Parse(await response.Content.ReadAsStringAsync());
+        capabilities.Descendants().Should().Contain(element => element.Name.LocalName == "Layer");
+        capabilities.Descendants().Should().NotContain(element => element.Name.LocalName == "LegendURL");
+    }
+
+    [IntegrationTheory]
+    [InlineData("symbol")]
+    [InlineData("background")]
+    [InlineData("heatmap")]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetCapabilities_UnpaintedStyle_OmitsLegendUrl(string styleType)
+    {
+        await _fixture.GetService<ILayerStyleCatalog>().SetMapLibreStyleAsync(WebAppFixture.TestLayerId, $$"""
+            {"version":8,"sources":{"honua":{"type":"geojson","data":{"type":"FeatureCollection","features":[]}}},
+             "layers":[{"id":"unpainted","type":"{{styleType}}","source":"honua"}]}
+            """);
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var capabilities = XDocument.Parse(await response.Content.ReadAsStringAsync());
+        var layer = capabilities.Descendants().Single(element => element.Name.LocalName == "Layer" &&
+            element.Elements().Any(child => child.Name.LocalName == "Identifier" &&
+                child.Value == WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        layer.Descendants().Should().NotContain(element => element.Name.LocalName == "LegendURL");
     }
 
     [IntegrationTest]
