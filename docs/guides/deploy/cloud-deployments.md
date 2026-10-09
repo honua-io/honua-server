@@ -95,6 +95,7 @@ Lambda production images are built from [`docker/Dockerfile.lambda.aot`](../../.
 - Use the `vX.Y.Z-lambda-aot` tag (arm64) from ECR behind API Gateway or a function URL.
 - Set `HONUA_SKIP_MIGRATIONS=true` and run migrations out-of-band — concurrent cold starts must not race migrations.
 - Publish numeric versions and route traffic through an alias; canary weight shifting and automatic promote/rollback use the deploy backend `honua-gitops-aws-lambda`.
+- `v*` release tags publish the Lambda AOT image as `vX.Y.Z-lambda-aot-amd64` (the `x86_64` variant, which the unsuffixed `vX.Y.Z-lambda-aot` tag also resolves to) alongside an uncertified `vX.Y.Z-lambda-aot-arm64`, matching the nightly `nightly-lambda-aot-<sha7>-amd64` shape.
 
 ```bash
 aws lambda update-function-code --function-name honua-prod \
