@@ -276,8 +276,11 @@ for label, body in (("format", fmt), ("pr-gate", gate), ("affected-shards-select
         problems.append(f"{label} must classify once, as step id docs-only")
 if fmt.count(GATED) != 3:
     problems.append(f"format must gate Setup .NET, Restore and Format Check on the verdict ({fmt.count(GATED)})")
-if gate.count(GATED) != 12:
-    problems.append(f"pr-gate must gate its twelve expensive steps on the verdict ({gate.count(GATED)})")
+if gate.count(GATED) != 13:
+    problems.append(f"pr-gate must gate its thirteen expensive steps on the verdict ({gate.count(GATED)})")
+image_step = "- name: Prepare secondary Testcontainers proof images"
+if image_step not in gate or GATED not in gate.split(image_step, 1)[1].split("- name:", 1)[0]:
+    problems.append("secondary proof-image preparation must obey the docs-only and exact-head review verdicts")
 order = [
     "- name: Revalidate exact-head review before verification",
     "- name: Validate the docs-only classifier before consuming it",
