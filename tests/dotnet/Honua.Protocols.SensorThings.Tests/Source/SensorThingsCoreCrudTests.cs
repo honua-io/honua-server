@@ -690,4 +690,74 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
         cleared.ContainsKey("resultTime").Should().BeFalse();
         cleared.ContainsKey("observedArea").Should().BeFalse("a supplied stale area must not resurface after the last observation disappears");
     }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    public async Task LargeCountResults_PreserveAdjacentIntegersInFiltersArithmeticAndOrdering()
+    {
+        var body = Datastream(1);
+        body["observationType"] = "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_CountObservation";
+        var stream = await CreateAsync("Datastreams", body);
+        var feature = await SensorThingsTestData.CreateFeatureAsync(_fixture);
+        const long lower = 9007199254740992;
+        const long upper = 9007199254740993;
+        var ids = new List<long>();
+        foreach (var value in new[] { upper, lower })
+            ids.Add(Id(await CreateAsync("Observations", new JsonObject { ["result"] = value, ["Datastream"] = Reference(Id(stream)), ["FeatureOfInterest"] = Reference(feature) })));
+        foreach (var filter in new[] { $"result eq {upper}", $"result gt {lower}", $"result sub {lower} eq 1" })
+        {
+            var page = await ReadAsync($"Datastreams({Id(stream)})/Observations?$filter=" + Uri.EscapeDataString(filter));
+            page["value"]!.AsArray().Should().ContainSingle(filter);
+            page["value"]![0]!["@iot.id"]!.GetValue<long>().Should().Be(ids[0]);
+            page["value"]![0]!["result"]!.GetValue<long>().Should().Be(upper);
+        }
+        foreach (var order in new[] { "result", "result add 0" })
+        {
+            var page = await ReadAsync($"Datastreams({Id(stream)})/Observations?$orderby=" + Uri.EscapeDataString(order));
+            page["value"]!.AsArray().Select(item => item!["result"]!.GetValue<long>()).Should().Equal(lower, upper);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    public async Task ComparisonsAcrossCollectionNavigations_RequireMatchingRelatedEntities()
+    {
+        var location = await CreateAsync("Locations", Location("Shared name"));
+        var thing = await CreateAsync("Things", new JsonObject { ["name"] = "Cross collection", ["description"] = "Synthetic", ["Locations"] = new JsonArray(Reference(Id(location))) });
+        var body = Datastream(Id(thing));
+        body["name"] = "Shared name";
+        await CreateAsync("Datastreams", body);
+        var other = await CreateAsync("Things", new JsonObject { ["name"] = "No match", ["description"] = "Synthetic", ["Locations"] = new JsonArray(Reference(Id(location))) });
+        body = Datastream(Id(other));
+        body["name"] = "Different name";
+        await CreateAsync("Datastreams", body);
+        foreach (var filter in new[] { "Datastreams/name eq Locations/name", "Locations/name eq Datastreams/name" })
+        {
+            var page = await ReadAsync("Things?$filter=" + Uri.EscapeDataString($"(id eq {Id(thing)} or id eq {Id(other)}) and ({filter})"));
+            page["value"]!.AsArray().Should().ContainSingle(filter);
+            page["value"]![0]!["@iot.id"]!.GetValue<long>().Should().Be(Id(thing));
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    public async Task ConcurrentObservationResultAndDatastreamTypePatches_SerializeValidationWithoutDeadlock()
+    {
+        using var admin = _fixture.CreateAdminClient();
+        var feature = await SensorThingsTestData.CreateFeatureAsync(_fixture);
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var stream = await CreateAsync("Datastreams", Datastream(1));
+            var observation = await CreateAsync("Observations", new JsonObject { ["result"] = 1, ["Datastream"] = Reference(Id(stream)), ["FeatureOfInterest"] = Reference(feature) });
+            var changeType = admin.PatchAsync($"/sta/v1.1/Datastreams({Id(stream)})", Body(new JsonObject { ["observationType"] = "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_CountObservation" }));
+            var changeResult = admin.PatchAsync($"/sta/v1.1/Observations({Id(observation)})", Body(new JsonObject { ["result"] = 1.5 }));
+            var responses = await Task.WhenAll(changeType, changeResult).WaitAsync(TimeSpan.FromSeconds(30));
+            try { responses.Select(response => response.StatusCode).Should().BeEquivalentTo(new[] { HttpStatusCode.NoContent, HttpStatusCode.BadRequest }); }
+            finally { foreach (var response in responses) response.Dispose(); }
+            var finalStream = await ReadAsync($"Datastreams({Id(stream)})");
+            var finalObservation = await ReadAsync($"Observations({Id(observation)})");
+            var count = finalStream["observationType"]!.GetValue<string>().EndsWith("OM_CountObservation", StringComparison.Ordinal);
+            finalObservation["result"]!.GetValue<double>().Should().Be(count ? 1 : 1.5);
+        }
+    }
 }
