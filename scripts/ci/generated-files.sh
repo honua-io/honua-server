@@ -4,6 +4,7 @@ GENERATED_FILES=(
   docs/gis/data/feature-catalog.json
   docs/gis/data/admin-openapi-operation-ids.json
   docs/gis/data/admin-mcp-projection-manifest.json
+  docs/gis/data/mcp-tool-roster.v1.json
   docs/gis/data/geoservices-rest-parity.json
   docs/gis/data/capability-matrix.v1.json
   docs/okf/capabilities
