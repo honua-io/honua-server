@@ -12,10 +12,10 @@ clients and two-feature journey as the [Windows install](windows-packages.md).
 No source checkout, build or GitHub login is needed. This pre-cut profile
 selects `linux/amd64`; use an amd64 host for this rehearsal.
 
-The server image is the 2026.1 release channel `ghcr.io/honua-io/honua-server:2026.1-rc`
-(`ghcr.io/honua-io/honua-server:2026.1` once 2026.1 is generally available); only
-release promotion moves that tag. The exact digest for a release is `server.image` in that release's `customer-install-manifest.json` (honua-release).
-The `2026.1-rc` tag is created when the first certified lock (`2026.1-rc.3`) is promoted; until then pull the server by the digest in `customer-install-manifest.json`.
+The server image is the 2026.1 release channel `ghcr.io/honua-io/honua-server:rc`
+(`ghcr.io/honua-io/honua-server:ga` once 2026.1 is generally available); only
+release promotion moves that tag. The exact digest for a release is `server.image` in that release's [customer install manifest](https://honua.io/data/customer-install-manifest.json).
+The `rc` tag is published by the release bundle when the first certified lock (`2026.1-rc.3`) is promoted; until then pull the server by the digest in the public [customer install manifest](https://honua.io/data/customer-install-manifest.json).
 Set `HONUA_IMAGE` in `.env` to that digest to pin an installation exactly.
 
 ## Create an isolated installation
@@ -46,7 +46,7 @@ import secrets
 from pathlib import Path
 Path('.env').write_text(
     'COMPOSE_PROJECT_NAME=' + Path.cwd().name + '\n'
-    'HONUA_IMAGE=ghcr.io/honua-io/honua-server:2026.1-rc\n'
+    'HONUA_IMAGE=ghcr.io/honua-io/honua-server:rc\n'
     'HONUA_HTTP_PORT=18080\n'
     'POSTGRES_PASSWORD=' + secrets.token_hex(32) + '\n'
     'HONUA_ADMIN_PASSWORD=Aa1!' + secrets.token_hex(32) + '\n'

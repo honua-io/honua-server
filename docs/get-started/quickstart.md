@@ -17,10 +17,10 @@ the server image and both Python clients are public. The 2026.1 release runs
 with licensing disabled, so there is no licence or edition-selection step.
 
 The server image is the 2026.1 release channel
-`ghcr.io/honua-io/honua-server:2026.1-rc` (`ghcr.io/honua-io/honua-server:2026.1` once 2026.1
+`ghcr.io/honua-io/honua-server:rc` (`ghcr.io/honua-io/honua-server:ga` once 2026.1
 is generally available); only release promotion moves that tag.
-The exact digest for a release is `server.image` in that release's `customer-install-manifest.json` (honua-release).
-The `2026.1-rc` tag is created when the first certified lock (`2026.1-rc.3`) is promoted; until then pull the server by the digest in `customer-install-manifest.json`.
+The exact digest for a release is `server.image` in that release's [customer install manifest](https://honua.io/data/customer-install-manifest.json).
+The `rc` tag is published by the release bundle when the first certified lock (`2026.1-rc.3`) is promoted; until then pull the server by the digest in the public [customer install manifest](https://honua.io/data/customer-install-manifest.json).
 Set `HONUA_IMAGE` to that digest to make a run byte-for-byte reproducible. The
 clients are pinned:
 [honua-admin 0.1.10](https://pypi.org/project/honua-admin/0.1.10/) and
@@ -122,7 +122,7 @@ than inventing them.
 ```bash
 cat > .env <<EOF
 COMPOSE_PROJECT_NAME=honua-quickstart
-HONUA_IMAGE=ghcr.io/honua-io/honua-server:2026.1-rc
+HONUA_IMAGE=ghcr.io/honua-io/honua-server:rc
 HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(openssl rand -hex 32)
 HONUA_ADMIN_PASSWORD=Aa1!$(openssl rand -hex 32)
@@ -138,7 +138,7 @@ EOF
 function New-Secret { -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) }) }
 @"
 COMPOSE_PROJECT_NAME=honua-quickstart
-HONUA_IMAGE=ghcr.io/honua-io/honua-server:2026.1-rc
+HONUA_IMAGE=ghcr.io/honua-io/honua-server:rc
 HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(New-Secret)
 HONUA_ADMIN_PASSWORD=Aa1!$(New-Secret)

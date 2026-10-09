@@ -63,7 +63,7 @@ On the generic web image (Docker Hub + GHCR), tags have distinct contracts. Pick
 > **No `v*` release tag has been cut yet**, so no `vX.Y.Z` image exists and `latest` has
 > never moved. Until the first release, pin a digest or a dated `nightly-YYYYMMDD`
 > tag — both are immutable. The getting-started pages use the 2026.1 release channel
-> `ghcr.io/honua-io/honua-server:2026.1-rc` (`:2026.1` at GA), which only release
+> `ghcr.io/honua-io/honua-server:rc` (`:ga` and `:latest` at GA), which only release
 > promotion moves; the exact digest for a release is `server.image` in that release's
 > `customer-install-manifest.json` (honua-release).
 

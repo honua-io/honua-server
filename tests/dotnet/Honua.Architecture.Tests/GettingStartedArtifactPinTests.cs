@@ -13,8 +13,8 @@ public sealed class GettingStartedArtifactPinTests
     // The getting-started pages reference the release channel, which only release promotion
     // moves (ruling R18). The exact digest for a release is `server.image` in that release's
     // honua-release `customer-install-manifest.json`; it is never hand-copied into these pages.
-    private const string ReleaseChannelImage = "ghcr.io/honua-io/honua-server:2026.1-rc";
-    private const string DigestSource = "`server.image` in that release's `customer-install-manifest.json`";
+    private const string ReleaseChannelImage = "ghcr.io/honua-io/honua-server:rc";
+    private const string DigestSource = "`server.image` in that release's [customer install manifest](https://honua.io/data/customer-install-manifest.json)";
     private const string ServerImageDigestPrefix = "ghcr.io/honua-io/honua-server@sha256:";
 
     [ArchitectureTest]
