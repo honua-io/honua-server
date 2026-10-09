@@ -93,8 +93,73 @@ internal static class PMTilesProxySourceResolver
             return ResolveStamped(snapshot, values, layerId, publicationId);
         }
 
+        // Archives published before the stamp exist. They may name a service, or
+        // only a layer. Either way an ambiguous or cross-service bind is not
+        // served: the first routable publication of a shared storage layer can
+        // be a different, public service.
         values.TryGetValue(ServiceIdMetadataKey, out var serviceKey);
-        return ResolveForPublish(snapshot, serviceKey, layerId);
+        return ResolveLegacy(snapshot, serviceKey, layerId);
+    }
+
+    /// <summary>
+    /// Binds an unstamped archive. A service key limits the candidates to that
+    /// service id or name. With no key, the storage layer must belong to exactly
+    /// one routable service. Layer index alone never selects a publication whose
+    /// storage handle is a different layer.
+    /// </summary>
+    private static PMTilesPublishedSource? ResolveLegacy(
+        MetadataV2GraphSnapshot snapshot,
+        string? serviceKey,
+        int layerId)
+    {
+        var matches = new List<PMTilesPublishedSource>();
+        foreach (var publication in snapshot.Graph.Publications)
+        {
+            if (!snapshot.IsRoutable(publication) ||
+                snapshot.ResolveStorageLayerId(publication) != layerId)
+            {
+                continue;
+            }
+
+            if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ||
+                !service.IsRoutable())
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(serviceKey) &&
+                !string.Equals(serviceKey, service.Metadata.Id, StringComparison.Ordinal) &&
+                !string.Equals(serviceKey, service.Metadata.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var resource = snapshot.ResolveResource(publication);
+            if (resource is null)
+            {
+                continue;
+            }
+
+            matches.Add(new PMTilesPublishedSource(resource, service, publication));
+        }
+
+        if (matches.Count == 0)
+        {
+            return null;
+        }
+
+        var serviceId = matches[0].Service.Metadata.Id;
+        var resourceId = matches[0].Resource.Metadata.Id;
+        for (var i = 1; i < matches.Count; i++)
+        {
+            if (!string.Equals(matches[i].Service.Metadata.Id, serviceId, StringComparison.Ordinal) ||
+                !string.Equals(matches[i].Resource.Metadata.Id, resourceId, StringComparison.Ordinal))
+            {
+                return null;
+            }
+        }
+
+        return matches[0];
     }
 
     internal static ImmutableDictionary<string, string> StampPublishMetadata(

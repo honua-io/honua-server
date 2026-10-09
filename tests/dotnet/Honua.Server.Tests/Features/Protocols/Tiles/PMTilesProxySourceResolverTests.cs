@@ -99,6 +99,81 @@ public sealed class PMTilesProxySourceResolverTests
     }
 
     [Fact]
+    public async Task Resolve_LegacyLayerId_TwoServices_ReturnsNull()
+    {
+        var snapshot = await SnapshotAsync(SharedLayerGraph());
+
+        PMTilesProxySourceResolver.Resolve(snapshot, new Dictionary<string, string>
+        {
+            ["layerId"] = "0",
+        }).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Resolve_LegacyServiceId_BindsThatServiceWhenAnotherServicePublishesTheLayer()
+    {
+        var snapshot = await SnapshotAsync(SharedLayerGraph());
+
+        var source = PMTilesProxySourceResolver.Resolve(snapshot, new Dictionary<string, string>
+        {
+            ["layerId"] = "0",
+            ["serviceId"] = "svc-parcels",
+        });
+
+        source.Should().NotBeNull();
+        source!.Service.Metadata.Id.Should().Be("svc-parcels");
+        source.Resource.Metadata.Id.Should().Be("res-parcels");
+    }
+
+    [Fact]
+    public async Task Resolve_LegacyUnknownService_ReturnsNull()
+    {
+        var snapshot = await SnapshotAsync(SampleGraph());
+
+        PMTilesProxySourceResolver.Resolve(snapshot, new Dictionary<string, string>
+        {
+            ["layerId"] = "0",
+            ["serviceId"] = "svc-missing",
+        }).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Resolve_LegacySameServiceTwoPublications_BindsThatService()
+    {
+        var snapshot = await SnapshotAsync(new TestMetadataV2GraphBuilder()
+            .AddResource("res-parcels", "parcels")
+            .AddStorageBinding("binding-parcels", "res-parcels", "features", storageLayerId: 0)
+            .AddService("svc-parcels", "parcels")
+            .AddPublication("pub-feature", "svc-parcels", "res-parcels", layerIndex: 0, storageBindingId: "binding-parcels")
+            .AddPublication("pub-map", "svc-parcels", "res-parcels", layerIndex: 1, storageBindingId: "binding-parcels")
+            .Build());
+
+        var source = PMTilesProxySourceResolver.Resolve(snapshot, new Dictionary<string, string>
+        {
+            ["layerId"] = "0",
+        });
+
+        source.Should().NotBeNull();
+        source!.Service.Metadata.Id.Should().Be("svc-parcels");
+    }
+
+    [Fact]
+    public async Task Resolve_LayerIndexOfADifferentStorageLayer_DoesNotBind()
+    {
+        var snapshot = await SnapshotAsync(new TestMetadataV2GraphBuilder()
+            .AddResource("res-other", "other")
+            .AddStorageBinding("binding-other", "res-other", "features", storageLayerId: 7)
+            .AddService("svc-public", "public-parcels")
+            .AddPublication("pub-public", "svc-public", "res-other", layerIndex: 0, storageBindingId: "binding-other")
+            .Build());
+
+        PMTilesProxySourceResolver.Resolve(snapshot, new Dictionary<string, string>
+        {
+            ["layerId"] = "0",
+        }).Should().BeNull();
+    }
+
+    [Fact]
     public async Task ResolveForPublish_NamedService_BindsThatServicesLayer()
     {
         var snapshot = await SnapshotAsync(SampleGraph());
@@ -117,6 +192,16 @@ public sealed class PMTilesProxySourceResolverTests
         ["publicationId"] = "pub-parcels",
         ["resourceId"] = "res-parcels",
     };
+
+    private static MetadataV2Graph SharedLayerGraph()
+        => new TestMetadataV2GraphBuilder()
+            .AddResource("res-parcels", "parcels")
+            .AddStorageBinding("binding-parcels", "res-parcels", "features", storageLayerId: 0)
+            .AddService("svc-parcels", "parcels")
+            .AddService("svc-public", "public-parcels")
+            .AddPublication("pub-parcels", "svc-parcels", "res-parcels", layerIndex: 0)
+            .AddPublication("pub-public", "svc-public", "res-parcels", layerIndex: 0)
+            .Build();
 
     private static MetadataV2Graph SampleGraph()
         => new TestMetadataV2GraphBuilder()
