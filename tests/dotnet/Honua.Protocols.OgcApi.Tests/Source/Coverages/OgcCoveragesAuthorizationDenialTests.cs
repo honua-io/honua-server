@@ -102,7 +102,7 @@ public sealed class OgcCoveragesAuthorizationDenialTests
                 .Returns((RasterInfo?)null);
             const string root = "coverage-token-proof";
             var reader = new InMemoryZarrRangeReader(ZarrFixtureBuilder.BuildGroupedZlib(
-                root, 2, 2, 2, 2, (row, column) => row * 2d + column, 4326, -1, -1, 1, 1));
+                root, 2, 2, 2, 2, (row, column) => row * 2f + column, 4326, -1, -1, 1, 1));
             var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", root);
             var store = Substitute.For<IZarrStore>();
             store.ListByLayerAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>()).Returns([
