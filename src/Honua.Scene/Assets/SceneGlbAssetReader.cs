@@ -13,13 +13,13 @@ internal sealed class SceneGlbAssetReader
     private const int MaxVertices = 250_000;
     private readonly JsonElement _document;
     private readonly byte[] _binary;
-    private readonly IReadOnlyList<SceneCachedFeature> _features;
+    private readonly List<SceneCachedFeature> _features;
     private readonly Func<string, byte[]> _readRelativeAsset;
     private readonly List<SceneMeshTriangle> _triangles = [];
     private readonly HashSet<int> _activeNodes = [];
     private readonly CancellationToken _cancellationToken;
 
-    private SceneGlbAssetReader(JsonElement document, byte[] binary, IReadOnlyList<SceneCachedFeature> features, Func<string, byte[]> readRelativeAsset, CancellationToken cancellationToken)
+    private SceneGlbAssetReader(JsonElement document, byte[] binary, List<SceneCachedFeature> features, Func<string, byte[]> readRelativeAsset, CancellationToken cancellationToken)
     {
         _document = document;
         _binary = binary;
@@ -103,7 +103,7 @@ internal sealed class SceneGlbAssetReader
     }
 
     private static SceneDecodedMesh[] ReadGlb(ReadOnlyMemory<byte> bytes, double[] tileTransform, string? upAxis, SceneCartesian rtc,
-        IReadOnlyList<SceneCachedFeature>? batchRows, Func<string, byte[]> readRelativeAsset, CancellationToken cancellationToken)
+        List<SceneCachedFeature>? batchRows, Func<string, byte[]> readRelativeAsset, CancellationToken cancellationToken)
     {
         var span = bytes.Span;
         if (span.Length < 20 || !span[..4].SequenceEqual("glTF"u8) || ReadUInt32(span, 4) != 2 || ReadUInt32(span, 8) != span.Length)
@@ -537,7 +537,7 @@ internal sealed class SceneGlbAssetReader
         if (!hasData || !ended || offset != bytes.Length) { throw new InvalidDataException("Incomplete PNG texture."); }
     }
 
-    private static IReadOnlyList<SceneCachedFeature> ReadBatchTable(JsonElement batch, byte[] binary, int count)
+    private static List<SceneCachedFeature> ReadBatchTable(JsonElement batch, byte[] binary, int count)
     {
         if (count == 0)
         {
@@ -587,7 +587,7 @@ internal sealed class SceneGlbAssetReader
         return Features(rows);
     }
 
-    private static IReadOnlyList<SceneCachedFeature> ReadStructuralTable(JsonElement root, byte[] binary)
+    private static List<SceneCachedFeature> ReadStructuralTable(JsonElement root, byte[] binary)
     {
         if (!root.TryGetProperty("extensions", out var extensions) || !extensions.TryGetProperty("EXT_structural_metadata", out var metadata))
         {
