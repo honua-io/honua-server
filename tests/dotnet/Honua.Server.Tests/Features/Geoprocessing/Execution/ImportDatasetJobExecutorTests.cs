@@ -37,7 +37,9 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    // An isolated host configures its fixture schema as an operational schema, which the
+    // secure connection below names on its search path (#5391). A shared host cannot.
+    private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureServices(_ => { });
     private Guid _connectionId;
     private string _stagedFilePath = string.Empty;
     private string _tableName = string.Empty;
@@ -264,11 +266,12 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
         // applies. In production the operational NpgsqlDataSource bakes the data schema
         // into the connection search_path; mirror that here so the publish step's
         // materialization into the shared `features` table (seeded into the isolated
-        // per-test schema) resolves, while keeping the literal `honua` catalog schema and
-        // `public` (PostGIS functions) on the path.
+        // per-test schema) resolves, with `public` (PostGIS functions) after it. The `honua`
+        // catalog is always schema-qualified, and the resolved-connection policy (#5391)
+        // admits only configured operational schemas, never the metadata schema.
         if (!string.IsNullOrWhiteSpace(_fixture.CurrentSchema))
         {
-            builder.SearchPath = $"{_fixture.CurrentSchema},honua,public";
+            builder.SearchPath = $"{_fixture.CurrentSchema},public";
         }
 
         connectionString = builder.ConnectionString;

@@ -276,7 +276,14 @@ internal static class WebAppFixturePostgresWiringMixin
         RemovePostgresBackedServices(services);
         RemoveBackgroundPollers(services);
 
-        var testConfiguration = BuildPostgresTestConfiguration(connectionString);
+        // The isolated host owns its fixture schema, so configure it as an operational schema
+        // exactly as an operator would (#5391): a secure connection whose search path names that
+        // schema then resolves under the unchanged connection policy. Drop the composition root's
+        // schema configuration so AddPostgreSqlServices registers this one.
+        services.RemoveAll<Honua.Db.Postgres.Features.Infrastructure.PostgresSchemaConfiguration>();
+        var testConfiguration = BuildPostgresTestConfiguration(
+            connectionString,
+            BuildFixtureOperationalSchemaSettings(currentSchemaAccessor()));
         Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(
             services,
             testConfiguration,
@@ -308,6 +315,18 @@ internal static class WebAppFixturePostgresWiringMixin
             configure(services);
         }
     }
+
+    /// <summary>
+    /// Configuration that lists an isolated host's fixture schema under
+    /// <c>Database:OperationalSchemas</c>, or nothing when the schema is not yet known.
+    /// Only isolated hosts use it: a shared host serves many fixture schemas and cannot
+    /// configure them, so tests that pin a secure connection's search path to their fixture
+    /// schema need an isolated host.
+    /// </summary>
+    internal static IDictionary<string, string?>? BuildFixtureOperationalSchemaSettings(string? fixtureSchema)
+        => string.IsNullOrWhiteSpace(fixtureSchema)
+            ? null
+            : new Dictionary<string, string?> { ["Database:OperationalSchemas:0"] = fixtureSchema };
 
     /// <summary>
     /// Applies the ConfigureTestServices block used by the shared bootstrap path. Same

@@ -296,7 +296,8 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFix
                 schemaContext: null,
                 schemaConfiguration: schemaConfiguration),
             graphStore,
-            NullLogger<PostgreSqlLayerPublishingService>.Instance);
+            NullLogger<PostgreSqlLayerPublishingService>.Instance,
+            schemaConfiguration: schemaConfiguration);
 
         return new GeoservicesImportService(
             restClient,
