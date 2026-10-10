@@ -58,7 +58,13 @@ public sealed class ImageServerHistogramBinEdgesTests
                     AssertRestHistograms(await ReadJsonAsync(response), oracle);
                 }
 
-                using (var form = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]))
+                var footprint = await ReadSqlFootprintAsync(fixture);
+                using (var form = new FormUrlEncodedContent(
+                [
+                    new KeyValuePair<string, string>("f", "json"),
+                    new KeyValuePair<string, string>("geometryType", "esriGeometryEnvelope"),
+                    new KeyValuePair<string, string>("geometry", footprint)
+                ]))
                 using (var response = await fixture.Client.PostAsync(root + "/computeStatisticsHistograms", form))
                 {
                     AssertRestHistograms(await ReadJsonAsync(response), oracle);
@@ -242,6 +248,24 @@ public sealed class ImageServerHistogramBinEdgesTests
 
     private static string Child(XElement element, string name)
         => element.Elements().Single(child => child.Name.LocalName == name).Value;
+
+    private static async Task<string> ReadSqlFootprintAsync(WebAppFixture fixture)
+    {
+        await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT jsonb_build_object(
+                'xmin', ST_XMin(footprint), 'ymin', ST_YMin(footprint),
+                'xmax', ST_XMax(footprint), 'ymax', ST_YMax(footprint),
+                'spatialReference', jsonb_build_object('wkid', 4326))::text
+            FROM (
+                SELECT ST_Extent(ST_Envelope(raster)) footprint
+                FROM honua.raster_data WHERE layer_id = @layerId
+            ) source
+            """;
+        command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+        return (string)(await command.ExecuteScalarAsync())!;
+    }
 
     private static async Task<SqlBand[]> ReadSqlOracleAsync(WebAppFixture fixture, long? rasterId = null)
     {
