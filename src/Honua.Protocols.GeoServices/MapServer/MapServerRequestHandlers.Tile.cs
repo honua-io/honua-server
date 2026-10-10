@@ -96,6 +96,11 @@ internal static partial class MapServerEndpoints
             }
 
             MapServerLog.TileRequested(logger, serviceId, z, y, x);
+            if (!MetadataV2MapServerDrawing.UsesCachedDrawing(service))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Dynamic MapServer drawing does not provide cached tiles.");
+            }
+
             var stopwatch = Stopwatch.StartNew();
             using var activity = HonuaTelemetry.ActivitySource.StartActivity(
                 HonuaTelemetry.Activities.MapServerExport, ActivityKind.Internal);
