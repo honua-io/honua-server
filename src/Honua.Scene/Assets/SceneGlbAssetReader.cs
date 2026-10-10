@@ -102,7 +102,7 @@ internal sealed class SceneGlbAssetReader
         return ReadGlb(glb, tileTransform, upAxis, rtc, null, readRelativeAsset, cancellationToken);
     }
 
-    private static IReadOnlyList<SceneDecodedMesh> ReadGlb(ReadOnlyMemory<byte> bytes, double[] tileTransform, string? upAxis, SceneCartesian rtc,
+    private static SceneDecodedMesh[] ReadGlb(ReadOnlyMemory<byte> bytes, double[] tileTransform, string? upAxis, SceneCartesian rtc,
         IReadOnlyList<SceneCachedFeature>? batchRows, Func<string, byte[]> readRelativeAsset, CancellationToken cancellationToken)
     {
         var span = bytes.Span;
@@ -350,7 +350,10 @@ internal sealed class SceneGlbAssetReader
 
         var components = accessor.GetProperty("type").GetString() switch
         {
-            "SCALAR" => 1, "VEC2" => 2, "VEC3" => 3, "VEC4" => 4,
+            "SCALAR" => 1,
+            "VEC2" => 2,
+            "VEC3" => 3,
+            "VEC4" => 4,
             _ => throw new InvalidDataException("Unsupported vertex accessor.")
         };
         var count = accessor.GetProperty("count").GetInt32();
@@ -382,8 +385,10 @@ internal sealed class SceneGlbAssetReader
                 {
                     value = component switch
                     {
-                        5120 => Math.Max(-1, value / 127), 5121 => value / 255,
-                        5122 => Math.Max(-1, value / 32767), 5123 => value / 65535,
+                        5120 => Math.Max(-1, value / 127),
+                        5121 => value / 255,
+                        5122 => Math.Max(-1, value / 32767),
+                        5123 => value / 65535,
                         _ => throw new InvalidDataException("Invalid normalized component type.")
                     };
                 }
@@ -400,7 +405,7 @@ internal sealed class SceneGlbAssetReader
         return result;
     }
 
-    private IReadOnlyDictionary<string, SceneTextureBinding> ReadTextures(JsonElement material)
+    private Dictionary<string, SceneTextureBinding> ReadTextures(JsonElement material)
     {
         var result = new Dictionary<string, SceneTextureBinding>(StringComparer.Ordinal);
         if (material.ValueKind != JsonValueKind.Object)
@@ -675,7 +680,7 @@ internal sealed class SceneGlbAssetReader
         }
     }
 
-    private static IReadOnlyList<SceneCachedFeature> Features(Dictionary<string, object?>[] rows)
+    private static List<SceneCachedFeature> Features(Dictionary<string, object?>[] rows)
     {
         var features = new List<SceneCachedFeature>(rows.Length);
         var identifiers = new HashSet<long>();
@@ -728,8 +733,10 @@ internal sealed class SceneGlbAssetReader
 
     private static object? Scalar(JsonElement value) => value.ValueKind switch
     {
-        JsonValueKind.Null => null, JsonValueKind.String => value.GetString(),
-        JsonValueKind.True => true, JsonValueKind.False => false,
+        JsonValueKind.Null => null,
+        JsonValueKind.String => value.GetString(),
+        JsonValueKind.True => true,
+        JsonValueKind.False => false,
         JsonValueKind.Number when value.TryGetInt64(out var integer) => integer,
         JsonValueKind.Number => value.GetDouble(),
         _ => throw new InvalidDataException("Batch attributes must be scalar values.")
@@ -740,20 +747,31 @@ internal sealed class SceneGlbAssetReader
     private static int ComponentWidth(int type) => type switch { 5120 or 5121 => 1, 5122 or 5123 => 2, 5125 or 5126 => 4, _ => throw new InvalidDataException("Unsupported component type.") };
     private static int BatchComponent(string? type) => type switch { "BYTE" => 5120, "UNSIGNED_BYTE" => 5121, "SHORT" => 5122, "UNSIGNED_SHORT" => 5123, "UNSIGNED_INT" => 5125, "FLOAT" => 5126, _ => throw new InvalidDataException("Unsupported batch component type.") };
     private static int StructuralWidth(string? type) => type switch { "INT8" or "UINT8" => 1, "INT16" or "UINT16" => 2, "INT32" or "UINT32" or "FLOAT32" => 4, "INT64" or "UINT64" or "FLOAT64" => 8, _ => throw new InvalidDataException("Unsupported feature scalar type.") };
+    // Explicit boxing prevents the numeric switch's common type from promoting
+    // integer values to double and losing Int64 precision above 2^53.
     private static object ReadStructuralScalar(ReadOnlySpan<byte> bytes, int offset, string? type) => type switch
     {
-        "INT8" => (long)(sbyte)bytes[offset], "UINT8" => (long)bytes[offset],
-        "INT16" => (long)BinaryPrimitives.ReadInt16LittleEndian(bytes[offset..]), "UINT16" => (long)BinaryPrimitives.ReadUInt16LittleEndian(bytes[offset..]),
-        "INT32" => (long)BinaryPrimitives.ReadInt32LittleEndian(bytes[offset..]), "UINT32" => (long)BinaryPrimitives.ReadUInt32LittleEndian(bytes[offset..]),
-        "INT64" => BinaryPrimitives.ReadInt64LittleEndian(bytes[offset..]), "UINT64" => BinaryPrimitives.ReadUInt64LittleEndian(bytes[offset..]),
-        "FLOAT32" => (double)BinaryPrimitives.ReadSingleLittleEndian(bytes[offset..]), "FLOAT64" => BinaryPrimitives.ReadDoubleLittleEndian(bytes[offset..]),
+        "INT8" => (object)(long)(sbyte)bytes[offset],
+        "UINT8" => (object)(long)bytes[offset],
+        "INT16" => (object)(long)BinaryPrimitives.ReadInt16LittleEndian(bytes[offset..]),
+        "UINT16" => (object)(long)BinaryPrimitives.ReadUInt16LittleEndian(bytes[offset..]),
+        "INT32" => (object)(long)BinaryPrimitives.ReadInt32LittleEndian(bytes[offset..]),
+        "UINT32" => (object)(long)BinaryPrimitives.ReadUInt32LittleEndian(bytes[offset..]),
+        "INT64" => (object)BinaryPrimitives.ReadInt64LittleEndian(bytes[offset..]),
+        "UINT64" => (object)BinaryPrimitives.ReadUInt64LittleEndian(bytes[offset..]),
+        "FLOAT32" => (double)BinaryPrimitives.ReadSingleLittleEndian(bytes[offset..]),
+        "FLOAT64" => BinaryPrimitives.ReadDoubleLittleEndian(bytes[offset..]),
         _ => throw new InvalidDataException("Unsupported feature scalar type.")
     };
     private static double ReadComponent(ReadOnlySpan<byte> bytes, int offset, int type) => type switch
     {
-        5120 => (sbyte)bytes[offset], 5121 => bytes[offset], 5122 => BinaryPrimitives.ReadInt16LittleEndian(bytes[offset..]),
-        5123 => BinaryPrimitives.ReadUInt16LittleEndian(bytes[offset..]), 5125 => BinaryPrimitives.ReadUInt32LittleEndian(bytes[offset..]),
-        5126 => BinaryPrimitives.ReadSingleLittleEndian(bytes[offset..]), _ => throw new InvalidDataException("Unsupported component type.")
+        5120 => (sbyte)bytes[offset],
+        5121 => bytes[offset],
+        5122 => BinaryPrimitives.ReadInt16LittleEndian(bytes[offset..]),
+        5123 => BinaryPrimitives.ReadUInt16LittleEndian(bytes[offset..]),
+        5125 => BinaryPrimitives.ReadUInt32LittleEndian(bytes[offset..]),
+        5126 => BinaryPrimitives.ReadSingleLittleEndian(bytes[offset..]),
+        _ => throw new InvalidDataException("Unsupported component type.")
     };
     private static ulong ReadUnsigned(ReadOnlySpan<byte> bytes, int offset, int width) => width == 8
         ? BinaryPrimitives.ReadUInt64LittleEndian(bytes[offset..]) : BinaryPrimitives.ReadUInt32LittleEndian(bytes[offset..]);

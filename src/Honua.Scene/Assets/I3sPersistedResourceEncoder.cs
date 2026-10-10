@@ -71,11 +71,15 @@ internal static class I3sPersistedResourceEncoder
 
     public static IReadOnlyList<I3sField> BuildFields(IReadOnlyList<I3sAttributeStorageInfo> attributes) => attributes.Select(field => new I3sField
     {
-        Name = field.Name!, Alias = field.Name!,
+        Name = field.Name!,
+        Alias = field.Name!,
         Type = field.AttributeValues!.ValueType switch
         {
-            "Oid32" => "esriFieldTypeOID", "String" => "esriFieldTypeString", "UInt8" => "esriFieldTypeSmallInteger",
-            "Int64" => "esriFieldTypeBigInteger", _ => "esriFieldTypeDouble",
+            "Oid32" => "esriFieldTypeOID",
+            "String" => "esriFieldTypeString",
+            "UInt8" => "esriFieldTypeSmallInteger",
+            "Int64" => "esriFieldTypeBigInteger",
+            _ => "esriFieldTypeDouble",
         },
     }).ToArray();
 
@@ -148,8 +152,12 @@ internal static class I3sPersistedResourceEncoder
         var max = new SceneCartesian(points.Max(p => p.X), points.Max(p => p.Y), points.Max(p => p.Z));
         var centre = (min + max) / 2;
         var geographic = EcefCoordinateTransform.FromEcef(centre.X, centre.Y, centre.Z);
-        return new() { Center = [geographic.Longitude, geographic.Latitude, geographic.Height],
-            HalfSize = [(max.X - min.X) / 2, (max.Y - min.Y) / 2, (max.Z - min.Z) / 2], Quaternion = [0, 0, 0, 1] };
+        return new()
+        {
+            Center = [geographic.Longitude, geographic.Latitude, geographic.Height],
+            HalfSize = [(max.X - min.X) / 2, (max.Y - min.Y) / 2, (max.Z - min.Z) / 2],
+            Quaternion = [0, 0, 0, 1]
+        };
     }
 
     public static I3sMaterialDefinition Material(SceneDecodedMesh mesh, List<I3sTextureSetDefinition> textureSets)
@@ -170,13 +178,19 @@ internal static class I3sPersistedResourceEncoder
             PbrMetallicRoughness = new()
             {
                 BaseColorFactor = [Srgb(color[0]), Srgb(color[1]), Srgb(color[2]), color[3]],
-                MetallicFactor = Scalar(pbr, "metallicFactor", 1), RoughnessFactor = Scalar(pbr, "roughnessFactor", 1),
-                BaseColorTexture = Texture("0"), MetallicRoughnessTexture = Texture("1"),
+                MetallicFactor = Scalar(pbr, "metallicFactor", 1),
+                RoughnessFactor = Scalar(pbr, "roughnessFactor", 1),
+                BaseColorTexture = Texture("0"),
+                MetallicRoughnessTexture = Texture("1"),
             },
-            NormalTexture = Texture("2"), OcclusionTexture = Texture("3"), EmissiveTexture = Texture("4"),
+            NormalTexture = Texture("2"),
+            OcclusionTexture = Texture("3"),
+            EmissiveTexture = Texture("4"),
             EmissiveFactor = Vector(source, "emissiveFactor", [0, 0, 0]).Select(Srgb).ToArray(),
-            AlphaMode = alpha.ToLowerInvariant(), AlphaCutoff = alpha == "MASK" ? Scalar(source, "alphaCutoff", 0.5) : null,
-            DoubleSided = doubleSided, CullFace = doubleSided ? "none" : "back",
+            AlphaMode = alpha.ToLowerInvariant(),
+            AlphaCutoff = alpha == "MASK" ? Scalar(source, "alphaCutoff", 0.5) : null,
+            DoubleSided = doubleSided,
+            CullFace = doubleSided ? "none" : "back",
         };
 
         I3sMaterialTexture? Texture(string key)
@@ -197,17 +211,22 @@ internal static class I3sPersistedResourceEncoder
         {
             var values = features.Select(feature => Value(feature, field.Name!)).Where(value => value is not null).ToArray();
             var numeric = field.AttributeValues!.ValueType != "String";
-            return new I3sAttributeStatisticsDocument { Stats = new()
+            return new I3sAttributeStatisticsDocument
             {
-                TotalValuesCount = values.Length, Count = values.Distinct().LongCount(),
-                Min = numeric && values.Length > 0 ? values.Min(value => Convert.ToDouble(value, CultureInfo.InvariantCulture)) : null,
-                Max = numeric && values.Length > 0 ? values.Max(value => Convert.ToDouble(value, CultureInfo.InvariantCulture)) : null,
-            } };
+                Stats = new()
+                {
+                    TotalValuesCount = values.Length,
+                    Count = values.Distinct().LongCount(),
+                    Min = numeric && values.Length > 0 ? values.Min(value => Convert.ToDouble(value, CultureInfo.InvariantCulture)) : null,
+                    Max = numeric && values.Length > 0 ? values.Max(value => Convert.ToDouble(value, CultureInfo.InvariantCulture)) : null,
+                }
+            };
         }, StringComparer.Ordinal);
 
     private static I3sAttributeStorageInfo Descriptor(string key, string name, string type) => new()
     {
-        Key = key, Name = name,
+        Key = key,
+        Name = name,
         Ordering = type == "String" ? ["attributeByteCounts", "attributeValues"] : ["attributeValues"],
         Header = type == "String" ? [new() { Property = "count", ValueType = "UInt32" }, new() { Property = "attributeValuesByteCount", ValueType = "UInt32" }]
             : [new() { Property = "count", ValueType = "UInt32" }],
@@ -215,17 +234,17 @@ internal static class I3sPersistedResourceEncoder
         AttributeValues = new() { ValueType = type, ValuesPerElement = 1, Encoding = type == "String" ? "UTF-8" : null },
     };
 
-    private static byte[] EncodeAttribute(IReadOnlyList<SceneCachedFeature> features, I3sAttributeStorageInfo field)
+    private static byte[] EncodeAttribute(SceneCachedFeature[] features, I3sAttributeStorageInfo field)
     {
         var values = features.Select(feature => Value(feature, field.Name!)).ToArray();
         var type = field.AttributeValues!.ValueType;
         if (type == "String")
         {
             var strings = values.Select(value => value is null ? [] : Encoding.UTF8.GetBytes((string)value + '\0')).ToArray();
-            var result = new byte[checked(8 + features.Count * 4 + strings.Sum(value => value.Length))];
-            BinaryPrimitives.WriteUInt32LittleEndian(result, (uint)features.Count);
+            var result = new byte[checked(8 + features.Length * 4 + strings.Sum(value => value.Length))];
+            BinaryPrimitives.WriteUInt32LittleEndian(result, (uint)features.Length);
             BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(4), (uint)strings.Sum(value => value.Length));
-            var offset = 8 + features.Count * 4;
+            var offset = 8 + features.Length * 4;
             for (var index = 0; index < strings.Length; index++)
             {
                 BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(8 + index * 4), (uint)strings[index].Length);
@@ -238,8 +257,8 @@ internal static class I3sPersistedResourceEncoder
 
         var width = type is "Float64" or "Int64" ? 8 : type == "UInt8" ? 1 : 4;
         var header = width == 8 ? 8 : 4;
-        var buffer = new byte[checked(header + features.Count * width)];
-        BinaryPrimitives.WriteUInt32LittleEndian(buffer, (uint)features.Count);
+        var buffer = new byte[checked(header + features.Length * width)];
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer, (uint)features.Length);
         for (var index = 0; index < values.Length; index++)
         {
             var destination = buffer.AsSpan(header + index * width);
@@ -273,7 +292,10 @@ internal static class I3sPersistedResourceEncoder
     }
     private static byte Color(double value) => Channel(Srgb(value));
     private static byte Channel(double value) => (byte)Math.Round(Math.Clamp(value, 0, 1) * 255);
-    private static double Srgb(double value) => value <= 0.0031308 ? value * 12.92 : 1.055 * Math.Pow(value, 1 / 2.4) - 0.055;
+    // The transfer function preserves black and white exactly; evaluating its
+    // nonlinear branch at white otherwise introduces a rounding error.
+    private static double Srgb(double value) => value is 0 or 1 ? value
+        : value <= 0.0031308 ? value * 12.92 : 1.055 * Math.Pow(value, 1 / 2.4) - 0.055;
     private static double Scalar(JsonElement source, string property, double fallback)
     {
         var value = source.ValueKind == JsonValueKind.Object && source.TryGetProperty(property, out var scalar) ? scalar.GetDouble() : fallback;

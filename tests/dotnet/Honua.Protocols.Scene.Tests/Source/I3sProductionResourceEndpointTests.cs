@@ -207,7 +207,8 @@ public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime
             parent["children"] = new JsonArray(new JsonObject
             {
                 ["boundingVolume"] = tileset["root"]!["boundingVolume"]!.DeepClone(),
-                ["geometricError"] = 0, ["content"] = new JsonObject { ["uri"] = "tiles/1.glb" },
+                ["geometricError"] = 0,
+                ["content"] = new JsonObject { ["uri"] = "tiles/1.glb" },
             });
             await File.WriteAllTextAsync(Path.Join(_root, "tileset.json"), tileset.ToJsonString());
         }
@@ -293,12 +294,14 @@ public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime
             ["children"] = new JsonArray(new JsonObject
             {
                 ["boundingVolume"] = root["boundingVolume"]!.DeepClone(),
-                ["geometricError"] = 5, ["refine"] = "REPLACE",
+                ["geometricError"] = 5,
+                ["refine"] = "REPLACE",
                 ["content"] = new JsonObject { ["uri"] = "tiles/1.glb" },
                 ["children"] = new JsonArray(new JsonObject
                 {
                     ["boundingVolume"] = root["boundingVolume"]!.DeepClone(),
-                    ["geometricError"] = 0, ["content"] = new JsonObject { ["uri"] = "tiles/0.b3dm" },
+                    ["geometricError"] = 0,
+                    ["content"] = new JsonObject { ["uri"] = "tiles/0.b3dm" },
                 }),
             }),
         });
@@ -485,6 +488,45 @@ public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime
         BinaryPrimitives.ReadInt32LittleEndian(objectId.AsSpan(4)).Should().Be(47);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}")]
+    public async Task PersistedInt64Attributes_PreserveValuesBeyondDoublePrecision()
+    {
+        const long first = 9007199254740993;
+        const long second = -9007199254740993;
+        var tileset = JsonNode.Parse(await File.ReadAllTextAsync(Path.Join(_root, "tileset.json")))!;
+        tileset["root"]!["children"]!.AsArray().RemoveAt(0);
+        await File.WriteAllTextAsync(Path.Join(_root, "tileset.json"), tileset.ToJsonString());
+        await RewriteGlbAsync("tiles/1.glb", json =>
+            json["extensions"]!["EXT_structural_metadata"]!["schema"]!["classes"]!["building"]!["properties"]!["height"]!["componentType"] = "INT64");
+        var path = Path.Join(_root, "tiles/1.glb");
+        var source = await File.ReadAllBytesAsync(path);
+        var jsonLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(source.AsSpan(12));
+        using (var metadata = JsonDocument.Parse(source.AsMemory(20, jsonLength)))
+        {
+            var table = metadata.RootElement.GetProperty("extensions").GetProperty("EXT_structural_metadata").GetProperty("propertyTables")[0];
+            var viewIndex = table.GetProperty("properties").GetProperty("height").GetProperty("values").GetInt32();
+            var offset = metadata.RootElement.GetProperty("bufferViews")[viewIndex].GetProperty("byteOffset").GetInt32();
+            BinaryPrimitives.WriteInt64LittleEndian(source.AsSpan(28 + jsonLength + offset), first);
+            BinaryPrimitives.WriteInt64LittleEndian(source.AsSpan(36 + jsonLength + offset), second);
+        }
+        await File.WriteAllBytesAsync(path, source);
+        using var layer = await GetJsonAsync(Base);
+        var declared = layer.RootElement.GetProperty("fields").EnumerateArray().Single(field => field.GetProperty("name").GetString() == "height");
+        declared.GetProperty("type").GetString().Should().Be("esriFieldTypeBigInteger");
+        var storage = layer.RootElement.GetProperty("attributeStorageInfo").EnumerateArray().Single(field => field.GetProperty("name").GetString() == "height");
+        storage.GetProperty("attributeValues").GetProperty("valueType").GetString().Should().Be("Int64");
+        var bytes = await _fixture.Client.GetByteArrayAsync($"{Base}/nodes/1/attributes/{storage.GetProperty("key").GetString()}/0");
+        bytes.Length.Should().Be(24);
+        BinaryPrimitives.ReadUInt32LittleEndian(bytes).Should().Be(2);
+        BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(8)).Should().Be(first);
+        BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(16)).Should().Be(second);
+        using var page = await GetJsonAsync(Base + "/nodepages/0");
+        var geometry = await _fixture.Client.GetByteArrayAsync(Base + "/nodes/1/geometries/0");
+        AssertSourcePlacement(geometry, page.RootElement.GetProperty("nodes")[1].GetProperty("obb").GetProperty("center"), 150);
+    }
+
     private async Task RewriteGlbAsync(string fileName, Action<JsonNode> change)
     {
         var path = Path.Join(_root, fileName);
@@ -509,7 +551,11 @@ public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime
     {
         var response = await _fixture.Client.GetAsync(url);
         response.EnsureSuccessStatusCode();
-        return JsonDocument.Parse(await response.Content.ReadAsByteArrayAsync());
+        var body = await response.Content.ReadAsByteArrayAsync();
+        var document = JsonDocument.Parse(body);
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            "a successful descriptor must not be a GeoServices error envelope: {0}", Encoding.UTF8.GetString(body));
+        return document;
     }
 
     private static void AssertSourcePlacement(byte[] bytes, JsonElement center, double eastOffset)

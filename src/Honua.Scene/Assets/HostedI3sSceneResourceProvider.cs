@@ -49,7 +49,7 @@ internal sealed class HostedI3sSceneResourceProvider(TimeProvider timeProvider) 
 
             return resources;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException
+        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException or JsonException
             or ArgumentException or FormatException or InvalidOperationException or KeyNotFoundException or OverflowException or IndexOutOfRangeException)
         {
             // Malformed or unsupported source assets are unavailable as a whole;
@@ -121,7 +121,8 @@ internal sealed class HostedI3sSceneResourceProvider(TimeProvider timeProvider) 
                 node.Entry.Mesh = new()
                 {
                     Geometry = new() { Definition = 0, Resource = index, VertexCount = encoded.Geometry.VertexCount, FeatureCount = encoded.Geometry.FeatureCount },
-                    Attribute = new() { Resource = index }, Material = new() { Definition = definition, Resource = index },
+                    Attribute = new() { Resource = index },
+                    Material = new() { Definition = definition, Resource = index },
                 };
                 resources.Add(index, encoded);
             }
