@@ -5,12 +5,35 @@ using System.Linq;
 using FluentAssertions;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.OData;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Queries.Filters.OData;
 
 public class ODataFilterParserTests
 {
     private readonly ODataFilterParser _parser = new();
+
+    [UnitTest]
+    public void Parse_BareProperty_RejectsFilterThatIsNotABooleanPredicate()
+    {
+        var act = () => _parser.Parse("result");
+
+        act.Should().Throw<ODataFilterParseException>()
+            .WithMessage("*must be a boolean expression*");
+    }
+
+    [UnitTest]
+    public void ParseOrderExpression_BarePropertyAndArithmetic_AreSortKeys()
+    {
+        var property = _parser.ParseOrderExpression("result");
+        property.Should().BeOfType<PropertyReference>();
+        ((PropertyReference)property).PropertyName.Should().Be("result");
+
+        var arithmetic = (BinaryExpression)_parser.ParseOrderExpression("result add 0");
+        arithmetic.Operator.Should().Be(BinaryOperator.Add);
+        ((PropertyReference)arithmetic.Left).PropertyName.Should().Be("result");
+        ((Literal)arithmetic.Right).Value.Should().Be(0);
+    }
 
     [Theory]
     [InlineData("properties/site/name")]

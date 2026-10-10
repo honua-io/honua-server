@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text;
 using Honua.Core.Queries.Filters;
+using Honua.Core.Queries.Filters.OData;
 
 namespace Honua.Protocols.SensorThings.Services;
 
@@ -170,9 +171,10 @@ internal sealed class StaFilterTranslator
                 var expression = term.Trim();
                 var descending = expression.EndsWith(" desc", StringComparison.OrdinalIgnoreCase);
                 if (descending || expression.EndsWith(" asc", StringComparison.OrdinalIgnoreCase)) expression = expression[..expression.LastIndexOf(' ')].TrimEnd();
-                var parsed = _filterExpressionService.Parse(FilterLanguage.OData, expression);
-                if (!parsed.IsSuccess || parsed.Expression is null) return StaFilterTranslation.Failure(parsed.ErrorMessage ?? "Invalid $orderby expression.");
-                var fragment = _entityStore.TranslateOrderExpression(schema.EntitySet, parsed.Expression);
+                // $orderby accepts a bare property. The shared filter parse rejects that
+                // shape because a $filter must be a boolean predicate.
+                var parsedExpression = new ODataFilterParser().ParseOrderExpression(expression);
+                var fragment = _entityStore.TranslateOrderExpression(schema.EntitySet, parsedExpression);
                 terms.Add(SqlFragmentHelpers.RenumberSqlFragmentParameters(fragment.Sql, parameters.Count) + (descending ? " DESC NULLS LAST" : " ASC NULLS FIRST"));
                 parameters.AddRange(fragment.Parameters);
             }

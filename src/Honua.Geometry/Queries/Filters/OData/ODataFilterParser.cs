@@ -23,7 +23,16 @@ public sealed class ODataFilterParser
     /// <param name="filter">The OData $filter string.</param>
     /// <returns>Parsed filter expression AST.</returns>
     /// <exception cref="ArgumentException">Thrown when parsing fails.</exception>
-    public FilterExpression Parse(string filter)
+    public FilterExpression Parse(string filter) => ParseCore(filter, requireBooleanPredicate: true);
+
+    /// <summary>
+    /// Parses one <c>$orderby</c> term. A bare property or arithmetic expression is a
+    /// sort key, so this does not apply the <c>$filter</c> boolean-predicate rule.
+    /// </summary>
+    public FilterExpression ParseOrderExpression(string expression) =>
+        ParseCore(expression, requireBooleanPredicate: false);
+
+    private FilterExpression ParseCore(string filter, bool requireBooleanPredicate)
     {
         if (string.IsNullOrWhiteSpace(filter))
         {
@@ -46,7 +55,8 @@ public sealed class ODataFilterParser
         // filter — the translator would otherwise silently coerce it into an unbounded
         // attribute lookup and return 200 with all features instead of rejecting the
         // request as malformed. Reject up-front for a clearer 400.
-        if (expression is PropertyReference || expression is Literal)
+        // $orderby sorts by the value itself, so a bare property stays valid there.
+        if (requireBooleanPredicate && expression is PropertyReference or Literal)
         {
             throw new ODataFilterParseException(
                 "$filter must be a boolean expression (e.g. 'field op value'); a bare property reference or literal is not valid.",

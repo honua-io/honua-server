@@ -72,7 +72,7 @@ public sealed class SensorThingsNavigationTests : IAsyncLifetime
             observation.GetProperty("result").GetDouble().Should().BeApproximately(15 + (10 * Math.Sin(id)), 1e-9);
             observation.GetProperty("phenomenonTime").GetDateTimeOffset().Should()
                 .Be(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero).AddHours(id));
-            observation.TryGetProperty("FeatureOfInterest@iot.navigationLink", out _).Should().BeFalse();
+            observation.TryGetProperty("FeatureOfInterest@iot.navigationLink", out _).Should().BeTrue();
             using var related = await GetAsync(observation.GetProperty("Datastream@iot.navigationLink").GetString()!);
             related.RootElement.GetProperty("@iot.id").GetInt64().Should().Be(1);
         }
@@ -156,19 +156,10 @@ public sealed class SensorThingsNavigationTests : IAsyncLifetime
         using var observationResponse = await admin.PostAsync("/sta/v1.1/Observations", observationBody);
         observationResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         using var observation = JsonDocument.Parse(await observationResponse.Content.ReadAsStringAsync());
-        observation.RootElement.TryGetProperty("FeatureOfInterest@iot.navigationLink", out _).Should().BeFalse();
-        // The HTTP ingest surface does not accept FeatureOfInterest. Seed the nullable
-        // storage field directly to exercise both mapper branches from the original defect.
-        await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema))
-        await using (var command = connection.CreateCommand())
-        {
-            command.CommandText = "UPDATE sta_observation SET feature_of_interest_id = 987 WHERE id = @id";
-            command.Parameters.AddWithValue("id", observation.RootElement.GetProperty("@iot.id").GetInt64());
-            (await command.ExecuteNonQueryAsync()).Should().Be(1);
-        }
+        observation.RootElement.GetProperty("FeatureOfInterest@iot.navigationLink").GetString().Should().NotBeNullOrEmpty();
         using var read = await GetAsync(observation.RootElement.GetProperty("@iot.selfLink").GetString()!);
         read.RootElement.GetProperty("result").GetDouble().Should().Be(42.25);
-        read.RootElement.TryGetProperty("FeatureOfInterest@iot.navigationLink", out _).Should().BeFalse();
+        read.RootElement.GetProperty("FeatureOfInterest@iot.navigationLink").GetString().Should().NotBeNullOrEmpty();
         using var target = await GetAsync(read.RootElement.GetProperty("Datastream@iot.navigationLink").GetString()!);
         target.RootElement.GetProperty("@iot.id").GetInt64().Should().Be(streamId);
         target.RootElement.GetProperty("name").GetString().Should().Be("Distinct keys");

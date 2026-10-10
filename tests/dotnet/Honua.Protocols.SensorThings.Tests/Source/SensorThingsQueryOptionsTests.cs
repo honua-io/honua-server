@@ -234,12 +234,12 @@ public sealed class SensorThingsQueryOptionsTests : IAsyncLifetime
     [Endpoint("GET /sta/v1.1/Observations")]
     public async Task Observations_FilterWithAStringLiteralAgainstANumericProperty_Returns400NotAnUnhandled500()
     {
-        // PostgreSQL has no implicit text -> double precision cast: this used to reach the
-        // reader as an untyped text parameter and raise 42883 past the handler.
-        (await GetStatusAsync($"/sta/v1.1/Observations?$filter={Escape("result eq 'abc'")}"))
-            .Should().Be(HttpStatusCode.BadRequest);
-        (await GetStatusAsync($"/sta/v1.1/Observations?$filter={Escape("result eq true")}"))
-            .Should().Be(HttpStatusCode.BadRequest);
+        // Result is stored as JSON, so a string or boolean comparison is a real filter.
+        // It matches nothing in the seeded measurement series instead of raising 42883.
+        using var text = await GetOkAsync($"/sta/v1.1/Observations?$filter={Escape("result eq 'abc'")}&$count=true");
+        text.RootElement.GetProperty("@iot.count").GetInt64().Should().Be(0);
+        using var boolean = await GetOkAsync($"/sta/v1.1/Observations?$filter={Escape("result eq true")}&$count=true");
+        boolean.RootElement.GetProperty("@iot.count").GetInt64().Should().Be(0);
         (await GetStatusAsync($"/sta/v1.1/Observations?$filter={Escape("id eq 'abc'")}"))
             .Should().Be(HttpStatusCode.BadRequest);
         (await GetStatusAsync($"/sta/v1.1/Observations?$filter={Escape("phenomenonTime gt 'not-a-time'")}"))

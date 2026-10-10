@@ -556,6 +556,7 @@ internal sealed class InputValidationMiddleware
 
     private static bool ShouldSkipLdapInspection(HttpRequest request, string paramType, string name, string value)
         => IsODataSystemQueryOption(request, paramType, name) ||
+           IsSensorThingsSystemQueryOption(request, paramType, name) ||
            IsProtocolFilterQueryOption(request, paramType, name) ||
            IsPortalSearchQuery(request, paramType, name) ||
            IsEdrWktCoordsQueryOption(request, paramType, name, value);
@@ -620,6 +621,20 @@ internal sealed class InputValidationMiddleware
 
         return name.StartsWith('$') &&
                request.Path.Value?.StartsWith("/odata", StringComparison.OrdinalIgnoreCase) == true;
+    }
+
+    private static bool IsSensorThingsSystemQueryOption(HttpRequest request, string paramType, string name)
+    {
+        if (!paramType.Equals("query", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // SensorThings $filter / $orderby / $expand carry OData geometry and function
+        // text. POLYGON((...)) contains the parenthesis tokens the LDAP heuristic
+        // flags, and the value is parsed as OData rather than forwarded to a directory.
+        return name.StartsWith('$') &&
+               request.Path.Value?.StartsWith("/sta/", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     private static bool IsProtocolFilterQueryOption(HttpRequest request, string paramType, string name)

@@ -74,6 +74,37 @@ internal static partial class SensorThingsEndpoints
         else route.RequireAdminAuthorization();
     }
 
+    private readonly record struct PathShape(string Set, bool Collection);
+
+    /// <summary>Structural path shape, with no database lookup.</summary>
+    private static PathShape DescribePath(string? path)
+    {
+        var segments = (path ?? string.Empty)[BasePath.Length..].Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0) throw new SensorThingsValidationException("An entity resource path is required.");
+        var (set, id) = ParseEntitySegment(segments[0]);
+        if (!SensorThingsRelationships.EntitySets.Contains(set)) throw new SensorThingsValidationException("Unknown sensing entity set.");
+        var collection = id is null;
+        var property = false;
+        for (var index = 1; index < segments.Length; index++)
+        {
+            var segment = segments[index];
+            if (segment is "$value" or "$ref") continue;
+            if (property)
+                continue;
+            var (navigation, relatedId) = ParseEntitySegment(segment);
+            if (!SensorThingsRelationships.For(set).TryGetValue(navigation, out var relationship))
+            {
+                property = true;
+                collection = false;
+                continue;
+            }
+            if (!relationship.Many && relatedId is not null) throw new SensorThingsValidationException("A singleton navigation property cannot carry an entity identifier.");
+            set = relationship.Target;
+            collection = relationship.Many && relatedId is null;
+        }
+        return new PathShape(set, collection);
+    }
+
     private static async Task<Resource> ResolveResourceAsync(HttpContext context, ISensorThingsEntityStore store)
     {
         var path = context.Request.Path.Value ?? string.Empty;
@@ -141,9 +172,15 @@ internal static partial class SensorThingsEndpoints
             if (context.RequestServices.GetRequiredService<IConfiguration>().GetValue<bool>("SensorThings:ConformantProfile")
                 && await store.CountUnresolvedFeaturesAsync(context.RequestAborted).ConfigureAwait(false) > 0)
                 return StandardErrorHelpers.CreateServiceUnavailable(context, "The conformant sensing profile requires explicit reconciliation of legacy FeatureOfInterest associations.");
+            // Reject a query the target cannot accept before the parent lookup, so a
+            // missing Datastreams(999999)/Thing?$filter=... is 400 rather than 404.
+            var shape = DescribePath(context.Request.Path.Value);
+            ValidateCoreQuery(context.Request, shape.Collection);
+            var planResult = StaQueryPlan.Create(context.Request, StaEntitySchema.For(shape.Set), translator);
+            if (!planResult.IsSuccess) return planResult.StatusCode == 501 ? StandardErrorHelpers.CreateNotImplemented(context, planResult.Error ?? "Unsupported query.") : StandardErrorHelpers.CreateBadRequest(context, planResult.Error ?? "Invalid query.");
             var resource = await ResolveResourceAsync(context, store).ConfigureAwait(false);
             ValidateCoreQuery(context.Request, resource.Id is null);
-            var planResult = StaQueryPlan.Create(context.Request, StaEntitySchema.For(resource.Set), translator);
+            planResult = StaQueryPlan.Create(context.Request, StaEntitySchema.For(resource.Set), translator);
             if (!planResult.IsSuccess) return planResult.StatusCode == 501 ? StandardErrorHelpers.CreateNotImplemented(context, planResult.Error ?? "Unsupported query.") : StandardErrorHelpers.CreateBadRequest(context, planResult.Error ?? "Invalid query.");
             var plan = planResult.Plan!;
             if (resource.Id is { } id)

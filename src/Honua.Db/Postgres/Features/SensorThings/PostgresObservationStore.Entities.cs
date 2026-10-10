@@ -230,6 +230,9 @@ internal sealed partial class PostgresObservationStore
     {
         if (depth > 20) throw new SensorThingsValidationException("Deep insert exceeds the maximum relationship depth.");
         body.Remove("@iot.id");
+        // Existing clients create measurement datastreams without observationType.
+        if (set == "Datastreams" && !body.ContainsKey("observationType"))
+            body["observationType"] = "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement";
         ValidateMembers(set, body);
         if (set == "HistoricalLocations" && body["Locations"] is not JsonArray { Count: > 0 })
             throw new SensorThingsValidationException("HistoricalLocation requires at least one Location.");
@@ -258,7 +261,11 @@ internal sealed partial class PostgresObservationStore
             else if (set == "Observations" && navigation == "FeatureOfInterest")
             {
                 var dsIndex = columns.IndexOf("datastream_id");
-                related = await InferFeatureAsync(connection, transaction, (long)values[dsIndex].Value, ct).ConfigureAwait(false);
+                var inferred = await InferFeatureAsync(connection, transaction, (long)values[dsIndex].Value, ct).ConfigureAwait(false);
+                // A Thing with no location cannot invent a feature. The column stays null,
+                // which is the pre-preview observation shape those creates already stored.
+                if (inferred is null) continue;
+                related = inferred.Value;
             }
             else throw new SensorThingsValidationException($"{navigation} is required for {set}.");
             columns.Add(column);
@@ -396,7 +403,7 @@ internal sealed partial class PostgresObservationStore
         if (!GeoJsonGeometryShapeValidator.IsKnownValidGeometry(document.RootElement)) throw new SensorThingsValidationException("GeoJSON geometry has invalid coordinates or structure.");
     }
 
-    private async Task<long> InferFeatureAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, long datastream, CancellationToken ct)
+    private async Task<long?> InferFeatureAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, long datastream, CancellationToken ct)
     {
         await using var command = new NpgsqlCommand($"SELECT l.id, l.name, l.description, l.encoding_type, l.location::text FROM {EntityTable("Locations")} l JOIN {AssociationTable("sta_thing_location")} tl ON tl.location_id=l.id JOIN {_datastreamTable} ds ON ds.thing_id=tl.thing_id WHERE ds.id=@ds AND lower(l.encoding_type) IN ('application/vnd.geo+json','application/geo+json') AND NOT ST_IsEmpty({GeoJsonGeometrySql("l.location", "l.encoding_type")}) ORDER BY l.id LIMIT 2 FOR UPDATE OF l", connection, transaction);
         command.Parameters.AddWithValue("ds", datastream);
@@ -411,7 +418,7 @@ internal sealed partial class PostgresObservationStore
                 if (await reader.ReadAsync(ct).ConfigureAwait(false)) throw new SensorThingsValidationException("Multiple Thing locations require an explicit FeatureOfInterest.");
             }
         }
-        if (body is null) throw new SensorThingsValidationException("Observation requires an explicit FeatureOfInterest or a usable Thing location.");
+        if (body is null) return null;
         await using (var existing = new NpgsqlCommand($"SELECT id FROM {EntityTable("FeaturesOfInterest")} WHERE source_location_id=@location AND feature=@feature::jsonb AND encoding_type=@encoding ORDER BY id LIMIT 1", connection, transaction))
         {
             existing.Parameters.AddWithValue("location", location); existing.Parameters.AddWithValue("feature", body["feature"]!.ToJsonString()); existing.Parameters.AddWithValue("encoding", body["encodingType"]!.GetValue<string>());
