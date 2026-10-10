@@ -54,13 +54,15 @@ public sealed partial class NightlyImageCertificationTests
         select.Should().Contain("--sha \"${REQUESTED_SHA:-}\"");
         select.Should().NotContain("\n    if:", "trunk selection must run on every schedule and dispatch");
 
-        // The only path that hands the build its own head is a non-trunk branch proof,
-        // and that path publishes nothing.
+        // The only path that hands the build its own head uncertified is a non-trunk
+        // branch proof, and that path publishes nothing.
         var headPath = select.IndexOf("echo \"sha=${GITHUB_SHA}\"", StringComparison.Ordinal);
         var branchGuard = select.IndexOf("if [ \"${GITHUB_REF}\" != \"refs/heads/trunk\" ]; then", StringComparison.Ordinal);
         branchGuard.Should().BeGreaterThan(-1);
-        headPath.Should().BeGreaterThan(branchGuard, "github.sha may only be imaged off trunk");
-        select[branchGuard..select.IndexOf("python3 " + SelectorPath, StringComparison.Ordinal)]
+        headPath.Should().BeGreaterThan(branchGuard, "github.sha may only be imaged uncertified off trunk");
+        var trunkSelection = select.IndexOf("--limit 100", branchGuard, StringComparison.Ordinal);
+        trunkSelection.Should().BeGreaterThan(branchGuard);
+        select[branchGuard..trunkSelection]
             .Should().Contain("exit 0", "the trunk path must fall through to certification, never to HEAD");
 
         foreach (var job in BuildJobs)
@@ -75,16 +77,80 @@ public sealed partial class NightlyImageCertificationTests
         nightly.Should().NotContain("HONUA_GIT_SHA=${{ github.sha }}");
         nightly.Should().Contain($"HONUA_GIT_SHA={CandidateSha}", Exactly.Times(4),
             "AOT, Lambda AOT, Functions AOT and JIT are all stamped with the candidate sha");
-        nightly.Should().Contain($"org.opencontainers.image.revision={CandidateSha}", Exactly.Times(4),
+        nightly.Should().Contain($"labels: |\n            org.opencontainers.image.revision={CandidateSha}\n", Exactly.Times(4),
             "the resolver binds a candidate by its config revision label, which metadata-action would otherwise set to github.sha");
+        nightly.Should().Contain($"annotations: |\n            org.opencontainers.image.revision={CandidateSha}\n", Exactly.Times(4),
+            "metadata-action's default revision annotation names github.sha too; it must name the candidate");
+        nightly.Should().Contain("annotations: ${{ steps.meta.outputs.annotations }}", Exactly.Times(4));
+        nightly.Should().Contain("--annotation \"index:org.opencontainers.image.revision=${CANDIDATE_SHA}\"", Exactly.Times(3),
+            "every published multi-arch index is annotated with the candidate sha");
         nightly.Should().Contain("uses: actions/checkout@v7", Exactly.Times(6),
             "only the selector itself checks out the workflow revision; every build checks out the candidate");
         nightly.Should().Contain($"ref: {CandidateSha}", Exactly.Times(5));
 
         foreach (var trunkOnly in new[] { "build-aot", "build-jit", "manifest-aot", "manifest-lambda-aot", "manifest-jit" })
         {
-            Job(nightly, trunkOnly).Should().Contain("github.ref == 'refs/heads/trunk'",
-                $"{trunkOnly} publishes channel tags, which only a trunk run may move");
+            IfOf(Job(nightly, trunkOnly)).Should().Contain("needs.select-candidate.outputs.publish == 'true'",
+                $"{trunkOnly} publishes channel tags, which only a trunk or candidate-tag run at the certified sha may move");
+        }
+
+        nightly.Should().NotContain("github.ref == 'refs/heads/trunk'",
+            "channel publication is decided once, by select-candidate's publish output");
+    }
+
+    [ArchitectureTest]
+    public void NightlyBuild_ShouldRunAtTheSelectedSha_SoProvenanceNamesTheImagedCommit()
+    {
+        // honua-io/honua-release#520: run 38072453832 was dispatched at 652f7ed, imaged
+        // 99cd5e3, and its Sigstore and BuildKit provenance named 652f7ed. Provenance can
+        // only bind to the run's own commit, so the build must RUN at the candidate.
+        var nightly = Read(NightlyPath);
+        var select = Job(nightly, "select-candidate");
+
+        // Hand-off: a trunk run whose head is not the candidate tags it and re-dispatches.
+        select.Should().Contain("actions: write");
+        select.Should().Contain("contents: write");
+        select.Should().Contain("mode: ${{ steps.route.outputs.mode }}");
+        select.Should().Contain("publish: ${{ steps.route.outputs.publish }}");
+        var route = select[select.IndexOf("id: route", StringComparison.Ordinal)..];
+        route.Should().Contain("tag=\"nightly-candidate-${CANDIDATE_SHA:0:7}\"");
+        route.Should().Contain("-f ref=\"refs/tags/${tag}\" -f sha=\"${CANDIDATE_SHA}\"");
+        route.Should().Contain("gh workflow run nightly-container-build.yml --repo \"${GITHUB_REPOSITORY}\" --ref \"${tag}\"");
+        route.Should().Contain("refs/tags/nightly-candidate-*) mode=build-candidate ;;",
+            "a candidate-tag run builds and never re-dispatches, so the hand-off cannot loop");
+        route.Should().Contain("if [ \"${CANDIDATE_SHA}\" = \"${GITHUB_SHA}\" ]; then mode=build-trunk; else mode=redirect; fi",
+            "only a trunk run whose head is not the candidate hands off");
+        route.Should().Contain("if [ \"${mode}\" != redirect ] && [ \"${CANDIDATE_SHA}\" != \"${GITHUB_SHA}\" ]; then");
+        route.Should().Contain("select(.status != \"completed\")", "a queued or running candidate build is not duplicated");
+
+        // A candidate-tag run images exactly its own commit, re-proving certification.
+        var selectStep = select[select.IndexOf("id: select", StringComparison.Ordinal)..select.IndexOf("id: route", StringComparison.Ordinal)];
+        selectStep.Should().Contain("\"refs/tags/nightly-candidate-${GITHUB_SHA:0:7}\"");
+        selectStep.Should().Contain("--sha \"${GITHUB_SHA}\"");
+
+        // Only the selector may write; every other job keeps contents: read.
+        nightly.Should().Contain("      contents: write\n", Exactly.Once());
+        nightly.Should().Contain("      actions: write\n", Exactly.Once());
+
+        // Candidate-tag runs share trunk base mirrors, one build per candidate sha.
+        nightly.Should().Contain("!startsWith(github.ref, 'refs/tags/nightly-candidate-')) && format('/proof-{0}', github.run_id)");
+        nightly.Should().Contain("format('candidate-{0}', github.sha)");
+        nightly.Should().Contain("cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/nightly-candidate-') }}");
+
+        // Safety net: every build and attest job refuses a candidate other than github.sha.
+        foreach (var job in BuildJobs.Concat(["manifest-aot", "manifest-lambda-aot", "manifest-jit"]))
+        {
+            var block = Job(nightly, job);
+            var steps = block[block.IndexOf("    steps:\n", StringComparison.Ordinal)..];
+            steps.Should().StartWith("    steps:\n      - name: Refuse a candidate that is not this run's commit\n",
+                $"{job} must refuse before it builds, mirrors or attests anything");
+            steps.Should().Contain("if [ \"${CANDIDATE_SHA}\" != \"${GITHUB_SHA}\" ]; then", job);
+        }
+
+        foreach (var job in new[] { "mirror-base-images", "verify-functions-aot" })
+        {
+            IfOf(Job(nightly, job)).Should().Be("needs.select-candidate.outputs.mode != 'redirect'",
+                $"{job} must not build in a run that handed the candidate off");
         }
     }
 
