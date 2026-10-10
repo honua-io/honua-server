@@ -84,7 +84,10 @@ internal static class ImageServerHistogramProjection
 
     private static bool EdgesPreserveCenter(double min, double max, double center)
     {
-        if (!double.IsFinite(min) || !double.IsFinite(max) || max <= min)
+        // A half-unit at ±2^52 rounds one edge onto the center (ties to even) while
+        // both midpoint formulas still equal the center. The sample would sit on the
+        // exclusive end of the bin, so both edges must stay strictly outside it.
+        if (!double.IsFinite(min) || !double.IsFinite(max) || min >= center || max <= center)
         {
             return false;
         }
