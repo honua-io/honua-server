@@ -22,13 +22,12 @@ namespace Honua.Protocols.Scene.I3s;
 /// <remarks>
 /// <para>
 /// The surface mirrors the I3S REST binding: a service root, the scene-layer
-/// descriptor at <c>/layers/0</c>, and a placeholder node-page resource. It is
+/// descriptor at <c>/layers/0</c>, node pages, and persisted binary resources. It is
 /// Enterprise-gated — I3S serving is an enterprise migration/parity feature.
 /// </para>
 /// <para>
-/// This metadata-preview surface serves descriptors, node pages, statistics,
-/// and available attribute metadata. Geometry-backed resources return an honest
-/// 404 when no production geometry provider is registered.
+/// Production descriptors and resources share a validated persisted revision.
+/// Unavailable or malformed source resources return an honest 404.
 /// </para>
 /// </remarks>
 internal static partial class I3sSceneServerEndpoints
@@ -186,15 +185,11 @@ internal static partial class I3sSceneServerEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status500InternalServerError);
 
-        // ADR-0078 keeps 2026.1 at descriptor/node-metadata preview. Register
-        // geometry-backed routes only when the host deliberately supplies an
-        // ISceneNodeGeometryProvider. Production does not register one today,
-        // so these routes are absent from its endpoint inventory rather than
-        // advertised endpoints that deterministically 404. The protocol-shape
-        // test host supplies a transcoder-backed stub and therefore exercises
-        // the deferred wire contract without turning it into a shipping claim.
+        // Persisted production resources and optional transcoder-backed hosts
+        // both use the same guarded HTTP surface.
         var serviceInspector = endpoints.ServiceProvider.GetService<IServiceProviderIsService>();
-        if (serviceInspector?.IsService(typeof(ISceneNodeGeometryProvider)) == true)
+        if (serviceInspector?.IsService(typeof(ISceneNodeGeometryProvider)) == true
+            || serviceInspector?.IsService(typeof(II3sSceneResourceProvider)) == true)
         {
             // Node geometry binary resource (#1810): the first slice that serves
             // RENDERABLE geometry (not just the descriptor). The transcoder
@@ -234,9 +229,9 @@ internal static partial class I3sSceneServerEndpoints
             // Node attribute binary resource (#1811): the per-field attribute file an
             // ArcGIS SceneLayer client reads to satisfy identify. The OBJECTID field
             // (f_0/Oid32) is materialised from the served node geometry's feature
-            // section so attribute order matches geometry order; user-attribute value
-            // decode (EXT_structural_metadata property tables) stays deferred and its
-            // fields answer a deterministic 404. Mapped at both the GeoServices and
+            // section so attribute order matches geometry order. Persisted batch
+            // and structural metadata supply the declared scalar fields.
+            // Mapped at both the GeoServices and
             // legacy /scenes paths for parity with the geometry route.
             endpoints.MapGet(
                     "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}",
@@ -266,6 +261,24 @@ internal static partial class I3sSceneServerEndpoints
                 .Produces(StatusCodes.Status404NotFound)
                 .Produces(StatusCodes.Status500InternalServerError);
         }
+
+        endpoints.MapGet(
+                "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/textures/{textureId}",
+                HandleGetNodeTexture)
+            .WithName("GetGeoServicesSceneNodeTexture")
+            .WithTags(ScenesTag)
+            .Produces(StatusCodes.Status200OK, contentType: "image/png")
+            .Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
+            .Produces(StatusCodes.Status404NotFound);
+
+        endpoints.MapGet(
+                "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/textures/{textureId}",
+                HandleGetNodeTexture)
+            .WithName("GetI3sSceneNodeTexture")
+            .WithTags(ScenesTag)
+            .Produces(StatusCodes.Status200OK, contentType: "image/png")
+            .Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
+            .Produces(StatusCodes.Status404NotFound);
 
         return endpoints;
     }
@@ -329,10 +342,7 @@ internal static partial class I3sSceneServerEndpoints
             return StandardErrorHelpers.CreateNotFound(context, "Scene layer was not found.");
         }
 
-        // This slice serves the single Default geometry (id 0) of the single
-        // whole-scene node (id 0). Any other index is a deterministic 404 rather
-        // than the node-0 body so a client probing the node tree gets honest
-        // misses (multi-node paging is the deferred #1809 lane).
+        // Each canonical content node has one Default geometry resource (id 0).
         if (geometryId != 0)
         {
             return StandardErrorHelpers.CreateNotFound(context, "Node geometry was not found.");
@@ -357,15 +367,18 @@ internal static partial class I3sSceneServerEndpoints
             }
         }
 
-        // The geometry provider is the serving seam (#1810): it transcodes the
-        // scene's renderable geometry with I3sGeometryTranscoder, or returns null
-        // when the scene carries no transcodable node geometry (e.g. a
-        // hosted-tiles-only scene whose glTF re-transcode is not yet wired). A
-        // null provider OR a null geometry both surface as a 404 so the route
-        // never fabricates an empty buffer.
+        // Explicit transcoder-backed hosts retain their existing seam. The
+        // production path serves validated persisted resources without inventing
+        // buffers for absent nodes or unsupported source content.
         var provider = context.RequestServices.GetService<ISceneNodeGeometryProvider>();
         if (provider is null)
         {
+            var resources = await ResolveResourcesAsync(context, scene, cancellationToken).ConfigureAwait(false);
+            if (resources?.Nodes.TryGetValue(nodeId, out var node) == true)
+            {
+                return Results.Bytes(node.Geometry.Buffer, I3sGeometryContentType);
+            }
+
             return StandardErrorHelpers.CreateNotFound(context, "Node geometry is not available for this scene.");
         }
 
@@ -405,9 +418,7 @@ internal static partial class I3sSceneServerEndpoints
             return StandardErrorHelpers.CreateNotFound(context, "Scene layer was not found.");
         }
 
-        // This slice serves the single attribute resource (id 0) of the single
-        // whole-scene node (id 0); any other index is an honest 404 (multi-node
-        // paging is the deferred #1809 lane).
+        // Each canonical field has one attribute resource (id 0) per content node.
         if (attributeId != 0)
         {
             return StandardErrorHelpers.CreateNotFound(context, "Node attribute was not found.");
@@ -434,6 +445,17 @@ internal static partial class I3sSceneServerEndpoints
 
         // The served field set is the layer descriptor's attributeStorageInfo, so
         // an attribute request can only resolve a field the descriptor advertises.
+        if (UsesPersistedResources(context))
+        {
+            var resources = await ResolveResourcesAsync(context, scene, cancellationToken).ConfigureAwait(false);
+            if (resources?.Nodes.TryGetValue(nodeId, out var node) == true && node.Attributes.TryGetValue(fieldKey, out var buffer))
+            {
+                return Results.Bytes(buffer, I3sAttributeContentType);
+            }
+
+            return StandardErrorHelpers.CreateNotFound(context, "Node attribute was not found.");
+        }
+
         var extent = await ResolveExtentAsync(context, scene, cancellationToken).ConfigureAwait(false);
         var datasetType = await ResolveDatasetTypeAsync(context, scene, cancellationToken).ConfigureAwait(false);
         var layer = I3sSceneServiceBuilder.BuildLayer(scene, extent, datasetType, advertiseNodePages: false);
@@ -486,6 +508,17 @@ internal static partial class I3sSceneServerEndpoints
         }
 
         var scene = gate.Scene!;
+        if (UsesPersistedResources(context))
+        {
+            var resources = await ResolveResourcesAsync(context, scene, cancellationToken).ConfigureAwait(false);
+            var persistedType = await ResolveDatasetTypeAsync(context, scene, cancellationToken).ConfigureAwait(false);
+            var persistedLayer = I3sSceneServiceBuilder.BuildPersistedLayer(scene, resources, persistedType);
+            if (layerId is not null) { return SerializeLayer(persistedLayer); }
+            var persistedService = I3sSceneServiceBuilder.BuildService(scene, resources?.Extent);
+            persistedService.Layers = [persistedLayer];
+            return SerializeService(persistedService);
+        }
+
         var extent = await ResolveExtentAsync(context, scene, cancellationToken)
             .ConfigureAwait(false);
         var datasetType = await ResolveDatasetTypeAsync(context, scene, cancellationToken)
@@ -526,7 +559,18 @@ internal static partial class I3sSceneServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Node page index must be non-negative.");
         }
 
-        if (!I3sNodeStore.TryBuildNodePages(gate.Scene!, out var pages) || pageId >= pages.Count)
+        IReadOnlyList<I3sNodePageDocument>? pages;
+        if (UsesPersistedResources(context))
+        {
+            var resources = await ResolveResourcesAsync(context, gate.Scene!, cancellationToken).ConfigureAwait(false);
+            pages = resources?.Pages;
+        }
+        else
+        {
+            pages = I3sNodeStore.TryBuildNodePages(gate.Scene!, out var legacyPages) ? legacyPages : null;
+        }
+
+        if (pages is null || pageId >= pages.Count)
         {
             // No loadable tileset (descriptor-only scene) or a page index past the
             // projected node tree: a deterministic 404 rather than an empty body.
@@ -555,6 +599,18 @@ internal static partial class I3sSceneServerEndpoints
         }
 
         var scene = gate.Scene!;
+        if (UsesPersistedResources(context))
+        {
+            var resources = await ResolveResourcesAsync(context, scene, cancellationToken).ConfigureAwait(false);
+            if (resources?.Statistics.TryGetValue(fieldKey, out var statistics) != true)
+            {
+                return StandardErrorHelpers.CreateNotFound(context, "Scene statistics field was not found.");
+            }
+
+            return Results.Bytes(JsonSerializer.SerializeToUtf8Bytes(statistics,
+                I3sAttributeStatisticsJsonContext.Default.I3sAttributeStatisticsDocument), I3sContentType);
+        }
+
         var extent = await ResolveExtentAsync(context, scene, cancellationToken).ConfigureAwait(false);
         var datasetType = await ResolveDatasetTypeAsync(context, scene, cancellationToken).ConfigureAwait(false);
 
@@ -573,6 +629,31 @@ internal static partial class I3sSceneServerEndpoints
             stats,
             I3sAttributeStatisticsJsonContext.Default.I3sAttributeStatisticsDocument);
         return Results.Bytes(bytes, I3sContentType);
+    }
+
+    private static bool UsesPersistedResources(HttpContext context) =>
+        context.RequestServices.GetService<ISceneNodeGeometryProvider>() is null
+        && context.RequestServices.GetService<II3sSceneResourceProvider>() is not null;
+
+    private static async Task<I3sSceneResources?> ResolveResourcesAsync(HttpContext context, SceneDataset scene, CancellationToken cancellationToken)
+    {
+        var provider = context.RequestServices.GetService<II3sSceneResourceProvider>();
+        return provider is null ? null : await provider.GetResourcesAsync(scene, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleGetNodeTexture(
+        string sceneId, int layerId, int nodeId, string textureId, HttpContext context,
+        [FromServices] ISceneDatasetRegistry registry, CancellationToken cancellationToken)
+    {
+        var gate = await ResolveSceneAsync(sceneId, layerId, context, registry, cancellationToken).ConfigureAwait(false);
+        if (gate.Failure is { } failure) { return failure; }
+        var resources = await ResolveResourcesAsync(context, gate.Scene!, cancellationToken).ConfigureAwait(false);
+        if (resources?.Nodes.TryGetValue(nodeId, out var node) == true && node.Textures.TryGetValue(textureId, out var texture))
+        {
+            return Results.Bytes(texture.Bytes, texture.ContentType);
+        }
+
+        return StandardErrorHelpers.CreateNotFound(context, "Scene node texture was not found.");
     }
 
     /// <summary>
