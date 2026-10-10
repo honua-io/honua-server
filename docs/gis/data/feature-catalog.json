@@ -5925,6 +5925,7 @@
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_InteriorTileRange_ReturnsExactlyThatTilesBytes",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_MissingArtifact_Returns404",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_RangeRequest_Returns206WithRangeHeaders",
+        "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_RestrictedOrRetiredSource_DoesNotServeArchiveBytes",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_ServedArchive_IsReadableAsAWholePMTilesArchive",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_UnsatisfiableRange_Returns416"
       ],
@@ -14293,7 +14294,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_HeadMissingArtifact_Returns404",
-        "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_HeadRequest_Returns200WithContentLengthAndNoBody"
+        "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_HeadRequest_Returns200WithContentLengthAndNoBody",
+        "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_RestrictedOrRetiredSource_DoesNotServeArchiveBytes"
       ],
       "proof_ledger_surface": "vector-tiles-mvt",
       "maturity": "implemented",
