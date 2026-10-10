@@ -518,33 +518,6 @@ internal static partial class ImageServerSoapEndpoints
                     count.ToString(CultureInfo.InvariantCulture)))));
     }
 
-    // An unscanned layer is an empty variable list. A nil Result would disagree with REST,
-    // which returns variables:[] for the same layer.
-    private static XElement BuildMultidimensionalResult(ImageServerMultidimensionalInfo? info)
-    {
-        XNamespace xsi = XmlSchemaInstanceNamespace;
-        return new XElement(
-            "Result",
-            new XAttribute(xsi + "type", "tns:MultidimensionalInfo"),
-            new XElement(
-                "Variables",
-                (info?.Variables ?? []).Select(variable => new XElement(
-                    "Variable",
-                    new XElement("Name", variable.Name),
-                    variable.Description is null ? null : new XElement("Description", variable.Description),
-                    variable.Unit is null ? null : new XElement("Unit", variable.Unit),
-                    new XElement(
-                        "Dimensions",
-                        variable.Dimensions.Select(dimension => new XElement(
-                            "Dimension",
-                            new XElement("Name", dimension.Name),
-                            dimension.Unit is null ? null : new XElement("Unit", dimension.Unit),
-                            dimension.Extent is null ? null : BuildDoubleArray("Extent", dimension.Extent),
-                            dimension.Values is null ? null : BuildDoubleArray("Values", dimension.Values),
-                            new XElement("HasRegularIntervals", dimension.HasRegularIntervals),
-                            new XElement("DimensionSize", dimension.DimensionSize))))))));
-    }
-
     private static async Task<ImageServerMultidimensionalInfo?> ReadMultidimensionalInfoAsync(
         HttpContext context,
         int layerId,
