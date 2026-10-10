@@ -6,6 +6,7 @@ using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -126,6 +127,7 @@ internal static class OperationsServiceCollectionExtensions
 
         // Enumerate operation identities without resolving unrelated actuator dependencies.
         services.TryAddDeferredOperationExecutor<DeferredServicePublishExecutor>(ServicePublishOperation.OperationId);
+        services.AddServerInstanceIdentity();
         services.TryAddDeferredOperationExecutor<AdminServerStatusExecutor>(AdminServerStatusExecutor.OperationName);
         services.TryAddDeferredOperationExecutor<StudioDraftCreateExecutor>(StudioDraftOperations.Create);
         services.TryAddDeferredOperationExecutor<StudioDraftUpdateExecutor>(StudioDraftOperations.Update);

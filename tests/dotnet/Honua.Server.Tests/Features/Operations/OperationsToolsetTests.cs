@@ -24,6 +24,7 @@ using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Hosting;
 using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
 using Honua.TestKit;
@@ -1565,7 +1566,7 @@ public sealed class OperationsToolsetTests
         var readiness = Substitute.For<IReadinessCheckService>();
         readiness.CheckReadinessAsync(Arg.Any<CancellationToken>())
             .Returns(ReadinessResult.Ready());
-        var executor = new AdminServerStatusExecutor(readiness, TimeProvider.System);
+        var executor = new AdminServerStatusExecutor(readiness, TimeProvider.System, BuildInstanceIdentity("replica-a"));
         var request = new OperationRequest { OperationId = AdminServerStatusExecutor.OperationName };
 
         var handle = await executor.SubmitAsync(
@@ -1577,6 +1578,43 @@ public sealed class OperationsToolsetTests
         handle.Result!.Details["version"].Should().Be(
             HonuaDeploymentIdentity.GetReleaseVersion(typeof(AdminServerStatusExecutor).Assembly));
     }
+
+    [UnitTest]
+    public async Task AdminStatus_Reports_The_Answering_Instance_Identity()
+    {
+        var readiness = Substitute.For<IReadinessCheckService>();
+        readiness.CheckReadinessAsync(Arg.Any<CancellationToken>())
+            .Returns(ReadinessResult.Ready());
+        var clock = new FixedInstanceClock(new DateTimeOffset(2026, 10, 10, 12, 0, 0, TimeSpan.Zero));
+        var identity = BuildInstanceIdentity("replica-b", clock);
+        var executor = new AdminServerStatusExecutor(readiness, clock, identity);
+
+        var handle = await executor.SubmitAsync(
+            new OperationRequest { OperationId = AdminServerStatusExecutor.OperationName },
+            new OperationPolicyContext(),
+            CancellationToken.None);
+
+        handle.Result!.Details["instanceId"].Should().Be("replica-b");
+        handle.Result.Details["instanceSource"].Should().Be(ServerInstanceIdentitySources.Configuration);
+        handle.Result.Details["instanceStartedAt"].Should().Be("2026-10-10T12:00:00.0000000+00:00");
+    }
+
+    private sealed class FixedInstanceClock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private static ServerInstanceIdentity BuildInstanceIdentity(string instanceId, TimeProvider? clock = null)
+        => ServerInstanceIdentity.Resolve(
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    [ServerInstanceIdentity.ConfigurationKey] = instanceId
+                })
+                .Build(),
+            static _ => null,
+            machineName: null,
+            clock ?? TimeProvider.System);
 
     [UnitTest]
     public async Task ValidateAsync_Delegates_To_ValidateTableForPublishAsync()
