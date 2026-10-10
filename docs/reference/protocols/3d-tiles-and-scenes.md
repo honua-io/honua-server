@@ -35,13 +35,27 @@ Honua hosts registered 3D scene datasets as OGC 3D Tiles (`tileset.json` + asset
 
 `{sceneId}` is the registered URL slug (`[a-z0-9-]{1,64}`). Protected datasets (`requiresAuth`) refuse anonymous access; caching follows the dataset's `cachePolicy` (`maxAgeSeconds` bounded to `[0, 86400]`, or `noStore`).
 
-The I3S adapter's 2026.1 production surface is a metadata preview: descriptors,
-node pages, and per-field statistics are available under both the canonical
-`/rest/services/{sceneId}/SceneServer/...` family and the `/scenes` alias.
-Renderable node geometry and geometry-backed attribute routes are registered
-only by protocol test hosts that provide the deferred geometry seam; production
-does not advertise them. All shipped I3S routes require the Enterprise
-`serve.i3s-scene` entitlement and return HTTP `402` when it is unavailable.
+The I3S adapter derives descriptors, node pages, geometry, scalar attributes,
+statistics, materials, and available PNG/JPEG textures from persisted B3DM/GLB
+mesh content under both the canonical `/rest/services/{sceneId}/SceneServer/...`
+family and the `/scenes` alias. Each advertised mesh resource belongs to the
+same validated source revision. Malformed assets or unsupported mesh encodings
+make that revision unavailable; the descriptor does not advertise resources
+that cannot be decoded. This remains Experimental, and source implementation
+does not establish stock ArcGIS certification. All shipped I3S routes require
+the Enterprise `serve.i3s-scene` entitlement and return HTTP `402` when it is
+unavailable.
+
+The serving LOD conversion uses a 16-pixel screen-space error target and the
+enclosing sphere of each actual mesh subtree: `lodThreshold = pi * (radius *
+16 / geometricError)^2`, in projected square pixels. Multi-material leaves
+are supported; multi-material replacement parents with refinement children
+must be baked into compatible LOD meshes before publication. Additive parent
+content remains in a persistent sibling branch; added content can appear
+earlier at distance than a 3D Tiles client's SSE traversal. Scalar metadata
+normalization, scale/offset, noData/default declarations and reflective mesh
+transforms must be baked before publication; this adapter rejects them rather
+than silently changing values or winding.
 
 > Open `https://server.example.com/api/scenes/downtown/resolve`, `https://server.example.com/scenes/downtown/tileset.json` in a browser.
 
@@ -102,7 +116,7 @@ this table records runtime truth without promoting it.
 | Capability key | Edition | Route/surface | Unlicensed result |
 |---|---|---|---|
 | `serve.3d-tiles-scene` | Community | `/scenes/{sceneId}/tileset.json` and assets | Not edition-gated |
-| `serve.i3s-scene` | Enterprise | Canonical and alias `SceneServer` descriptor/node/statistics metadata-preview routes | `402` |
+| `serve.i3s-scene` | Enterprise | Canonical and alias `SceneServer` descriptors and persisted node geometry/attribute/texture/statistics resources | `402` |
 | `scene.catalog` | Community | `/api/scenes*` | Not edition-gated |
 | `scene.bim-ingest` | Enterprise | `/api/v1/admin/scenes/ingest/citygml` | `402` entitlement response |
 | `scene.pointcloud-ingest` | Enterprise | `/api/v1/admin/scenes/ingest/pointcloud` | `402` entitlement response |

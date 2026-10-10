@@ -64,13 +64,7 @@ internal sealed class ImageServerRasterItemHandler
         {
             var histograms = await _rasterStore.GetHistogramsAsync(
                 layerId, raster.Id, bands: null, DefaultBinCount, cancellationToken: cancellationToken);
-            var entries = histograms.Select(static histogram => new BandHistogram
-            {
-                Size = histogram.BinCount,
-                Min = histogram.Min,
-                Max = histogram.Max,
-                Counts = histogram.Counts,
-            }).ToArray();
+            var entries = histograms.Select(ImageServerHistogramProjection.Project).ToArray();
             return (Results.Json(new HistogramsResourceResponse { Histograms = entries },
                 ImageServerJsonContext.Default.HistogramsResourceResponse), entries.Length);
         }, cancellationToken);

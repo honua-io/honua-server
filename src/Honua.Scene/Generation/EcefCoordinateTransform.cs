@@ -16,6 +16,46 @@ namespace Honua.Core.Features.Scene.Generation;
 /// </remarks>
 public static class EcefCoordinateTransform
 {
+    /// <summary>Converts a finite ECEF point back to WGS-84 longitude, latitude and ellipsoidal height.</summary>
+    public static (double Longitude, double Latitude, double Height) FromEcef(double x, double y, double z)
+    {
+        if (!double.IsFinite(x) || !double.IsFinite(y) || !double.IsFinite(z))
+        {
+            throw new ArgumentException("ECEF coordinates must be finite.");
+        }
+
+        var horizontal = Math.Sqrt(x * x + y * y);
+        var semiMinor = WgsSemiMajorAxis * (1 - 1 / WgsInverseFlattening);
+        if (horizontal < 0.000001)
+        {
+            if (Math.Abs(z) < 0.000001)
+            {
+                throw new ArgumentException("The earth centre has no geographic coordinate.");
+            }
+
+            return (0, z > 0 ? 90 : -90, Math.Abs(z) - semiMinor);
+        }
+
+        var latitude = Math.Atan2(z, horizontal * (1 - WgsEccentricitySquared));
+        for (var iteration = 0; iteration < 12; iteration++)
+        {
+            var sine = Math.Sin(latitude);
+            var normal = WgsSemiMajorAxis / Math.Sqrt(1 - WgsEccentricitySquared * sine * sine);
+            var next = Math.Atan2(z + WgsEccentricitySquared * normal * sine, horizontal);
+            if (Math.Abs(next - latitude) < 1e-14)
+            {
+                latitude = next;
+                break;
+            }
+
+            latitude = next;
+        }
+
+        var sinLatitude = Math.Sin(latitude);
+        var height = horizontal * Math.Cos(latitude) + z * sinLatitude
+            - WgsSemiMajorAxis * Math.Sqrt(1 - WgsEccentricitySquared * sinLatitude * sinLatitude);
+        return (Math.Atan2(y, x) * 180 / Math.PI, latitude * 180 / Math.PI, height);
+    }
     /// <summary>WGS-84 semi-major axis in meters.</summary>
     public const double WgsSemiMajorAxis = 6_378_137.0;
 

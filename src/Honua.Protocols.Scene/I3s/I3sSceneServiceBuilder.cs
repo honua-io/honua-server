@@ -4,6 +4,7 @@
 using Honua.Core.Features.Scene.Conversion;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Scene;
+using Honua.Scene.Assets;
 
 namespace Honua.Protocols.Scene.I3s;
 
@@ -16,23 +17,36 @@ namespace Honua.Protocols.Scene.I3s;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This slice serves the service and layer descriptor JSON only: it is a
-/// metadata/descriptor preview. Per-node geometry streaming (node pages,
-/// geometry/attribute/texture binary resources, the <c>nodes/*</c> store) is a
-/// tracked follow-up (#1202) and the server maps no node/geometry routes yet.
+/// Production descriptors use the same validated persisted revision as node
+/// pages and binary resources. Explicit transcoder-backed hosts can continue
+/// to use the legacy descriptor builder.
 /// </para>
 /// <para>
-/// The descriptor therefore deliberately does NOT advertise a fetchable
-/// <c>store.rootNode</c> / node-page resource: doing so would make a conformant
-/// I3S/ArcGIS client request a node URL that 404s. It carries only the
-/// spec-required scalar fields that are honestly knowable today (id, name,
-/// version, spatialReference, heightModelInfo, fullExtent, and store id/profile/
-/// version), so the advertised contract matches what the server can actually
-/// serve until per-node geometry lands.
+/// Unavailable revisions omit node pages and resource definitions rather than
+/// advertising geometry or attributes that cannot be served.
 /// </para>
 /// </remarks>
 internal static class I3sSceneServiceBuilder
 {
+    /// <summary>Builds descriptors using the same canonical revision as the served resources.</summary>
+    public static I3sSceneLayerDocument BuildPersistedLayer(SceneDataset scene, I3sSceneResources? resources,
+        SceneDatasetType datasetType = SceneDatasetType.HostedTiles)
+    {
+        var layer = BuildLayer(scene, resources?.Extent, datasetType,
+            advertiseNodePages: resources is not null);
+        layer.Fields = resources?.Fields ?? [];
+        layer.ObjectIdField = resources is not null ? "OBJECTID" : null;
+        layer.AttributeStorageInfo = resources?.Attributes ?? [];
+        layer.GeometryDefinitions = resources is not null ? [I3sPersistedResourceEncoder.GeometryDefinition] : [];
+        layer.MaterialDefinitions = resources?.Materials ?? [];
+        layer.TextureSetDefinitions = resources?.TextureSets ?? [];
+        layer.Store!.NormalReferenceFrame = "earth-centered";
+        layer.Store.IndexCrs = "http://www.opengis.net/def/crs/EPSG/0/4326";
+        layer.Store.VertexCrs = layer.Store.IndexCrs;
+        layer.Store.DefaultGeometrySchema = resources is not null ? I3sPersistedResourceEncoder.GeometrySchema : null;
+        return layer;
+    }
+
     /// <summary>Default I3S layer type Honua serves for hosted scenes.</summary>
     public const string DefaultLayerType = "3DObject";
 

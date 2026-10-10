@@ -11,6 +11,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Geoprocessing.Execution;
 using Honua.ControlPlane;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -37,19 +38,43 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
 {
-    // An isolated host configures its fixture schema as an operational schema, which the
-    // secure connection below names on its search path (#5391). A shared host cannot.
-    private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureServices(_ => { });
+    private readonly WebAppFixture _fixture;
+    private readonly string _operationalSchema = $"import_job_{Guid.NewGuid():N}";
     private Guid _connectionId;
     private string _stagedFilePath = string.Empty;
     private string _tableName = string.Empty;
     private string _serviceName = string.Empty;
+
+    public ImportDatasetJobExecutorTests()
+    {
+        // The production secure resolver permits configured operational schemas,
+        // never the metadata schema. This host owns its import/publication schema.
+        _fixture = new WebAppFixture().ConfigureServices(services =>
+            services.AddSingleton(new PostgresSchemaConfiguration(
+                PostgresSchemaConfiguration.DefaultMetadataSchema,
+                _operationalSchema,
+                [_operationalSchema, "public"])));
+    }
 
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
         _tableName = $"import_{Guid.NewGuid():N}";
         _serviceName = $"svc_{Guid.NewGuid():N}";
+
+        await _fixture.Postgres.CreateSchemaUnderLockAsync(_operationalSchema);
+        await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+        {
+            await using var connection = await _fixture.Postgres.GetConnectionAsync();
+            await using var command = connection.CreateCommand();
+            var seededSchema = _fixture.CurrentSchema
+                ?? throw new InvalidOperationException("The fixture schema was not initialized.");
+            command.CommandText = $"""
+                CREATE TABLE {QuoteIdentifier(_operationalSchema)}.features
+                (LIKE {QuoteIdentifier(seededSchema)}.features INCLUDING ALL);
+                """;
+            await command.ExecuteNonQueryAsync();
+        });
 
         await CreateSecureConnectionAsync(_fixture.Postgres.ConnectionString);
         _stagedFilePath = StageGeoJsonSource();
@@ -62,7 +87,14 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
             File.Delete(_stagedFilePath);
         }
 
-        await _fixture.DisposeAsync();
+        try
+        {
+            await _fixture.Postgres.DropSchemaAsync(_operationalSchema);
+        }
+        finally
+        {
+            await _fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -90,6 +122,14 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
         await AssertImportedTableHasRowsAsync();
         var layerId = await ReadPublishedLayerIdAsync();
         layerId.Should().BePositive("the flatten step must publish a typed catalog layer");
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync(_operationalSchema))
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT count(*) FROM features WHERE layer_id = @layerId";
+            command.Parameters.AddWithValue("layerId", layerId);
+            (await command.ExecuteScalarAsync()).Should().Be(3L,
+                "all three imported features must be materialized in the configured operational schema");
+        }
 
         // The extent-refresh step populated a non-null layer extent.
         var hasExtent = await LayerHasExtentAsync(layerId);
@@ -162,6 +202,7 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
             [prefix + "tableName"] = _tableName,
             [prefix + "layerName"] = $"Layer {_tableName}",
             [prefix + "serviceName"] = _serviceName,
+            [prefix + "targetSchema"] = _operationalSchema,
             [prefix + "targetSrid"] = "4326"
         };
     }
@@ -261,18 +302,10 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
 
         var builder = new NpgsqlConnectionStringBuilder(connectionString);
 
-        // The executor resolves this connection string verbatim and opens raw
-        // connections that do NOT carry the per-test schema header the HTTP pipeline
-        // applies. In production the operational NpgsqlDataSource bakes the data schema
-        // into the connection search_path; mirror that here so the publish step's
-        // materialization into the shared `features` table (seeded into the isolated
-        // per-test schema) resolves, with `public` (PostGIS functions) after it. The `honua`
-        // catalog is always schema-qualified, and the resolved-connection policy (#5391)
-        // admits only configured operational schemas, never the metadata schema.
-        if (!string.IsNullOrWhiteSpace(_fixture.CurrentSchema))
-        {
-            builder.SearchPath = $"{_fixture.CurrentSchema},public";
-        }
+        // Raw publication connections resolve the owned canonical features table.
+        // Catalog SQL qualifies honua explicitly; it must not enter an operational
+        // connection's search path. Public supplies the PostGIS functions.
+        builder.SearchPath = $"{_operationalSchema},public";
 
         connectionString = builder.ConnectionString;
         var encrypted = await encryptionService.EncryptConnectionStringAsync(connectionString);
@@ -296,6 +329,9 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
         var created = await registry.CreateConnectionAsync(connection);
         _connectionId = created.ConnectionId;
     }
+
+    private static string QuoteIdentifier(string identifier)
+        => "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 
     private sealed class RecordingJobExecutionContext(string operationId) : IJobExecutionContext
     {

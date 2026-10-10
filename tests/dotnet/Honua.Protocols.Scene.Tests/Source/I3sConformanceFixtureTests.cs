@@ -33,7 +33,7 @@ public sealed class I3sConformanceFixtureTests : IAsyncLifetime
 
     public I3sConformanceFixtureTests()
     {
-        _tilesetRoot = I3sConformanceFixturePaths.ResolveSourceTilesetRoot();
+        _tilesetRoot = SceneFixtureRoots.Resolve("i3s-production");
         _fixture = new WebAppFixture()
             .ConfigureWebHost(builder =>
             {
@@ -145,7 +145,7 @@ public sealed class I3sConformanceFixtureTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/statistics/{fieldKey}/0")]
-    public async Task Statistics_ForObjectId_PassesValidator_AndCountsContentNodes()
+    public async Task Statistics_ForObjectId_PassesValidator_AndCountsPersistedFeatures()
     {
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{SceneId}/SceneServer/layers/0/statistics/f_0/0");
@@ -157,8 +157,10 @@ public sealed class I3sConformanceFixtureTests : IAsyncLifetime
         var violations = I3sProtocolShapeValidator.ValidateStatistics(root);
         violations.Should().BeEmpty("the served statistics document must be I3S-shape conformant");
 
-        // Two content-bearing nodes in the fixture tree.
+        // Two persisted features shared across the source content nodes.
         root.GetProperty("stats").GetProperty("totalValuesCount").GetInt64().Should().Be(2);
+        root.GetProperty("stats").GetProperty("min").GetDouble().Should().Be(42);
+        root.GetProperty("stats").GetProperty("max").GetDouble().Should().Be(77);
     }
 
     [IntegrationTest]

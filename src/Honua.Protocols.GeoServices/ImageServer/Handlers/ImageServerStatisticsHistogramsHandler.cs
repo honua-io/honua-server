@@ -343,13 +343,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 : new BandStatistic());
 
             histogramsList.Add(hasHist
-                ? new BandHistogram
-                {
-                    Size = h.BinCount,
-                    Min = h.Min,
-                    Max = h.Max,
-                    Counts = h.Counts,
-                }
+                ? ImageServerHistogramProjection.Project(h)
                 : new BandHistogram { Counts = Array.Empty<long>() });
         }
     }

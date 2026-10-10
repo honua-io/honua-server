@@ -1,7 +1,7 @@
 {
   "asset": {
     "version": "1.1",
-    "tilesetVersion": "mobile-live-fixture-v1"
+    "tilesetVersion": "persisted-geometry-v2"
   },
   "geometricError": 250,
   "root": {
@@ -19,7 +19,25 @@
     "refine": "ADD",
     "content": {
       "uri": "tiles/0.b3dm"
-    }
+    },
+    "transform": [
+      0.3769017263404372,
+      -0.9262532529938009,
+      0,
+      0,
+      0.33656655839643773,
+      0.13695230378740267,
+      0.9316474753126851,
+      0,
+      -0.8629415046518364,
+      -0.3511395417860609,
+      0.36336342928740056,
+      0,
+      -5506393.170131092,
+      -2240606.5350093744,
+      2303085.009196196,
+      1
+    ]
   },
   "extras": {
     "sceneId": "downtown-honolulu",
@@ -27,7 +45,7 @@
     "fixture": "mobile-live-image",
     "bounds": {
       "west": -157.875,
-      "south": 21.290,
+      "south": 21.29,
       "east": -157.835,
       "north": 21.325
     },
