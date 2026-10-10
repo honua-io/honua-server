@@ -15,6 +15,12 @@ Honua is configured entirely through environment variables (or the equivalent `a
 | `HONUA_ADMIN_PASSWORD` | Production — admin endpoints refuse to operate without it. |
 | `Security__ConnectionEncryption__MasterKey` | Non-development environments — startup fails without it. Encrypts stored data-connection credentials (minimum 32 characters); in Development, registering a data connection fails until it is set. |
 
+## Settings document
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `HONUA_SETTINGS_DOCUMENT` (`Settings__Document`) | — (none) | `aws:secretsmanager:<name-or-arn>` of a secret whose value is a JSON object of configuration keys (nested objects map to `Section:Key`, arrays to `Section:0..n`, flat `Section__Key` names accepted). Loaded once at startup above `appsettings*.json` and below environment variables and the command line. Values may themselves be `aws:secretsmanager:` references. An unreadable, non-JSON, non-object or larger-than-64 KB document refuses startup; only the key count and the reference are logged. Use it to stay under the 4 KB AWS Lambda environment limit; see [Keep settings out of the 4 KB Lambda environment](../../guides/deploy/cloud-deployments.md#keep-settings-out-of-the-4-kb-lambda-environment). |
+
 ## Database and providers
 
 | Variable | Default | Purpose |

@@ -26,6 +26,24 @@ Cors__AllowedOrigins__1=https://admin.example.com
 
 Docs that write a setting as `Section:Key` (the .NET colon form) mean the same thing — replace `:` with `__` in env vars.
 
+## Settings document (environment-size-limited hosts)
+
+Where the environment itself is size-limited (AWS Lambda caps it at 4 KB), set one variable,
+`HONUA_SETTINGS_DOCUMENT=aws:secretsmanager:<name-or-arn>`, and keep the remaining settings in that
+secret as a JSON object. Nested objects map to `Section:Key`, arrays to `Section:0..n`, and flat
+`Section__Key` names are accepted. Configuration sources apply in this order, later winning:
+
+1. `appsettings.json`, `appsettings.Security.json`, `appsettings.{Environment}.json`
+2. the settings document
+3. environment variables
+4. command-line arguments
+
+Values inside the document may be `aws:secretsmanager:` references and resolve like environment
+values. Startup refuses an unreadable, non-JSON, non-object, or larger-than-64 KB document, and
+logs only the key count and the document reference. Only `aws:secretsmanager:` documents are
+supported in this release. See [Keep settings out of the 4 KB Lambda environment](cloud-deployments.md#keep-settings-out-of-the-4-kb-lambda-environment)
+for an example document and the IAM grant.
+
 ## Startup validation
 
 Options are validated at startup (`ValidateOnStart`), so a malformed value fails the process immediately instead of surfacing later:
