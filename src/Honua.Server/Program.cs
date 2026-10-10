@@ -194,7 +194,8 @@ if (loadHostedBlazorStaticWebAssets)
 
 // The AWS serverless module injects these values as aws:secretsmanager: references. Validate the
 // admin credential while preserving its refreshable reference, and snapshot the encryption master
-// key before its direct consumer can mistake the reference text for key material.
+// key and audit-chain key before their direct consumers can mistake the reference text for key
+// material.
 await StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
     builder.Configuration,
     builder.Environment.IsProduction());

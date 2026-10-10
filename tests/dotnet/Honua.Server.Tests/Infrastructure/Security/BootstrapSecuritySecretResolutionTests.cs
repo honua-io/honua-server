@@ -18,6 +18,55 @@ public sealed class BootstrapSecuritySecretResolutionTests
 {
     private const string AdminKey = "HONUA_ADMIN_PASSWORD";
     private const string MasterKey = "Security:ConnectionEncryption:MasterKey";
+    private const string AuditChainKey = "AuditLog:ChainVerification:Key";
+
+    [UnitTest]
+    public void SecuritySecretReferenceKeys_IncludeTheAuditChainKey()
+    {
+        // Lambda carries the audit-chain key as an aws:secretsmanager: reference; without bootstrap
+        // resolution AuditChainKeyMaterial would reject the reference text as non-base64.
+        StartupConfigurationHelpers.SecuritySecretReferenceKeys
+            .Should().BeEquivalentTo([AdminKey, MasterKey, AuditChainKey]);
+    }
+
+    [UnitTest]
+    public async Task ResolveSecuritySecretReferences_SnapshotsTheAuditChainKey()
+    {
+        const string reference = "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:audit-chain-AbCdEf";
+        var key = Convert.ToBase64String(Enumerable.Range(0, 32).Select(static i => (byte)i).ToArray());
+        var configuration = BuildConfiguration(new Dictionary<string, string?> { [AuditChainKey] = reference });
+        var resolver = new StubSecretResolver(new Dictionary<string, string> { [reference] = key });
+
+        await StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
+            configuration,
+            resolver,
+            StartupConfigurationHelpers.SecuritySecretReferenceKeys,
+            isProduction: true);
+
+        configuration[AuditChainKey].Should().Be(key);
+        Honua.Core.Features.AuditLog.Abstractions.AuditChainKeyMaterial.Decode(configuration[AuditChainKey])
+            .Length.Should().Be(32);
+    }
+
+    [UnitTest]
+    public void ResolveEnvironmentSecretReferences_ResolvesAnEnvironmentAuditChainKey()
+    {
+        const string variable = "HONUA_TEST_AUDIT_CHAIN_KEY_5F2C";
+        var key = Convert.ToBase64String(new byte[32]);
+        Environment.SetEnvironmentVariable(variable, key);
+        try
+        {
+            var configuration = BuildConfiguration(new Dictionary<string, string?> { [AuditChainKey] = $"env:{variable}" });
+
+            StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(configuration);
+
+            configuration[AuditChainKey].Should().Be(key);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variable, null);
+        }
+    }
 
     [UnitTest]
     public async Task ResolveSecuritySecretReferences_PreservesRefreshableAdminReferenceAndSnapshotsMasterKey()
