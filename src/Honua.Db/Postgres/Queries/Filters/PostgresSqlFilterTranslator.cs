@@ -491,6 +491,22 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
             return TranslateGeoLength(function, context);
         }
 
+        if (string.Equals(function.FunctionName, "ST_RELATE", StringComparison.OrdinalIgnoreCase))
+        {
+            if (function.Arguments.Count != 3)
+            {
+                throw new ArgumentException("ST_RELATE requires three arguments");
+            }
+
+            // Geometry literals are spatial operands, not scalar AST literals.
+            // Use the virtual geometry path so entity-specific property mappings
+            // and CRS conversion are retained; the DE-9IM pattern stays bound.
+            var left = TranslateGeometryExpression(function.Arguments[0], context);
+            var right = TranslateGeometryExpression(function.Arguments[1], context);
+            var pattern = TranslateExpression(function.Arguments[2], context);
+            return $"ST_Relate({left}, {right}, {pattern})";
+        }
+
         // CAST resolves its target type from the AST literal rather than a bound
         // parameter: the type name is a SQL keyword, not a value, so it must never
         // become a parameter placeholder. The allowlisted switch in TranslateCast
@@ -574,7 +590,6 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
             "TOTALOFFSETMINUTES" => args.Length == 1 ? $"(EXTRACT(TIMEZONE FROM {args[0]}) / 60)" : throw new ArgumentException("TOTALOFFSETMINUTES requires one argument"),
             "MINDATETIME" => args.Length == 0 ? "'-infinity'::timestamptz" : throw new ArgumentException("MINDATETIME requires no arguments"),
             "MAXDATETIME" => args.Length == 0 ? "'infinity'::timestamptz" : throw new ArgumentException("MAXDATETIME requires no arguments"),
-            "ST_RELATE" => TranslateSpatialFunction("ST_Relate", args, 3),
 
             // Extended EXTRACT fields (#1865). The field token is fixed by the parser's
             // allowlist (never user text), so it is interpolated while the source operand
