@@ -327,6 +327,34 @@ internal sealed record CapabilityManifestJobLimits
     /// missing dependency from an unentitled licence.
     /// </summary>
     public required bool DurableJobRuntimeAvailable { get; init; }
+
+    /// <summary>
+    /// The startup Redis durability attestation outcome, published as information (owner ruling
+    /// 2026-10-10). It never withholds <c>jobs.runner</c> or <c>operations.proposals</c>: a
+    /// connected Redis enables both, and durability is an operator property of the Redis
+    /// deployment. Omitted when no attestation ran against a connected Redis.
+    /// </summary>
+    public CapabilityManifestRedisDurability? RedisDurability { get; init; }
+}
+
+/// <summary>
+/// Informational Redis durability outcome on the capability manifest
+/// (<c>limits.job.redisDurability</c>).
+/// </summary>
+internal sealed record CapabilityManifestRedisDurability
+{
+    /// <summary>
+    /// <c>attested</c> (AOF on, <c>appendfsync</c> everysec/always, <c>noeviction</c>),
+    /// <c>unverified</c> (policy unreadable, e.g. <c>CONFIG</c> blocked on AWS ElastiCache or
+    /// MemoryDB), or <c>not-durable</c> (policy read and not durable).
+    /// </summary>
+    public required string Status { get; init; }
+
+    /// <summary>The typed attestation outcome cause; omitted when attested.</summary>
+    public string? Cause { get; init; }
+
+    /// <summary>Operator guidance for the outcome; omitted when attested.</summary>
+    public string? Remediation { get; init; }
 }
 
 internal sealed record CapabilityManifestUploadLimits

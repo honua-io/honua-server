@@ -352,34 +352,32 @@ internal sealed class RedisHealthCheck : IHealthCheck
                     data: data);
             }
 
-            // honua-server#4502: the operations status surface for a non-durable job substrate,
-            // reported as DEGRADED — not Unhealthy. The durable job store IS composed and Redis
-            // IS serving; what is missing is the durability guarantee, which the capability
-            // manifest already withholds 'jobs.runner' for. Reporting Unhealthy here fails the
-            // roll-up and, before this fix, the readiness probe with it — turning "AOF is off"
-            // into a total outage.
+            // Redis durability is INFORMATION (owner ruling 2026-10-10), reported as data on a
+            // Healthy result — not Degraded. A connected Redis serves the governed control plane
+            // and the durable job runner whatever the attestation said; managed Redis that blocks
+            // CONFIG (AWS ElastiCache, MemoryDB) would otherwise read Degraded forever.
             //
             // Evaluated AFTER the ping and the cache write/read/delete probes, and after the
             // latency and cache-failure verdicts above, so a Redis that later goes unreachable or
             // read-only reports the actual outage instead of being masked by the startup-time
-            // durability verdict. Durability is the diagnosis only once connectivity is proven.
-            if (_durableJobSubstrate.RedisEntitled
-                && _durableJobSubstrate.RedisDurabilityAttestation is null
-                && _durableJobSubstrate.RedisDurabilityFailure is { } durabilityCause)
+            // durability outcome.
+            if (_durableJobSubstrate.RedisDurabilityStatus is { } durabilityStatus)
             {
-                // The description is what the ops-health snapshot (honua://ops/health) projects per
-                // entry, so it carries the whole diagnosis — cause, consequence, remediation — and
-                // not just a label an operator then has to go and decode.
-                data["cause"] = durabilityCause.ToString();
-                data["durabilityAttested"] = false;
-                data["consequence"] = DurableJobSubstrateRemediation.NonDurableConsequence;
-                data["remediation"] = DurableJobSubstrateRemediation.For(durabilityCause);
-
-                return HealthCheckResult.Degraded(
-                    $"Redis durability is not attested ({durabilityCause}). "
-                        + $"{DurableJobSubstrateRemediation.NonDurableConsequence} "
-                        + DurableJobSubstrateRemediation.For(durabilityCause),
-                    data: data);
+                data["durability"] = durabilityStatus;
+                data["durabilityAttested"] = _durableJobSubstrate.RedisDurabilityAttestation is not null;
+                if (_durableJobSubstrate.RedisDurabilityAttestation is null
+                    && _durableJobSubstrate.RedisDurabilityFailure is { } durabilityCause)
+                {
+                    // The description is what the ops-health snapshot (honua://ops/health)
+                    // projects per entry, so it carries the outcome and its guidance.
+                    data["cause"] = durabilityCause.ToString();
+                    data["consequence"] = DurableJobSubstrateRemediation.NonDurableConsequence;
+                    data["remediation"] = DurableJobSubstrateRemediation.For(durabilityCause);
+                    return HealthCheckResult.Healthy(
+                        $"Redis is healthy; durability {durabilityStatus} ({durabilityCause}). "
+                            + DurableJobSubstrateRemediation.NonDurableConsequence,
+                        data);
+                }
             }
 
             return HealthCheckResult.Healthy("Redis is healthy", data);

@@ -22,10 +22,10 @@ moving branch.
 - A Kubernetes cluster with `kubectl` and Helm 3 access.
 - PostGIS and Redis endpoints reachable from the cluster. Redis is required by
   the chart for non-development deployments, including the single-node path.
-  Configure it for **durability**: `appendonly yes`, `appendfsync everysec` (or
-  `always`), and `maxmemory-policy noeviction`. Without all three the server
-  still starts and still runs jobs, but non-durably — see
-  [Redis durability](#redis-durability) below.
+  Any working Redis enables the control plane and jobs. For durable
+  acknowledged state, configure `appendonly yes`, `appendfsync everysec` (or
+  `always`) and `maxmemory-policy noeviction`, or use a managed service's own
+  durability. See [Redis durability](#redis-durability) below.
 - A default StorageClass for the single-node persistent volume.
 - An OpenTelemetry collector reachable at the endpoint used below.
 - An ingress controller and a TLS secret named `honua-tls`.
@@ -330,10 +330,11 @@ kubectl -n honua rollout status deployment/honua-honua --timeout=600s
 
 ## Redis durability
 
-Redis holds acknowledged control-plane state — durable jobs, the job queue, and
-execution logs. At startup the server inspects the Redis persistence policy once
-and records a typed attestation, which is accepted only when all three of these
-hold:
+Redis holds acknowledged control-plane state: durable jobs, the job queue,
+execution logs and governed proposals. Any working Redis enables all of it. At
+startup the server reads the Redis persistence policy once and publishes the
+outcome as information (`limits.job.redisDurability` on the capability
+manifest). It reports `attested` only when all three of these hold:
 
 | Redis setting | Required value |
 |---|---|
@@ -341,24 +342,22 @@ hold:
 | `appendfsync` | `everysec` or `always` |
 | `maxmemory-policy` | `noeviction` |
 
-Managed Redis defaults vary and a stock `redis:7-alpine` sidecar defaults to
-`appendonly no`, so set the policy explicitly on whatever Redis the cluster
-points `ConnectionStrings__redis` at. On AWS ElastiCache enable AOF (or use a
-Redis version/tier with durable persistence); on Azure Cache for Redis enable
-data persistence on a tier that supports it.
+Otherwise it reports `unverified` (the policy could not be read; managed Redis
+such as AWS ElastiCache and MemoryDB blocks `CONFIG`) or `not-durable` (the
+policy was read and is not durable). A stock `redis:7-alpine` sidecar defaults
+to `appendonly no` and reports `not-durable`.
 
-**A failed attestation degrades; it does not stop the pod.** Jobs still run, the
-server logs one warning naming the typed cause and its remediation, the `redis`
-health entry reports `Degraded` on the ops-health snapshot, and the capability
-manifest withholds `jobs.runner` rather than advertising durability the cluster
-cannot provide. `/healthz/ready` stays `Ready`, so an AOF-less Redis does not
-depool every pod in the deployment.
+**The outcome is information, not a gate.** `operations.proposals` and
+`jobs.runner` stay available, pods stay `Ready`, and the `redis` health entry
+stays `Healthy` with the outcome in its data. Durability is a property of the
+Redis you choose. Configure the policy above on self-managed Redis, or rely on
+the managed service's replication, snapshots or transaction log.
 
-If a cluster must not serve at all without an attested durable store, set
-`Jobs__RequireDurableStore: "true"` in `config.env`. A rejected attestation then
-exits with a single typed startup error naming the cause and its remediation —
-and, because the readiness probe never passes, the rollout stops instead of
-silently running non-durably.
+If a cluster must not serve at all unless the outcome is `attested`, set
+`Jobs__RequireDurableStore: "true"` in `config.env`. Any other outcome then
+exits with a single typed startup error naming the cause and its remediation.
+Because the readiness probe never passes, the rollout stops. Managed Redis that
+blocks `CONFIG` can never satisfy this setting.
 
 ## Troubleshoot
 
@@ -378,9 +377,10 @@ silently running non-durably.
 - **Native gRPC is unreachable** — this chart contract publishes the HTTP and
   gRPC-Web listener on port 8080. Native h2c gRPC on port 8081 needs a
   separately managed Service/Ingress until the chart exposes that listener.
-- **Pods log "Redis durability attestation was REJECTED"** — the cluster's Redis
-  does not meet the persistence policy above. Pods stay `Ready` and jobs keep
-  running, but non-durably; see [Redis durability](#redis-durability).
+- **Pods log "Redis durability attestation: not-durable" or "unverified"**: this
+  is information. Pods stay `Ready`, and jobs and governed proposals keep
+  running. See [Redis durability](#redis-durability) to decide whether the
+  cluster's Redis needs a durable policy.
 
 ## Next steps
 

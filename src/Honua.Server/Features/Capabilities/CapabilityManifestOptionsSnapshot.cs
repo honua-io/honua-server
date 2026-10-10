@@ -80,10 +80,11 @@ internal sealed class CapabilityManifestOptionsSnapshot
         ManifestFromRegistry = manifestFeatureOptions.Value.FromRegistry;
         TenantSchemaRoutingEnabled = tenantSchemaOptions.Value.Enabled;
         TenantContextEnabled = tenantContextOptions.Value.Enabled;
-        DurableJobSubstrateCause = (durableJobSubstrateOptions?.Value ?? new DurableJobSubstrateOptions())
-            .Classify(executionJobStore is not null, jobQueue is not null);
+        var substrate = durableJobSubstrateOptions?.Value ?? new DurableJobSubstrateOptions();
+        DurableJobSubstrateCause = substrate.Classify(executionJobStore is not null, jobQueue is not null);
         DurableJobRuntimeAvailable =
             DurableJobSubstrateCause == Core.Features.Capabilities.DurableJobSubstrateCause.Available;
+        RedisDurability = BuildRedisDurability(substrate, DurableJobRuntimeAvailable);
         DeploymentIdentity = deploymentIdentity;
         DeploymentProfile = new CapabilityManifestDeploymentProfile
         {
@@ -166,6 +167,13 @@ internal sealed class CapabilityManifestOptionsSnapshot
     /// </summary>
     public DurableJobSubstrateCause DurableJobSubstrateCause { get; }
 
+    /// <summary>
+    /// The informational Redis durability outcome (owner ruling 2026-10-10), or
+    /// <see langword="null"/> when the Redis-backed runtime is not composed. Published only
+    /// alongside an available runtime so it never reads as a reason a capability is withheld.
+    /// </summary>
+    public CapabilityManifestRedisDurability? RedisDurability { get; }
+
     /// <summary>The immutable deployment-profile selection reported by the manifest.</summary>
     public CapabilityManifestDeploymentProfile DeploymentProfile { get; }
 
@@ -174,4 +182,26 @@ internal sealed class CapabilityManifestOptionsSnapshot
     /// evidence consumers can bind a retained artifact to exact code/image content (#3038).
     /// </summary>
     public DeploymentIdentity DeploymentIdentity { get; }
+
+    private static CapabilityManifestRedisDurability? BuildRedisDurability(
+        DurableJobSubstrateOptions substrate,
+        bool runtimeAvailable)
+    {
+        if (!runtimeAvailable || substrate.RedisDurabilityStatus is not { } status)
+        {
+            return null;
+        }
+
+        if (substrate.RedisDurabilityAttestation is not null || substrate.RedisDurabilityFailure is not { } cause)
+        {
+            return new CapabilityManifestRedisDurability { Status = status };
+        }
+
+        return new CapabilityManifestRedisDurability
+        {
+            Status = status,
+            Cause = cause.ToString(),
+            Remediation = DurableJobSubstrateRemediation.For(cause),
+        };
+    }
 }
