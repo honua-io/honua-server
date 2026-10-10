@@ -107,7 +107,6 @@ public sealed class ImageServerRawPixelExportTests
     }
 
     [IntegrationTheory]
-    [InlineData("esriNoDataMatchAny", "partial")]
     [InlineData("esriNoDataMatchAll", "different-band")]
     [InlineData("esriNoDataMatchAll", "missing-band")]
     [InlineData("esriNoDataMatchAll", "mosaic")]
@@ -136,6 +135,63 @@ public sealed class ImageServerRawPixelExportTests
             var body = await response.Content.ReadAsStringAsync();
             response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, body);
             XDocument.Parse(body).Descendants().Should().Contain(element => element.Name.LocalName == "Fault");
+        });
+    }
+
+    [IntegrationTheory]
+    [InlineData("esriNoDataMatchAny", "esriImageReturnMimeData")]
+    [InlineData("esriNoDataMatchAny", "esriImageReturnURL")]
+    [InlineData("esriNoDataMatchAll", "esriImageReturnMimeData")]
+    [InlineData("esriNoDataMatchAll", "esriImageReturnURL")]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task SoapExportImage_StoredNoDataInterpretation_MatchesIndependentSqlSamplesAndMask(string interpretation, string returnType)
+    {
+        await RunWithFixtureRasterAsync(async fixture =>
+        {
+            await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema!);
+            await using var update = connection.CreateCommand();
+            update.CommandText = "UPDATE honua.raster_data SET raster = ST_SetValue(raster, 2, @x, @y, 7) WHERE layer_id = @layerId";
+            update.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+            update.Parameters.AddWithValue("x", NoDataColumn + 1);
+            update.Parameters.AddWithValue("y", NoDataRow + 1);
+            (await update.ExecuteNonQueryAsync()).Should().Be(1);
+
+            await using var readback = connection.CreateCommand();
+            readback.CommandText = """
+                SELECT jsonb_agg(jsonb_build_object('samples', ST_DumpValues(raster, band, false),
+                    'valid', ST_DumpValues(raster, band, true)) ORDER BY band)::text
+                FROM honua.raster_data CROSS JOIN generate_series(1, ST_NumBands(raster)) band
+                WHERE layer_id = @layerId
+                """;
+            readback.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+            using var sql = JsonDocument.Parse((string)(await readback.ExecuteScalarAsync())!);
+            using var response = await PostSoapAsync(fixture, BuildSoapExportImage(
+                XMin, YMin, XMax, YMax, Size, Size, "RSP_NearestNeighbor", returnType, interpretation));
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            var result = XDocument.Parse(body).Descendants().Single(element => element.Name.LocalName == "Result");
+            var block = await ReadSoapImageAsync(fixture, result, returnType);
+            const int pixels = Size * Size;
+            block.Should().HaveCount((pixels * BandCount) + ((pixels + 7) / 8));
+            for (var row = 0; row < Size; row++)
+            {
+                for (var column = 0; column < Size; column++)
+                {
+                    var pixel = (row * Size) + column;
+                    var validity = new bool[BandCount];
+                    for (var band = 0; band < BandCount; band++)
+                    {
+                        var expected = sql.RootElement[band];
+                        block[(band * pixels) + pixel].Should().Be((byte)expected.GetProperty("samples")[row][column].GetDouble());
+                        validity[band] = expected.GetProperty("valid")[row][column].ValueKind != JsonValueKind.Null;
+                    }
+                    var valid = interpretation == "esriNoDataMatchAny" ? validity.All(value => value) : validity.Any(value => value);
+                    var actual = (block[(pixels * BandCount) + (pixel / 8)] & (0x80 >> (pixel % 8))) != 0;
+                    actual.Should().Be(valid, $"SQL per-band validity at {column},{row} with {interpretation}");
+                }
+            }
         });
     }
 
