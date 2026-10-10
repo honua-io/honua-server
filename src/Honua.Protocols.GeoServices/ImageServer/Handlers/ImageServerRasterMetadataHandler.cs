@@ -135,13 +135,7 @@ internal sealed class ImageServerRasterMetadataHandler
             for (var i = 0; i < histograms.Length; i++)
             {
                 var h = histograms[i];
-                entries[i] = new BandHistogram
-                {
-                    Size = h.BinCount,
-                    Min = h.Min,
-                    Max = h.Max,
-                    Counts = h.Counts,
-                };
+                entries[i] = ImageServerHistogramProjection.Project(h);
             }
 
             ImageServerLog.StatisticsHistogramsComputed(_logger, layerId, entries.Length);
