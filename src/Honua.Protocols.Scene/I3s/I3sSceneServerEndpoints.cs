@@ -3,11 +3,11 @@
 
 using System.Security.Cryptography;
 using System.Text.Json;
-using Honua.Core.Features.Caching;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Conversion;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
@@ -673,7 +673,7 @@ internal static partial class I3sSceneServerEndpoints
 
     private static IResult BinaryResponse(HttpContext context, SceneDataset scene, byte[] bytes, string contentType)
     {
-        var cache = context.RequestServices.GetRequiredService<IOptions<CacheOptions>>().Value;
+        var cache = context.RequestServices.GetRequiredService<IOptions<OutputCacheTtlOptions>>().Value;
         SceneEndpoints.SetDynamicSceneCacheHeaders(context, '"' + Convert.ToHexStringLower(SHA256.HashData(bytes)) + '"',
             cache.SceneTilesetMetadata, scene.AccessPolicy?.AllowAnonymous == false || context.User.Identity?.IsAuthenticated == true,
             scene.CachePolicy);
