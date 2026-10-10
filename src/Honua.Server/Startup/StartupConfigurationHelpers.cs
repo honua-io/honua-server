@@ -72,13 +72,32 @@ internal static class StartupConfigurationHelpers
         ResolveEnvironmentSecretReference(configuration, "Aspire:StackExchange:Redis:ConnectionString");
         ResolveEnvironmentSecretReference(configuration, "HONUA_ADMIN_PASSWORD");
         ResolveEnvironmentSecretReference(configuration, "Security:ConnectionEncryption:MasterKey");
+        ResolveEnvironmentSecretReference(configuration, AuditChainKeyConfigurationKey);
     }
 
     /// <summary>
+    /// The audit hash-chain MAC key. Its consumers decode it once at service registration
+    /// (<c>AuditChainKeySnapshot</c>), so a secret reference must be resolved before then.
+    /// </summary>
+    internal const string AuditChainKeyConfigurationKey = "AuditLog:ChainVerification:Key";
+
+    /// <summary>
+    /// Security values the AWS serverless module may inject as <c>aws:secretsmanager:</c>
+    /// references, because Lambda cannot resolve Secrets Manager into environment variables.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> SecuritySecretReferenceKeys =
+    [
+        "HONUA_ADMIN_PASSWORD",
+        "Security:ConnectionEncryption:MasterKey",
+        AuditChainKeyConfigurationKey
+    ];
+
+    /// <summary>
     /// Validates or resolves security values that are consumed directly from configuration. The AWS
-    /// serverless module deliberately injects the admin password and connection-encryption master key
-    /// as Secrets Manager references. Authentication retains its reference for per-request refresh,
-    /// while connection encryption requires a stable process-lifetime key snapshot.
+    /// serverless module deliberately injects the admin password, connection-encryption master key
+    /// and audit-chain key as Secrets Manager references. Authentication retains its reference for
+    /// per-request refresh, while connection encryption and the audit chain require a stable
+    /// process-lifetime key snapshot.
     /// </summary>
     public static async Task ResolveSecuritySecretReferencesAsync(
         ConfigurationManager configuration,
@@ -86,11 +105,7 @@ internal static class StartupConfigurationHelpers
         CancellationToken cancellationToken = default)
     {
         const string awsSecretsManagerPrefix = "aws:secretsmanager:";
-        var keys = new[]
-        {
-            "HONUA_ADMIN_PASSWORD",
-            "Security:ConnectionEncryption:MasterKey"
-        };
+        var keys = SecuritySecretReferenceKeys;
 
         // Normalize references for direct callers as well. Program.cs finalizes source precedence
         // before its initial environment-reference pass, so security-file overrides are already visible.
@@ -163,7 +178,8 @@ internal static class StartupConfigurationHelpers
             // request so a warm process observes secret rotation. Resolve once here only to fail
             // startup on an inaccessible or weak production credential. The connection-encryption
             // master key is different: changing it while a process is live would make existing
-            // ciphertext unreadable, so that key remains a process-lifetime snapshot.
+            // ciphertext unreadable, so that key remains a process-lifetime snapshot. The audit-chain
+            // key is a snapshot for the same reason: a mid-process change breaks chain verification.
             if (string.Equals(key, "HONUA_ADMIN_PASSWORD", StringComparison.OrdinalIgnoreCase))
             {
                 if (isProduction)
