@@ -30,6 +30,8 @@ public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime
 {
     private const string Key = "i3s-production-resource-test";
     private const string Base = "/rest/services/i3s-persisted/SceneServer/layers/0";
+    private static readonly int[] ZeroErrorSelectedResources = [1];
+    private static readonly int[] AdditiveSelectedResources = [2, 3, 5];
     private readonly WebAppFixture _fixture;
     private readonly string _root;
 
@@ -326,7 +328,7 @@ public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime
             SelectedResources(0.32).Should().Equal(1);
             if (geometricError == 0)
             {
-                SelectedResources(20.48).Should().Equal(new[] { 1 }, "zero-error source content already satisfies the SSE target");
+                SelectedResources(20.48).Should().Equal(ZeroErrorSelectedResources, "zero-error source content already satisfies the SSE target");
             }
             else
             {
@@ -337,7 +339,7 @@ public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime
         else
         {
             SelectedResources(0.32).Should().Equal(2, 3, 4);
-            SelectedResources(20.48).Should().Equal(new[] { 2, 3, 5 }, "additive parent materials remain when descendants refine");
+            SelectedResources(20.48).Should().Equal(AdditiveSelectedResources, "additive parent materials remain when descendants refine");
         }
 
         int[] SelectedResources(double focalLengthSquaredOverDistanceSquared)
