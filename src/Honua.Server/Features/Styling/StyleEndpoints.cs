@@ -100,7 +100,7 @@ internal static class StyleEndpoints
 
         if (themeProfile == ThemeProfile.Default)
         {
-            var resolvedStyle = StyleEndpointUrlResolver.Resolve(styleElement.Value, BaseUrlResolver.GetBaseUrl(context));
+            var resolvedStyle = StyleEndpointUrlResolver.Resolve(styleElement.Value, BaseUrlResolver.GetBaseUrl(context), context.Request);
             return Results.Json(resolvedStyle, StyleJsonContext.Default.JsonElement, contentType: MediaTypes.Json);
         }
 
@@ -119,11 +119,11 @@ internal static class StyleEndpoints
         var themedElement = StyleJsonUtilities.ParseJsonElement(themed);
         if (!themedElement.HasValue)
         {
-            var resolvedStyle = StyleEndpointUrlResolver.Resolve(styleElement.Value, BaseUrlResolver.GetBaseUrl(context));
+            var resolvedStyle = StyleEndpointUrlResolver.Resolve(styleElement.Value, BaseUrlResolver.GetBaseUrl(context), context.Request);
             return Results.Json(resolvedStyle, StyleJsonContext.Default.JsonElement, contentType: MediaTypes.Json);
         }
 
-        var resolvedThemedStyle = StyleEndpointUrlResolver.Resolve(themedElement.Value, BaseUrlResolver.GetBaseUrl(context));
+        var resolvedThemedStyle = StyleEndpointUrlResolver.Resolve(themedElement.Value, BaseUrlResolver.GetBaseUrl(context), context.Request);
         return Results.Json(resolvedThemedStyle, StyleJsonContext.Default.JsonElement, contentType: MediaTypes.Json);
     }
 

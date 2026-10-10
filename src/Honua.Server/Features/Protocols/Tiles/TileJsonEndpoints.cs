@@ -79,8 +79,10 @@ internal static class TileJsonEndpoints
             : new[] { (bounds[0] + bounds[2]) / 2.0, (bounds[1] + bounds[3]) / 2.0, (double)minZoom };
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        var tilesUrl = $"{baseUrl}/tiles/{resolvedLayerId}/{{z}}/{{x}}/{{y}}.mvt";
-        var styleUrl = $"{baseUrl}/api/styles/{resolvedLayerId}.json";
+        var tilesUrl = BaseUrlResolver.PreserveToken(context.Request,
+            $"{baseUrl}/tiles/{resolvedLayerId}/{{z}}/{{x}}/{{y}}.mvt");
+        var styleUrl = BaseUrlResolver.PreserveToken(context.Request,
+            $"{baseUrl}/api/styles/{resolvedLayerId}.json");
 
         var title = resource.Metadata.Title ?? resource.Metadata.Name;
         var description = resource.Metadata.Description;
