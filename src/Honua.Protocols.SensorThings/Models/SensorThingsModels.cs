@@ -35,6 +35,10 @@ public sealed record StaServerSettings
     /// <summary>Requirements or complete requirement classes declared by this service.</summary>
     [JsonPropertyName("conformance")]
     public IReadOnlyList<string> Conformance { get; init; } = [];
+
+    /// <summary>Legacy observations requiring a trustworthy feature-of-interest mapping.</summary>
+    [JsonPropertyName("honua:unresolvedFeatureOfInterestCount")]
+    public long UnresolvedFeatureOfInterestCount { get; init; }
 }
 
 /// <summary>
@@ -150,15 +154,18 @@ public sealed record StaUnitOfMeasurement
 {
     /// <summary>Display name (e.g. <c>degree Celsius</c>).</summary>
     [JsonPropertyName("name")]
-    public required string Name { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public required string? Name { get; init; }
 
     /// <summary>Symbol (e.g. <c>°C</c>).</summary>
     [JsonPropertyName("symbol")]
-    public required string Symbol { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public required string? Symbol { get; init; }
 
     /// <summary>Definition URI (UCUM or QUDT).</summary>
     [JsonPropertyName("definition")]
-    public required string Definition { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public required string? Definition { get; init; }
 }
 
 /// <summary>STA v1.1 <c>Datastream</c> entity DTO.</summary>
@@ -239,6 +246,7 @@ public sealed record StaObservationCreate
 
     /// <summary>When the result was generated (ISO-8601), if distinct.</summary>
     [JsonPropertyName("resultTime")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? ResultTime { get; init; }
 
     /// <summary>The numeric measurement result.</summary>
@@ -342,11 +350,12 @@ public sealed record StaObservation
 
     /// <summary>The time the result was generated (ISO-8601), when distinct.</summary>
     [JsonPropertyName("resultTime")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? ResultTime { get; init; }
 
     /// <summary>The numeric measurement result.</summary>
     [JsonPropertyName("result")]
-    public required double Result { get; init; }
+    public required System.Text.Json.JsonElement Result { get; init; }
 
     /// <summary>Navigation link to the owning Datastream.</summary>
     [JsonPropertyName("Datastream@iot.navigationLink")]

@@ -275,6 +275,10 @@ internal sealed class ODataFilterLexer
 
         var value = _input[start.._position];
         FilterParserGuard.EnsureIdentifierLength(value.Length, "OData identifier");
+        if (value.Contains('/', StringComparison.Ordinal) && value.Split('/').Any(segment => segment.Length == 0 || !IsIdentifierStart(segment[0])))
+        {
+            throw new ODataFilterParseException("Property paths require non-empty identifier segments", start);
+        }
         var normalized = value.ToLowerInvariant();
 
         return normalized switch
@@ -338,5 +342,5 @@ internal sealed class ODataFilterLexer
         => char.IsLetter(c) || c == '_';
 
     private static bool IsIdentifierPart(char c)
-        => char.IsLetterOrDigit(c) || c == '_' || c == '.';
+        => char.IsLetterOrDigit(c) || c == '_' || c == '.' || c == '/';
 }

@@ -58,6 +58,22 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         "sta_observation_id_seq",
     ];
 
+    private static readonly string[] _sensorThingsSensingTables =
+    [
+        "sta_location", "sta_historical_location", "sta_feature_of_interest", "sta_thing_location", "sta_historical_location_location",
+        "sta_location_id_seq", "sta_historical_location_id_seq", "sta_feature_of_interest_id_seq",
+    ];
+    private static readonly (string Table, string Column)[] _sensorThingsSensingColumns =
+    [
+        ("sta_thing", "properties"), ("sta_sensor", "properties"), ("sta_sensor", "metadata_json"), ("sta_observed_property", "properties"),
+        ("sta_datastream", "properties"), ("sta_datastream", "observed_area"),
+        ("sta_observation", "result_json"), ("sta_observation", "phenomenon_time_end"),
+        ("sta_observation", "datastream_reference_id"), ("sta_observation", "feature_of_interest_reference_id"),
+        ("sta_observation", "valid_time"), ("sta_observation", "result_quality"), ("sta_observation", "parameters"),
+        ("sta_location", "location"), ("sta_historical_location", "thing_id"), ("sta_historical_location", "time"),
+        ("sta_feature_of_interest", "feature"), ("sta_thing_location", "location_id"), ("sta_historical_location_location", "location_id"),
+    ];
+
     private static readonly string[] _metadataV2ReleasePackageTables =
     [
         "metadata_v2_release_packages",
@@ -332,6 +348,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         .. _metadataV2ReleasePackageTables,
         .. _sensorThingsTables,
         .. _sensorThingsIdSequences,
+        .. _sensorThingsSensingTables,
         .. _governedLineageTables,
         .. _initialSchemaTables,
         "raster_layer_statistics",
@@ -763,6 +780,18 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                     DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
                     $"required identifier sequence(s) are absent from schema '{_schemaName}': {string.Join(", ", missingSequences)}.");
             }
+        }
+
+        if (requirement == DatabaseSchemaRequirement.SensorThings && _migrations.SensorThingsSensingMigration is { } sensingMigration)
+        {
+            if (!state.IsApplied(sensingMigration))
+                throw CreateFailure(sensingMigration, DatabaseSchemaFloorFailureKind.MigrationNotApplied, "the full sensing schema migration is not recorded in public.schema_versions.");
+            var missing = _sensorThingsSensingTables.Where(table => !state.Tables.Contains(table)).ToArray();
+            if (missing.Length > 0)
+                throw CreateFailure(sensingMigration, DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema, $"required sensing tables or sequences are absent: {string.Join(", ", missing)}.");
+            var missingColumns = _sensorThingsSensingColumns.Where(column => !state.Columns.Contains(column)).ToArray();
+            if (missingColumns.Length > 0)
+                throw CreateFailure(sensingMigration, DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema, $"required sensing columns are absent: {string.Join(", ", missingColumns.Select(c => c.Table + "." + c.Column))}.");
         }
 
         if (requirement == DatabaseSchemaRequirement.RasterExternalStorage)

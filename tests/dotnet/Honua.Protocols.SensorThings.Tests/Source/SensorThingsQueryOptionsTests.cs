@@ -31,11 +31,16 @@ public sealed class SensorThingsQueryOptionsTests : IAsyncLifetime
 
     private readonly WebAppFixture _fixture = new();
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
+    private long _featureId;
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _featureId = await SensorThingsTestData.CreateFeatureAsync(_fixture);
+    }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    private static StringContent Json(string body) => new(body, Encoding.UTF8, "application/json");
+    private StringContent Json(string body) => SensorThingsTestData.ObservationJson(body, _featureId);
 
     /// <summary>The seeded result for observation <paramref name="id"/>, computed here.</summary>
     private static double SeededResult(int id) => 15.0d + (10.0d * Math.Sin(id));
@@ -128,8 +133,8 @@ public sealed class SensorThingsQueryOptionsTests : IAsyncLifetime
                   "description": "ordering fixture",
                   "unitOfMeasurement": { "name": "metre per second", "symbol": "m/s", "definition": "http://unitsofmeasure.org/ucum.html#para-30" },
                   "Thing": { "name": "{{name}} Station", "description": "x" },
-                  "Sensor": { "name": "{{name}} Sensor", "description": "x" },
-                  "ObservedProperty": { "name": "{{name}} Property", "description": "x" }
+                  "Sensor": { "name": "{{name}} Sensor", "description": "x", "encodingType": "text/plain", "metadata": "Synthetic sensor" },
+                  "ObservedProperty": { "name": "{{name}} Property", "description": "x", "definition": "https://example.test/property" }
                 }
                 """));
             created.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -158,8 +163,8 @@ public sealed class SensorThingsQueryOptionsTests : IAsyncLifetime
               "description": "filter fixture",
               "unitOfMeasurement": { "name": "metre per second", "symbol": "m/s", "definition": "http://unitsofmeasure.org/ucum.html#para-30" },
               "Thing": { "name": "Filterable Station", "description": "filter fixture" },
-              "Sensor": { "name": "Filterable Sensor", "description": "filter fixture" },
-              "ObservedProperty": { "name": "Filterable Property", "description": "filter fixture" }
+              "Sensor": { "name": "Filterable Sensor", "description": "filter fixture", "encodingType": "text/plain", "metadata": "Synthetic sensor" },
+              "ObservedProperty": { "name": "Filterable Property", "description": "filter fixture", "definition": "https://example.test/property" }
             }
             """));
         created.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -229,12 +234,12 @@ public sealed class SensorThingsQueryOptionsTests : IAsyncLifetime
     [Endpoint("GET /sta/v1.1/Observations")]
     public async Task Observations_FilterWithAStringLiteralAgainstANumericProperty_Returns400NotAnUnhandled500()
     {
-        // PostgreSQL has no implicit text -> double precision cast: this used to reach the
-        // reader as an untyped text parameter and raise 42883 past the handler.
-        (await GetStatusAsync($"/sta/v1.1/Observations?$filter={Escape("result eq 'abc'")}"))
-            .Should().Be(HttpStatusCode.BadRequest);
-        (await GetStatusAsync($"/sta/v1.1/Observations?$filter={Escape("result eq true")}"))
-            .Should().Be(HttpStatusCode.BadRequest);
+        // Result is stored as JSON, so a string or boolean comparison is a real filter.
+        // It matches nothing in the seeded measurement series instead of raising 42883.
+        using var text = await GetOkAsync($"/sta/v1.1/Observations?$filter={Escape("result eq 'abc'")}&$count=true");
+        text.RootElement.GetProperty("@iot.count").GetInt64().Should().Be(0);
+        using var boolean = await GetOkAsync($"/sta/v1.1/Observations?$filter={Escape("result eq true")}&$count=true");
+        boolean.RootElement.GetProperty("@iot.count").GetInt64().Should().Be(0);
         (await GetStatusAsync($"/sta/v1.1/Observations?$filter={Escape("id eq 'abc'")}"))
             .Should().Be(HttpStatusCode.BadRequest);
         (await GetStatusAsync($"/sta/v1.1/Observations?$filter={Escape("phenomenonTime gt 'not-a-time'")}"))
@@ -403,10 +408,10 @@ public sealed class SensorThingsQueryOptionsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /sta/v1.1/Things")]
-    public async Task Things_ExpandDatastreams_Returns501RatherThanIgnoringTheOption()
+    public async Task Things_ExpandDatastreams_ReturnsRelatedEntities()
     {
-        (await GetStatusAsync("/sta/v1.1/Things?$expand=Datastreams"))
-            .Should().Be(HttpStatusCode.NotImplemented);
+        using var document = await GetOkAsync("/sta/v1.1/Things?$expand=Datastreams");
+        document.RootElement.GetProperty("value")[0].GetProperty("Datastreams").GetArrayLength().Should().Be(1);
     }
 
     [IntegrationTest]
@@ -421,10 +426,12 @@ public sealed class SensorThingsQueryOptionsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /sta/v1.1/Datastreams({id})")]
-    public async Task Datastream_ExpandWithAnUnsupportedNestedOption_Returns501()
+    public async Task Datastream_ExpandWithNestedSelect_ProjectsRelatedEntities()
     {
-        (await GetStatusAsync($"/sta/v1.1/Datastreams(1)?$expand={Escape("Observations($select=result)")}"))
-            .Should().Be(HttpStatusCode.NotImplemented);
+        using var document = await GetOkAsync($"/sta/v1.1/Datastreams(1)?$expand={Escape("Observations($select=result)")}");
+        var observation = document.RootElement.GetProperty("Observations")[0];
+        observation.TryGetProperty("result", out _).Should().BeTrue();
+        observation.TryGetProperty("phenomenonTime", out _).Should().BeFalse();
     }
 
     [IntegrationTest]

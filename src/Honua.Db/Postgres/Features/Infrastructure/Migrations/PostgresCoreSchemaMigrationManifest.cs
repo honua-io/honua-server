@@ -21,7 +21,8 @@ internal sealed class PostgresCoreSchemaMigrationManifest
         string configuredSchemaAdoptionMigration,
         string governedLineageMigration,
         string? initialSchemaMigration = null,
-        string? sensorThingsIdSequencesMigration = null)
+        string? sensorThingsIdSequencesMigration = null,
+        string? sensorThingsSensingMigration = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationMigrationAssemblyName);
         ArgumentException.ThrowIfNullOrWhiteSpace(metadataV2SnapshotMigration);
@@ -44,6 +45,7 @@ internal sealed class PostgresCoreSchemaMigrationManifest
         GovernedLineageMigration = governedLineageMigration;
         InitialSchemaMigration = initialSchemaMigration;
         SensorThingsIdSequencesMigration = sensorThingsIdSequencesMigration;
+        SensorThingsSensingMigration = sensorThingsSensingMigration;
     }
 
     public string ApplicationMigrationAssemblyName { get; }
@@ -82,4 +84,7 @@ internal sealed class PostgresCoreSchemaMigrationManifest
     /// predate the sequences leave this null and the guard skips the check.
     /// </summary>
     public string? SensorThingsIdSequencesMigration { get; }
+
+    /// <summary>Migration owning the full eight-entity sensing schema.</summary>
+    public string? SensorThingsSensingMigration { get; }
 }

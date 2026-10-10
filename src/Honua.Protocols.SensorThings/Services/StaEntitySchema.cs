@@ -21,6 +21,8 @@ internal enum StaPropertyType
 
     /// <summary>Timestamp-with-time-zone column.</summary>
     Timestamp,
+    /// <summary>A structured JSON property.</summary>
+    Json,
 }
 
 /// <summary>A queryable STA property and the column that backs it.</summary>
@@ -81,8 +83,21 @@ internal sealed class StaEntitySchema
     public string DefaultOrderBySql { get; }
 
     /// <summary>Resolves a property by its STA name (case-insensitively).</summary>
-    public bool TryGetProperty(string name, out StaProperty property) =>
-        _properties.TryGetValue(name.Trim(), out property!);
+    public bool TryGetProperty(string name, out StaProperty property)
+    {
+        name = name.Trim();
+        if (_properties.TryGetValue(name, out property!)) return true;
+        var slash = name.IndexOf('/', StringComparison.Ordinal);
+        if (slash > 0 && _properties.TryGetValue(name[..slash], out var root) && root.Type == StaPropertyType.Json
+            && (root.Name != "unitOfMeasurement" || name.EndsWith("/*", StringComparison.Ordinal))
+            && name.Split('/').All(part => part.Length > 0))
+        {
+            var emitted = root.EmittedMember + name[slash..];
+            property = new StaProperty(name, root.Column, StaPropertyType.Json, emitted.EndsWith("/*", StringComparison.Ordinal) ? emitted[..^2] : emitted);
+            return true;
+        }
+        return false;
+    }
 
     /// <summary>True when <paramref name="name"/> is a navigation property of this entity.</summary>
     public bool IsNavigationProperty(string name) => _navigationProperties.Contains(name.Trim());
@@ -106,8 +121,9 @@ internal sealed class StaEntitySchema
             .. IdProperties(),
             new StaProperty("name", "name", StaPropertyType.Text),
             new StaProperty("description", "description", StaPropertyType.Text),
+            new StaProperty("properties", "properties", StaPropertyType.Json),
         ],
-        ["Datastreams"],
+        ["Datastreams", "Locations", "HistoricalLocations"],
         "id ASC");
 
     public static StaEntitySchema Sensors { get; } = new(
@@ -117,7 +133,8 @@ internal sealed class StaEntitySchema
             new StaProperty("name", "name", StaPropertyType.Text),
             new StaProperty("description", "description", StaPropertyType.Text),
             new StaProperty("encodingType", "encoding_type", StaPropertyType.Text),
-            new StaProperty("metadata", "metadata", StaPropertyType.Text),
+            new StaProperty("metadata", "metadata_json", StaPropertyType.Json),
+            new StaProperty("properties", "properties", StaPropertyType.Json),
         ],
         ["Datastreams"],
         "id ASC");
@@ -129,6 +146,7 @@ internal sealed class StaEntitySchema
             new StaProperty("name", "name", StaPropertyType.Text),
             new StaProperty("definition", "definition", StaPropertyType.Text),
             new StaProperty("description", "description", StaPropertyType.Text),
+            new StaProperty("properties", "properties", StaPropertyType.Json),
         ],
         ["Datastreams"],
         "id ASC");
@@ -143,6 +161,14 @@ internal sealed class StaEntitySchema
             new StaProperty("name", "d.name", StaPropertyType.Text),
             new StaProperty("description", "d.description", StaPropertyType.Text),
             new StaProperty("observationType", "d.observation_type", StaPropertyType.Text),
+            new StaProperty("unitOfMeasurement", "d.unit_name", StaPropertyType.Json),
+            new StaProperty("unitOfMeasurement/name", "d.unit_name", StaPropertyType.Text),
+            new StaProperty("unitOfMeasurement/symbol", "d.unit_symbol", StaPropertyType.Text),
+            new StaProperty("unitOfMeasurement/definition", "d.unit_definition", StaPropertyType.Text),
+            new StaProperty("observedArea", "d.observed_area", StaPropertyType.Json),
+            new StaProperty("phenomenonTime", "d.phenomenon_time", StaPropertyType.Text),
+            new StaProperty("resultTime", "d.result_time", StaPropertyType.Text),
+            new StaProperty("properties", "d.properties", StaPropertyType.Json),
         ],
         ["Thing", "Sensor", "ObservedProperty", "Observations"],
         "d.id ASC");
@@ -153,8 +179,35 @@ internal sealed class StaEntitySchema
             .. IdProperties(),
             new StaProperty("phenomenonTime", "phenomenon_time", StaPropertyType.Timestamp),
             new StaProperty("resultTime", "result_time", StaPropertyType.Timestamp),
-            new StaProperty("result", "result", StaPropertyType.Number),
+            new StaProperty("result", "result_json", StaPropertyType.Json),
+            new StaProperty("validTime", "valid_time", StaPropertyType.Text),
+            new StaProperty("resultQuality", "result_quality", StaPropertyType.Json),
+            new StaProperty("parameters", "parameters", StaPropertyType.Json),
         ],
         ["Datastream", "FeatureOfInterest"],
         "phenomenon_time ASC, id ASC");
+
+    public static StaEntitySchema Locations { get; } = new("Locations",
+        [.. IdProperties(), new("name", "name", StaPropertyType.Text), new("description", "description", StaPropertyType.Text), new("encodingType", "encoding_type", StaPropertyType.Text), new("location", "location", StaPropertyType.Json), new("properties", "properties", StaPropertyType.Json)],
+        ["Things", "HistoricalLocations"], "id ASC");
+
+    public static StaEntitySchema HistoricalLocations { get; } = new("HistoricalLocations",
+        [.. IdProperties(), new("time", "time", StaPropertyType.Timestamp)], ["Thing", "Locations"], "id ASC");
+
+    public static StaEntitySchema FeaturesOfInterest { get; } = new("FeaturesOfInterest",
+        [.. IdProperties(), new("name", "name", StaPropertyType.Text), new("description", "description", StaPropertyType.Text), new("encodingType", "encoding_type", StaPropertyType.Text), new("feature", "feature", StaPropertyType.Json), new("properties", "properties", StaPropertyType.Json)],
+        ["Observations"], "id ASC");
+
+    public static StaEntitySchema For(string set) => set switch
+    {
+        "Things" => Things,
+        "Locations" => Locations,
+        "HistoricalLocations" => HistoricalLocations,
+        "Datastreams" => Datastreams,
+        "Sensors" => Sensors,
+        "ObservedProperties" => ObservedProperties,
+        "Observations" => Observations,
+        "FeaturesOfInterest" => FeaturesOfInterest,
+        _ => throw new ArgumentException("Unknown sensing entity set.", nameof(set))
+    };
 }

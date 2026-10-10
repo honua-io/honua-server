@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text;
 using Honua.Core.Queries.Filters;
+using Honua.Core.Queries.Filters.OData;
 
 namespace Honua.Protocols.SensorThings.Services;
 
@@ -49,11 +50,13 @@ internal readonly record struct StaFilterTranslation(
 internal sealed class StaFilterTranslator
 {
     private readonly IFilterExpressionService _filterExpressionService;
+    private readonly Honua.Core.Features.SensorThings.Abstractions.ISensorThingsEntityStore? _entityStore;
 
-    public StaFilterTranslator(IFilterExpressionService filterExpressionService)
+    public StaFilterTranslator(IFilterExpressionService filterExpressionService, Honua.Core.Features.SensorThings.Abstractions.ISensorThingsEntityStore? entityStore = null)
     {
         _filterExpressionService = filterExpressionService
             ?? throw new ArgumentNullException(nameof(filterExpressionService));
+        _entityStore = entityStore;
     }
 
     /// <summary>
@@ -79,9 +82,18 @@ internal sealed class StaFilterTranslator
         var parameters = new List<object?>();
         try
         {
+            if (_entityStore is not null)
+            {
+                var translated = _entityStore.TranslateFilter(schema.EntitySet, parseResult.Expression);
+                return StaFilterTranslation.Success(translated.Sql, translated.Parameters);
+            }
             Visit(schema, parseResult.Expression, sql, parameters);
         }
         catch (StaFilterTranslationException ex)
+        {
+            return StaFilterTranslation.Failure(ex.Message);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or Honua.Core.Features.SensorThings.Abstractions.SensorThingsValidationException)
         {
             return StaFilterTranslation.Failure(ex.Message);
         }
@@ -137,13 +149,43 @@ internal sealed class StaFilterTranslator
                     $"Property '{parts[0]}' is not orderable on {schema.EntitySet}. Allowed: {schema.PropertyList}.");
             }
 
-            terms.Add($"{property.Column} {direction}");
+            terms.Add($"{property.Column} {direction} {(direction == "ASC" ? "NULLS FIRST" : "NULLS LAST")}");
         }
 
         // The default clause is the tiebreaker, not a replacement: ordering by a non-unique
         // property (result, name) is otherwise not deterministic across pages.
         terms.Add(schema.DefaultOrderBySql);
         return StaFilterTranslation.Success(string.Join(", ", terms), Array.Empty<object?>());
+    }
+
+    /// <summary>Translates primitive order expressions through the shared OData parser and provider visitor.</summary>
+    public StaFilterTranslation TranslateOrderExpressions(StaEntitySchema schema, string? orderBy)
+    {
+        if (_entityStore is null || string.IsNullOrWhiteSpace(orderBy)) return TranslateOrderBy(schema, orderBy);
+        var terms = new List<string>();
+        var parameters = new List<object?>();
+        try
+        {
+            foreach (var term in StaQueryPlan.SplitTopLevel(orderBy, ','))
+            {
+                var expression = term.Trim();
+                var descending = expression.EndsWith(" desc", StringComparison.OrdinalIgnoreCase);
+                if (descending || expression.EndsWith(" asc", StringComparison.OrdinalIgnoreCase)) expression = expression[..expression.LastIndexOf(' ')].TrimEnd();
+                // $orderby accepts a bare property. The shared filter parse rejects that
+                // shape because a $filter must be a boolean predicate.
+                var parsedExpression = new ODataFilterParser().ParseOrderExpression(expression);
+                var fragment = _entityStore.TranslateOrderExpression(schema.EntitySet, parsedExpression);
+                terms.Add(SqlFragmentHelpers.RenumberSqlFragmentParameters(fragment.Sql, parameters.Count) + (descending ? " DESC NULLS LAST" : " ASC NULLS FIRST"));
+                parameters.AddRange(fragment.Parameters);
+            }
+            if (terms.Count == 0) return StaFilterTranslation.Failure("$orderby requires a primitive expression.");
+            terms.Add(schema.DefaultOrderBySql);
+            return StaFilterTranslation.Success(string.Join(", ", terms), parameters);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or Honua.Core.Features.SensorThings.Abstractions.SensorThingsValidationException)
+        {
+            return StaFilterTranslation.Failure(ex.Message);
+        }
     }
 
     private static void Visit(StaEntitySchema schema, FilterExpression expression, StringBuilder sql, List<object?> parameters)
@@ -209,6 +251,10 @@ internal sealed class StaFilterTranslator
         };
 
         var property = ResolveProperty(schema, binary.Left, binary.Right, out var literal);
+        if (binary.Left is Literal)
+        {
+            op = op switch { "<" => ">", "<=" => ">=", ">" => "<", ">=" => "<=", _ => op };
+        }
         sql.Append(property.Column).Append(' ').Append(op).Append(" @p")
             .Append(parameters.Count.ToString(CultureInfo.InvariantCulture));
         parameters.Add(ConvertLiteral(property, literal));

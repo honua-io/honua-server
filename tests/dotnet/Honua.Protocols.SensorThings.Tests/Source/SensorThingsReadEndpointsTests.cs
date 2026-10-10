@@ -50,7 +50,7 @@ public sealed class SensorThingsReadEndpointsTests : IAsyncLifetime
         document.RootElement.GetProperty("serverSettings").GetProperty("conformance").ValueKind.Should().Be(JsonValueKind.Array);
         var entitySets = document.RootElement.GetProperty("value").EnumerateArray().ToArray();
         entitySets.Select(entitySet => entitySet.GetProperty("name").GetString()).Should()
-            .BeEquivalentTo("Things", "Sensors", "ObservedProperties", "Datastreams", "Observations");
+            .BeEquivalentTo("Things", "Sensors", "ObservedProperties", "Datastreams", "Observations", "Locations", "HistoricalLocations", "FeaturesOfInterest");
 
         foreach (var entitySet in entitySets)
         {

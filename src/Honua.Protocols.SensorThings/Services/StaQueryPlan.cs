@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.SensorThings.Domain;
+using Honua.Core.Queries.Filters;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Protocols.SensorThings.Services;
@@ -16,13 +17,23 @@ namespace Honua.Protocols.SensorThings.Services;
 /// <param name="WhereSql">Nested <c>$filter</c> translated to SQL, or null.</param>
 /// <param name="WhereParameters">Parameters for <paramref name="WhereSql"/>.</param>
 /// <param name="OrderBySql">Nested <c>$orderby</c> translated to an ORDER BY body.</param>
+/// <param name="Select">Nested data-property projection.</param>
+/// <param name="Expand">Nested relationship expansion.</param>
+/// <param name="Count">Whether to emit the related collection count.</param>
+/// <param name="Filter">Original nested filter, retained for continuation links.</param>
+/// <param name="OrderBy">Original nested ordering, retained for continuation links.</param>
 internal sealed record StaExpansion(
     string Navigation,
     int Skip,
     int Top,
     string? WhereSql,
     IReadOnlyList<object?> WhereParameters,
-    string OrderBySql);
+    string OrderBySql,
+    string? Select = null,
+    string? Expand = null,
+    bool Count = false,
+    string? Filter = null,
+    string? OrderBy = null);
 
 /// <summary>
 /// A validated, translated request plan for one STA entity set: the paging options plus
@@ -90,6 +101,7 @@ internal sealed class StaQueryPlan
     [
         .. Select.Select(property => property.EmittedMember),
         .. SelectNavigations,
+        .. Expansions.Select(expansion => expansion.Navigation),
     ];
 
     /// <summary>The <c>$expand</c> item for <paramref name="navigation"/>, or null.</summary>
@@ -112,11 +124,13 @@ internal sealed class StaQueryPlan
     public static StaQueryPlanResult Create(
         HttpRequest request,
         StaEntitySchema schema,
-        StaFilterTranslator filterTranslator)
+        StaFilterTranslator filterTranslator,
+        int expansionDepth = 0)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(schema);
         ArgumentNullException.ThrowIfNull(filterTranslator);
+        if (expansionDepth > 10) return StaQueryPlanResult.BadRequest("$expand exceeds the maximum depth.");
 
         var options = StaQueryOptions.FromRequest(request);
 
@@ -126,7 +140,7 @@ internal sealed class StaQueryPlan
             return StaQueryPlanResult.BadRequest(filter.Error ?? "Invalid $filter.");
         }
 
-        var order = StaFilterTranslator.TranslateOrderBy(schema, options.OrderBy);
+        var order = filterTranslator.TranslateOrderExpressions(schema, options.OrderBy);
         if (!order.IsSuccess)
         {
             return StaQueryPlanResult.BadRequest(order.Error ?? "Invalid $orderby.");
@@ -138,6 +152,13 @@ internal sealed class StaQueryPlan
         {
             foreach (var name in rawSelect.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
+                if (name == "*")
+                {
+                    select.AddRange(schema.Properties);
+                    selectNavigations.Add("@iot.selfLink");
+                    selectNavigations.AddRange(schema.NavigationProperties);
+                    continue;
+                }
                 if (string.Equals(name, "@iot.selfLink", StringComparison.OrdinalIgnoreCase))
                 {
                     selectNavigations.Add("@iot.selfLink");
@@ -152,11 +173,6 @@ internal sealed class StaQueryPlan
 
                 if (schema.IsNavigationProperty(name))
                 {
-                    if (IsUnavailableNavigation(schema, name))
-                    {
-                        return StaQueryPlanResult.NotImplemented("FeaturesOfInterest are not exposed by this server.");
-                    }
-
                     selectNavigations.Add(name);
                     continue;
                 }
@@ -176,13 +192,21 @@ internal sealed class StaQueryPlan
         {
             foreach (var item in SplitTopLevel(rawExpand, ','))
             {
-                var expansion = ParseExpansion(schema, item, filterTranslator, out var failure);
+                var expansion = ParseExpansion(schema, item, filterTranslator, expansionDepth, out var failure);
                 if (expansion is null)
                 {
                     return failure!.Value;
                 }
 
-                expansions.Add(expansion);
+                var duplicate = expansions.FindIndex(existing => existing.Navigation == expansion.Navigation);
+                if (duplicate < 0) expansions.Add(expansion);
+                else
+                {
+                    var existing = expansions[duplicate];
+                    if (existing.Skip != expansion.Skip || existing.Top != expansion.Top || existing.Filter != expansion.Filter || existing.OrderBy != expansion.OrderBy || existing.Select != expansion.Select || existing.Count != expansion.Count)
+                        return StaQueryPlanResult.BadRequest($"Conflicting options for expanded navigation '{expansion.Navigation}'.");
+                    expansions[duplicate] = existing with { Expand = string.Join(',', new[] { existing.Expand, expansion.Expand }.Where(value => !string.IsNullOrWhiteSpace(value))) };
+                }
             }
         }
 
@@ -190,8 +214,8 @@ internal sealed class StaQueryPlan
             schema,
             options,
             filter.Sql,
-            filter.Parameters,
-            order.Sql ?? schema.DefaultOrderBySql,
+            filter.Parameters.Concat(order.Parameters).ToArray(),
+            SqlFragmentHelpers.RenumberSqlFragmentParameters(order.Sql ?? schema.DefaultOrderBySql, filter.Parameters.Count),
             select,
             selectNavigations,
             expansions));
@@ -199,13 +223,13 @@ internal sealed class StaQueryPlan
 
     // Recognise this STA relationship so explicit requests receive 501, while never
     // projecting an empty selection or directing clients to a link we do not expose.
-    private static bool IsUnavailableNavigation(StaEntitySchema schema, string name) =>
-        schema == StaEntitySchema.Observations && name.Equals("FeatureOfInterest", StringComparison.OrdinalIgnoreCase);
+    private static bool IsUnavailableNavigation(StaEntitySchema schema, string name) => false;
 
     private static StaExpansion? ParseExpansion(
         StaEntitySchema schema,
         string item,
         StaFilterTranslator filterTranslator,
+        int expansionDepth,
         out StaQueryPlanResult? failure)
     {
         failure = null;
@@ -226,6 +250,18 @@ internal sealed class StaQueryPlan
         }
 
         name = name.Trim();
+        var slash = name.IndexOf('/', StringComparison.Ordinal);
+        if (slash >= 0)
+        {
+            var tail = name[(slash + 1)..];
+            if (name.Split('/').Length > 10 || tail.Length == 0)
+            {
+                failure = StaQueryPlanResult.BadRequest("$expand paths require valid navigations and at most ten levels.");
+                return null;
+            }
+            nested = "$expand=" + tail + (nested is null ? string.Empty : "(" + nested + ")");
+            name = name[..slash];
+        }
         if (!schema.IsNavigationProperty(name))
         {
             failure = StaQueryPlanResult.BadRequest(
@@ -233,17 +269,10 @@ internal sealed class StaQueryPlan
             return null;
         }
 
-        // Only the Datastream navigations are materialised. Everything else is declined
-        // rather than dropped, so a client can tell the difference between "no related
-        // entity" and "this server will not expand that".
-        var expandedSchema = name switch
-        {
-            "Thing" => StaEntitySchema.Things,
-            "Sensor" => StaEntitySchema.Sensors,
-            "ObservedProperty" => StaEntitySchema.ObservedProperties,
-            "Observations" => StaEntitySchema.Observations,
-            _ => null,
-        };
+        // Validate each path level against the target entity's canonical schema.
+        var relationship = SensorThingsRelationships.For(schema.EntitySet).FirstOrDefault(r => r.Key.Equals(name, StringComparison.OrdinalIgnoreCase));
+        var expandedSchema = relationship.Value is null ? null : StaEntitySchema.For(relationship.Value.Target);
+        name = relationship.Key ?? name;
 
         if (IsUnavailableNavigation(schema, name))
         {
@@ -251,7 +280,7 @@ internal sealed class StaQueryPlan
             return null;
         }
 
-        if (expandedSchema is null || schema.EntitySet != StaEntitySchema.Datastreams.EntitySet)
+        if (expandedSchema is null)
         {
             failure = StaQueryPlanResult.NotImplemented(
                 $"$expand={name} is not supported on {schema.EntitySet}. This server expands Thing, Sensor, ObservedProperty and Observations on Datastreams; follow the entity's @iot.navigationLink otherwise.");
@@ -262,6 +291,9 @@ internal sealed class StaQueryPlan
         var top = StaQueryOptions.DefaultTop;
         string? nestedFilter = null;
         string? nestedOrderBy = null;
+        string? nestedSelect = null;
+        string? nestedExpand = null;
+        var nestedCount = false;
 
         foreach (var option in SplitTopLevel(nested ?? string.Empty, ';'))
         {
@@ -299,6 +331,19 @@ internal sealed class StaQueryPlan
                 case "$orderby":
                     nestedOrderBy = value;
                     break;
+                case "$select":
+                    nestedSelect = value;
+                    break;
+                case "$expand":
+                    nestedExpand = value;
+                    break;
+                case "$count":
+                    if (!bool.TryParse(value, out nestedCount))
+                    {
+                        failure = StaQueryPlanResult.BadRequest("Nested $count must be true or false.");
+                        return null;
+                    }
+                    break;
                 default:
                     failure = StaQueryPlanResult.NotImplemented(
                         $"Nested option '{key}' is not supported inside $expand. Supported: $top, $skip, $filter, $orderby.");
@@ -313,11 +358,21 @@ internal sealed class StaQueryPlan
             return null;
         }
 
-        var nestedOrder = StaFilterTranslator.TranslateOrderBy(expandedSchema, nestedOrderBy);
+        var nestedOrder = filterTranslator.TranslateOrderExpressions(expandedSchema, nestedOrderBy);
         if (!nestedOrder.IsSuccess)
         {
             failure = StaQueryPlanResult.BadRequest(nestedOrder.Error ?? "Invalid nested $orderby.");
             return null;
+        }
+        if (nestedSelect is not null || nestedExpand is not null)
+        {
+            var request = new DefaultHttpContext().Request;
+            var options = new Dictionary<string, string?>();
+            if (nestedSelect is not null) options["$select"] = nestedSelect;
+            if (nestedExpand is not null) options["$expand"] = nestedExpand;
+            request.QueryString = QueryString.Create(options);
+            var nestedPlan = Create(request, expandedSchema, filterTranslator, expansionDepth + 1);
+            if (!nestedPlan.IsSuccess) { failure = nestedPlan; return null; }
         }
 
         return new StaExpansion(
@@ -325,15 +380,16 @@ internal sealed class StaQueryPlan
             skip,
             top,
             nestedFilterTranslation.Sql,
-            nestedFilterTranslation.Parameters,
-            nestedOrder.Sql ?? expandedSchema.DefaultOrderBySql);
+            nestedFilterTranslation.Parameters.Concat(nestedOrder.Parameters).ToArray(),
+            SqlFragmentHelpers.RenumberSqlFragmentParameters(nestedOrder.Sql ?? expandedSchema.DefaultOrderBySql, nestedFilterTranslation.Parameters.Count),
+            nestedSelect, nestedExpand, nestedCount, nestedFilter, nestedOrderBy);
     }
 
     /// <summary>
     /// Splits on <paramref name="separator"/> at parenthesis depth zero and outside quoted
     /// literals, so <c>Observations($filter=name eq 'a,b')</c> stays one item.
     /// </summary>
-    private static List<string> SplitTopLevel(string value, char separator)
+    internal static List<string> SplitTopLevel(string value, char separator)
     {
         var parts = new List<string>();
         if (string.IsNullOrWhiteSpace(value))

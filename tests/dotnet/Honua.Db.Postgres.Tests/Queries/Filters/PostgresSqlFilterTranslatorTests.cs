@@ -518,6 +518,80 @@ public class PostgresSqlFilterTranslatorTests
         result.Sql.Should().Be("ST_Contains(\"geom\"::geometry, ST_GeomFromWKB(@p0, @p1))");
     }
 
+    [Theory]
+    [InlineData("T********")]
+    [InlineData("x' ; DROP TABLE features --")]
+    public void Translate_StaRelate_BindsGeometryAndPattern(string pattern)
+    {
+        var wkb = new byte[] { 1, 2, 3, 4 };
+        var function = new FunctionCall("st_relate", new FilterExpression[]
+        {
+            new PropertyReference("geom"),
+            new GeometryLiteral(wkb, 4326, "POINT(1 2)"),
+            new Literal(pattern, LiteralType.Text)
+        });
+
+        var result = _translator.Translate(function, _resource);
+
+        result.Sql.Should().Be("ST_Relate(\"geom\"::geometry, ST_GeomFromWKB(@p0, @p1), @p2)");
+        result.Parameters.Should().HaveCount(3);
+        result.Parameters[0].Should().BeSameAs(wkb);
+        result.Parameters[1].Should().Be(4326);
+        result.Parameters[2].Should().Be(pattern);
+        result.Sql.Should().NotContain(pattern);
+    }
+
+    [Fact]
+    public void Translate_StaRelate_TransformsLiteralToResourceCrs()
+    {
+        var resource = CreateResource(new MetadataV2SpatialReference
+        {
+            Srid = 3857,
+            Crs = "EPSG:3857",
+            IsGeographic = false,
+        });
+        var function = new FunctionCall("ST_RELATE", new FilterExpression[]
+        {
+            new PropertyReference("geom"),
+            new GeometryLiteral(new byte[] { 1, 2, 3, 4 }, 4326, "POINT(1 2)"),
+            new Literal("T********", LiteralType.Text)
+        });
+
+        var result = _translator.Translate(function, resource);
+
+        result.Sql.Should().Be("ST_Relate(\"geom\"::geometry, ST_Transform(ST_GeomFromWKB(@p0, @p1), 3857), @p2)");
+        result.Parameters[1].Should().Be(4326);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(4)]
+    public void Translate_StaRelate_WrongArgumentCount_Throws(int argumentCount)
+    {
+        var function = new FunctionCall("ST_RELATE",
+            Enumerable.Repeat<FilterExpression>(new PropertyReference("geom"), argumentCount).ToArray());
+
+        var action = () => _translator.Translate(function, _resource);
+
+        action.Should().Throw<ArgumentException>().WithMessage("ST_RELATE requires three arguments");
+    }
+
+    [Fact]
+    public void Translate_StaRelate_NonGeometryProperty_Throws()
+    {
+        var function = new FunctionCall("ST_RELATE", new FilterExpression[]
+        {
+            new PropertyReference("name"),
+            new PropertyReference("geom"),
+            new Literal("T********", LiteralType.Text)
+        });
+
+        var action = () => _translator.Translate(function, _resource);
+
+        action.Should().Throw<ArgumentException>().WithMessage("Field 'name' is not a geometry field");
+    }
+
     [Fact]
     public void Translate_GeoLengthFunction_UsesGeographyLength()
     {

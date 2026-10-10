@@ -10,7 +10,7 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>HTTP navigation receipts for the five exposed SensorThings entity sets.</summary>
+/// <summary>HTTP navigation receipts for the exposed SensorThings entity sets.</summary>
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
 public sealed class SensorThingsNavigationTests : IAsyncLifetime
@@ -72,7 +72,7 @@ public sealed class SensorThingsNavigationTests : IAsyncLifetime
             observation.GetProperty("result").GetDouble().Should().BeApproximately(15 + (10 * Math.Sin(id)), 1e-9);
             observation.GetProperty("phenomenonTime").GetDateTimeOffset().Should()
                 .Be(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero).AddHours(id));
-            observation.TryGetProperty("FeatureOfInterest@iot.navigationLink", out _).Should().BeFalse();
+            observation.TryGetProperty("FeatureOfInterest@iot.navigationLink", out _).Should().BeTrue();
             using var related = await GetAsync(observation.GetProperty("Datastream@iot.navigationLink").GetString()!);
             related.RootElement.GetProperty("@iot.id").GetInt64().Should().Be(1);
         }
@@ -90,10 +90,12 @@ public sealed class SensorThingsNavigationTests : IAsyncLifetime
         foreach (var name in new[] { "Navigation Alpha", "Navigation Zulu", "Unrelated" })
         {
             var relation = name == "Unrelated" ? "{\"name\":\"Other\",\"description\":\"other\"}" : "{\"@iot.id\":1}";
+            var sensor = name == "Unrelated" ? "{\"name\":\"Other\",\"description\":\"other\",\"encodingType\":\"text/plain\",\"metadata\":\"Synthetic sensor\"}" : relation;
+            var property = name == "Unrelated" ? "{\"name\":\"Other\",\"description\":\"other\",\"definition\":\"https://example.test/property\"}" : relation;
             using var body = new StringContent($$"""
                 {"name":"{{name}}","description":"navigation fixture",
                  "unitOfMeasurement":{"name":"degree Celsius","symbol":"C","definition":"urn:unit:celsius"},
-                 "Thing":{{relation}},"Sensor":{{relation}},"ObservedProperty":{{relation}}}
+                 "Thing":{{relation}},"Sensor":{{sensor}},"ObservedProperty":{{property}}}
                 """, Encoding.UTF8, "application/json");
             using var response = await admin.PostAsync("/sta/v1.1/Datastreams", body);
             response.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -126,28 +128,44 @@ public sealed class SensorThingsNavigationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /sta/v1.1/Observations({id})/Datastream")]
-    public async Task Navigation_DistinctForeignKeys_ResolveTargetsAndOmitUnsupportedFeatureOfInterest()
+    public async Task Navigation_DistinctForeignKeys_ResolveGeneratedTargetsAndLocationlessFeatureIsAbsent()
     {
         using var admin = _fixture.CreateAdminClient();
+        // Offset the independent sequences so a mistaken foreign-key column cannot
+        // resolve the correct target merely because all three generated IDs match.
+        foreach (var set in new[] { "Sensors", "ObservedProperties", "ObservedProperties" })
+        {
+            var payload = set == "Sensors"
+                ? """{"name":"Offset sensor","description":"fixture","encodingType":"text/plain","metadata":"Synthetic sensor"}"""
+                : """{"name":"Offset property","description":"fixture","definition":"https://example.test/property"}""";
+            using var offsetBody = new StringContent(payload, Encoding.UTF8, "application/json");
+            using var offset = await admin.PostAsync("/sta/v1.1/" + set, offsetBody);
+            offset.StatusCode.Should().Be(HttpStatusCode.Created);
+        }
         using var body = new StringContent("""
             {"name":"Distinct keys","description":"foreign key fixture",
              "unitOfMeasurement":{"name":"metre","symbol":"m","definition":"urn:unit:metre"},
              "Thing":{"@iot.id":701,"name":"Station 701","description":"station"},
-             "Sensor":{"@iot.id":702,"name":"Sensor 702","description":"sensor"},
-             "ObservedProperty":{"@iot.id":703,"name":"Property 703","description":"property"}}
+             "Sensor":{"@iot.id":702,"name":"Sensor 702","description":"sensor","encodingType":"text/plain","metadata":"Synthetic sensor"},
+             "ObservedProperty":{"@iot.id":703,"name":"Property 703","description":"property","definition":"https://example.test/property"}}
             """, Encoding.UTF8, "application/json");
         using var created = await admin.PostAsync("/sta/v1.1/Datastreams", body);
         created.StatusCode.Should().Be(HttpStatusCode.Created);
         using var stream = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
         var streamId = stream.RootElement.GetProperty("@iot.id").GetInt64();
-        foreach (var (navigation, entitySet, expectedId) in new[] { ("Thing", "Things", 701L), ("Sensor", "Sensors", 702L), ("ObservedProperty", "ObservedProperties", 703L) })
+        var relatedIds = new List<long>();
+        foreach (var (navigation, entitySet, suppliedId, expectedName) in new[] { ("Thing", "Things", 701L, "Station 701"), ("Sensor", "Sensors", 702L, "Sensor 702"), ("ObservedProperty", "ObservedProperties", 703L, "Property 703") })
         {
             using var related = await GetAsync(stream.RootElement.GetProperty(navigation + "@iot.navigationLink").GetString()!);
-            related.RootElement.GetProperty("@iot.id").GetInt64().Should().Be(expectedId);
+            var expectedId = related.RootElement.GetProperty("@iot.id").GetInt64();
+            expectedId.Should().NotBe(suppliedId, "computed identities are ignored on deep insert");
+            related.RootElement.GetProperty("name").GetString().Should().Be(expectedName);
+            relatedIds.Add(expectedId);
             using var reverse = await GetAsync($"/sta/v1.1/{entitySet}({expectedId})/Datastreams");
             reverse.RootElement.GetProperty("value").EnumerateArray()
                 .Select(item => item.GetProperty("@iot.id").GetInt64()).Should().Equal(streamId);
         }
+        relatedIds.Should().OnlyHaveUniqueItems();
         using var observationBody = new StringContent($$"""
             {"phenomenonTime":"2026-08-01T00:00:00Z","result":42.25,
              "Datastream":{"@iot.id":{{streamId}}}
@@ -156,19 +174,12 @@ public sealed class SensorThingsNavigationTests : IAsyncLifetime
         using var observationResponse = await admin.PostAsync("/sta/v1.1/Observations", observationBody);
         observationResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         using var observation = JsonDocument.Parse(await observationResponse.Content.ReadAsStringAsync());
-        observation.RootElement.TryGetProperty("FeatureOfInterest@iot.navigationLink", out _).Should().BeFalse();
-        // The HTTP ingest surface does not accept FeatureOfInterest. Seed the nullable
-        // storage field directly to exercise both mapper branches from the original defect.
-        await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema))
-        await using (var command = connection.CreateCommand())
-        {
-            command.CommandText = "UPDATE sta_observation SET feature_of_interest_id = 987 WHERE id = @id";
-            command.Parameters.AddWithValue("id", observation.RootElement.GetProperty("@iot.id").GetInt64());
-            (await command.ExecuteNonQueryAsync()).Should().Be(1);
-        }
+        observation.RootElement.GetProperty("FeatureOfInterest@iot.navigationLink").GetString().Should().NotBeNullOrEmpty();
         using var read = await GetAsync(observation.RootElement.GetProperty("@iot.selfLink").GetString()!);
         read.RootElement.GetProperty("result").GetDouble().Should().Be(42.25);
-        read.RootElement.TryGetProperty("FeatureOfInterest@iot.navigationLink", out _).Should().BeFalse();
+        read.RootElement.GetProperty("FeatureOfInterest@iot.navigationLink").GetString().Should().NotBeNullOrEmpty();
+        using var absentFeature = await _fixture.Client.GetAsync(read.RootElement.GetProperty("FeatureOfInterest@iot.navigationLink").GetString()!);
+        absentFeature.StatusCode.Should().Be(HttpStatusCode.NotFound, "a locationless Thing cannot supply an inferred feature");
         using var target = await GetAsync(read.RootElement.GetProperty("Datastream@iot.navigationLink").GetString()!);
         target.RootElement.GetProperty("@iot.id").GetInt64().Should().Be(streamId);
         target.RootElement.GetProperty("name").GetString().Should().Be("Distinct keys");
@@ -201,16 +212,23 @@ public sealed class SensorThingsNavigationTests : IAsyncLifetime
             invalid.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
         using var missingParentExpansion = await _fixture.Client.GetAsync("/sta/v1.1/Observations(999999)/Datastream?$expand=Observations($select=result)");
-        missingParentExpansion.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        missingParentExpansion.StatusCode.Should().Be(HttpStatusCode.NotFound);
         foreach (var query in new[] { "$select=FeatureOfInterest", "$expand=FeatureOfInterest" })
         {
-            using var unavailable = await _fixture.Client.GetAsync("/sta/v1.1/Observations(1)?" + query);
-            unavailable.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
-            var error = await unavailable.Content.ReadAsStringAsync();
-            error.Should().Contain("FeaturesOfInterest are not exposed");
-            error.Should().NotContain("follow the entity");
+            using var available = await GetAsync("/sta/v1.1/Observations(1)?" + query);
+            available.RootElement.GetProperty("FeatureOfInterest@iot.navigationLink").GetString().Should().NotBeNullOrEmpty();
+            if (query.StartsWith("$expand", StringComparison.Ordinal))
+            {
+                available.RootElement.GetProperty("FeatureOfInterest").ValueKind.Should().Be(JsonValueKind.Null,
+                    "the legacy seeded observation has no inferred feature");
+            }
+            else
+            {
+                available.RootElement.TryGetProperty("FeatureOfInterest", out _).Should().BeFalse(
+                    "selecting navigation retains its link without expanding it");
+            }
         }
-        using var unsupported = await _fixture.Client.GetAsync("/sta/v1.1/Things(1)/Datastreams?$expand=Observations($select=result)");
+        using var unsupported = await _fixture.Client.GetAsync("/sta/v1.1/Things(1)/Datastreams?$expand=Observations($search=unsupported)");
         unsupported.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
     }
 }

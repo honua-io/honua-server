@@ -32,11 +32,16 @@ public sealed class SensorThingsIngestIdentityTests : IAsyncLifetime
 
     private readonly WebAppFixture _fixture = new();
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
+    private long _featureId;
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _featureId = await SensorThingsTestData.CreateFeatureAsync(_fixture);
+    }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    private static StringContent Json(string body) => new(body, Encoding.UTF8, "application/json");
+    private StringContent Json(string body) => SensorThingsTestData.ObservationJson(body, _featureId);
 
     private static string Instant(int index) =>
         new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero)
@@ -173,10 +178,11 @@ public sealed class SensorThingsIngestIdentityTests : IAsyncLifetime
                 {
                   "name": "Concurrent Datastream {{index}}",
                   "description": "writer {{index}}",
+                  "observationType":"http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
                   "unitOfMeasurement": { "name": "metre per second", "symbol": "m/s", "definition": "http://unitsofmeasure.org/ucum.html#para-30" },
                   "Thing": { "name": "Station {{index}}", "description": "writer {{index}}" },
-                  "Sensor": { "name": "Anemometer {{index}}", "description": "writer {{index}}" },
-                  "ObservedProperty": { "name": "Wind Speed {{index}}", "description": "writer {{index}}" }
+                  "Sensor": { "name": "Anemometer {{index}}", "description": "writer {{index}}" , "encodingType":"application/pdf", "metadata":"https://example.org/test-sensor.pdf" },
+                  "ObservedProperty": { "name": "Wind Speed {{index}}", "description": "writer {{index}}" , "definition":"https://example.org/observed-property" }
                 }
                 """);
             using var response = await adminClient.PostAsync("/sta/v1.1/Datastreams", body);
@@ -213,35 +219,37 @@ public sealed class SensorThingsIngestIdentityTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /sta/v1.1/Datastreams")]
-    public async Task PostDatastream_AfterAClientSuppliedId_AllocatesAboveItRatherThanColliding()
+    public async Task PostDatastream_InlineComputedIdIsIgnored_AndAllocationsRemainDistinct()
     {
         using var adminClient = _fixture.CreateAdminClient();
 
-        // A deep insert may carry an explicit @iot.id, which bypasses the column default.
+        // An inline entity's computed identifier is ignored under STA 10.2.1.2.
         using var explicitResponse = await adminClient.PostAsync("/sta/v1.1/Datastreams", Json("""
             {
               "name": "Explicit Thing Datastream",
               "description": "carries a client-chosen Thing id",
+              "observationType":"http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
               "unitOfMeasurement": { "name": "degree Celsius", "symbol": "C", "definition": "http://unitsofmeasure.org/ucum.html#para-30" },
               "Thing": { "@iot.id": 500, "name": "Client Numbered Station", "description": "explicit id" },
-              "Sensor": { "name": "Thermometer A", "description": "test" },
-              "ObservedProperty": { "name": "Air Temperature A", "description": "test" }
+              "Sensor": { "name": "Thermometer A", "description": "test" , "encodingType":"application/pdf", "metadata":"https://example.org/test-sensor.pdf" },
+              "ObservedProperty": { "name": "Air Temperature A", "description": "test" , "definition":"https://example.org/observed-property" }
             }
             """));
         explicitResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
         using var explicitThing = await _fixture.Client.GetAsync("/sta/v1.1/Things(500)");
-        explicitThing.StatusCode.Should().Be(HttpStatusCode.OK, "the client-supplied Thing id must be honoured");
+        explicitThing.StatusCode.Should().Be(HttpStatusCode.NotFound, "inline computed identifiers are ignored");
 
-        // The next server-allocated Thing must land above the client-chosen id.
+        // Subsequent allocations remain unique.
         using var followUp = await adminClient.PostAsync("/sta/v1.1/Datastreams", Json("""
             {
               "name": "Server Numbered Datastream",
               "description": "server-allocated Thing id",
+              "observationType":"http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
               "unitOfMeasurement": { "name": "degree Celsius", "symbol": "C", "definition": "http://unitsofmeasure.org/ucum.html#para-30" },
               "Thing": { "name": "Server Numbered Station", "description": "generated id" },
-              "Sensor": { "name": "Thermometer B", "description": "test" },
-              "ObservedProperty": { "name": "Air Temperature B", "description": "test" }
+              "Sensor": { "name": "Thermometer B", "description": "test" , "encodingType":"application/pdf", "metadata":"https://example.org/test-sensor.pdf" },
+              "ObservedProperty": { "name": "Air Temperature B", "description": "test" , "definition":"https://example.org/observed-property" }
             }
             """));
         followUp.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -250,7 +258,9 @@ public sealed class SensorThingsIngestIdentityTests : IAsyncLifetime
         using var document = JsonDocument.Parse(await things.Content.ReadAsStringAsync());
         var created = document.RootElement.GetProperty("value").EnumerateArray()
             .Single(value => value.GetProperty("name").GetString() == "Server Numbered Station");
-        created.GetProperty("@iot.id").GetInt64().Should().Be(501,
-            "the sequence must be advanced past a client-supplied id so the next allocation cannot collide");
+        var inline = document.RootElement.GetProperty("value").EnumerateArray()
+            .Single(value => value.GetProperty("name").GetString() == "Client Numbered Station");
+        created.GetProperty("@iot.id").GetInt64().Should().NotBe(inline.GetProperty("@iot.id").GetInt64());
+        inline.GetProperty("@iot.id").GetInt64().Should().NotBe(500);
     }
 }

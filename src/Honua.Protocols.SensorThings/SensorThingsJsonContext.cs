@@ -29,6 +29,9 @@ namespace Honua.Protocols.SensorThings;
 [JsonSerializable(typeof(StaObservationBulkResult))]
 [JsonSerializable(typeof(StaDatastreamCreate))]
 [JsonSerializable(typeof(StaEntityReference))]
+[JsonSerializable(typeof(System.Text.Json.JsonElement))]
+[JsonSerializable(typeof(System.Text.Json.Nodes.JsonObject))]
+[JsonSerializable(typeof(System.Text.Json.Nodes.JsonNode))]
 internal sealed partial class SensorThingsJsonContext : JsonSerializerContext
 {
 }

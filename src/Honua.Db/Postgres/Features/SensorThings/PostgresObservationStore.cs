@@ -17,7 +17,7 @@ namespace Honua.Db.Postgres.Features.SensorThings;
 /// configured-schema <c>sta_*</c> catalog tables and the range-partitioned
 /// <c>sta_observation</c> time-series table (migration 059).
 /// </summary>
-internal sealed class PostgresObservationStore : IObservationStore
+internal sealed partial class PostgresObservationStore : IObservationStore, ISensorThingsEntityStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly IDatabaseSchemaGuard _schemaGuard;
@@ -28,17 +28,6 @@ internal sealed class PostgresObservationStore : IObservationStore
     private string _observedPropertyTable => SchemaSearchPath.QualifyTable("sta_observed_property", _schemaContext?.CurrentSchema ?? _configuredSchema);
     private string _datastreamTable => SchemaSearchPath.QualifyTable("sta_datastream", _schemaContext?.CurrentSchema ?? _configuredSchema);
     private string _observationTable => SchemaSearchPath.QualifyTable("sta_observation", _schemaContext?.CurrentSchema ?? _configuredSchema);
-
-    // Identifier sequences created by server migration 116. Allocating from a sequence
-    // instead of SELECT MAX(id) + 1 is what makes concurrent ingest safe: nextval is
-    // non-transactional and never returns the same value to two sessions, so overlapping
-    // writers cannot mint the same @iot.id (#4199).
-    private string _thingIdSequence => SchemaSearchPath.QualifyTable("sta_thing_id_seq", _schemaContext?.CurrentSchema ?? _configuredSchema);
-    private string _sensorIdSequence => SchemaSearchPath.QualifyTable("sta_sensor_id_seq", _schemaContext?.CurrentSchema ?? _configuredSchema);
-    private string _observedPropertyIdSequence => SchemaSearchPath.QualifyTable("sta_observed_property_id_seq", _schemaContext?.CurrentSchema ?? _configuredSchema);
-    // sta_datastream_id_seq and sta_observation_id_seq are reached through the column
-    // default alone: neither entity accepts a client-supplied id, so nothing has to
-    // reposition them.
 
     public PostgresObservationStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
@@ -71,9 +60,9 @@ internal sealed class PostgresObservationStore : IObservationStore
         var sql = new System.Text.StringBuilder($"""
 SELECT d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_symbol,
        d.unit_definition, d.thing_id, d.sensor_id, d.observed_property_id,
-       MIN(o.phenomenon_time) AS pt_start, MAX(o.phenomenon_time) AS pt_end
+       MIN(o.phenomenon_time) AS pt_start, MAX(COALESCE(o.phenomenon_time_end,o.phenomenon_time)) AS pt_end
 FROM {_datastreamTable} d
-LEFT JOIN {_observationTable} o ON o.datastream_id = d.id
+LEFT JOIN {_observationTable} o ON o.datastream_reference_id = d.id
 """);
         AppendWhere(sql, query.WhereSql);
         sql.Append("""
@@ -104,9 +93,9 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         var sql = $"""
 SELECT d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_symbol,
        d.unit_definition, d.thing_id, d.sensor_id, d.observed_property_id,
-       MIN(o.phenomenon_time) AS pt_start, MAX(o.phenomenon_time) AS pt_end
+       MIN(o.phenomenon_time) AS pt_start, MAX(COALESCE(o.phenomenon_time_end,o.phenomenon_time)) AS pt_end
 FROM {_datastreamTable} d
-LEFT JOIN {_observationTable} o ON o.datastream_id = d.id
+LEFT JOIN {_observationTable} o ON o.datastream_reference_id = d.id
 WHERE d.id = @id
 GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_symbol,
          d.unit_definition, d.thing_id, d.sensor_id, d.observed_property_id
@@ -174,7 +163,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
 
         var sql = new System.Text.StringBuilder(
-            $"SELECT id, name, description, encoding_type, metadata FROM {_sensorTable}");
+            $"SELECT id, name, description, encoding_type, COALESCE(metadata_json,to_jsonb(metadata))::text FROM {_sensorTable}");
         AppendWhere(sql, query.WhereSql);
         AppendOrderByAndPaging(sql, query.OrderBySql ?? "id ASC");
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -195,7 +184,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
     {
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
 
-        var sql = $"SELECT id, name, description, encoding_type, metadata FROM {_sensorTable} WHERE id = @id";
+        var sql = $"SELECT id, name, description, encoding_type, COALESCE(metadata_json,to_jsonb(metadata))::text FROM {_sensorTable} WHERE id = @id";
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
@@ -409,7 +398,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
 
         var sql = new System.Text.StringBuilder(
-            $"SELECT id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id FROM {_observationTable}");
+            $"SELECT id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_reference_id, result_json, phenomenon_time_end FROM {_observationTable}");
 
         AppendObservationFilter(sql, query);
         // The ORDER BY body is translated from $orderby against the observation column
@@ -437,7 +426,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
 
         var sql =
-            $"SELECT id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id FROM {_observationTable} WHERE id = @id";
+            $"SELECT id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_reference_id, result_json, phenomenon_time_end FROM {_observationTable} WHERE id = @id";
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
@@ -447,145 +436,55 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
     }
 
     public async Task<IReadOnlyList<SensorThingsObservation>> IngestObservationsAsync(
-        IReadOnlyList<ObservationIngestRow> rows,
-        CancellationToken cancellationToken)
+        IReadOnlyList<ObservationIngestRow> rows, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(rows);
-        await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
-
-        if (rows.Count == 0)
+        if (rows.Count == 0) return [];
+        var bodies = rows.Select(row =>
         {
-            return Array.Empty<SensorThingsObservation>();
-        }
-
-        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var connection = lease.Connection;
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-        // The id column defaults to nextval(sta_observation_id_seq) (migration 116), so the
-        // identifier is allocated by the INSERT itself and returned. There is no read-then-write
-        // window for a concurrent writer to observe: reserving the block with MAX(id) + 1 under
-        // READ COMMITTED handed overlapping ingests the same ids, and because the observation PK
-        // is (id, phenomenon_time) the duplicate rows were accepted silently (#4199).
-        var results = new List<SensorThingsObservation>(rows.Count);
-        var insertSql = $"""
-INSERT INTO {_observationTable} (datastream_id, phenomenon_time, result_time, result, feature_of_interest_id)
-VALUES (@datastream_id, @phenomenon_time, @result_time, @result, @feature_of_interest_id)
-RETURNING id
-""";
-
-        foreach (var row in rows)
-        {
-            await using var command = new NpgsqlCommand(insertSql, connection, transaction);
-            command.Parameters.AddWithValue("datastream_id", NpgsqlDbType.Bigint, row.DatastreamId);
-            command.Parameters.AddWithValue("phenomenon_time", NpgsqlDbType.TimestampTz, row.PhenomenonTime);
-            command.Parameters.AddWithValue(
-                "result_time",
-                NpgsqlDbType.TimestampTz,
-                (object?)row.ResultTime ?? DBNull.Value);
-            command.Parameters.AddWithValue("result", NpgsqlDbType.Double, row.Result);
-            command.Parameters.AddWithValue(
-                "feature_of_interest_id",
-                NpgsqlDbType.Bigint,
-                (object?)row.FeatureOfInterestId ?? DBNull.Value);
-            var id = (long)(await ExecuteCatalogScalarAsync(command, cancellationToken).ConfigureAwait(false)
-                ?? throw new InvalidOperationException("Observation insert did not return a server-allocated id."));
-
-            results.Add(new SensorThingsObservation
+            var body = new System.Text.Json.Nodes.JsonObject
             {
-                Id = id,
-                DatastreamId = row.DatastreamId,
-                PhenomenonTime = row.PhenomenonTime,
-                ResultTime = row.ResultTime,
-                Result = row.Result,
-                FeatureOfInterestId = row.FeatureOfInterestId
-            });
-        }
-
-        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-        return results;
+                ["Datastream"] = new System.Text.Json.Nodes.JsonObject { ["@iot.id"] = row.DatastreamId },
+                ["phenomenonTime"] = row.PhenomenonTime.ToString("O", CultureInfo.InvariantCulture),
+                ["resultTime"] = row.ResultTime?.ToString("O", CultureInfo.InvariantCulture),
+                ["result"] = row.Result
+            };
+            if (row.FeatureOfInterestId is { } feature) body["FeatureOfInterest"] = new System.Text.Json.Nodes.JsonObject { ["@iot.id"] = feature };
+            return System.Text.Json.JsonSerializer.SerializeToElement(body, EntityJsonContext.Default.JsonObject);
+        }).ToArray();
+        var ids = await CreateEntityBatchAsync("Observations", bodies, cancellationToken).ConfigureAwait(false);
+        var persisted = new List<SensorThingsObservation>(ids.Count);
+        foreach (var id in ids) persisted.Add((await GetObservationAsync(id, cancellationToken).ConfigureAwait(false))!);
+        return persisted;
     }
 
     public async Task<SensorThingsDatastream> CreateDatastreamAsync(
-        CreateDatastreamRequest request,
-        CancellationToken cancellationToken)
+        CreateDatastreamRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
-
-        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var connection = lease.Connection;
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-        var thingId = await UpsertRelatedAsync(
-            connection, transaction, _thingTable, _thingIdSequence, request.Thing, cancellationToken).ConfigureAwait(false);
-        var sensorId = await UpsertSensorAsync(
-            connection, transaction, request.Sensor, cancellationToken).ConfigureAwait(false);
-        var observedPropertyId = await UpsertObservedPropertyAsync(
-            connection, transaction, request.ObservedProperty, cancellationToken).ConfigureAwait(false);
-
-        var insertSql = $"""
-INSERT INTO {_datastreamTable}
-    (name, description, observation_type, unit_name, unit_symbol, unit_definition, thing_id, sensor_id, observed_property_id)
-VALUES (@name, @description, @observation_type, @unit_name, @unit_symbol, @unit_definition, @thing_id, @sensor_id, @observed_property_id)
-RETURNING id
-""";
-
-        long datastreamId;
-        await using (var command = new NpgsqlCommand(insertSql, connection, transaction))
+        var body = new System.Text.Json.Nodes.JsonObject
         {
-            command.Parameters.AddWithValue("name", NpgsqlDbType.Text, request.Name);
-            command.Parameters.AddWithValue("description", NpgsqlDbType.Text, request.Description);
-            command.Parameters.AddWithValue("observation_type", NpgsqlDbType.Text, request.ObservationType);
-            command.Parameters.AddWithValue("unit_name", NpgsqlDbType.Text, request.UnitName);
-            command.Parameters.AddWithValue("unit_symbol", NpgsqlDbType.Text, request.UnitSymbol);
-            command.Parameters.AddWithValue("unit_definition", NpgsqlDbType.Text, request.UnitDefinition);
-            command.Parameters.AddWithValue("thing_id", NpgsqlDbType.Bigint, thingId);
-            command.Parameters.AddWithValue("sensor_id", NpgsqlDbType.Bigint, sensorId);
-            command.Parameters.AddWithValue("observed_property_id", NpgsqlDbType.Bigint, observedPropertyId);
-            datastreamId = (long)(await ExecuteCatalogScalarAsync(command, cancellationToken).ConfigureAwait(false)
-                ?? throw new InvalidOperationException("Datastream insert did not return a server-allocated id."));
-        }
-
-        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-
-        return new SensorThingsDatastream
-        {
-            Id = datastreamId,
-            Name = request.Name,
-            Description = request.Description,
-            ObservationType = request.ObservationType,
-            UnitName = request.UnitName,
-            UnitSymbol = request.UnitSymbol,
-            UnitDefinition = request.UnitDefinition,
-            ThingId = thingId,
-            SensorId = sensorId,
-            ObservedPropertyId = observedPropertyId
+            ["name"] = request.Name,
+            ["description"] = request.Description,
+            ["observationType"] = request.ObservationType,
+            ["unitOfMeasurement"] = new System.Text.Json.Nodes.JsonObject
+            { ["name"] = request.UnitName, ["symbol"] = request.UnitSymbol, ["definition"] = request.UnitDefinition },
+            ["Thing"] = Reference(request.Thing),
+            ["Sensor"] = Reference(request.Sensor),
+            ["ObservedProperty"] = Reference(request.ObservedProperty)
         };
-    }
+        var id = await CreateEntityAsync("Datastreams", System.Text.Json.JsonSerializer.SerializeToElement(body, EntityJsonContext.Default.JsonObject), cancellationToken).ConfigureAwait(false);
+        return (await GetDatastreamAsync(id, cancellationToken).ConfigureAwait(false))!;
 
-    /// <summary>
-    /// Advances <paramref name="sequence"/> past a client-supplied identifier so a later
-    /// server allocation cannot collide with the row just written. Catalog entities may be
-    /// deep-inserted with an explicit <c>@iot.id</c>, which bypasses the column default;
-    /// without this the sequence would still be sitting behind that id.
-    /// </summary>
-    private static async Task AdvanceSequencePastAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        string sequence,
-        long id,
-        CancellationToken cancellationToken)
-    {
-        // The sequence name is an internal schema-qualified identifier built from the
-        // validated schema, never request text. GREATEST keeps the sequence monotonic: an
-        // explicit id below the current position leaves it untouched.
-        await using var command = new NpgsqlCommand(
-            $"SELECT setval('{sequence}', GREATEST(last_value, @id), true) FROM {sequence}",
-            connection,
-            transaction);
-        command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
-        await ExecuteCatalogScalarAsync(command, cancellationToken).ConfigureAwait(false);
+        static System.Text.Json.Nodes.JsonObject Reference(RelatedEntityRef entity)
+        {
+            if (entity.Id > 0 && entity.Name is null) return new() { ["@iot.id"] = entity.Id };
+            var value = new System.Text.Json.Nodes.JsonObject { ["name"] = entity.Name, ["description"] = entity.Description };
+            if (entity.EncodingType is not null) value["encodingType"] = entity.EncodingType;
+            if (entity.Metadata is { } metadata) value["metadata"] = System.Text.Json.Nodes.JsonNode.Parse(metadata.GetRawText());
+            if (entity.Definition is not null) value["definition"] = entity.Definition;
+            return value;
+        }
     }
 
     private static async Task<bool> ExistsAsync(
@@ -599,109 +498,6 @@ RETURNING id
             $"SELECT 1 FROM {table} WHERE id = @id", connection, transaction);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
         return await ExecuteCatalogScalarAsync(command, cancellationToken).ConfigureAwait(false) is not null;
-    }
-
-    private static async Task<long> UpsertRelatedAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        string table,
-        string sequence,
-        RelatedEntityRef entity,
-        CancellationToken cancellationToken)
-    {
-        if (entity.Id > 0 && await ExistsAsync(connection, transaction, table, entity.Id, cancellationToken).ConfigureAwait(false))
-        {
-            return entity.Id;
-        }
-
-        if (entity.Id > 0)
-        {
-            await using var explicitCommand = new NpgsqlCommand(
-                $"INSERT INTO {table} (id, name, description) VALUES (@id, @name, @description)", connection, transaction);
-            explicitCommand.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, entity.Id);
-            explicitCommand.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? $"Thing {entity.Id}");
-            explicitCommand.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
-            await ExecuteCatalogNonQueryAsync(explicitCommand, cancellationToken).ConfigureAwait(false);
-            await AdvanceSequencePastAsync(connection, transaction, sequence, entity.Id, cancellationToken).ConfigureAwait(false);
-            return entity.Id;
-        }
-
-        await using var command = new NpgsqlCommand(
-            $"INSERT INTO {table} (name, description) VALUES (@name, @description) RETURNING id", connection, transaction);
-        command.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? "Thing");
-        command.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
-        return (long)(await ExecuteCatalogScalarAsync(command, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException("Related-entity insert did not return a server-allocated id."));
-    }
-
-    private async Task<long> UpsertSensorAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        RelatedEntityRef entity,
-        CancellationToken cancellationToken)
-    {
-        if (entity.Id > 0 && await ExistsAsync(connection, transaction, _sensorTable, entity.Id, cancellationToken).ConfigureAwait(false))
-        {
-            return entity.Id;
-        }
-
-        if (entity.Id > 0)
-        {
-            await using var explicitCommand = new NpgsqlCommand(
-                $"INSERT INTO {_sensorTable} (id, name, description, encoding_type, metadata) VALUES (@id, @name, @description, 'application/pdf', '')",
-                connection,
-                transaction);
-            explicitCommand.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, entity.Id);
-            explicitCommand.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? $"Sensor {entity.Id}");
-            explicitCommand.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
-            await ExecuteCatalogNonQueryAsync(explicitCommand, cancellationToken).ConfigureAwait(false);
-            await AdvanceSequencePastAsync(connection, transaction, _sensorIdSequence, entity.Id, cancellationToken).ConfigureAwait(false);
-            return entity.Id;
-        }
-
-        await using var command = new NpgsqlCommand(
-            $"INSERT INTO {_sensorTable} (name, description, encoding_type, metadata) VALUES (@name, @description, 'application/pdf', '') RETURNING id",
-            connection,
-            transaction);
-        command.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? "Sensor");
-        command.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
-        return (long)(await ExecuteCatalogScalarAsync(command, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException("Sensor insert did not return a server-allocated id."));
-    }
-
-    private async Task<long> UpsertObservedPropertyAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        RelatedEntityRef entity,
-        CancellationToken cancellationToken)
-    {
-        if (entity.Id > 0 && await ExistsAsync(connection, transaction, _observedPropertyTable, entity.Id, cancellationToken).ConfigureAwait(false))
-        {
-            return entity.Id;
-        }
-
-        if (entity.Id > 0)
-        {
-            await using var explicitCommand = new NpgsqlCommand(
-                $"INSERT INTO {_observedPropertyTable} (id, name, definition, description) VALUES (@id, @name, '', @description)",
-                connection,
-                transaction);
-            explicitCommand.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, entity.Id);
-            explicitCommand.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? $"ObservedProperty {entity.Id}");
-            explicitCommand.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
-            await ExecuteCatalogNonQueryAsync(explicitCommand, cancellationToken).ConfigureAwait(false);
-            await AdvanceSequencePastAsync(connection, transaction, _observedPropertyIdSequence, entity.Id, cancellationToken).ConfigureAwait(false);
-            return entity.Id;
-        }
-
-        await using var command = new NpgsqlCommand(
-            $"INSERT INTO {_observedPropertyTable} (name, definition, description) VALUES (@name, '', @description) RETURNING id",
-            connection,
-            transaction);
-        command.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? "ObservedProperty");
-        command.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
-        return (long)(await ExecuteCatalogScalarAsync(command, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException("ObservedProperty insert did not return a server-allocated id."));
     }
 
     private static Task<NpgsqlDataReader> ExecuteCatalogReaderAsync(
@@ -740,9 +536,9 @@ RETURNING id
         Name = reader.GetString(1),
         Description = reader.GetString(2),
         ObservationType = reader.GetString(3),
-        UnitName = reader.GetString(4),
-        UnitSymbol = reader.GetString(5),
-        UnitDefinition = reader.GetString(6),
+        UnitName = reader.IsDBNull(4) ? null : reader.GetString(4),
+        UnitSymbol = reader.IsDBNull(5) ? null : reader.GetString(5),
+        UnitDefinition = reader.IsDBNull(6) ? null : reader.GetString(6),
         ThingId = reader.GetInt64(7),
         SensorId = reader.GetInt64(8),
         ObservedPropertyId = reader.GetInt64(9),
@@ -750,14 +546,19 @@ RETURNING id
         PhenomenonTimeEnd = reader.IsDBNull(11) ? null : reader.GetFieldValue<DateTimeOffset>(11)
     };
 
-    private static SensorThingsSensor ReadSensor(NpgsqlDataReader reader) => new()
+    private static SensorThingsSensor ReadSensor(NpgsqlDataReader reader)
     {
-        Id = reader.GetInt64(0),
-        Name = reader.GetString(1),
-        Description = reader.GetString(2),
-        EncodingType = reader.GetString(3),
-        Metadata = reader.GetString(4)
-    };
+        var metadata = ParseJsonValue(reader.GetString(4));
+        return new()
+        {
+            Id = reader.GetInt64(0),
+            Name = reader.GetString(1),
+            Description = reader.GetString(2),
+            EncodingType = reader.GetString(3),
+            Metadata = metadata.ValueKind == System.Text.Json.JsonValueKind.String ? metadata.GetString()! : metadata.GetRawText(),
+            JsonMetadata = metadata
+        };
+    }
 
     private static SensorThingsObservedProperty ReadObservedProperty(NpgsqlDataReader reader) => new()
     {
@@ -773,7 +574,15 @@ RETURNING id
         DatastreamId = reader.GetInt64(1),
         PhenomenonTime = reader.GetFieldValue<DateTimeOffset>(2),
         ResultTime = reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3),
-        Result = reader.GetDouble(4),
-        FeatureOfInterestId = reader.IsDBNull(5) ? null : reader.GetInt64(5)
+        Result = reader.IsDBNull(4) ? null : reader.GetDouble(4),
+        FeatureOfInterestId = reader.IsDBNull(5) ? null : reader.GetInt64(5),
+        JsonResult = reader.IsDBNull(6) ? null : ParseJsonValue(reader.GetString(6)),
+        PhenomenonTimeEnd = reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7)
     };
+
+    private static System.Text.Json.JsonElement ParseJsonValue(string json)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        return document.RootElement.Clone();
+    }
 }
