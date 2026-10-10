@@ -33,10 +33,11 @@ public sealed class PostgresRasterStoreOverviewTests
     {
         var expr = PostgresRasterStore.BuildOverviewSourceExpression(0);
 
-        // A low-zoom tile reduces the source to a coarser grid before the precise resample.
+        // A low-zoom tile can reduce a source already in the tile CRS before registration.
         expr.Should().NotBe("raster");
-        expr.Should().StartWith("ST_Rescale(");
-        expr.Should().Contain("ST_Transform(raster, 3857)");
+        expr.Should().StartWith("CASE WHEN ST_SRID(raster) = 3857 THEN ST_Rescale(raster,");
+        expr.Should().EndWith("ELSE raster END");
+        expr.Should().NotContain("ST_Transform(");
         // Guarded so the rescale can only coarsen, never upsample, per-source.
         expr.Should().Contain("GREATEST(abs(ST_ScaleX(");
         expr.Should().Contain("GREATEST(abs(ST_ScaleY(");
@@ -62,7 +63,8 @@ public sealed class PostgresRasterStoreOverviewTests
     {
         var expr = PostgresRasterStore.BuildOverviewSourceExpression(3, "rast");
 
-        expr.Should().Contain("ST_Transform(rast, 3857)");
+        expr.Should().Contain("ST_SRID(rast) = 3857 THEN ST_Rescale(rast,");
+        expr.Should().EndWith("ELSE rast END");
         expr.Should().NotContain("raster");
     }
 }

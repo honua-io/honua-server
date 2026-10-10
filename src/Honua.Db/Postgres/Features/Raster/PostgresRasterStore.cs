@@ -1201,8 +1201,8 @@ internal sealed class PostgresRasterStore : IRasterStore
     // is one 256px image of the whole web-mercator world). Resampling the full-resolution
     // source straight onto that tiny grid forces PostGIS to read every source pixel even
     // though almost all of them collapse into a single output pixel. To avoid that, we
-    // first reduce the source to a grid near the tile's own ground resolution, then let
-    // the existing precise ST_Resample reproject/register that reduced grid onto the
+    // first reduce an EPSG:3857 source to a grid near the tile's own ground resolution, then let
+    // the precise reference-grid transform register that reduced grid onto the
     // 256x256 tile envelope. At native-or-finer zoom this is a strict no-op so high-zoom
     // tiles keep reading the full-resolution raster unchanged.
 
@@ -1230,13 +1230,14 @@ internal sealed class PostgresRasterStore : IRasterStore
     /// keeping the substitution a single-token no-op on the high-zoom path.
     /// </summary>
     /// <remarks>
-    /// The reduction is performed in EPSG:3857 (the tile CRS) via <c>ST_Rescale</c> so it is
-    /// SRID-agnostic: the outer <c>ST_Transform(..., 3857)</c> in the tile query becomes an
-    /// identity transform on the already-reprojected grid. <c>GREATEST</c>/<c>LEAST</c> guards
+    /// The reduction applies only to sources already in EPSG:3857 (the tile CRS). Other
+    /// sources must reach the final reference-grid transform unchanged: projecting them onto
+    /// an automatically sized intermediate grid can discard cells even at finer tile zooms.
+    /// <c>GREATEST</c> guards
     /// clamp the target pixel size against the source's own 3857 resolution so the rescale can
     /// only ever coarsen â€” never upsample â€” making it a per-source no-op when the source is
     /// already coarser than the tile. Residual sub-pixel drift from <c>ST_Rescale</c> keeping
-    /// the source origin is corrected by the subsequent envelope-aligned <c>ST_Resample</c>.
+    /// the source origin is corrected by the subsequent reference-grid transform.
     /// NearestNeighbor matches the tile path's existing (default) resampling/nodata semantics.
     /// </remarks>
     internal static string BuildOverviewSourceExpression(int level, string rasterToken = "raster")
@@ -1252,14 +1253,13 @@ internal sealed class PostgresRasterStore : IRasterStore
         var metresPerPixel = WebMercatorWorldSpanMeters / (256.0 * Math.Pow(2, level));
         var mpp = metresPerPixel.ToString("G17", CultureInfo.InvariantCulture);
 
-        // Reproject to 3857 once, then rescale to ~tile resolution. The GREATEST/LEAST guards
-        // clamp against the source's own scale so we never produce a finer grid than the source.
-        var transformed = $"ST_Transform({rasterToken}, 3857)";
+        // Reduce only a source already in the tile CRS. Transforming another CRS here would
+        // discard cells before the final tile reference grid can govern reprojection.
         return
-            $"ST_Rescale({transformed}, " +
-            $"GREATEST(abs(ST_ScaleX({transformed})), {mpp}), " +
-            $"-GREATEST(abs(ST_ScaleY({transformed})), {mpp}), " +
-            "'NearestNeighbor')";
+            $"CASE WHEN ST_SRID({rasterToken}) = 3857 THEN ST_Rescale({rasterToken}, " +
+            $"GREATEST(abs(ST_ScaleX({rasterToken})), {mpp}), " +
+            $"-GREATEST(abs(ST_ScaleY({rasterToken})), {mpp}), " +
+            $"'NearestNeighbor') ELSE {rasterToken} END";
     }
 
     /// <summary>
