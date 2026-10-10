@@ -830,6 +830,14 @@ public static class MetadataV2GraphValidator
         // the redundant Service.PublicationIds slot was removed in design slice 55/N.
         _ = publicationsById;
 
+        foreach (var service in services)
+        {
+            if (!MetadataV2MapServerDrawing.TryResolveCachedDrawing(service, out _))
+            {
+                errors.Add($"service '{service.Metadata.Id}' options.{MetadataV2MapServerDrawing.OptionName} must be 'cached' or 'dynamic'.");
+            }
+        }
+
         foreach (var configured in services
                      .Select(service => (Service: service, Settings: service.Settings))
                      .Where(configured => configured.Settings is not null))
