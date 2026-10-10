@@ -118,7 +118,9 @@ internal static partial class SensorThingsEndpoints
 
     private static string StaBase(HttpContext context) => $"{BaseUrlResolver.GetBaseUrl(context)}{BasePath}";
 
-    private static async Task<IResult> HandleServiceRoot(HttpContext context, ISensorThingsEntityStore store)
+    private static async Task<IResult> HandleServiceRoot(
+        HttpContext context,
+        [FromServices] ISensorThingsEntityStore store)
     {
         var staBase = StaBase(context);
         var unresolved = await store.CountUnresolvedFeaturesAsync(context.RequestAborted).ConfigureAwait(false);

@@ -11,6 +11,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.SensorThings.Services;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Logging;
 using Honua.ServiceDefaults;
@@ -130,7 +131,10 @@ internal static partial class SensorThingsEndpoints
         return (segment[..open], id);
     }
 
-    internal static async Task<IResult> HandleCoreRead(HttpContext context, ISensorThingsEntityStore store, StaFilterTranslator translator)
+    internal static async Task<IResult> HandleCoreRead(
+        HttpContext context,
+        [FromServices] ISensorThingsEntityStore store,
+        [FromServices] StaFilterTranslator translator)
     {
         try
         {
@@ -259,7 +263,10 @@ internal static partial class SensorThingsEndpoints
         return QueryHelpers.AddQueryString($"{BaseUrlResolver.GetBaseUrl(context)}{context.Request.Path}", query);
     }
 
-    internal static async Task<IResult> HandleCoreWrite(HttpContext context, ISensorThingsEntityStore store, ILogger<SensorThingsEndpointsLog> logger)
+    internal static async Task<IResult> HandleCoreWrite(
+        HttpContext context,
+        [FromServices] ISensorThingsEntityStore store,
+        [FromServices] ILogger<SensorThingsEndpointsLog> logger)
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("sensorthings.mutate", ActivityKind.Internal);
         try

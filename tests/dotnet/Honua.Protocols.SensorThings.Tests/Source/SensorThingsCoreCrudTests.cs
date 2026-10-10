@@ -46,7 +46,8 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
     private static DateTimeOffset ParseInstant(string value) => DateTimeOffset.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
     private async Task<JsonObject> ReadAsync(string path)
     {
-        using var response = await _fixture.Client.GetAsync("/sta/v1.1/" + path);
+        var url = path.StartsWith("/", StringComparison.Ordinal) ? path : "/sta/v1.1/" + path;
+        using var response = await _fixture.Client.GetAsync(url);
         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         return JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
     }
@@ -109,18 +110,32 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
             "HistoricalLocations" => new JsonObject { ["time"] = "2026-01-01T00:00:00Z", ["Thing"] = Reference(1), ["Locations"] = new JsonArray(Reference(historicalLocation)) },
             _ => new JsonObject { ["name"] = "CRUD thing", ["description"] = "Synthetic" }
         };
-        var entity = await CreateAsync(set, body);
+        using var admin = _fixture.CreateAdminClient();
+        var createPath = set switch
+        {
+            "FeaturesOfInterest" => "/sta/v1.1/FeaturesOfInterest",
+            _ => "/sta/v1.1/" + set,
+        };
+        using var created = await admin.PostAsync(createPath, Body(body));
+        created.StatusCode.Should().Be(HttpStatusCode.Created, await created.Content.ReadAsStringAsync());
+        var entity = JsonNode.Parse(await created.Content.ReadAsStringAsync())!.AsObject();
         var property = set == "Observations" ? "result" : set == "HistoricalLocations" ? "time" : "description";
         JsonNode value = set == "Observations" ? JsonValue.Create(9.5)! : JsonValue.Create(set == "HistoricalLocations" ? "2026-02-01T00:00:00Z" : "Updated description")!;
-        using var admin = _fixture.CreateAdminClient();
-        using var patch = await admin.PatchAsync($"/sta/v1.1/{set}({Id(entity)})", Body(new JsonObject { [property] = value.DeepClone() }));
+        var path = set switch
+        {
+            "Sensors" => $"/sta/v1.1/Sensors({Id(entity)})",
+            "ObservedProperties" => $"/sta/v1.1/ObservedProperties({Id(entity)})",
+            "FeaturesOfInterest" => $"/sta/v1.1/FeaturesOfInterest({Id(entity)})",
+            _ => $"/sta/v1.1/{set}({Id(entity)})",
+        };
+        using var patch = await admin.PatchAsync(path, Body(new JsonObject { [property] = value.DeepClone() }));
         patch.StatusCode.Should().Be(HttpStatusCode.NoContent);
         var updated = await ReadAsync($"{set}({Id(entity)})");
         if (set == "HistoricalLocations") DateTimeOffset.Parse(updated[property]!.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture).Should().Be(DateTimeOffset.Parse(value.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture));
         else JsonNode.DeepEquals(updated[property], value).Should().BeTrue();
-        using var deleted = await admin.DeleteAsync($"/sta/v1.1/{set}({Id(entity)})");
+        using var deleted = await admin.DeleteAsync(path);
         deleted.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        using var missing = await _fixture.Client.GetAsync($"/sta/v1.1/{set}({Id(entity)})");
+        using var missing = await _fixture.Client.GetAsync(path);
         missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
@@ -172,18 +187,21 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
         sensor["metadata"]!.GetValue<string>().Should().Be("Synthetic sensor");
         var property = await ReadAsync($"Datastreams({Id(stream)})/ObservedProperty");
         property["definition"]!.GetValue<string>().Should().Be("https://example.test/temperature");
-        var thingLocations = await ReadAsync($"Things({Id(thing)})/Locations");
+        var features = await ReadAsync("/sta/v1.1/FeaturesOfInterest?$top=1");
+        var feature = await ReadAsync($"/sta/v1.1/FeaturesOfInterest({Id(features["value"]![0]!.AsObject())})");
+        feature["name"].Should().NotBeNull();
+        var thingLocations = await ReadAsync($"/sta/v1.1/Things({Id(thing)})/Locations");
         Id(thingLocations["value"]![0]!.AsObject()).Should().Be(Id(location));
-        var locationThings = await ReadAsync($"Locations({Id(location)})/Things");
+        var locationThings = await ReadAsync($"/sta/v1.1/Locations({Id(location)})/Things");
         Id(locationThings["value"]![0]!.AsObject()).Should().Be(Id(thing));
-        var histories = await ReadAsync($"Things({Id(thing)})/HistoricalLocations");
+        var histories = await ReadAsync($"/sta/v1.1/Things({Id(thing)})/HistoricalLocations");
         var historyId = Id(histories["value"]![0]!.AsObject());
-        Id(await ReadAsync($"HistoricalLocations({historyId})/Thing")).Should().Be(Id(thing));
-        var historicalLocations = await ReadAsync($"HistoricalLocations({historyId})/Locations");
+        Id(await ReadAsync($"/sta/v1.1/HistoricalLocations({historyId})/Thing")).Should().Be(Id(thing));
+        var historicalLocations = await ReadAsync($"/sta/v1.1/HistoricalLocations({historyId})/Locations");
         Id(historicalLocations["value"]![0]!.AsObject()).Should().Be(Id(location));
-        var inverseHistory = await ReadAsync($"Locations({Id(location)})/HistoricalLocations");
+        var inverseHistory = await ReadAsync($"/sta/v1.1/Locations({Id(location)})/HistoricalLocations");
         inverseHistory["value"]!.AsArray().Select(node => Id(node!.AsObject())).Should().Contain(historyId);
-        var featureObservations = await ReadAsync($"FeaturesOfInterest({Id(related)})/Observations");
+        var featureObservations = await ReadAsync($"/sta/v1.1/FeaturesOfInterest({Id(related)})/Observations");
         Id(featureObservations["value"]![0]!.AsObject()).Should().Be(Id(observation));
     }
 
@@ -431,6 +449,8 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
         using var rawPatch = await admin.PatchAsync("/sta/v1.1/Observations(1)/$value", Body(new JsonObject { ["result"] = 99 }));
         rawPatch.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         using var rawRead = await admin.GetAsync("/sta/v1.1/Observations(1)/$value");
+        using var unsupportedPut = await admin.PutAsync("/sta/v1.1/Things(1)", Body(new JsonObject { ["name"] = "replaced" }));
+        unsupportedPut.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
         rawRead.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         using var singletonKey = await admin.GetAsync("/sta/v1.1/Datastreams(1)/Thing(999)");
         singletonKey.StatusCode.Should().Be(HttpStatusCode.BadRequest);

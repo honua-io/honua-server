@@ -106,6 +106,11 @@ public static partial class EndpointRegistry
         new("POST", "/sta/v1.1/Datastreams({id})/Observations"),
         new("POST", "/sta/v1.1/Datastreams"),
         new("GET", "/sta/v1.1/ObservationsStream"),
+        new("GET", "/sta/v1.1/{**resourcePath}"),
+        new("POST", "/sta/v1.1/{**resourcePath}"),
+        new("PUT", "/sta/v1.1/{**resourcePath}"),
+        new("PATCH", "/sta/v1.1/{**resourcePath}"),
+        new("DELETE", "/sta/v1.1/{**resourcePath}"),
 
         // Hosted samples
         new("GET", "/samples/stac-ops"),
