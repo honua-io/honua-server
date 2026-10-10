@@ -37,8 +37,9 @@ public sealed class WfsFallbackGeometryTransactionTests : IAsyncLifetime
         await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            UPDATE features SET attributes = attributes ||
-              '{"rank":1,"score":1.5,"active":false,"cert_owner":"fallback-geometry-regression"}'::jsonb
+            UPDATE features SET attributes = jsonb_build_object(
+              'name', attributes->'name', 'rank', 1, 'score', 1.5,
+              'active', false, 'cert_owner', 'fallback-geometry-regression')
             WHERE layer_id = 0
             """;
         await command.ExecuteNonQueryAsync();
@@ -50,7 +51,6 @@ public sealed class WfsFallbackGeometryTransactionTests : IAsyncLifetime
     [InlineData(true)]
     [Operation(Operations.Create, Operations.Update)]
     [Endpoint("POST /wfs")]
-    [InterfaceOperation(TestProtocols.Wfs10, "Transaction")]
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Transaction_AdvertisedGeometry_PersistsInsertUpdateReplaceAndNil(bool explicitGeometry)
     {
@@ -133,7 +133,7 @@ public sealed class WfsFallbackGeometryTransactionTests : IAsyncLifetime
     [InlineData(true)]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("POST /wfs")]
-    [InterfaceOperation(TestProtocols.Wfs10, "Transaction")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Transaction_UnknownProperty_IsRejectedWithoutChangingSql(bool update)
     {
         var before = await ReadLayerStateAsync();
@@ -156,7 +156,7 @@ public sealed class WfsFallbackGeometryTransactionTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Update, Operations.ErrorHandling)]
     [Endpoint("POST /wfs")]
-    [InterfaceOperation(TestProtocols.Wfs10, "Transaction")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Transaction_Fallback_DoesNotShadowAttributesOrCreateNonspatialGeometry()
     {
         _fixture.UpdateV2ResourceSchemaField(0,
