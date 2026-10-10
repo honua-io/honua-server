@@ -364,10 +364,13 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
         });
 
         // Stock QGIS sends form-encoded GeoServices small-integer Boolean values.
+        var addFeatures = $$$"""[{"attributes":{"name":"typed-add","active":{{{initial}}},"rank":{{{initial}}}},"geometry":{"x":-157.8333,"y":21.3555}}]""";
+        using var addPayload = JsonDocument.Parse(addFeatures);
+        addPayload.RootElement.GetArrayLength().Should().Be(1);
         using var addForm = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
-            ["features"] = $$$"""[{"attributes":{"name":"typed-add","active":{{{initial}}},"rank":{{{initial}}}},"geometry":{"x":-157.8333,"y":21.3555}}]"""
+            ["features"] = addFeatures
         });
         using var addedResponse = await _fixture.Client.PostAsync(
             "/rest/services/test/FeatureServer/0/addFeatures", addForm);
@@ -377,15 +380,19 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
         await AssertBooleanQueryAsync(objectId, initial);
 
         var updated = 1 - initial;
+        var updateFeatures = $$$"""[{"attributes":{"objectid":{{{objectId}}},"active":{{{updated}}},"rank":{{{updated}}}}}]""";
+        using var updatePayload = JsonDocument.Parse(updateFeatures);
+        updatePayload.RootElement.GetArrayLength().Should().Be(1);
         using var updateForm = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
-            ["features"] = $$$"""[{"attributes":{"objectid":{{{objectId}}},"active":{{{updated}}},"rank":{{{updated}}}}]"""
+            ["features"] = updateFeatures
         });
         using var updatedResponse = await _fixture.Client.PostAsync(
             "/rest/services/test/FeatureServer/0/updateFeatures", updateForm);
         var result = await DeserializeEditsAsync(updatedResponse);
-        result.UpdateResults.Should().ContainSingle(edit => edit.Success && edit.ObjectId == objectId);
+        result.UpdateResults.Should().ContainSingle(edit => edit.Success && edit.ObjectId == objectId,
+            await updatedResponse.Content.ReadAsStringAsync());
         await AssertPersistedBooleanAsync(objectId, updated);
         await AssertBooleanQueryAsync(objectId, updated);
     }
