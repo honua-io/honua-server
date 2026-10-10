@@ -97,19 +97,19 @@ internal static class GeoprocessingServiceCollectionExtensions
         //
         // REGISTRATION CONTRACT (honua-server#4502): whenever the durable job substrate is
         // ENTITLED and a Redis multiplexer is composed, IExecutionJobStore IS resolvable.
-        // The durability attestation never decides whether the store exists (nor, since the
-        // 2026-10-10 owner ruling, whether it is advertised). #4141 gated this block on the accepted RedisDurabilityAttestation while every
+        // Durability attestation decides what the server ADVERTISES, never whether the store
+        // exists. #4141 gated this block on the accepted RedisDurabilityAttestation while every
         // consumer of IExecutionJobStore stayed registered alongside the multiplexer (the
         // reconcilers, the backstop sweep, the event handler, the queue-depth collector, the
         // metadata-release reconciler — the `connectedRedis != null` block in Program.cs), so a
         // stock non-AOF Redis aborted ServiceProvider descriptor validation with 31
         // unresolved-service failures and exit 139 before the server bound a port.
         //
-        // The attestation is information (owner ruling 2026-10-10): the same Redis-backed store is
-        // composed and ADVERTISED for any connected Redis, Program.cs logs the outcome once, the
-        // capability manifest publishes it as limits.job.redisDurability, and only an explicit
-        // Jobs:RequireDurableStore=true may turn a non-attested outcome into a typed startup
-        // refusal.
+        // A rejected attestation now degrades instead: the same Redis-backed store is composed,
+        // Program.cs logs one warning naming the typed cause and its consequence, the capability
+        // manifest reports that cause rather than advertising 'jobs.runner'
+        // (DurableJobSubstrateOptions.Classify), and only an explicit Jobs:RequireDurableStore=true
+        // may turn the rejection into a typed startup refusal.
         //
         // The entitlement marker is required SEPARATELY from the attestation and is not
         // interchangeable with it. Infrastructure Redis is connected in non-Development/Test
