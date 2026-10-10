@@ -438,9 +438,7 @@ if (connectedRedis is not null &&
     var keyRingCertificate = OperationSecretKeyRingProtection.Resolve(builder.Configuration);
     if (nativeAot)
     {
-        builder.Services.AddSingleton(new RsaAesGcmKeyRingMaterial(keyRingCertificate));
-        keyRing.AddKeyManagementOptions(options =>
-            options.XmlEncryptor = new RsaAesGcmKeyRingEncryptor(keyRingCertificate));
+        keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
     }
     else
     {
