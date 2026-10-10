@@ -212,19 +212,27 @@ public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime
         finally { await registration.DeactivateAsync(record.DatasetId); }
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(0)]
+    [InlineData(150)]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodepages/{pageId:int}")]
-    public async Task MultipleContentTile_PublishesBothPersistedMeshesAndTheirMaterialResources()
+    public async Task MultipleContentTile_PublishesBothPersistedMeshesAndTheirMaterialResources(double eastOffset)
     {
         var tileset = JsonNode.Parse(await File.ReadAllTextAsync(Path.Join(_root, "tileset.json")))!;
         tileset["asset"]!["version"] = "1.1";
-        tileset["root"]!["children"] = new JsonArray(new JsonObject
+        var sharedChild = new JsonObject
         {
             ["boundingVolume"] = tileset["root"]!["boundingVolume"]!.DeepClone(),
             ["geometricError"] = 0,
             ["contents"] = new JsonArray(new JsonObject { ["uri"] = "tiles/0.b3dm" }, new JsonObject { ["uri"] = "tiles/1.glb" }),
-        });
+        };
+        if (eastOffset != 0)
+        {
+            // Both contents inherit the single tile's persisted transform.
+            sharedChild["transform"] = tileset["root"]!["children"]![1]!["transform"]!.DeepClone();
+        }
+        tileset["root"]!["children"] = new JsonArray(sharedChild);
         await File.WriteAllTextAsync(Path.Join(_root, "tileset.json"), tileset.ToJsonString());
         using var page = await GetJsonAsync(Base + "/nodepages/0");
         var meshes = page.RootElement.GetProperty("nodes").EnumerateArray().Where(node => node.TryGetProperty("mesh", out _)).ToArray();
@@ -236,7 +244,7 @@ public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime
             var resource = meshes[index].GetProperty("mesh").GetProperty("geometry").GetProperty("resource").GetInt32();
             var bytes = await _fixture.Client.GetByteArrayAsync($"{Base}/nodes/{resource}/geometries/0");
             BinaryPrimitives.ReadUInt32LittleEndian(bytes).Should().Be(6);
-            AssertSourcePlacement(bytes, meshes[index].GetProperty("obb").GetProperty("center"), index == 0 ? 0 : 150);
+            AssertSourcePlacement(bytes, meshes[index].GetProperty("obb").GetProperty("center"), eastOffset);
         }
     }
 
