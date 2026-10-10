@@ -5,8 +5,10 @@ using System.Reflection;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Hosting;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
@@ -54,14 +56,22 @@ internal static class AdminInfoEndpoints
             .AllowAnonymous();
     }
 
-    private static IResult HandleGetVersion()
+    private static IResult HandleGetVersion([FromServices] IServerInstanceIdentity instance)
     {
         var response = new AdminVersionResponse
         {
             Version = GetServerVersion(),
             MetadataApiVersion = MetadataV2Constants.ApiVersion,
             MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
-            ServerTime = DateTimeOffset.UtcNow
+            ServerTime = DateTimeOffset.UtcNow,
+            // Admin-only by design: the anonymous capabilities handshake stays constant build
+            // metadata, while this authenticated surface names the replica that answered.
+            Instance = new AdminServerInstance
+            {
+                Id = instance.InstanceId,
+                Source = instance.Source,
+                StartedAt = instance.StartedAt
+            }
         };
         return Results.Json(
             ApiResponse<AdminVersionResponse>.CreateSuccess(response),
@@ -197,6 +207,35 @@ public sealed record AdminVersionResponse
 
     [JsonPropertyName("serverTime")]
     public DateTimeOffset ServerTime { get; init; }
+
+    /// <summary>
+    /// Identity of the server instance that answered; <c>id</c> equals the
+    /// <c>Honua-Instance</c> response header.
+    /// </summary>
+    [JsonPropertyName("instance")]
+    public AdminServerInstance? Instance { get; init; }
+}
+
+/// <summary>
+/// Per-instance identity of the answering server process, used to prove which replica behind a
+/// load balancer or Lambda alias served a request.
+/// </summary>
+public sealed record AdminServerInstance
+{
+    /// <summary>Stable instance id for the life of the process.</summary>
+    [JsonPropertyName("id")]
+    public string Id { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Source of <see cref="Id"/>: <c>configuration</c>, <c>aws-lambda</c>, <c>aws-ecs-task</c>,
+    /// <c>aws-ecs-container</c>, <c>hostname</c>, <c>machine-name</c>, or <c>generated</c>.
+    /// </summary>
+    [JsonPropertyName("source")]
+    public string Source { get; init; } = string.Empty;
+
+    /// <summary>When the instance resolved its identity (process start, UTC).</summary>
+    [JsonPropertyName("startedAt")]
+    public DateTimeOffset StartedAt { get; init; }
 }
 
 /// <summary>

@@ -131,6 +131,9 @@ StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(builder.Configura
 await StartupConfigurationHelpers.LoadBootstrapLicenseSnapshotAsync(builder.Configuration, builder.Environment);
 // Start the license hosted service before any workload execution or reconciliation service.
 builder.Services.AddHonuaLicensing(builder.Configuration, builder.Environment);
+// Per-instance identity (Honua-Instance response header, admin status) lets the release harness
+// prove a cross-replica read behind an ALB or Lambda alias.
+builder.Services.AddServerInstanceIdentity();
 // Resolve aws:secretsmanager: Redis connection-string references before anything below reads
 // ConnectionStrings:redis — the multiplexer wiring a few lines down runs ahead of
 // WebApplicationBuilder.Build(), so it cannot use the DI-registered IConnectionSecretResolver
@@ -1185,6 +1188,14 @@ if (hostComposition.Launch is { } executionWorkerLaunch)
 
 var app = builder.Build();
 
+// Resolve the per-instance identity once, at startup, and record it so a response's
+// Honua-Instance header can be matched to this process's logs.
+{
+    var instanceIdentity = app.Services.GetRequiredService<IServerInstanceIdentity>();
+    Honua.Infrastructure.Logging.Log.ServerInstanceIdentityResolved(
+        app.Logger, instanceIdentity.InstanceId, instanceIdentity.Source, instanceIdentity.StartedAt);
+}
+
 // A PostgreSQL production composition is never allowed to construct an unguarded migration
 // runner or core store. Resolve the guard eagerly, before compatibility checks, migrations, or
 // endpoint activation, so an accidentally removed/overridden registration aborts host startup
@@ -1222,6 +1233,10 @@ if (activeDbConnectionTracker != null)
 // (auth, tenancy, rate limiting, auditing, telemetry, request logging) sees the method the
 // client actually sent. See UseHonuaHeadRequestGetSemantics below for the handler side (#3389).
 app.UseHonuaHeadRequestMethod();
+
+// Stamp Honua-Instance on every response, including ones short-circuited below (host
+// validation, HTTPS redirection, auth), so callers can tell which replica answered.
+app.UseServerInstanceHeader();
 
 if (forwardedHeadersEnabled)
 {
