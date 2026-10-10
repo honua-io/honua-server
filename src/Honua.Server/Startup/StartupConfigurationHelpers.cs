@@ -12,7 +12,6 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Security;
-using Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
 using Honua.Server.Features.Operations;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -121,13 +120,8 @@ internal static class StartupConfigurationHelpers
             return;
         }
 
-        using var loggerFactory = LoggerFactory.Create(static builder => builder.AddConsole());
-        using var secretsClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-        using var metadataClient = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-        using var resolver = new AwsSecretsManagerResolver(
-            secretsClient,
-            metadataClient,
-            loggerFactory.CreateLogger<AwsSecretsManagerResolver>());
+        using var lease = BootstrapSecretResolver.Create();
+        var resolver = lease.Resolver;
 
         await ResolveSecuritySecretReferencesAsync(configuration, resolver, keys, isProduction, cancellationToken)
             .ConfigureAwait(false);
@@ -301,13 +295,8 @@ internal static class StartupConfigurationHelpers
             return material;
         }
 
-        using var loggerFactory = LoggerFactory.Create(static builder => builder.AddConsole());
-        using var secretsClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-        using var metadataClient = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-        using var resolver = new AwsSecretsManagerResolver(
-            secretsClient,
-            metadataClient,
-            loggerFactory.CreateLogger<AwsSecretsManagerResolver>());
+        using var lease = BootstrapSecretResolver.Create();
+        var resolver = lease.Resolver;
         var resolved = await resolver.ResolveSecretAsync(material, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(resolved))
         {
@@ -333,13 +322,8 @@ internal static class StartupConfigurationHelpers
             return;
         }
 
-        using var loggerFactory = LoggerFactory.Create(static builder => builder.AddConsole());
-        using var secretsClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-        using var metadataClient = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-        using var resolver = new AwsSecretsManagerResolver(
-            secretsClient,
-            metadataClient,
-            loggerFactory.CreateLogger<AwsSecretsManagerResolver>());
+        using var lease = BootstrapSecretResolver.Create();
+        var resolver = lease.Resolver;
 
         await ResolveRedisConnectionSecretReferenceAsync(configuration, key, resolver, cancellationToken)
             .ConfigureAwait(false);

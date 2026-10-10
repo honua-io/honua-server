@@ -114,6 +114,13 @@ StartupConfigurationHelpers.EnsureStaticWebAssetContentRootsExist();
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Owner decision 6 (2026-10-10): HONUA_SETTINGS_DOCUMENT=aws:secretsmanager:<name-or-arn> loads one
+// JSON settings document so a Lambda function can keep most settings out of its 4 KB environment.
+// It must run before anything below reads configuration, and before the per-setting secret
+// resolution steps so aws:secretsmanager: references inside the document resolve exactly as if
+// they had come from the environment. Precedence: appsettings < document < env vars < command line.
+await SettingsDocumentConfiguration.AddSettingsDocumentAsync(builder.Configuration);
+
 // Typed composition switch (resolved once, never consulted by services): a process a batch compute
 // backend launched for one execution job (HONUA_OPERATION_ID et al.) is composed as a single-job
 // execution worker, narrowed just before Build() below. Without it the worker booted as a full
