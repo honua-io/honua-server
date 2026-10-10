@@ -350,6 +350,14 @@
         "FeatureServer MVT Tiles",
         "FeatureServer Replica"
       ]
+    },
+    {
+      "name": "Scene All",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Scene",
+      "children": [
+        "Scene",
+        "Scene I3S Resources"
+      ]
     }
   ],
   "shards": [
@@ -1451,12 +1459,33 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.Scene.Tests/Honua.Protocols.Scene.Tests.csproj",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Scene",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Scene)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Scene.I3s",
       "paths": [
         "src/Honua.Protocols.Scene/",
         "src/Honua.Scene/",
         "tests/dotnet/Honua.Protocols.Scene.Tests/Source/"
-      ]
+      ],
+      "_comment": "Whole-class capacity split after run 38054987297 exhausted its 30m active-output budget. Retains the original Scene classes outside the I3s prefix; the complementary sibling preserves every I3S class. Both inherit the original paths and 30m test / 40m job caps."
+    },
+    {
+      "name": "Scene I3S Resources",
+      "shard_name": "Scene I3S Resources",
+      "dispatch_rank": 24.5,
+      "artifact_suffix": "scene-i3s-resources",
+      "log_name": "server-tests-scene-i3s-resources",
+      "timeout_minutes": 40,
+      "test_timeout_minutes": 30,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.Scene.Tests/Honua.Protocols.Scene.Tests.csproj",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Scene)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Scene.I3s",
+      "paths": [
+        "src/Honua.Protocols.Scene/",
+        "src/Honua.Scene/",
+        "tests/dotnet/Honua.Protocols.Scene.Tests/Source/"
+      ],
+      "_comment": "Complementary whole-class I3s-prefix half of Scene. The prior 8e58 successful TRX partitions into 66 I3S and 87 remaining cases; new I3S cases stay in this sibling automatically. Original paths, tier composition, CPU and 30m/40m budgets are unchanged."
     },
     {
       "name": "SensorThings",

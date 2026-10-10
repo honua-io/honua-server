@@ -618,13 +618,19 @@ assert_excludes_shard \
   "src/Honua.Protocols.OData/Features/ODataEndpoints.cs" \
   "WFS"
 
-# A Scene-only change targets the Scene shard and excludes FeatureServer.
-assert_descriptor \
+# Scene source and tests select both complementary whole-class owners.
+assert_exact_shards \
   "scene-targeted" \
   "src/Honua.Protocols.Scene/SceneServerEndpoints.cs" \
-  "targeted" \
-  "false" \
-  "Scene"
+  '["Scene","Scene I3S Resources"]'
+assert_exact_shards \
+  "scene-assets-targeted" \
+  "src/Honua.Scene/Assets/HostedI3sSceneResourceProvider.cs" \
+  '["Scene","Scene I3S Resources","Operator Eval Harness","gRPC Protocol and Scene"]'
+assert_exact_shards \
+  "scene-tests-targeted" \
+  "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sProductionResourceEndpointTests.cs" \
+  '["Scene","Scene I3S Resources"]'
 assert_excludes_shard \
   "scene-excludes-featureserver" \
   "src/Honua.Protocols.Scene/SceneServerEndpoints.cs" \

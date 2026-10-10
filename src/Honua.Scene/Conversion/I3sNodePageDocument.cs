@@ -8,7 +8,7 @@ namespace Honua.Core.Features.Scene.Conversion;
 /// <summary>
 /// An Esri I3S 1.7 node page (OGC 19-008 <c>nodepages/{n}.json</c>): a fixed-size
 /// window of HLOD nodes projected from the 3D Tiles tree. Each node carries its
-/// minimum bounding sphere (<c>obb</c>), an LOD threshold derived from the source
+/// oriented bounding box (<c>obb</c>), an LOD threshold derived from the source
 /// geometric error, parent/child references by global node index, and the
 /// per-resource (mesh geometry / attribute / texture) reference indices a client
 /// uses to fetch node content.
@@ -59,8 +59,8 @@ public sealed class I3sNodePageEntry
     /// <summary>
     /// Oriented bounding box (I3S <c>obb</c>): centre in the layer's index CRS
     /// (WGS-84 lon/lat/elevation), half-sizes in metres, and an orientation
-    /// quaternion. Honua emits an axis-aligned box (identity quaternion) derived
-    /// from the source region bounding volume.
+    /// quaternion in the ECEF frame. Persisted resources derive the box from
+    /// actual mesh positions; legacy projection uses the source bounding volume.
     /// </summary>
     [JsonPropertyName("obb")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -120,10 +120,18 @@ public sealed class I3sNodeMesh
 /// </summary>
 public sealed class I3sNodeResourceReference
 {
+    /// <summary>Number of decoded geometry vertices, when this is a geometry reference.</summary>
+    [JsonPropertyName("vertexCount")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? VertexCount { get; set; }
+
+    /// <summary>Number of actual features represented by this geometry.</summary>
+    [JsonPropertyName("featureCount")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? FeatureCount { get; set; }
     /// <summary>
     /// Index into the layer's definition array (geometry/material/attribute
-    /// definition the resource conforms to). Honua serves a single definition,
-    /// so this is always 0.
+    /// definition the resource conforms to).
     /// </summary>
     [JsonPropertyName("definition")]
     public int Definition { get; set; }
