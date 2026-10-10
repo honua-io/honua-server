@@ -15,7 +15,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Hosting;
 
 /// <summary>
 /// Proves the per-instance identity through the real server pipeline: the <c>Honua-Instance</c>
-/// header on success, probe, and not-found responses, and the admin version <c>instance</c> block.
+/// header on success, probe, and method-not-allowed responses, and the admin version <c>instance</c> block.
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
@@ -57,11 +57,12 @@ public sealed class ServerInstanceHeaderIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    public async Task UnknownRoute_StillCarriesInstanceHeader()
+    [Endpoint("POST /healthz/live")]
+    public async Task MethodNotAllowed_EmptyBodyResponse_StillCarriesInstanceHeader()
     {
-        using var response = await _fixture.Client.GetAsync("/no-such-route-for-instance-identity");
+        using var response = await _fixture.Client.PostAsync("/healthz/live", content: null);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
         response.Headers.GetValues(ServerInstanceIdentity.HeaderName).Should().ContainSingle().Which.Should().Be(InstanceId);
     }
 
