@@ -15,10 +15,11 @@ internal static class SensorThingsTestData
     internal static async Task<long> CreateFeatureAsync(WebAppFixture fixture)
     {
         using var admin = fixture.CreateAdminClient();
-        using var response = await admin.PostAsync("/sta/v1.1/FeaturesOfInterest", new StringContent("""
+        using var content = new StringContent("""
             {"name":"Test sampling site","description":"Explicit synthetic integration-test site",
              "encodingType":"application/vnd.geo+json","feature":{"type":"Feature","geometry":{"type":"Point","coordinates":[-157.8,21.3]},"properties":{"fixture":true}}}
-            """, Encoding.UTF8, "application/json"));
+            """, Encoding.UTF8, "application/json");
+        using var response = await admin.PostAsync("/sta/v1.1/FeaturesOfInterest", content);
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return body.RootElement.GetProperty("@iot.id").GetInt64();

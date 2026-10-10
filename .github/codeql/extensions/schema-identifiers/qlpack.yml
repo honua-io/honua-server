@@ -1,0 +1,7 @@
+name: honua-io/schema-identifiers
+version: 0.0.1
+library: true
+extensionTargets:
+  codeql/csharp-all: '*'
+dataExtensions:
+  - models/*.yml

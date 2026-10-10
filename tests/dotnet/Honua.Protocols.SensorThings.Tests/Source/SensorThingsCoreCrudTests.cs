@@ -273,7 +273,7 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /sta/v1.1/Observations")]
-    public async Task InferredFeature_IsReusedByConcurrentObservations_AndLocationlessCreationRollsBack()
+    public async Task InferredFeature_IsReusedByConcurrentObservations_AndLocationlessCreationRemainsUnresolved()
     {
         var location = await CreateAsync("Locations", Location("Concurrent sampling point"));
         var thing = await CreateAsync("Things", new JsonObject { ["name"] = "Device", ["description"] = "Synthetic", ["Locations"] = new JsonArray(Reference(Id(location))) });
@@ -281,15 +281,37 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
         var observations = await Task.WhenAll(Enumerable.Range(0, 4).Select(index => CreateAsync("Observations", new JsonObject { ["result"] = index, ["Datastream"] = Reference(Id(stream)) })));
         var features = await Task.WhenAll(observations.Select(entity => ReadAsync($"Observations({Id(entity)})/FeatureOfInterest")));
         features.Select(Id).Distinct().Should().ContainSingle();
-        var before = await ReadAsync("Things?$count=true&$top=0");
+        var locationless = Datastream(1);
+        locationless["Thing"] = new JsonObject { ["name"] = "Locationless", ["description"] = "Legacy-compatible observation" };
+        locationless["Observations"] = new JsonArray(new JsonObject { ["result"] = 4 });
+        var created = await CreateAsync("Datastreams", locationless);
+        var saved = await ReadAsync($"Datastreams({Id(created)})/Observations");
+        saved["value"]!.AsArray().Should().ContainSingle();
+        var observationId = Id(saved["value"]![0]!.AsObject());
         using var admin = _fixture.CreateAdminClient();
+        using var unresolved = await _fixture.Client.GetAsync($"/sta/v1.1/Observations({observationId})/FeatureOfInterest");
+        unresolved.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var root = await ReadAsync(string.Empty);
+        root["serverSettings"]!["honua:unresolvedFeatureOfInterestCount"]!.GetValue<long>().Should().BeGreaterThan(0);
+
+        // A genuinely invalid explicit reference must still roll back every
+        // nested entity; compatibility with missing inference does not permit it.
+        var sets = new[] { "Things", "Datastreams", "Sensors", "ObservedProperties", "Observations" };
+        var before = new Dictionary<string, long>();
+        foreach (var set in sets)
+        {
+            before[set] = (await ReadAsync($"{set}?$count=true&$top=0"))["@iot.count"]!.GetValue<long>();
+        }
         var invalid = Datastream(1);
-        invalid["Thing"] = new JsonObject { ["name"] = "Must roll back", ["description"] = "Locationless" };
-        invalid["Observations"] = new JsonArray(new JsonObject { ["result"] = 4 });
+        invalid["Thing"] = new JsonObject { ["name"] = "Must roll back", ["description"] = "Invalid explicit feature" };
+        invalid["Observations"] = new JsonArray(new JsonObject { ["result"] = 4, ["FeatureOfInterest"] = Reference(999999) });
         using var response = await admin.PostAsync("/sta/v1.1/Datastreams", Body(invalid));
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var after = await ReadAsync("Things?$count=true&$top=0");
-        after["@iot.count"]!.GetValue<long>().Should().Be(before["@iot.count"]!.GetValue<long>());
+        foreach (var set in sets)
+        {
+            var after = await ReadAsync($"{set}?$count=true&$top=0");
+            after["@iot.count"]!.GetValue<long>().Should().Be(before[set], "the failed deep insert must not leave a {0} row", set);
+        }
     }
 
     [IntegrationTest]

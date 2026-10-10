@@ -384,8 +384,8 @@ internal sealed partial class PostgresObservationStore
             throw new SensorThingsValidationException("GeoJSON must be an object with a type.");
         if (kind == "Feature")
         {
-            if (!body.ContainsKey("geometry")) throw new SensorThingsValidationException("GeoJSON Feature requires geometry, which may be null.");
-            if (body["geometry"] is { } geometry) ValidateGeoJson(geometry);
+            if (!body.TryGetPropertyValue("geometry", out var geometry)) throw new SensorThingsValidationException("GeoJSON Feature requires geometry, which may be null.");
+            if (geometry is not null) ValidateGeoJson(geometry);
             if (body["properties"] is { } properties && properties is not JsonObject) throw new SensorThingsValidationException("Feature properties must be an object or null.");
             return;
         }
@@ -615,29 +615,29 @@ internal sealed partial class PostgresObservationStore
             assignments.Add(column.Column + "=@" + parameter);
             command.Parameters.AddWithValue(parameter, column.Type, value is null ? entitySet == "Observations" && column.Name == "result" ? "null" : DBNull.Value : ConvertValue(column, value));
         }
-        if (entitySet == "Observations" && patch.ContainsKey("phenomenonTime"))
+        if (entitySet == "Observations" && patch.TryGetPropertyValue("phenomenonTime", out var phenomenonTime))
         {
-            var text = patch["phenomenonTime"]!.GetValue<string>();
+            var text = phenomenonTime!.GetValue<string>();
             object end = DBNull.Value;
             if (text.Contains('/', StringComparison.Ordinal))
             {
                 var parts = text.Split('/');
                 if (parts.Length != 2 || !DateTimeOffset.TryParse(parts[1], CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsedEnd)
-                    || parsedEnd < (DateTimeOffset)ConvertValue(new("phenomenonTime", "phenomenon_time", NpgsqlDbType.TimestampTz), patch["phenomenonTime"]!))
+                    || parsedEnd < (DateTimeOffset)ConvertValue(new("phenomenonTime", "phenomenon_time", NpgsqlDbType.TimestampTz), phenomenonTime))
                     throw new SensorThingsValidationException("phenomenonTime must be an ordered time interval.");
                 end = parsedEnd;
             }
             assignments.Add("phenomenon_time_end=@end"); command.Parameters.AddWithValue("end", NpgsqlDbType.TimestampTz, end);
         }
-        if (entitySet == "Observations" && patch.ContainsKey("result"))
+        if (entitySet == "Observations" && patch.TryGetPropertyValue("result", out var result))
         {
-            object numericResult = patch["result"] is JsonValue numeric && numeric.TryGetValue<double>(out var number) ? number : DBNull.Value;
+            object numericResult = result is JsonValue numeric && numeric.TryGetValue<double>(out var number) ? number : DBNull.Value;
             assignments.Add("result=@numericResult"); command.Parameters.AddWithValue("numericResult", NpgsqlDbType.Double, numericResult);
         }
         foreach (var (navigation, column) in ForeignKeys(entitySet))
         {
-            if (!patch.ContainsKey(navigation)) continue;
-            var related = await ResolveEntityAsync(lease.Connection, transaction, SensorThingsRelationships.For(entitySet)[navigation].Target, patch[navigation], 0, cancellationToken).ConfigureAwait(false);
+            if (!patch.TryGetPropertyValue(navigation, out var navigationValue)) continue;
+            var related = await ResolveEntityAsync(lease.Connection, transaction, SensorThingsRelationships.For(entitySet)[navigation].Target, navigationValue, 0, cancellationToken).ConfigureAwait(false);
             var parameter = "v" + assignments.Count.ToString(CultureInfo.InvariantCulture);
             assignments.Add(column + "=@" + parameter); command.Parameters.AddWithValue(parameter, related);
             if (entitySet == "Observations") assignments.Add((navigation == "Datastream" ? "datastream_reference_id" : "feature_of_interest_reference_id") + "=@" + parameter);
@@ -658,13 +658,13 @@ internal sealed partial class PostgresObservationStore
             }
             if (observation is not null) await ValidateObservationTypeAsync(lease.Connection, transaction, observation, datastream, cancellationToken).ConfigureAwait(false);
         }
-        if (entitySet == "Datastreams" && patch.ContainsKey("observationType"))
+        if (entitySet == "Datastreams" && patch.TryGetPropertyValue("observationType", out var observationType))
         {
             await using var results = new NpgsqlCommand($"SELECT result_json::text FROM {_observationTable} WHERE datastream_reference_id=@id", lease.Connection, transaction);
             results.Parameters.AddWithValue("id", id);
             await using var reader = await ExecuteCatalogReaderAsync(results, cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-                ValidateObservationResult(new JsonObject { ["result"] = JsonNode.Parse(reader.GetString(0)) }, patch["observationType"]!.GetValue<string>());
+                ValidateObservationResult(new JsonObject { ["result"] = JsonNode.Parse(reader.GetString(0)) }, observationType!.GetValue<string>());
         }
         await ApplyCollectionsAsync(lease.Connection, transaction, entitySet, id, patch, 0, cancellationToken).ConfigureAwait(false);
         if (entitySet == "Locations")

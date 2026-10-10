@@ -133,8 +133,8 @@ public sealed class SensorThingsQueryOptionsTests : IAsyncLifetime
                   "description": "ordering fixture",
                   "unitOfMeasurement": { "name": "metre per second", "symbol": "m/s", "definition": "http://unitsofmeasure.org/ucum.html#para-30" },
                   "Thing": { "name": "{{name}} Station", "description": "x" },
-                  "Sensor": { "name": "{{name}} Sensor", "description": "x" },
-                  "ObservedProperty": { "name": "{{name}} Property", "description": "x" }
+                  "Sensor": { "name": "{{name}} Sensor", "description": "x", "encodingType": "text/plain", "metadata": "Synthetic sensor" },
+                  "ObservedProperty": { "name": "{{name}} Property", "description": "x", "definition": "https://example.test/property" }
                 }
                 """));
             created.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -163,8 +163,8 @@ public sealed class SensorThingsQueryOptionsTests : IAsyncLifetime
               "description": "filter fixture",
               "unitOfMeasurement": { "name": "metre per second", "symbol": "m/s", "definition": "http://unitsofmeasure.org/ucum.html#para-30" },
               "Thing": { "name": "Filterable Station", "description": "filter fixture" },
-              "Sensor": { "name": "Filterable Sensor", "description": "filter fixture" },
-              "ObservedProperty": { "name": "Filterable Property", "description": "filter fixture" }
+              "Sensor": { "name": "Filterable Sensor", "description": "filter fixture", "encodingType": "text/plain", "metadata": "Synthetic sensor" },
+              "ObservedProperty": { "name": "Filterable Property", "description": "filter fixture", "definition": "https://example.test/property" }
             }
             """));
         created.StatusCode.Should().Be(HttpStatusCode.Created);

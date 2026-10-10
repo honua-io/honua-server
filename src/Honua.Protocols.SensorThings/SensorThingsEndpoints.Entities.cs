@@ -199,8 +199,8 @@ internal static partial class SensorThingsEndpoints
                             return StandardErrorHelpers.CreateNotFound(context, "Entity property was not found.");
                     }
                     if (value is null) return Results.NoContent();
-                    return resource.Raw ? Results.Text(value is JsonValue scalar && scalar.TryGetValue<string>(out var text) ? text : value?.ToJsonString() ?? "null", "text/plain")
-                        : JsonResponse(new JsonObject { [members[^1]] = value?.DeepClone() });
+                    return resource.Raw ? Results.Text(value is JsonValue scalar && scalar.TryGetValue<string>(out var text) ? text : value.ToJsonString(), "text/plain")
+                        : JsonResponse(new JsonObject { [members[^1]] = value.DeepClone() });
                 }
                 if (resource.Reference) return JsonResponse(new JsonObject { ["value"] = new JsonArray(new JsonObject { ["@iot.selfLink"] = $"{StaBase(context)}/{resource.Set}({id.ToString(CultureInfo.InvariantCulture)})" }) });
                 return JsonResponse(shaped);
@@ -325,8 +325,7 @@ internal static partial class SensorThingsEndpoints
             var body = document.RootElement;
             if (body.ValueKind != JsonValueKind.Object) throw new SensorThingsValidationException("An entity must be a JSON object.");
             if (context.Request.Method == "POST" && resource.Set == "Observations" && resource.ParentSet is null
-                && resource.Id is null && !resource.Raw && !resource.Reference
-                && body.ValueKind == JsonValueKind.Object && body.TryGetProperty("value", out var bulk))
+                && resource.Id is null && body.TryGetProperty("value", out var bulk))
             {
                 if (bulk.ValueKind != JsonValueKind.Array) throw new SensorThingsValidationException("Bulk value must be an array.");
                 var ids = await store.CreateEntityBatchAsync("Observations", bulk.EnumerateArray().Select(e => e.Clone()).ToArray(), context.RequestAborted).ConfigureAwait(false);
