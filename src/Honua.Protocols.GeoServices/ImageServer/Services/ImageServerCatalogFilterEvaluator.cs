@@ -46,10 +46,10 @@ internal sealed class ImageServerCatalogFilterEvaluator : IImageServerCatalogFil
             throw new ImageServerCatalogFilterException(ex.Message, ex);
         }
 
-        return items.Where(item => Evaluate(expression, item)).ToList();
+        return items.Where(item => Evaluate(expression, item) is true).ToList();
     }
 
-    private static bool Evaluate(FilterExpression expression, ImageServerCatalogItem item)
+    private static bool? Evaluate(FilterExpression expression, ImageServerCatalogItem item)
     {
         return expression switch
         {
@@ -60,17 +60,24 @@ internal sealed class ImageServerCatalogFilterEvaluator : IImageServerCatalogFil
         };
     }
 
-    private static bool EvaluateBinary(BinaryExpression expression, ImageServerCatalogItem item)
+    private static bool? EvaluateBinary(BinaryExpression expression, ImageServerCatalogItem item)
     {
         switch (expression.Operator)
         {
             case BinaryOperator.And:
-                return Evaluate(expression.Left, item) && Evaluate(expression.Right, item);
+                var andLeft = Evaluate(expression.Left, item);
+                return andLeft is false ? false : andLeft & Evaluate(expression.Right, item);
             case BinaryOperator.Or:
-                return Evaluate(expression.Left, item) || Evaluate(expression.Right, item);
+                var orLeft = Evaluate(expression.Left, item);
+                return orLeft is true ? true : orLeft | Evaluate(expression.Right, item);
         }
 
         var left = ResolveValue(expression.Left, item);
+        if (expression.Operator is BinaryOperator.In or BinaryOperator.NotIn)
+        {
+            return MatchIn(left, expression.Right, item, negate: expression.Operator == BinaryOperator.NotIn);
+        }
+
         var right = ResolveValue(expression.Right, item);
 
         return expression.Operator switch
@@ -83,14 +90,12 @@ internal sealed class ImageServerCatalogFilterEvaluator : IImageServerCatalogFil
             BinaryOperator.GreaterThanOrEqual => Compare(left, right) >= 0,
             BinaryOperator.Like => MatchLike(left, right, negate: false),
             BinaryOperator.NotLike => MatchLike(left, right, negate: true),
-            BinaryOperator.In => MatchIn(left, expression.Right, item, negate: false),
-            BinaryOperator.NotIn => MatchIn(left, expression.Right, item, negate: true),
             _ => throw new ImageServerCatalogFilterException(
                 $"Unsupported binary operator '{expression.Operator}' in raster catalog WHERE clause.")
         };
     }
 
-    private static bool EvaluateUnary(UnaryExpression expression, ImageServerCatalogItem item)
+    private static bool? EvaluateUnary(UnaryExpression expression, ImageServerCatalogItem item)
     {
         return expression.Operator switch
         {
@@ -176,16 +181,47 @@ internal sealed class ImageServerCatalogFilterEvaluator : IImageServerCatalogFil
         return negate ? !matched : matched;
     }
 
-    private static bool MatchIn(object? left, FilterExpression rightExpression, ImageServerCatalogItem item, bool negate)
+    private static bool? MatchIn(object? left, FilterExpression rightExpression, ImageServerCatalogItem item, bool negate)
     {
         if (rightExpression is not ValueList values)
         {
             throw new ImageServerCatalogFilterException("Right operand of IN must be a value list.");
         }
 
-        var matched = values.Values.Any(value => CompareEquality(left, ResolveValue(value, item)));
-        return matched ? !negate : negate;
+        var candidates = values.Values.Select(value => ResolveValue(value, item)).ToArray();
+        if (left is null)
+        {
+            return null;
+        }
+
+        var matched = candidates.Any(candidate => candidate is not null && MembershipEquals(left, candidate));
+        return matched ? !negate : candidates.Any(candidate => candidate is null) ? null : negate;
     }
+
+    private static bool MembershipEquals(object left, object right)
+    {
+        // Catalog OBJECTIDs are Int64: list membership must not round adjacent large IDs.
+        if (left is long leftId)
+        {
+            return right switch
+            {
+                long rightId => leftId == rightId,
+                int rightId => leftId == rightId,
+                decimal number => leftId == number,
+                double number => ExactIntegerEquals(leftId, number),
+                float number => ExactIntegerEquals(leftId, number),
+                string text when decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
+                    => leftId == number,
+                _ => CompareEquality(left, right)
+            };
+        }
+
+        return CompareEquality(left, right);
+    }
+
+    private static bool ExactIntegerEquals(long left, double right)
+        => double.IsFinite(right) && right >= long.MinValue && right < 9223372036854775808d
+            && Math.Truncate(right) == right && left == (long)right;
 
     private static bool TryCoerceToDouble(object? value, out double result)
     {
