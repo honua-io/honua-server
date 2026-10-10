@@ -140,6 +140,11 @@ internal sealed class PublishServiceTool : IMcpTool
             OperationId = handle.OperationId,
             OperationInstanceId = handle.OperationInstanceId,
             HandleId = handle.HandleId,
+            Durable = handle.EvidenceRefs.Contains(
+                Honua.Core.Features.Operations.Services.NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef,
+                StringComparer.Ordinal)
+                ? false
+                : null,
             ProposalId = handle.ProposalId,
             CorrelationId = handle.CorrelationId,
             AuditId = handle.AuditId,

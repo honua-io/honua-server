@@ -261,7 +261,7 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetRequiredService<IOperationPolicyDecisionPoint>(),
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetService<IOperationApprovalBridge>(),
-                sp.GetRequiredService<IOperationInstanceStore>(),
+                ComposeDispatcherInstanceStore(sp.GetRequiredService<IOperationInstanceStore>()),
                 environment.IsDevelopment() || environment.IsEnvironment("Test")
                     ? new VolatileOperationAuditLog()
                     : sp.GetRequiredService<Honua.Core.Features.AuditLog.Abstractions.IAuditLog>(),
@@ -272,6 +272,29 @@ internal static class OperationsServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Operations a Redis-off host may execute directly, without the durable operation-instance
+    /// store, when the policy decision is Allow. Owner decision 20 (2026-10-10): a Redis-off cell
+    /// is a serving + configure + style/render topology and publishing a service is
+    /// configuration, so a policy-allowed direct publish involves no governed proposal and must
+    /// not be refused for a missing Redis. Governed / proposal-based paths (RequireApproval
+    /// decisions, Studio publication requests, the <c>honua_admin_*</c> catalogs) are not listed
+    /// and keep the typed capability-unavailable refusal.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> RedisOffDirectOperationIds =
+    [
+        ServicePublishOperation.OperationId,
+    ];
+
+    /// <summary>
+    /// Wraps the fail-closed Redis-off instance store in a dispatcher-scoped non-durable store for
+    /// <see cref="RedisOffDirectOperationIds"/>; every other store is used as composed.
+    /// </summary>
+    internal static IOperationInstanceStore ComposeDispatcherInstanceStore(IOperationInstanceStore store)
+        => store is UnavailableOperationInstanceStore
+            ? new NonDurableDirectOperationInstanceStore(store, RedisOffDirectOperationIds)
+            : store;
 
     private static void AddLegacyAdapter(
         IServiceCollection services,

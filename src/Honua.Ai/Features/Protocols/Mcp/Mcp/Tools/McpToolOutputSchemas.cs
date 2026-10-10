@@ -348,6 +348,10 @@ internal static class McpToolOutputSchemas
             "operationId": { "type": "string" },
             "operationInstanceId": { "type": "string" },
             "handleId": { "type": "string" },
+            "durable": {
+              "type": "boolean",
+              "description": "Present and false when the operation instance record was not durably persisted (a direct publish on a server started without Redis). The ids and audit receipts are real; the handle cannot be polled afterwards."
+            },
             "proposalId": { "type": ["string", "null"] },
             "correlationId": { "type": "string" },
             "auditId": { "type": ["string", "null"] },
