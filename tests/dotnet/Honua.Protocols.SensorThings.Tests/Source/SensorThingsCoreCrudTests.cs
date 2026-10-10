@@ -437,6 +437,11 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
     [Endpoint("GET /sta/v1.1/Observations({id})/$value")]
     [Endpoint("GET /sta/v1.1/Datastreams({id})/Thing({id})")]
     [Endpoint("GET /sta/v1.1/Observations({id})")]
+    [Endpoint("GET /sta/v1.1/{**resourcePath}")]
+    [Endpoint("POST /sta/v1.1/{**resourcePath}")]
+    [Endpoint("PUT /sta/v1.1/{**resourcePath}")]
+    [Endpoint("PATCH /sta/v1.1/{**resourcePath}")]
+    [Endpoint("DELETE /sta/v1.1/{**resourcePath}")]
     public async Task ReferenceWritesAndBulkSingletonPost_DoNotMutateEntities()
     {
         var before = (await ReadAsync("Observations?$count=true"))["@iot.count"]!.GetValue<long>();
