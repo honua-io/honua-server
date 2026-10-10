@@ -172,6 +172,29 @@ public sealed class ImageServerHistogramBinEdgesTests
         result.Counts.Should().Equal(4096);
     }
 
+    [UnitTheory]
+    [InlineData(1e-20)]
+    [InlineData(-1e-20)]
+    [InlineData(1e-8)]
+    public void ConstantSubUnitHistogram_MidpointEqualsSourceCenter(double value)
+    {
+        var result = ImageServerHistogramProjection.Project(new RasterHistogram
+        {
+            Band = 1,
+            BinCount = 1,
+            Min = value,
+            Max = value,
+            Counts = [4096],
+        });
+
+        result.Max.Should().BeGreaterThan(result.Min);
+        (result.Min / 2d + result.Max / 2d).Should().Be(value);
+        ((result.Min + result.Max) / 2d).Should().Be(value);
+        result.Min.Should().NotBe(-0.5d);
+        result.Max.Should().NotBe(0.5d);
+        result.Counts.Should().Equal(4096);
+    }
+
     [UnitTest]
     public void NonconstantHistogram_PreservesEdgesAndCounts()
     {
