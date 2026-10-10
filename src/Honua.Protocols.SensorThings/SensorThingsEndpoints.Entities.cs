@@ -243,9 +243,13 @@ internal static partial class SensorThingsEndpoints
 
     private static Dictionary<string, string?> ExpansionQuery(StaExpansion expansion) => new()
     {
-        ["$top"] = expansion.Top.ToString(CultureInfo.InvariantCulture), ["$skip"] = expansion.Skip.ToString(CultureInfo.InvariantCulture),
-        ["$select"] = expansion.Select, ["$expand"] = expansion.Expand, ["$filter"] = expansion.Filter,
-        ["$orderby"] = expansion.OrderBy, ["$count"] = expansion.Count ? "true" : null
+        ["$top"] = expansion.Top.ToString(CultureInfo.InvariantCulture),
+        ["$skip"] = expansion.Skip.ToString(CultureInfo.InvariantCulture),
+        ["$select"] = expansion.Select,
+        ["$expand"] = expansion.Expand,
+        ["$filter"] = expansion.Filter,
+        ["$orderby"] = expansion.OrderBy,
+        ["$count"] = expansion.Count ? "true" : null
     };
 
     private static string Continuation(HttpContext context, int skip)

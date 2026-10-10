@@ -273,7 +273,9 @@ internal sealed partial class PostgresObservationStore
                 && WrapCollectionPredicate(function, context) is { } collection) return collection;
             if (name is "lower" or "upper" or "length" or "char_length" or "position" or "substring" or "substr" or "trim" or "ltrim" or "rtrim" or "concat" or "replace")
             {
-                function = function with { Arguments = function.Arguments.Select((argument, index) =>
+                function = function with
+                {
+                    Arguments = function.Arguments.Select((argument, index) =>
                     name is "substring" or "substr" && index > 0 ? argument : Rewrite(argument, property =>
                     {
                         var reference = Reference(property, context);
@@ -281,7 +283,8 @@ internal sealed partial class PostgresObservationStore
                         var symbol = "__sta_typed_" + _typedReferences.Count.ToString(CultureInfo.InvariantCulture);
                         _typedReferences[symbol] = JsonScalar(ResolveReference(property, context, true), LiteralType.Text);
                         return new PropertyReference(symbol);
-                    })).ToArray() };
+                    })).ToArray()
+                };
             }
             return base.TranslateFunction(function, context);
         }

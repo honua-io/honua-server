@@ -200,9 +200,14 @@ internal sealed class StaEntitySchema
 
     public static StaEntitySchema For(string set) => set switch
     {
-        "Things" => Things, "Locations" => Locations, "HistoricalLocations" => HistoricalLocations,
-        "Datastreams" => Datastreams, "Sensors" => Sensors, "ObservedProperties" => ObservedProperties,
-        "Observations" => Observations, "FeaturesOfInterest" => FeaturesOfInterest,
+        "Things" => Things,
+        "Locations" => Locations,
+        "HistoricalLocations" => HistoricalLocations,
+        "Datastreams" => Datastreams,
+        "Sensors" => Sensors,
+        "ObservedProperties" => ObservedProperties,
+        "Observations" => Observations,
+        "FeaturesOfInterest" => FeaturesOfInterest,
         _ => throw new ArgumentException("Unknown sensing entity set.", nameof(set))
     };
 }
