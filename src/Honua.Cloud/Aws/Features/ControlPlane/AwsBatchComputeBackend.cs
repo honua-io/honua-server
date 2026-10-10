@@ -937,43 +937,20 @@ internal sealed partial class AwsBatchComputeBackend(
 
     private static List<AwsBatchEnvironmentOverride> BuildEnvironmentOverrides(ExecutionJobRecord job)
     {
-        var overrides = new List<AwsBatchEnvironmentOverride>
-        {
-            new("HONUA_OPERATION_ID", job.OperationId),
-            new("HONUA_WORKLOAD_NAME", job.Spec.WorkloadName),
-            new("HONUA_JOB_KIND", job.Spec.Kind.ToString())
-        };
-
-        if (!string.IsNullOrWhiteSpace(job.Spec.WorkloadId))
-        {
-            overrides.Add(new("HONUA_WORKLOAD_ID", job.Spec.WorkloadId));
-        }
-
-        if (!string.IsNullOrWhiteSpace(job.Spec.RuntimeProfile))
-        {
-            overrides.Add(new("HONUA_RUNTIME_PROFILE", job.Spec.RuntimeProfile));
-        }
-
+        var overrides = new List<AwsBatchEnvironmentOverride>();
         foreach (var entry in job.Spec.Parameters)
         {
-            if (entry.Key.StartsWith("batch.", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (!entry.Key.StartsWith("env.", StringComparison.Ordinal))
+            if (entry.Key.StartsWith("batch.", StringComparison.Ordinal)
+                || !entry.Key.StartsWith("env.", StringComparison.Ordinal))
             {
                 continue;
             }
 
             var name = entry.Key["env.".Length..];
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                continue;
-            }
 
-            // Never let a workload passthrough shadow the contract-version gate; it is stamped last below.
-            if (string.Equals(name, "HONUA_CONTRACT_VERSION", StringComparison.Ordinal))
+            // Never let a workload passthrough shadow a launch variable (operation id, kind, attempt,
+            // contract version): the worker-mode switch and its claim fence read them.
+            if (string.IsNullOrWhiteSpace(name) || ExecutionWorkerLaunchEnvironment.IsReserved(name))
             {
                 continue;
             }
@@ -981,10 +958,13 @@ internal sealed partial class AwsBatchComputeBackend(
             overrides.Add(new(name, entry.Value ?? string.Empty));
         }
 
-        // Serving↔worker job-contract version (ADR-0060 #3b): the worker harness re-checks this and
-        // fails closed if it exceeds the version it can run. Appended AFTER the env.* passthrough so a
-        // workload-supplied env.HONUA_CONTRACT_VERSION can never override the gate value.
-        overrides.Add(new("HONUA_CONTRACT_VERSION", job.Spec.ContractVersion.ToString(CultureInfo.InvariantCulture)));
+        // The launch contract (HONUA_OPERATION_ID, kind, attempt, and the serving-to-worker contract
+        // version of ADR-0060 #3b) is stamped AFTER the passthrough. StartAsync receives the record
+        // before the submission is counted, so this launch runs attempt AttemptCount + 1.
+        foreach (var variable in ExecutionWorkerLaunchEnvironment.Build(job, job.AttemptCount + 1))
+        {
+            overrides.Add(new(variable.Key, variable.Value));
+        }
 
         return overrides;
     }
