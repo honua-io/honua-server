@@ -138,8 +138,16 @@ public sealed class WfsFallbackGeometryTransactionTests : IAsyncLifetime
     {
         var before = await ReadLayerStateAsync();
         var action = update
-            ? Update($"{TypeName}.1", Property("missing_property", Point("-157.8,21.3")))
-            : $"<Insert><honua:{TypeName}><honua:missing_property>{Point("-157.8,21.3")}</honua:missing_property></honua:{TypeName}></Insert>";
+            ? Update($"{TypeName}.1", Property("name", "must-not-commit") + Property("missing_property", Point("-157.8,21.3")))
+            : $$"""
+                <Insert><honua:native_rich_edits_wfs>
+                  <honua:name>must-not-commit</honua:name><honua:rank>40</honua:rank>
+                  <honua:score>1.5</honua:score><honua:active>false</honua:active>
+                  <honua:cert_owner>fallback-geometry-regression</honua:cert_owner>
+                  <honua:geometry>{{Point("-157.8,21.3")}}</honua:geometry>
+                  <honua:missing_property>{{Point("-157.8,21.3")}}</honua:missing_property>
+                </honua:native_rich_edits_wfs></Insert>
+                """;
         var response = await SendAsync(LegacyTransaction(action), HttpStatusCode.BadRequest);
         response.Should().Contain("InvalidParameterValue");
         (await ReadLayerStateAsync()).Should().Be(before);
