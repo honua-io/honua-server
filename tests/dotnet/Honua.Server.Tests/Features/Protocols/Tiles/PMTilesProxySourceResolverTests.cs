@@ -5,13 +5,14 @@ using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
+using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.Tiles;
 
 public sealed class PMTilesProxySourceResolverTests
 {
-    [Fact]
+    [UnitTest]
     public async Task Resolve_StampedPublication_ReturnsThatSource()
     {
         var snapshot = await SnapshotAsync(SampleGraph());
@@ -30,7 +31,7 @@ public sealed class PMTilesProxySourceResolverTests
         source.Resource.Metadata.Id.Should().Be("res-parcels");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Resolve_LowercasedProviderKeys_StillBindsTheSource()
     {
         var snapshot = await SnapshotAsync(SampleGraph());
@@ -45,7 +46,7 @@ public sealed class PMTilesProxySourceResolverTests
         source!.Publication.Metadata.Id.Should().Be("pub-parcels");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Resolve_RetiredPublication_ReturnsNull()
     {
         var graph = SampleGraph();
@@ -61,7 +62,7 @@ public sealed class PMTilesProxySourceResolverTests
         PMTilesProxySourceResolver.Resolve(snapshot, StampedMetadata()).Should().BeNull();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Resolve_ReboundResource_ReturnsNull()
     {
         var snapshot = await SnapshotAsync(SampleGraph());
@@ -71,7 +72,7 @@ public sealed class PMTilesProxySourceResolverTests
         PMTilesProxySourceResolver.Resolve(snapshot, metadata).Should().BeNull();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Resolve_DuplicateMetadataKey_ReturnsNull()
     {
         var snapshot = await SnapshotAsync(SampleGraph());
@@ -84,7 +85,7 @@ public sealed class PMTilesProxySourceResolverTests
         }).Should().BeNull();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Resolve_LegacyLayerIdOnly_StillBindsARoutableSource()
     {
         var snapshot = await SnapshotAsync(SampleGraph());
@@ -98,7 +99,7 @@ public sealed class PMTilesProxySourceResolverTests
         source!.Resource.Metadata.Id.Should().Be("res-parcels");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Resolve_LegacyLayerId_TwoServices_ReturnsNull()
     {
         var snapshot = await SnapshotAsync(SharedLayerGraph());
@@ -109,7 +110,7 @@ public sealed class PMTilesProxySourceResolverTests
         }).Should().BeNull();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Resolve_LegacyServiceId_BindsThatServiceWhenAnotherServicePublishesTheLayer()
     {
         var snapshot = await SnapshotAsync(SharedLayerGraph());
@@ -125,7 +126,7 @@ public sealed class PMTilesProxySourceResolverTests
         source.Resource.Metadata.Id.Should().Be("res-parcels");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Resolve_LegacyUnknownService_ReturnsNull()
     {
         var snapshot = await SnapshotAsync(SampleGraph());
@@ -137,7 +138,7 @@ public sealed class PMTilesProxySourceResolverTests
         }).Should().BeNull();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Resolve_LegacySameServiceTwoPublications_BindsThatService()
     {
         var snapshot = await SnapshotAsync(new TestMetadataV2GraphBuilder()
@@ -157,8 +158,8 @@ public sealed class PMTilesProxySourceResolverTests
         source!.Service.Metadata.Id.Should().Be("svc-parcels");
     }
 
-    [Fact]
-    public async Task Resolve_LayerIndexOfADifferentStorageLayer_DoesNotBind()
+    [UnitTest]
+    public async Task Resolve_LegacyLayerIndex_BindsWhenItIsTheOnlySource()
     {
         var snapshot = await SnapshotAsync(new TestMetadataV2GraphBuilder()
             .AddResource("res-other", "other")
@@ -167,13 +168,52 @@ public sealed class PMTilesProxySourceResolverTests
             .AddPublication("pub-public", "svc-public", "res-other", layerIndex: 0, storageBindingId: "binding-other")
             .Build());
 
+        var source = PMTilesProxySourceResolver.Resolve(snapshot, new Dictionary<string, string>
+        {
+            ["layerId"] = "0",
+        });
+
+        source.Should().NotBeNull();
+        source!.Service.Metadata.Id.Should().Be("svc-public");
+        source.Resource.Metadata.Id.Should().Be("res-other");
+    }
+
+    [UnitTest]
+    public async Task Resolve_LegacyIndexAndStorageDisagree_ReturnsNull()
+    {
+        var snapshot = await SnapshotAsync(new TestMetadataV2GraphBuilder()
+            .AddResource("res-index", "indexed")
+            .AddStorageBinding("binding-index", "res-index", "features", storageLayerId: 7)
+            .AddResource("res-storage", "stored")
+            .AddStorageBinding("binding-storage", "res-storage", "features", storageLayerId: 0)
+            .AddService("svc-public", "public-parcels")
+            .AddService("svc-private", "private-parcels")
+            .AddPublication("pub-index", "svc-public", "res-index", layerIndex: 0, storageBindingId: "binding-index")
+            .AddPublication("pub-storage", "svc-private", "res-storage", layerIndex: 5, storageBindingId: "binding-storage")
+            .Build());
+
         PMTilesProxySourceResolver.Resolve(snapshot, new Dictionary<string, string>
         {
             ["layerId"] = "0",
         }).Should().BeNull();
     }
 
-    [Fact]
+    [UnitTest]
+    public async Task Resolve_StampedBindingChanged_ReturnsNull()
+    {
+        var snapshot = await SnapshotAsync(SampleGraph());
+
+        PMTilesProxySourceResolver.Resolve(snapshot, new Dictionary<string, string>
+        {
+            ["layerId"] = "0",
+            ["serviceId"] = "svc-parcels",
+            ["publicationId"] = "pub-parcels",
+            ["resourceId"] = "res-parcels",
+            ["storageBindingId"] = "binding-retired",
+        }).Should().BeNull();
+    }
+
+    [UnitTest]
     public async Task ResolveForPublish_NamedService_BindsThatServicesLayer()
     {
         var snapshot = await SnapshotAsync(SampleGraph());

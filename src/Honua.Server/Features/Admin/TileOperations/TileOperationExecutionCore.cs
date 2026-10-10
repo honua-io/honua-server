@@ -540,6 +540,12 @@ internal sealed partial class TileOperationExecutionCore
         }
 
         var layerId = request.LayerId.Value;
+        var graphProvider = serviceProvider.GetRequiredService<IMetadataV2GraphProvider>();
+        var generationSnapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var generationSource = PMTilesProxySourceResolver.ResolveForPublish(
+            generationSnapshot,
+            request.ServiceId,
+            layerId);
 
         var cloudOptions = serviceProvider.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
         var publishOptions = cloudOptions.PMTilesPublish ?? new PMTilesPublishOptions();
@@ -558,7 +564,6 @@ internal sealed partial class TileOperationExecutionCore
             };
         }
 
-        var graphProvider = serviceProvider.GetRequiredService<IMetadataV2GraphProvider>();
         var build = await BuildPMTilesArchiveAsync(
             "publish", progress, request, layerId, tileSources, graphProvider, cancellationToken).ConfigureAwait(false);
         if (!build.HasArchive)
@@ -623,6 +628,18 @@ internal sealed partial class TileOperationExecutionCore
             publishSnapshot,
             request.ServiceId,
             layerId);
+        if (!PMTilesProxySourceResolver.SameSource(generationSource, publishSource))
+        {
+            return current with
+            {
+                ArchiveSizeBytes = build.ArchiveSize,
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = "Publish could not bind the same routable source that generated the archive, so the object was not uploaded.",
+                CurrentPhase = "Failed"
+            };
+        }
+
         var uploadResult = await cloudStorage.UploadAsync(new FileUploadRequest
         {
             Content = archiveStream,

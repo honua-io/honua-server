@@ -27,6 +27,7 @@ internal static class PMTilesProxySourceResolver
     internal const string ServiceIdMetadataKey = "serviceId";
     internal const string PublicationIdMetadataKey = "publicationId";
     internal const string ResourceIdMetadataKey = "resourceId";
+    internal const string StorageBindingIdMetadataKey = "storageBindingId";
 
     internal static PMTilesPublishedSource? ResolveForPublish(
         MetadataV2GraphSnapshot snapshot,
@@ -103,9 +104,9 @@ internal static class PMTilesProxySourceResolver
 
     /// <summary>
     /// Binds an unstamped archive. A service key limits the candidates to that
-    /// service id or name. With no key, the storage layer must belong to exactly
-    /// one routable service. Layer index alone never selects a publication whose
-    /// storage handle is a different layer.
+    /// service id or name. The stored layer id may be the storage handle or the
+    /// service-local publication index. Either match is kept only when every
+    /// match names the same service and the same resource.
     /// </summary>
     private static PMTilesPublishedSource? ResolveLegacy(
         MetadataV2GraphSnapshot snapshot,
@@ -115,8 +116,17 @@ internal static class PMTilesProxySourceResolver
         var matches = new List<PMTilesPublishedSource>();
         foreach (var publication in snapshot.Graph.Publications)
         {
-            if (!snapshot.IsRoutable(publication) ||
-                snapshot.ResolveStorageLayerId(publication) != layerId)
+            if (!snapshot.IsRoutable(publication))
+            {
+                continue;
+            }
+
+            // The stored layer id is either the storage handle or the service-local
+            // publication index. An unambiguous match of either is kept. Two
+            // different services or resources means the number is ambiguous.
+            var storageMatch = snapshot.ResolveStorageLayerId(publication) == layerId;
+            var indexMatch = publication.LayerIndex == layerId;
+            if (!storageMatch && !indexMatch)
             {
                 continue;
             }
@@ -172,11 +182,35 @@ internal static class PMTilesProxySourceResolver
             return metadata;
         }
 
-        return metadata
+        var stamped = metadata
             .Add(ServiceIdMetadataKey, source.Service.Metadata.Id)
             .Add(PublicationIdMetadataKey, source.Publication.Metadata.Id)
             .Add(ResourceIdMetadataKey, source.Resource.Metadata.Id);
+        var bindingId = BindingId(source);
+        return string.IsNullOrWhiteSpace(bindingId)
+            ? stamped
+            : stamped.Add(StorageBindingIdMetadataKey, bindingId);
     }
+
+    internal static string? BindingId(PMTilesPublishedSource source)
+    {
+        if (!string.IsNullOrWhiteSpace(source.Publication.StorageBindingId))
+        {
+            return source.Publication.StorageBindingId;
+        }
+
+        return string.IsNullOrWhiteSpace(source.Resource.PrimaryStorageBindingId)
+            ? null
+            : source.Resource.PrimaryStorageBindingId;
+    }
+
+    internal static bool SameSource(PMTilesPublishedSource? left, PMTilesPublishedSource? right)
+        => left is not null &&
+           right is not null &&
+           string.Equals(left.Service.Metadata.Id, right.Service.Metadata.Id, StringComparison.Ordinal) &&
+           string.Equals(left.Publication.Metadata.Id, right.Publication.Metadata.Id, StringComparison.Ordinal) &&
+           string.Equals(left.Resource.Metadata.Id, right.Resource.Metadata.Id, StringComparison.Ordinal) &&
+           string.Equals(BindingId(left), BindingId(right), StringComparison.Ordinal);
 
     private static PMTilesPublishedSource? ResolveStamped(
         MetadataV2GraphSnapshot snapshot,
@@ -223,7 +257,15 @@ internal static class PMTilesProxySourceResolver
             return null;
         }
 
-        return new PMTilesPublishedSource(resource, service, publication);
+        var source = new PMTilesPublishedSource(resource, service, publication);
+        if (values.TryGetValue(StorageBindingIdMetadataKey, out var bindingId) &&
+            !string.IsNullOrWhiteSpace(bindingId) &&
+            !string.Equals(bindingId, BindingId(source), StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return source;
     }
 
     private static MetadataV2Publication? FindLayerPublication(

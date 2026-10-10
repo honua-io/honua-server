@@ -133,7 +133,7 @@ internal static class PMTilesProxyEndpoints
 
             case PMTilesRangeOutcome.Full:
             default:
-                var fullStream = await service.OpenFullAsync(artifactId, cancellationToken).ConfigureAwait(false);
+                var fullStream = await service.OpenFullAsync(artifactId, metadata, cancellationToken).ConfigureAwait(false);
                 if (fullStream is null)
                 {
                     return TypedResults.NotFound();
