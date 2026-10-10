@@ -8,12 +8,14 @@ using System.Text.Json;
 using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.Multidimensional.Abstractions;
 using Honua.Core.Features.Raster.Multidimensional.Domain;
 using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Hosting;
 using static Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMultidimensionalSoapAssertions;
@@ -45,7 +47,11 @@ public sealed class ImageServerMultidimensionalSoapTests
             // Production auth remains enabled: declare a legitimately public baseline
             // before checking the independent resource and publication denial paths.
             fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, accessPolicy: new AccessPolicy { AllowAnonymous = true });
+            // The numeric REST alias also has a feature publication in this shared seed.
+            // Make that independent comparison public; SOAP policy transitions below
+            // must target the distinct EsriImageLayer resource by publication identity.
             fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, accessPolicy: new AccessPolicy { AllowAnonymous = true });
+            SetImagePublicationState(fixture, allowAnonymous: true);
             await fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
             {
                 using var scope = fixture.Services.CreateScope();
@@ -108,12 +114,11 @@ public sealed class ImageServerMultidimensionalSoapTests
                     Property(time, "HasRegularIntervals").Value.Should().Be("true");
                     Child(Property(sets[2], "salinity"), "PropertyArray").Elements().Should().BeEmpty();
 
-                    fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, accessPolicy: new AccessPolicy { AllowAnonymous = false });
+                    SetImagePublicationState(fixture, allowAnonymous: false);
                     await PostAsync(fixture, HttpStatusCode.Unauthorized);
-                    fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, accessPolicy: new AccessPolicy { AllowAnonymous = true });
-                    fixture.SetV2LayerEnabled(WebAppFixture.TestLayerId, false);
+                    SetImagePublicationState(fixture, allowAnonymous: true, enabled: false);
                     await PostAsync(fixture, HttpStatusCode.NotFound);
-                    fixture.SetV2LayerEnabled(WebAppFixture.TestLayerId, true);
+                    SetImagePublicationState(fixture, allowAnonymous: true);
                     (await store.UnregisterAsync(registration.Id)).Should().BeTrue();
                     foreach (var set in AssertShape(await PostAsync(fixture)))
                     {
@@ -124,6 +129,45 @@ public sealed class ImageServerMultidimensionalSoapTests
             });
         }
         finally { await fixture.DisposeAsync(); }
+    }
+
+    private static void SetImagePublicationState(WebAppFixture fixture, bool allowAnonymous, bool enabled = true)
+    {
+        var snapshot = fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.Single(candidate =>
+            candidate.PublicationType == MetadataV2PublicationType.EsriImageLayer &&
+            snapshot.Index.ServicesById.TryGetValue(candidate.ServiceId, out var owningService) &&
+            owningService.Metadata.Name == WebAppFixture.TestServiceId &&
+            owningService.Protocols.Contains(ServiceProtocols.ImageServer, StringComparer.OrdinalIgnoreCase));
+        var service = snapshot.Index.ServicesById[publication.ServiceId];
+        publication.LayerIndex.Should().Be(WebAppFixture.TestLayerId);
+        snapshot.ResolveStorageLayerId(publication).Should().Be(WebAppFixture.TestLayerId);
+        var resource = snapshot.ResolveResource(publication);
+        resource.Should().NotBeNull();
+        resource!.Type.Should().Be(MetadataV2ResourceType.RasterDataset);
+        var status = new MetadataV2Status
+        {
+            Lifecycle = enabled ? MetadataV2LifecycleStatus.Active : MetadataV2LifecycleStatus.Retired,
+            State = MetadataV2OperationalState.Ready
+        };
+        var graph = snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Services = snapshot.Graph.Services.Select(candidate => candidate.Metadata.Id == service.Metadata.Id
+                ? candidate with { AccessPolicy = new AccessPolicy { AllowAnonymous = true } } : candidate).ToArray(),
+            Resources = snapshot.Graph.Resources.Select(candidate => candidate.Metadata.Id == resource.Metadata.Id
+                ? candidate with { AccessPolicy = new AccessPolicy { AllowAnonymous = allowAnonymous } } : candidate).ToArray(),
+            Publications = snapshot.Graph.Publications.Select(candidate => candidate.Metadata.Id == publication.Metadata.Id
+                ? candidate with { Status = status } : candidate).ToArray()
+        };
+        fixture.GetService<TestMetadataV2GraphProvider>().SetGraph(graph, schema: fixture.CurrentSchema);
+        var updated = fixture.GetCurrentV2GraphSnapshot();
+        var updatedPublication = updated.Graph.Publications.Single(candidate => candidate.Metadata.Id == publication.Metadata.Id);
+        updatedPublication.ServiceId.Should().Be(service.Metadata.Id);
+        updatedPublication.ResourceId.Should().Be(resource.Metadata.Id);
+        updated.ResolveStorageLayerId(updatedPublication).Should().Be(WebAppFixture.TestLayerId);
+        updated.ResolveResource(updatedPublication)!.AccessPolicy!.AllowAnonymous.Should().Be(allowAnonymous);
+        updated.IsRoutable(updatedPublication).Should().Be(enabled);
     }
 
     private static MultidimensionalCoverageRegistrationRequest Registration() => new()
