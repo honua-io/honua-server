@@ -415,6 +415,31 @@ place. Listing versions returns `200` with the requested `itemId` and an empty
 `versions` array when no versions exist for that item; retrieving an individual
 missing or cross-item version returns `404`.
 
+### Verifying `contentHash` (honua-server#5449)
+
+`contentHash` is the lower-case hexadecimal SHA-256 of the version's canonical
+hash input: the UTF-8 bytes of the server's JSON serialization of the whole
+version envelope with `validation.generatedAt` removed. Those bytes depend on
+serializer details (property order, null omission, character escaping), so the
+server does not ask clients to rebuild them. The single-version read
+(`GET /content-items/{itemId}/versions/{versionId}`), the save response and the
+published-route read return them verbatim as `contentHashInput`: base64 (RFC 4648
+standard alphabet, padded) of the exact bytes hashed. To verify a version:
+
+1. base64-decode `contentHashInput`;
+2. compute SHA-256 over the decoded bytes and hex-encode it in lower case;
+3. compare with `contentHash`. The decoded bytes are the JSON envelope, so a
+   client can also check that its `body` is the content it expects.
+
+The input is persisted beside the digest when the version is saved (the stored
+envelope is `jsonb`, which reorders object keys, so it cannot be rebuilt from the
+envelope). It is about the size of the envelope and is omitted from version
+enumerations (`GET /content-items/{itemId}/versions`). It is absent when the
+server cannot supply bytes that hash to `contentHash`: bridged `form` and
+`analysis` versions, whose hash is owned by the native store, and versions saved
+before the input was persisted whose re-serialized envelope no longer hashes to
+the stored digest.
+
 Routes that include both `{itemId}` and `{versionId}` treat the pair as an
 ownership boundary. A version that exists under a different content item is
 handled as not found, and publish, reopen, compare, and rollback operations do
@@ -430,6 +455,12 @@ versions are accepted and move the Studio content item's published pointer;
 warning acknowledgement is optional audit text in the MVP. The `pending`
 publication status is reserved for later asynchronous publication execution and
 is not emitted by the API service today.
+
+`GET /content-items/{itemId}/versions/{versionId}/publish-requests/{requestId}`
+carries the final publication URL as `publicationUrl` once the request is
+`accepted` (Active) and its intent names a route (honua-server#5788). The value is
+the same root-relative `activeUrl` the publication operation handle reports
+(below). A `pending` or `rejected` request carries no `publicationUrl`.
 
 An accepted publication's operation handle (`GET /api/v1/operations/handles/{id}`,
 and the MCP proposal resource once approved) reports `resourceIds.route` (the

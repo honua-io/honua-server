@@ -411,6 +411,18 @@ public sealed record StudioContentVersion
     [JsonPropertyName("contentHash")]
     public required string ContentHash { get; init; }
 
+    /// <summary>
+    /// Canonical hash input (honua-server#5449): base64 of the exact UTF-8 bytes the server
+    /// hashed, so a client recomputes <see cref="ContentHash"/> as the lower-case hex SHA-256 of
+    /// the decoded bytes without reproducing the server's envelope serialization. Absent when the
+    /// server cannot supply bytes that hash to <see cref="ContentHash"/> (bridged Form/Analysis
+    /// versions, whose hash is owned by the native store, or a legacy version whose stored
+    /// envelope no longer reproduces it).
+    /// </summary>
+    [JsonPropertyName("contentHashInput")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ContentHashInput { get; init; }
+
     /// <summary>Immutable package envelope.</summary>
     [JsonPropertyName("envelope")]
     public required StudioPackageEnvelope Envelope { get; init; }
@@ -543,6 +555,20 @@ public sealed record StudioPublicationRequest
     /// <summary>Timestamp when the request was created.</summary>
     [JsonPropertyName("createdAt")]
     public required DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>
+    /// Final publication URL (honua-server#5788): the root-relative published-route URL that
+    /// serves the item's Active version, the same value as the <c>activeUrl</c> the publication
+    /// operation handle reports. Present only once the request is accepted (Active) and names a
+    /// route; absent while pending and on a rejected request. Derived from the persisted status
+    /// and intent route, so it is never stored and never read back on deserialization.
+    /// </summary>
+    [JsonPropertyName("publicationUrl")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PublicationUrl
+        => Status == StudioPublicationRequestStatus.Accepted && !string.IsNullOrWhiteSpace(Intent?.Route)
+            ? StudioPublishedRoutes.BuildActiveUrl(Intent.Route)
+            : null;
 }
 
 /// <summary>

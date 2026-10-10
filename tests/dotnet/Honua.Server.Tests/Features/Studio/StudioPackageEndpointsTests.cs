@@ -1983,6 +1983,132 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         (await ReadPublishedAsync(anonymous, movedUrl)).VersionId.Should().Be(version.VersionId);
     }
 
+    // honua-server#5788: the publish-request read a client polls to Active must carry the final
+    // publication URL -- the same activeUrl the operation handle names -- and only once the
+    // request is accepted; a pending or rejected request has no URL.
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests")]
+    [Endpoint("GET /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests/{requestId}")]
+    [Endpoint("GET /api/v1/operations/handles/{handleId}")]
+    public async Task GetPublishRequest_AcceptedRequest_CarriesHandleActiveUrlAsPublicationUrl_PendingAndRejectedCarryNone()
+    {
+        var version = await SaveNewItemVersionAsync($"publication-url-{Guid.NewGuid():N}", "1=1");
+        var route = $"/maps/publication-url-{Guid.NewGuid():N}";
+        var (requestId, activeUrl) = await PublishAndReadRequestAsync(version, route, "public");
+
+        using (var accepted = await ReadPublishRequestJsonAsync(version, requestId))
+        {
+            var data = accepted.RootElement.GetProperty("data");
+            data.GetProperty("status").GetString().Should().Be("accepted");
+            data.GetProperty("publicationUrl").GetString().Should().Be(
+                activeUrl,
+                "the polled request names the same final URL as the operation handle's activeUrl");
+        }
+
+        var store = _fixture.Services.GetRequiredService<IStudioPackageStore>();
+        foreach (var status in new[] { StudioPublicationRequestStatus.Pending, StudioPublicationRequestStatus.Rejected })
+        {
+            var seeded = await store.CreatePublicationRequestAsync(
+                new StudioPublicationRequest
+                {
+                    RequestId = Guid.NewGuid(),
+                    ItemId = version.ItemId,
+                    VersionId = version.VersionId,
+                    Intent = new StudioPublicationIntent { Route = route, Visibility = "public" },
+                    Status = status,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                },
+                expectedCurrentVersionId: null);
+            using var read = await ReadPublishRequestJsonAsync(version, seeded.RequestId);
+            var data = read.RootElement.GetProperty("data");
+            data.GetProperty("status").GetString().Should().Be(status == StudioPublicationRequestStatus.Pending ? "pending" : "rejected");
+            data.TryGetProperty("publicationUrl", out _).Should().BeFalse($"a {status} request has no final publication URL");
+        }
+    }
+
+    // honua-server#5449: the version read returns the exact bytes the server hashed, so a client
+    // recomputes contentHash as their SHA-256 instead of only checking that two readers agree.
+    // The where clause carries non-ASCII and HTML-sensitive characters the serializer escapes.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/content-items/{itemId}/versions/{versionId}")]
+    [Endpoint("GET /api/v1/studio/content-items/{itemId}/versions")]
+    [Endpoint("GET /api/v1/studio/published/{*route}")]
+    public async Task GetVersion_ContentHashInput_RecomputesToContentHashOnVersionAndPublishedReads()
+    {
+        const string where = "NAME = 'Caf\u00e9 & <Co>'";
+        var version = await SaveNewItemVersionAsync($"hash-input-{Guid.NewGuid():N}", where);
+        AssertRecomputes(version.ContentHashInput, version.ContentHash, where);
+
+        var read = await _client.GetAsync($"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}");
+        read.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var document = JsonDocument.Parse(await read.Content.ReadAsStringAsync()))
+        {
+            var data = document.RootElement.GetProperty("data");
+            AssertRecomputes(
+                data.GetProperty("contentHashInput").GetString(),
+                data.GetProperty("contentHash").GetString()!,
+                where);
+        }
+
+        var list = await _client.GetAsync($"/api/v1/studio/content-items/{version.ItemId:D}/versions");
+        list.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var document = JsonDocument.Parse(await list.Content.ReadAsStringAsync()))
+        {
+            var versions = document.RootElement.GetProperty("data").GetProperty("versions").EnumerateArray().ToList();
+            versions.Should().ContainSingle();
+            versions.Where(entry => entry.TryGetProperty("contentHashInput", out var _)).Should().BeEmpty(
+                "the canonical hash input is a single-version read, not part of an enumeration");
+        }
+
+        var (_, activeUrl) = await PublishAndReadRequestAsync(version, $"/maps/hash-input-{Guid.NewGuid():N}", "public");
+        using var anonymous = _fixture.CreateClient();
+        var published = await ReadPublishedAsync(anonymous, activeUrl);
+        published.ContentHash.Should().Be(version.ContentHash);
+        AssertRecomputes(published.ContentHashInput, published.ContentHash, where);
+    }
+
+    private static void AssertRecomputes(string? contentHashInput, string contentHash, string where)
+    {
+        contentHashInput.Should().NotBeNullOrEmpty();
+        var bytes = Convert.FromBase64String(contentHashInput!);
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant()
+            .Should().Be(contentHash, "contentHash is the lower-case hex SHA-256 of the decoded canonical input");
+        using var envelope = JsonDocument.Parse(bytes);
+        envelope.RootElement.GetProperty("body").GetProperty("where").GetString().Should().Be(where);
+        envelope.RootElement.GetProperty("validation").TryGetProperty("generatedAt", out _).Should().BeFalse(
+            "the volatile validation timestamp is excluded from the hashed input");
+    }
+
+    private async Task<(Guid RequestId, string ActiveUrl)> PublishAndReadRequestAsync(
+        StudioContentVersion version, string route, string visibility)
+    {
+        var publishResponse = await PostAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}/publish-requests",
+            new CreateStudioPublicationRequest
+            {
+                Intent = new StudioPublicationIntent { Route = route, Visibility = visibility },
+            },
+            StudioApiJsonContext.Default.CreateStudioPublicationRequest);
+        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var publication = await ReadAsync<StudioPublicationRequest>(
+            publishResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPublicationRequest);
+        var operationInstanceId = publishResponse.Headers.GetValues("X-Honua-Operation-Instance-Id").Single();
+        var handleResponse = await _client.GetAsync($"/api/v1/operations/handles/{operationInstanceId}");
+        handleResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var handle = JsonDocument.Parse(await handleResponse.Content.ReadAsStringAsync());
+        var activeUrl = handle.RootElement.GetProperty("data").GetProperty("resourceIds").GetProperty("activeUrl").GetString()!;
+        return (publication.RequestId, activeUrl);
+    }
+
+    private async Task<JsonDocument> ReadPublishRequestJsonAsync(StudioContentVersion version, Guid requestId)
+    {
+        var response = await _client.GetAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}/publish-requests/{requestId:D}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+    }
+
     private async Task<StudioContentVersion> SaveNewItemVersionAsync(string packageKey, string where)
     {
         var createResponse = await PostAsync(

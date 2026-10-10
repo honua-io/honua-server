@@ -177,6 +177,69 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         }
     }
 
+    // honua-server#5449: the envelope column is jsonb, which reorders object keys, so the version
+    // read must return the persisted bytes that were hashed rather than a re-serialization; a
+    // legacy row with no persisted input is rebuilt only when the rebuild still hashes to the
+    // stored digest, and enumerations leave the input out.
+    [IntegrationTest]
+    public async Task GetVersion_ContentHashInput_IsThePersistedHashedBytesAndLegacyRowsRebuildOnlyWhenTheyMatch()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var store = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var draft = BuildDraft("1=1");
+            using (var body = JsonDocument.Parse("""{"middle":{"y":2,"b":[3,1]},"alpha":1,"zeta":"NAME = 'Caf\u00e9 & <Co>'"}"""))
+            {
+                draft = draft with { Envelope = draft.Envelope with { Body = body.RootElement.Clone() } };
+            }
+
+            var saved = await store.CreateVersionAsync(await store.CreateDraftAsync(draft), "save", "tester");
+            var read = await store.GetVersionAsync(saved.ItemId, saved.VersionId);
+            read!.ContentHashInput.Should().NotBeNullOrEmpty();
+            read.ContentHashInput.Should().Be(saved.ContentHashInput);
+            var input = Convert.FromBase64String(read.ContentHashInput!);
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(input)).ToLowerInvariant()
+                .Should().Be(read.ContentHash, "contentHash is the SHA-256 of the returned canonical input");
+            using (var hashed = JsonDocument.Parse(input))
+            {
+                hashed.RootElement.GetProperty("body").GetProperty("zeta").GetString().Should().Be("NAME = 'Caf\u00e9 & <Co>'");
+            }
+
+            StudioPackageHash.Compute(read.Envelope).Should().NotBe(
+                read.ContentHash,
+                "jsonb reorders the body keys, so re-serializing the stored envelope cannot reproduce the hashed bytes");
+            (await store.ListVersionsAsync(saved.ItemId)).Should().ContainSingle()
+                .Which.ContentHashInput.Should().BeNull("enumerations do not carry the canonical input");
+
+            // A version saved before migration 126 (or by an older binary) has no persisted input.
+            var legacy = await store.CreateVersionAsync(
+                await store.CreateDraftAsync(BuildDraft("1=1", packageKey: "legacy-query")), "legacy", "tester");
+            await using (var connection = await fixture.GetConnectionAsync(schema))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"""
+                    UPDATE "{schema}".studio_content_versions SET content_hash_input = NULL
+                    WHERE version_id IN (@legacy, @reordered)
+                    """;
+                command.Parameters.AddWithValue("@legacy", legacy.VersionId);
+                command.Parameters.AddWithValue("@reordered", saved.VersionId);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var rebuilt = await store.GetVersionAsync(legacy.ItemId, legacy.VersionId);
+            rebuilt!.ContentHashInput.Should().NotBeNull("a single-key body round-trips jsonb unchanged, so the rebuild matches");
+            StudioPackageHash.ComputeFromInput(Convert.FromBase64String(rebuilt.ContentHashInput!)).Should().Be(rebuilt.ContentHash);
+            (await store.GetVersionAsync(saved.ItemId, saved.VersionId))!.ContentHashInput.Should().BeNull(
+                "a rebuild that no longer hashes to the stored digest is withheld rather than returned");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     [IntegrationTest]
     public async Task PackageStore_CreateVersionPublishAndRollback_PersistsImmutableVersionState()
     {
@@ -1067,6 +1130,9 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                      // Migration 120 adds the tenant_id column every Studio lifecycle write and
                      // read now carries (honua-server#4905).
                      "120_AddStudioTenantOwnership.sql",
+                     // Migration 126 adds the persisted canonical content-hash input the version
+                     // insert and single-version read carry (honua-server#5449).
+                     "126_AddStudioContentHashInput.sql",
                  })
         {
             await ApplyStudioMigrationAsync(schema, migrationFile, root);
