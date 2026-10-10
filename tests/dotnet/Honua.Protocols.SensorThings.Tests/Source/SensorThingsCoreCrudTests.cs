@@ -46,19 +46,22 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
     private static DateTimeOffset ParseInstant(string value) => DateTimeOffset.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
     private async Task<JsonObject> ReadAsync(string path)
     {
-        var url = path.StartsWith("/", StringComparison.Ordinal) ? path : "/sta/v1.1/" + path;
+        var url = path.StartsWith('/') ? path : "/sta/v1.1/" + path;
         using var response = await _fixture.Client.GetAsync(url);
         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         return JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
     }
     private static JsonObject Location(string name) => new()
     {
-        ["name"] = name, ["description"] = "Synthetic test location", ["encodingType"] = "application/geo+json",
+        ["name"] = name,
+        ["description"] = "Synthetic test location",
+        ["encodingType"] = "application/geo+json",
         ["location"] = JsonNode.Parse("""{"type":"Point","coordinates":[-157.8,21.3]}""")
     };
     private static JsonObject Datastream(long thing) => new()
     {
-        ["name"] = "Measurement", ["description"] = "Synthetic measurement",
+        ["name"] = "Measurement",
+        ["description"] = "Synthetic measurement",
         ["observationType"] = "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
         ["unitOfMeasurement"] = new JsonObject { ["name"] = "Celsius", ["symbol"] = "C", ["definition"] = "https://example.test/celsius" },
         ["Thing"] = Reference(thing),
