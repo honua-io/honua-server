@@ -85,7 +85,7 @@ public sealed class MapServerDrawingModeTests : MapServerEndpointTestBase
 
         using var tileResponse = await Fixture.Client.GetAsync(root + "/tile/0/0/0");
         if (cached) { await AssertPngAsync(tileResponse); }
-        else { await AssertUnavailableAsync(tileResponse, HttpStatusCode.BadRequest); }
+        else { await AssertGeoServicesCacheUnavailableAsync(tileResponse, "Dynamic MapServer drawing does not provide cached tiles."); }
 
         var wmts = root + "/WMTS?SERVICE=WMTS&VERSION=1.0.0";
         using var capabilitiesResponse = await Fixture.Client.GetAsync(wmts + "&REQUEST=GetCapabilities");
@@ -97,12 +97,12 @@ public sealed class MapServerDrawingModeTests : MapServerEndpointTestBase
             capabilities.Root!.Name.LocalName.Should().Be("Capabilities");
             capabilities.Descendants().Where(element => element.Name.LocalName == "Layer").Should().NotBeEmpty();
         }
-        else { await AssertUnavailableAsync(capabilitiesResponse, HttpStatusCode.NotFound); }
+        else { await AssertWmtsCacheUnavailableAsync(capabilitiesResponse); }
 
         using var wmtsTileResponse = await Fixture.Client.GetAsync(wmts +
             "&REQUEST=GetTile&LAYER=0&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0");
         if (cached) { await AssertPngAsync(wmtsTileResponse); }
-        else { await AssertUnavailableAsync(wmtsTileResponse, HttpStatusCode.NotFound); }
+        else { await AssertWmtsCacheUnavailableAsync(wmtsTileResponse); }
 
         // Canonical OGC WMTS is an independent on-demand protocol publication.
         var canonicalWmts = $"/ogc/services/{serviceName}/wmts?SERVICE=WMTS&VERSION=1.0.0";
@@ -121,14 +121,14 @@ public sealed class MapServerDrawingModeTests : MapServerEndpointTestBase
             using var estimate = await ReadJsonAsync(estimateResponse);
             estimate.RootElement.GetProperty("tileCount").GetInt64().Should().Be(1);
         }
-        else { await AssertUnavailableAsync(estimateResponse, HttpStatusCode.BadRequest); }
+        else { await AssertGeoServicesCacheUnavailableAsync(estimateResponse, "Dynamic MapServer drawing does not provide tile exports."); }
 
         foreach (var format in PackageFormats)
         {
             using var packageResponse = await Fixture.Client.GetAsync(root + "/exportTiles" + selection + "&storageFormat=" + format);
             if (!cached)
             {
-                await AssertUnavailableAsync(packageResponse, HttpStatusCode.BadRequest);
+                await AssertGeoServicesCacheUnavailableAsync(packageResponse, "Dynamic MapServer drawing does not provide tile exports.");
                 continue;
             }
             using var result = await ReadJsonAsync(packageResponse);
@@ -158,28 +158,45 @@ public sealed class MapServerDrawingModeTests : MapServerEndpointTestBase
     [Endpoint("POST /rest/services/{serviceId}/MapServer/exportTiles")]
     public async Task DynamicMode_DurableTileExportNegotiation_IsRejectedBeforeSubmission()
     {
+        var store = new InMemoryExecutionJobStore();
+        var queue = new InMemoryJobQueue();
         await using var fixture = new WebAppFixture().ConfigureServices(services =>
         {
-            services.AddSingleton<IExecutionJobStore>(new InMemoryExecutionJobStore());
-            services.AddSingleton<IJobQueue>(new InMemoryJobQueue());
+            services.AddSingleton<IExecutionJobStore>(store);
+            services.AddSingleton<IJobQueue>(queue);
         });
         await fixture.InitializeAsync();
         var name = AddSameDataPublication(fixture, "dynamic");
         var root = $"/rest/services/{name}/MapServer/exportTiles";
-        using var get = await fixture.Client.GetAsync(root +
-            "?f=json&storageFormatType=esriMapCacheStorageModeCompactV2&exportExtent=-180,-85,180,85&exportExtentSR=4326&levels=0&maxTiles=1");
-        await AssertUnavailableAsync(get, HttpStatusCode.BadRequest);
+        const string selection = "?f=json&storageFormatType=esriMapCacheStorageModeCompactV2&exportExtent=-180,-85,180,85&exportExtentSR=4326&levels=0,1&maxTiles=5";
+        (await store.ListActiveAsync()).Should().BeEmpty();
+        (await queue.GetQueueDepthAsync()).Should().Be(0);
+        using var get = await fixture.Client.GetAsync(root + selection);
+        await AssertGeoServicesCacheUnavailableAsync(get, "Dynamic MapServer drawing does not provide tile exports.");
+        (await store.ListActiveAsync()).Should().BeEmpty();
+        (await queue.GetQueueDepthAsync()).Should().Be(0);
         using var form = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("storageFormatType", "esriMapCacheStorageModeCompactV2"),
             new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
             new KeyValuePair<string, string>("exportExtentSR", "4326"),
-            new KeyValuePair<string, string>("levels", "0"),
-            new KeyValuePair<string, string>("maxTiles", "1")
+            new KeyValuePair<string, string>("levels", "0,1"),
+            new KeyValuePair<string, string>("maxTiles", "5")
         ]);
         using var post = await fixture.Client.PostAsync(root, form);
-        await AssertUnavailableAsync(post, HttpStatusCode.BadRequest);
+        await AssertGeoServicesCacheUnavailableAsync(post, "Dynamic MapServer drawing does not provide tile exports.");
+        (await store.ListActiveAsync()).Should().BeEmpty();
+        (await queue.GetQueueDepthAsync()).Should().Be(0);
+
+        // The identical selection is valid for a cached publication and really submits a job.
+        var cachedName = AddSameDataPublication(fixture, "cached");
+        using var cachedResponse = await fixture.Client.GetAsync($"/rest/services/{cachedName}/MapServer/exportTiles" + selection);
+        using var cached = await ReadJsonAsync(cachedResponse);
+        cached.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
+        var jobId = cached.RootElement.GetProperty("jobId").GetString();
+        jobId.Should().NotBeNullOrWhiteSpace();
+        (await store.GetAsync(jobId!)).Should().NotBeNull();
     }
 
     private static string AddSameDataPublication(WebAppFixture fixture, string? mode)
@@ -249,13 +266,34 @@ public sealed class MapServerDrawingModeTests : MapServerEndpointTestBase
         return json;
     }
 
-    private static async Task AssertUnavailableAsync(HttpResponseMessage response, HttpStatusCode expected)
+    private static async Task AssertGeoServicesCacheUnavailableAsync(HttpResponseMessage response, string expectedDetail)
     {
         var body = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(expected, body);
-        body.Should().Contain("Dynamic MapServer drawing");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
         using var json = JsonDocument.Parse(body);
-        json.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be((int)expected);
+        var error = json.RootElement.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(400);
+        error.GetProperty("message").GetString().Should().Be("Bad Request");
+        error.GetProperty("details").EnumerateArray().Select(detail => detail.GetString()).Should().Contain(expectedDetail);
+        json.RootElement.TryGetProperty("jobId", out _).Should().BeFalse();
+        json.RootElement.TryGetProperty("jobStatus", out _).Should().BeFalse();
+    }
+
+    private static async Task AssertWmtsCacheUnavailableAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, body);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/xml");
+        XNamespace ows = "http://www.opengis.net/ows/1.1";
+        var xml = XDocument.Parse(body);
+        var root = xml.Root!;
+        root.Name.Should().Be(ows + "ExceptionReport");
+        root.Attribute("version")!.Value.Should().Be("1.0.0");
+        var exception = root.Elements(ows + "Exception").Should().ContainSingle().Subject;
+        exception.Attribute("exceptionCode")!.Value.Should().Be("NoApplicableCode");
+        exception.Elements(ows + "ExceptionText").Should().ContainSingle().Subject.Value.Should()
+            .StartWith("Dynamic MapServer drawing does not provide a cached WMTS service.");
     }
 
     private static async Task AssertPngAsync(HttpResponseMessage response)
