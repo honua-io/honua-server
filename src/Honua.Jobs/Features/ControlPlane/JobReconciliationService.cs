@@ -100,16 +100,6 @@ internal sealed partial class JobReconciliationService(
                 continue;
             }
 
-            // A record submitted to an external provider (AWS/Azure Batch, a Kubernetes Job, the
-            // local process pool) is claimed by the execution worker that provider launched, not by
-            // this host's queue. Its liveness belongs to the provider: the execution-job reconciler
-            // observes the provider job and owns its retry, and the worker enforces its own timeout.
-            // Reaping it here would requeue a remote attempt into this host's local queue.
-            if (IsProviderOwned(job))
-            {
-                continue;
-            }
-
             // Timeout takes precedence: timed-out jobs must fail terminally
             // even when the heartbeat has also expired and retries remain.
             if (ShouldExpireTimeout(job, now))
@@ -119,6 +109,16 @@ internal sealed partial class JobReconciliationService(
                     reconciled++;
                 }
 
+                continue;
+            }
+
+            // A record submitted to an external provider (AWS/Azure Batch, a Kubernetes Job, the local
+            // process pool) is claimed by the execution worker that provider launched, not by this
+            // host's queue. Its liveness belongs to the provider: the execution-job reconciler observes
+            // the provider job and owns its retry. Requeueing it on heartbeat expiry would push a remote
+            // attempt into this host's local queue. The terminal timeout above still applies.
+            if (IsProviderOwned(job))
+            {
                 continue;
             }
 

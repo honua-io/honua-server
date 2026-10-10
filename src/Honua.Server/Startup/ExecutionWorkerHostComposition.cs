@@ -22,8 +22,8 @@ namespace Honua.Server.Startup;
 /// pass then removes what a worker must never run:
 /// </para>
 /// <list type="bullet">
-/// <item>every hosted service except the shared <see cref="JobExecutionService"/> loop, license
-/// revalidation and telemetry export — the control-plane reconcilers and backstop sweeps (the
+/// <item>every hosted service except telemetry export (the shared <see cref="JobExecutionService"/>
+/// loop and license revalidation are re-added with worker semantics) — the control-plane reconcilers and backstop sweeps (the
 /// <c>ExecutionJobReconcilerBackgroundService</c> that dispatched queued jobs to AWS Batch from
 /// inside the worker in run 38048901509, EventId 9046), the stale-claim reaper, workflow
 /// orchestration, outbox, import/export, alert, audit and cleanup loops;</item>
@@ -89,10 +89,6 @@ internal static class ExecutionWorkerHostComposition
                 + "can claim the job and report its outcome.");
         }
 
-        var executionLoopComposed = services.Any(static descriptor =>
-            descriptor.ServiceType == typeof(IHostedService)
-            && descriptor.ImplementationType == typeof(JobExecutionService));
-
         for (var index = services.Count - 1; index >= 0; index--)
         {
             if (services[index].ServiceType == typeof(IHostedService) && !IsRetainedHostedService(services[index]))
@@ -120,10 +116,16 @@ internal static class ExecutionWorkerHostComposition
         services.AddSingleton<AssignedExecutionJobQueue>();
         services.AddSingleton<IJobQueue>(static sp => sp.GetRequiredService<AssignedExecutionJobQueue>());
         services.TryAddSingleton<ExecutionJobCancellationTokens>();
-        if (!executionLoopComposed)
+
+        // The shared execution loop, fed only by the assigned queue. A provider stop (Spot
+        // interruption, eviction, Job delete) cancels the job and hands the attempt back for
+        // resubmission instead of draining it into a terminal "drain deadline" failure.
+        services.AddHostedService(static sp =>
         {
-            services.AddHostedService<JobExecutionService>();
-        }
+            var loop = ActivatorUtilities.CreateInstance<JobExecutionService>(sp);
+            loop.RequeueOnShutdown = true;
+            return loop;
+        });
 
         // Registered after the execution loop so the host stops it first on shutdown.
         services.AddHostedService<ExecutionWorkerLifetimeService>();
@@ -131,15 +133,14 @@ internal static class ExecutionWorkerHostComposition
     }
 
     /// <summary>
-    /// The only hosted services a worker keeps: the shared execution loop (fed by the assigned
-    /// queue) and OpenTelemetry's provider host so the worker's traces and metrics still export.
-    /// License revalidation is re-added explicitly because it is registered through a factory.
+    /// The only composed hosted service a worker keeps is OpenTelemetry's provider host, so the
+    /// worker's traces and metrics still export. The execution loop and license revalidation are
+    /// re-added explicitly with worker semantics.
     /// </summary>
     internal static bool IsRetainedHostedService(ServiceDescriptor descriptor)
     {
         var implementationType = descriptor.IsKeyedService ? null : descriptor.ImplementationType;
-        return implementationType == typeof(JobExecutionService)
-            || (implementationType?.Namespace?.StartsWith("OpenTelemetry", StringComparison.Ordinal) ?? false);
+        return implementationType?.Namespace?.StartsWith("OpenTelemetry", StringComparison.Ordinal) ?? false;
     }
 }
 

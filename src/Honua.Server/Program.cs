@@ -1202,7 +1202,7 @@ if (hostComposition.IsExecutionWorker)
     // The worker serves no HTTP surface and runs no migrations: its only hosted work is the one
     // assigned execution job. The host stops itself once the job's outcome is durable.
     await app.RunAsync();
-    Environment.ExitCode = app.Services.GetRequiredService<ExecutionWorkerExitState>().ExitCode;
+    Environment.ExitCode = await app.Services.GetRequiredService<ExecutionWorkerExitState>().ResolveAsync();
     return;
 }
 

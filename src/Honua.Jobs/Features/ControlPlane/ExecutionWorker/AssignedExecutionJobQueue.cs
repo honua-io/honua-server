@@ -21,12 +21,12 @@ internal enum ExecutionWorkerClaimOutcome
     NotFound,
 
     /// <summary>
-    /// The durable record is not a submitted attempt (it is queued for resubmission), so this
-    /// launch is stale and the provider reconciler owns the next attempt.
+    /// The durable record has moved past the attempt this process was launched for (it was handed
+    /// back for resubmission, or resubmitted), so this launch is stale and must not run.
     /// </summary>
-    NotSubmitted,
+    StaleLaunch,
 
-    /// <summary>Another live worker holds the claim.</summary>
+    /// <summary>Another live worker holds the claim on the launched attempt.</summary>
     OwnedByAnotherWorker,
 
     /// <summary>The launch environment names a different job kind than the durable record.</summary>
@@ -38,13 +38,16 @@ internal enum ExecutionWorkerClaimOutcome
     /// </summary>
     Unrunnable,
 
-    /// <summary>The durable job store could not be read or written, or the host stopped first.</summary>
+    /// <summary>
+    /// The durable job store could not be read or written, the submission never became visible,
+    /// or the host stopped first.
+    /// </summary>
     StoreUnavailable,
 }
 
 /// <summary>
 /// The <see cref="IJobQueue"/> an execution worker composes in place of the shared Redis queue.
-/// It hands the shared <see cref="JobExecutionService"/> loop exactly one operation — the one the
+/// It hands the shared <see cref="JobExecutionService"/> loop exactly one operation — the attempt the
 /// batch compute backend launched this process for — so the worker runs the same claim, heartbeat,
 /// artifact-publication fence and terminal finalization as an in-process run, but can never claim
 /// another job from the shared queue.
@@ -52,15 +55,18 @@ internal enum ExecutionWorkerClaimOutcome
 /// <remarks>
 /// <para>
 /// The claim does not count an attempt: the provider submission that launched this worker already
-/// did (<c>ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync</c>). Retries are owned by the
-/// serving host's execution-job reconciler, which resubmits a record the worker hands back as
-/// <c>Queued</c> without a provider marker, so <see cref="RequeueAsync"/> and
-/// <see cref="RemoveAsync"/> have no queue membership to maintain. A worker never submits work,
-/// so <see cref="EnqueueAsync"/> fails loudly.
+/// did (<c>ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync</c>). When the launch carries
+/// <see cref="ExecutionWorkerLaunch.ExecutionAttempt"/> the claim is fenced to that attempt, so a
+/// stale container (or one the provider retried natively) can never run a newer attempt.
+/// </para>
+/// <para>
+/// Retries are owned by the serving host's execution-job reconciler, which resubmits a record the
+/// worker hands back as <c>Queued</c> with no provider marker and a retry time. A worker never
+/// submits work, so <see cref="EnqueueAsync"/> fails loudly.
 /// </para>
 /// <para>
 /// <see cref="JobExecutionService"/> processes a claim to completion before it polls again, so the
-/// second <see cref="TryClaimAsync"/> call marks the assigned run finished and completes
+/// next <see cref="TryClaimAsync"/> call after a claim marks the assigned run finished and completes
 /// <see cref="Completion"/>.
 /// </para>
 /// </remarks>
@@ -68,23 +74,27 @@ internal sealed partial class AssignedExecutionJobQueue : IJobQueue
 {
     internal const string ClaimedPhase = "Claimed by execution worker";
     private const int MaxClaimAttempts = 3;
+    private const int MaxSubmissionWaitPolls = 24;
     private const int Idle = 0;
     private const int Claimed = 1;
     private const int Finished = 2;
 
     private readonly ExecutionWorkerLaunch _launch;
     private readonly IExecutionJobStore _jobStore;
+    private readonly IServiceProvider? _services;
     private readonly ILogger<AssignedExecutionJobQueue> _logger;
     private readonly TimeProvider _timeProvider;
     private readonly TaskCompletionSource<ExecutionWorkerClaimOutcome> _completion =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _state = Idle;
     private int _failedClaimAttempts;
+    private int _submissionWaitPolls;
 
     public AssignedExecutionJobQueue(
         ExecutionWorkerLaunch launch,
         IExecutionJobStore jobStore,
         ILogger<AssignedExecutionJobQueue> logger,
+        IServiceProvider? services = null,
         TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(launch);
@@ -93,6 +103,7 @@ internal sealed partial class AssignedExecutionJobQueue : IJobQueue
         _launch = launch;
         _jobStore = jobStore;
         _logger = logger;
+        _services = services;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -132,7 +143,7 @@ internal sealed partial class AssignedExecutionJobQueue : IJobQueue
             return null;
         }
 
-        ExecutionWorkerClaimOutcome outcome;
+        ExecutionWorkerClaimOutcome? outcome;
         try
         {
             outcome = await TryClaimAssignedAsync(workerId, acceptedKinds, acceptedRuntimeProfiles, cancellationToken)
@@ -150,6 +161,18 @@ internal sealed partial class AssignedExecutionJobQueue : IJobQueue
             outcome = ExecutionWorkerClaimOutcome.StoreUnavailable;
         }
 
+        if (outcome is null)
+        {
+            // The submitting server has not recorded this attempt yet; poll again.
+            if (++_submissionWaitPolls < MaxSubmissionWaitPolls)
+            {
+                return null;
+            }
+
+            Log.SubmissionNeverRecorded(_logger, _launch.OperationId, _launch.ExecutionAttempt ?? 0);
+            outcome = ExecutionWorkerClaimOutcome.StoreUnavailable;
+        }
+
         if (outcome == ExecutionWorkerClaimOutcome.Executed)
         {
             Volatile.Write(ref _state, Claimed);
@@ -157,20 +180,41 @@ internal sealed partial class AssignedExecutionJobQueue : IJobQueue
         }
 
         Volatile.Write(ref _state, Finished);
-        _completion.TrySetResult(outcome);
+        _completion.TrySetResult(outcome.Value);
         return null;
     }
 
-    public Task RequeueAsync(
+    public async Task RequeueAsync(
         string operationId,
         OperationPriority priority = OperationPriority.Normal,
         TimeSpan? visibleAfter = null,
         CancellationToken cancellationToken = default)
     {
-        // The durable record is already Queued without a provider marker; the serving host's
-        // execution-job reconciler resubmits it to the provider (and counts the attempt).
+        // The execution loop has already written the record back to Queued with no provider id. The
+        // serving host's reconciler resubmits such a record only when it carries a retry time; without
+        // one (an immediate handback such as a provider interruption) it would read the record as an
+        // orphaned submission of the attempt that just ended. Stamp the retry time so the next attempt
+        // is a fresh provider submission.
+        for (var attempt = 0; attempt < MaxClaimAttempts; attempt++)
+        {
+            var job = await _jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (job is null
+                || job.Status != ExecutionJobStatus.Queued
+                || job.ClaimedBy is not null
+                || !string.IsNullOrEmpty(job.ProviderOperationId)
+                || job.NextRetryAt.HasValue)
+            {
+                break;
+            }
+
+            var retry = job with { NextRetryAt = _timeProvider.GetUtcNow(), UpdatedAt = _timeProvider.GetUtcNow() };
+            if (await _jobStore.TrySetAsync(retry, cancellationToken: cancellationToken).ConfigureAwait(false))
+            {
+                break;
+            }
+        }
+
         Log.RequeueHandedToReconciler(_logger, operationId);
-        return Task.CompletedTask;
     }
 
     public Task RemoveAsync(string operationId, CancellationToken cancellationToken = default)
@@ -191,7 +235,8 @@ internal sealed partial class AssignedExecutionJobQueue : IJobQueue
             : ExecutionWorkerClaimOutcome.StoreUnavailable);
     }
 
-    private async Task<ExecutionWorkerClaimOutcome> TryClaimAssignedAsync(
+    /// <returns>The outcome, or <see langword="null"/> when the launched submission is not recorded yet.</returns>
+    private async Task<ExecutionWorkerClaimOutcome?> TryClaimAssignedAsync(
         string workerId,
         IReadOnlySet<ExecutionJobKind>? acceptedKinds,
         IReadOnlySet<string>? acceptedRuntimeProfiles,
@@ -218,16 +263,32 @@ internal sealed partial class AssignedExecutionJobQueue : IJobQueue
                 return ExecutionWorkerClaimOutcome.LaunchMismatch;
             }
 
-            var refusal = DescribeUnrunnable(job, acceptedKinds, acceptedRuntimeProfiles);
-            if (refusal is not null)
+            if (_launch.ExecutionAttempt is { } launchedAttempt)
             {
-                return await FailUnrunnableAsync(job, refusal, cancellationToken).ConfigureAwait(false);
+                if (job.AttemptCount > launchedAttempt)
+                {
+                    Log.AssignedJobStale(_logger, _launch.OperationId, launchedAttempt, job.AttemptCount);
+                    return ExecutionWorkerClaimOutcome.StaleLaunch;
+                }
+
+                if (job.AttemptCount < launchedAttempt)
+                {
+                    // The provider started this container before the submitting server recorded the
+                    // submission (its post-start write). Claiming now would race that write.
+                    return null;
+                }
             }
 
             if (job.Status == ExecutionJobStatus.Queued && !ExecutionJobCancellationHelper.HasSubmittedProviderMarker(job))
             {
-                Log.AssignedJobNotSubmitted(_logger, _launch.OperationId);
-                return ExecutionWorkerClaimOutcome.NotSubmitted;
+                Log.AssignedJobStale(_logger, _launch.OperationId, _launch.ExecutionAttempt ?? 0, job.AttemptCount);
+                return ExecutionWorkerClaimOutcome.StaleLaunch;
+            }
+
+            var refusal = DescribeUnrunnable(job, acceptedKinds, acceptedRuntimeProfiles);
+            if (refusal is not null)
+            {
+                return await FailUnrunnableAsync(job, refusal, cancellationToken).ConfigureAwait(false);
             }
 
             var now = _timeProvider.GetUtcNow();
@@ -309,9 +370,29 @@ internal sealed partial class AssignedExecutionJobQueue : IJobQueue
             NextRetryAt = null,
         };
 
-        if (await _jobStore.TrySetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false))
+        if (!await _jobStore.TrySetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false))
         {
-            ControlPlaneTelemetry.RecordExecutionTransition(job, failed);
+            // Someone else moved the record; the next poll (or the provider outcome) decides.
+            throw new InvalidOperationException(
+                $"Execution worker could not record the refusal of operation '{_launch.OperationId}'.");
+        }
+
+        ControlPlaneTelemetry.RecordExecutionTransition(job, failed);
+
+        // Fan out exactly as the shared loop does for a terminal transition, so the GP result
+        // package and progress projection see the failure instead of an awaiting job.
+        foreach (var callback in _services?.GetServices<IJobTerminalCallback>() ?? [])
+        {
+            try
+            {
+                await callback.OnTerminalAsync(failed, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // Deliberately broad: one failing callback must not stop the rest; the terminal
+                // record is already durable.
+                Log.TerminalCallbackFailed(_logger, _launch.OperationId, ex);
+            }
         }
 
         return ExecutionWorkerClaimOutcome.Unrunnable;
@@ -328,8 +409,8 @@ internal sealed partial class AssignedExecutionJobQueue : IJobQueue
         [LoggerMessage(9483, LogLevel.Information, "Execution worker assigned operation {OperationId} is already {Status}; nothing to run")]
         public static partial void AssignedJobAlreadyTerminal(ILogger logger, string operationId, string status);
 
-        [LoggerMessage(9484, LogLevel.Warning, "Execution worker launch is stale: operation {OperationId} is queued for resubmission, not a submitted attempt")]
-        public static partial void AssignedJobNotSubmitted(ILogger logger, string operationId);
+        [LoggerMessage(9484, LogLevel.Warning, "Execution worker launch is stale: operation {OperationId} launched for attempt {LaunchedAttempt} but the durable record is at attempt {RecordAttempt} or queued for resubmission")]
+        public static partial void AssignedJobStale(ILogger logger, string operationId, int launchedAttempt, int recordAttempt);
 
         [LoggerMessage(9485, LogLevel.Warning, "Execution worker refused operation {OperationId}: live claim held by {ClaimedBy}")]
         public static partial void AssignedJobOwnedElsewhere(ILogger logger, string operationId, string? claimedBy);
@@ -345,5 +426,11 @@ internal sealed partial class AssignedExecutionJobQueue : IJobQueue
 
         [LoggerMessage(9489, LogLevel.Information, "Execution worker handed operation {OperationId} back for a provider retry; the serving host reconciler resubmits it")]
         public static partial void RequeueHandedToReconciler(ILogger logger, string operationId);
+
+        [LoggerMessage(9494, LogLevel.Error, "Execution worker for operation {OperationId} never saw attempt {Attempt} recorded by the submitting server")]
+        public static partial void SubmissionNeverRecorded(ILogger logger, string operationId, int attempt);
+
+        [LoggerMessage(9495, LogLevel.Warning, "Execution worker terminal callback failed for operation {OperationId}")]
+        public static partial void TerminalCallbackFailed(ILogger logger, string operationId, Exception exception);
     }
 }

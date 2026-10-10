@@ -57,6 +57,13 @@ internal sealed record ExecutionWorkerLaunch
     public const string ContractVersionVariable = "HONUA_CONTRACT_VERSION";
 
     /// <summary>
+    /// The submission attempt (the durable record's <c>AttemptCount</c> once the submission is
+    /// recorded) the provider job was launched for. A worker only claims the attempt it was
+    /// launched for, so a stale or provider-retried container can never run a newer attempt.
+    /// </summary>
+    public const string ExecutionAttemptVariable = "HONUA_EXECUTION_ATTEMPT";
+
+    /// <summary>
     /// The highest serving-to-worker job-contract version this image's execution worker can run.
     /// A launch or a job record that names a higher version fails closed instead of running a job
     /// whose shape this worker does not understand.
@@ -74,6 +81,72 @@ internal sealed record ExecutionWorkerLaunch
     public string? RuntimeProfile { get; init; }
 
     public int ContractVersion { get; init; } = 1;
+
+    /// <summary>The launched submission attempt, when the submitting server stamped one.</summary>
+    public int? ExecutionAttempt { get; init; }
+}
+
+/// <summary>
+/// Builds the launch environment every batch compute backend injects, so the worker-mode switch
+/// sees the same contract whichever provider launched the process.
+/// </summary>
+internal static class ExecutionWorkerLaunchEnvironment
+{
+    /// <summary>
+    /// The launch variable names. Workload <c>env.*</c> passthrough may never set them: a workload
+    /// that could rename the operation would make a worker claim a different job than the one the
+    /// provider was asked to run.
+    /// </summary>
+    public static readonly IReadOnlySet<string> ReservedNames = new HashSet<string>(StringComparer.Ordinal)
+    {
+        ExecutionWorkerLaunch.OperationIdVariable,
+        ExecutionWorkerLaunch.JobKindVariable,
+        ExecutionWorkerLaunch.WorkloadNameVariable,
+        ExecutionWorkerLaunch.WorkloadIdVariable,
+        ExecutionWorkerLaunch.RuntimeProfileVariable,
+        ExecutionWorkerLaunch.ContractVersionVariable,
+        ExecutionWorkerLaunch.ExecutionAttemptVariable,
+    };
+
+    /// <summary>Whether a workload passthrough name is a reserved launch variable.</summary>
+    public static bool IsReserved(string name) => ReservedNames.Contains(name);
+
+    /// <summary>
+    /// The launch variables for <paramref name="job"/>, to be stamped AFTER any workload passthrough.
+    /// </summary>
+    /// <param name="job">The record being launched.</param>
+    /// <param name="executionAttempt">
+    /// The attempt this launch runs. A backend's <c>StartAsync</c> receives the record before the
+    /// submission is counted, so it passes <c>job.AttemptCount + 1</c>.
+    /// </param>
+    public static IReadOnlyList<KeyValuePair<string, string>> Build(ExecutionJobRecord job, int executionAttempt)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        var variables = new List<KeyValuePair<string, string>>
+        {
+            new(ExecutionWorkerLaunch.OperationIdVariable, job.OperationId),
+            new(ExecutionWorkerLaunch.WorkloadNameVariable, job.Spec.WorkloadName),
+            new(ExecutionWorkerLaunch.JobKindVariable, job.Spec.Kind.ToString()),
+        };
+
+        if (!string.IsNullOrWhiteSpace(job.Spec.WorkloadId))
+        {
+            variables.Add(new(ExecutionWorkerLaunch.WorkloadIdVariable, job.Spec.WorkloadId));
+        }
+
+        if (!string.IsNullOrWhiteSpace(job.Spec.RuntimeProfile))
+        {
+            variables.Add(new(ExecutionWorkerLaunch.RuntimeProfileVariable, job.Spec.RuntimeProfile));
+        }
+
+        variables.Add(new(
+            ExecutionWorkerLaunch.ExecutionAttemptVariable,
+            Math.Max(1, executionAttempt).ToString(CultureInfo.InvariantCulture)));
+        variables.Add(new(
+            ExecutionWorkerLaunch.ContractVersionVariable,
+            job.Spec.ContractVersion.ToString(CultureInfo.InvariantCulture)));
+        return variables;
+    }
 }
 
 /// <summary>
@@ -133,6 +206,21 @@ internal sealed record HostCompositionSelection(HostCompositionProfile Profile, 
                 + $"{ExecutionWorkerLaunch.ContractVersionVariable} value '{contractVersionText.Trim()}'.");
         }
 
+        int? executionAttempt = null;
+        var attemptText = configuration[ExecutionWorkerLaunch.ExecutionAttemptVariable];
+        if (!string.IsNullOrWhiteSpace(attemptText))
+        {
+            if (!int.TryParse(attemptText.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var attempt)
+                || attempt < 1)
+            {
+                throw new InvalidOperationException(
+                    $"Execution worker launch for operation '{operationId.Trim()}' carries an invalid "
+                    + $"{ExecutionWorkerLaunch.ExecutionAttemptVariable} value '{attemptText.Trim()}'.");
+            }
+
+            executionAttempt = attempt;
+        }
+
         return new HostCompositionSelection(
             HostCompositionProfile.ExecutionWorker,
             new ExecutionWorkerLaunch
@@ -143,6 +231,7 @@ internal sealed record HostCompositionSelection(HostCompositionProfile Profile, 
                 WorkloadId = Normalize(configuration[ExecutionWorkerLaunch.WorkloadIdVariable]),
                 RuntimeProfile = Normalize(configuration[ExecutionWorkerLaunch.RuntimeProfileVariable]),
                 ContractVersion = contractVersion,
+                ExecutionAttempt = executionAttempt,
             });
     }
 

@@ -33,7 +33,7 @@ public sealed class ExecutionWorkerProfileTests
     private const string OperationId = "gp-512eacce12104f1aa4f4a092c4c17408";
 
     // ---------------------------------------------------------------------
-    // Worker-mode detection
+    // Worker-mode detection and the launch contract
     // ---------------------------------------------------------------------
 
     [UnitTest]
@@ -52,15 +52,19 @@ public sealed class ExecutionWorkerProfileTests
             .IsExecutionWorker.Should().BeFalse();
 
     [UnitTest]
-    public void Resolve_BatchContainerOverrides_SelectTheExecutionWorkerProfile()
+    public void Resolve_TheLaunchEnvironmentEveryBackendStamps_SelectsTheExecutionWorkerProfile()
     {
-        // The exact override names AwsBatchComputeBackend.BuildEnvironmentOverrides injects.
-        var selection = HostCompositionSelection.Resolve(Configuration(
-            ("HONUA_OPERATION_ID", OperationId),
-            ("HONUA_WORKLOAD_NAME", "Geoprocessing (AWS Batch)"),
-            ("HONUA_JOB_KIND", "Geoprocessing"),
-            ("HONUA_WORKLOAD_ID", "geoprocessing-aws-batch"),
-            ("HONUA_CONTRACT_VERSION", "1")));
+        var job = SubmittedRemoteJob() with
+        {
+            AttemptCount = 0,
+            Spec = SubmittedRemoteJob().Spec with { WorkloadId = "geoprocessing-aws-batch" },
+        };
+
+        // Backends stamp the record they receive before the submission is counted: attempt 0 + 1.
+        var launchEnvironment = ExecutionWorkerLaunchEnvironment.Build(job, job.AttemptCount + 1);
+        var selection = HostCompositionSelection.Resolve(new ConfigurationBuilder()
+            .AddInMemoryCollection(launchEnvironment.Select(static pair => new KeyValuePair<string, string?>(pair.Key, pair.Value)))
+            .Build());
 
         selection.Profile.Should().Be(HostCompositionProfile.ExecutionWorker);
         selection.Launch.Should().BeEquivalentTo(new ExecutionWorkerLaunch
@@ -70,7 +74,19 @@ public sealed class ExecutionWorkerProfileTests
             WorkloadName = "Geoprocessing (AWS Batch)",
             WorkloadId = "geoprocessing-aws-batch",
             ContractVersion = 1,
+            ExecutionAttempt = 1,
         });
+    }
+
+    [UnitTest]
+    public void LaunchEnvironment_ReservesEveryLaunchVariableFromWorkloadPassthrough()
+    {
+        ExecutionWorkerLaunchEnvironment.ReservedNames.Should().BeEquivalentTo(
+        [
+            "HONUA_OPERATION_ID", "HONUA_JOB_KIND", "HONUA_WORKLOAD_NAME", "HONUA_WORKLOAD_ID",
+            "HONUA_RUNTIME_PROFILE", "HONUA_CONTRACT_VERSION", "HONUA_EXECUTION_ATTEMPT",
+        ]);
+        ExecutionWorkerLaunchEnvironment.IsReserved("GDAL_CACHEMAX").Should().BeFalse();
     }
 
     [UnitTest]
@@ -84,6 +100,8 @@ public sealed class ExecutionWorkerProfileTests
     [InlineData("HONUA_CONTRACT_VERSION", "two")]
     [InlineData("HONUA_CONTRACT_VERSION", "0")]
     [InlineData("HONUA_CONTRACT_VERSION", "-1")]
+    [InlineData("HONUA_EXECUTION_ATTEMPT", "0")]
+    [InlineData("HONUA_EXECUTION_ATTEMPT", "first")]
     [Trait("Tier", "Fast")]
     public void Resolve_UnparseableLaunch_RefusesToStart(string name, string value)
     {
@@ -119,12 +137,12 @@ public sealed class ExecutionWorkerProfileTests
 
         services.ApplyExecutionWorkerProfile(Launch());
 
-        HostedImplementations(services).Should().BeEquivalentTo(
-            [typeof(JobExecutionService), typeof(ExecutionWorkerLifetimeService)],
-            "the worker runs only the execution loop for its assigned job and the lifetime that stops it");
+        HostedImplementations(services).Should().Equal(
+            [typeof(ExecutionWorkerLifetimeService)],
+            "nothing composed for the serving host is hosted by the worker");
         services.Where(static descriptor => descriptor.ServiceType == typeof(IHostedService)
                 && descriptor.ImplementationType is null)
-            .Should().ContainSingle("only license revalidation is re-added (it is factory-registered)");
+            .Should().HaveCount(2, "only the worker execution loop and license revalidation are re-added");
         services.Should().Contain(static descriptor => descriptor.ServiceType == typeof(FileBackedLicenseService));
         services.Where(static descriptor => descriptor.ServiceType == typeof(HttpServer))
             .Should().ContainSingle().Which.ImplementationType.Should().Be<NoHttpServer>(
@@ -176,7 +194,7 @@ public sealed class ExecutionWorkerProfileTests
     // ---------------------------------------------------------------------
 
     [UnitTest]
-    public async Task AssignedQueue_ClaimsOnlyTheSubmittedAssignedJob_WithoutCountingAnAttempt()
+    public async Task AssignedQueue_ClaimsOnlyTheLaunchedAttempt_WithoutCountingAnother()
     {
         var store = new VersionedJobStore(SubmittedRemoteJob(), SubmittedRemoteJob("gp-someone-else"));
         var queue = Queue(store);
@@ -196,7 +214,42 @@ public sealed class ExecutionWorkerProfileTests
     }
 
     [UnitTest]
-    public async Task AssignedQueue_StaleLaunchForAJobQueuedForResubmission_IsRefused()
+    public async Task AssignedQueue_LaunchForAnOlderAttempt_IsStale()
+    {
+        // A stale container, or one the provider retried natively, must never run a newer attempt.
+        var store = new VersionedJobStore(SubmittedRemoteJob() with { AttemptCount = 2, ProviderOperationId = "aws-batch-job-9" });
+        var queue = Queue(store);
+
+        (await queue.TryClaimAsync("worker-a", Kinds(), RuntimeProfiles.DefaultAccepted)).Should().BeNull();
+
+        (await queue.Completion).Should().Be(ExecutionWorkerClaimOutcome.StaleLaunch);
+        store.Get(OperationId).ClaimedBy.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task AssignedQueue_LaunchAheadOfTheRecordedSubmission_WaitsInsteadOfRacingIt()
+    {
+        // The provider started the container before the submitting server's post-start write.
+        var inFlight = SubmittedRemoteJob() with
+        {
+            Status = ExecutionJobStatus.Provisioning,
+            AttemptCount = 0,
+            ProviderOperationId = null,
+        };
+        var store = new VersionedJobStore(inFlight);
+        var queue = Queue(store);
+
+        (await queue.TryClaimAsync("worker-a", Kinds(), RuntimeProfiles.DefaultAccepted)).Should().BeNull();
+
+        queue.Completion.IsCompleted.Should().BeFalse("the worker polls again until the submission is recorded");
+        store.Get(OperationId).Should().Be(inFlight, "the record is untouched");
+
+        store.Replace(inFlight with { Status = ExecutionJobStatus.Queued, AttemptCount = 1, ProviderOperationId = "aws-batch-job-1" });
+        (await queue.TryClaimAsync("worker-a", Kinds(), RuntimeProfiles.DefaultAccepted)).Should().Be(OperationId);
+    }
+
+    [UnitTest]
+    public async Task AssignedQueue_RecordQueuedForResubmission_IsStale()
     {
         var store = new VersionedJobStore(SubmittedRemoteJob() with
         {
@@ -207,7 +260,7 @@ public sealed class ExecutionWorkerProfileTests
 
         (await queue.TryClaimAsync("worker-a", Kinds(), RuntimeProfiles.DefaultAccepted)).Should().BeNull();
 
-        (await queue.Completion).Should().Be(ExecutionWorkerClaimOutcome.NotSubmitted);
+        (await queue.Completion).Should().Be(ExecutionWorkerClaimOutcome.StaleLaunch);
         store.Get(OperationId).ClaimedBy.Should().BeNull();
     }
 
@@ -241,13 +294,15 @@ public sealed class ExecutionWorkerProfileTests
     }
 
     [UnitTest]
-    public async Task AssignedQueue_UnsupportedContractVersion_FailsTheJobClosed()
+    public async Task AssignedQueue_UnsupportedContractVersion_FailsTheJobClosed_AndPublishesTheTerminalTransition()
     {
         var store = new VersionedJobStore(SubmittedRemoteJob() with
         {
             Spec = SubmittedRemoteJob().Spec with { ContractVersion = ExecutionWorkerLaunch.MaxSupportedContractVersion + 1 },
         });
-        var queue = Queue(store);
+        var callback = Substitute.For<IJobTerminalCallback>();
+        var services = new ServiceCollection().AddSingleton(callback).BuildServiceProvider();
+        var queue = new AssignedExecutionJobQueue(Launch(), store, NullLogger<AssignedExecutionJobQueue>.Instance, services);
 
         (await queue.TryClaimAsync("worker-a", Kinds(), RuntimeProfiles.DefaultAccepted)).Should().BeNull();
 
@@ -255,6 +310,8 @@ public sealed class ExecutionWorkerProfileTests
         var record = store.Get(OperationId);
         record.Status.Should().Be(ExecutionJobStatus.Failed);
         record.ErrorMessage.Should().Contain("contract version");
+        await callback.Received(1).OnTerminalAsync(
+            Arg.Is<ExecutionJobRecord>(job => job.Status == ExecutionJobStatus.Failed), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -275,9 +332,9 @@ public sealed class ExecutionWorkerProfileTests
     public async Task Worker_RunsTheAssignedJob_AndReportsSuccessThroughTheDurableStore()
     {
         var store = new VersionedJobStore(SubmittedRemoteJob(), SubmittedRemoteJob("gp-queued-local"));
-        var executor = new ScriptedExecutor(async (job, context) =>
+        var executor = new ScriptedExecutor(async (job, context, cancellationToken) =>
         {
-            await context.PublishArtifactAsync("gp-result://area");
+            await context.PublishArtifactAsync("gp-result://area", cancellationToken);
             return JobExecutionResult.Succeeded();
         });
 
@@ -295,10 +352,31 @@ public sealed class ExecutionWorkerProfileTests
     }
 
     [UnitTest]
+    public async Task Worker_ConcurrentProviderObservationAtFinalization_StillRecordsTheSuccess()
+    {
+        var store = new VersionedJobStore(SubmittedRemoteJob());
+        var executor = new ScriptedExecutor((job, _, _) =>
+        {
+            // The serving host's reconciler writes a nonterminal provider observation right before
+            // the worker's terminal CAS.
+            store.InterleaveBeforeNextTerminalWrite(current => current with { CurrentPhase = "AWS Batch job status=RUNNING" });
+            return Task.FromResult(JobExecutionResult.Succeeded());
+        });
+
+        var (exitCode, _) = await RunWorkerAsync(store, executor);
+
+        var record = store.Get(OperationId);
+        record.Status.Should().Be(ExecutionJobStatus.Succeeded, "a CAS conflict while still owning the attempt is retried");
+        record.ProviderOperationId.Should().Be("aws-batch-job-1", "the executed attempt is not handed back for another run");
+        executor.ExecutedOperations.Should().ContainSingle();
+        exitCode.Should().Be(0);
+    }
+
+    [UnitTest]
     public async Task Worker_DeterministicExecutorFailure_IsReportedAsTheTypedTerminalError()
     {
         var store = new VersionedJobStore(SubmittedRemoteJob());
-        var executor = new ScriptedExecutor((_, _) => Task.FromResult(
+        var executor = new ScriptedExecutor((_, _, _) => Task.FromResult(
             JobExecutionResult.Failed("geometry.buffer: distance must be finite.") with { IsRetryable = false }));
 
         var (exitCode, _) = await RunWorkerAsync(store, executor);
@@ -306,23 +384,76 @@ public sealed class ExecutionWorkerProfileTests
         var record = store.Get(OperationId);
         record.Status.Should().Be(ExecutionJobStatus.Failed);
         record.ErrorMessage.Should().Be("geometry.buffer: distance must be finite.");
-        exitCode.Should().Be(1);
+        exitCode.Should().Be(0, "the outcome is durable; a provider-native retry must not run the job again");
     }
 
     [UnitTest]
     public async Task Worker_RetryableFailure_HandsTheAttemptBackToTheProviderReconciler()
     {
         var store = new VersionedJobStore(SubmittedRemoteJob());
-        var executor = new ScriptedExecutor((_, _) => Task.FromResult(JobExecutionResult.Failed("source timed out")));
+        var executor = new ScriptedExecutor((_, _, _) => Task.FromResult(JobExecutionResult.Failed("source timed out")));
 
         var (exitCode, _) = await RunWorkerAsync(store, executor);
 
         var record = store.Get(OperationId);
         record.Status.Should().Be(ExecutionJobStatus.Queued);
         record.ClaimedBy.Should().BeNull();
-        record.ProviderOperationId.Should().BeNull(
-            "without a provider marker the serving host's execution-job reconciler resubmits it (and counts the attempt)");
-        exitCode.Should().Be(1);
+        record.ProviderOperationId.Should().BeNull();
+        record.NextRetryAt.Should().NotBeNull(
+            "with a retry time and no provider marker the serving host's reconciler resubmits it (and counts the attempt)");
+        exitCode.Should().Be(0, "the reconciler owns the retry, so the provider must not retry natively");
+    }
+
+    [UnitTest]
+    public async Task Worker_ProviderInterruption_HandsTheAttemptBackInsteadOfFailingIt()
+    {
+        var store = new VersionedJobStore(SubmittedRemoteJob());
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var executor = new ScriptedExecutor(async (_, _, cancellationToken) =>
+        {
+            started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return JobExecutionResult.Succeeded();
+        });
+        var launch = Launch();
+        var queue = new AssignedExecutionJobQueue(launch, store, NullLogger<AssignedExecutionJobQueue>.Instance);
+        using var loop = new JobExecutionService(
+            queue, store, [executor], new ExecutionJobCancellationTokens(), [], null,
+            NullLogger<JobExecutionService>.Instance)
+        {
+            RequeueOnShutdown = true,
+        };
+
+        await loop.StartAsync(CancellationToken.None);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
+        // SIGTERM from the provider: the host gives the loop a short stop budget.
+        using var hostDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await loop.StopAsync(hostDeadline.Token);
+
+        var record = store.Get(OperationId);
+        record.Status.Should().Be(ExecutionJobStatus.Queued, "an interruption is not a drain-deadline failure");
+        record.ErrorMessage.Should().BeNull();
+        record.ProviderOperationId.Should().BeNull();
+        record.NextRetryAt.Should().NotBeNull("an immediate handback must still read as a retry, not an orphaned submission");
+        (await new ExecutionWorkerExitState(launch, store, NullLogger<ExecutionWorkerExitState>.Instance).ResolveAsync())
+            .Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(ExecutionJobStatus.Running, "worker-a", 1, 1)]
+    [InlineData(ExecutionJobStatus.Provisioning, null, 1, 1)]
+    [InlineData(ExecutionJobStatus.Running, "worker-a", 1, 2)]
+    [Trait("Tier", "Fast")]
+    public void ExitCode_IsNonzeroOnlyWhileThisLaunchStillOwnsTheAttemptWithoutAnOutcome(
+        ExecutionJobStatus status, string? claimedBy, int launchedAttempt, int recordAttempt)
+    {
+        var record = SubmittedRemoteJob() with { Status = status, ClaimedBy = claimedBy, AttemptCount = recordAttempt };
+
+        var exitCode = ExecutionWorkerExitState.Resolve(Launch() with { ExecutionAttempt = launchedAttempt }, record);
+
+        exitCode.Should().Be(launchedAttempt == recordAttempt ? 1 : 0);
+        ExecutionWorkerExitState.Resolve(Launch(), null).Should().Be(1);
     }
 
     // ---------------------------------------------------------------------
@@ -332,7 +463,7 @@ public sealed class ExecutionWorkerProfileTests
     [UnitTest]
     public async Task Reaper_DoesNotRequeueAWorkerClaimedProviderJob_IntoTheLocalQueue()
     {
-        var stale = DateTimeOffset.UtcNow.AddHours(-1);
+        var stale = DateTimeOffset.UtcNow.AddMinutes(-10);
         var store = new VersionedJobStore(SubmittedRemoteJob() with
         {
             Status = ExecutionJobStatus.Running,
@@ -341,14 +472,7 @@ public sealed class ExecutionWorkerProfileTests
             LastHeartbeatAt = stale,
         });
         var localQueue = Substitute.For<IJobQueue>();
-        using var reaper = new JobReconciliationService(
-            store,
-            localQueue,
-            Substitute.For<IQueueClaimReconciler>(),
-            new ExecutionJobCancellationTokens(),
-            [],
-            null,
-            NullLogger<JobReconciliationService>.Instance);
+        using var reaper = Reaper(store, localQueue);
 
         await reaper.SweepActiveJobsAsync(CancellationToken.None);
 
@@ -362,24 +486,56 @@ public sealed class ExecutionWorkerProfileTests
         }).Should().BeFalse("in-process local jobs keep heartbeat reaping");
     }
 
+    [UnitTest]
+    public async Task Reaper_StillEnforcesTheTerminalTimeout_ForProviderOwnedJobs()
+    {
+        var longAgo = DateTimeOffset.UtcNow.AddHours(-2);
+        var store = new VersionedJobStore(SubmittedRemoteJob() with
+        {
+            Status = ExecutionJobStatus.Running,
+            ClaimedBy = "worker-batch",
+            ClaimedAt = longAgo,
+            LastHeartbeatAt = DateTimeOffset.UtcNow,
+            TimeoutPolicy = new JobTimeoutPolicy { MaxDuration = TimeSpan.FromHours(1) },
+        });
+        using var reaper = Reaper(store, Substitute.For<IJobQueue>());
+
+        await reaper.SweepActiveJobsAsync(CancellationToken.None);
+
+        store.Get(OperationId).Status.Should().Be(ExecutionJobStatus.Failed,
+            "a hung worker cannot keep a provider job Running past its timeout");
+    }
+
     // ---------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------
+
+    private static JobReconciliationService Reaper(VersionedJobStore store, IJobQueue localQueue)
+        => new(
+            store,
+            localQueue,
+            Substitute.For<IQueueClaimReconciler>(),
+            new ExecutionJobCancellationTokens(),
+            [],
+            null,
+            NullLogger<JobReconciliationService>.Instance);
 
     private static async Task<(int ExitCode, bool Stopped)> RunWorkerAsync(VersionedJobStore store, IJobExecutor executor)
     {
         var launch = Launch();
         var queue = new AssignedExecutionJobQueue(launch, store, NullLogger<AssignedExecutionJobQueue>.Instance);
-        var exitState = new ExecutionWorkerExitState();
         var lifetime = Substitute.For<IHostApplicationLifetime>();
         var stopped = false;
         lifetime.When(static l => l.StopApplication()).Do(_ => stopped = true);
 
         using var loop = new JobExecutionService(
             queue, store, [executor], new ExecutionJobCancellationTokens(), [], null,
-            NullLogger<JobExecutionService>.Instance);
+            NullLogger<JobExecutionService>.Instance)
+        {
+            RequeueOnShutdown = true,
+        };
         using var workerLifetime = new ExecutionWorkerLifetimeService(
-            launch, queue, store, exitState, lifetime, NullLogger<ExecutionWorkerLifetimeService>.Instance);
+            launch, queue, lifetime, NullLogger<ExecutionWorkerLifetimeService>.Instance);
 
         await loop.StartAsync(CancellationToken.None);
         await workerLifetime.StartAsync(CancellationToken.None);
@@ -387,7 +543,10 @@ public sealed class ExecutionWorkerProfileTests
         await workerLifetime.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(30));
         await workerLifetime.StopAsync(CancellationToken.None);
         await loop.StopAsync(CancellationToken.None);
-        return (exitState.ExitCode, stopped);
+
+        var exitCode = await new ExecutionWorkerExitState(launch, store, NullLogger<ExecutionWorkerExitState>.Instance)
+            .ResolveAsync();
+        return (exitCode, stopped);
     }
 
     private static void ComposeRedisConnectedControlPlane(
@@ -431,6 +590,7 @@ public sealed class ExecutionWorkerProfileTests
             OperationId = OperationId,
             JobKind = ExecutionJobKind.Geoprocessing,
             WorkloadName = "Geoprocessing (AWS Batch)",
+            ExecutionAttempt = 1,
         };
 
     private static AssignedExecutionJobQueue Queue(VersionedJobStore store)
@@ -443,7 +603,7 @@ public sealed class ExecutionWorkerProfileTests
             .AddInMemoryCollection(values.Select(static pair => new KeyValuePair<string, string?>(pair.Key, pair.Value)))
             .Build();
 
-    /// <summary>The record after the serving host submitted it to AWS Batch.</summary>
+    /// <summary>The record after the serving host submitted attempt 1 to AWS Batch.</summary>
     private static ExecutionJobRecord SubmittedRemoteJob(string operationId = OperationId)
     {
         var now = DateTimeOffset.UtcNow;
@@ -466,7 +626,8 @@ public sealed class ExecutionWorkerProfileTests
         };
     }
 
-    private sealed class ScriptedExecutor(Func<ExecutionJobRecord, IJobExecutionContext, Task<JobExecutionResult>> run)
+    private sealed class ScriptedExecutor(
+        Func<ExecutionJobRecord, IJobExecutionContext, CancellationToken, Task<JobExecutionResult>> run)
         : IJobExecutor
     {
         public List<string> ExecutedOperations { get; } = [];
@@ -479,7 +640,7 @@ public sealed class ExecutionWorkerProfileTests
             CancellationToken cancellationToken = default)
         {
             ExecutedOperations.Add(job.OperationId);
-            return await run(job, context);
+            return await run(job, context, cancellationToken);
         }
     }
 
@@ -489,12 +650,30 @@ public sealed class ExecutionWorkerProfileTests
         private readonly object _gate = new();
         private readonly Dictionary<string, ExecutionJobRecord> _jobs =
             jobs.ToDictionary(static job => job.OperationId, StringComparer.Ordinal);
+        private Func<ExecutionJobRecord, ExecutionJobRecord>? _interleave;
 
         public ExecutionJobRecord Get(string operationId)
         {
             lock (_gate)
             {
                 return _jobs[operationId];
+            }
+        }
+
+        public void Replace(ExecutionJobRecord job)
+        {
+            lock (_gate)
+            {
+                _jobs[job.OperationId] = job with { Version = _jobs[job.OperationId].Version + 1 };
+            }
+        }
+
+        /// <summary>Applies a concurrent write just before the next terminal CAS lands.</summary>
+        public void InterleaveBeforeNextTerminalWrite(Func<ExecutionJobRecord, ExecutionJobRecord> write)
+        {
+            lock (_gate)
+            {
+                _interleave = write;
             }
         }
 
@@ -536,6 +715,13 @@ public sealed class ExecutionWorkerProfileTests
         {
             lock (_gate)
             {
+                if (_interleave is { } interleave && ExecutionJobReconciler.IsTerminal(job.Status)
+                    && _jobs.TryGetValue(job.OperationId, out var before))
+                {
+                    _interleave = null;
+                    _jobs[job.OperationId] = interleave(before) with { Version = before.Version + 1 };
+                }
+
                 if (!_jobs.TryGetValue(job.OperationId, out var current) || current.Version != job.Version)
                 {
                     return Task.FromResult(false);
