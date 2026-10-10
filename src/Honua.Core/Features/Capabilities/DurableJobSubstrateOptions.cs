@@ -32,17 +32,71 @@ public enum DurableJobSubstrateCause
     /// </summary>
     RuntimeIncomplete,
 
-    /// <summary>Redis policy could not be read, so durability cannot be established.</summary>
+    /// <summary>
+    /// Attestation outcome, not a composition cause: Redis policy could not be read (managed
+    /// Redis such as AWS ElastiCache and MemoryDB block <c>CONFIG</c>), so durability is
+    /// <see cref="RedisDurabilityStatuses.Unverified"/>. Informational since the 2026-10-10
+    /// owner ruling; it no longer withholds any capability.
+    /// </summary>
     RedisAttestationUnavailable,
 
-    /// <summary>Redis persistence is disabled.</summary>
+    /// <summary>Attestation outcome (informational): Redis persistence is disabled.</summary>
     RedisPersistenceDisabled,
 
-    /// <summary>Redis does not expose an accepted acknowledged-write persistence policy.</summary>
+    /// <summary>Attestation outcome (informational): the acknowledged-write fsync policy is <c>no</c>.</summary>
     RedisWritePolicyUnsafe,
 
-    /// <summary>Redis may evict durable control-plane keys under memory pressure.</summary>
+    /// <summary>Attestation outcome (informational): Redis may evict keys under memory pressure.</summary>
     RedisEvictionPolicyUnsafe,
+
+    /// <summary>
+    /// Redis is configured but did not connect at startup, so the Redis-backed control plane is
+    /// not usable. Unlike the attestation outcomes above this IS a composition cause: it is the
+    /// "Redis is genuinely absent" case the typed capability-unavailable refusals describe.
+    /// </summary>
+    RedisUnreachable,
+}
+
+/// <summary>
+/// The published Redis durability outcome (<c>limits.job.redisDurability.status</c> on the
+/// capability manifest).
+/// </summary>
+/// <remarks>
+/// Owner ruling (2026-10-10): the governed proposal control plane and the durable job runner
+/// require Redis to be present and working, not a <c>CONFIG GET</c>-proven durable policy.
+/// Durability is an operator property of the Redis deployment (AOF, replication, snapshots,
+/// a managed service's own guarantees), so the startup attestation is published as information
+/// and never withholds a capability.
+/// </remarks>
+public static class RedisDurabilityStatuses
+{
+    /// <summary>AOF on, <c>appendfsync</c> everysec/always, <c>maxmemory-policy noeviction</c>.</summary>
+    public const string Attested = "attested";
+
+    /// <summary>
+    /// The policy could not be read (typically <c>CONFIG</c> is blocked, as on AWS ElastiCache and
+    /// MemoryDB), so durability is neither proven nor disproven.
+    /// </summary>
+    public const string Unverified = "unverified";
+
+    /// <summary>The policy was read and is not durable (AOF off, fsync <c>no</c>, or an evicting policy).</summary>
+    public const string NotDurable = "not-durable";
+
+    /// <summary>Maps an attestation outcome to its published status.</summary>
+    /// <param name="attested">Whether the attestation was accepted.</param>
+    /// <param name="cause">The rejection cause, when not accepted.</param>
+    /// <returns>The status, or <see langword="null"/> when no attestation outcome exists.</returns>
+    public static string? For(bool attested, DurableJobSubstrateCause? cause)
+        => attested
+            ? Attested
+            : cause switch
+            {
+                DurableJobSubstrateCause.RedisAttestationUnavailable => Unverified,
+                DurableJobSubstrateCause.RedisPersistenceDisabled
+                    or DurableJobSubstrateCause.RedisWritePolicyUnsafe
+                    or DurableJobSubstrateCause.RedisEvictionPolicyUnsafe => NotDurable,
+                _ => null,
+            };
 }
 
 /// <summary>Machine-observed Redis durability facts safe to publish as release evidence.</summary>
@@ -81,11 +135,33 @@ public sealed class DurableJobSubstrateOptions
     /// </summary>
     public bool RedisEntitled { get; set; }
 
-    /// <summary>The accepted startup attestation, or <see langword="null"/> when Redis is unsafe.</summary>
+    /// <summary>
+    /// The accepted startup attestation, or <see langword="null"/> when durability was not
+    /// attested. Informational: it is published, never used to withhold a capability.
+    /// </summary>
     public RedisDurabilityAttestation? RedisDurabilityAttestation { get; set; }
 
-    /// <summary>Typed reason an attempted Redis durability attestation was rejected.</summary>
+    /// <summary>
+    /// Typed reason the Redis durability attestation was not accepted (informational), or
+    /// <see cref="DurableJobSubstrateCause.RedisUnreachable"/> when Redis did not connect at
+    /// startup (which does withhold the Redis-backed capabilities).
+    /// </summary>
     public DurableJobSubstrateCause? RedisDurabilityFailure { get; set; }
+
+    /// <summary>
+    /// Machine-observed detail of a non-accepted attestation (for example
+    /// <c>ERR unknown command 'CONFIG'</c> or <c>appendonly=no, aof_enabled=0</c>). Logged at
+    /// startup only; never published on the anonymous capability manifest because a client
+    /// error message can name internal endpoints.
+    /// </summary>
+    public string? RedisDurabilityDetail { get; set; }
+
+    /// <summary>
+    /// The published durability status (<see cref="RedisDurabilityStatuses"/>), or
+    /// <see langword="null"/> when no attestation ran against a connected Redis.
+    /// </summary>
+    public string? RedisDurabilityStatus
+        => RedisDurabilityStatuses.For(RedisDurabilityAttestation is not null, RedisDurabilityFailure);
 
     /// <summary>
     /// Classifies why the substrate is unavailable, given whether the composed runtime actually
@@ -106,11 +182,20 @@ public sealed class DurableJobSubstrateOptions
             return DurableJobSubstrateCause.RedisNotEntitled;
         }
 
+        // Owner ruling (2026-10-10): a CONNECTED Redis enables the durable job runner and the
+        // governed proposal control plane whatever the durability attestation said. The
+        // attestation outcome is published (RedisDurabilityStatus) and logged, never classified
+        // here; only a Redis that is absent or did not connect withholds the capability.
         if (jobStorePresent && jobQueuePresent)
         {
-            return RedisDurabilityAttestation is not null
-                ? DurableJobSubstrateCause.Available
-                : RedisDurabilityFailure ?? DurableJobSubstrateCause.RedisAttestationUnavailable;
+            if (!RedisConfigured)
+            {
+                return DurableJobSubstrateCause.RedisNotConfigured;
+            }
+
+            return RedisDurabilityFailure == DurableJobSubstrateCause.RedisUnreachable
+                ? DurableJobSubstrateCause.RedisUnreachable
+                : DurableJobSubstrateCause.Available;
         }
 
         if (!RedisConfigured)
@@ -119,7 +204,9 @@ public sealed class DurableJobSubstrateOptions
         }
 
         return RedisEntitled
-            ? RedisDurabilityFailure ?? DurableJobSubstrateCause.RuntimeIncomplete
+            ? RedisDurabilityFailure == DurableJobSubstrateCause.RedisUnreachable
+                ? DurableJobSubstrateCause.RedisUnreachable
+                : DurableJobSubstrateCause.RuntimeIncomplete
             : DurableJobSubstrateCause.RedisNotEntitled;
     }
 }

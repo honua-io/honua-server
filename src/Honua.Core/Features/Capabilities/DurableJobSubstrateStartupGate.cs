@@ -32,14 +32,16 @@ public sealed class DurableJobSubstrateEntitlement
 /// Operator policy for what an unattested Redis durability inspection means at startup.
 /// </summary>
 /// <remarks>
-/// The default is <em>degrade</em>: the durable job substrate is still composed (so every
-/// consumer of <c>IExecutionJobStore</c> resolves and the server boots and serves), the
-/// capability manifest reports the typed <see cref="DurableJobSubstrateCause"/> instead of
-/// advertising <c>jobs.runner</c>, and one startup warning names the failure and its
-/// consequence. Operators who would rather not run at all without an attested durable store
-/// opt in to <see cref="RequireDurableStore"/>, which converts the rejection into a typed
-/// <see cref="DurableJobSubstrateNotAttestedException"/> raised by the composition root
-/// (honua-server#4502).
+/// By default the attestation is <em>information</em> (owner ruling, 2026-10-10): a connected
+/// Redis composes the durable job runner and the governed proposal control plane, the capability
+/// manifest advertises both, and the attestation outcome is published as
+/// <c>limits.job.redisDurability</c> (<c>attested</c> / <c>unverified</c> / <c>not-durable</c>)
+/// plus one startup log line. Durability is an operator property of the Redis deployment.
+/// Operators who would rather not run at all without a <c>CONFIG GET</c>-proven durable policy
+/// opt in to <see cref="RequireDurableStore"/>, which converts any outcome other than
+/// <c>attested</c> into a typed <see cref="DurableJobSubstrateNotAttestedException"/> raised by
+/// the composition root (honua-server#4502). That opt-in cannot be satisfied on managed Redis
+/// that blocks <c>CONFIG</c> (AWS ElastiCache, MemoryDB): leave it off there.
 /// </remarks>
 public sealed class JobDurabilityOptions
 {
@@ -47,9 +49,12 @@ public sealed class JobDurabilityOptions
     public const string SectionName = "Jobs";
 
     /// <summary>
-    /// When <see langword="true"/>, a Redis substrate whose durability was not attested fails
-    /// startup with <see cref="DurableJobSubstrateNotAttestedException"/> instead of degrading
-    /// to a composed-but-non-durable job store. Defaults to <see langword="false"/>.
+    /// When <see langword="true"/>, startup fails with
+    /// <see cref="DurableJobSubstrateNotAttestedException"/> unless the Redis durability
+    /// attestation is <c>attested</c> (AOF on, <c>appendfsync</c> everysec/always,
+    /// <c>maxmemory-policy noeviction</c>, all read through <c>CONFIG GET</c>). Defaults to
+    /// <see langword="false"/>, under which the attestation is informational only. Cannot be
+    /// satisfied on managed Redis that blocks <c>CONFIG</c> (AWS ElastiCache, MemoryDB).
     /// </summary>
     public bool RequireDurableStore { get; set; }
 }
@@ -120,7 +125,8 @@ public sealed class DurableJobSubstrateNotAttestedException : Exception
             + (string.IsNullOrWhiteSpace(detail) ? ")" : $": {detail})")
             + $". {DurableJobSubstrateRemediation.For(cause)} "
             + $"Alternatively, clear {JobDurabilityOptions.SectionName}:{nameof(JobDurabilityOptions.RequireDurableStore)} "
-            + "to start with non-durable jobs instead.";
+            + "to treat the attestation as information (the default; required on managed Redis that "
+            + "blocks CONFIG, such as AWS ElastiCache and MemoryDB).";
 }
 
 /// <summary>
@@ -136,12 +142,13 @@ public static class DurableJobSubstrateRemediation
 {
     /// <summary>
     /// What running with an unattested Redis substrate actually means for the operator. Stated
-    /// once so the startup warning and the health-check roll-up agree.
+    /// once so the startup log line and the health-check data agree.
     /// </summary>
     public const string NonDurableConsequence =
-        "Execution jobs are still accepted, served and reconciled, but the job store is NOT "
-        + "durable: acknowledged job state can be lost if Redis restarts or evicts keys, and the "
-        + "capability manifest will not advertise 'jobs.runner'.";
+        "The governed control plane and the durable job runner stay enabled (operations.proposals "
+        + "and jobs.runner are advertised); durability is an operator property of the Redis "
+        + "deployment, and the capability manifest publishes this outcome as "
+        + "limits.job.redisDurability.";
 
     /// <summary>Returns the remediation sentence for a classified cause.</summary>
     /// <param name="cause">The classified cause.</param>
@@ -166,9 +173,15 @@ public static class DurableJobSubstrateRemediation
                 + "are never evicted under memory pressure.",
 
             DurableJobSubstrateCause.RedisAttestationUnavailable =>
-                "Confirm Redis is reachable and that the server's Redis user may read the "
-                + "persistence policy ('INFO persistence' plus 'CONFIG GET' for appendonly, "
-                + "appendfsync and maxmemory-policy).",
+                "No action is required on managed Redis that blocks CONFIG (AWS ElastiCache, "
+                + "MemoryDB): rely on the service's own durability (replication, snapshots, "
+                + "Multi-AZ, MemoryDB's transaction log). On self-managed Redis, let the server's "
+                + "Redis user read the persistence policy ('INFO persistence' plus 'CONFIG GET' "
+                + "for appendonly, appendfsync and maxmemory-policy) to have it attested.",
+
+            DurableJobSubstrateCause.RedisUnreachable =>
+                "Redis is configured but did not connect at startup. Check the 'redis' "
+                + "connection string, network reachability, TLS and credentials, then restart.",
 
             DurableJobSubstrateCause.RedisNotConfigured =>
                 CapabilityUnavailableCodes.RedisRemediation,
@@ -198,7 +211,7 @@ public static class DurableJobSubstrateStartupGate
 {
     /// <summary>
     /// Throws when the operator required a durable job store and the substrate could not
-    /// attest durability. A no-op otherwise, including the default (degrade) policy.
+    /// attest durability. A no-op otherwise, including the default policy, under which the attestation is information.
     /// </summary>
     /// <param name="options">The startup-resolved substrate facts.</param>
     /// <param name="requireDurableStore">The <c>Jobs:RequireDurableStore</c> policy.</param>
@@ -218,11 +231,16 @@ public static class DurableJobSubstrateStartupGate
             return;
         }
 
-        // jobStorePresent/jobQueuePresent are not knowable before the provider is built, and
-        // they are not what decides this: with no accepted attestation the classification falls
-        // through to the configuration facts, which is exactly the cause to report.
-        throw new DurableJobSubstrateNotAttestedException(
-            options.Classify(jobStorePresent: false, jobQueuePresent: false),
-            detail);
+        // The configuration facts decide first (absent, unentitled, unreachable Redis);
+        // jobStorePresent/jobQueuePresent are not knowable before the provider is built and are
+        // not what decides this. For a connected, entitled Redis report the attestation outcome
+        // itself (unverified / not-durable) rather than a generic incomplete runtime.
+        var cause = options.Classify(jobStorePresent: false, jobQueuePresent: false);
+        if (cause == DurableJobSubstrateCause.RuntimeIncomplete && options.RedisDurabilityFailure is { } outcome)
+        {
+            cause = outcome;
+        }
+
+        throw new DurableJobSubstrateNotAttestedException(cause, detail);
     }
 }

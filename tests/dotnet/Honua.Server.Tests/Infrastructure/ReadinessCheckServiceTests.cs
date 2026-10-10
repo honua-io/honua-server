@@ -41,14 +41,14 @@ public sealed class ReadinessCheckServiceTests
     }
 
     /// <summary>
-    /// honua-server#4502: an unattested durable job substrate is healthy-but-DEGRADED, exactly
-    /// like the cache-fallback and in-memory feature-change-event paths, and must not fail
-    /// readiness. Failing it depools every node of a fleet whose Redis merely has AOF off — the
-    /// release e2e harness (stock <c>redis:7-alpine</c>) polls <c>/healthz/ready</c>, so a 503
-    /// there is a total outage in exchange for a durability guarantee the capability manifest
-    /// already withholds. The degradation is reported on the health-check roll-up instead
-    /// (<c>RedisHealthCheck</c> -> Degraded), and <c>Jobs:RequireDurableStore=true</c> is the
-    /// opt-in for operators who would rather the process refuse to start at all.
+    /// honua-server#4502 and the 2026-10-10 owner ruling: a non-attested Redis durability outcome
+    /// is information and must not fail readiness. Failing it depools every node of a fleet whose
+    /// Redis has AOF off or blocks <c>CONFIG</c> (AWS ElastiCache, MemoryDB) — the release e2e
+    /// harness (stock <c>redis:7-alpine</c>) polls <c>/healthz/ready</c>, so a 503 there is a
+    /// total outage for a property the operator owns. The outcome is published on the capability
+    /// manifest (<c>limits.job.redisDurability</c>) and the Redis health-check data, and
+    /// <c>Jobs:RequireDurableStore=true</c> is the opt-in for operators who would rather the
+    /// process refuse to start at all.
     /// </summary>
     [UnitTest]
     [Operation(Operations.HealthCheck)]

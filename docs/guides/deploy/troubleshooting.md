@@ -27,8 +27,8 @@ A single-node deployment with no Redis configured reports `Ready` — feature-ch
 | Exits with an options-validation error naming a `Limits` or `ControlPlane` setting | Out-of-range or malformed env value (validated at startup) | Correct the named variable; compare against [.env.example](../../../.env.example) |
 | Container restart loop, log shows migration failure | Database migration failed at startup | Fix DB connectivity/permissions; check `GET /api/v1/admin/observability/migrations` once up. `HONUA_SKIP_MIGRATIONS=true` defers (does not fix) the migration |
 | Starts but logs "connection string not configured" | `ConnectionStrings__DefaultConnection` missing | Set it; migrations and data access are skipped without it |
-| Starts but warns "Redis durability attestation was REJECTED" | Redis is reachable but its persistence policy does not protect acknowledged control-plane writes | Jobs still run, but non-durably. Fix the Redis policy — see [Redis durability](#redis-durability) |
-| Exits with "Jobs:RequireDurableStore is enabled, but the durable job substrate is not attested" | You opted in to requiring an attested durable job store and Redis did not attest | Fix the Redis policy per the message's remediation, or clear `Jobs__RequireDurableStore` to start non-durably |
+| Logs "Redis durability attestation: unverified" or "not-durable" | Information only: the Redis policy could not be read (managed Redis blocks `CONFIG`) or is not durable | Nothing is disabled. See [Redis durability](#redis-durability) to decide whether you need a durable policy |
+| Exits with "Jobs:RequireDurableStore is enabled, but the durable job substrate is not attested" | You opted in to requiring an `attested` Redis policy and the outcome was something else | Fix the Redis policy per the message's remediation, or clear `Jobs__RequireDurableStore` (required on ElastiCache and MemoryDB) |
 
 ## License failure mode
 
@@ -130,14 +130,15 @@ Do not disable rate limiting during an attack or raise every caller's limit to a
 | Import job fails on geometry | Invalid geometry or unsupported CRS in the source | Validate/fix geometries before import (`ST_MakeValid`), declare the correct source CRS |
 | Import accepted but job never progresses | Queued imports require Redis | Set `ConnectionStrings__Redis` and ensure Redis is reachable |
 | `503` on OGC Processes / GPServer job routes | Redis-backed durable job store not configured | Enable Redis; see [Scale and tune performance](scaling-and-performance.md) |
-| Jobs run, but the capability manifest reports `jobs.runner` unavailable | Redis is present but durability was not attested | See [Redis durability](#redis-durability); the manifest reports the typed cause |
+| Capability manifest reports `jobs.runner` or `operations.proposals` with `dependency-unavailable` although Redis is configured | Redis did not connect at startup | Check the connection string, network path, TLS and credentials, then restart |
 
 ## Redis durability
 
-The durable job substrate stores acknowledged control-plane state (jobs, queue,
-execution logs) in Redis. At startup the server **inspects** the Redis
-persistence policy once and records a typed attestation. Attestation is accepted
-only when all three hold:
+The durable job substrate and the governed control plane store acknowledged
+state (jobs, queue, execution logs, proposals) in Redis. **Any configured,
+entitled and connected Redis enables them** (owner ruling, 2026-10-10). At
+startup the server reads the Redis persistence policy once and publishes the
+outcome as information. The outcome is `attested` only when all three hold:
 
 | Redis setting | Required value | Why |
 |---|---|---|
@@ -145,29 +146,32 @@ only when all three hold:
 | `appendfsync` | `everysec` or `always` | An acknowledged write is not left only in the OS page cache |
 | `maxmemory-policy` | `noeviction` | Durable control-plane keys are never evicted under memory pressure |
 
-**A failed attestation degrades; it does not stop the server.** The job
-substrate is still composed and jobs still run — the server logs one warning
-naming the typed cause and its remediation, `RedisHealthCheck` reports
-`Degraded` with the same cause on the health roll-up, and the capability
-manifest withholds `jobs.runner` instead of advertising a durability guarantee
-it cannot make. `/healthz/ready` stays `Ready`, because depooling a node whose
-Redis merely has AOF off is a worse outcome than serving non-durably.
+| Outcome (`limits.job.redisDurability.status`) | `cause` | Meaning |
+|---|---|---|
+| `attested` | (none) | The policy was read and meets all three settings |
+| `unverified` | `RedisAttestationUnavailable` | The policy could not be read. AWS ElastiCache and MemoryDB block `CONFIG`, so this is expected there |
+| `not-durable` | `RedisPersistenceDisabled`, `RedisWritePolicyUnsafe` or `RedisEvictionPolicyUnsafe` | The policy was read and does not protect acknowledged writes |
 
-Read the cause from the ops-health snapshot: the `redis` health entry reports
-`Degraded` with a description naming the typed cause, what running non-durable
-means, and the remediation. An MCP client reads it from the `honua://ops/health`
-resource; the same snapshot backs the comprehensive monitoring view. The typed
-causes are `RedisPersistenceDisabled`, `RedisWritePolicyUnsafe`,
-`RedisEvictionPolicyUnsafe`, `RedisAttestationUnavailable`,
-`RedisNotConfigured`, `RedisNotEntitled` and `RuntimeIncomplete`.
+**The outcome never disables anything.** `operations.proposals` and
+`jobs.runner` report `available: true` and
+`limits.job.durableJobRuntimeAvailable` is `true`. The `redis` health entry
+stays `Healthy` and carries `durability`, `cause`, `consequence` and
+`remediation` in its data. An MCP client reads that from the
+`honua://ops/health` resource. `/healthz/ready` is unaffected. The server logs
+one startup line: Information for `attested` and `unverified`, Warning for
+`not-durable`. The manifest publishes the status, cause and remediation, but not
+the raw Redis error text or the endpoint.
 
-The capabilities manifest agrees: `jobs.runner` reports `available: false` with
-`reasonCode: dependency-unavailable`, and `limits.job.durableJobRuntimeAvailable`
-is `false`, so nothing advertises a durability guarantee the deployment cannot
-make.
+Those capabilities read `dependency-unavailable` only when Redis is genuinely
+absent (`RedisNotConfigured`) or did not connect at startup
+(`RedisUnreachable`). They read `license-required` when Redis is configured but
+unentitled (`RedisNotEntitled`).
 
-A stock `redis:7-alpine` defaults to `appendonly no` and therefore never
-attests. Start it with the durable policy instead:
+Durability is a property of the Redis deployment you run. On managed Redis,
+rely on the service: MemoryDB's transaction log, or ElastiCache replication,
+Multi-AZ and snapshots. A stock `redis:7-alpine` defaults to `appendonly no` and
+reports `not-durable`. To make a self-managed Redis durable, start it with the
+policy:
 
 ```yaml
 redis:
@@ -175,15 +179,21 @@ redis:
   command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory-policy", "noeviction"]
 ```
 
-If your deployment must not serve at all without an attested durable store, opt
-in to a hard startup refusal:
+### `Jobs:RequireDurableStore`
+
+`Jobs:RequireDurableStore` (environment variable `Jobs__RequireDurableStore`)
+defaults to `false`. In that state the outcome above is information only. Set it
+to `true` if the server must refuse to start unless the outcome is `attested`:
 
 ```bash
 Jobs__RequireDurableStore=true
 ```
 
-With that set, a rejected attestation exits with a single typed startup error
-naming the cause and its remediation, rather than starting degraded.
+With that set, any other outcome, and a missing or unreachable Redis, exits with
+a single typed startup error naming the cause and its remediation. The GDAL
+worker applies the same setting. The setting **cannot be satisfied on managed
+Redis that blocks `CONFIG`** (AWS ElastiCache, Amazon MemoryDB), because the
+policy is unreadable there. Leave it unset on those services.
 
 Recent jobs: `GET /api/v1/admin/import/jobs`; durable job detail and logs: `GET /api/v1/admin/jobs/{jobId}/logs`. For stuck workflow runs, see [Automate workflows](../query-analyze/automate-workflows.md).
 

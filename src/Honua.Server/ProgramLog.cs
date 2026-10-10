@@ -10,18 +10,46 @@ internal static partial class ProgramLog
     public static partial void RedisStartupConnectionFailed(ILogger logger, Exception exception);
 
     /// <summary>
-    /// The one startup line an operator needs when Redis durability attestation is rejected
-    /// (honua-server#4502). Names the typed cause, the machine-observed detail, what running
-    /// non-durable actually means, and how to fix it — so the degraded boot is a one-line
-    /// diagnosis rather than the 31 unresolved-service descriptor failures it used to be.
+    /// Startup line for an accepted Redis durability attestation (information; owner ruling
+    /// 2026-10-10 makes the attestation informational rather than a capability gate).
+    /// </summary>
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Redis durability attestation: attested ({PersistenceMode}, {AcknowledgedWritePolicy}, maxmemory-policy={EvictionPolicy}). Published as limits.job.redisDurability on the capability manifest.")]
+    public static partial void RedisDurabilityAttested(
+        ILogger logger,
+        string persistenceMode,
+        string acknowledgedWritePolicy,
+        string evictionPolicy);
+
+    /// <summary>
+    /// Startup line when the Redis policy could not be read, as on managed Redis that blocks
+    /// <c>CONFIG</c> (AWS ElastiCache, MemoryDB). Information, not a rejection: the governed
+    /// control plane and the durable job runner stay enabled.
+    /// </summary>
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Redis durability attestation: {Status} (the persistence policy could not be read: {Detail}). {Consequence} {Guidance} Jobs:RequireDurableStore=true would refuse startup on this Redis.")]
+    public static partial void RedisDurabilityUnverified(
+        ILogger logger,
+        string status,
+        string detail,
+        string consequence,
+        string guidance);
+
+    /// <summary>
+    /// Startup line when the Redis policy was read and is not durable (AOF off, fsync <c>no</c>,
+    /// or an evicting policy). A warning so the operator sees it, never a rejection: the governed
+    /// control plane and the durable job runner stay enabled.
     /// </summary>
     [LoggerMessage(
         Level = LogLevel.Warning,
-        Message = "Redis durability attestation was REJECTED ({Cause}: {Detail}). {Consequence} Remediation: {Remediation} Set Jobs:RequireDurableStore=true to fail startup instead of degrading.")]
-    public static partial void RedisDurabilityNotAttested(
+        Message = "Redis durability attestation: {Status} ({Cause}: {Detail}). {Consequence} To make acknowledged writes durable: {Guidance} Jobs:RequireDurableStore=true would refuse startup on this Redis.")]
+    public static partial void RedisDurabilityNotDurable(
         ILogger logger,
+        string status,
         Honua.Core.Features.Capabilities.DurableJobSubstrateCause cause,
         string detail,
         string consequence,
-        string remediation);
+        string guidance);
 }

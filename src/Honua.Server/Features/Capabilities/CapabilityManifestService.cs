@@ -1014,7 +1014,8 @@ internal sealed class CapabilityManifestService(
                 AvailableBackendCount = batchCapabilities.AvailableBackendCount,
                 SupportsCancellation = batchCapabilities.SupportsCancellation,
                 SupportsProgressPolling = batchCapabilities.SupportsProgressPolling,
-                DurableJobRuntimeAvailable = options.DurableJobRuntimeAvailable
+                DurableJobRuntimeAvailable = options.DurableJobRuntimeAvailable,
+                RedisDurability = options.RedisDurability
             },
             Upload = new CapabilityManifestUploadLimits
             {

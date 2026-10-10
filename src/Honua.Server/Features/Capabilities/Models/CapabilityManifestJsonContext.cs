@@ -26,6 +26,7 @@ namespace Honua.Server.Features.Capabilities.Models;
 [JsonSerializable(typeof(CapabilityManifestAnalysisLimits))]
 [JsonSerializable(typeof(CapabilityManifestPublicationLimits))]
 [JsonSerializable(typeof(CapabilityManifestJobLimits))]
+[JsonSerializable(typeof(CapabilityManifestRedisDurability))]
 [JsonSerializable(typeof(CapabilityManifestUploadLimits))]
 [JsonSerializable(typeof(CapabilityManifestStreamingLimits))]
 [JsonSerializable(typeof(CapabilityManifestEditLimits))]
