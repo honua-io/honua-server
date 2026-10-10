@@ -1207,7 +1207,7 @@
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ImportDatasetJobExecutorTests.cs",
           "test": "ExecuteAsync_StagedGeoJson_ImportsFlattensRefreshesAndRecordsProvenance",
           "assertion": "Real PostGIS import of staged GeoJSON is queried for schema/rows and provenance/refresh side effects.",
-          "bodyDigest": "sha256:46639812d84764a11d9f1d9dbf7347b4e4efcab64aed5d167ab762a46bafdff4"
+          "bodyDigest": "sha256:16394e1343859b33e0e1fd65d64f188d10360090fe50e7ebf4b22a17cc994606"
         }
       ]
     },

@@ -16,35 +16,48 @@ internal sealed class HostedI3sSceneResourceProvider(TimeProvider timeProvider) 
     // 3D Tiles SSE = geometricError * focalLength / distance. At 16 pixels,
     // the enclosing sphere projects to pi * (radius * 16 / error)^2 pixels².
     private const double ServingScreenSpaceError = 16;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _cacheGate = new();
+    private readonly Dictionary<string, ResourceFlight> _flights = new(StringComparer.Ordinal);
     private readonly Dictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
 
     public async Task<I3sSceneResources?> GetResourcesAsync(SceneDataset scene, CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        var key = scene.AssetRoot + "\n" + scene.TilesetFileName;
+        var policy = scene.CachePolicy ?? SceneCachePolicy.Default;
+        if (TryGetCurrent(scene, key, policy) is { } cached) { return cached; }
+        ResourceFlight flight;
+        lock (_cacheGate)
+        {
+            if (!_flights.TryGetValue(key, out flight!))
+            {
+                flight = new ResourceFlight();
+                _flights.Add(key, flight);
+            }
+            flight.Users++;
+        }
+        var acquired = false;
         try
         {
-            var key = scene.AssetRoot + "\n" + scene.TilesetFileName;
-            var policy = scene.CachePolicy ?? SceneCachePolicy.Default;
-            if (!policy.NoStore && _cache.TryGetValue(key, out var existing)
-                && timeProvider.GetUtcNow() - existing.Created < TimeSpan.FromSeconds(policy.MaxAgeSeconds)
-                && existing.Resources.Assets.All(asset => IsCurrent(scene, asset)))
-            {
-                return existing.Resources;
-            }
+            await flight.Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            acquired = true;
+            if (TryGetCurrent(scene, key, policy) is { } current) { return current; }
 
-            _cache.Remove(key);
+            lock (_cacheGate) { _cache.Remove(key); }
             var builder = new ResourceBuilder(scene, cancellationToken);
             var resources = await builder.BuildAsync().ConfigureAwait(false);
             if (!policy.NoStore && policy.MaxAgeSeconds > 0 && resources.ByteSize <= ByteBudget)
             {
-                while (_cache.Count >= 16 || _cache.Values.Sum(entry => entry.Resources.ByteSize) + resources.ByteSize > ByteBudget)
+                var created = timeProvider.GetUtcNow();
+                lock (_cacheGate)
                 {
-                    var oldest = _cache.MinBy(entry => entry.Value.Created).Key;
-                    _cache.Remove(oldest);
+                    while (_cache.Count >= 16 || _cache.Values.Sum(entry => entry.Resources.ByteSize) + resources.ByteSize > ByteBudget)
+                    {
+                        var oldest = _cache.MinBy(entry => entry.Value.Created).Key;
+                        _cache.Remove(oldest);
+                    }
+                    _cache[key] = new(created, resources);
                 }
-
-                _cache[key] = new(timeProvider.GetUtcNow(), resources);
             }
 
             return resources;
@@ -58,11 +71,44 @@ internal sealed class HostedI3sSceneResourceProvider(TimeProvider timeProvider) 
         }
         finally
         {
-            _gate.Release();
+            if (acquired) { flight.Gate.Release(); }
+            lock (_cacheGate)
+            {
+                if (--flight.Users == 0)
+                {
+                    _flights.Remove(key);
+                    flight.Gate.Dispose();
+                }
+            }
         }
     }
 
-    public void Dispose() => _gate.Dispose();
+    public void Dispose()
+    {
+        lock (_cacheGate) { _cache.Clear(); }
+    }
+
+    private I3sSceneResources? TryGetCurrent(SceneDataset scene, string key, SceneCachePolicy policy)
+    {
+        if (policy.NoStore) { return null; }
+        CacheEntry? existing;
+        lock (_cacheGate) { _cache.TryGetValue(key, out existing); }
+        try
+        {
+            return existing is not null
+                && timeProvider.GetUtcNow() - existing.Created < TimeSpan.FromSeconds(policy.MaxAgeSeconds)
+                && existing.Resources.Assets.All(asset => IsCurrent(scene, asset))
+                ? existing.Resources : null;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        { return null; }
+    }
+
+    private sealed class ResourceFlight
+    {
+        public SemaphoreSlim Gate { get; } = new(1, 1);
+        public int Users { get; set; }
+    }
 
     private static bool IsCurrent(SceneDataset scene, I3sAssetIdentity identity)
     {
@@ -154,9 +200,49 @@ internal sealed class HostedI3sSceneResourceProvider(TimeProvider timeProvider) 
             if (refine is not ("ADD" or "REPLACE")) { throw new InvalidDataException("Unsupported tileset refinement mode."); }
             var node = Add(parent, error, null);
             var descendantParent = node;
-            if (tile.TryGetProperty("content", out var content))
+            var meshes = new List<SceneDecodedMesh>();
+            var hasContent = tile.TryGetProperty("content", out var content);
+            var hasContents = tile.TryGetProperty("contents", out var contents);
+            if (hasContent && hasContents) { throw new InvalidDataException("Tile cannot contain both content and contents."); }
+            if (hasContent) { ReadContent(content); }
+            if (hasContents)
             {
-                var uri = content.TryGetProperty("uri", out var encodedUri) ? encodedUri.GetString() : content.GetProperty("url").GetString();
+                foreach (var entry in contents.EnumerateArray()) { ReadContent(entry); }
+            }
+
+            if (meshes.Count > 1 && refine == "REPLACE"
+                && tile.TryGetProperty("children", out var refinementChildren) && refinementChildren.GetArrayLength() > 0)
+            {
+                throw new InvalidDataException("Multi-mesh replacement hierarchies require compatible baked LOD meshes.");
+            }
+            if (meshes.Count > 0)
+            {
+                if (!root && meshes.Count == 1 && refine == "REPLACE")
+                {
+                    _nodes[node].Mesh = meshes[0];
+                }
+                else
+                {
+                    // ADD content is a persistent sibling: descendants cannot
+                    // replace it. It may become visible earlier than 3D Tiles
+                    // SSE traversal, preserving additive content without loss.
+                    var groups = meshes.Select(mesh => Add(node, error, mesh)).ToArray();
+                    if (refine == "REPLACE")
+                    {
+                        descendantParent = groups[0];
+                        foreach (var group in groups) { _nodes[group].BoundsSource = node; }
+                    }
+                }
+            }
+
+            if (tile.TryGetProperty("children", out var children))
+            {
+                foreach (var child in children.EnumerateArray()) { Walk(child, transform, directory, upAxis, descendantParent, depth + 1, inheritedRefine: refine); }
+            }
+
+            void ReadContent(JsonElement entry)
+            {
+                var uri = entry.TryGetProperty("uri", out var encodedUri) ? encodedUri.GetString() : entry.GetProperty("url").GetString();
                 var path = Join(directory, uri ?? throw new InvalidDataException("Missing content URI."));
                 var bytes = Read(path);
                 if (Path.GetExtension(path).Equals(".json", StringComparison.OrdinalIgnoreCase))
@@ -168,41 +254,15 @@ internal sealed class HostedI3sSceneResourceProvider(TimeProvider timeProvider) 
                 }
                 else
                 {
-                    var meshes = SceneGlbAssetReader.Read(bytes, transform, upAxis, relative => Read(Join(DirectoryOf(path), relative)), cancellationToken);
-                    foreach (var mesh in meshes)
+                    var decoded = SceneGlbAssetReader.Read(bytes, transform, upAxis, relative => Read(Join(DirectoryOf(path), relative)), cancellationToken);
+                    foreach (var mesh in decoded)
                     {
                         _vertices = checked(_vertices + mesh.Triangles.Count * 3);
                         if (_vertices > VertexBudget) { throw new InvalidDataException("Scene exceeds the serving vertex budget."); }
                     }
 
-                    if (meshes.Count > 1 && refine == "REPLACE"
-                        && tile.TryGetProperty("children", out var refinementChildren) && refinementChildren.GetArrayLength() > 0)
-                    {
-                        throw new InvalidDataException("Multi-material replacement hierarchies require compatible baked LOD meshes.");
-                    }
-
-                    if (!root && meshes.Count == 1 && refine == "REPLACE")
-                    {
-                        _nodes[node].Mesh = meshes[0];
-                    }
-                    else
-                    {
-                        // ADD content is a persistent sibling: descendants cannot
-                        // replace it. It may become visible earlier than 3D Tiles
-                        // SSE traversal, preserving additive content without loss.
-                        var groups = meshes.Select(mesh => Add(node, error, mesh)).ToArray();
-                        if (refine == "REPLACE")
-                        {
-                            descendantParent = groups[0];
-                            foreach (var group in groups) { _nodes[group].BoundsSource = node; }
-                        }
-                    }
+                    meshes.AddRange(decoded);
                 }
-            }
-
-            if (tile.TryGetProperty("children", out var children))
-            {
-                foreach (var child in children.EnumerateArray()) { Walk(child, transform, directory, upAxis, descendantParent, depth + 1, inheritedRefine: refine); }
             }
         }
 
@@ -304,7 +364,27 @@ internal sealed class HostedI3sSceneResourceProvider(TimeProvider timeProvider) 
             _assets.Add(new(asset.File.FullName, asset.File.Length, asset.File.LastWriteTimeUtc));
         }
 
-        private static string Join(string directory, string uri) => directory.Length == 0 ? uri : directory + "/" + uri;
+        private static string Join(string directory, string uri)
+        {
+            // Persisted content references are URI paths, not filesystem names.
+            // Decode once, then retain the shared resolver's traversal/link checks.
+            // Separators, dot traversal and schemes must never be smuggled through
+            // an encoded segment, including a second encoding layer.
+            if (uri.Contains(':', StringComparison.Ordinal) || uri.Contains('?', StringComparison.Ordinal)
+                || uri.Contains('#', StringComparison.Ordinal) || uri.StartsWith('/') || uri.StartsWith('\\'))
+            { throw new InvalidDataException("Only relative scene content URI paths are supported."); }
+            var decoded = string.Join('/', uri.Split('/').Select(segment =>
+            {
+                var value = Uri.UnescapeDataString(segment);
+                if (value is "." or ".." || value.Contains('/', StringComparison.Ordinal) || value.Contains('\\', StringComparison.Ordinal)
+                    || value.Contains(':', StringComparison.Ordinal) || value.Contains('\0', StringComparison.Ordinal)
+                    || value.Contains("%2e", StringComparison.OrdinalIgnoreCase) || value.Contains("%2f", StringComparison.OrdinalIgnoreCase)
+                    || value.Contains("%5c", StringComparison.OrdinalIgnoreCase))
+                { throw new InvalidDataException("Unsafe scene content URI segment."); }
+                return value;
+            }));
+            return directory.Length == 0 ? decoded : directory + "/" + decoded;
+        }
         private static string DirectoryOf(string path) => Path.GetDirectoryName(path)?.Replace(Path.DirectorySeparatorChar, '/') ?? "";
         private static string? ReadAxis(JsonElement document) => document.TryGetProperty("asset", out var asset) && asset.TryGetProperty("gltfUpAxis", out var axis) ? axis.GetString() : null;
         private static bool SameScalar(object? left, object? right)

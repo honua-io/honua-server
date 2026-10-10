@@ -210,7 +210,10 @@ internal static class I3sPersistedResourceEncoder
         IReadOnlyList<I3sAttributeStorageInfo> attributes) => attributes.ToDictionary(field => field.Key!, field =>
         {
             var values = features.Select(feature => Value(feature, field.Name!)).Where(value => value is not null).ToArray();
-            var numeric = field.AttributeValues!.ValueType != "String";
+            // The public statistics model uses double extrema. Omit them when
+            // a stored integral value would be rounded; counts and Int64 buffers
+            // remain exact instead of advertising a different numeric range.
+            var numeric = field.AttributeValues!.ValueType != "String" && values.All(IsExactlyRepresentable);
             return new I3sAttributeStatisticsDocument
             {
                 Stats = new()
@@ -222,6 +225,13 @@ internal static class I3sPersistedResourceEncoder
                 }
             };
         }, StringComparer.Ordinal);
+
+    private static bool IsExactlyRepresentable(object? value)
+    {
+        if (value is not long integer) { return true; }
+        var number = (double)integer;
+        return number < 9223372036854775808d && (long)number == integer;
+    }
 
     private static I3sAttributeStorageInfo Descriptor(string key, string name, string type) => new()
     {

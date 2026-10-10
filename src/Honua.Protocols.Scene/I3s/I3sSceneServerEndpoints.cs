@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Cryptography;
 using System.Text.Json;
+using Honua.Core.Features.Caching;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Conversion;
 using Honua.Core.Features.Scene.Domain;
@@ -12,6 +14,7 @@ using Honua.Infrastructure.Validation;
 using Honua.Scene;
 using Honua.Scene.Assets;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.Scene.I3s;
 
@@ -269,7 +272,10 @@ internal static partial class I3sSceneServerEndpoints
             .WithTags(ScenesTag)
             .Produces(StatusCodes.Status200OK, contentType: "image/png")
             .Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status402PaymentRequired)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
 
         endpoints.MapGet(
                 "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/textures/{textureId}",
@@ -278,7 +284,10 @@ internal static partial class I3sSceneServerEndpoints
             .WithTags(ScenesTag)
             .Produces(StatusCodes.Status200OK, contentType: "image/png")
             .Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status402PaymentRequired)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
 
         return endpoints;
     }
@@ -376,7 +385,7 @@ internal static partial class I3sSceneServerEndpoints
             var resources = await ResolveResourcesAsync(context, scene, cancellationToken).ConfigureAwait(false);
             if (resources?.Nodes.TryGetValue(nodeId, out var node) == true)
             {
-                return Results.Bytes(node.Geometry.Buffer, I3sGeometryContentType);
+                return BinaryResponse(context, scene, node.Geometry.Buffer, I3sGeometryContentType);
             }
 
             return StandardErrorHelpers.CreateNotFound(context, "Node geometry is not available for this scene.");
@@ -388,7 +397,7 @@ internal static partial class I3sSceneServerEndpoints
             return StandardErrorHelpers.CreateNotFound(context, "Node geometry is not available for this scene.");
         }
 
-        return Results.Bytes(transcoded.Buffer, I3sGeometryContentType);
+        return BinaryResponse(context, scene, transcoded.Buffer, I3sGeometryContentType);
     }
 
     private static async Task<IResult> HandleGetNodeAttribute(
@@ -450,7 +459,7 @@ internal static partial class I3sSceneServerEndpoints
             var resources = await ResolveResourcesAsync(context, scene, cancellationToken).ConfigureAwait(false);
             if (resources?.Nodes.TryGetValue(nodeId, out var node) == true && node.Attributes.TryGetValue(fieldKey, out var buffer))
             {
-                return Results.Bytes(buffer, I3sAttributeContentType);
+                return BinaryResponse(context, scene, buffer, I3sAttributeContentType);
             }
 
             return StandardErrorHelpers.CreateNotFound(context, "Node attribute was not found.");
@@ -490,7 +499,7 @@ internal static partial class I3sSceneServerEndpoints
             return StandardErrorHelpers.CreateNotFound(context, "Node attribute values are not available for this field.");
         }
 
-        return Results.Bytes(attributeBuffer, I3sAttributeContentType);
+        return BinaryResponse(context, scene, attributeBuffer, I3sAttributeContentType);
     }
 
     private static async Task<IResult> HandleAsync(
@@ -637,6 +646,10 @@ internal static partial class I3sSceneServerEndpoints
 
     private static async Task<I3sSceneResources?> ResolveResourcesAsync(HttpContext context, SceneDataset scene, CancellationToken cancellationToken)
     {
+        // This converter produces the 3DObject profile only. Preserve other
+        // registered kinds without advertising incompatible resource buffers.
+        if (await ResolveDatasetTypeAsync(context, scene, cancellationToken).ConfigureAwait(false) != SceneDatasetType.HostedTiles)
+        { return null; }
         var provider = context.RequestServices.GetService<II3sSceneResourceProvider>();
         return provider is null ? null : await provider.GetResourcesAsync(scene, cancellationToken).ConfigureAwait(false);
     }
@@ -647,13 +660,24 @@ internal static partial class I3sSceneServerEndpoints
     {
         var gate = await ResolveSceneAsync(sceneId, layerId, context, registry, cancellationToken).ConfigureAwait(false);
         if (gate.Failure is { } failure) { return failure; }
+        if (!UsesPersistedResources(context))
+        { return StandardErrorHelpers.CreateNotFound(context, "Scene node texture is not available from the selected geometry provider."); }
         var resources = await ResolveResourcesAsync(context, gate.Scene!, cancellationToken).ConfigureAwait(false);
         if (resources?.Nodes.TryGetValue(nodeId, out var node) == true && node.Textures.TryGetValue(textureId, out var texture))
         {
-            return Results.Bytes(texture.Bytes, texture.ContentType);
+            return BinaryResponse(context, gate.Scene!, texture.Bytes, texture.ContentType);
         }
 
         return StandardErrorHelpers.CreateNotFound(context, "Scene node texture was not found.");
+    }
+
+    private static IResult BinaryResponse(HttpContext context, SceneDataset scene, byte[] bytes, string contentType)
+    {
+        var cache = context.RequestServices.GetRequiredService<IOptions<CacheOptions>>().Value;
+        SceneEndpoints.SetDynamicSceneCacheHeaders(context, '"' + Convert.ToHexStringLower(SHA256.HashData(bytes)) + '"',
+            cache.SceneTilesetMetadata, scene.AccessPolicy?.AllowAnonymous == false || context.User.Identity?.IsAuthenticated == true,
+            scene.CachePolicy);
+        return Results.Bytes(bytes, contentType);
     }
 
     /// <summary>

@@ -32,7 +32,7 @@ internal static class I3sSceneServiceBuilder
     public static I3sSceneLayerDocument BuildPersistedLayer(SceneDataset scene, I3sSceneResources? resources,
         SceneDatasetType datasetType = SceneDatasetType.HostedTiles)
     {
-        var layer = BuildLayer(scene, resources?.Extent, resources is null ? datasetType : SceneDatasetType.HostedTiles,
+        var layer = BuildLayer(scene, resources?.Extent, datasetType,
             advertiseNodePages: resources is not null);
         layer.Fields = resources?.Fields ?? [];
         layer.ObjectIdField = resources is not null ? "OBJECTID" : null;

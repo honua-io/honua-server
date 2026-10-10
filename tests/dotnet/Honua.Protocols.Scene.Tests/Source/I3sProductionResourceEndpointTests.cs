@@ -11,6 +11,8 @@ using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Scene.Generation;
 using Honua.Core.Features.Scene.Domain;
+using Honua.Core.Features.Scene.Abstractions;
+using Honua.Core.Features.Scene.Conversion;
 using Honua.Scene.Assets;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -32,6 +34,8 @@ public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime
     private const string Base = "/rest/services/i3s-persisted/SceneServer/layers/0";
     private static readonly int[] ZeroErrorSelectedResources = [1];
     private static readonly int[] AdditiveSelectedResources = [2, 3, 5];
+    private static readonly byte[] OversizedJpegFrame = [255, 216, 255, 192, 0, 11, 8, 255, 255, 255, 255, 1, 1, 17, 0, 255, 217];
+    private static readonly byte[] FramelessJpeg = [255, 216, 255, 217];
     private readonly WebAppFixture _fixture;
     private readonly string _root;
 
@@ -45,7 +49,11 @@ public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             File.Copy(file, destination);
         }
-        _fixture = new WebAppFixture().ConfigureWebHost(builder =>
+        _fixture = CreateFixture();
+    }
+
+    private WebAppFixture CreateFixture(Action<IServiceCollection>? configure = null)
+        => new WebAppFixture().ConfigureWebHost(builder =>
         {
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", Key);
@@ -64,8 +72,8 @@ public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime
             var license = new TestLicenseEntitlementService(HonuaEdition.Enterprise);
             services.AddSingleton<ILicenseEntitlementService>(license);
             services.AddSingleton<ILicenseStatusProvider>(license);
+            configure?.Invoke(services);
         });
-    }
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
     public async Task DisposeAsync()
@@ -163,6 +171,238 @@ public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime
         await absent.AssertGeoServicesErrorAsync(404, 404);
     }
 
+    [IntegrationTheory]
+    [InlineData(true, "no-store")]
+    [InlineData(false, "public, max-age=37")]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}")]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}")]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/textures/{textureId}")]
+    public async Task PersistedBinaryResources_ApplyDeclaredHttpCachePolicy(bool noStore, string expected)
+    {
+        var registration = _fixture.Services.GetRequiredService<ISceneRegistrationService>();
+        var sceneId = "i3s-cache-" + Guid.NewGuid().ToString("N");
+        var record = await registration.RegisterAsync(new SceneDatasetRecord
+        {
+            DatasetId = Guid.NewGuid(),
+            Id = sceneId,
+            Name = sceneId,
+            AssetRoot = _root,
+            TilesetFileName = "tileset.json",
+            DatasetType = SceneDatasetType.HostedTiles,
+            CachePolicy = new(37, noStore),
+            IsPublic = true,
+            Status = SceneDatasetStatus.Active,
+            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedBy = "test",
+        });
+        try
+        {
+            foreach (var suffix in new[] { "/nodes/2/geometries/0", "/nodes/2/attributes/f_0/0", "/nodes/2/textures/0" })
+            {
+                using var response = await _fixture.Client.GetAsync($"/rest/services/{sceneId}/SceneServer/layers/0{suffix}");
+                response.EnsureSuccessStatusCode();
+                response.Headers.CacheControl!.ToString().Should().Be(expected);
+                response.Headers.ETag.Should().NotBeNull();
+                var bytes = await response.Content.ReadAsByteArrayAsync();
+                bytes.Should().NotBeEmpty();
+                response.Headers.ETag!.Tag.Should().Be('"' + Convert.ToHexStringLower(SHA256.HashData(bytes)) + '"');
+            }
+        }
+        finally { await registration.DeactivateAsync(record.DatasetId); }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodepages/{pageId:int}")]
+    public async Task MultipleContentTile_PublishesBothPersistedMeshesAndTheirMaterialResources()
+    {
+        var tileset = JsonNode.Parse(await File.ReadAllTextAsync(Path.Join(_root, "tileset.json")))!;
+        tileset["asset"]!["version"] = "1.1";
+        tileset["root"]!["children"] = new JsonArray(new JsonObject
+        {
+            ["boundingVolume"] = tileset["root"]!["boundingVolume"]!.DeepClone(),
+            ["geometricError"] = 0,
+            ["contents"] = new JsonArray(new JsonObject { ["uri"] = "tiles/0.b3dm" }, new JsonObject { ["uri"] = "tiles/1.glb" }),
+        });
+        await File.WriteAllTextAsync(Path.Join(_root, "tileset.json"), tileset.ToJsonString());
+        using var page = await GetJsonAsync(Base + "/nodepages/0");
+        var meshes = page.RootElement.GetProperty("nodes").EnumerateArray().Where(node => node.TryGetProperty("mesh", out _)).ToArray();
+        meshes.Should().HaveCount(2);
+        using var layer = await GetJsonAsync(Base);
+        layer.RootElement.GetProperty("materialDefinitions").GetArrayLength().Should().Be(2);
+        for (var index = 0; index < meshes.Length; index++)
+        {
+            var resource = meshes[index].GetProperty("mesh").GetProperty("geometry").GetProperty("resource").GetInt32();
+            var bytes = await _fixture.Client.GetByteArrayAsync($"{Base}/nodes/{resource}/geometries/0");
+            BinaryPrimitives.ReadUInt32LittleEndian(bytes).Should().Be(6);
+            AssertSourcePlacement(bytes, meshes[index].GetProperty("obb").GetProperty("center"), index == 0 ? 0 : 150);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/textures/{textureId}")]
+    public async Task EncodedUtf8ContentAndTextureUris_ResolvePersistedFilesWithoutChangingBytes()
+    {
+        var source = await File.ReadAllBytesAsync(Path.Join(_root, "tiles/1.glb"));
+        var jsonLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(source.AsSpan(12));
+        using var metadata = JsonDocument.Parse(source.AsMemory(20, jsonLength));
+        var viewIndex = metadata.RootElement.GetProperty("images")[0].GetProperty("bufferView").GetInt32();
+        var view = metadata.RootElement.GetProperty("bufferViews")[viewIndex];
+        var image = source.AsMemory(28 + jsonLength + view.GetProperty("byteOffset").GetInt32(), view.GetProperty("byteLength").GetInt32()).ToArray();
+        await File.WriteAllBytesAsync(Path.Join(_root, "tiles/café texture.png"), image);
+        await File.WriteAllBytesAsync(Path.Join(_root, "tiles/grande sphère.glb"), source);
+        await RewriteGlbAsync("tiles/grande sphère.glb", json =>
+        {
+            json["images"]![0]!.AsObject().Remove("bufferView");
+            json["images"]![0]!["uri"] = "caf%C3%A9%20texture.png";
+        });
+        var tileset = JsonNode.Parse(await File.ReadAllTextAsync(Path.Join(_root, "tileset.json")))!;
+        tileset["root"]!["children"]![1]!["content"]!["uri"] = "tiles/grande%20sph%C3%A8re.glb";
+        await File.WriteAllTextAsync(Path.Join(_root, "tileset.json"), tileset.ToJsonString());
+        (await _fixture.Client.GetByteArrayAsync(Base + "/nodes/2/textures/0")).Should().Equal(image);
+        using var page = await GetJsonAsync(Base + "/nodepages/0");
+        AssertSourcePlacement(await _fixture.Client.GetByteArrayAsync(Base + "/nodes/2/geometries/0"),
+            page.RootElement.GetProperty("nodes")[2].GetProperty("obb").GetProperty("center"), 150);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}")]
+    public async Task RegisteredBuildingScene_KeepsItsTypeWithoutAdvertisingIncompatibleHostedBuffers()
+    {
+        var registration = _fixture.Services.GetRequiredService<ISceneRegistrationService>();
+        var id = "i3s-building-" + Guid.NewGuid().ToString("N");
+        var record = await registration.RegisterAsync(new SceneDatasetRecord
+        {
+            DatasetId = Guid.NewGuid(),
+            Id = id,
+            Name = id,
+            AssetRoot = _root,
+            TilesetFileName = "tileset.json",
+            DatasetType = SceneDatasetType.Building,
+            CachePolicy = SceneCachePolicy.Default,
+            IsPublic = true,
+            Status = SceneDatasetStatus.Active,
+            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedBy = "test",
+        });
+        try
+        {
+            using var response = await _fixture.Client.GetAsync($"/rest/services/{id}/SceneServer/layers/0");
+            var body = await response.Content.ReadAsStringAsync();
+            response.EnsureSuccessStatusCode();
+            using var layer = JsonDocument.Parse(body);
+            layer.RootElement.GetProperty("layerType").GetString().Should().Be("Building", body);
+            layer.RootElement.GetProperty("geometryDefinitions").GetArrayLength().Should().Be(0);
+            using var geometry = await _fixture.Client.GetAsync($"/rest/services/{id}/SceneServer/layers/0/nodes/1/geometries/0");
+            await geometry.AssertGeoServicesErrorAsync(404, 404);
+        }
+        finally { await registration.DeactivateAsync(record.DatasetId); }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/textures/{textureId}")]
+    public async Task CustomGeometryProvider_DoesNotServeTexturesFromAnUnrelatedPersistedRevision()
+    {
+        var persisted = _fixture.Services.GetRequiredService<II3sSceneResourceProvider>();
+        var resources = await persisted.GetResourcesAsync(new SceneDataset { Id = "control", Name = "Control", AssetRoot = _root }, CancellationToken.None);
+        resources.Should().NotBeNull();
+        resources!.Nodes[2].Textures.Should().ContainKey("0", "the persisted control really has a texture");
+        var custom = CreateFixture(services => services.AddSingleton<ISceneNodeGeometryProvider>(new EmptyGeometryProvider()));
+        await custom.InitializeAsync();
+        try
+        {
+            using var response = await custom.Client.GetAsync(Base + "/nodes/2/textures/0");
+            await response.AssertGeoServicesErrorAsync(404, 404);
+        }
+        finally { await custom.DisposeAsync(); }
+    }
+
+    private sealed class EmptyGeometryProvider : ISceneNodeGeometryProvider
+    {
+        public Task<I3sTranscodedGeometry?> GetNodeGeometryAsync(SceneDataset scene, int nodeId, CancellationToken cancellationToken = default)
+            => Task.FromResult<I3sTranscodedGeometry?>(null);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/textures/{textureId}")]
+    public async Task BoundedJpegTexture_AdvertisesJpgAndServesOriginalPersistedBytes()
+    {
+        var image = await File.ReadAllBytesAsync(Path.Join(_root, "texture.jpg"));
+        await File.WriteAllBytesAsync(Path.Join(_root, "tiles/texture.jpg"), image);
+        await RewriteGlbAsync("tiles/1.glb", json =>
+        {
+            json["images"]![0]!.AsObject().Remove("bufferView");
+            json["images"]![0]!["uri"] = "texture.jpg";
+        });
+        using var response = await _fixture.Client.GetAsync(Base + "/nodes/2/textures/0");
+        response.EnsureSuccessStatusCode();
+        response.Content.Headers.ContentType!.MediaType.Should().Be("image/jpeg");
+        (await response.Content.ReadAsByteArrayAsync()).Should().Equal(image);
+        using var layer = await GetJsonAsync(Base);
+        layer.RootElement.GetProperty("textureSetDefinitions")[0].GetProperty("formats")[0].GetProperty("format").GetString().Should().Be("jpg");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodepages/{pageId:int}")]
+    public async Task IndependentSceneRead_DoesNotWaitForAnotherScenesBlockedCacheValidation()
+    {
+        using var clock = new BlockingTimeProvider();
+        var fixture = CreateFixture(services => services.AddSingleton<II3sSceneResourceProvider>(new HostedI3sSceneResourceProvider(clock)));
+        await fixture.InitializeAsync();
+        try
+        {
+            using var warm = await fixture.Client.GetAsync(Base + "/nodepages/0");
+            warm.EnsureSuccessStatusCode();
+            clock.BlockNextRead();
+            var blocked = Task.Run(() => fixture.Client.GetAsync(Base + "/nodepages/0"));
+            try
+            {
+                await clock.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                // A distinct source key must not be serialized behind the first.
+                var tileset = await File.ReadAllBytesAsync(Path.Join(_root, "tileset.json"));
+                await File.WriteAllBytesAsync(Path.Join(_root, "independent.json"), tileset);
+                var provider = fixture.Services.GetRequiredService<II3sSceneResourceProvider>();
+                var independent = await Task.Run(() => provider.GetResourcesAsync(new SceneDataset
+                {
+                    Id = "independent",
+                    Name = "Independent",
+                    AssetRoot = _root,
+                    TilesetFileName = "independent.json",
+                }, CancellationToken.None)).WaitAsync(TimeSpan.FromSeconds(10));
+                independent.Should().NotBeNull();
+            }
+            finally { clock.Release(); }
+            using var completed = await blocked.WaitAsync(TimeSpan.FromSeconds(10));
+            completed.EnsureSuccessStatusCode();
+        }
+        finally { clock.Release(); await fixture.DisposeAsync(); }
+    }
+
+    private sealed class BlockingTimeProvider : TimeProvider, IDisposable
+    {
+        private readonly ManualResetEventSlim _release = new(false);
+        private int _block;
+        public TaskCompletionSource<bool> Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public void BlockNextRead() => Interlocked.Exchange(ref _block, 1);
+        public void Release() => _release.Set();
+        public override DateTimeOffset GetUtcNow()
+        {
+            if (Interlocked.Exchange(ref _block, 0) == 1)
+            {
+                Entered.TrySetResult(true);
+                if (!_release.Wait(TimeSpan.FromSeconds(30))) { throw new TimeoutException("Owned scene validation gate was not released."); }
+            }
+            return DateTimeOffset.UtcNow;
+        }
+        public void Dispose() => _release.Dispose();
+    }
+
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/textures/{textureId}")]
@@ -193,12 +433,29 @@ public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime
     [InlineData("metadata-nodata-default")]
     [InlineData("reflective-transform")]
     [InlineData("multimaterial-replacement")]
+    [InlineData("encoded-traversal")]
+    [InlineData("double-encoded-traversal")]
+    [InlineData("encoded-separator")]
+    [InlineData("absolute-content")]
+    [InlineData("content-and-contents")]
+    [InlineData("jpeg-bomb")]
+    [InlineData("jpeg-no-frame")]
     public async Task InvalidPersistedContent_DoesNotAdvertiseOrServePartialResources(string invalid)
     {
-        if (invalid == "external-content")
+        if (invalid is "external-content" or "encoded-traversal" or "double-encoded-traversal" or "encoded-separator" or "absolute-content" or "content-and-contents")
         {
             var tileset = JsonNode.Parse(await File.ReadAllTextAsync(Path.Join(_root, "tileset.json")))!;
-            tileset["root"]!["children"]![1]!["content"]!["uri"] = "../outside.glb";
+            var child = tileset["root"]!["children"]![1]!;
+            child["content"]!["uri"] = invalid switch
+            {
+                "encoded-traversal" => "tiles/%2e%2e/outside.glb",
+                "double-encoded-traversal" => "tiles/%252e%252e/outside.glb",
+                "encoded-separator" => "tiles%2f1.glb",
+                "absolute-content" => "file:///outside.glb",
+                "content-and-contents" => "tiles/1.glb",
+                _ => "../outside.glb",
+            };
+            if (invalid == "content-and-contents") { child["contents"] = new JsonArray(child["content"]!.DeepClone()); }
             await File.WriteAllTextAsync(Path.Join(_root, "tileset.json"), tileset.ToJsonString());
         }
         else if (invalid == "multimaterial-replacement")
@@ -245,7 +502,13 @@ public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime
             await RewriteGlbAsync("tiles/1.glb", json =>
             {
                 json["images"]![0]!.AsObject().Remove("bufferView");
-                json["images"]![0]!["uri"] = invalid == "invalid-base64" ? "data:image/png;base64,!!!" : "https://example.invalid/private.png";
+                json["images"]![0]!["uri"] = invalid switch
+                {
+                    "invalid-base64" => "data:image/png;base64,!!!",
+                    "jpeg-bomb" => "data:image/jpeg;base64," + Convert.ToBase64String(OversizedJpegFrame),
+                    "jpeg-no-frame" => "data:image/jpeg;base64," + Convert.ToBase64String(FramelessJpeg),
+                    _ => "https://example.invalid/private.png",
+                };
             });
         }
 
@@ -524,6 +787,12 @@ public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime
         BinaryPrimitives.ReadUInt32LittleEndian(bytes).Should().Be(2);
         BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(8)).Should().Be(first);
         BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(16)).Should().Be(second);
+        using var statistics = await GetJsonAsync($"{Base}/statistics/{storage.GetProperty("key").GetString()}/0");
+        var stats = statistics.RootElement.GetProperty("stats");
+        stats.GetProperty("totalValuesCount").GetInt64().Should().Be(2);
+        stats.GetProperty("count").GetInt64().Should().Be(2);
+        stats.TryGetProperty("min", out _).Should().BeFalse("the double statistics model cannot represent the exact Int64 minimum");
+        stats.TryGetProperty("max", out _).Should().BeFalse("the double statistics model cannot represent the exact Int64 maximum");
         using var page = await GetJsonAsync(Base + "/nodepages/0");
         var geometry = await _fixture.Client.GetByteArrayAsync(Base + "/nodes/1/geometries/0");
         AssertSourcePlacement(geometry, page.RootElement.GetProperty("nodes")[1].GetProperty("obb").GetProperty("center"), 150);

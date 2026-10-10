@@ -487,6 +487,7 @@ internal sealed class SceneGlbAssetReader
             }
 
             if (png) { ValidatePng(data); }
+            else { ValidateJpeg(data); }
 
             var factor = texture.TryGetProperty("scale", out var scale) ? scale.GetDouble()
                 : texture.TryGetProperty("strength", out var strength) ? strength.GetDouble() : (double?)null;
@@ -497,6 +498,35 @@ internal sealed class SceneGlbAssetReader
 
             result[key] = new(new(data, png ? "image/png" : "image/jpeg", png ? "png" : "jpg"), coordinate, factor);
         }
+    }
+
+    private static void ValidateJpeg(ReadOnlySpan<byte> bytes)
+    {
+        var offset = 2;
+        for (var scanned = 0; scanned < 4096 && offset < bytes.Length - 1; scanned++)
+        {
+            if (bytes[offset] != 255) { break; }
+            var marker = bytes[offset + 1];
+            if (marker == 255) { offset++; continue; }
+            if (marker is 1 or >= 208 and <= 217) { offset += 2; continue; }
+            if (offset > bytes.Length - 4) { break; }
+            var length = BinaryPrimitives.ReadUInt16BigEndian(bytes.Slice(offset + 2, 2));
+            if (length < 2 || length > bytes.Length - offset - 2) { break; }
+            if (marker is >= 192 and <= 207 && marker is not (196 or 200 or 204))
+            {
+                if (length < 8) { break; }
+                var height = BinaryPrimitives.ReadUInt16BigEndian(bytes.Slice(offset + 5, 2));
+                var width = BinaryPrimitives.ReadUInt16BigEndian(bytes.Slice(offset + 7, 2));
+                var components = bytes[offset + 9];
+                if (components == 0 || length != 8 + 3 * components || width == 0 || height == 0 || width > 8192 || height > 8192)
+                { throw new InvalidDataException("JPEG texture dimensions exceed the serving budget or its frame is malformed."); }
+                return;
+            }
+            // Scan headers only: a frame must precede the compressed scan data.
+            if (marker == 218) { break; }
+            offset += 2 + length;
+        }
+        throw new InvalidDataException("JPEG texture has no bounded frame header.");
     }
 
     private static void ValidatePng(byte[] bytes)
