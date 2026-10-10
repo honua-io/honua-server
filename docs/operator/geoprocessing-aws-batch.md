@@ -33,6 +33,23 @@ is not a supported output store.
    storage need (`batch.ephemeral_gib` → `s`/`m`/`l`/`xl`) and submits to the
    queue.
 
+## The worker container
+
+The job definition runs the same Honua image as the server. The backend passes the job to the
+container as environment overrides: `HONUA_OPERATION_ID`, `HONUA_JOB_KIND`,
+`HONUA_WORKLOAD_NAME`, `HONUA_CONTRACT_VERSION` and any `env.*` workload parameters. Because
+`HONUA_OPERATION_ID` is set, the container starts as a **single-job execution worker**. It claims
+that one operation in the shared Redis job store, runs the GP executor, writes the result (or the
+typed failure) back to the job record, and exits. The exit code is `0` only when the job succeeded
+or was already finished. The serving host sees the terminal record. A retryable failure, or an
+interruption, hands the attempt back so the server's reconciler can resubmit it.
+
+The worker composes no job dispatch, control-plane reconcilers, scheduled background services,
+proposal gateway or HTTP surface. It never submits jobs to AWS Batch, so the job role does not need
+`batch:SubmitJob`. It does need what the server uses to run and report the job: the database
+connection, `ConnectionStrings__redis` and the operation key-ring certificate. Without Redis it
+refuses to start, because nobody could see the result.
+
 ## The activation gate
 
 The committed `geoprocessing-aws-batch` workload has **empty** ARN parameters,

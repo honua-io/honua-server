@@ -100,6 +100,16 @@ internal sealed partial class JobReconciliationService(
                 continue;
             }
 
+            // A record submitted to an external provider (AWS/Azure Batch, a Kubernetes Job, the
+            // local process pool) is claimed by the execution worker that provider launched, not by
+            // this host's queue. Its liveness belongs to the provider: the execution-job reconciler
+            // observes the provider job and owns its retry, and the worker enforces its own timeout.
+            // Reaping it here would requeue a remote attempt into this host's local queue.
+            if (IsProviderOwned(job))
+            {
+                continue;
+            }
+
             // Timeout takes precedence: timed-out jobs must fail terminally
             // even when the heartbeat has also expired and retries remain.
             if (ShouldExpireTimeout(job, now))
@@ -128,6 +138,16 @@ internal sealed partial class JobReconciliationService(
         await claimReconciler.ReconcileStaleClaimsAsync(StaleClaimThreshold, cancellationToken)
             .ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Whether the active record names an external provider job, so its liveness is observed by
+    /// the execution-job reconciler rather than by heartbeat expiry on this host. The in-process
+    /// <c>local</c> backend stamps the operation id itself as its provider id.
+    /// </summary>
+    internal static bool IsProviderOwned(ExecutionJobRecord job)
+        => !string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+            && !string.IsNullOrEmpty(job.ProviderOperationId)
+            && !string.Equals(job.ProviderOperationId, job.OperationId, StringComparison.Ordinal);
 
     private static bool ShouldExpireHeartbeat(ExecutionJobRecord job, DateTimeOffset now)
     {

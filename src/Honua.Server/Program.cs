@@ -114,6 +114,13 @@ StartupConfigurationHelpers.EnsureStaticWebAssetContentRootsExist();
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Typed composition switch (resolved once, never consulted by services): a process a batch compute
+// backend launched for one execution job (HONUA_OPERATION_ID et al.) is composed as a single-job
+// execution worker, narrowed just before Build() below. Without it the worker booted as a full
+// server and, once Redis was connected, its execution-job reconciler re-dispatched the shared
+// queued jobs to AWS Batch from inside the worker (e2e-cloud-aws run 38048901509, EventId 9046).
+var hostComposition = HostCompositionSelection.Resolve(builder.Configuration);
+
 // Finalize JSON precedence before any secret becomes a process-lifetime snapshot.
 StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, builder.Environment);
 var useTestSchemaHeaders = builder.Configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
@@ -1171,6 +1178,11 @@ builder.Services.AddConfigurationOptionsValidation();
 // Bound EventSource logger retention after all provider registrations, while
 // preserving Serilog forwarding and the rest of the diagnostic providers.
 builder.Services.CacheEventSourceLoggersForSerilogForwarding();
+if (hostComposition.Launch is { } executionWorkerLaunch)
+{
+    builder.Services.ApplyExecutionWorkerProfile(executionWorkerLaunch);
+}
+
 var app = builder.Build();
 
 // A PostgreSQL production composition is never allowed to construct an unguarded migration
@@ -1183,6 +1195,15 @@ if (registerProviderInfrastructure &&
     configuredPrimaryProvider is DataProviderNames.Postgis or DataProviderNames.PostgreSql)
 {
     _ = app.Services.GetRequiredService<IDatabaseSchemaGuard>();
+}
+
+if (hostComposition.IsExecutionWorker)
+{
+    // The worker serves no HTTP surface and runs no migrations: its only hosted work is the one
+    // assigned execution job. The host stops itself once the job's outcome is durable.
+    await app.RunAsync();
+    Environment.ExitCode = app.Services.GetRequiredService<ExecutionWorkerExitState>().ExitCode;
+    return;
 }
 
 HostedBlazorAssetHelpers.FilterHostedBlazorStaticAssetEndpoints(
