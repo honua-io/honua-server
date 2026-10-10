@@ -143,6 +143,68 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /sta/v1.1/FeaturesOfInterest")]
+    [Endpoint("PATCH /sta/v1.1/FeaturesOfInterest({id})")]
+    [Endpoint("PATCH /sta/v1.1/ObservedProperties({id})")]
+    [Endpoint("DELETE /sta/v1.1/FeaturesOfInterest({id})")]
+    [Endpoint("DELETE /sta/v1.1/ObservedProperties({id})")]
+    [Endpoint("DELETE /sta/v1.1/Sensors({id})")]
+    public async Task CoreSets_CreatePatchAndDeleteOutsideTheTheory()
+    {
+        using var admin = _fixture.CreateAdminClient();
+
+        using var feature = await admin.PostAsync(
+            "/sta/v1.1/FeaturesOfInterest",
+            Body(new JsonObject
+            {
+                ["name"] = "CRUD feature",
+                ["description"] = "Synthetic",
+                ["encodingType"] = "application/geo+json",
+                ["feature"] = JsonNode.Parse("""{"type":"Point","coordinates":[1,2]}"""),
+            }));
+        feature.StatusCode.Should().Be(HttpStatusCode.Created, await feature.Content.ReadAsStringAsync());
+        var featureId = Id(JsonNode.Parse(await feature.Content.ReadAsStringAsync())!.AsObject());
+        using var patchFeature = await admin.PatchAsync(
+            $"/sta/v1.1/FeaturesOfInterest({featureId})",
+            Body(new JsonObject { ["description"] = "Updated feature" }));
+        patchFeature.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        using var deleteFeature = await admin.DeleteAsync($"/sta/v1.1/FeaturesOfInterest({featureId})");
+        deleteFeature.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var sensor = await admin.PostAsync(
+            "/sta/v1.1/Sensors",
+            Body(new JsonObject
+            {
+                ["name"] = "CRUD sensor",
+                ["description"] = "Synthetic",
+                ["encodingType"] = "application/pdf",
+                ["metadata"] = "https://example.test/sensor.pdf",
+            }));
+        sensor.StatusCode.Should().Be(HttpStatusCode.Created, await sensor.Content.ReadAsStringAsync());
+        var sensorId = Id(JsonNode.Parse(await sensor.Content.ReadAsStringAsync())!.AsObject());
+        using var deleteSensor = await admin.DeleteAsync($"/sta/v1.1/Sensors({sensorId})");
+        deleteSensor.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var property = await admin.PostAsync(
+            "/sta/v1.1/ObservedProperties",
+            Body(new JsonObject
+            {
+                ["name"] = "CRUD property",
+                ["description"] = "Synthetic",
+                ["definition"] = "https://example.test/property",
+            }));
+        property.StatusCode.Should().Be(HttpStatusCode.Created, await property.Content.ReadAsStringAsync());
+        var propertyId = Id(JsonNode.Parse(await property.Content.ReadAsStringAsync())!.AsObject());
+        using var patchProperty = await admin.PatchAsync(
+            $"/sta/v1.1/ObservedProperties({propertyId})",
+            Body(new JsonObject { ["description"] = "Updated property" }));
+        patchProperty.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        using var deleteProperty = await admin.DeleteAsync($"/sta/v1.1/ObservedProperties({propertyId})");
+        deleteProperty.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /sta/v1.1/Locations")]
     [Endpoint("POST /sta/v1.1/Things")]
