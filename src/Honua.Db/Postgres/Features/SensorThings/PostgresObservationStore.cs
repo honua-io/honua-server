@@ -464,10 +464,14 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         ArgumentNullException.ThrowIfNull(request);
         var body = new System.Text.Json.Nodes.JsonObject
         {
-            ["name"] = request.Name, ["description"] = request.Description, ["observationType"] = request.ObservationType,
+            ["name"] = request.Name,
+            ["description"] = request.Description,
+            ["observationType"] = request.ObservationType,
             ["unitOfMeasurement"] = new System.Text.Json.Nodes.JsonObject
             { ["name"] = request.UnitName, ["symbol"] = request.UnitSymbol, ["definition"] = request.UnitDefinition },
-            ["Thing"] = Reference(request.Thing), ["Sensor"] = Reference(request.Sensor), ["ObservedProperty"] = Reference(request.ObservedProperty)
+            ["Thing"] = Reference(request.Thing),
+            ["Sensor"] = Reference(request.Sensor),
+            ["ObservedProperty"] = Reference(request.ObservedProperty)
         };
         var id = await CreateEntityAsync("Datastreams", System.Text.Json.JsonSerializer.SerializeToElement(body, EntityJsonContext.Default.JsonObject), cancellationToken).ConfigureAwait(false);
         return (await GetDatastreamAsync(id, cancellationToken).ConfigureAwait(false))!;

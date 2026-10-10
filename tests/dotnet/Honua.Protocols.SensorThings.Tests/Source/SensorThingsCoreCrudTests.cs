@@ -408,6 +408,14 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("DELETE /sta/v1.1/Observations({id})/$ref")]
+    [Endpoint("PATCH /sta/v1.1/Observations({id})/$ref")]
+    [Endpoint("POST /sta/v1.1/Observations({id})")]
+    [Endpoint("DELETE /sta/v1.1/Observations({id})/$value")]
+    [Endpoint("PATCH /sta/v1.1/Observations({id})/$value")]
+    [Endpoint("GET /sta/v1.1/Observations({id})/$value")]
+    [Endpoint("GET /sta/v1.1/Datastreams({id})/Thing({id})")]
+    [Endpoint("GET /sta/v1.1/Observations({id})")]
     public async Task ReferenceWritesAndBulkSingletonPost_DoNotMutateEntities()
     {
         var before = (await ReadAsync("Observations?$count=true"))["@iot.count"]!.GetValue<long>();
@@ -432,6 +440,13 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /sta/v1.1/Things({id})/properties/site/name")]
+    [Endpoint("GET /sta/v1.1/Things({id})/properties/site/name/$value")]
+    [Endpoint("GET /sta/v1.1/Datastreams({id})/unitOfMeasurement/name")]
+    [Endpoint("GET /sta/v1.1/Things({id})")]
+    [Endpoint("GET /sta/v1.1/Datastreams({id})")]
+    [Endpoint("GET /sta/v1.1/Datastreams({id})/Thing/$ref")]
+    [Endpoint("GET /sta/v1.1/Things")]
     public async Task ComplexPropertyPathsProjectionReferencesAndUnsupportedOptions_UseCoreResourceSemantics()
     {
         var thing = await CreateAsync("Things", new JsonObject { ["name"] = "Complex device", ["description"] = "Synthetic", ["properties"] = JsonNode.Parse("""{"site":{"name":"Laboratory","optional":null,"keep":1}}""") });
@@ -460,6 +475,9 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /sta/v1.1/Things")]
+    [Endpoint("GET /sta/v1.1/Observations")]
+    [Endpoint("GET /sta/v1.1/Sensors")]
     public async Task SharedQueryExpressions_HandleTypedJsonNavigationFunctionsSpatialPredicatesAndOrderParameters()
     {
         var location = await CreateAsync("Locations", Location("Query location"));
@@ -488,6 +506,10 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Update)]
+    [Endpoint("PATCH /sta/v1.1/Things({id})")]
+    [Endpoint("PATCH /sta/v1.1/Locations({id})")]
+    [Endpoint("GET /sta/v1.1/Things({id})/HistoricalLocations")]
+    [Endpoint("GET /sta/v1.1/Things({id})/Locations")]
     public async Task LocationBindingsRequireDistinctEncodings_AndUnchangedBindingsDoNotInventHistory()
     {
         var first = await CreateAsync("Locations", Location("First encoding"));
@@ -529,6 +551,9 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Update)]
+    [Endpoint("PATCH /sta/v1.1/Datastreams({id})")]
+    [Endpoint("GET /sta/v1.1/Datastreams({id})")]
+    [Endpoint("GET /sta/v1.1/Observations({id})/Datastream")]
     public async Task ObservationReparentAndDatastreamTypePatch_RejectIncompatibleExistingResultsAtomically()
     {
         var categoryBody = Datastream(1);
@@ -549,6 +574,8 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /sta/v1.1/Things({id})")]
+    [Endpoint("GET /sta/v1.1/Datastreams({id})")]
     public async Task SlashExpansionsMergeCommonPrefixes_AndNestedUnsupportedOptionsRetain501()
     {
         var stream = await CreateAsync("Datastreams", Datastream(1));
@@ -566,6 +593,10 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /sta/v1.1/Locations({id})")]
+    [Endpoint("GET /sta/v1.1/FeaturesOfInterest({id})")]
+    [Endpoint("GET /sta/v1.1/Locations({id})/properties/site/name")]
+    [Endpoint("GET /sta/v1.1/FeaturesOfInterest({id})/properties/site/name")]
     public async Task JsonPropertiesOnLocationsAndFeatures_SupportNestedSelectAndPropertyReads()
     {
         foreach (var set in new[] { "Locations", "FeaturesOfInterest" })
@@ -584,6 +615,12 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Create)]
+    [Endpoint("POST /sta/v1.1/Locations")]
+    [Endpoint("POST /sta/v1.1/Things({id})/Locations")]
+    [Endpoint("PATCH /sta/v1.1/Things({id})")]
+    [Endpoint("DELETE /sta/v1.1/Things({id})")]
+    [Endpoint("PATCH /sta/v1.1/Datastreams({id})/Thing")]
+    [Endpoint("GET /sta/v1.1/Things({id})")]
     public async Task AnonymousWritesAreDeniedOnLiteralAndCatchAllRoutes_BeforeValidationOrMutation()
     {
         using var anonymous = _fixture.CreateClient();
@@ -598,6 +635,9 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /sta/v1.1/Things")]
+    [Endpoint("GET /sta/v1.1/Observations")]
+    [Endpoint("GET /sta/v1.1/Locations")]
     public async Task MandatoryTable23Functions_ExecuteAgainstTypedCatalogTimeResultAndGeometry()
     {
         var thing = await CreateAsync("Things", new JsonObject { ["name"] = "Functions", ["description"] = "Sensor Things" });
@@ -627,6 +667,9 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Update)]
+    [Endpoint("PATCH /sta/v1.1/Locations({id})")]
+    [Endpoint("PATCH /sta/v1.1/Things({id})")]
+    [Endpoint("GET /sta/v1.1/Things({id})/Locations")]
     public async Task ConcurrentLocationEncodingPatchAndThingBinding_CannotCommitDuplicateCurrentEncodings()
     {
         using var admin = _fixture.CreateAdminClient();
@@ -649,6 +692,9 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /sta/v1.1/Datastreams({id})")]
+    [Endpoint("PATCH /sta/v1.1/Observations({id})")]
+    [Endpoint("DELETE /sta/v1.1/Observations({id})")]
     public async Task DatastreamExtents_UseValidatedRelationsFullIntervalsAndActualFeatureBounds()
     {
         var body = Datastream(1);
@@ -693,6 +739,7 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /sta/v1.1/Datastreams({id})/Observations")]
     public async Task LargeCountResults_PreserveAdjacentIntegersInFiltersArithmeticAndOrdering()
     {
         var body = Datastream(1);
@@ -720,6 +767,7 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /sta/v1.1/Things")]
     public async Task ComparisonsAcrossCollectionNavigations_RequireMatchingRelatedEntities()
     {
         var location = await CreateAsync("Locations", Location("Shared name"));
@@ -741,6 +789,10 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Update)]
+    [Endpoint("PATCH /sta/v1.1/Datastreams({id})")]
+    [Endpoint("PATCH /sta/v1.1/Observations({id})")]
+    [Endpoint("GET /sta/v1.1/Datastreams({id})")]
+    [Endpoint("GET /sta/v1.1/Observations({id})")]
     public async Task ConcurrentObservationResultAndDatastreamTypePatches_SerializeValidationWithoutDeadlock()
     {
         using var admin = _fixture.CreateAdminClient();
@@ -763,6 +815,8 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("PATCH /sta/v1.1/Things({id})")]
+    [Endpoint("GET /sta/v1.1/Things")]
     public async Task JsonPrimitivePropertyComparisons_RetainTypesWithinAndAcrossCollectionScopes()
     {
         var locationBody = Location("JSON comparison");
@@ -786,6 +840,7 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /sta/v1.1/Things")]
     public async Task SpatialComparisonAcrossCollections_UsesEachOriginalGeometryScope()
     {
         var location = await CreateAsync("Locations", Location("Spatial comparison"));

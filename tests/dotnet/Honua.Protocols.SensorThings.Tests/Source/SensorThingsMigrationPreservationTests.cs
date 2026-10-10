@@ -21,6 +21,7 @@ public sealed class SensorThingsMigrationPreservationTests : IAsyncLifetime
     public Task DisposeAsync() => _postgres.DisposeAsync();
 
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Upgrade_PreservesLegacyValuesAndOrphanReferences_WithoutIdentifierCollision()
     {
         var schema = "sta_upgrade_" + Guid.NewGuid().ToString("N");

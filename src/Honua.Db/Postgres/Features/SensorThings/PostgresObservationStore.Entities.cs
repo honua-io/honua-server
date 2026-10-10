@@ -38,9 +38,14 @@ internal sealed partial class PostgresObservationStore
 
     private string EntityTable(string set) => SchemaSearchPath.QualifyTable(set switch
     {
-        "Things" => "sta_thing", "Sensors" => "sta_sensor", "ObservedProperties" => "sta_observed_property",
-        "Datastreams" => "sta_datastream", "Observations" => "sta_observation", "Locations" => "sta_location",
-        "HistoricalLocations" => "sta_historical_location", "FeaturesOfInterest" => "sta_feature_of_interest",
+        "Things" => "sta_thing",
+        "Sensors" => "sta_sensor",
+        "ObservedProperties" => "sta_observed_property",
+        "Datastreams" => "sta_datastream",
+        "Observations" => "sta_observation",
+        "Locations" => "sta_location",
+        "HistoricalLocations" => "sta_historical_location",
+        "FeaturesOfInterest" => "sta_feature_of_interest",
         _ => throw new SensorThingsValidationException("Unknown sensing entity set.")
     }, _schemaContext?.CurrentSchema ?? _configuredSchema);
 
@@ -308,7 +313,8 @@ internal sealed partial class PostgresObservationStore
     {
         "Datastreams" => [("Thing", "thing_id"), ("Sensor", "sensor_id"), ("ObservedProperty", "observed_property_id")],
         "Observations" => [("Datastream", "datastream_id"), ("FeatureOfInterest", "feature_of_interest_id")],
-        "HistoricalLocations" => [("Thing", "thing_id")], _ => []
+        "HistoricalLocations" => [("Thing", "thing_id")],
+        _ => []
     };
 
     private static void ValidateMembers(string set, JsonObject body)

@@ -116,12 +116,3 @@ END;
 $$;
 CREATE TRIGGER sta_observation_reference_sync BEFORE INSERT OR UPDATE OF datastream_id,feature_of_interest_id
     ON $HonuaSchema$.sta_observation FOR EACH ROW EXECUTE FUNCTION $HonuaSchema$.sta_synchronize_references();
-ALTER TABLE $HonuaSchema$.sta_datastream DROP CONSTRAINT IF EXISTS sta_datastream_thing_fk;
-ALTER TABLE $HonuaSchema$.sta_datastream ADD CONSTRAINT sta_datastream_thing_fk
-    FOREIGN KEY (thing_id) REFERENCES $HonuaSchema$.sta_thing(id) ON DELETE CASCADE;
-ALTER TABLE $HonuaSchema$.sta_datastream DROP CONSTRAINT IF EXISTS sta_datastream_sensor_fk;
-ALTER TABLE $HonuaSchema$.sta_datastream ADD CONSTRAINT sta_datastream_sensor_fk
-    FOREIGN KEY (sensor_id) REFERENCES $HonuaSchema$.sta_sensor(id) ON DELETE CASCADE;
-ALTER TABLE $HonuaSchema$.sta_datastream DROP CONSTRAINT IF EXISTS sta_datastream_obsprop_fk;
-ALTER TABLE $HonuaSchema$.sta_datastream ADD CONSTRAINT sta_datastream_obsprop_fk
-    FOREIGN KEY (observed_property_id) REFERENCES $HonuaSchema$.sta_observed_property(id) ON DELETE CASCADE;
