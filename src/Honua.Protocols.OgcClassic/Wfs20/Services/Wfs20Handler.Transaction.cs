@@ -848,6 +848,15 @@ internal sealed partial class Wfs20Handler
                 continue;
             }
 
+            // Attribute-only schemas still advertise geometry for spatial resources.
+            // Resolve that fallback before field lookup, without shadowing declared attributes.
+            if (geometryField is null && IsFallbackTransactionGeometryProperty(resource, propertyElement.Name.LocalName))
+            {
+                geometry = await ParseTransactionGeometryPropertyAsync(
+                    propertyElement, resource, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
             var resolution = ResolveTransactionField(
                 resource,
                 propertyElement.Name.LocalName,
@@ -944,6 +953,16 @@ internal sealed partial class Wfs20Handler
                         : ParseTransactionGmlCodeSpace(valueElement);
                 }
 
+                continue;
+            }
+
+            if (geometryField is null && IsFallbackTransactionGeometryProperty(resource, nameElement.Value))
+            {
+                geometrySpecified = true;
+                geometry = valueElement == null
+                    ? null
+                    : await ParseTransactionGeometryPropertyAsync(
+                        valueElement, resource, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
@@ -1131,6 +1150,11 @@ internal sealed partial class Wfs20Handler
         throw new WfsTransactionException("InvalidValue", $"Unknown feature type '{rawTypeName}'.", "typeName");
     }
 
+
+    private static bool IsFallbackTransactionGeometryProperty(MetadataV2Resource resource, string rawName)
+        => ResolveGeometryPropertyName(resource) is { } geometryProperty &&
+           WfsPropertyNameResolver.MatchesGeometryProperty(rawName, geometryProperty) &&
+           WfsPropertyNameResolver.Resolve(resource, rawName, allowGeometryAlias: true, includeHiddenFields: true) is null;
 
     private static TransactionFieldResolution? ResolveTransactionField(
         MetadataV2Resource resource,
