@@ -184,9 +184,16 @@ public sealed class MapServerDrawingModeTests : MapServerEndpointTestBase
 
     private static string AddSameDataPublication(WebAppFixture fixture, string? mode)
     {
-        var graph = fixture.GetCurrentV2GraphSnapshot().Graph;
-        var original = graph.Services.Single(service => service.Metadata.Name == WebAppFixture.TestServiceId &&
-            service.Protocols.Contains(ServiceProtocols.MapServer, StringComparer.OrdinalIgnoreCase));
+        var snapshot = fixture.GetCurrentV2GraphSnapshot();
+        var graph = snapshot.Graph;
+        var originalPublication = graph.Publications.Single(publication =>
+            publication.PublicationType == MetadataV2PublicationType.EsriMapLayer &&
+            publication.LayerIndex == WebAppFixture.TestLayerId &&
+            snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var owningService) &&
+            owningService.Metadata.Name == WebAppFixture.TestServiceId &&
+            owningService.Protocols.Contains(ServiceProtocols.MapServer, StringComparer.OrdinalIgnoreCase));
+        var original = snapshot.Index.ServicesById[originalPublication.ServiceId];
+        snapshot.ResolveStorageLayerId(originalPublication).Should().Be(WebAppFixture.TestLayerId);
         var serviceName = "drawing_" + Guid.NewGuid().ToString("N");
         var serviceId = "svc-" + serviceName;
         var options = original.Options.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
