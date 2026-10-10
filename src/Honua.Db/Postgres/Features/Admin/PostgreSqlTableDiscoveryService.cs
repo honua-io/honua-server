@@ -90,6 +90,11 @@ internal sealed class PostgreSqlTableDiscoveryService(
         string table,
         CancellationToken cancellationToken = default)
     {
+        if (!_schemaConfiguration.IsOperationalSchema(schema, _schemaContext?.CurrentSchema))
+        {
+            return null;
+        }
+
         ArgumentNullException.ThrowIfNull(connection);
         var postgres = connection.RequireNpgsqlConnection();
 
@@ -147,13 +152,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
             FROM geometry_columns
             WHERE f_table_schema <> ALL(@metadataSchemas)
               AND f_table_name NOT LIKE '\_\_honua\_wfs\_stage\_%' ESCAPE '\'
-              AND (
-                  f_table_schema = ANY(@discoverySchemas)
-                  OR (
-                      f_table_schema <> 'information_schema'
-                      AND f_table_schema !~ '^pg_'
-                  )
-              )
+              AND f_table_schema = ANY(@discoverySchemas)
 
             UNION ALL
 
@@ -167,13 +166,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
             FROM geography_columns
             WHERE f_table_schema <> ALL(@metadataSchemas)
               AND f_table_name NOT LIKE '\_\_honua\_wfs\_stage\_%' ESCAPE '\'
-              AND (
-                  f_table_schema = ANY(@discoverySchemas)
-                  OR (
-                      f_table_schema <> 'information_schema'
-                      AND f_table_schema !~ '^pg_'
-                  )
-              )
+              AND f_table_schema = ANY(@discoverySchemas)
 
             ORDER BY schema, table_name
             """;
@@ -239,6 +232,11 @@ internal sealed class PostgreSqlTableDiscoveryService(
         string table,
         CancellationToken cancellationToken = default)
     {
+        if (!_schemaConfiguration.IsOperationalSchema(schema, _schemaContext?.CurrentSchema))
+        {
+            return null;
+        }
+
         ArgumentNullException.ThrowIfNull(connectionString);
 
         try
@@ -257,17 +255,11 @@ internal sealed class PostgreSqlTableDiscoveryService(
                     type as geometry_type,
                     srid
                 FROM geometry_columns
-                WHERE lower(f_table_schema) = lower(@schema)
+                WHERE f_table_schema = @schema
                   AND lower(f_table_name) = lower(@table)
                   AND f_table_schema <> ALL(@metadataSchemas)
                   AND f_table_name NOT LIKE '\_\_honua\_wfs\_stage\_%' ESCAPE '\'
-                  AND (
-                      f_table_schema = ANY(@discoverySchemas)
-                      OR (
-                          f_table_schema <> 'information_schema'
-                          AND f_table_schema !~ '^pg_'
-                      )
-                  )
+                  AND f_table_schema = ANY(@discoverySchemas)
 
                 UNION ALL
 
@@ -278,17 +270,11 @@ internal sealed class PostgreSqlTableDiscoveryService(
                     type as geometry_type,
                     srid
                 FROM geography_columns
-                WHERE lower(f_table_schema) = lower(@schema)
+                WHERE f_table_schema = @schema
                   AND lower(f_table_name) = lower(@table)
                   AND f_table_schema <> ALL(@metadataSchemas)
                   AND f_table_name NOT LIKE '\_\_honua\_wfs\_stage\_%' ESCAPE '\'
-                  AND (
-                      f_table_schema = ANY(@discoverySchemas)
-                      OR (
-                          f_table_schema <> 'information_schema'
-                          AND f_table_schema !~ '^pg_'
-                      )
-                  )
+                  AND f_table_schema = ANY(@discoverySchemas)
 
                 LIMIT 1
                 """;

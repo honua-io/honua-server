@@ -189,7 +189,7 @@ public sealed class SecureConnectionResolverSslModeTests
     [InlineData("Host=db.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require")]
     [InlineData("Server=db.example.com;Port=5432;Database=analytics;User Id=app;Password=secret;SSL Mode=VerifyFull")]
     [InlineData("Host=db.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SSL Mode=Require;Trust Server Certificate=false")]
-    [InlineData("Host=db.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require;Timeout=5;Command Timeout=30;Pooling=true;Maximum Pool Size=20;Minimum Pool Size=0;Application Name=honua;Search Path=analytics;Keepalive=30;Connection Idle Lifetime=60")]
+    [InlineData("Host=db.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require;Timeout=5;Command Timeout=30;Pooling=true;Maximum Pool Size=20;Minimum Pool Size=0;Application Name=honua;Search Path=public;Keepalive=30;Connection Idle Lifetime=60")]
     public async Task ResolveConnectionStringAsync_SecretWithAllowedKeywords_ResolvesUnchanged(string resolvedConnectionString)
     {
         var connection = CreateSecretReferenceConnection(host: "db.example.com", port: 5432);
@@ -266,6 +266,31 @@ public sealed class SecureConnectionResolverSslModeTests
             NullLogger<SecureConnectionResolver>.Instance,
             connectionDriverRegistry: null,
             hostAllowlist: hostAllowlist);
+
+    [SecurityTest]
+    [Theory]
+    [InlineData("honua")]
+    [InlineData("pg_catalog")]
+    [InlineData("information_schema")]
+    [InlineData("unlisted")]
+    [InlineData("public,pg_temp")]
+    [InlineData("\"$user\",public")]
+    [InlineData("public,")]
+    [InlineData("\"PUBLIC\"")]
+    public async Task ResolveConnectionStringAsync_UnsafeSearchPath_Refuses(string searchPath)
+    {
+        var connection = CreateSecretReferenceConnection("db.example.com", 5432);
+        var builder = new Npgsql.NpgsqlConnectionStringBuilder
+        {
+            Host = "db.example.com",
+            Username = "app",
+            Password = "secret",
+            SslMode = Npgsql.SslMode.Require,
+            SearchPath = searchPath
+        };
+        var resolver = CreateResolver(connection, builder.ConnectionString);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => resolver.ResolveConnectionStringAsync(connection.Name));
+    }
 
     private sealed class StubRegistry(DataConnection connection) : ISecureConnectionRegistry
     {

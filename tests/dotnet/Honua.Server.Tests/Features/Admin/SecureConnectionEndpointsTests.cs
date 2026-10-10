@@ -18,6 +18,7 @@ using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -438,6 +439,56 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             capturingDriver.LastSslMode.Should().Be(SslMode.VerifyFull);
+        }
+        finally
+        {
+            await localFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("Host=localhost;Port=5432;Database=test;Username=test;Password=sensitive-value;SSL Mode=Require;Options=-c statement_timeout=0")]
+    [InlineData("Host=denied.example.com;Port=5432;Database=test;Username=test;Password=sensitive-value;SSL Mode=Require")]
+    [Endpoint("POST /api/v1/admin/connections/test")]
+    public async Task TestDraftConnection_ForbiddenResolvedSecret_ReturnsRedactedDenialWithoutProbing(string resolvedString)
+    {
+        var driver = new CapturingConnectionDriver();
+        var secrets = Substitute.For<IRequestSecretReferenceResolver>();
+        secrets.Evaluate(Arg.Any<string>()).Returns(RequestSecretReferenceDecision.Permitted());
+        secrets.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(resolvedString);
+        var localFixture = CreateAllowlistFixture(["localhost"], false, out var audit)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IRequestSecretReferenceResolver>();
+                services.AddSingleton(secrets);
+                services.RemoveAll<IConnectionDriverRegistry>();
+                services.AddSingleton<IConnectionDriverRegistry>(new ConnectionDriverRegistry([driver]));
+            });
+        await localFixture.InitializeAsync();
+        try
+        {
+            using var client = localFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+            var request = new CreateSecureConnectionRequest
+            {
+                Name = "forbidden-draft",
+                Host = "localhost",
+                Port = 5432,
+                DatabaseName = "test",
+                Username = "test",
+                SecretReference = "env:TEST_CONNECTION",
+                SecretType = "environment",
+                SslRequired = true,
+                SslMode = "Require"
+            };
+            using var content = new StringContent(JsonSerializer.Serialize(request, _jsonOptions), Encoding.UTF8, "application/json");
+            var response = await client.PostAsync("/api/v1/admin/connections/test", content);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().Contain("connection security policy").And.NotContain("sensitive-value").And.NotContain("statement_timeout");
+            driver.ProbeCount.Should().Be(0);
+            var denial = await WaitForEventAsync(audit, e => e.Action == "connection.test" && e.Outcome == AuditOutcome.Denied);
+            denial.Should().NotBeNull();
+            JsonSerializer.Serialize(denial).Should().NotContain("sensitive-value").And.NotContain("statement_timeout");
         }
         finally
         {
@@ -1038,6 +1089,8 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
     {
         public SslMode LastSslMode { get; private set; } = SslMode.Require;
 
+        public int ProbeCount { get; private set; }
+
         public string Provider => DataProviderNames.Postgis;
 
         public string BuildConnectionString(ConnectionTarget target)
@@ -1049,7 +1102,10 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         public Task<ConnectionHealthStatus> TestConnectionAsync(
             string connectionString,
             CancellationToken cancellationToken = default)
-            => Task.FromResult(ConnectionHealthStatus.Healthy);
+        {
+            ProbeCount++;
+            return Task.FromResult(ConnectionHealthStatus.Healthy);
+        }
     }
 
     private sealed class AlwaysHealthyConnectionTester : IConnectionHealthTester

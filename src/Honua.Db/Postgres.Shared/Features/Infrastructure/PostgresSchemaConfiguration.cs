@@ -42,8 +42,42 @@ internal sealed record PostgresSchemaConfiguration(
         AddSchemaIfValid(schemas, currentSchema);
 
         return NormalizeSchemaNames(schemas)
-            .Where(schema => !IsMetadataSchema(schema))
+            .Where(schema => !ImportTargetSchemaPolicy.IsReserved(schema, MetadataSchemas))
             .ToArray();
+    }
+
+    public bool IsOperationalSchema(string? schema, string? currentSchema = null)
+        => !string.IsNullOrWhiteSpace(schema) &&
+           ResolveDiscoverySchemas(currentSchema).Contains(schema, StringComparer.Ordinal);
+
+    public bool IsAllowedSearchPath(string? searchPath)
+    {
+        if (searchPath is null)
+        {
+            return true;
+        }
+
+        // PostgreSQL folds unquoted identifiers to lower case; quoted identifiers
+        // retain their spelling. Dynamic entries such as $user are never permitted.
+        foreach (var entry in searchPath.Split(','))
+        {
+            var identifier = entry.Trim();
+            if (identifier.StartsWith('"') && identifier.EndsWith('"') && identifier.Length >= 2)
+            {
+                identifier = identifier[1..^1];
+            }
+            else
+            {
+                identifier = identifier.ToLowerInvariant();
+            }
+
+            if (!SchemaSearchPath.IsValidIdentifier(identifier) || !IsOperationalSchema(identifier))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public IReadOnlyList<string> MetadataSchemas

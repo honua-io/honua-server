@@ -297,6 +297,11 @@ internal static class WebAppFixturePostgresWiringMixin
         WebAppFixtureMetadataV2Mixin.RegisterDefaultMetadataV2Graph(services);
 
         OverrideDatabaseConnectionProvider(services, currentSchemaAccessor);
+        // Job executors open a new scope and publish into the fixture schema. The HTTP
+        // test-schema header never reaches that scope, so bind ISchemaContext to the
+        // same accessor the connection provider uses.
+        services.RemoveAll<ISchemaContext>();
+        services.AddScoped<ISchemaContext>(_ => new FixtureCurrentSchemaContext(currentSchemaAccessor));
 
         foreach (var configure in userConfigurations)
         {

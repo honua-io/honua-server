@@ -20,6 +20,23 @@ namespace Honua.Db.Postgres.Tests.Features.Admin;
 public sealed class PostgreSqlLayerPublishingServiceSqlTests
 {
     [Theory]
+    [InlineData("honua")]
+    [InlineData("pg_catalog")]
+    [InlineData("information_schema")]
+    [InlineData("unlisted")]
+    public async Task ValidateTableForPublishAsync_NonOperationalSchema_ReturnsNotFoundWithoutIntrospection(string schema)
+    {
+        var discovery = new Mock<ITableDiscoveryService>(MockBehavior.Strict);
+        var service = new PostgreSqlLayerPublishingService(discovery.Object,
+            Mock.Of<IMetadataV2GraphStore>(), NullLogger<PostgreSqlLayerPublishingService>.Instance);
+        var result = await service.ValidateTableForPublishAsync("not a connection string",
+            new TablePublishValidationRequest { Schema = schema, Table = "source" });
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Checks, check => check.Code == "source-table" && check.Message.Contains("was not found", StringComparison.Ordinal));
+        discovery.VerifyNoOtherCalls();
+    }
+
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task UpsertPublishedLayerMetadataV2Async_UsesEffectiveStorageConnectionForGraphIdentity(bool managed)

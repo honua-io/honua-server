@@ -236,6 +236,39 @@ internal static partial class SecureConnectionEndpoints
                         parsedSslMode);
             }
 
+            var validator = context.RequestServices.GetRequiredService<IResolvedConnectionStringValidator>();
+            try
+            {
+                await validator.ValidateConnectionStringAsync(new DataConnection
+                {
+                    Name = request.Name,
+                    Provider = request.Provider,
+                    Host = request.Host ?? DataConnection.SecretReferenceMetadataPlaceholder,
+                    Port = request.Port,
+                    SslRequired = request.SslRequired
+                }, connectionString, context.RequestAborted).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+            {
+                const string refusal = "The resolved connection string does not satisfy the connection security policy.";
+                await governance.RecordAsync(
+                    context,
+                    "connection.test",
+                    AuditOutcome.Denied,
+                    resourceId: null,
+                    new SecureConnectionAuditDetails
+                    {
+                        Name = request.Name,
+                        Host = request.Host,
+                        Port = request.Port,
+                        Provider = request.Provider,
+                        UsesSecretReference = draftUsesSecretReference,
+                        Reason = refusal
+                    },
+                    context.RequestAborted);
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(refusal));
+            }
+
             var healthStatus = driver is not null
                 ? await driver.TestConnectionAsync(connectionString, context.RequestAborted)
                 : await connectionTester.TestConnectionAsync(connectionString, context.RequestAborted);

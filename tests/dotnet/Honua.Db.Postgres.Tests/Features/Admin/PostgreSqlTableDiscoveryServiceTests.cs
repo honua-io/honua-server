@@ -40,7 +40,8 @@ public sealed class PostgreSqlTableDiscoveryServiceTests
                     """;
                 await command.ExecuteNonQueryAsync();
             }
-            var service = new PostgreSqlTableDiscoveryService(NullLogger<PostgreSqlTableDiscoveryService>.Instance);
+            var service = new PostgreSqlTableDiscoveryService(NullLogger<PostgreSqlTableDiscoveryService>.Instance,
+                schemaConfiguration: new PostgresSchemaConfiguration("honua", schema, [schema, "public"]));
             var table = await service.DiscoverNonSpatialTableAsync(connection, schema, "attributes");
             table.Should().NotBeNull();
             table!.GeometryColumn.Should().BeNull();
@@ -54,6 +55,38 @@ public sealed class PostgreSqlTableDiscoveryServiceTests
                 NullLogger<PostgreSqlTableDiscoveryService>.Instance,
                 schemaConfiguration: new PostgresSchemaConfiguration(schema, "public", ["public"]));
             (await configured.DiscoverNonSpatialTableAsync(connection, schema, "attributes")).Should().BeNull();
+        }
+        finally
+        {
+            await _fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [Fact]
+    public async Task DiscoverTables_OnlyOperationalSchemasReachSpatialAndAttributeIntrospection()
+    {
+        var schema = await _fixture.CreateIsolatedSchemaAsync("schema_policy");
+        try
+        {
+            await using var connection = await _fixture.DataSource.OpenConnectionAsync();
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"""
+                    CREATE TABLE "{schema}".spatial (id integer PRIMARY KEY, geom geometry(Point, 4326));
+                    CREATE TABLE "{schema}".attributes (id integer PRIMARY KEY, name text);
+                    """;
+                await command.ExecuteNonQueryAsync();
+            }
+            var restricted = new PostgreSqlTableDiscoveryService(NullLogger<PostgreSqlTableDiscoveryService>.Instance);
+            (await restricted.DiscoverPostGisTableAsync(_fixture.ConnectionString, schema, "spatial")).Should().BeNull();
+            (await restricted.DiscoverNonSpatialTableAsync(connection, schema, "attributes")).Should().BeNull();
+            (await restricted.DiscoverPostGisTablesAsync(connection)).Should().NotContain(table => table.Schema == schema);
+
+            var allowed = new PostgreSqlTableDiscoveryService(NullLogger<PostgreSqlTableDiscoveryService>.Instance,
+                schemaConfiguration: new PostgresSchemaConfiguration("honua", schema, [schema, "public"]));
+            (await allowed.DiscoverPostGisTableAsync(_fixture.ConnectionString, schema, "spatial")).Should().NotBeNull();
+            (await allowed.DiscoverNonSpatialTableAsync(connection, schema, "attributes")).Should().NotBeNull();
+            (await allowed.DiscoverPostGisTablesAsync(connection)).Should().Contain(table => table.Schema == schema && table.Table == "spatial");
         }
         finally
         {
