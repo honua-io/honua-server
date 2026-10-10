@@ -1301,9 +1301,9 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             using var document = await ReadDocumentAsync(response);
             var root = document.RootElement;
 
-            foreach (var capabilityId in new[] { "jobs.runner", "operations.proposals" })
+            foreach (var capability in new[] { "jobs.runner", "operations.proposals" }
+                         .Select(capabilityId => GetCapability(root, capabilityId)))
             {
-                var capability = GetCapability(root, capabilityId);
                 capability.GetProperty("available").GetBoolean().Should().BeFalse();
                 capability.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
             }
