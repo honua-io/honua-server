@@ -226,6 +226,8 @@ internal sealed class ServerInstanceIdentity : IServerInstanceIdentity
 /// <summary>Registers the per-instance identity.</summary>
 internal static class ServerInstanceIdentityServiceCollectionExtensions
 {
+    private static readonly IConfiguration EmptyConfiguration = new ConfigurationBuilder().Build();
+
     /// <summary>
     /// Registers <see cref="IServerInstanceIdentity"/> as a singleton resolved from configuration
     /// and the process environment. Idempotent.
@@ -233,8 +235,10 @@ internal static class ServerInstanceIdentityServiceCollectionExtensions
     public static IServiceCollection AddServerInstanceIdentity(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
+        // Hosts that compose only the operations slice (no IConfiguration registered) still get a
+        // usable identity from the environment sources.
         services.TryAddSingleton<IServerInstanceIdentity>(static sp => ServerInstanceIdentity.Resolve(
-            sp.GetRequiredService<IConfiguration>(),
+            sp.GetService<IConfiguration>() ?? EmptyConfiguration,
             sp.GetService<TimeProvider>() ?? TimeProvider.System));
         return services;
     }

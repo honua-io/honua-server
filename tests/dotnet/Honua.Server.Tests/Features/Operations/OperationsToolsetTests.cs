@@ -372,7 +372,7 @@ public sealed class OperationsToolsetTests
         descriptor.ApprovalModel.Should().Be(OperationApprovalModel.None);
         descriptor.InputSchema.Should().BeEmpty();
         descriptor.OutputSchema.Select(parameter => parameter.Name)
-            .Should().BeEquivalentTo(["status", "version"]);
+            .Should().BeEquivalentTo(["status", "version", "instanceId"]);
         descriptor.Policy.BlastRadiusClass.Should().Be(OperationBlastRadiusClass.None);
         descriptor.Policy.SideEffectClass.Should().Be(OperationSideEffectClass.ReadOnly);
         descriptor.Policy.Determinism.Should().Be(OperationDeterminism.RuntimeDynamic);
