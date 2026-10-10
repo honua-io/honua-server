@@ -16,9 +16,9 @@ Serve I3S metadata previews through Enterprise-gated SceneServer handlers; unlic
 | Capability key | `serve.i3s-scene` |
 | Category | Serve |
 | Edition | Enterprise |
-| Surface maturity | 8 implemented |
-| Registry entries | 8 |
-| Proving tests | 26 |
+| Surface maturity | 14 implemented |
+| Registry entries | 14 |
+| Proving tests | 65 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

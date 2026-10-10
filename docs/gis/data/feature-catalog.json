@@ -4599,6 +4599,7 @@
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_AsAdminWithEnvironmentAndWorkspace_ReturnsFilteredManifest",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_AsAnonymous_ReturnsPublicTenantManifestAndNoStoreHeaders",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_AutonomyTracksPolicyStoreInsteadOfWorkflowStore",
+        "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_ConnectedRedis_AdvertisesControlPlaneAndPublishesDurabilityOutcome",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_FileExportDirections_AdvertisesOnlyThreeImplementedWriters",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_FilePluginWriters_UsesLicensedEnabledDiscovery",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_FileReadersWithoutImportService_ReportMissingDependency",
@@ -4607,6 +4608,7 @@
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_LifecycleOnlyPreviews_RemainAvailableWithoutOptIn",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_MultiTenancyWithoutSchemaRouting_IsDisabledByConfiguration",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_MultiTenancy_ReflectsRuntimeLicenseAndAuthentication",
+        "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_RedisConfiguredButUnreachable_WithholdsControlPlaneWithoutDurabilityOutcome",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_RegistryDerived_MatchesHandCuratedComposition",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_RollbackClaimsAreTargetScoped",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_RollbackIgnoresTargetsFromOtherEnvironments",
@@ -4634,7 +4636,8 @@
         "Honua.Server.Tests.Features.Collaboration.FeatureLocks.FeatureLockCapabilityManifestTests.Manifest_WhenAnAuthorizerIsSupplied_ReportsLeasesAvailable",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamConformanceEndpointsTests.Manifest_PublishesTheImmutableRevisionUnderBothNames",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Manifest_ExposesImmutableDeploymentRevisionSeparatelyFromServerVersion",
-        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Manifest_RejectsMalformedDeploymentRevisionRatherThanEchoingIt"
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Manifest_RejectsMalformedDeploymentRevisionRatherThanEchoingIt",
+        "Honua.Server.Tests.Features.Studio.StudioPublishRequestNonAttestedRedisTests.StockRedis_Production_AdvertisesOperationsProposalsAndPublishesDurabilityAsInformation"
       ],
       "proof_ledger_surface": "capability-manifest",
       "maturity": "implemented",
@@ -7881,6 +7884,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs10EndpointsTests.Wcs10_ServiceCoverageIdUsesPublicationIndexAndReadsBoundStorageLayer",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs10EndpointsTests.Wcs10_UnknownServiceUsesLegacyErrorEnvelope",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs10EndpointsTests.Wcs_VersionNegotiation_KeepsTwoPointZeroAsTheDefaultAndIsolatesTheEncodings",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs10GridEndpointsTests.GetCoverage_PreservesRequestedGridAndCellValues",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_DescribeCoverage_ServiceRouteUnknownService_ReturnsServiceNotFoundException",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCapabilities_CoverageSubtype_IsBoundUnprefixedQName",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCapabilities_ServiceRoute_ReturnsAccessibleRasterCoverage",
@@ -9084,7 +9088,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetTile_WorldCrs84QuadColumnOutOfBounds_ReturnsInvalidParameterValue",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetTile_WorldCrs84QuadEnabled_RendersThroughSharedGridsetPipeline",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetTile_WorldCrs84QuadNotConfigured_ReturnsInvalidParameterValue",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetTile_WorldCrs84QuadRowOutOfBounds_ReturnsInvalidParameterValue"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetTile_WorldCrs84QuadRowOutOfBounds_ReturnsInvalidParameterValue",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsReprojectionTests.Wmts_GetTile_ReprojectsSingleAndMosaicSourcesWithoutLosingCells"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "preview",
@@ -9370,6 +9375,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerHistogramBinEdgesTests.ConstantHistograms_SoapAndRest_PreserveSqlCentersCountsAndNoData",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerHistogramBinEdgesTests.EmptyLayer_Histograms_PreservesNotFoundEnvelope",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.Histograms_GetAndPost_ReturnPerBandHistograms"
       ],
       "proof_ledger_surface": "image-server",
@@ -9530,7 +9537,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.MultidimensionalInfo_Get_NonMultidimensionalLayer_ReturnsEmptyVariables",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.MultidimensionalInfo_NonExistentLayer_ReturnsNotFound"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.MultidimensionalInfo_NonExistentLayer_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMultidimensionalSoapTests.PersistedCoverage_SoapPropertySetsPreserveSqlAndRestSemantics"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "preview",
@@ -9740,7 +9748,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemHistograms_ExistingRaster_ReturnsBandHistograms"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemHistograms_ExistingRaster_ReturnsBandHistograms",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerHistogramBinEdgesTests.ConstantHistograms_SoapAndRest_PreserveSqlCentersCountsAndNoData"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "preview",
@@ -9945,6 +9954,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Scene.I3sConformanceFixtureTests.LayerDescriptor_AdvertisesNodePages_AndPassesValidator",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.InvalidPersistedContent_DoesNotAdvertiseOrServePartialResources",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.RegisteredBuildingScene_KeepsItsTypeWithoutAdvertisingIncompatibleHostedBuffers",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.SourceMaterialCulling_PreservesGltfSingleAndDoubleSidedRendering",
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetLayer_AtGeoServicesPath_ReturnsThreeDObjectLayer",
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetLayer_BuildingScene_AdvertisesBuildingLayerType",
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetLayer_DescriptorIsHonest_RichMetadataAndNodePages",
@@ -9963,7 +9975,79 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Scene.I3sConformanceFixtureTests.NodePage_OutOfRange_Returns404",
-        "Honua.Server.Tests.Features.Protocols.Scene.I3sConformanceFixtureTests.NodePage_ProjectsTilesetTree_AndPassesValidator"
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sConformanceFixtureTests.NodePage_ProjectsTilesetTree_AndPassesValidator",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.IndependentSceneRead_DoesNotWaitForAnotherScenesBlockedCacheValidation",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.MultipleContentTile_PublishesBothPersistedMeshesAndTheirMaterialResources",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.MultipleSourceMaterials_EveryTriangleHasItsOwnPublishedMaterialAndResources",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.PersistedB3dmAndGlb_AllAdvertisedNodes_DecodeToSourceGeometryAndAttributes",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.PersistedHierarchy_UsesPixelAreaAndPreservesRefinement"
+      ],
+      "proof_ledger_surface": "i3s-sceneserver",
+      "maturity": "implemented",
+      "capability": "serve.i3s-scene"
+    },
+    {
+      "id": "get-rest-services-sceneid-sceneserver-layers-layerid-int-nodes-nodeid-int-attributes-fieldkey-attributeid-int",
+      "route": "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}",
+      "method": "GET",
+      "family": "I3S",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.PersistedB3dmAndGlb_AllAdvertisedNodes_DecodeToSourceGeometryAndAttributes",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.PersistedBinaryResources_ApplyDeclaredHttpCachePolicy",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.PersistedInt64Attributes_PreserveValuesBeyondDoublePrecision",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.PersistedStringAttributes_NullAndEmptyRemainDistinctInDeclaredBinaryLayout",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_CommunityEdition_Returns402",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_EnterpriseEdition_ReturnsObjectIdAttributeFile",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_ProtectedScene_WithoutAuth_ReturnsUnauthorized",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_SceneWithNoTranscodableGeometry_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_UnknownAttributeId_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_UnknownField_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_UnknownLayerId_Returns404"
+      ],
+      "proof_ledger_surface": "i3s-sceneserver",
+      "maturity": "implemented",
+      "capability": "serve.i3s-scene"
+    },
+    {
+      "id": "get-rest-services-sceneid-sceneserver-layers-layerid-int-nodes-nodeid-int-geometries-geometryid-int",
+      "route": "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}",
+      "method": "GET",
+      "family": "I3S",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.ExistingHonuaGeneratedGlb_UsesPersistedEcefTranslationWithoutAnExtraAxisRotation",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.InvalidPersistedContent_DoesNotAdvertiseOrServePartialResources",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.PersistedB3dmAndGlb_AllAdvertisedNodes_DecodeToSourceGeometryAndAttributes",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.PersistedBinaryResources_ApplyDeclaredHttpCachePolicy",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.SourceRevisionChange_InvalidatesPreviouslyDerivedDescriptorsAndBytes",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeGeometry_CommunityEdition_Returns402",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeGeometry_EnterpriseEdition_ReturnsTranscodedI3sBuffer",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeGeometry_ProtectedScene_WithoutAuth_ReturnsUnauthorized",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeGeometry_SceneWithNoTranscodableGeometry_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeGeometry_UnknownGeometryId_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeGeometry_UnknownLayerId_Returns404"
+      ],
+      "proof_ledger_surface": "i3s-sceneserver",
+      "maturity": "implemented",
+      "capability": "serve.i3s-scene"
+    },
+    {
+      "id": "get-rest-services-sceneid-sceneserver-layers-layerid-int-nodes-nodeid-int-textures-textureid",
+      "route": "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/textures/{textureId}",
+      "method": "GET",
+      "family": "I3S",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.BoundedJpegTexture_AdvertisesJpgAndServesOriginalPersistedBytes",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.CustomGeometryProvider_DoesNotServeTexturesFromAnUnrelatedPersistedRevision",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.EncodedUtf8ContentAndTextureUris_ResolvePersistedFilesWithoutChangingBytes",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.PersistedBinaryResources_ApplyDeclaredHttpCachePolicy",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.ProtectedResources_AnonymousDenied_AuthenticatedBytesMatchPublicScene",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.TexturedNode_AdvertisedMaterial_FetchesOriginalPng_AndUntexturedNodeHasNoTexture"
       ],
       "proof_ledger_surface": "i3s-sceneserver",
       "maturity": "implemented",
@@ -9977,7 +10061,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.Scene.I3sConformanceFixtureTests.Statistics_ForObjectId_PassesValidator_AndCountsContentNodes",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sConformanceFixtureTests.Statistics_ForObjectId_PassesValidator_AndCountsPersistedFeatures",
         "Honua.Server.Tests.Features.Protocols.Scene.I3sConformanceFixtureTests.Statistics_UnknownField_Returns404"
       ],
       "proof_ledger_surface": "i3s-sceneserver",
@@ -10516,6 +10600,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerExceptionMappingTests.Query_WhenReaderThrowsNotSupportedException_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerExceptionMappingTests.Query_WhenReaderThrowsUnexpectedInvalidOperation_ReturnsInternalServerError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerExtrusionTests.LayerQuery_WithExtrusionConfigured_DoesNotAffect2DResponse",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.AddAndUpdateFeatures_NumericBooleanWireValues_PersistBooleansAndPreserveIntegerFields",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.ApplyEdits_ConcurrentAttributeOnlyUpdates_PreserveGeometryAndReportSuccess",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.ApplyEdits_ConcurrentDistinctPartialUpdates_RereadAfterLockedSnapshotChanges",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.ApplyEdits_NumericPrimaryKeyAndDuplicateIdAttribute_TargetsOnlyPrimaryKey",
@@ -10748,6 +10833,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerExceptionMappingTests.QueryRelatedRecords_WhenServiceThrowsKnownInvalidQueryInvalidOperation_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerExceptionMappingTests.QueryRelatedRecords_WhenServiceThrowsUnexpectedInvalidOperation_ReturnsInternalServerError",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerOptionalProjectionTests.RelatedQuery_WithoutProjector_PreservesSourceCoordinatesAndAttributeOnlyRequests",
         "Honua.Server.Tests.QueryRelatedRecordsEndpointTests.QueryRelatedRecords_EmptyGroupAlwaysEmitsRelatedRecordsArray",
         "Honua.Server.Tests.QueryRelatedRecordsEndpointTests.QueryRelatedRecords_RelatedRecordsIsFlatArrayPerEsriSpec",
         "Honua.Server.Tests.QueryRelatedRecordsEndpointTests.QueryRelatedRecords_ResponseValidatesAgainstGeoServicesSchema",
@@ -12207,7 +12293,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.RestCatalog_AdminAndRoleOperationHandoffsAgreeWithCatalogVisibility",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Layers_ReturnsSameDocumentAsAllLayersAndTables"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Layers_ReturnsSameDocumentAsAllLayersAndTables",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerSpatialReferenceTests.MapAllLayers_AdvertisesMapReferenceAndProjectedExtentSeparatelyFromSource"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented",
@@ -12353,7 +12440,12 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.RestCatalog_AdminAndRoleOperationHandoffsAgreeWithCatalogVisibility",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalTests.GeoServicesQuery_BracketedTimeExtent_MapServer_MatchesPlainExtentAndExpectedFeatures",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Query_Get_ReturnsFeatures",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerObjectIdFieldTests.Query_WithStringIdAndNumericObjectId_UsesNumericObjectIdAndPreservesStringId"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerObjectIdFieldTests.Query_WithStringIdAndNumericObjectId_UsesNumericObjectIdAndPreservesStringId",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerSpatialReferenceTests.MapQuery_CloudNativeDefaultsRemainValidWgs84",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerSpatialReferenceTests.MapQuery_DefaultGeometryUsesMapReference_ExplicitReferenceAndFeatureServerRemainGeographic",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerSpatialReferenceTests.MapQuery_GeoJsonDefaultRemainsWgs84",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerSpatialReferenceTests.MapQuery_OmittedInputReferenceUsesMapCoordinates",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerSpatialReferenceTests.MapQuery_PbfDefaultSpatialReferenceIsMapReference"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented",
@@ -12383,7 +12475,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_QueryRelatedRecords_ReturnsRelatedRecordGroups",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_QueryRelatedRecords_WithUnknownRelationship_ReturnsNotFound"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_QueryRelatedRecords_WithUnknownRelationship_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerOptionalProjectionTests.RelatedQuery_WithoutProjector_RejectsRequiredCoordinateTransformation",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerSpatialReferenceTests.MapRelatedQuery_DefaultReferenceIsMap_ExplicitAndFeatureServerRemainGeographic"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented",
@@ -12806,6 +12900,48 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodePage_ScenesAlias_CommunityEdition_Returns402",
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodePage_ScenesAlias_EnterpriseEdition_ReturnsNodePage"
+      ],
+      "proof_ledger_surface": "scenes-3dtiles",
+      "maturity": "implemented",
+      "capability": "serve.i3s-scene"
+    },
+    {
+      "id": "get-scenes-sceneid-sceneserver-layers-layerid-int-nodes-nodeid-int-attributes-fieldkey-attributeid-int",
+      "route": "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}",
+      "method": "GET",
+      "family": "3D-Tiles",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_AtScenesAlias_ReturnsObjectIdAttributeFile"
+      ],
+      "proof_ledger_surface": "scenes-3dtiles",
+      "maturity": "implemented",
+      "capability": "serve.i3s-scene"
+    },
+    {
+      "id": "get-scenes-sceneid-sceneserver-layers-layerid-int-nodes-nodeid-int-geometries-geometryid-int",
+      "route": "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}",
+      "method": "GET",
+      "family": "3D-Tiles",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeGeometry_AtScenesAlias_ReturnsTranscodedI3sBuffer"
+      ],
+      "proof_ledger_surface": "scenes-3dtiles",
+      "maturity": "implemented",
+      "capability": "serve.i3s-scene"
+    },
+    {
+      "id": "get-scenes-sceneid-sceneserver-layers-layerid-int-nodes-nodeid-int-textures-textureid",
+      "route": "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/textures/{textureId}",
+      "method": "GET",
+      "family": "3D-Tiles",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sProductionResourceEndpointTests.TexturedNode_AdvertisedMaterial_FetchesOriginalPng_AndUntexturedNodeHasNoTexture"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
       "maturity": "implemented",
@@ -18480,6 +18616,7 @@
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.PublishedRoute_FollowActiveUrlAfterPublication_ServesActiveVersionThroughRepublishAndRollback",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.PublishedRoute_PersonalVisibility_RequiresAuthorizedReader_AndRepublishedRouteRetiresOldUrl",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback",
+        "Honua.Server.Tests.Features.Studio.StudioPublishRequestNonAttestedRedisTests.StockRedis_Production_PublishRequestCreatesADurableProposal",
         "Honua.Server.Tests.Features.Studio.StudioPublishRequestRedisOffTests.PublishRequest_RedisOffDevelopmentHost_RefusesWithTypedRedisDependencyAndLeavesDraftUnchanged",
         "Honua.Server.Tests.Features.Studio.StudioTenantIsolationTests.StudioLifecycle_WithinOneTenant_IsUnchanged",
         "Honua.Server.Tests.Features.Studio.StudioTenantIsolationTests.StudioPublishRequest_AnotherTenantsVersion_IsRefusedAndDoesNotPublish"
@@ -18535,6 +18672,7 @@
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.CreateDraft_WithNullCollections_Returns201WithEmptyCollections",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.EndUserAuthorization_FlagOn_OwnerCrudSucceeds_CrossUserDenied_ElevatedGatedOnGrant",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback",
+        "Honua.Server.Tests.Features.Studio.StudioPublishRequestNonAttestedRedisTests.StockRedis_Production_PublishRequestCreatesADurableProposal",
         "Honua.Server.Tests.Features.Studio.StudioPublishRequestRedisOffTests.PublishRequest_RedisOffDevelopmentHost_RefusesWithTypedRedisDependencyAndLeavesDraftUnchanged",
         "Honua.Server.Tests.Features.Studio.StudioTenantIsolationTests.StudioLifecycle_WithinOneTenant_IsUnchanged"
       ],
@@ -18557,6 +18695,7 @@
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.CreateVersion_FlagOn_MixedOwnerDraftCannotMoveAnotherOwnersCurrentPointer",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.EndUserAuthorization_FlagOn_OwnerCrudSucceeds_CrossUserDenied_ElevatedGatedOnGrant",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback",
+        "Honua.Server.Tests.Features.Studio.StudioPublishRequestNonAttestedRedisTests.StockRedis_Production_PublishRequestCreatesADurableProposal",
         "Honua.Server.Tests.Features.Studio.StudioPublishRequestRedisOffTests.PublishRequest_RedisOffDevelopmentHost_RefusesWithTypedRedisDependencyAndLeavesDraftUnchanged",
         "Honua.Server.Tests.Features.Studio.StudioTenantIsolationTests.StudioLifecycle_WithinOneTenant_IsUnchanged"
       ],
@@ -18573,6 +18712,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback",
+        "Honua.Server.Tests.Features.Studio.StudioPublishRequestNonAttestedRedisTests.StockRedis_Production_PublishRequestCreatesADurableProposal",
         "Honua.Server.Tests.Features.Studio.StudioPublishRequestRedisOffTests.PublishRequest_RedisOffDevelopmentHost_RefusesWithTypedRedisDependencyAndLeavesDraftUnchanged"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -18588,6 +18728,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback",
+        "Honua.Server.Tests.Features.Studio.StudioPublishRequestNonAttestedRedisTests.StockRedis_Production_PublishRequestCreatesADurableProposal",
         "Honua.Server.Tests.Features.Studio.StudioPublishRequestRedisOffTests.PublishRequest_RedisOffDevelopmentHost_RefusesWithTypedRedisDependencyAndLeavesDraftUnchanged"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -19972,7 +20113,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeStatisticsHistograms_Post_WithGeometry_ReturnsStatisticsAndHistograms"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeStatisticsHistograms_Post_WithGeometry_ReturnsStatisticsAndHistograms",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerHistogramBinEdgesTests.ConstantHistograms_SoapAndRest_PreserveSqlCentersCountsAndNoData"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "preview",
@@ -20683,6 +20825,7 @@
       "proving_tests": [
         "Honua.Server.Tests.FeatureServerEndpointTests.AddFeatures_WithFeaturePayload_ReturnsAddResults",
         "Honua.Server.Tests.Features.Licensing.FeatureEditsDeniedPathSkipsResourceValidatorTests.AddFeatures_UnlicensedHostWithBrokenResourceValidator_Returns402NotA500",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.AddAndUpdateFeatures_NumericBooleanWireValues_PersistBooleansAndPreserveIntegerFields",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_AcceptValidEdits_AndRoundTripEachState",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_RejectInvalidEdits_WithoutChangingStoredState",
         "Honua.Server.Tests.Seed.ClientCompatSeedMigratedDatabaseTests.ClientCompatSeed_OnServerMigratedDatabase_ServesTheTenFixtureNamesAndAcceptsScratchLayerWrites"
@@ -21144,6 +21287,7 @@
         "Honua.Server.Tests.FeatureServerEndpointTests.UpdateFeatures_WithAttributeOnlyPayload_PreservesExistingGeometryAndAttributes",
         "Honua.Server.Tests.FeatureServerEndpointTests.UpdateFeatures_WithFeaturePayload_ReturnsUpdateResults",
         "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicy_BlocksEditAndDeleteOfHiddenRow_OnDefaultObjectIdLayer",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.AddAndUpdateFeatures_NumericBooleanWireValues_PersistBooleansAndPreserveIntegerFields",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_AcceptValidEdits_AndRoundTripEachState",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_RejectInvalidEdits_WithoutChangingStoredState"
       ],
@@ -22691,6 +22835,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapImageServer_DtdPayload_ReturnsClientFault",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.SoapXmlSecurityTests.PostSoap_DtdWithExternalEntity_RejectsWithoutResolving",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.SoapXmlSecurityTests.PostSoap_InvalidEnvelopeWithSchemaLocation_RejectsWithoutLoadingClientSchema",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerHistogramBinEdgesTests.ConstantHistograms_SoapAndRest_PreserveSqlCentersCountsAndNoData",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMultidimensionalSoapTests.PersistedCoverage_SoapPropertySetsPreserveSqlAndRestSemantics",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRawPixelExportTests.HonuaServer5559_SoapExportImage_ServiceNoDataOverride_ReturnsFixturePixelBlock",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRawPixelExportTests.SoapExportImage_EsriImageBsqFullExtent_ReturnsFixturePixelBlock",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRawPixelExportTests.SoapExportImage_EsriImageBsqTwoByTwoNearestNeighbor_ReturnsPointBlock",
@@ -23192,6 +23338,9 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20MutationScenarioTests.Transaction_InvalidInsertAndDelete_AreRejectedWithoutChangingStoredState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsAuthorizationProofTests.Transaction_InsertOnlyGrant_IsRefusedOverHttpAndMatchingGrantPersists",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsAuthorizationProofTests.Transaction_UpdateOnlyGrant_CannotInsert",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsFallbackGeometryTransactionTests.Transaction_AdvertisedGeometry_PersistsInsertUpdateReplaceAndNil",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsFallbackGeometryTransactionTests.Transaction_Fallback_DoesNotShadowAttributesOrCreateNonspatialGeometry",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsFallbackGeometryTransactionTests.Transaction_UnknownProperty_IsRejectedWithoutChangingSql",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsLegacyEndpointsTests.Wfs11_Post_GetFeature_XmlBody_ReturnsGml31FeatureCollection",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsLegacyGeometryMetadataTests.GetFeature_GeometryMetadataWithoutSchemaField_PreservesGeometryAndControls"
       ],

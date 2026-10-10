@@ -30,7 +30,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 378,
-      "provingTestCount": 1345,
+      "provingTestCount": 1350,
       "maturity": {
         "implemented": 375,
         "preview": 2,
@@ -712,7 +712,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 44,
+      "provingTestCount": 47,
       "maturity": {
         "implemented": 2
       },
@@ -842,7 +842,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 7,
-      "provingTestCount": 151,
+      "provingTestCount": 153,
       "maturity": {
         "implemented": 7
       },
@@ -1696,7 +1696,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 49,
-      "provingTestCount": 530,
+      "provingTestCount": 532,
       "maturity": {
         "implemented": 49
       },
@@ -1819,7 +1819,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 143,
-      "provingTestCount": 454,
+      "provingTestCount": 462,
       "maturity": {
         "preview": 143
       },
@@ -1845,7 +1845,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 47,
-      "provingTestCount": 394,
+      "provingTestCount": 402,
       "maturity": {
         "implemented": 45,
         "preview": 2
@@ -1983,10 +1983,10 @@
       "category": "Serve",
       "edition": "Enterprise",
       "status": "experimental",
-      "entryCount": 8,
-      "provingTestCount": 26,
+      "entryCount": 14,
+      "provingTestCount": 65,
       "maturity": {
-        "implemented": 8
+        "implemented": 14
       },
       "noSurface": null,
       "cite": [],
@@ -2317,7 +2317,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 28,
+      "provingTestCount": 29,
       "maturity": {
         "implemented": 2
       },
@@ -2345,7 +2345,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 135,
+      "provingTestCount": 138,
       "maturity": {
         "implemented": 2
       },
