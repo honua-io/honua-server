@@ -180,7 +180,7 @@ public sealed class SettingsDocumentConfigurationTests
     [UnitTest]
     public async Task Add_WithoutReference_DoesNothing()
     {
-        var configuration = new ConfigurationManager();
+        using var configuration = new ConfigurationManager();
         configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Other"] = "1" });
         var resolver = new StubSecretResolver(new Dictionary<string, string>());
 
@@ -199,7 +199,7 @@ public sealed class SettingsDocumentConfigurationTests
         Environment.SetEnvironmentVariable(environmentVariable, "environment");
         try
         {
-            var configuration = new ConfigurationManager();
+            using var configuration = new ConfigurationManager();
             // Stands in for appsettings*.json: lowest precedence.
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -241,7 +241,7 @@ public sealed class SettingsDocumentConfigurationTests
     [UnitTest]
     public async Task Add_LogsKeyCountAndReferenceButNoValues()
     {
-        var configuration = Configure(SettingsDocumentConfiguration.EnvironmentVariableName, Reference);
+        using var configuration = Configure(SettingsDocumentConfiguration.EnvironmentVariableName, Reference);
         var resolver = new StubSecretResolver(new Dictionary<string, string>
         {
             [Reference] = $$"""{"A":"{{SecretSentinel}}","B":{"C":"{{SecretSentinel}}"} }""",
@@ -259,7 +259,7 @@ public sealed class SettingsDocumentConfigurationTests
     [UnitTest]
     public async Task Add_ProviderDescriptionNamesOnlyTheReference()
     {
-        var configuration = Configure(SettingsDocumentConfiguration.EnvironmentVariableName, Reference);
+        using var configuration = Configure(SettingsDocumentConfiguration.EnvironmentVariableName, Reference);
         var resolver = new StubSecretResolver(new Dictionary<string, string>
         {
             [Reference] = $$"""{"A":"{{SecretSentinel}}"}""",
@@ -274,7 +274,7 @@ public sealed class SettingsDocumentConfigurationTests
     [UnitTest]
     public async Task Add_ResolverThrows_RefusesAsUnreadable()
     {
-        var configuration = Configure(SettingsDocumentConfiguration.EnvironmentVariableName, Reference);
+        using var configuration = Configure(SettingsDocumentConfiguration.EnvironmentVariableName, Reference);
 
         var action = () => SettingsDocumentConfiguration.AddSettingsDocumentAsync(
             configuration, new ThrowingSecretResolver(), NullLogger.Instance);
@@ -287,7 +287,7 @@ public sealed class SettingsDocumentConfigurationTests
     [UnitTest]
     public async Task Add_UnresolvableReference_RefusesAsUnreadable()
     {
-        var configuration = Configure("Settings:Document", Reference);
+        using var configuration = Configure("Settings:Document", Reference);
 
         var action = () => SettingsDocumentConfiguration.AddSettingsDocumentAsync(
             configuration, new StubSecretResolver(new Dictionary<string, string>()), NullLogger.Instance);
@@ -299,7 +299,7 @@ public sealed class SettingsDocumentConfigurationTests
     [UnitTest]
     public async Task Add_EmptySecret_RefusesAsUnreadable()
     {
-        var configuration = Configure(SettingsDocumentConfiguration.EnvironmentVariableName, Reference);
+        using var configuration = Configure(SettingsDocumentConfiguration.EnvironmentVariableName, Reference);
 
         var action = () => SettingsDocumentConfiguration.AddSettingsDocumentAsync(
             configuration,
@@ -316,7 +316,7 @@ public sealed class SettingsDocumentConfigurationTests
     [InlineData("honua/prod/settings")]
     public async Task Add_UnsupportedScheme_Refuses(string reference)
     {
-        var configuration = Configure(SettingsDocumentConfiguration.EnvironmentVariableName, reference);
+        using var configuration = Configure(SettingsDocumentConfiguration.EnvironmentVariableName, reference);
         var resolver = new StubSecretResolver(new Dictionary<string, string>());
 
         var action = () => SettingsDocumentConfiguration.AddSettingsDocumentAsync(
@@ -330,7 +330,7 @@ public sealed class SettingsDocumentConfigurationTests
     [UnitTest]
     public async Task Add_ConflictingSpellings_Refuses()
     {
-        var configuration = new ConfigurationManager();
+        using var configuration = new ConfigurationManager();
         configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             [SettingsDocumentConfiguration.EnvironmentVariableName] = Reference,
@@ -350,7 +350,7 @@ public sealed class SettingsDocumentConfigurationTests
         const string auditReference = "aws:secretsmanager:honua/prod/audit-chain-key";
         const string adminReference = "aws:secretsmanager:honua/prod/admin-password";
         var auditKey = Convert.ToBase64String(Enumerable.Range(0, 32).Select(static i => (byte)i).ToArray());
-        var configuration = Configure(SettingsDocumentConfiguration.EnvironmentVariableName, Reference);
+        using var configuration = Configure(SettingsDocumentConfiguration.EnvironmentVariableName, Reference);
         var resolver = new StubSecretResolver(new Dictionary<string, string>
         {
             [Reference] = $$"""

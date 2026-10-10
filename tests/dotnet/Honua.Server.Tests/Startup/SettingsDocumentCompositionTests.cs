@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
 using FluentAssertions;
 using Honua.Server.Startup;
 using Honua.TestKit;
@@ -26,6 +27,7 @@ public sealed class SettingsDocumentCompositionTests
     private const string AuditReference = "aws:secretsmanager:honua/composition/audit-chain-key";
 
     [IntegrationTest]
+    [Endpoint("GET /healthz/live")]
     public async Task Program_WithSettingsDocument_AppliesDocumentBelowEnvironmentAndCommandLine()
     {
         var section = "SettingsDocComposition" + Guid.NewGuid().ToString("N");
@@ -58,6 +60,10 @@ public sealed class SettingsDocumentCompositionTests
                 builder.UseSetting($"{section}:FromCommandLine", "command-line");
             });
 
+            using var client = factory.CreateClient();
+            using var live = await client.GetAsync("/healthz/live");
+            live.StatusCode.Should().Be(HttpStatusCode.OK, "the host composed with the document serves requests");
+
             var configuration = factory.Services.GetRequiredService<IConfiguration>();
 
             configuration[$"{section}:FromDocument"].Should().Be("document");
@@ -77,6 +83,7 @@ public sealed class SettingsDocumentCompositionTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /healthz/live")]
     public async Task Program_WithUnreadableSettingsDocument_RefusesToStart()
     {
         var resolver = new SettingsDocumentConfigurationTests.StubSecretResolver(new Dictionary<string, string>
@@ -89,9 +96,10 @@ public sealed class SettingsDocumentCompositionTests
         await using var factory = baseFactory.WithWebHostBuilder(builder =>
             builder.UseSetting(SettingsDocumentConfiguration.EnvironmentVariableName, DocumentReference));
 
-        var start = () => factory.Services;
+        // The host never comes up, so the liveness probe is never served.
+        var start = () => factory.CreateClient().GetAsync("/healthz/live");
 
-        var thrown = start.Should().Throw<Exception>().Which;
+        var thrown = (await start.Should().ThrowAsync<Exception>()).Which;
         Unwrap(thrown).OfType<SettingsDocumentException>()
             .Should().Contain(ex => ex.Failure == SettingsDocumentFailure.NotObject);
     }
