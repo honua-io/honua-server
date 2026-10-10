@@ -15,6 +15,13 @@ namespace Honua.Core.Features.Scene.Conversion;
 /// </summary>
 public sealed class I3sSceneLayerDocument
 {
+    /// <summary>Typed fields backed by actual node attribute resources.</summary>
+    [JsonPropertyName("fields")]
+    public IReadOnlyList<I3sField>? Fields { get; set; }
+
+    /// <summary>Object-id field used to identify the cached features.</summary>
+    [JsonPropertyName("objectIdField")]
+    public string? ObjectIdField { get; set; }
     /// <summary>Integer layer id within the scene service (usually <c>0</c>).</summary>
     [JsonPropertyName("id")]
     public int Id { get; set; }
@@ -202,6 +209,10 @@ public sealed class I3sGeometryBuffer
     [JsonPropertyName("uv0")]
     public I3sVertexLayout? Uv0 { get; set; }
 
+    /// <summary>Uncompressed descriptor for the second source UV stream.</summary>
+    [JsonPropertyName("uv1")]
+    public I3sVertexLayout? Uv1 { get; set; }
+
     /// <summary>Uncompressed descriptor for the per-vertex RGBA color stream.</summary>
     [JsonPropertyName("color")]
     public I3sVertexLayout? Color { get; set; }
@@ -293,6 +304,29 @@ public sealed class I3sGeometryHeader
 /// </summary>
 public sealed class I3sMaterialDefinition
 {
+    /// <summary>Face culling for the source mesh's counterclockwise winding.</summary>
+    [JsonPropertyName("cullFace")]
+    public string? CullFace { get; set; }
+
+    /// <summary>Original normal-map texture.</summary>
+    [JsonPropertyName("normalTexture")]
+    public I3sMaterialTexture? NormalTexture { get; set; }
+
+    /// <summary>Original occlusion texture.</summary>
+    [JsonPropertyName("occlusionTexture")]
+    public I3sMaterialTexture? OcclusionTexture { get; set; }
+
+    /// <summary>Original emissive texture.</summary>
+    [JsonPropertyName("emissiveTexture")]
+    public I3sMaterialTexture? EmissiveTexture { get; set; }
+
+    /// <summary>Emissive color in the I3S material's sRGB color space.</summary>
+    [JsonPropertyName("emissiveFactor")]
+    public IReadOnlyList<double>? EmissiveFactor { get; set; }
+
+    /// <summary>Mask threshold when alphaMode is mask.</summary>
+    [JsonPropertyName("alphaCutoff")]
+    public double? AlphaCutoff { get; set; }
     /// <summary>Metallic-roughness PBR block.</summary>
     [JsonPropertyName("pbrMetallicRoughness")]
     public I3sPbrMetallicRoughness? PbrMetallicRoughness { get; set; }
@@ -309,7 +343,13 @@ public sealed class I3sMaterialDefinition
 /// <summary>I3S PBR metallic-roughness descriptor.</summary>
 public sealed class I3sPbrMetallicRoughness
 {
-    /// <summary>Linear-space base color factor (RGBA).</summary>
+    /// <summary>Original packed metallic-roughness texture.</summary>
+    [JsonPropertyName("metallicRoughnessTexture")]
+    public I3sMaterialTexture? MetallicRoughnessTexture { get; set; }
+    /// <summary>Reference to the original base-color texture set, when present.</summary>
+    [JsonPropertyName("baseColorTexture")]
+    public I3sMaterialTexture? BaseColorTexture { get; set; }
+    /// <summary>I3S sRGB base color factor (RGBA).</summary>
     [JsonPropertyName("baseColorFactor")]
     public IReadOnlyList<double>? BaseColorFactor { get; set; }
 
@@ -418,6 +458,13 @@ public sealed class I3sFullExtent
 /// <summary>I3S store block: geometry/node-page layout descriptor.</summary>
 public sealed class I3sStore
 {
+    /// <summary>CRS of the node index bounds.</summary>
+    [JsonPropertyName("indexCRS")]
+    public string? IndexCrs { get; set; }
+
+    /// <summary>CRS of geometry positions, matching the layer spatial reference.</summary>
+    [JsonPropertyName("vertexCRS")]
+    public string? VertexCrs { get; set; }
     /// <summary>Store id.</summary>
     [JsonPropertyName("id")]
     public string? Id { get; set; }
@@ -448,6 +495,37 @@ public sealed class I3sStore
     /// </summary>
     [JsonPropertyName("defaultGeometrySchema")]
     public I3sDefaultGeometrySchema? DefaultGeometrySchema { get; set; }
+}
+
+/// <summary>One published field's GeoServices type and display name.</summary>
+public sealed class I3sField
+{
+    /// <summary>Field name in the source feature metadata.</summary>
+    [JsonPropertyName("name")]
+    public required string Name { get; set; }
+
+    /// <summary>GeoServices field type matching the binary storage layout.</summary>
+    [JsonPropertyName("type")]
+    public required string Type { get; set; }
+
+    /// <summary>Display alias.</summary>
+    [JsonPropertyName("alias")]
+    public required string Alias { get; set; }
+}
+
+/// <summary>Reference to one texture set in a scene layer.</summary>
+public sealed class I3sMaterialTexture
+{
+    /// <summary>UV set used by the original material.</summary>
+    [JsonPropertyName("texCoord")]
+    public int TexCoord { get; set; }
+
+    /// <summary>Normal scale or occlusion strength.</summary>
+    [JsonPropertyName("factor")]
+    public double? Factor { get; set; }
+    /// <summary>Index in the layer texture-set definitions.</summary>
+    [JsonPropertyName("textureSetDefinitionId")]
+    public int TextureSetDefinitionId { get; set; }
 }
 
 /// <summary>

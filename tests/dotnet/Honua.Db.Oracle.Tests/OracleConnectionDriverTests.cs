@@ -20,7 +20,7 @@ public sealed class OracleConnectionDriverTests
         var builder = new OracleConnectionStringBuilder(connectionString);
 
         Assert.Contains("PROTOCOL=TCPS", builder.DataSource, StringComparison.Ordinal);
-        Assert.Contains("SSL_SERVER_DN_MATCH=NO", builder.DataSource, StringComparison.Ordinal);
+        Assert.Contains("SSL_SERVER_DN_MATCH=YES", builder.DataSource, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -17,7 +17,7 @@ namespace Honua.Db.SqlServer.Features.Security;
 /// SQL Server <see cref="IConnectionDriver"/>: builds a Microsoft.Data.SqlClient connection string
 /// (<c>Data Source=host,port</c>) and probes health with a real <see cref="SqlConnection"/> + <c>SELECT 1</c>.
 /// </summary>
-internal sealed partial class SqlServerConnectionDriver : IConnectionDriver
+internal sealed partial class SqlServerConnectionDriver : IConnectionDriver, ISecureConnectionStringPolicy
 {
     private readonly ILogger<SqlServerConnectionDriver> _logger;
 
@@ -27,6 +27,40 @@ internal sealed partial class SqlServerConnectionDriver : IConnectionDriver
     }
 
     public string Provider => DataProviderNames.SqlServer;
+
+    public ConnectionStringSecurity InspectConnectionString(string connectionString)
+    {
+        var builder = new SqlConnectionStringBuilder(connectionString);
+        ConnectionStringKeywordPolicy.EnsureAllowed(builder,
+            "Data Source", "Initial Catalog", "User ID", "Password", "Encrypt", "Trust Server Certificate",
+            "Connect Timeout", "Command Timeout", "Pooling", "Min Pool Size", "Max Pool Size",
+            "Load Balance Timeout", "Connect Retry Count", "Connect Retry Interval", "Application Name",
+            "Application Intent", "Multi Subnet Failover", "Multiple Active Result Sets", "Packet Size", "Enlist");
+        if (builder.TrustServerCertificate)
+        {
+            throw new ArgumentException("Disabling server certificate validation is not permitted.");
+        }
+        var source = builder.DataSource.Trim();
+        if (source.StartsWith("tcp:", StringComparison.OrdinalIgnoreCase))
+        {
+            source = source[4..].Trim();
+        }
+        else if (source.Contains(':') && !source.StartsWith('['))
+        {
+            throw new ArgumentException("SQL Server connections must use a network host.");
+        }
+        if (source.StartsWith("(localdb)", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("LocalDB is not a permitted network destination.");
+        }
+        var host = source.Split(',')[0].Split('\\')[0].Trim();
+        if (Uri.CheckHostName(host.Trim('[', ']')) == UriHostNameType.Unknown)
+        {
+            throw new ArgumentException("SQL Server connections must name a network host.");
+        }
+        return new(ConnectionStringKeywordPolicy.SplitHosts(host),
+            builder.Encrypt != SqlConnectionEncryptOption.Optional);
+    }
 
     public string BuildConnectionString(ConnectionTarget target)
     {
@@ -41,8 +75,8 @@ internal sealed partial class SqlServerConnectionDriver : IConnectionDriver
             ConnectTimeout = 5
         };
 
-        // SQL Server encrypts by default. "Disable" turns it off; the verify modes require a chain-valid
-        // server certificate, while the non-verify encrypted modes accept a self-signed/dev certificate.
+        // SQL Server encrypts by default. "Disable" turns it off; encrypted modes require
+        // a chain-valid certificate, including the Require mode.
         if (target.SslMode == CoreSslMode.Disable)
         {
             builder.Encrypt = false;
@@ -50,7 +84,7 @@ internal sealed partial class SqlServerConnectionDriver : IConnectionDriver
         else
         {
             builder.Encrypt = true;
-            builder.TrustServerCertificate = target.SslMode is not (CoreSslMode.VerifyCa or CoreSslMode.VerifyFull);
+            builder.TrustServerCertificate = false;
         }
 
         return builder.ConnectionString;

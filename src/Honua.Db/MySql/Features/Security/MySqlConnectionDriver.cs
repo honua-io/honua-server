@@ -16,7 +16,7 @@ namespace Honua.Db.MySql.Features.Security;
 /// MySQL/MariaDB <see cref="IConnectionDriver"/>: builds a MySqlConnector connection string and probes health
 /// with a real <see cref="MySqlConnection"/> + <c>SELECT 1</c>.
 /// </summary>
-internal sealed partial class MySqlConnectionDriver : IConnectionDriver
+internal sealed partial class MySqlConnectionDriver : IConnectionDriver, ISecureConnectionStringPolicy
 {
     private readonly ILogger<MySqlConnectionDriver> _logger;
 
@@ -26,6 +26,19 @@ internal sealed partial class MySqlConnectionDriver : IConnectionDriver
     }
 
     public string Provider => DataProviderNames.MySql;
+
+    public ConnectionStringSecurity InspectConnectionString(string connectionString)
+    {
+        var builder = new MySqlConnectionStringBuilder(connectionString);
+        ConnectionStringKeywordPolicy.EnsureAllowed(builder,
+            "Server", "Port", "Database", "User ID", "Password", "SSL Mode",
+            "Connection Timeout", "Default Command Timeout", "Cancellation Timeout",
+            "Pooling", "Minimum Pool Size", "Maximum Pool Size", "Connection Lifetime",
+            "Connection Idle Timeout", "Connection Reset", "Keepalive", "Load Balance",
+            "Application Name", "Auto Enlist", "Use Affected Rows", "Allow User Variables");
+        return new(ConnectionStringKeywordPolicy.SplitHosts(builder.Server),
+            builder.SslMode is MySqlSslMode.Required or MySqlSslMode.VerifyCA or MySqlSslMode.VerifyFull);
+    }
 
     public string BuildConnectionString(ConnectionTarget target)
     {

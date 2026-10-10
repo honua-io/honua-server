@@ -199,6 +199,34 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.Equal(await _store.CountAsync(LayerId, new FeatureQuery()), await store.CountAsync(LayerId, new FeatureQuery()));
     }
 
+    [Fact]
+    public async Task GetTemporalExtentAsync_PermanentFilter_HidesExcludedDates()
+    {
+        var store = new DuckDBFeatureStore(
+            new DuckDBFeatureQueryBuilder(_registry),
+            new DuckDBFeatureDataAccess(
+                new FileDuckDBConnectionProvider(_connectionString, _spatialBootstrap), _registry,
+                null, NullLogger<DuckDBFeatureDataAccess>.Instance),
+            new DuckDBFeatureCacheManager(_registry),
+            v2Provider: new StubV2Provider(LayerId, "id >= 3 AND id <= 7"),
+            filterExpressionService: new FilterExpressionService(new TemporalFilterTranslator()),
+            readSecurity: CreateResolver());
+
+        var extent = await store.GetTemporalExtentAsync(LayerId, "start_time", TemporalPropertyType.DateTime);
+
+        Assert.NotNull(extent);
+        Assert.Equal(new DateTimeOffset(2024, 1, 3, 0, 0, 0, TimeSpan.Zero), extent.Value.Start);
+        Assert.Equal(new DateTimeOffset(2024, 1, 7, 0, 0, 0, TimeSpan.Zero), extent.Value.End);
+    }
+
+    private sealed class TemporalFilterTranslator : IFilterExpressionTranslator
+    {
+        public FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource) => expression;
+
+        public SqlFragment Translate(FilterExpression expression, MetadataV2Resource resource)
+            => new DuckDbSqlFilterTranslator().Translate(expression, resource);
+    }
+
     private static LayerReadSecurityResolver CreateResolver(
         Honua.Core.Queries.Filters.SqlFragment? rowFilter = null,
         string[]? maskedFields = null)
@@ -260,6 +288,11 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "Parcels" },
                 Type = MetadataV2ResourceType.FeatureDataset,
+                SchemaFields =
+                [
+                    new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] },
+                    new MetadataV2Field { Name = "start_time", Type = MetadataV2FieldType.DateTime }
+                ],
                 PermanentFilter = permanentFilterExpression == null ? null : new MetadataV2PermanentFilter
                 {
                     Expression = permanentFilterExpression,

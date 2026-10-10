@@ -34,7 +34,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     Honua.Core.Features.Styling.Abstractions.IStyleCatalog? styleCatalog = null,
     Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider? featureStoreConnections = null,
     LayerPublishingOptions? publishingOptions = null,
-    Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext? tenantContext = null) : ILayerPublishingService
+    Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext? tenantContext = null,
+    PostgresSchemaConfiguration? schemaConfiguration = null,
+    Honua.Core.Features.Infrastructure.Abstractions.ISchemaContext? schemaContext = null) : ILayerPublishingService
 {
     private const string DefaultServiceName = "default";
     private const int CatalogExtentSrid = 4326;
@@ -57,6 +59,11 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         : SchemaSearchPath.QualifyTable("features", metadataSchema);
 
     private readonly ITableDiscoveryService _tableDiscoveryService = tableDiscoveryService;
+    private readonly PostgresSchemaConfiguration _schemaConfiguration = schemaConfiguration ?? new(
+        metadataSchema ?? PostgresSchemaConfiguration.DefaultMetadataSchema,
+        PostgresSchemaConfiguration.DefaultDataSchema,
+        [PostgresSchemaConfiguration.DefaultDataSchema, "public"]);
+    private readonly Honua.Core.Features.Infrastructure.Abstractions.ISchemaContext? _schemaContext = schemaContext;
     private readonly IMetadataV2GraphStore _metadataGraphStore = metadataGraphStore;
     private readonly Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext? _tenantContext = tenantContext;
 

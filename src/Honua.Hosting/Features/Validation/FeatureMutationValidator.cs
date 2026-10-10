@@ -133,6 +133,15 @@ internal static class MetadataV2AttributeValidation
                 continue;
             }
 
+            // GeoServices exposes Boolean fields as small integers. Accept its wire 0/1
+            // representation, but persist the declared Boolean type for other adapters.
+            if (mode == ValidationExtensions.AttributeValidationMode.GeoServices &&
+                field.Type == MetadataV2FieldType.Boolean && normalizedValue is not null &&
+                TryGetBooleanFromNumeric(normalizedValue, out var booleanValue))
+            {
+                normalizedValue = booleanValue;
+            }
+
             builder[field.Name] = normalizedValue;
         }
 
@@ -256,7 +265,7 @@ internal static class MetadataV2AttributeValidation
                 {
                     return null;
                 }
-                if (mode == ValidationExtensions.AttributeValidationMode.GeoServices && TryGetBooleanFromNumeric(value))
+                if (mode == ValidationExtensions.AttributeValidationMode.GeoServices && TryGetBooleanFromNumeric(value, out _))
                 {
                     return null;
                 }
@@ -566,16 +575,19 @@ internal static class MetadataV2AttributeValidation
         }
     }
 
-    private static bool TryGetBooleanFromNumeric(object value)
+    private static bool TryGetBooleanFromNumeric(object value, out bool booleanValue)
     {
         if (TryGetInt64(value, out var longValue))
         {
+            booleanValue = longValue == 1;
             return longValue is 0 or 1;
         }
         if (TryGetDouble(value, out var doubleValue))
         {
+            booleanValue = doubleValue == 1;
             return doubleValue is 0 or 1;
         }
+        booleanValue = false;
         return false;
     }
 

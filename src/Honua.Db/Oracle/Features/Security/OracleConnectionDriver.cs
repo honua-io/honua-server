@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,7 +19,7 @@ namespace Honua.Db.Oracle.Features.Security;
 /// (<c>Data Source=host:port/service</c>, where the connection's "database" is the service name / SID) and
 /// probes health with a real <see cref="OracleConnection"/> + <c>SELECT 1 FROM DUAL</c>.
 /// </summary>
-internal sealed partial class OracleConnectionDriver : IConnectionDriver
+internal sealed partial class OracleConnectionDriver : IConnectionDriver, ISecureConnectionStringPolicy
 {
     private readonly ILogger<OracleConnectionDriver> _logger;
 
@@ -29,6 +30,50 @@ internal sealed partial class OracleConnectionDriver : IConnectionDriver
 
     public string Provider => DataProviderNames.Oracle;
 
+    public ConnectionStringSecurity InspectConnectionString(string connectionString)
+    {
+        var builder = new OracleConnectionStringBuilder(connectionString);
+        ConnectionStringKeywordPolicy.EnsureAllowed(builder,
+            "User Id", "Password", "Data Source", "Connection Timeout", "Pooling",
+            "Min Pool Size", "Max Pool Size", "Incr Pool Size", "Decr Pool Size", "Connection Lifetime",
+            "Validate Connection", "Statement Cache Size", "Statement Cache Purge", "Enlist");
+        var source = builder.DataSource.Trim();
+        if (source.StartsWith('('))
+        {
+            // Deliberately accept the explicit single-address descriptor we generate,
+            // not TNS aliases or arbitrary descriptors with wallets/startup options.
+            var match = SafeDescriptorPattern().Match(source);
+            if (!match.Success ||
+                (match.Groups["protocol"].Value.Equals("TCPS", StringComparison.OrdinalIgnoreCase) && !match.Groups["security"].Success))
+            {
+                throw new ArgumentException("Oracle data source must be an explicit safe network address.");
+            }
+            return new(ConnectionStringKeywordPolicy.SplitHosts(match.Groups["host"].Value),
+                match.Groups["protocol"].Value.Equals("TCPS", StringComparison.OrdinalIgnoreCase));
+        }
+
+        var tls = source.StartsWith("tcps://", StringComparison.OrdinalIgnoreCase);
+        if (tls)
+        {
+            throw new ArgumentException("Oracle TLS connections require an explicit descriptor with server identity validation.");
+        }
+        if (source.StartsWith("tcp://", StringComparison.OrdinalIgnoreCase))
+        {
+            source = source[(source.IndexOf("://", StringComparison.Ordinal) + 3)..];
+        }
+        if (!Uri.TryCreate("oracle://" + source.TrimStart('/'), UriKind.Absolute, out var endpoint) ||
+            string.IsNullOrWhiteSpace(endpoint.Host) || string.IsNullOrWhiteSpace(endpoint.AbsolutePath.Trim('/')) ||
+            !string.IsNullOrEmpty(endpoint.Query) || !string.IsNullOrEmpty(endpoint.Fragment) ||
+            !string.IsNullOrEmpty(endpoint.UserInfo))
+        {
+            throw new ArgumentException("Oracle data source must be an explicit host and service name.");
+        }
+        return new([endpoint.IdnHost.Trim('[', ']')], tls);
+    }
+
+    [GeneratedRegex(@"^\s*\(DESCRIPTION\s*=\s*\(ADDRESS\s*=\s*\(PROTOCOL\s*=\s*(?<protocol>TCPS|TCP)\s*\)\s*\(HOST\s*=\s*(?<host>[^\s();=]+)\s*\)\s*\(PORT\s*=\s*[0-9]+\s*\)\s*\)\s*\(CONNECT_DATA\s*=\s*\(SERVICE_NAME\s*=\s*[^\s();=]+\s*\)\s*\)\s*(?<security>\(SECURITY\s*=\s*\(SSL_SERVER_DN_MATCH\s*=\s*YES\s*\)\s*\))?\s*\)\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
+    private static partial Regex SafeDescriptorPattern();
+
     public string BuildConnectionString(ConnectionTarget target)
     {
         ArgumentNullException.ThrowIfNull(target);
@@ -37,7 +82,7 @@ internal sealed partial class OracleConnectionDriver : IConnectionDriver
         // field as "Service name" for this provider. Easy Connect syntax: host:port/service.
         var useTls = target.SslMode is CoreSslMode.Require or CoreSslMode.VerifyCa or CoreSslMode.VerifyFull;
         var dataSource = useTls
-            ? BuildTcpsDescriptor(target, target.SslMode == CoreSslMode.VerifyFull)
+            ? BuildTcpsDescriptor(target, verifyServerIdentity: true)
             : $"{target.Host}:{target.Port.ToString(CultureInfo.InvariantCulture)}/{target.Database}";
 
         return new OracleConnectionStringBuilder

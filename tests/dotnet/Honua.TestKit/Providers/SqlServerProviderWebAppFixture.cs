@@ -1,6 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using DotNet.Testcontainers.Configurations;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
@@ -42,12 +47,18 @@ namespace Honua.TestKit.Providers;
 /// returns a <c>501 Not Implemented</c> problem response for vector tiles rather than
 /// silently serving PostGIS data for the same layer id.
 /// </para>
+/// <para>
+/// Trusted TLS setup requires a writable CurrentUser Root certificate store (Linux or
+/// Windows). .NET does not support writing that store on macOS; this fixture does not
+/// provide a macOS trust-store setup.
+/// </para>
 /// </remarks>
 public sealed class SqlServerProviderWebAppFixture : IAsyncLifetime
 {
     private MsSqlContainer _container = null!;
     private WebAppFixture _webApp = null!;
     private string _tableName = null!;
+    private X509Certificate2? _trustedRoot;
 
     /// <summary>HTTP client bound to the underlying Postgres-primary host.</summary>
     public HttpClient Client => _webApp.Client;
@@ -60,59 +71,147 @@ public sealed class SqlServerProviderWebAppFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _container = new MsSqlBuilder().Build();
-        await _container.StartAsync().ConfigureAwait(false);
-
-        _tableName = $"parcels_{Guid.NewGuid():N}";
-        await SeedAsync().ConfigureAwait(false);
-
-        var connectionId = Guid.NewGuid();
-        var graph = ProviderSmokeGraph.Build(
-            locator: $"dbo.{_tableName}",
-            connectionId: connectionId.ToString(),
-            connectionProvider: "sqlserver");
-
-        _webApp = new WebAppFixture();
-        _webApp.ConfigureServices(services =>
+        try
         {
-            services.RemoveAll<IMetadataV2GraphProvider>();
-            services.RemoveAll<IMetadataV2GraphStore>();
-            GraphProvider = new TestMetadataV2GraphProvider(graph);
-            services.AddSingleton(GraphProvider);
-            services.AddSingleton<IMetadataV2GraphProvider>(sp => sp.GetRequiredService<TestMetadataV2GraphProvider>());
-            services.AddSingleton<IMetadataV2GraphStore>(sp => sp.GetRequiredService<TestMetadataV2GraphProvider>());
+            var (certificatePem, privateKeyPem) = CreateTrustedServerCertificate();
+            // mssql runs as uid10001. Keep the ephemeral private key readable only by that user.
+            // https://learn.microsoft.com/en-us/sql/linux/containers/security
+            _container = new MsSqlBuilder()
+                .WithResourceMapping(Encoding.ASCII.GetBytes(certificatePem), "/var/opt/mssql/test-server.pem", 10001, 0,
+                    UnixFileModes.UserRead | UnixFileModes.UserWrite)
+                .WithResourceMapping(Encoding.ASCII.GetBytes(privateKeyPem), "/var/opt/mssql/test-server.key", 10001, 0,
+                    UnixFileModes.UserRead | UnixFileModes.UserWrite)
+                .WithResourceMapping(Encoding.ASCII.GetBytes("""
+                    [network]
+                    tlscert = /var/opt/mssql/test-server.pem
+                    tlskey = /var/opt/mssql/test-server.key
+                    forceencryption = 1
+                    """), "/var/opt/mssql/mssql.conf")
+                .Build();
+            await _container.StartAsync().ConfigureAwait(false);
 
-            // WebAppFixture's isolated test host bypasses InfrastructureCompositionRoot
-            // entirely (Program.cs's TestInfrastructureRegistrationPolicy skips it in the
-            // Test environment so WebAppFixture can wire its own providers), which is
-            // exactly where AddSqlServerFeatureProvider normally gets called in production.
-            // WebAppFixturePostgresWiringMixin only re-registers the Postgres primary, so
-            // SQL Server must be registered explicitly here (honua-server#2947).
-            Honua.Db.SqlServer.ServiceCollectionExtensions.AddSqlServerFeatureProvider(
-                services, new ConfigurationBuilder().Build());
-        });
+            _tableName = $"parcels_{Guid.NewGuid():N}";
+            await SeedAsync().ConfigureAwait(false);
 
-        await _webApp.InitializeAsync().ConfigureAwait(false);
+            var connectionId = Guid.NewGuid();
+            var graph = ProviderSmokeGraph.Build(
+                locator: $"dbo.{_tableName}",
+                connectionId: connectionId.ToString(),
+                connectionProvider: "sqlserver");
 
-        await RegisterSecureConnectionAsync(connectionId).ConfigureAwait(false);
+            _webApp = new WebAppFixture();
+            _webApp.ConfigureServices(services =>
+            {
+                services.RemoveAll<IMetadataV2GraphProvider>();
+                services.RemoveAll<IMetadataV2GraphStore>();
+                GraphProvider = new TestMetadataV2GraphProvider(graph);
+                services.AddSingleton(GraphProvider);
+                services.AddSingleton<IMetadataV2GraphProvider>(sp => sp.GetRequiredService<TestMetadataV2GraphProvider>());
+                services.AddSingleton<IMetadataV2GraphStore>(sp => sp.GetRequiredService<TestMetadataV2GraphProvider>());
+
+                // WebAppFixture's isolated test host bypasses InfrastructureCompositionRoot
+                // entirely (Program.cs's TestInfrastructureRegistrationPolicy skips it in the
+                // Test environment so WebAppFixture can wire its own providers), which is
+                // exactly where AddSqlServerFeatureProvider normally gets called in production.
+                // WebAppFixturePostgresWiringMixin only re-registers the Postgres primary, so
+                // SQL Server must be registered explicitly here (honua-server#2947).
+                Honua.Db.SqlServer.ServiceCollectionExtensions.AddSqlServerFeatureProvider(
+                    services, new ConfigurationBuilder().Build());
+            });
+
+            await _webApp.InitializeAsync().ConfigureAwait(false);
+
+            await RegisterSecureConnectionAsync(connectionId).ConfigureAwait(false);
+        }
+        catch
+        {
+            await DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    private (string CertificatePem, string PrivateKeyPem) CreateTrustedServerCertificate()
+    {
+        using var rootKey = RSA.Create(2048);
+        var rootRequest = new CertificateRequest($"CN=Honua SQL test {Guid.NewGuid():N}", rootKey,
+            HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        rootRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
+        rootRequest.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign, true));
+        using var root = rootRequest.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(1));
+        using var serverKey = RSA.Create(2048);
+        var request = new CertificateRequest("CN=localhost", serverKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
+        request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment, true));
+        request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(new OidCollection { new("1.3.6.1.5.5.7.3.1") }, true));
+        var names = new SubjectAlternativeNameBuilder();
+        names.AddDnsName("localhost");
+        names.AddIpAddress(IPAddress.Loopback);
+        names.AddIpAddress(IPAddress.IPv6Loopback);
+        var dockerHost = Environment.GetEnvironmentVariable("TESTCONTAINERS_HOST_OVERRIDE");
+        if (string.IsNullOrWhiteSpace(dockerHost) && Uri.TryCreate(Environment.GetEnvironmentVariable("DOCKER_HOST"), UriKind.Absolute, out var endpoint) && (endpoint.Scheme is "tcp" or "http" or "https"))
+        {
+            dockerHost = endpoint.Host;
+        }
+        if (!string.IsNullOrWhiteSpace(dockerHost))
+        {
+            if (IPAddress.TryParse(dockerHost, out var address))
+            {
+                names.AddIpAddress(address);
+            }
+            else
+            {
+                names.AddDnsName(dockerHost);
+            }
+        }
+        request.CertificateExtensions.Add(names.Build());
+        using var server = request.Create(root, DateTimeOffset.UtcNow.AddMinutes(-2), DateTimeOffset.UtcNow.AddHours(12), RandomNumberGenerator.GetBytes(16));
+        _trustedRoot = X509CertificateLoader.LoadCertificate(root.RawData);
+        using var store = new X509Store(StoreName.Root, StoreLocation.CurrentUser);
+        store.Open(OpenFlags.ReadWrite);
+        store.Add(_trustedRoot);
+        return (server.ExportCertificatePem(), serverKey.ExportPkcs8PrivateKeyPem());
     }
 
     public async Task DisposeAsync()
     {
-        if (_webApp is not null)
+        try
         {
-            await _webApp.DisposeAsync().ConfigureAwait(false);
+            if (_webApp is not null)
+            {
+                await _webApp.DisposeAsync().ConfigureAwait(false);
+            }
         }
-
-        if (_container is not null)
+        finally
         {
-            await _container.DisposeAsync().ConfigureAwait(false);
+            try
+            {
+                if (_container is not null)
+                {
+                    await _container.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                if (_trustedRoot is not null)
+                {
+                    using var store = new X509Store(StoreName.Root, StoreLocation.CurrentUser);
+                    store.Open(OpenFlags.ReadWrite);
+                    store.Remove(_trustedRoot);
+                    _trustedRoot.Dispose();
+                    _trustedRoot = null;
+                }
+            }
         }
     }
 
     private async Task SeedAsync()
     {
-        await using var connection = new SqlConnection(_container.GetConnectionString());
+        var secured = new SqlConnectionStringBuilder(_container.GetConnectionString())
+        {
+            Encrypt = true,
+            TrustServerCertificate = false
+        };
+        await using var connection = new SqlConnection(secured.ConnectionString);
         await connection.OpenAsync().ConfigureAwait(false);
 
         await ExecuteAsync(connection, $"""
@@ -146,13 +245,11 @@ public sealed class SqlServerProviderWebAppFixture : IAsyncLifetime
         var registry = _webApp.GetService<ISecureConnectionRegistry>();
         var encryption = _webApp.GetService<IConnectionEncryptionService>();
 
-        // SqlServerConnectionFactory (Honua.SqlServer) forces Encrypt=true on every
-        // resolved connection string but does not set TrustServerCertificate; the
-        // Testcontainers mssql image serves a self-signed certificate, so the encrypted
-        // connection string stored here must carry TrustServerCertificate=true itself.
+        // Exercise the production resolver and real TLS validation against our isolated CA.
         var builder = new SqlConnectionStringBuilder(_container.GetConnectionString())
         {
-            TrustServerCertificate = true,
+            Encrypt = true,
+            TrustServerCertificate = false,
         };
         var rawConnectionString = builder.ConnectionString;
 
@@ -172,8 +269,8 @@ public sealed class SqlServerProviderWebAppFixture : IAsyncLifetime
             encryptedConnectionString: encrypted,
             encryptionKeyVersion: keyVersion,
             createdBy: "provider-smoke-fixture",
-            sslRequired: false,
-            sslMode: SslMode.Disable);
+            sslRequired: true,
+            sslMode: SslMode.VerifyFull);
         connection.ConnectionId = connectionId;
         connection.Provider = "sqlserver";
 

@@ -1184,6 +1184,140 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// Owner ruling (2026-10-10): the Redis durability attestation is INFORMATION. A connected,
+    /// entitled Redis advertises <c>jobs.runner</c> and <c>operations.proposals</c> whatever the
+    /// attestation said, and the manifest publishes the outcome as
+    /// <c>limits.job.redisDurability</c>: <c>attested</c>, <c>unverified</c> (the managed-Redis
+    /// shape: AWS ElastiCache and MemoryDB block <c>CONFIG</c>), or <c>not-durable</c>
+    /// (<c>appendonly no</c>). Before the ruling the last two read <c>dependency-unavailable</c>
+    /// with <c>missingDependency=redis</c> although Redis was serving.
+    /// </summary>
+    [IntegrationTheory]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    [InlineData(null, "attested")]
+    [InlineData(DurableJobSubstrateCause.RedisAttestationUnavailable, "unverified")]
+    [InlineData(DurableJobSubstrateCause.RedisPersistenceDisabled, "not-durable")]
+    public async Task GetManifest_ConnectedRedis_AdvertisesControlPlaneAndPublishesDurabilityOutcome(
+        DurableJobSubstrateCause? outcome,
+        string expectedStatus)
+    {
+        var fixture = CreateManifestFixture()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton<IExecutionJobStore>(new InMemoryExecutionJobStore());
+                services.AddSingleton<IJobQueue>(new InMemoryJobQueue());
+                services.Configure<DurableJobSubstrateOptions>(options =>
+                {
+                    options.RedisConfigured = true;
+                    options.RedisEntitled = true;
+                    options.RedisDurabilityFailure = outcome;
+                    options.RedisDurabilityDetail = outcome is null
+                        ? null
+                        : "ERR unknown command 'CONFIG', with args beginning with: 'GET' 'appendonly'";
+                    options.RedisDurabilityAttestation = outcome is null
+                        ? new RedisDurabilityAttestation(
+                            "redis.example.internal:6379",
+                            "aof (appendonly=yes, aof_enabled=1)",
+                            "appendfsync=everysec",
+                            "noeviction",
+                            DateTimeOffset.UtcNow)
+                        : null;
+                });
+            });
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+
+            foreach (var capabilityId in new[] { "jobs.runner", "operations.proposals" })
+            {
+                var capability = GetCapability(root, capabilityId);
+                capability.GetProperty("available").GetBoolean().Should().BeTrue(
+                    $"a connected Redis enables {capabilityId} whatever the attestation said ({expectedStatus})");
+                capability.TryGetProperty("reasonCode", out _).Should().BeFalse();
+            }
+
+            var job = root.GetProperty("limits").GetProperty("job");
+            job.GetProperty("durableJobRuntimeAvailable").GetBoolean().Should().BeTrue();
+            var durability = job.GetProperty("redisDurability");
+            durability.GetProperty("status").GetString().Should().Be(expectedStatus);
+            if (outcome is null)
+            {
+                durability.TryGetProperty("cause", out _).Should().BeFalse();
+                durability.TryGetProperty("remediation", out _).Should().BeFalse();
+            }
+            else
+            {
+                durability.GetProperty("cause").GetString().Should().Be(outcome.Value.ToString());
+                durability.GetProperty("remediation").GetString()
+                    .Should().Be(DurableJobSubstrateRemediation.For(outcome.Value));
+            }
+
+            body.Should().NotContain("unknown command",
+                "the raw attestation detail is logged, never published on the manifest");
+            body.Should().NotContain("redis.example.internal",
+                "the Redis endpoint is not published on the manifest");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_RedisConfiguredButUnreachable_WithholdsControlPlaneWithoutDurabilityOutcome()
+    {
+        // The one Redis-on case that still withholds the control plane: Redis did not connect at
+        // startup. It is a missing dependency, not a durability outcome.
+        var fixture = CreateManifestFixture()
+            .ConfigureServices(static services =>
+            {
+                services.AddSingleton<IExecutionJobStore>(new InMemoryExecutionJobStore());
+                services.AddSingleton<IJobQueue>(new InMemoryJobQueue());
+                services.Configure<DurableJobSubstrateOptions>(options =>
+                {
+                    options.RedisConfigured = true;
+                    options.RedisEntitled = true;
+                    options.RedisDurabilityFailure = DurableJobSubstrateCause.RedisUnreachable;
+                });
+            });
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = await ReadDocumentAsync(response);
+            var root = document.RootElement;
+
+            foreach (var capability in new[] { "jobs.runner", "operations.proposals" }
+                         .Select(capabilityId => GetCapability(root, capabilityId)))
+            {
+                capability.GetProperty("available").GetBoolean().Should().BeFalse();
+                capability.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
+            }
+
+            var job = root.GetProperty("limits").GetProperty("job");
+            job.GetProperty("durableJobRuntimeAvailable").GetBoolean().Should().BeFalse();
+            job.TryGetProperty("redisDurability", out _).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task GetManifest_WithJobStoreButNoQueue_StillReportsJobsRunnerUnavailable()

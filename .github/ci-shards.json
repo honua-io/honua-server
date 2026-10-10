@@ -197,11 +197,20 @@
       ]
     },
     {
+      "name": "GeoServices Geometry VectorTile and Versioning All",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog&FullyQualifiedName!~GeoServicesSpatialFilterBuilderTests)|(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer&FullyQualifiedName!~MapServerEndpointTests&FullyQualifiedName!~MapServerExportEndpointTests&FullyQualifiedName!~MapServerIdentifyEndpointTests)",
+      "children": [
+        "GeoServices Geometry VectorTile and Versioning",
+        "GeoServices Versioning"
+      ]
+    },
+    {
       "name": "Server Features Data and Sharing",
       "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.DataEnrichment.|FullyQualifiedName~Honua.Server.Tests.Features.Orchestration.|FullyQualifiedName~Honua.Server.Tests.Features.Sharing.|FullyQualifiedName~Honua.Server.Tests.Features.Grounding.|FullyQualifiedName~Honua.Server.Tests.Features.Capabilities.|FullyQualifiedName~Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests|FullyQualifiedName~Honua.Server.Tests.Features.Streaming.FeatureStreamConformanceEndpointsTests|FullyQualifiedName~Honua.Server.Tests.Features.Streaming.FeatureStreamCursorDurabilityTests)",
       "children": [
         "Server Features Data Enrichment and Capabilities",
         "Server Features Sharing",
+        "Server Features Sharing OAuth and Portal",
         "Server Features Streaming Snapshot and Conformance",
         "Server Features Capabilities"
       ]
@@ -340,6 +349,14 @@
       "children": [
         "FeatureServer MVT Tiles",
         "FeatureServer Replica"
+      ]
+    },
+    {
+      "name": "Scene All",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Scene",
+      "children": [
+        "Scene",
+        "Scene I3S Resources"
       ]
     }
   ],
@@ -1226,8 +1243,36 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "Coverage CATCH-ALL for the GeoServices test assembly (#1899). Claims every Honua.Protocols.GeoServices.Tests class NOT owned by a sibling GeoServices shard. Closes three #1899-class holes at once: (1) the GeoServices VectorTileServer and VersionManagementServer namespaces matched no filter; (2) GeoServices-root classes (MetadataClientParameterTests, MetadataPostTests) matched no filter; (3) the entire GeometryService namespace (~107 tests) had a filter on the 'Geometry Tiles and Terrain' shard, but that shard's csproj defaults to the Honua.Server.Tests monolith assembly while GeometryService tests live in the Honua.Protocols.GeoServices.Tests assembly — so `dotnet test <Server.Tests.csproj> --filter ...GeometryService` discovered ZERO of them and they never ran. This shard targets the correct GeoServices.Tests csproj. The trailing FullyQualifiedName!~ exclusions cover every GeoServices sub-namespace already owned by a sibling GeoServices shard (FeatureServer/ImageServer/MapServer/GPServer/NAServer/Catalog), so this is the GeoServices assembly catch-all: any new GeoServices test class not in those owned sub-namespaces lands here by default instead of becoming a silent orphan. September 2026 shard-headroom rebalance (#3204), from the trunk-red run 34072577139 and the TRX artifacts of runs 34054772215 / 34058058911 / 34066674166 / 34072577139. Sizing is `scripts/ci/summarize-trx-class-intervals.py` union-of-intervals (startTime..endTime), which includes the fixture/collection setup that `duration` omits; the same measure predicted the #4455 STAC split's post-split wall to 7.1m against an actual 6.5-7.5m. Budgets are unchanged. Adopts the non-dominant GeoServices MapServer classes (1.6m union) from `GeoServices MapServer`, which was at 24.6m of 29m (85%). They go here rather than to a new shard because 1.6m does not justify a runner job: this shard goes 8.9m -> 10.5m of 24m (44%). KNOWN LIMIT: the donor only reaches 22.9m of 29m (79%), because MapServerEndpointTests is a single 22.9m class; splitting that class in source is the follow-up. Follow-up #4533 partitions that dominant class into metadata/query/legend, export/KML and identify/find classes with dedicated sibling shards; all three are excluded here to retain unique ownership.",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog&FullyQualifiedName!~GeoServicesSpatialFilterBuilderTests)|(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer&FullyQualifiedName!~MapServerEndpointTests&FullyQualifiedName!~MapServerExportEndpointTests&FullyQualifiedName!~MapServerIdentifyEndpointTests)",
+      "_comment": "GeoServices assembly catch-all with the existing FeatureServer/ImageServer/MapServer/GPServer/NAServer/Catalog and spatial-builder exclusions. Minor MapServer classes retain their existing path. Run 38013245849 exhausted the 24m cap while still producing output 9s earlier. Whole VersionManagementServer classes now run in the GeoServices Versioning sibling; the prior successful run 38009517832 predicts 9.53m retained union versus 10.26m sibling union. The original 330 cases partition into 272 and 58, with unchanged 24m test / 34m job caps and tier predicates. New classes outside the explicitly owned namespaces still land here.",
+      "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog&FullyQualifiedName!~GeoServicesSpatialFilterBuilderTests)|(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer&FullyQualifiedName!~MapServerEndpointTests&FullyQualifiedName!~MapServerExportEndpointTests&FullyQualifiedName!~MapServerIdentifyEndpointTests))&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.",
+      "paths": [
+        "src/Honua.Protocols.GeoServices/VectorTileServer/",
+        "src/Honua.Protocols.GeoServices/VersionManagementServer/",
+        "src/Honua.Protocols.GeoServices/GeometryService/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VersionManagementServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MetadataClientParameterTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MetadataPostTests.cs",
+        "src/Honua.Protocols.GeoServices/MapServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/",
+        "src/Honua.Core/Features/Validation/"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    {
+      "name": "GeoServices Versioning",
+      "shard_name": "GeoServices Versioning",
+      "dispatch_rank": 13.21,
+      "artifact_suffix": "geoservices-versioning",
+      "log_name": "server-tests-geoservices-versioning",
+      "timeout_minutes": 34,
+      "test_timeout_minutes": 24,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "Whole-class VersionManagementServer split after run 38013245849 exhausted the 24m parent cap. All 58 versioning cases from prior successful run 38009517832 are retained, with measured interval union 10.26m (the parallel parent totaled 19.79m union / 21.5m span). The 272 retained cases have a 9.53m union. Routing paths, owning GeoServices.Tests project, 24m test / 34m job budgets and non-advisory membership are inherited unchanged.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.",
       "paths": [
         "src/Honua.Protocols.GeoServices/VectorTileServer/",
         "src/Honua.Protocols.GeoServices/VersionManagementServer/",
@@ -1414,12 +1459,33 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.Scene.Tests/Honua.Protocols.Scene.Tests.csproj",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Scene",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Scene)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Scene.I3s",
       "paths": [
         "src/Honua.Protocols.Scene/",
         "src/Honua.Scene/",
         "tests/dotnet/Honua.Protocols.Scene.Tests/Source/"
-      ]
+      ],
+      "_comment": "Whole-class capacity split after run 38054987297 exhausted its 30m active-output budget. Retains the original Scene classes outside the I3s prefix; the complementary sibling preserves every I3S class. Both inherit the original paths and 30m test / 40m job caps."
+    },
+    {
+      "name": "Scene I3S Resources",
+      "shard_name": "Scene I3S Resources",
+      "dispatch_rank": 24.5,
+      "artifact_suffix": "scene-i3s-resources",
+      "log_name": "server-tests-scene-i3s-resources",
+      "timeout_minutes": 40,
+      "test_timeout_minutes": 30,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.Scene.Tests/Honua.Protocols.Scene.Tests.csproj",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Scene)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Scene.I3s",
+      "paths": [
+        "src/Honua.Protocols.Scene/",
+        "src/Honua.Scene/",
+        "tests/dotnet/Honua.Protocols.Scene.Tests/Source/"
+      ],
+      "_comment": "Complementary whole-class I3s-prefix half of Scene. The prior 8e58 successful TRX partitions into 66 I3S and 87 remaining cases; new I3S cases stay in this sibling automatically. Original paths, tier composition, CPU and 30m/40m budgets are unchanged."
     },
     {
       "name": "SensorThings",
@@ -2014,8 +2080,49 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "Round-2 offline TRX split (#3770): sharing half of the 29.6m-p90 parent.",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Sharing.",
+      "_comment": "Whole-class capacity split after run 38013245849 exhausted the 22m cap. Retains 74 REST/community/managed-key cases; prior run 38009517832 serial TRX intervals predict 8.63m versus 10.73m for its OAuth/portal sibling. Existing 22m test / 32m job caps and tier predicates are unchanged.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Sharing.)&FullyQualifiedName!~Honua.Server.Tests.Features.Sharing.SharingOAuth2&FullyQualifiedName!~Honua.Server.Tests.Features.Sharing.PortalFacadeDiscoveryContractTests",
+      "paths": [
+        "tests/dotnet/Honua.Server.Tests/Features/Capabilities/",
+        "tests/dotnet/Honua.Server.Tests/Features/DataEnrichment/",
+        "tests/dotnet/Honua.Server.Tests/Features/Grounding/",
+        "tests/dotnet/Honua.Server.Tests/Features/Orchestration/",
+        "tests/dotnet/Honua.Server.Tests/Features/Sharing/",
+        "src/Honua.Server/Features/Capabilities/",
+        "src/Honua.Core/Features/Capabilities/",
+        "src/Honua.Server/Features/DataEnrichment/",
+        "src/Honua.Core/Features/DataEnrichment/",
+        "src/Honua.Server/Features/Orchestration/",
+        "src/Honua.Core/Features/Orchestration/",
+        "src/Honua.Core/Features/Grounding/",
+        "src/Honua.Server/Features/Spec/",
+        "src/Honua.Core/Features/Share/",
+        "src/Honua.Db/Postgres/Features/Share/",
+        "src/Honua.Protocols.GeoServices/Sharing/",
+        "src/Honua.Core/Features/Authorization/",
+        "src/Honua.Db/Postgres/Features/Authorization/",
+        "src/Honua.Core/Features/FeatureStore/",
+        "src/Honua.Db/Postgres/Features/FeatureStore/",
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/",
+        "src/Honua.Server/Features/Streaming/"
+      ],
+      "csproj": "",
+      "_paths_comment": "Narrowed in #3229 to the five owned test namespaces and their source trees, plus the shared Validation/Hosting prefixes and src/Honua.Server/Features/Streaming/ (Capabilities tests bind FeatureStreamOptions via CapabilityManifestOptionsSnapshot). The 33 prefixes dropped here - Studio, Mobile, Collaboration, Reporting, Temporal, Forms, FieldWorkflows and friends, plus the broad tests/dotnet/Honua.Server.Tests/Features/ prefix - were inherited wholesale by the #2422 carve (#2709) and name features this shard runs no tests for. Each remains claimed by 'Server Features Misc', 'Server Features Spec Printing and Static Maps' and its real owner, so nothing becomes unrouted."
+    },
+    {
+      "name": "Server Features Sharing OAuth and Portal",
+      "shard_name": "Server Features Sharing OAuth and Portal",
+      "dispatch_rank": 14.81,
+      "artifact_suffix": "server-features-sharing-oauth-portal",
+      "log_name": "server-tests-server-features-sharing-oauth-portal",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "Whole-class capacity split after run 38013245849 exhausted the 22m cap with output 3s earlier. Prior successful run 38009517832 TRX intervals were serial: these 59 OAuth/portal cases occupied 10.73m of 19.4m total. Retains the 22m test / 32m job caps, inherited routing paths and unchanged tier predicates.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Sharing.SharingOAuth2|FullyQualifiedName~Honua.Server.Tests.Features.Sharing.PortalFacadeDiscoveryContractTests",
       "paths": [
         "tests/dotnet/Honua.Server.Tests/Features/Capabilities/",
         "tests/dotnet/Honua.Server.Tests/Features/DataEnrichment/",

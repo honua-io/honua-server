@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
@@ -9,7 +11,9 @@ using FluentAssertions;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.Internal;
 using Microsoft.AspNetCore.DataProtection.Repositories;
+using Microsoft.AspNetCore.DataProtection.XmlEncryption;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -238,6 +242,51 @@ public sealed class OperationSecretKeyRingProtectionTests
         stored.Descendants("encryptedSecret").Should().BeEmpty();
     }
 
+    // DataProtection re-creates the decryptor from the type name it wrote into the key XML,
+    // through the DI-aware IActivator (SimpleActivator: .ctor(IServiceProvider), then .ctor()).
+    // This is the exact path that threw MissingMethodException on the Native AOT Lambda
+    // (honua-release run 38038435904, image nightly-lambda-aot-798d517-amd64).
+    [UnitTest]
+    public void AotKeyRing_DecryptorTypeNameWrittenToTheRing_ActivatesThroughDataProtection()
+    {
+        using var certificate = CreateCertificate();
+        var repository = new MemoryKeyRepository();
+        _ = Protect(repository, certificate, "approved-secret");
+        XNamespace dataProtection = "http://schemas.asp.net/2015/03/dataProtection";
+        var encryptedSecret = repository.Elements.Should().ContainSingle().Subject
+            .Descendants(dataProtection + "encryptedSecret").Should().ContainSingle().Subject;
+        var decryptorTypeName = encryptedSecret.Attribute("decryptorType")!.Value;
+
+        using var provider = BuildProvider(new MemoryKeyRepository(), certificate);
+        var activator = provider.GetRequiredService<IActivator>();
+        var decryptor = (IXmlDecryptor)activator.CreateInstance(typeof(IXmlDecryptor), decryptorTypeName);
+
+        decryptorTypeName.Should().Be(typeof(RsaAesGcmKeyRingDecryptor).AssemblyQualifiedName);
+        decryptor.Should().BeOfType<RsaAesGcmKeyRingDecryptor>();
+        decryptor.Decrypt(encryptedSecret.Elements().Single()).Name.LocalName.Should().Be("masterKey");
+    }
+
+    // A JIT host can always reflect the decryptor constructor, so the activation test above
+    // cannot fail there. Native AOT only keeps the constructor metadata because the
+    // production registration roots it; this pins that root to the constructor
+    // SimpleActivator actually looks up.
+    [UnitTest]
+    public void AotKeyRing_ProductionRegistration_RootsTheConstructorDataProtectionActivates()
+    {
+        var registration = typeof(RsaAesGcmKeyRingProtection).GetMethod(
+            nameof(RsaAesGcmKeyRingProtection.ProtectKeysWithRsaAesGcm),
+            BindingFlags.Public | BindingFlags.Static)!;
+
+        var roots = registration.GetCustomAttributes<DynamicDependencyAttribute>()
+            .Where(root => root.Type == typeof(RsaAesGcmKeyRingDecryptor))
+            .ToArray();
+
+        roots.Should().ContainSingle();
+        roots[0].MemberTypes.Should().HaveFlag(DynamicallyAccessedMemberTypes.PublicConstructors);
+        typeof(RsaAesGcmKeyRingDecryptor).GetConstructor([typeof(IServiceProvider)])
+            .Should().NotBeNull("SimpleActivator resolves .ctor(IServiceProvider) by reflection");
+    }
+
     private static string Protect(MemoryKeyRepository repository, X509Certificate2 certificate, string value)
     {
         using var provider = BuildProvider(repository, certificate);
@@ -253,14 +302,10 @@ public sealed class OperationSecretKeyRingProtectionTests
     private static ServiceProvider BuildProvider(MemoryKeyRepository repository, X509Certificate2 certificate)
     {
         var services = new ServiceCollection();
-        services.AddSingleton(new RsaAesGcmKeyRingMaterial(certificate));
         services.AddDataProtection()
             .SetApplicationName("Honua.Server")
-            .AddKeyManagementOptions(options =>
-            {
-                options.XmlRepository = repository;
-                options.XmlEncryptor = new RsaAesGcmKeyRingEncryptor(certificate);
-            });
+            .AddKeyManagementOptions(options => options.XmlRepository = repository)
+            .ProtectKeysWithRsaAesGcm(certificate);
         return services.BuildServiceProvider();
     }
 

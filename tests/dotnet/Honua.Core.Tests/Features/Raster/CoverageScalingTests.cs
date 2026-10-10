@@ -43,6 +43,16 @@ public sealed class CoverageScalingTests
         CoverageScaling.TryResolveFactor(64, 64, double.NaN, out _).Should().BeFalse();
     }
 
+    [UnitTheory]
+    [InlineData(2147483648d)]
+    [InlineData(double.MaxValue)]
+    public void Scaling_RejectsDimensionsOutsideIntegerRange(double factor)
+    {
+        CoverageScaling.TryResolveFactor(64, 32, factor, out _).Should().BeFalse();
+        CoverageScaling.TryResolveAxes(64, 32, factor, null, out _).Should().BeFalse();
+        CoverageScaling.TryResolveAxes(64, 32, null, factor, out _).Should().BeFalse();
+    }
+
     [UnitTest]
     public void TryResolveAxes_ScalesEachAxisIndependently()
     {

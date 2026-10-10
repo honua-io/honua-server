@@ -194,7 +194,8 @@ if (loadHostedBlazorStaticWebAssets)
 
 // The AWS serverless module injects these values as aws:secretsmanager: references. Validate the
 // admin credential while preserving its refreshable reference, and snapshot the encryption master
-// key before its direct consumer can mistake the reference text for key material.
+// key and audit-chain key before their direct consumers can mistake the reference text for key
+// material.
 await StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
     builder.Configuration,
     builder.Environment.IsProduction());
@@ -230,9 +231,11 @@ var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : nu
 RedisDurabilityAttestation? redisDurabilityAttestation = null;
 DurableJobSubstrateCause? redisDurabilityFailure = null;
 string? redisDurabilityDetail = null;
-// honua-server#4502: an unattested durable substrate DEGRADES by default. Operators who would
-// rather not serve at all without a durable job store opt in here, and get a typed startup
-// refusal naming the cause instead of a wall of unresolved-service descriptor failures.
+// The Redis durability attestation is INFORMATION by default (owner ruling 2026-10-10): a
+// connected Redis enables the governed control plane and the durable job runner whatever the
+// attestation says. Operators who would rather not serve at all without a CONFIG GET-proven
+// durable policy opt in here and get a typed startup refusal naming the cause
+// (honua-server#4502). The opt-in cannot be satisfied on managed Redis that blocks CONFIG.
 var requireDurableJobStore = builder.Configuration
     .GetSection(JobDurabilityOptions.SectionName)
     .GetValue<bool>(nameof(JobDurabilityOptions.RequireDurableStore));
@@ -249,6 +252,7 @@ builder.Services.Configure<DurableJobSubstrateOptions>(options =>
     options.RedisEntitled = redisCacheEntitled;
     options.RedisDurabilityAttestation = redisDurabilityAttestation;
     options.RedisDurabilityFailure = redisDurabilityFailure;
+    options.RedisDurabilityDetail = redisDurabilityDetail;
 });
 var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastructureConnectionString(
     redisConnectionString,
@@ -344,34 +348,53 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
             redisDurabilityFailure = durability.FailureCause;
             redisDurabilityDetail = durability.FailureDetail;
 
-            // An accepted attestation publishes the machine-observed durability facts as a
-            // resolvable evidence object. A REJECTED one does not compose the durable job
-            // substrate out — that was honua-server#4502, where every consumer of
-            // IExecutionJobStore stayed registered while the store did not, and the process
-            // died in ServiceProvider validation before binding a port. The store is composed
-            // either way; what an unattested Redis changes is what the server ADVERTISES
-            // (DurableJobSubstrateOptions.Classify keeps returning the typed failure cause, so
-            // the capability manifest never claims 'jobs.runner') plus this one warning.
+            // The attestation is INFORMATION, never a gate (owner ruling 2026-10-10). The durable
+            // job substrate, proposal store, operation gateway and admin executors are composed
+            // for any connected, entitled Redis; the outcome is published on the capability
+            // manifest (limits.job.redisDurability) and logged once here. Managed Redis that
+            // blocks CONFIG (AWS ElastiCache, MemoryDB) reads 'unverified', not a rejection.
             if (redisCacheEntitled && durability.Attestation is not null)
             {
                 builder.Services.TryAddSingleton(durability.Attestation);
-            }
-            else if (redisCacheEntitled && durability.FailureCause is { } rejectedCause)
-            {
-                var rejectionDetail = durability.FailureDetail ?? "no detail reported";
-                var rejectionRemediation = DurableJobSubstrateRemediation.For(rejectedCause);
                 var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
-                ProgramLog.RedisDurabilityNotAttested(
+                ProgramLog.RedisDurabilityAttested(
                     startupLogger,
-                    rejectedCause,
-                    rejectionDetail,
-                    DurableJobSubstrateRemediation.NonDurableConsequence,
-                    rejectionRemediation);
+                    durability.Attestation.PersistenceMode,
+                    durability.Attestation.AcknowledgedWritePolicy,
+                    durability.Attestation.EvictionPolicy);
+            }
+            else if (redisCacheEntitled && durability.FailureCause is { } outcomeCause)
+            {
+                var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
+                var status = RedisDurabilityStatuses.For(attested: false, outcomeCause) ?? RedisDurabilityStatuses.Unverified;
+                var outcomeDetail = durability.FailureDetail ?? "no detail reported";
+                var guidance = DurableJobSubstrateRemediation.For(outcomeCause);
+                if (outcomeCause == DurableJobSubstrateCause.RedisAttestationUnavailable)
+                {
+                    ProgramLog.RedisDurabilityUnverified(
+                        startupLogger,
+                        status,
+                        outcomeDetail,
+                        DurableJobSubstrateRemediation.NonDurableConsequence,
+                        guidance);
+                }
+                else
+                {
+                    ProgramLog.RedisDurabilityNotDurable(
+                        startupLogger,
+                        status,
+                        outcomeCause,
+                        outcomeDetail,
+                        DurableJobSubstrateRemediation.NonDurableConsequence,
+                        guidance);
+                }
             }
         }
         else if (redisCacheEntitled)
         {
-            redisDurabilityFailure = DurableJobSubstrateCause.RedisAttestationUnavailable;
+            // Configured but not connected: Redis is genuinely unavailable at startup, which (unlike
+            // an attestation outcome) does withhold the Redis-backed capabilities.
+            redisDurabilityFailure = DurableJobSubstrateCause.RedisUnreachable;
         }
     }
     catch (Exception ex)
@@ -386,7 +409,7 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
         var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
         ProgramLog.RedisStartupConnectionFailed(startupLogger, ex);
         // Do not register IConnectionMultiplexer — services that request it via GetService<> will receive null
-        redisDurabilityFailure = DurableJobSubstrateCause.RedisAttestationUnavailable;
+        redisDurabilityFailure = DurableJobSubstrateCause.RedisUnreachable;
         redisDurabilityDetail = ex.Message;
     }
 }
@@ -415,9 +438,7 @@ if (connectedRedis is not null &&
     var keyRingCertificate = OperationSecretKeyRingProtection.Resolve(builder.Configuration);
     if (nativeAot)
     {
-        builder.Services.AddSingleton(new RsaAesGcmKeyRingMaterial(keyRingCertificate));
-        keyRing.AddKeyManagementOptions(options =>
-            options.XmlEncryptor = new RsaAesGcmKeyRingEncryptor(keyRingCertificate));
+        keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
     }
     else
     {
@@ -425,9 +446,9 @@ if (connectedRedis is not null &&
     }
 }
 
-// The ONE sanctioned way an unattested durable job substrate may stop this process
-// (honua-server#4502). Nothing else is allowed to: a rejected attestation otherwise degrades to
-// a composed-but-non-durable store, which is why the DI graph can no longer abort startup.
+// The ONE sanctioned way the durability attestation may stop this process, and only when the
+// operator opted in with Jobs:RequireDurableStore=true (honua-server#4502). Otherwise the
+// attestation is information and a connected Redis composes the full control plane.
 DurableJobSubstrateStartupGate.EnsureSatisfied(
     new DurableJobSubstrateOptions
     {

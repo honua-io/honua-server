@@ -972,6 +972,101 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
         _exportQueries.Should().BeEmpty();
     }
 
+    [IntegrationTheory]
+    [InlineData("", "COVERAGEID")]
+    [InlineData("&SCALEFACTOR=1", "SCALEFACTOR")]
+    [InlineData("&SCALEFACTOR=40", "SCALEFACTOR")]
+    [InlineData("&SCALEFACTOR=1e300", "SCALEFACTOR")]
+    [InlineData("&SCALEAXES=x(0.25)", "SCALEAXES")]
+    [InlineData("&SCALEAXES=x(1e300),y(1)", "SCALEAXES")]
+    [InlineData("&SCALEEXTENT=x(0,8191),y(0,8191)", "SCALEEXTENT")]
+    [InlineData("&SCALEEXTENT=x(0,63)", "SCALEEXTENT")]
+    [InlineData("&SCALEEXTENT=x(-1e300,1e300),y(0,63)", "SCALEEXTENT")]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_OversizeEffectiveGrid_IsRejectedBeforeExport(string scaling, string locator)
+    {
+        var raster = CreateRasterInfo() with { Width = 8192, Height = 8192, GeoTransform = null };
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/png{scaling}");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"").And.Contain($"locator=\"{locator}\"");
+        _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTheory]
+    [InlineData("&SCALEFACTOR=0.5", 4096, 4096)]
+    [InlineData("&SCALEAXES=x(0.25),y(0.5)", 2048, 4096)]
+    [InlineData("&SCALEEXTENT=x(0,127),y(0,63)", 128, 64)]
+    [InlineData("&SCALESIZE=x(128),y(64)", 128, 64)]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_OversizeNativeGrid_CanBeDownscaled(string scaling, int width, int height)
+    {
+        var raster = CreateRasterInfo() with { Width = 8192, Height = 8192, GeoTransform = null };
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/png{scaling}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        _exportQueries.Should().ContainSingle();
+        _exportQueries[0].OutputWidth.Should().Be(width);
+        _exportQueries[0].OutputHeight.Should().Be(height);
+    }
+
+    [IntegrationTheory]
+    [InlineData("0,0,0.25,0.25", true)]
+    [InlineData("0.00003,0,0.50003,0.25", false)]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_NativeBbox_BoundsAllTouchedCells(string bbox, bool allowed)
+    {
+        var raster = CreateRasterInfo() with
+        {
+            Width = 8192,
+            Height = 8192,
+            GeoTransform = null,
+            Extent = new RasterExtent { XMin = 0, YMin = 0, XMax = 1, YMax = 1, Srid = 4326 }
+        };
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/png&BBOX={bbox}");
+        response.StatusCode.Should().Be(allowed ? HttpStatusCode.OK : HttpStatusCode.BadRequest,
+            await response.Content.ReadAsStringAsync());
+        _exportQueries.Should().HaveCount(allowed ? 1 : 0);
+    }
+
+    [IntegrationTheory]
+    [InlineData(double.NegativeInfinity, double.PositiveInfinity)]
+    [InlineData(double.MinValue, double.MaxValue)]
+    [InlineData(double.NaN, 1d)]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_UnboundedExtent_CannotBypassNativeGridCap(double minX, double maxX)
+    {
+        var raster = CreateRasterInfo() with
+        {
+            Width = 8192,
+            Height = 8192,
+            GeoTransform = null,
+            Extent = new RasterExtent { XMin = minX, YMin = 0, XMax = maxX, YMax = 1, Srid = 4326 }
+        };
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/png&BBOX=0,0,1,1");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
+        _exportQueries.Should().BeEmpty();
+    }
+
     private static void ConfigureRasterStore(IRasterStore rasterStore, List<RasterQuery> exportQueries)
     {
         var raster = CreateRasterInfo();

@@ -36,6 +36,7 @@ scripts/ci/validate-review-first-dispatch.sh
 
 echo "Validating PR Gate impact observation..."
 if [[ -n "${PYTHON_BIN}" ]]; then
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
   HONUA_PR_GATE_IMPACT_PYTHON="${PYTHON_BIN}" scripts/ci/validate-pr-gate-impact.sh
   "${PYTHON_BIN}" scripts/ci/audit-impact-routing-evidence.test.py
   "${PYTHON_BIN}" scripts/ci/collect-impact-routing-runs.test.py
@@ -617,13 +618,19 @@ assert_excludes_shard \
   "src/Honua.Protocols.OData/Features/ODataEndpoints.cs" \
   "WFS"
 
-# A Scene-only change targets the Scene shard and excludes FeatureServer.
-assert_descriptor \
+# Scene source and tests select both complementary whole-class owners.
+assert_exact_shards \
   "scene-targeted" \
   "src/Honua.Protocols.Scene/SceneServerEndpoints.cs" \
-  "targeted" \
-  "false" \
-  "Scene"
+  '["Scene","Scene I3S Resources"]'
+assert_exact_shards \
+  "scene-assets-targeted" \
+  "src/Honua.Scene/Assets/HostedI3sSceneResourceProvider.cs" \
+  '["Scene","Scene I3S Resources","Operator Eval Harness","gRPC Protocol and Scene"]'
+assert_exact_shards \
+  "scene-tests-targeted" \
+  "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sProductionResourceEndpointTests.cs" \
+  '["Scene","Scene I3S Resources"]'
 assert_excludes_shard \
   "scene-excludes-featureserver" \
   "src/Honua.Protocols.Scene/SceneServerEndpoints.cs" \
@@ -929,7 +936,7 @@ assert_descriptor \
 assert_exact_shards \
   "streaming-source-exact-owners" \
   "src/Honua.Server/Features/Streaming/FeatureStreamEndpoints.cs" \
-  '["Server Features Data Enrichment and Capabilities","Server Features Miscellaneous","Server Features Sharing","Server Features Streaming Endpoints","Server Features Streaming Snapshot and Conformance","Server Features Capabilities","Server Features Studio AI"]'
+  '["Server Features Data Enrichment and Capabilities","Server Features Miscellaneous","Server Features Sharing","Server Features Sharing OAuth and Portal","Server Features Streaming Endpoints","Server Features Streaming Snapshot and Conformance","Server Features Capabilities","Server Features Studio AI"]'
 # A Streaming TEST change, by contrast, must reach the shard that runs those
 # classes and must NOT wake the 25-minute Data Enrichment and Sharing child,
 # which runs no Streaming class. #3229 narrowed that child off the broad
@@ -1668,6 +1675,10 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Server.Tests.Features.Eval.EvalHarnessTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Operator Eval Harness" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "GeoServices Versioning" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \

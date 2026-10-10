@@ -96,29 +96,59 @@ public sealed class GdalWorkerLicensingTests
         resolvers.Should().Contain(resolver => resolver.CanResolve("azure:keyvault:https://synthetic.vault.azure.net/secrets/synthetic"));
     }
 
+    /// <summary>
+    /// Owner ruling (2026-10-10): the attestation is information. A connected Redis whose policy
+    /// is not durable (or, on managed Redis, unreadable) still runs the worker; the outcome is
+    /// logged, and the accepted-attestation evidence object is simply not published.
+    /// </summary>
+    [IntegrationTheory]
+    [InlineData("no", "always", "noeviction")]
+    [InlineData("yes", "no", "noeviction")]
+    [InlineData("yes", "always", "allkeys-lru")]
+    public async Task AddGdalWorker_NonDurableRedis_StillRegistersDurableJobs(
+        string appendOnly, string appendFsync, string evictionPolicy)
+    {
+        await using var redis = BuildRedis(appendOnly, appendFsync, evictionPolicy);
+        await redis.StartAsync();
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        services.AddGdalWorker(RedisConfiguration(redis));
+        using var provider = services.BuildServiceProvider();
+        using var connection = provider.GetRequiredService<IConnectionMultiplexer>();
+
+        provider.GetService<RedisDurabilityAttestation>().Should().BeNull();
+        provider.GetRequiredService<IExecutionJobStore>().Should().NotBeNull();
+        provider.GetRequiredService<IJobQueue>().Should().NotBeNull();
+    }
+
     [IntegrationTheory]
     [InlineData("no", "always", "noeviction", DurableJobSubstrateCause.RedisPersistenceDisabled)]
     [InlineData("yes", "no", "noeviction", DurableJobSubstrateCause.RedisWritePolicyUnsafe)]
     [InlineData("yes", "always", "allkeys-lru", DurableJobSubstrateCause.RedisEvictionPolicyUnsafe)]
-    public async Task AddGdalWorker_UnsafeRedis_RejectsBeforeRegisteringDurableJobs(
+    public async Task AddGdalWorker_RequireDurableStoreOnNonDurableRedis_RefusesBeforeRegisteringDurableJobs(
         string appendOnly, string appendFsync, string evictionPolicy, DurableJobSubstrateCause expectedCause)
     {
         await using var redis = BuildRedis(appendOnly, appendFsync, evictionPolicy);
         await redis.StartAsync();
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(
-            new Dictionary<string, string?>
-            {
-                ["ConnectionStrings:redis"] = $"{redis.Hostname}:{redis.GetMappedPublicPort(6379)}"
-            }).Build();
         var services = new ServiceCollection();
         services.AddLogging();
 
-        var register = () => services.AddGdalWorker(configuration);
+        var register = () => services.AddGdalWorker(RedisConfiguration(redis, requireDurableStore: true));
 
-        register.Should().Throw<InvalidOperationException>().WithMessage($"*rejected ({expectedCause})*");
+        register.Should().Throw<DurableJobSubstrateNotAttestedException>()
+            .Which.Cause.Should().Be(expectedCause);
         services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IExecutionJobStore));
         services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IJobQueue));
     }
+
+    private static IConfiguration RedisConfiguration(IContainer redis, bool requireDurableStore = false) =>
+        new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:redis"] = $"{redis.Hostname}:{redis.GetMappedPublicPort(6379)}",
+                ["Jobs:RequireDurableStore"] = requireDurableStore ? "true" : null,
+            }).Build();
 
     private static IContainer BuildRedis(string appendOnly, string appendFsync, string evictionPolicy) =>
         new ContainerBuilder()

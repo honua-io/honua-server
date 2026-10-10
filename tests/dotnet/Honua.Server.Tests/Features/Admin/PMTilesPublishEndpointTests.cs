@@ -2,14 +2,21 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Tiles.PMTiles;
+using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -23,8 +30,15 @@ public sealed class PMTilesPublishEndpointTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // The shared test host otherwise authenticates every caller as an admin API key,
+        // which hides a restricted source-layer denial.
+        _fixture.ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
         await _fixture.InitializeAsync();
-        _client = _fixture.Client;
+        _client = _fixture.CreateAdminClient();
     }
 
     public async Task DisposeAsync()
@@ -292,6 +306,122 @@ public sealed class PMTilesPublishEndpointTests : IAsyncLifetime
         using var response = await _client.SendAsync(headRequest);
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/tiles/pmtiles/{*artifactId}")]
+    [Endpoint("HEAD /api/v1/tiles/pmtiles/{*artifactId}")]
+    public async Task PMTilesProxy_RestrictedOrRetiredSource_DoesNotServeArchiveBytes()
+    {
+        var artifactId = await PublishArchiveAsync();
+        var url = $"/api/v1/tiles/pmtiles/{artifactId}";
+        using var anonymous = _fixture.CreateClient();
+
+        using (var warmRequest = new HttpRequestMessage(HttpMethod.Get, url))
+        {
+            warmRequest.Headers.Range = new RangeHeaderValue(0, 6);
+            using var warm = await anonymous.SendAsync(warmRequest);
+            warm.StatusCode.Should().Be(HttpStatusCode.PartialContent);
+            (await warm.Content.ReadAsByteArrayAsync()).Should().Equal("PMTiles"u8.ToArray());
+        }
+
+        var initial = _fixture.GetCurrentV2GraphSnapshot();
+        var source = PMTilesProxySourceResolver.ResolveForPublish(
+            initial,
+            WebAppFixture.TestServiceId,
+            WebAppFixture.TestLayerId);
+        source.Should().NotBeNull("the published archive must bind the current test layer");
+
+        var restricted = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["admin"] };
+        try
+        {
+            SetGraph(initial.Graph with
+            {
+                Resources = initial.Graph.Resources.Select(resource =>
+                    resource.Metadata.Id == source!.Resource.Metadata.Id
+                        ? resource with { AccessPolicy = restricted }
+                        : resource).ToArray()
+            });
+
+            await AssertArchiveDeniedAsync(anonymous, HttpMethod.Get, url, withRange: true);
+            await AssertArchiveDeniedAsync(anonymous, HttpMethod.Head, url, withRange: false);
+
+            using (var allowedRequest = new HttpRequestMessage(HttpMethod.Get, url))
+            {
+                allowedRequest.Headers.Range = new RangeHeaderValue(0, 6);
+                using var allowed = await _client.SendAsync(allowedRequest);
+                allowed.StatusCode.Should().Be(HttpStatusCode.PartialContent);
+                (await allowed.Content.ReadAsByteArrayAsync()).Should().Equal("PMTiles"u8.ToArray());
+            }
+
+            var serviceRestricted = _fixture.GetCurrentV2GraphSnapshot();
+            SetGraph(initial.Graph with
+            {
+                Revision = serviceRestricted.Graph.Revision,
+                Services = initial.Graph.Services.Select(service =>
+                    service.Metadata.Id == source.Service.Metadata.Id
+                        ? service with { AccessPolicy = restricted }
+                        : service).ToArray()
+            });
+
+            await AssertArchiveDeniedAsync(anonymous, HttpMethod.Get, url, withRange: true);
+
+            using (var allowedRequest = new HttpRequestMessage(HttpMethod.Get, url))
+            {
+                allowedRequest.Headers.Range = new RangeHeaderValue(0, 6);
+                using var allowed = await _client.SendAsync(allowedRequest);
+                allowed.StatusCode.Should().Be(HttpStatusCode.PartialContent);
+            }
+
+            var current = _fixture.GetCurrentV2GraphSnapshot();
+            SetGraph(current.Graph with
+            {
+                Publications = current.Graph.Publications.Select(publication =>
+                    publication.Metadata.Id == source.Publication.Metadata.Id
+                        ? publication with
+                        {
+                            Status = publication.Status with { Lifecycle = MetadataV2LifecycleStatus.Retired }
+                        }
+                        : publication).ToArray()
+            });
+
+            using var retiredAdmin = await _client.GetAsync(url);
+            retiredAdmin.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            (await retiredAdmin.Content.ReadAsByteArrayAsync()).Should().NotEqual("PMTiles"u8.ToArray());
+
+            using var retiredAnonymous = await anonymous.GetAsync(url);
+            retiredAnonymous.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            var latest = _fixture.GetCurrentV2GraphSnapshot();
+            SetGraph(initial.Graph with { Revision = latest.Graph.Revision });
+        }
+    }
+
+    private async Task AssertArchiveDeniedAsync(HttpClient client, HttpMethod method, string url, bool withRange)
+    {
+        using var request = new HttpRequestMessage(method, url);
+        if (withRange)
+        {
+            request.Headers.Range = new RangeHeaderValue(0, 6);
+        }
+
+        using var response = await client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Headers.ETag.Should().BeNull();
+        response.Headers.AcceptRanges.Should().NotContain("bytes");
+        response.Content.Headers.ContentRange.Should().BeNull();
+        if (method == HttpMethod.Get)
+        {
+            var body = await response.Content.ReadAsByteArrayAsync();
+            body.Take(7).SequenceEqual("PMTiles"u8.ToArray()).Should().BeFalse(
+                "a denied proxy response must not return the archive header");
+        }
+    }
+
+    private void SetGraph(MetadataV2Graph graph)
+        => _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>()
+            .SetGraph(graph with { Revision = graph.Revision + 1 }, schema: _fixture.MetadataGraphSchema);
 
     private async Task<string> StartPublishJobAsync()
     {

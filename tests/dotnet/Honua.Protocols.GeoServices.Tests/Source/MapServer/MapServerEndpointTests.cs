@@ -197,6 +197,10 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         layer.MinScale.Should().NotBeNull();
         layer.MaxScale.Should().NotBeNull();
         layer.Extent.Should().NotBeNull();
+        layer.SpatialReference!.Wkid.Should().Be(3857);
+        layer.SourceSpatialReference!.Wkid.Should().Be(4326);
+        layer.Extent!.SpatialReference!.Wkid.Should().Be(3857);
+        layer.Extent.Xmin.Should().BeApproximately(-13692297.3676, 0.1);
         layer.AdvancedQueryCapabilities.Should().NotBeNull();
         layer.AdvancedQueryCapabilities!.SupportsPagination.Should().BeTrue();
         layer.AdvancedQueryCapabilities.SupportsStatistics.Should().BeTrue();
@@ -222,6 +226,9 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         using var document = JsonDocument.Parse(content);
         var root = document.RootElement;
         root.GetProperty("id").GetInt32().Should().Be(dynamicLayerId);
+        root.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
+        root.GetProperty("sourceSpatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+        root.GetProperty("extent").GetProperty("xmin").GetDouble().Should().BeApproximately(-13692297.3676, 0.1);
         root.GetProperty("definitionExpression").GetString().Should().Be("1=1");
         root.GetProperty("drawingInfo").GetProperty("renderer").GetProperty("type").GetString().Should().Be("simple");
         root.GetProperty("fields").GetArrayLength().Should().BeGreaterThan(0);

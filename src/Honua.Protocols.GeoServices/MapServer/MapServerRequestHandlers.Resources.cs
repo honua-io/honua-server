@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
@@ -88,12 +89,17 @@ internal static partial class MapServerEndpoints
             foreach (var layer in visibleLayers)
             {
                 var drawingInfo = ResolveMapServerDrawingInfo(layer.Resource, snapshot);
+                var mapExtent = await ResolveCachedExtentAsync(
+                    service, [layer.Resource],
+                    context.RequestServices.GetRequiredService<ICoordinateTransformService>(),
+                    cancellationToken).ConfigureAwait(false);
                 var response = MapLayerToMapServerLayerResponse(
                     service,
                     layer.Publication,
                     layer.Resource,
                     snapshot,
                     maxRecordCount,
+                    mapExtent,
                     drawingInfo);
 
                 if (HasMapServerGeometry(layer.Resource))

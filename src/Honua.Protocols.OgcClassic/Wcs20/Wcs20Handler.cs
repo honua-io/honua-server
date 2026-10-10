@@ -1411,6 +1411,26 @@ internal sealed partial class Wcs20Handler
         sliceWidth = width ?? baseWidth;
         sliceHeight = height ?? baseHeight;
 
+        // Validate the effective grid for every scaling operator and native export
+        // before either the raster provider or a multidimensional reader allocates it.
+        if (sliceWidth > MaxWcsOutputDimension || sliceHeight > MaxWcsOutputDimension ||
+            (long)sliceWidth * sliceHeight > 16L * 1024L * 1024L)
+        {
+            var locator = new[]
+            {
+                Wcs20Utilities.Parameters.ScaleSize,
+                Wcs20Utilities.Parameters.ScaleFactor,
+                Wcs20Utilities.Parameters.ScaleAxes,
+                Wcs20Utilities.Parameters.ScaleExtent
+            }.FirstOrDefault(parameter => !string.IsNullOrWhiteSpace(GetQueryValue(query, parameter)))
+                ?? Wcs20Utilities.Parameters.CoverageId;
+            error = new WcsParameterError(
+                Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
+                $"Coverage output exceeds the {MaxWcsOutputDimension}-pixel per-axis limit. Select a smaller subset or down-scale the output.",
+                locator);
+            return false;
+        }
+
         if (!TryResolveInterpolation(query, out var resampling, out error))
         {
             return false;
@@ -1889,14 +1909,17 @@ internal sealed partial class Wcs20Handler
         ref int baseWidth,
         ref int baseHeight)
     {
-        if (!IsNativeSubsettingCrs(raster, subsettingCrs) || !TryResolveExtent(raster, out var extent))
+        if (!IsNativeSubsettingCrs(raster, subsettingCrs) || !TryResolveExtent(raster, out var extent) ||
+            // codeql[cs/equality-on-floats]: only an exactly axis-aligned grid can be bounded by envelope proportions
+            (raster.GeoTransform is { Length: >= 6 } transform && (transform[2] != 0 || transform[4] != 0)))
         {
             return;
         }
 
         var fullWidth = extent.XMax - extent.XMin;
         var fullHeight = extent.YMax - extent.YMin;
-        if (fullWidth <= 0 || fullHeight <= 0 || raster.Width <= 0 || raster.Height <= 0)
+        if (!double.IsFinite(fullWidth) || !double.IsFinite(fullHeight) ||
+            fullWidth <= 0 || fullHeight <= 0 || raster.Width <= 0 || raster.Height <= 0)
         {
             return;
         }
@@ -1908,8 +1931,20 @@ internal sealed partial class Wcs20Handler
             return;
         }
 
-        baseWidth = Math.Max(1, (int)Math.Round(raster.Width * (clipWidth / fullWidth), MidpointRounding.AwayFromZero));
-        baseHeight = Math.Max(1, (int)Math.Round(raster.Height * (clipHeight / fullHeight), MidpointRounding.AwayFromZero));
+        // Round each edge outward: a window narrower than N pixels can still
+        // touch N+1 native cells when its edges are not aligned with the grid.
+        var width = Math.Ceiling((Math.Min(clip.MaxX, extent.XMax) - extent.XMin) / fullWidth * raster.Width) -
+            Math.Floor((Math.Max(clip.MinX, extent.XMin) - extent.XMin) / fullWidth * raster.Width);
+        var height = Math.Ceiling((Math.Min(clip.MaxY, extent.YMax) - extent.YMin) / fullHeight * raster.Height) -
+            Math.Floor((Math.Max(clip.MinY, extent.YMin) - extent.YMin) / fullHeight * raster.Height);
+        if (!double.IsFinite(width) || !double.IsFinite(height) ||
+            width < 1 || height < 1 || width > int.MaxValue || height > int.MaxValue)
+        {
+            return;
+        }
+
+        baseWidth = (int)width;
+        baseHeight = (int)height;
     }
 
     // WCS 2.0 Scaling extension coordinator. At most one scaling operator may be
@@ -2134,8 +2169,10 @@ internal sealed partial class Wcs20Handler
             return false;
         }
 
-        var span = (long)high - (long)low + 1;
-        if (span <= 0 || span > int.MaxValue)
+        // Check the floating-point span before narrowing either endpoint. Large
+        // finite coordinates can overflow integer subtraction or casts.
+        var span = high - low + 1;
+        if (!double.IsFinite(span) || span <= 0 || span > int.MaxValue)
         {
             return false;
         }

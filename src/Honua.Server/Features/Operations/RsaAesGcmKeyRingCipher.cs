@@ -1,11 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Xml.Linq;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.XmlEncryption;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Operations;
 
@@ -20,6 +23,38 @@ namespace Honua.Server.Features.Operations;
 internal sealed class RsaAesGcmKeyRingMaterial(X509Certificate2 certificate)
 {
     public X509Certificate2 Certificate { get; } = certificate;
+}
+
+/// <summary>
+/// Composes the Native AOT protection for the shared operation-secret key ring.
+/// </summary>
+internal static class RsaAesGcmKeyRingProtection
+{
+    /// <summary>
+    /// Wraps every new key with <paramref name="certificate"/> and lets the decryptor
+    /// resolve the same certificate when DataProtection reads the ring back.
+    /// </summary>
+    /// <remarks>
+    /// DataProtection never calls the decryptor constructor directly. It writes the
+    /// decryptor's type name into the key XML and later activates it by reflection:
+    /// SimpleActivator looks up <c>.ctor(IServiceProvider)</c> and otherwise falls back to
+    /// a parameterless constructor. The only static reference to the decryptor is a
+    /// <c>typeof</c>, so Native AOT keeps the type but not its constructor metadata, the
+    /// lookup returns null, and every key fails with MissingMethodException. The dynamic
+    /// dependency keeps that constructor reflectable wherever this composition is reachable.
+    /// </remarks>
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(RsaAesGcmKeyRingDecryptor))]
+    public static IDataProtectionBuilder ProtectKeysWithRsaAesGcm(
+        this IDataProtectionBuilder builder,
+        X509Certificate2 certificate)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(certificate);
+        builder.Services.AddSingleton(new RsaAesGcmKeyRingMaterial(certificate));
+        builder.AddKeyManagementOptions(options =>
+            options.XmlEncryptor = new RsaAesGcmKeyRingEncryptor(certificate));
+        return builder;
+    }
 }
 
 /// <summary>

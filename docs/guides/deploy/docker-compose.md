@@ -139,6 +139,23 @@ tells it in advance which ones will refuse: `operations.proposals` and
 `jobs.runner` report `available: false` with `reasonCode: "dependency-unavailable"`
 (or `"license-required"` when Redis is configured but not entitled).
 
+**What "required" means: present and working, not a proven durability policy.**
+The governed control plane and durable jobs need Redis to be configured,
+entitled and connected. They do not need a particular persistence policy (owner
+ruling, 2026-10-10). At startup the server still reads the Redis policy
+(`appendonly`, `appendfsync`, `maxmemory-policy`) and publishes the result in the
+capability manifest as `limits.job.redisDurability.status`. The value is
+`attested`, `unverified` (the policy could not be read, as on managed Redis
+that blocks `CONFIG`) or `not-durable` (the policy was read and is not
+durable). The result never disables `operations.proposals` or `jobs.runner`.
+
+A Redis started with `--appendonly yes --appendfsync everysec --maxmemory-policy
+noeviction` keeps proposals and job state across restarts and reports `attested`.
+A stock `redis:7` image also works. The manifest then reports `not-durable`, and
+a Redis restart can lose recent proposals and job state. If you would rather the server refuse to
+start unless the policy is `attested`, set `Jobs__RequireDurableStore=true`
+(see [Redis durability](troubleshooting.md#redis-durability)).
+
 ### Redis is configured but not entitled
 
 Redis is included with persistent storage, but installing Redis does not grant

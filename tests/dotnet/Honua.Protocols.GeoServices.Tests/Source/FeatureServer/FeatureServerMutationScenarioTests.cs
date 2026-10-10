@@ -341,6 +341,102 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
         await AssertFeatureNameAsync(702, "second");
     }
 
+    [IntegrationTheory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Operation(Operations.BulkCreate, Operations.BulkUpdate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task AddAndUpdateFeatures_NumericBooleanWireValues_PersistBooleansAndPreserveIntegerFields(int initial)
+    {
+        _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field
+        {
+            Name = "active",
+            Type = MetadataV2FieldType.Boolean,
+            Nullable = false
+        });
+        _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field
+        {
+            Name = "rank",
+            Type = MetadataV2FieldType.Integer,
+            Nullable = false
+        });
+
+        // Stock QGIS sends form-encoded GeoServices small-integer Boolean values.
+        var addFeatures = $$$"""[{"attributes":{"name":"typed-add","active":{{{initial}}},"rank":{{{initial}}}},"geometry":{"x":-157.8333,"y":21.3555}}]""";
+        using var addPayload = JsonDocument.Parse(addFeatures);
+        addPayload.RootElement.GetArrayLength().Should().Be(1);
+        using var addForm = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["features"] = addFeatures
+        });
+        using var addedResponse = await _fixture.Client.PostAsync(
+            "/rest/services/test/FeatureServer/0/addFeatures", addForm);
+        var added = await DeserializeEditsAsync(addedResponse);
+        var objectId = added.AddResults.Should().ContainSingle(result => result.Success).Subject.ObjectId!.Value;
+        await AssertPersistedBooleanAsync(objectId, initial);
+        await AssertBooleanQueryAsync(objectId, initial);
+
+        var updated = 1 - initial;
+        var updateFeatures = $$$"""[{"attributes":{"objectid":{{{objectId}}},"active":{{{updated}}},"rank":{{{updated}}}}}]""";
+        using var updatePayload = JsonDocument.Parse(updateFeatures);
+        updatePayload.RootElement.GetArrayLength().Should().Be(1);
+        using var updateForm = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["features"] = updateFeatures
+        });
+        using var updatedResponse = await _fixture.Client.PostAsync(
+            "/rest/services/test/FeatureServer/0/updateFeatures", updateForm);
+        var result = await DeserializeEditsAsync(updatedResponse);
+        result.UpdateResults.Should().ContainSingle(edit => edit.Success && edit.ObjectId == objectId,
+            await updatedResponse.Content.ReadAsStringAsync());
+        await AssertPersistedBooleanAsync(objectId, updated);
+        await AssertBooleanQueryAsync(objectId, updated);
+    }
+
+    private async Task AssertBooleanQueryAsync(long objectId, int expected)
+    {
+        // This common compact point query selects the raw PostGIS JSON response path.
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/test/FeatureServer/0/query?f=json&objectIds={objectId}&outFields=*&returnGeometry=true");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        var booleanField = document.RootElement.GetProperty("fields").EnumerateArray()
+            .Single(field => field.GetProperty("name").GetString() == "active");
+        booleanField.GetProperty("type").GetString().Should().Be("esriFieldTypeSmallInteger");
+        var feature = document.RootElement.GetProperty("features").EnumerateArray().Single();
+        var attributes = feature.GetProperty("attributes");
+        attributes.GetProperty("active").ValueKind.Should().Be(JsonValueKind.Number);
+        attributes.GetProperty("active").GetInt32().Should().Be(expected);
+        attributes.GetProperty("rank").ValueKind.Should().Be(JsonValueKind.Number);
+        attributes.GetProperty("rank").GetInt32().Should().Be(expected);
+        feature.GetProperty("geometry").GetProperty("x").GetDouble().Should().BeApproximately(-157.8333, 1e-10);
+        feature.GetProperty("geometry").GetProperty("y").GetDouble().Should().BeApproximately(21.3555, 1e-10);
+    }
+
+    private async Task AssertPersistedBooleanAsync(long objectId, int expected)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT jsonb_typeof(attributes->'active'), attributes->'active',
+                   jsonb_typeof(attributes->'rank'), (attributes->>'rank')::integer
+            FROM features WHERE layer_id = 0 AND objectid = @objectId;
+            """;
+        command.Parameters.AddWithValue("objectId", objectId);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetString(0).Should().Be("boolean", "persisted attributes must honor the Boolean schema");
+        using var boolean = JsonDocument.Parse(reader.GetString(1));
+        boolean.RootElement.GetBoolean().Should().Be(expected == 1);
+        reader.GetString(2).Should().Be("number", "an Integer field containing 0 or 1 remains numeric");
+        reader.GetInt32(3).Should().Be(expected);
+    }
+
     private async Task<HttpResponseMessage> PostJsonAsync(string path, string json)
     {
         using var content = new StringContent(json, Encoding.UTF8, "application/json");

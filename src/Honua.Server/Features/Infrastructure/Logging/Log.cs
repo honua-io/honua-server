@@ -231,17 +231,19 @@ internal static partial class Log
         ILogger logger, string checkName, string status, double elapsedMs);
 
     /// <summary>
-    /// Records that readiness observed an unattested durable job substrate (honua-server#4502).
-    /// This is a DEGRADATION, not a readiness failure: jobs still run, they are just not durable,
-    /// and the health-check roll-up plus the capability manifest carry the operator-facing
-    /// diagnosis. Typed so the cause is a structured field rather than an interpolated string.
+    /// Records the Redis durability attestation outcome that readiness observed
+    /// (honua-server#4502). Information only (owner ruling 2026-10-10): the governed control
+    /// plane and the durable job runner stay available, and the capability manifest publishes the
+    /// outcome as <c>limits.job.redisDurability</c>. Debug level because it repeats per probe;
+    /// the startup log line is the operator-facing record. Typed so the cause is a structured
+    /// field rather than an interpolated string.
     /// </summary>
     /// <param name="logger">The logger instance.</param>
-    /// <param name="cause">The classified reason durability was not attested.</param>
+    /// <param name="cause">The attestation outcome cause.</param>
     [LoggerMessage(
         EventId = 4021,
-        Level = LogLevel.Information,
-        Message = "Health check executed: DurableJobSubstrate = Degraded ({Cause}); jobs remain available but are not durable")]
+        Level = LogLevel.Debug,
+        Message = "Health check executed: Redis durability not attested ({Cause}); informational, the control plane and job runner remain available")]
     public static partial void DurableJobSubstrateDegraded(
         ILogger logger, Honua.Core.Features.Capabilities.DurableJobSubstrateCause cause);
 

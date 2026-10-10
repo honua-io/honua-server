@@ -138,9 +138,25 @@ az functionapp config container set --name honua-prod --resource-group honua \
 
 **Redis is a hard dependency for the ops control plane.** Durable jobs, queued imports, deploy workflows, and the operation gateway are all backed by Redis (ElastiCache / Azure Cache for Redis). Without it these surfaces fail closed — job/import/workflow endpoints return `503` rather than silently running node-local work — and the ops-findings recommended-action gateway reports a degraded, unavailable state. Provision Redis for any environment that runs jobs, imports, workflows, or the deploy control plane; single-host dev/test via Docker Compose is the only tier where you can skip it.
 
-**Provision it for durability, not just reachability.** The server inspects the Redis persistence policy once at startup and accepts the durability attestation only when `appendonly` is `yes` (with `INFO persistence` reporting `aof_enabled:1`), `appendfsync` is `everysec` or `always`, and `maxmemory-policy` is `noeviction`. Enable AOF on ElastiCache, or data persistence on an Azure Cache for Redis tier that supports it. A **rejected** attestation degrades rather than stopping the server: jobs keep running, the server logs one warning naming the typed cause and its remediation, the `redis` health entry reports `Degraded`, and the capability manifest withholds `jobs.runner` instead of advertising durability the deployment cannot provide. `/healthz/ready` stays `Ready`, so an AOF-less cache does not take every instance out of the load balancer. Set `Jobs__RequireDurableStore=true` if you would rather the process refuse to start at all, in which case a rejection exits with a single typed startup error.
+**Managed Redis is supported: AWS ElastiCache, Amazon MemoryDB and Azure Cache for Redis.** Honua needs Redis to be reachable and working. A particular persistence policy is not required (owner ruling, 2026-10-10). On ECS and Lambda, point `ConnectionStrings__redis` at the ElastiCache or MemoryDB endpoint, with TLS and auth as the cluster requires. Also supply the operation key-ring certificate, which every Redis-backed non-development deployment needs (`Operations__SecretChannel__KeyRingCertificatePath`, or `Operations__SecretChannel__KeyRingCertificatePkcs12` from Secrets Manager on Lambda).
 
-This matters most on **serverless** substrates, where a frozen or torn-down process keeps no state of its own: an unattested Redis there means acknowledged job state has no durable home at all.
+**Durability is a property of your Redis deployment.** Choose it to match how much acknowledged job and proposal state you can afford to lose:
+
+| Service | Durability you can rely on |
+|---|---|
+| Amazon MemoryDB | A durable Multi-AZ transaction log; acknowledged writes survive node failure |
+| ElastiCache (Redis OSS / Valkey) | Replication with Multi-AZ failover plus optional snapshots; Redis 7 offers no AOF, so the last writes before a failure can be lost |
+| Self-managed Redis | `appendonly yes`, `appendfsync everysec` (or `always`), `maxmemory-policy noeviction` |
+
+At startup the server tries to read the policy (`INFO persistence` plus `CONFIG GET` for `appendonly`, `appendfsync` and `maxmemory-policy`). It publishes the result as information, never as a gate. The capability manifest (`GET /api/v1/capabilities/manifest`) shows it under `limits.job.redisDurability`:
+
+- `status: "attested"`: the policy was read and is durable.
+- `status: "unverified"`, `cause: "RedisAttestationUnavailable"`: the policy could not be read. ElastiCache and MemoryDB block `CONFIG`, so this is what a managed cell reports. No action is needed.
+- `status: "not-durable"`, with `RedisPersistenceDisabled`, `RedisWritePolicyUnsafe` or `RedisEvictionPolicyUnsafe`: the policy was read and is not durable.
+
+In all three cases `operations.proposals` and `jobs.runner` report `available: true`, `limits.job.durableJobRuntimeAvailable` is `true`, and the `redis` health entry stays `Healthy` with the outcome in its data. Those capabilities read `dependency-unavailable` only when Redis is absent or did not connect at startup, and `license-required` when it is unentitled. `Jobs__RequireDurableStore=true` makes the server refuse to start unless the status is `attested`. ElastiCache and MemoryDB can never satisfy it, so leave it unset there.
+
+On **serverless** substrates a frozen or torn-down process keeps no state of its own, so Redis is the only home for acknowledged job and proposal state. Choose MemoryDB, or accept ElastiCache's replication-and-snapshot durability knowingly.
 
 **The local batch-compute backends are single-host only.** The in-process `local` backend and the child-process `honua-local-process` pool track launched jobs in an in-process registry that cannot survive a host restart or be observed from another node. They are the zero-dependency executors for single-host / air-gapped deployments; they **cannot** work on:
 
@@ -161,7 +177,7 @@ against a deployed environment.
 
 - **Serverless cold starts time out** — use the `-aot` image variants and confirm `HONUA_SKIP_MIGRATIONS=true`; migrations during cold start are the usual culprit.
 - **Job/import endpoints return `503`** — durable jobs, queued imports, and workflows require Redis (ElastiCache / Azure Cache for Redis); serverless patterns without Redis don't host them.
-- **Logs warn "Redis durability attestation was REJECTED"** — Redis is reachable but its persistence policy does not protect acknowledged writes. Jobs still run, non-durably; fix the policy per the remediation in the warning (see the durability paragraph above).
+- **Logs show "Redis durability attestation: unverified" or "not-durable"**: this is information. The governed control plane and jobs stay enabled. `unverified` is expected on ElastiCache and MemoryDB, which block `CONFIG`. `not-durable` means the policy was read and does not protect acknowledged writes. Change it only if you need that durability (see the durability paragraphs above).
 - **Admin calls return 401** — confirm the secret store value actually reaches the container env as `HONUA_ADMIN_PASSWORD` and requests send it in the `X-API-Key` header.
 
 ## Next steps

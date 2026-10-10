@@ -590,7 +590,7 @@ internal static partial class SceneEndpoints
         headers[HeaderNames.AcceptRanges] = "bytes";
     }
 
-    private static void SetDynamicSceneCacheHeaders(
+    internal static void SetDynamicSceneCacheHeaders(
         HttpContext context,
         string etag,
         TimeSpan maxAge,

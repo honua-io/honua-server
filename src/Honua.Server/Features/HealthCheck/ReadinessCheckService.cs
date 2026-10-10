@@ -69,14 +69,12 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         var currentReasonCode = ReadinessReasonCodes.DatabaseUnavailable;
         try
         {
-            // Durable job substrate (honua-server#4502): an unattested Redis is healthy-but-degraded,
-            // exactly like the cache fallback and in-memory feature-change event paths below — NOT
-            // not-ready. Depooling every node of a fleet whose Redis simply has AOF off takes the
-            // whole deployment down to protect job durability, which is strictly worse than serving
-            // reads, writes and jobs with durability unadvertised. The degradation is reported on
-            // the health-check roll-up (RedisHealthCheck -> Degraded, with the typed cause) and on
-            // the capability manifest (which withholds 'jobs.runner'); Jobs:RequireDurableStore=true
-            // is the opt-in for operators who would rather the process refuse to start at all.
+            // Redis durability (honua-server#4502, owner ruling 2026-10-10): the attestation
+            // outcome is information and never affects readiness. Depooling every node whose
+            // Redis does not expose CONFIG (managed Redis) or has AOF off would take the whole
+            // deployment down for a property the operator owns. The outcome is published on the
+            // capability manifest (limits.job.redisDurability) and the Redis health-check data;
+            // Jobs:RequireDurableStore=true is the opt-in to refuse startup instead.
             if (_durableJobSubstrate.RedisEntitled
                 && _durableJobSubstrate.RedisDurabilityAttestation is null
                 && _durableJobSubstrate.RedisDurabilityFailure is { } durabilityCause)
