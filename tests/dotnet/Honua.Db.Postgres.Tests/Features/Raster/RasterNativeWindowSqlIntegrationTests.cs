@@ -123,7 +123,7 @@ public sealed class RasterNativeWindowSqlIntegrationTests(PostgresFixture fixtur
         reader.GetDouble(13).Should().Be(0);
     }
 
-    [IntegrationFact]
+    [IntegrationTest]
     public async Task TryWarp_MosaicCoverage_DoesNotOccludeOtherSourcesWithUndeclaredZeroPadding()
     {
         await using var connection = await fixture.GetConnectionAsync();
