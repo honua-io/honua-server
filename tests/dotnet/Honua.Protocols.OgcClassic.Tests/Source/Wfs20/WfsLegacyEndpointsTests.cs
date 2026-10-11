@@ -5,6 +5,9 @@ using System.Net;
 using System.Text;
 using System.Xml.Linq;
 using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Protocols.Ogc.Classic.Wfs20.Models;
+using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -20,6 +23,26 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WebAppFixture>
     public WfsLegacyEndpointsTests(WebAppFixture fixture)
     {
         _fixture = fixture;
+    }
+
+    [UnitTheory]
+    [InlineData("DuckDB")]
+    [InlineData("MySQL")]
+    [InlineData("MariaDB")]
+    public void Wfs11_GetCapabilities_ReadOnlyProvider_AdvertisesQueryOnly(string provider)
+    {
+        // These are the exact capability contracts returned by the shipping
+        // DuckDB and MySQL/MariaDB feature readers registered in the WFS runtime.
+        var capabilities = provider == "DuckDB"
+            ? FeatureProviderCapabilities.ReadOnlyAnalytical
+            : FeatureProviderCapabilities.ReadOnlyMySql;
+        var content = Wfs20Handler.BuildWfs11Capabilities(
+            "https://owned.example/wfs", Array.Empty<FeatureType>(), capabilities.Edits);
+        XNamespace wfs = "http://www.opengis.net/wfs";
+        var featureTypeList = XElement.Parse(content).Element(wfs + "FeatureTypeList")!;
+        var operations = featureTypeList.Element(wfs + "Operations")!;
+        operations.Elements(wfs + "Operation").Select(element => element.Value)
+            .Should().Equal("Query");
     }
 
     [IntegrationTest]
