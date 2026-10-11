@@ -17,10 +17,11 @@ namespace Honua.Core.Features.Metadata.Caching;
 /// object reference across threads and requests is safe.
 /// </summary>
 /// <remarks>
-/// Staleness is bounded by a short, configurable TTL (<see cref="CacheOptions.MetadataGraphTtl"/>);
-/// this is what keeps multi-node deployments correct because a catalog write on one node does not
-/// reach another node's in-process cache. Same-node writes call <see cref="Invalidate(string)"/> for
-/// immediate freshness. Concurrent misses are coalesced (single-flight) so a TTL expiry under load
+/// Same-node writes call <see cref="Invalidate(string)"/> for immediate freshness. In multi-node
+/// deployments with Redis composed, the host decorates this cache with a Redis pub/sub invalidator
+/// that broadcasts each write so every node drops its snapshot too. Staleness is still bounded by a
+/// short, configurable TTL (<see cref="CacheOptions.MetadataGraphTtl"/>) as the backstop for a lost
+/// broadcast or a Redis-off node. Concurrent misses are coalesced (single-flight) so a TTL expiry under load
 /// triggers a single reload rather than a stampede.
 /// </remarks>
 public sealed class MetadataV2GraphSnapshotCache : IMetadataV2GraphCacheInvalidator

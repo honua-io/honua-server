@@ -343,7 +343,9 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
 
         // Drop the shared read-through snapshot cache for this environment so read surfaces
         // (MCP tools, REST/OGC metadata) observe the committed mutation immediately on this node
-        // instead of waiting out the TTL. Other nodes remain TTL-bounded. This is the canonical
+        // instead of waiting out the TTL. When Redis is composed the invalidator also broadcasts to
+        // every other node (RedisMetadataV2GraphCacheInvalidator); without it, other nodes remain
+        // TTL-bounded. This is the canonical
         // catalog write, so every mutation path (admin publish, migration/import, release
         // reconcilers) invalidates through here. (mcp A2 hot-path caching.)
         _cacheInvalidator?.Invalidate(_environment);
