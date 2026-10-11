@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
@@ -290,6 +291,110 @@ public sealed class GenerateServiceAreasExecuteTests(GenerateServiceAreasExecute
         fixture.Requests.Should().BeEmpty();
     }
 
+    [IntegrationTheory]
+    [InlineData("GPServer", "env:outSR", "3857")]
+    [InlineData("NAServer", "env:outSR", "3857")]
+    [InlineData("GPServer", "env:outSR", "{\"latestWkid\":3857}")]
+    [InlineData("NAServer", "env:outSR", "{\"latestWkid\":3857}")]
+    [InlineData("GPServer", "context", "{\"outSR\":3857}")]
+    [InlineData("NAServer", "context", "{\"outSR\":3857}")]
+    [InlineData("GPServer", "context", "{\"outSR\":{\"wkid\":3857},\"extent\":null}")]
+    [InlineData("NAServer", "context", "{\"outSR\":{\"wkid\":3857},\"extent\":null}")]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/GenerateServiceAreas/execute")]
+    public async Task Execute_GpOutputSpatialReference_MatchesCanonicalProjectedPolygons(string service, string key, string value)
+    {
+        var parameters = Inputs();
+        parameters[key] = value;
+        fixture.Requests.Clear();
+        using var actual = await ExecuteAsync(service, true, parameters);
+        var projectedRequest = fixture.Requests.Single();
+        projectedRequest.OutSrid.Should().Be(3857);
+        projectedRequest.InSrid.Should().Be(4326);
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["facilities"] = Facilities,
+            ["defaultBreaks"] = "5,10,15",
+            ["travelMode"] = "walking",
+            ["outSR"] = "3857",
+        });
+        using var response = await fixture.Client.PostAsync($"/rest/services/{WebAppFixture.TestServiceId}/NAServer/ServiceArea/solveServiceArea", content);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var canonical = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        projectedRequest.Should().BeEquivalentTo(fixture.Requests.Last());
+        var polygons = actual.RootElement.GetProperty("results")[0].GetProperty("value");
+        polygons.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
+        var features = polygons.GetProperty("features");
+        var expected = canonical.RootElement.GetProperty("saPolygons").GetProperty("features");
+        features.GetArrayLength().Should().Be(6);
+        for (var i = 0; i < features.GetArrayLength(); i++)
+        {
+            features[i].GetProperty("geometry").GetRawText().Should().Be(expected[i].GetProperty("geometry").GetRawText());
+        }
+        var first = features[0].GetProperty("geometry").GetProperty("rings")[0][0];
+        first[0].GetDouble().Should().BeApproximately(-17568236.902113102, 0.001);
+        first[1].GetDouble().Should().BeApproximately(2428516.23997281, 0.001);
+    }
+
+    [IntegrationTheory]
+    [InlineData("GPServer")]
+    [InlineData("NAServer")]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    [Endpoint("GET /rest/services/{serviceId}/NAServer/GenerateServiceAreas/execute")]
+    public async Task Execute_MatchingOutputSpatialReferenceAliases_AreHonored(string service)
+    {
+        var parameters = Inputs();
+        parameters["outSR"] = "{\"wkid\":102100}";
+        parameters["env:outSR"] = "3857";
+        parameters["context"] = "{\"outSR\":3857}";
+        fixture.Requests.Clear();
+        using var result = await ExecuteAsync(service, false, parameters);
+        result.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        fixture.Requests.Single().OutSrid.Should().Be(3857);
+    }
+
+    [IntegrationTheory]
+    [InlineData("GPServer")]
+    [InlineData("NAServer")]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/GenerateServiceAreas/execute")]
+    public async Task Execute_MalformedConflictingOrUnsupportedGpEnvironment_NeverSolves(string service)
+    {
+        Dictionary<string, string>[] invalid =
+        [
+            new() { ["env:outSR"] = "invalid" },
+            new() { ["env:outSR"] = "-1" },
+            new() { ["env:outSR"] = "{\"wkid\":3857.5}" },
+            new() { ["context"] = "not-json" },
+            new() { ["context"] = "[]" },
+            new() { ["context"] = "{\"outSR\":true}" },
+            new() { ["context"] = "{\"outSR\":{\"wkt\":\"unsupported\"}}" },
+            new() { ["context"] = "{\"outSR\":3857}", ["env:outSR"] = "4326" },
+            new() { ["env:outSR"] = "3857", ["outSR"] = "4326" },
+            new() { ["context"] = "{\"outSR\":3857}", ["outSR"] = "4326" },
+            new() { ["context"] = "{\"processSR\":3857}" },
+            new() { ["context"] = "{\"extent\":{\"xmin\":0}}" },
+            new() { ["context"] = "{\"parallelProcessingFactor\":\"50%\"}" },
+            new() { ["env:processSR"] = "3857" },
+        ];
+        foreach (var environment in invalid)
+        {
+            var parameters = Inputs();
+            foreach (var entry in environment)
+            {
+                parameters[entry.Key] = entry.Value;
+            }
+            fixture.Requests.Clear();
+            using var result = await ExecuteAsync(service, true, parameters);
+            result.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
+            fixture.Requests.Should().BeEmpty();
+        }
+    }
+
     private static Dictionary<string, string> Inputs() => new()
     {
         ["f"] = "json",
@@ -350,10 +455,36 @@ public sealed class GenerateServiceAreasExecuteTestsFixture : IAsyncLifetime
         public string Name => "test";
         public RoutingProviderCapabilities Capabilities { get; set; } = new() { SupportedTravelModes = ["driving", "walking"] };
         public bool ReturnNoPolygons { get; set; }
-        public Task<ServiceAreaSolveResult> SolveServiceAreaAsync(ServiceAreaSolveRequest request, CancellationToken cancellationToken = default)
+        public async Task<ServiceAreaSolveResult> SolveServiceAreaAsync(ServiceAreaSolveRequest request, CancellationToken cancellationToken = default)
         {
             requests.Enqueue(request);
-            return ReturnNoPolygons ? Task.FromResult(new ServiceAreaSolveResult([])) : _canonical.SolveServiceAreaAsync(request, cancellationToken);
+            if (ReturnNoPolygons)
+            {
+                return new ServiceAreaSolveResult([]);
+            }
+            var result = await _canonical.SolveServiceAreaAsync(request, cancellationToken);
+            if (request.OutSrid != 3857)
+            {
+                return result;
+            }
+            return new ServiceAreaSolveResult(result.Polygons.Select(polygon => polygon with
+            {
+                GeometryGeoJson = ProjectPolygon(polygon.GeometryGeoJson),
+            }).ToArray());
+        }
+
+        private static string ProjectPolygon(string geoJson)
+        {
+            var geometry = JsonNode.Parse(geoJson)!;
+            foreach (var point in geometry["coordinates"]!.AsArray().SelectMany(ring => ring!.AsArray()))
+            {
+                var coordinate = point!.AsArray();
+                var longitude = coordinate[0]!.GetValue<double>();
+                var latitude = coordinate[1]!.GetValue<double>();
+                coordinate[0] = 6378137 * longitude * Math.PI / 180;
+                coordinate[1] = 6378137 * Math.Log(Math.Tan(Math.PI / 4 + latitude * Math.PI / 360));
+            }
+            return geometry.ToJsonString();
         }
         public Task<RouteSolveResult> SolveRouteAsync(RouteSolveRequest request, CancellationToken cancellationToken = default) => _canonical.SolveRouteAsync(request, cancellationToken);
         public Task<ClosestFacilitySolveResult> SolveClosestFacilityAsync(ClosestFacilitySolveRequest request, CancellationToken cancellationToken = default) => _canonical.SolveClosestFacilityAsync(request, cancellationToken);

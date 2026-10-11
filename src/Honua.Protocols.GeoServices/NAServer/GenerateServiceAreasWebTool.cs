@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.GPServer;
@@ -25,7 +26,7 @@ internal static class GenerateServiceAreasWebTool
     private static readonly HashSet<string> AllowedParameters = new(StringComparer.OrdinalIgnoreCase)
     {
         "f", "token", "Facilities", "Break_Values", "defaultBreaks", "Break_Units",
-        "Travel_Direction", "travelDirection", "Travel_Mode", "travelMode", "inSR", "outSR",
+        "Travel_Direction", "travelDirection", "Travel_Mode", "travelMode", "inSR", "outSR", "env:outSR", "context",
         "Point_Barriers", "Line_Barriers", "Polygon_Barriers", "barriers", "polylineBarriers", "polygonBarriers",
     };
 
@@ -52,8 +53,34 @@ internal static class GenerateServiceAreasWebTool
 
         try
         {
+            var translated = TranslateParameters(parameters);
+            var environmentError = GPServerEndpoints.TryParseEnvControls(context,
+                context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(GenerateServiceAreasWebTool)),
+                parameters, out var environment);
+            if (environmentError is not null)
+            {
+                return environmentError;
+            }
+
+            if (environment.ProcessSr is not null || environment.Workspace is not null || environment.OverwriteOutput is not null)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "GenerateServiceAreas supports only output spatial-reference GP environment controls.");
+            }
+
+            if (environment.OutSr is { } outputSrid)
+            {
+                if (translated.TryGetValue("outSR", out var explicitOutSr) && !string.IsNullOrWhiteSpace(explicitOutSr) &&
+                    SpatialReferenceExtensions.NormalizeWebMercatorSrid(NAServerParameterTranslation.ParseOutSr(translated)) !=
+                    SpatialReferenceExtensions.NormalizeWebMercatorSrid(outputSrid))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context, "outSR conflicts with the GP output spatial-reference control.");
+                }
+
+                translated["outSR"] = outputSrid.ToString(CultureInfo.InvariantCulture);
+            }
+
             var request = NAServerParameterTranslation.BuildServiceAreaSolveRequest(
-                TranslateParameters(parameters), NAServerInputCaps.FromConfiguration(configuration));
+                translated, NAServerInputCaps.FromConfiguration(configuration));
             var facilities = ReadFacilityIdentities(parameters, request.Facilities.Count);
             if (!capabilities.SupportedTravelDirections.Contains(request.TravelDirection))
             {

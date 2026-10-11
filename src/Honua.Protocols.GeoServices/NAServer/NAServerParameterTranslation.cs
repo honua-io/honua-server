@@ -895,7 +895,7 @@ internal static class NAServerParameterTranslation
     /// Reads the output spatial reference from <c>outSR</c>. Accepts a bare WKID or a
     /// spatial-reference JSON object (<c>{ "wkid": 3857 }</c>). Defaults to 4326.
     /// </summary>
-    private static int ParseOutSr(IReadOnlyDictionary<string, string> parameters)
+    internal static int ParseOutSr(IReadOnlyDictionary<string, string> parameters)
         => ParseSpatialReference(parameters, "outSR") ?? DefaultSrid;
 
     /// <summary>
