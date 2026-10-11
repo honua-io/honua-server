@@ -99,10 +99,14 @@ public sealed class PortalTokenIssuerTests
 
         validation.Should().NotBeNull();
         validation!.Principal.FindFirstValue(ClaimTypes.Name).Should().Be("alice");
-        logger.ReceivedCalls()
+        var loggedEventIds = logger.ReceivedCalls()
             .Where(call => call.GetMethodInfo().Name == nameof(ILogger.Log))
             .Select(call => call.GetArguments())
-            .Should().NotContain(arguments => arguments[1] is EventId { Id: 7003 });
+            .Select(arguments => arguments.Length > 1 ? arguments[1] : null)
+            .OfType<EventId>()
+            .Select(eventId => eventId.Id)
+            .ToArray();
+        loggedEventIds.Should().NotContain(7003);
     }
 
     [UnitTest]
