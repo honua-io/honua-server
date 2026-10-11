@@ -55,6 +55,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresRasterStore> _logger;
     private readonly IDatabaseSchemaGuard _schemaGuard;
+    private readonly int _maximumStatisticsSampleSlots;
     private readonly string _rasterDataTable;
     private readonly string _rasterStatisticsTable;
     private readonly string _rasterLayerStatisticsTable;
@@ -68,11 +69,18 @@ internal sealed class PostgresRasterStore : IRasterStore
         IAdoNetDatabaseConnectionProvider connectionProvider,
         ILogger<PostgresRasterStore> logger,
         IDatabaseSchemaGuard schemaGuard,
-        string? schemaName = null)
+        string? schemaName = null,
+        PostgresRasterStatisticsOptions? statisticsOptions = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _schemaGuard = schemaGuard ?? throw new ArgumentNullException(nameof(schemaGuard));
+        _maximumStatisticsSampleSlots = statisticsOptions?.MaxDenseSampleSlots
+            ?? PostgresRasterStatisticsOptions.MaximumDenseSampleSlots;
+        if (_maximumStatisticsSampleSlots is < 1 or > PostgresRasterStatisticsOptions.MaximumDenseSampleSlots)
+        {
+            throw new ArgumentOutOfRangeException(nameof(statisticsOptions));
+        }
 
         _rasterDataTable = SchemaSearchPath.QualifyTable("raster_data", schemaName);
         _rasterStatisticsTable = SchemaSearchPath.QualifyTable("raster_statistics", schemaName);
@@ -3280,11 +3288,48 @@ internal sealed class PostgresRasterStore : IRasterStore
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandTimeout = StatisticsComputeTimeoutSeconds;
-        command.CommandText = $"""
+        command.CommandText = CreateMosaicStatisticsCommandText(mergeStrategy);
+        AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@rasterIds", rasterIds);
+        AddParameter(command, "@maximumStatisticsSampleSlots", _maximumStatisticsSampleSlots);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var statistics = new List<RasterStatistics>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (!reader.GetBoolean(0))
+            {
+                throw new RasterStatisticsBudgetExceededException(_maximumStatisticsSampleSlots);
+            }
+
+            // The left join retains allocation status for an empty or rejected mosaic.
+            if (reader.IsDBNull(1))
+            {
+                continue;
+            }
+
+            statistics.Add(new RasterStatistics
+            {
+                Band = reader.GetInt32(1),
+                MinValue = reader.IsDBNull(2) ? null : reader.GetDouble(2),
+                MaxValue = reader.IsDBNull(3) ? null : reader.GetDouble(3),
+                MeanValue = reader.IsDBNull(4) ? null : reader.GetDouble(4),
+                StandardDeviation = reader.IsDBNull(5) ? null : reader.GetDouble(5),
+                ValidPixelCount = reader.IsDBNull(6) ? 0 : reader.GetInt64(6),
+                NoDataPixelCount = 0
+            });
+        }
+
+        return statistics;
+    }
+
+    // Also used by the provider integration test to inspect the actual rejected execution plan.
+    internal string CreateMosaicStatisticsCommandText(RasterMergeStrategy mergeStrategy)
+        => $"""
             WITH requested AS (
                 SELECT unnest(@rasterIds) AS raster_id
             ),
-            source AS (
+            source AS MATERIALIZED (
                 SELECT raster AS rast,
                        id,
                        created_at,
@@ -3293,31 +3338,27 @@ internal sealed class PostgresRasterStore : IRasterStore
                 WHERE layer_id = @layerId
                   AND id IN (SELECT raster_id FROM requested)
             ),
+            {RasterStatisticsAllocationSql.CreateCtes()},
             merged AS (
                 SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
-                FROM source
+                FROM admitted_source
                 WHERE rast IS NOT NULL
             )
-            SELECT band,
-                   (stats).min AS min_value,
-                   (stats).max AS max_value,
-                   (stats).mean AS mean_value,
-                   (stats).stddev AS std_dev,
-                   (stats).count AS valid_count
-            FROM (
+            SELECT allocation.admitted, summary.band,
+                   (summary.stats).min AS min_value,
+                   (summary.stats).max AS max_value,
+                   (summary.stats).mean AS mean_value,
+                   (summary.stats).stddev AS std_dev,
+                   (summary.stats).count AS valid_count
+            FROM allocation
+            LEFT JOIN LATERAL (
                 SELECT generate_series(1, ST_NumBands(rast)) AS band,
                        ST_SummaryStats(rast, generate_series(1, ST_NumBands(rast))) AS stats
                 FROM merged
                 WHERE rast IS NOT NULL
-            ) sub
-            ORDER BY band
+            ) summary ON TRUE
+            ORDER BY summary.band
             """;
-        AddParameter(command, "@layerId", layerId);
-        AddParameter(command, "@rasterIds", rasterIds);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        return await ReadStatisticsRowsAsync(reader, cancellationToken, hasNoDataColumn: false).ConfigureAwait(false);
-    }
 
     private static async Task<List<RasterStatistics>> ReadStatisticsRowsAsync(
         DbDataReader reader,

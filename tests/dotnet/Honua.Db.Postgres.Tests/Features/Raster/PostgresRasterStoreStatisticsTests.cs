@@ -4,6 +4,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Linq;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -297,12 +298,366 @@ public sealed class PostgresRasterStoreStatisticsTests(PostgresFixture fixture)
         }
     }
 
-    private PostgresRasterStore CreateStore(string schemaName)
+    [IntegrationTheory]
+    [InlineData(RasterMergeStrategy.Newest)]
+    [InlineData(RasterMergeStrategy.Oldest)]
+    [InlineData(RasterMergeStrategy.Average)]
+    [InlineData(RasterMergeStrategy.Max)]
+    [InlineData(RasterMergeStrategy.Min)]
+    public async Task GetMosaicStatisticsAsync_WideGapRejectsBeforeUnionAndReleasesTransaction(RasterMergeStrategy strategy)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreStatisticsTests));
+        try
+        {
+            await CreateRasterTablesAsync(schemaName);
+            await CoreMigrationTestFixture.ApplyRasterLayerStatisticsAsync(fixture, schemaName);
+            var west = await InsertConstantRasterAsync(schemaName, "west", 10, 0);
+            var far = await InsertConstantRasterAsync(schemaName, "far", 30, 200_000_000);
+            var store = CreateStore(schemaName);
+
+            var compute = () => store.GetMosaicStatisticsAsync(LayerId, [west, far], strategy);
+            await compute.Should().ThrowAsync<RasterStatisticsBudgetExceededException>();
+            (await CountAsync(schemaName, "SELECT COUNT(*) FROM raster_layer_statistics")).Should().Be(0);
+
+            // Inspect exactly the SQL used in production, not an alternate simulated guard.
+            await using (var connection = await fixture.GetConnectionAsync(schemaName))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "EXPLAIN (ANALYZE, FORMAT JSON) " + store.CreateMosaicStatisticsCommandText(strategy);
+                command.Parameters.AddWithValue("layerId", LayerId);
+                command.Parameters.AddWithValue("rasterIds", new[] { west, far });
+                command.Parameters.AddWithValue("maximumStatisticsSampleSlots", PostgresRasterStatisticsOptions.MaximumDenseSampleSlots);
+                using var plan = JsonDocument.Parse((string)(await command.ExecuteScalarAsync())!);
+                var admittedScans = PlanNodes(plan.RootElement[0].GetProperty("Plan"))
+                    .Where(node => node.TryGetProperty("CTE Name", out var name) && name.GetString() == "admitted_source")
+                    .ToArray();
+                admittedScans.Should().NotBeEmpty();
+                admittedScans.Should().OnlyContain(node => node.GetProperty("Actual Rows").GetDouble() == 0,
+                    "the aggregate must receive zero rows before any per-row alignment or ST_Union allocation");
+            }
+
+            var east = await InsertConstantRasterAsync(schemaName, "east", 30, 2);
+            var admitted = await store.GetMosaicStatisticsAsync(LayerId, [west, east], strategy);
+            admitted.Should().ContainSingle();
+            admitted[0].ValidPixelCount.Should().Be(8);
+            admitted[0].MinValue.Should().Be(10);
+            admitted[0].MaxValue.Should().Be(30);
+            admitted[0].MeanValue.Should().Be(20);
+            admitted[0].StandardDeviation.Should().Be(10);
+            (await CountAsync(schemaName, "SELECT COUNT(*) FROM raster_layer_statistics")).Should().Be(1);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(RasterMergeStrategy.Newest, 10, 30, 25, 75)]
+    [InlineData(RasterMergeStrategy.Oldest, 0, 10, 7.5, 18.75)]
+    [InlineData(RasterMergeStrategy.Average, 10, 20, 16.25, 17.1875)]
+    [InlineData(RasterMergeStrategy.Max, 10, 30, 25, 75)]
+    [InlineData(RasterMergeStrategy.Min, 0, 10, 7.5, 18.75)]
+    public async Task GetMosaicStatisticsAsync_AdmittedOverlapRetainsMergeNoDataAndValidZero(
+        RasterMergeStrategy strategy, double minimum, double maximum, double mean, double variance)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreStatisticsTests));
+        try
+        {
+            await CreateRasterTablesAsync(schemaName);
+            await CoreMigrationTestFixture.ApplyRasterLayerStatisticsAsync(fixture, schemaName);
+            var west = await InsertConstantRasterAsync(schemaName, "west", 10, 0);
+            var east = await InsertConstantRasterAsync(schemaName, "east", 30, 0);
+            await using (var connection = await fixture.GetConnectionAsync(schemaName))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = """
+                    UPDATE raster_data SET raster = ST_SetBandNoDataValue(raster, 1, -9999);
+                    UPDATE raster_data SET raster = ST_SetValue(raster, 1, 2, 1, 0),
+                           acquisition_date = '2024-01-01' WHERE id = @west;
+                    UPDATE raster_data SET raster = ST_SetValue(raster, 1, 1, 1, -9999),
+                           acquisition_date = '2024-01-02' WHERE id = @east;
+                    """;
+                command.Parameters.AddWithValue("west", west);
+                command.Parameters.AddWithValue("east", east);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var result = await CreateStore(schemaName).GetMosaicStatisticsAsync(LayerId, [west, east], strategy);
+            result.Should().ContainSingle();
+            result[0].ValidPixelCount.Should().Be(4);
+            result[0].MinValue.Should().Be(minimum);
+            result[0].MaxValue.Should().Be(maximum);
+            result[0].MeanValue.Should().BeApproximately(mean, 1e-7);
+            result[0].StandardDeviation.Should().BeApproximately(Math.Sqrt(variance), 1e-7);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(71, false)]
+    [InlineData(72, true)]
+    public async Task GetMosaicStatisticsAsync_BudgetCountsEveryBandAndAdmitsEquality(int limit, bool expectedAdmission)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreStatisticsTests));
+        try
+        {
+            await CreateRasterTablesAsync(schemaName);
+            await CoreMigrationTestFixture.ApplyRasterLayerStatisticsAsync(fixture, schemaName);
+            var west = await InsertThreeBandRasterAsync(schemaName, "west", 10, 20, 30, 0);
+            var east = await InsertThreeBandRasterAsync(schemaName, "east", 30, 40, 50, 2);
+            var store = CreateStore(schemaName, limit);
+            if (!expectedAdmission)
+            {
+                var compute = () => store.GetMosaicStatisticsAsync(LayerId, [west, east], RasterMergeStrategy.Newest);
+                await compute.Should().ThrowAsync<RasterStatisticsBudgetExceededException>();
+                (await CountAsync(schemaName, "SELECT COUNT(*) FROM raster_layer_statistics")).Should().Be(0);
+            }
+            else
+            {
+                var result = await store.GetMosaicStatisticsAsync(LayerId, [west, east], RasterMergeStrategy.Newest);
+                result.Should().HaveCount(3);
+                result.Select(band => band.MeanValue).Should().Equal(20, 30, 40);
+                result.Should().OnlyContain(band => band.ValidPixelCount == 8 && band.StandardDeviation == 10);
+                // A persisted snapshot remains available even when a later operator lowers the limit.
+                var cached = await CreateStore(schemaName, 1).GetMosaicStatisticsAsync(LayerId, [west, east], RasterMergeStrategy.Newest);
+                cached.Should().BeEquivalentTo(result);
+            }
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("0", "1", "0")]
+    [InlineData("NaN", "1", "0")]
+    [InlineData("Infinity", "1", "0")]
+    [InlineData("1", "1", "Infinity")]
+    public async Task GetMosaicStatisticsAsync_InvalidHeaderRejectsWithoutDivisionOrUnion(string scaleX, string scaleY, string upperLeftX)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreStatisticsTests));
+        try
+        {
+            await CreateRasterTablesAsync(schemaName);
+            var raster = await InsertConstantRasterAsync(schemaName, "invalid", 10, 0);
+            await using (var connection = await fixture.GetConnectionAsync(schemaName))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = """
+                    UPDATE raster_data
+                    SET raster = ST_SetUpperLeft(ST_SetScale(raster, @sx::double precision, @sy::double precision),
+                                                 @x::double precision, 2)
+                    WHERE id = @id
+                    """;
+                command.Parameters.AddWithValue("sx", scaleX);
+                command.Parameters.AddWithValue("sy", scaleY);
+                command.Parameters.AddWithValue("x", upperLeftX);
+                command.Parameters.AddWithValue("id", raster);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var compute = () => CreateStore(schemaName).GetMosaicStatisticsAsync(LayerId, [raster], RasterMergeStrategy.Newest);
+            await compute.Should().ThrowAsync<RasterStatisticsBudgetExceededException>();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("1e-200", "-1e-200", "0", "SELECT '1e-200'::double precision * '1e-200'::double precision")]
+    [InlineData("1", "-1", "1e-200", "SELECT power('1e-200'::double precision, 2)")]
+    public async Task GetMosaicStatisticsAsync_TinyComponentRejectsBeforeFloatingUnderflow(
+        string scaleX, string scaleY, string skewX, string originalUnsafeExpression)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreStatisticsTests));
+        try
+        {
+            await CreateRasterTablesAsync(schemaName);
+            await CoreMigrationTestFixture.ApplyRasterLayerStatisticsAsync(fixture, schemaName);
+            var raster = await InsertConstantRasterAsync(schemaName, "tiny", 10, 0);
+            await using (var connection = await fixture.GetConnectionAsync(schemaName))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = originalUnsafeExpression;
+                var unsafeCalculation = async () => await command.ExecuteScalarAsync();
+                (await unsafeCalculation.Should().ThrowAsync<PostgresException>())
+                    .Which.SqlState.Should().Be(PostgresErrorCodes.NumericValueOutOfRange);
+
+                command.CommandText = """
+                    UPDATE raster_data SET raster = ST_SetUpperLeft(
+                        ST_SetSkew(ST_SetScale(raster, @sx::double precision, @sy::double precision),
+                                   @skew::double precision, 0), 0, 0)
+                    WHERE id = @id
+                    """;
+                command.Parameters.AddWithValue("sx", scaleX);
+                command.Parameters.AddWithValue("sy", scaleY);
+                command.Parameters.AddWithValue("skew", skewX);
+                command.Parameters.AddWithValue("id", raster);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var store = CreateStore(schemaName);
+            var compute = () => store.GetMosaicStatisticsAsync(LayerId, [raster], RasterMergeStrategy.Newest);
+            await compute.Should().ThrowAsync<RasterStatisticsBudgetExceededException>();
+            (await CountAsync(schemaName, "SELECT COUNT(*) FROM raster_layer_statistics")).Should().Be(0);
+
+            await using var planConnection = await fixture.GetConnectionAsync(schemaName);
+            await using var planCommand = planConnection.CreateCommand();
+            planCommand.CommandText = "EXPLAIN (ANALYZE, FORMAT JSON) "
+                + store.CreateMosaicStatisticsCommandText(RasterMergeStrategy.Newest);
+            planCommand.Parameters.AddWithValue("layerId", LayerId);
+            planCommand.Parameters.AddWithValue("rasterIds", new[] { raster });
+            planCommand.Parameters.AddWithValue("maximumStatisticsSampleSlots", PostgresRasterStatisticsOptions.MaximumDenseSampleSlots);
+            using var plan = JsonDocument.Parse((string)(await planCommand.ExecuteScalarAsync())!);
+            var admittedScans = PlanNodes(plan.RootElement[0].GetProperty("Plan"))
+                .Where(node => node.TryGetProperty("CTE Name", out var name) && name.GetString() == "admitted_source")
+                .ToArray();
+            admittedScans.Should().NotBeEmpty();
+            admittedScans.Should().OnlyContain(node => node.GetProperty("Actual Rows").GetDouble() == 0);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("1e-69", "-1e-69", "2.5e-70")]
+    [InlineData("1e69", "-1e69", "2.5e68")]
+    public async Task GetMosaicStatisticsAsync_SafeExtremeComponentsRemainAdmitted(string scaleX, string scaleY, string skewX)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreStatisticsTests));
+        try
+        {
+            await CreateRasterTablesAsync(schemaName);
+            var raster = await InsertConstantRasterAsync(schemaName, "safe-extreme", 10, 0);
+            await using (var connection = await fixture.GetConnectionAsync(schemaName))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = """
+                    UPDATE raster_data SET raster = ST_SetUpperLeft(
+                        ST_SetSkew(ST_SetScale(raster, @sx::double precision, @sy::double precision),
+                                   @skew::double precision, 0), 0, 0)
+                    WHERE id = @id
+                    """;
+                command.Parameters.AddWithValue("sx", scaleX);
+                command.Parameters.AddWithValue("sy", scaleY);
+                command.Parameters.AddWithValue("skew", skewX);
+                command.Parameters.AddWithValue("id", raster);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var result = await CreateStore(schemaName).GetMosaicStatisticsAsync(LayerId, [raster], RasterMergeStrategy.Newest);
+            result.Should().ContainSingle();
+            result[0].ValidPixelCount.Should().Be(4);
+            result[0].MeanValue.Should().Be(10);
+            result[0].StandardDeviation.Should().Be(0);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("negative-x")]
+    [InlineData("positive-y")]
+    [InlineData("skew")]
+    [InlineData("mixed-resolution")]
+    [InlineData("fractional-origin")]
+    public async Task AllocationEstimate_BoundsActualSmallPostgisMosaic(string gridCase)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreStatisticsTests));
+        try
+        {
+            await CreateRasterTablesAsync(schemaName);
+            var west = await InsertConstantRasterAsync(schemaName, "west", 10, 0);
+            var east = await InsertConstantRasterAsync(schemaName, "east", 30, 2);
+            var change = gridCase switch
+            {
+                "negative-x" => "UPDATE raster_data SET raster = ST_SetScale(raster, -1, -1)",
+                "positive-y" => "UPDATE raster_data SET raster = ST_SetScale(raster, 1, 1)",
+                "skew" => "UPDATE raster_data SET raster = ST_SetUpperLeft(ST_SetSkew(raster, 0.25, 0.125), ST_UpperLeftX(raster), CASE WHEN name = 'east' THEN 2.25 ELSE 2 END)",
+                "mixed-resolution" => "UPDATE raster_data SET raster = ST_SetScale(raster, 0.5, -0.5) WHERE name = 'east'",
+                "fractional-origin" => "UPDATE raster_data SET raster = ST_SetUpperLeft(raster, 2.25, 2) WHERE name = 'east'",
+                _ => throw new ArgumentOutOfRangeException(nameof(gridCase))
+            };
+            await ExecuteAsync(schemaName, change);
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                WITH source AS MATERIALIZED (
+                    SELECT raster AS rast, id, created_at,
+                           COALESCE(acquisition_date, created_at) AS effective_acquisition
+                    FROM raster_data WHERE id = ANY(@ids)
+                ),
+                {RasterStatisticsAllocationSql.CreateCtes()},
+                merged AS (
+                    SELECT {RasterMosaicSql.CreateMosaicAggregateExpression(RasterMergeStrategy.Newest, alignToSourceCte: "source")} AS rast
+                    FROM admitted_source
+                )
+                SELECT a.admitted, a.width, a.height, ST_Width(m.rast), ST_Height(m.rast)
+                FROM allocation a CROSS JOIN merged m
+                """;
+            command.Parameters.AddWithValue("ids", new[] { west, east });
+            command.Parameters.AddWithValue("maximumStatisticsSampleSlots", PostgresRasterStatisticsOptions.MaximumDenseSampleSlots);
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetBoolean(0).Should().BeTrue();
+            reader.GetDecimal(1).Should().BeGreaterThanOrEqualTo(reader.GetInt32(3));
+            reader.GetDecimal(2).Should().BeGreaterThanOrEqualTo(reader.GetInt32(4));
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task GetMosaicStatisticsAsync_MissingSources_ReturnsEmptyWithoutBudgetFailure()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreStatisticsTests));
+        try
+        {
+            await CreateRasterTablesAsync(schemaName);
+            var result = await CreateStore(schemaName).GetMosaicStatisticsAsync(LayerId, [long.MaxValue], RasterMergeStrategy.Newest);
+            result.Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    private static IEnumerable<JsonElement> PlanNodes(JsonElement node)
+    {
+        yield return node;
+        if (node.TryGetProperty("Plans", out var children))
+        {
+            foreach (var child in children.EnumerateArray())
+            {
+                foreach (var descendant in PlanNodes(child))
+                {
+                    yield return descendant;
+                }
+            }
+        }
+    }
+
+    private PostgresRasterStore CreateStore(string schemaName, int maximumSampleSlots = PostgresRasterStatisticsOptions.MaximumDenseSampleSlots)
         => new(
             new FixtureConnectionProvider(fixture.DataSource),
             NullLogger<PostgresRasterStore>.Instance,
             FixtureBypassDatabaseSchemaGuard.Instance,
-            schemaName);
+            schemaName,
+            new PostgresRasterStatisticsOptions { MaxDenseSampleSlots = maximumSampleSlots });
 
     // A 2x2 raster whose four pixels are 0, 100, 200, 300 so a stretch has a real range to map.
     private async Task<long> InsertGradientRasterAsync(string schemaName)
