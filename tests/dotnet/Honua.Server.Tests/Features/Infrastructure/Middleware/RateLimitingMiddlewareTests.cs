@@ -532,6 +532,44 @@ public sealed class RateLimitingMiddlewareTests
     }
 
     [UnitTest]
+    public async Task InvokeAsync_AnonymousIpv6_SharesASlash64AndLeavesIpv4Distinct()
+    {
+        var field = typeof(RateLimitingMiddleware).GetField("_memoryCounters",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        var counters = (System.Collections.IDictionary)field.GetValue(null)!;
+        var previous = counters.Keys.Cast<object>()
+            .Select(key => new System.Collections.DictionaryEntry(key, counters[key])).ToArray();
+        counters.Clear();
+        try
+        {
+            var middleware = CreateMiddleware(limit: 1);
+            async Task<int> RequestAsync(string remoteIp)
+            {
+                var context = CreateContext(remoteIp);
+                using var services = (IDisposable)context.RequestServices;
+                using var body = context.Response.Body;
+                await middleware.InvokeAsync(context);
+                return context.Response.StatusCode;
+            }
+
+            Assert.Equal(StatusCodes.Status200OK, await RequestAsync("2001:db8:1:2::1"));
+            Assert.Equal(StatusCodes.Status429TooManyRequests, await RequestAsync("2001:db8:1:2::abcd"));
+            Assert.Equal(StatusCodes.Status200OK, await RequestAsync("2001:db8:1:3::1"));
+            Assert.Equal(StatusCodes.Status200OK, await RequestAsync("198.51.100.20"));
+            Assert.Equal(StatusCodes.Status200OK, await RequestAsync("198.51.100.21"));
+            Assert.Equal(StatusCodes.Status429TooManyRequests, await RequestAsync("198.51.100.20"));
+        }
+        finally
+        {
+            counters.Clear();
+            foreach (var entry in previous)
+            {
+                counters.Add(entry.Key, entry.Value);
+            }
+        }
+    }
+
+    [UnitTest]
     public async Task InvokeAsync_RedisOutage_HardBoundsLocalCountersWithoutResettingExistingBudgets()
     {
         // This collection runs alone because the process-local store is shared.
@@ -576,10 +614,12 @@ public sealed class RateLimitingMiddlewareTests
             var burst = await Task.WhenAll(Enumerable.Range(0, 128)
                 .Select(i => Task.Run(() => RequestAsync("burst-" + i))));
 
-            Assert.Equal(10, burst.Count(status => status == StatusCodes.Status200OK));
-            Assert.Equal(118, burst.Count(status => status == StatusCodes.Status429TooManyRequests));
+            Assert.Equal(128, burst.Count(status => status == StatusCodes.Status200OK));
+            Assert.DoesNotContain(StatusCodes.Status429TooManyRequests, burst);
             Assert.Equal(10_000, counters.Count);
-            Assert.Equal(StatusCodes.Status429TooManyRequests, await RequestAsync("existing-0"));
+            // existing-9989 is the most recently used pre-burst subject, so eviction
+            // must not have reset its one-request budget.
+            Assert.Equal(StatusCodes.Status429TooManyRequests, await RequestAsync("existing-9989"));
         }
         finally
         {

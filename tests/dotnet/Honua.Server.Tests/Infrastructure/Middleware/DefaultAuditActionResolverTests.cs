@@ -53,6 +53,32 @@ public sealed class DefaultAuditActionResolverTests
         descriptor!.EventType.Should().Be(AuditEventType.AdminAction);
     }
 
+    [UnitTheory]
+    [InlineData("PUT", "/api/v{version:apiVersion}/console/content/{id}/share/access", "console.share.access.update")]
+    [InlineData("POST", "/api/v{version:apiVersion}/console/content/{id}/share/link", "console.share.link.mint")]
+    [InlineData("DELETE", "/api/v{version:apiVersion}/console/content/{id}/share/link/{tokenId}", "console.share.link.revoke")]
+    [InlineData("POST", "/api/v{version:apiVersion}/console/content/{id}/share/embed", "console.share.embed.mint")]
+    [InlineData("PUT", "/api/v{version:apiVersion}/console/content/{id}/share/embed", "console.share.embed.update")]
+    [InlineData("POST", "/api/v{version:apiVersion}/console/content", "console.content.create")]
+    [InlineData("PUT", "/api/v{version:apiVersion}/console/content/{id}", "console.content.update")]
+    [InlineData("PATCH", "/api/v{version:apiVersion}/console/content/{id}", "console.content.update")]
+    [InlineData("DELETE", "/api/v{version:apiVersion}/console/content/{id}", "console.content.delete")]
+    [InlineData("PUT", "/api/v{version:apiVersion}/console/content/{id}/open-data", "console.open-data.update")]
+    [InlineData("POST", "/api/v{version:apiVersion}/console/content/{id}/open-data/stac/publish", "console.open-data.stac.publish")]
+    [InlineData("DELETE", "/api/v{version:apiVersion}/console/content/{id}/open-data/stac", "console.open-data.stac.delete")]
+    [InlineData("POST", "/api/enrich/datasets", "enrich.dataset.create")]
+    [InlineData("PUT", "/api/enrich/datasets/{id}", "enrich.dataset.update")]
+    [InlineData("DELETE", "/api/enrich/datasets/{id}", "enrich.dataset.delete")]
+    public void SRV_INF_010_NamedControlPlaneMutation_UsesResourceSpecificAction(string method, string route, string action)
+    {
+        var descriptor = _resolver.Resolve(method, route);
+
+        descriptor.Should().NotBeNull();
+        descriptor!.EventType.Should().Be(AuditEventType.AdminAction);
+        descriptor.Action.Should().Be(action);
+        descriptor.AuditOnSuccess.Should().BeTrue();
+    }
+
     [Fact]
     public void Resolve_AdminLoginTokenExchange_ReturnsAuthenticationDescriptor()
     {

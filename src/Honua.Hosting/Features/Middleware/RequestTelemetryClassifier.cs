@@ -1110,7 +1110,7 @@ internal static class RequestTelemetryClassifier
         return ResolveBoundedOgcOperation(prefix, request);
     }
 
-    private static string ResolveBoundedOgcOperation(string prefix, string request)
+    internal static string ResolveBoundedOgcOperation(string prefix, string request)
     {
         var operation = request.Trim().ToUpperInvariant();
         var supported = prefix switch

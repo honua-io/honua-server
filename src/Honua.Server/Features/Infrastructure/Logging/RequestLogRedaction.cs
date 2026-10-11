@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Infrastructure.Logging;
 using Serilog;
 using Serilog.Core;
 using Serilog.Events;
@@ -105,7 +106,7 @@ internal sealed partial class RequestLogRedaction : ILogEventEnricher
         {
             // Hosting start events run before routing, so matched endpoint metadata is
             // unavailable there. Scrub the known capability-token paths at the same seam.
-            var safePath = CredentialRoute().Replace(text, "$1" + Redacted);
+            var safePath = CredentialPathRedaction.Redact(text);
             return QueryParameter().Replace(safePath, match =>
                 IsCredentialName(Uri.UnescapeDataString(match.Groups[2].Value))
                     ? string.Concat(match.Groups[1].Value, match.Groups[2].Value, "=", Redacted)
@@ -117,9 +118,6 @@ internal sealed partial class RequestLogRedaction : ILogEventEnricher
             return Redacted;
         }
     }
-
-    [GeneratedRegex(@"((?:/api/v[0-9]+(?:\.[0-9]+)?/console/share/(?:link|embed)|/wps/conformance/results)/)[^/?#\s]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 100)]
-    private static partial Regex CredentialRoute();
 
     [GeneratedRegex(@"([?&])([^?&=\s]+)=([^&\s]*)", RegexOptions.CultureInvariant, 100)]
     private static partial Regex QueryParameter();

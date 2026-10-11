@@ -73,7 +73,10 @@ internal sealed class PostgresAuditLog : IAuditLog
         var correlationId = Truncate(auditEvent.CorrelationId, MaxCorrelationIdLength);
         var remoteIp = auditEvent.RemoteIp is null ? null : Truncate(auditEvent.RemoteIp, MaxRemoteIpLength);
         var userAgent = auditEvent.UserAgent is null ? null : Truncate(auditEvent.UserAgent, MaxUserAgentLength);
-        var details = auditEvent.Details ?? string.Empty;
+        // Details are not length-capped, but NUL and unpaired surrogates still have to
+        // be removed before the hash is computed. Postgres rejects NUL, and Npgsql's
+        // UTF-8 encoder throws on a lone surrogate, which drops the whole row.
+        var details = SanitizeText(auditEvent.Details);
 
         var sql = $"""
             INSERT INTO {_table} (
@@ -196,9 +199,11 @@ internal sealed class PostgresAuditLog : IAuditLog
         }
     }
 
-    // Truncates by UTF-16 char count (not bytes), appending the ellipsis marker
-    // so the truncation is visible. Exposed to the Postgres test assembly for
-    // direct, Docker-free coverage of the marker/encoding contract.
+    // Scrubs text that PostgreSQL or the UTF-8 encoder cannot store, then truncates
+    // by UTF-16 char count (not bytes), appending the ellipsis marker so the
+    // truncation is visible. Exposed to the Postgres test assembly for direct,
+    // Docker-free coverage of the marker/encoding contract. RecordAsync hashes
+    // these same values, so the chain matches the row.
     internal static string Truncate(string value, int max)
     {
         if (string.IsNullOrEmpty(value))
@@ -206,6 +211,7 @@ internal sealed class PostgresAuditLog : IAuditLog
             return string.Empty;
         }
 
+        value = SanitizeText(value);
         if (value.Length <= max)
         {
             return value;
@@ -220,6 +226,62 @@ internal sealed class PostgresAuditLog : IAuditLog
         }
 
         return string.Concat(value.AsSpan(0, contentLength), TruncationMarker);
+    }
+
+    /// <summary>
+    /// Drops U+0000 and unpaired UTF-16 surrogates. Valid surrogate pairs are kept.
+    /// Returns the original instance when the value needs no rewrite.
+    /// </summary>
+    internal static string SanitizeText(string? value)
+    {
+        if (string.IsNullOrEmpty(value) || !NeedsSanitize(value))
+        {
+            return value ?? string.Empty;
+        }
+
+        var builder = new System.Text.StringBuilder(value.Length);
+        for (var i = 0; i < value.Length; i++)
+        {
+            var current = value[i];
+            if (current == '\0')
+            {
+                continue;
+            }
+
+            if (char.IsHighSurrogate(current))
+            {
+                if (i + 1 < value.Length && char.IsLowSurrogate(value[i + 1]))
+                {
+                    builder.Append(current);
+                    builder.Append(value[i + 1]);
+                    i++;
+                }
+
+                continue;
+            }
+
+            if (char.IsLowSurrogate(current))
+            {
+                continue;
+            }
+
+            builder.Append(current);
+        }
+
+        return builder.ToString();
+    }
+
+    private static bool NeedsSanitize(string value)
+    {
+        foreach (var current in value)
+        {
+            if (current == '\0' || char.IsSurrogate(current))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 

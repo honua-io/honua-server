@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Db.Postgres.Features.AuditLog;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.AuditLog;
 
@@ -70,5 +71,48 @@ public sealed class PostgresAuditLogTruncationTests
         result.Should().Be(new string('a', 254) + Ellipsis);
         result.Should().NotContain(char.ConvertFromUtf32(0xFFFD));
         result.Any(char.IsSurrogate).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void SRV_DB_013_Truncate_ActorBoundary_DoesNotSplitSurrogatePair()
+    {
+        var actor = new string('a', 254) + "😀" + "b";
+
+        var result = PostgresAuditLog.Truncate(actor, 256);
+
+        result.Should().Be(new string('a', 254) + Ellipsis);
+        result.Any(char.IsSurrogate).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void SRV_DB_013_Truncate_UserAgentBoundary_DoesNotSplitSurrogatePair()
+    {
+        var userAgent = new string('a', 510) + "😀" + "b";
+
+        var result = PostgresAuditLog.Truncate(userAgent, 512);
+
+        result.Should().Be(new string('a', 510) + Ellipsis);
+        result.Length.Should().Be(511);
+        result.Any(char.IsSurrogate).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void SRV_DB_013_Truncate_StripsNulAndUnpairedSurrogateInsideTheKeptSpan()
+    {
+        var value = "actor\0" + "\uD800" + "kept";
+
+        PostgresAuditLog.Truncate(value, 256).Should().Be("actorkept");
+    }
+
+    [UnitTest]
+    public void SRV_DB_013_SanitizeText_StripsNulAndLoneSurrogateWithoutTruncatingDetails()
+    {
+        var details = "before\0" + "\uD800" + "😀" + "\uDE00" + "after";
+
+        var result = PostgresAuditLog.SanitizeText(details);
+
+        result.Should().Be("before😀after");
+        result.Should().NotContain("\0");
+        result.Count(char.IsSurrogate).Should().Be(2);
     }
 }

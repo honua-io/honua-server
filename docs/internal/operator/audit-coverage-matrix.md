@@ -60,6 +60,20 @@ rejected `401`/`403` is still captured by the authorization row below.
 | ArcGIS-compatible portal token issuance | `/sharing/rest/generateToken` | `POST`, `GET` | `Authentication` | `auth.token.issue` | 2xx → `Success`; failure (including `400` for unusable credentials) → `Failure`/`Denied` |
 | Failed authentication (any route) | `**` | any | `Authentication` | `auth.failure` | `401` → `Failure` |
 | Permission denied (any route) | `**` | any | `Authorization` | `auth.denied` | `403` → `Denied` |
+| Update console share access | `/api/v{version}/console/content/{id}/share/access` | `PUT` | `AdminAction` | `console.share.access.update` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Mint a console share link | `/api/v{version}/console/content/{id}/share/link` | `POST` | `AdminAction` | `console.share.link.mint` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Revoke a console share link | `/api/v{version}/console/content/{id}/share/link/{tokenId}` | `DELETE` | `AdminAction` | `console.share.link.revoke` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Update a console embed | `/api/v{version}/console/content/{id}/share/embed` | `PUT` | `AdminAction` | `console.share.embed.update` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Mint a console embed | `/api/v{version}/console/content/{id}/share/embed` | `POST` | `AdminAction` | `console.share.embed.mint` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Create console content | `/api/v{version}/console/content` | `POST` | `AdminAction` | `console.content.create` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Update console content | `/api/v{version}/console/content/{id}` | `PUT`, `PATCH` | `AdminAction` | `console.content.update` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Delete console content | `/api/v{version}/console/content/{id}` | `DELETE` | `AdminAction` | `console.content.delete` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Update console open data | `/api/v{version}/console/content/{id}/open-data` | `PUT` | `AdminAction` | `console.open-data.update` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Publish console content to STAC | `/api/v{version}/console/content/{id}/open-data/stac/publish` | `POST` | `AdminAction` | `console.open-data.stac.publish` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Delete a console STAC publication | `/api/v{version}/console/content/{id}/open-data/stac` | `DELETE` | `AdminAction` | `console.open-data.stac.delete` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Create an enrichment dataset | `/api/enrich/datasets` | `POST` | `AdminAction` | `enrich.dataset.create` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Update an enrichment dataset | `/api/enrich/datasets/{id}` | `PUT` | `AdminAction` | `enrich.dataset.update` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| Delete an enrichment dataset | `/api/enrich/datasets/{id}` | `DELETE` | `AdminAction` | `enrich.dataset.delete` | 2xx → `Success`; failure → `Failure`/`Denied` |
 
 Login success and failed login therefore both produce an `auth.login`
 (success/failure) event on the login routes, while a bare `401`/`403` on any

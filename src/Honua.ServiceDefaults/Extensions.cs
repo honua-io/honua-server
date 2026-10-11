@@ -7,6 +7,7 @@ using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Attachments.Services;
 using Honua.Core.Features.Federation.Services;
+using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Studio.Services;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -517,6 +518,8 @@ public static partial class Extensions
 
         public override void OnEnd(Activity activity)
         {
+            RedactCredentialPaths(activity);
+
             if (!_includeDbStatementText)
             {
                 foreach (var tag in _dbStatementTags)
@@ -541,6 +544,35 @@ public static partial class Extensions
                 {
                     activity.SetTag("otel.events.truncated", eventCount - _maxEvents);
                 }
+            }
+        }
+
+        private static void RedactCredentialPaths(Activity activity)
+        {
+            RedactTag(activity, "url.path");
+            RedactTag(activity, "http.target");
+            RedactTag(activity, "url.full");
+            RedactTag(activity, "http.url");
+
+            var displayName = activity.DisplayName;
+            var redacted = CredentialPathRedaction.Redact(displayName);
+            if (!string.Equals(displayName, redacted, StringComparison.Ordinal))
+            {
+                activity.DisplayName = redacted;
+            }
+        }
+
+        private static void RedactTag(Activity activity, string key)
+        {
+            if (activity.GetTagItem(key) is not string current)
+            {
+                return;
+            }
+
+            var redacted = CredentialPathRedaction.Redact(current);
+            if (!string.Equals(current, redacted, StringComparison.Ordinal))
+            {
+                activity.SetTag(key, redacted);
             }
         }
 

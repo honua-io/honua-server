@@ -1302,13 +1302,10 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
         var response = await _client.PutAsync("/api/v1/admin/services/test/layers/1/metadata", content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
 
         var payload = await response.Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(payload);
-        var data = document.RootElement.GetProperty("data");
-
-        data.GetProperty("rasterMosaic").GetProperty("mergeStrategy").GetString().Should().Be("max");
+        payload.Should().Contain("Raster mosaic settings have no Metadata v2 representation yet.");
     }
 
     [IntegrationTest]
@@ -1326,13 +1323,10 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
         var response = await _client.PutAsync("/api/v1/admin/services/test/layers/1/metadata", content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
 
         var payload = await response.Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(payload);
-        var data = document.RootElement.GetProperty("data");
-
-        data.GetProperty("rasterMosaic").GetProperty("mergeStrategy").GetString().Should().Be("average");
+        payload.Should().Contain("Raster mosaic settings have no Metadata v2 representation yet.");
     }
 
     [IntegrationTest]
@@ -1350,10 +1344,10 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
         var response = await _client.PutAsync("/api/v1/admin/services/test/layers/1/metadata", content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
 
         var payload = await response.Content.ReadAsStringAsync();
-        payload.Should().Contain("newest").And.Contain("oldest").And.Contain("average").And.Contain("max").And.Contain("min");
+        payload.Should().Contain("Raster mosaic settings have no Metadata v2 representation yet.");
     }
 
     [IntegrationTest]

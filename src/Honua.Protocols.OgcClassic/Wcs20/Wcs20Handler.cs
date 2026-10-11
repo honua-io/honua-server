@@ -104,8 +104,10 @@ internal sealed partial class Wcs20Handler
             operation = Wcs20Utilities.Operations.GetCapabilities;
         }
 
-        context.Items[RequestTelemetryClassifier.OperationItemKey] =
-            "wcs." + operation.Trim().ToLowerInvariant();
+        // Closed WCS operation set. A caller-supplied REQUEST must not mint a
+        // serving-latency or activity label (SRV-INF-018).
+        var telemetryOperation = ResolveTelemetryOperation(operation);
+        context.Items[RequestTelemetryClassifier.OperationItemKey] = telemetryOperation;
 
         var isLegacy = Wcs20Utilities.IsVersion10(
             GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.Version),
@@ -113,11 +115,11 @@ internal sealed partial class Wcs20Handler
         var protocol = isLegacy ? HonuaTelemetry.Protocols.Wcs10 : HonuaTelemetry.Protocols.Wcs20;
 
         using var telemetry = HonuaTelemetryScope.StartFeature(
-            operation,
+            telemetryOperation,
             protocol,
             scope.LayerId?.ToString(CultureInfo.InvariantCulture) ?? scope.ServiceId ?? "service");
         telemetry
-            .WithTag(HonuaTelemetry.Tags.Operation, operation)
+            .WithTag(HonuaTelemetry.Tags.Operation, telemetryOperation)
             .WithTag(HonuaTelemetry.Tags.Protocol, protocol);
         if (scope.ServiceId is not null)
         {
@@ -1023,6 +1025,14 @@ internal sealed partial class Wcs20Handler
 
         return null;
     }
+
+    /// <summary>
+    /// Maps a WCS REQUEST value onto the closed telemetry label
+    /// (<c>wcs.getcapabilities</c>, <c>wcs.describecoverage</c>, <c>wcs.getcoverage</c>,
+    /// or <c>wcs.unsupported</c>).
+    /// </summary>
+    internal static string ResolveTelemetryOperation(string operation)
+        => RequestTelemetryClassifier.ResolveBoundedOgcOperation("wcs", operation);
 
     internal static IResult? ValidateGetCoverageParameters(IQueryCollection query)
     {
