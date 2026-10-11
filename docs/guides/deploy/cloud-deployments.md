@@ -110,6 +110,100 @@ aws lambda update-function-code --function-name honua-prod \
 aws lambda publish-version --function-name honua-prod
 ```
 
+### Keep settings out of the 4 KB Lambda environment
+
+AWS Lambda caps a function's environment variables at 4 KB in total. A Redis-on release cell already
+uses most of it, so move settings into a **settings document**: one Secrets Manager secret whose
+value is a JSON object of configuration keys. The function environment then carries a single
+reference:
+
+```bash
+HONUA_SETTINGS_DOCUMENT=aws:secretsmanager:honua/prod/settings
+```
+
+`Settings__Document` is an accepted alternative spelling; setting both to different values refuses
+startup. A secret name resolves in the function's own account and region (`AWS_REGION`, which
+Lambda always sets); use the full ARN for a secret in another account or region.
+
+Store the document as the secret's string value. Nested objects map to `Section:Key` exactly like
+`appsettings.json`, arrays map to `Section:0`, `Section:1`, and flat `Section__Key` names work too.
+This document moves CORS origins, the operation-policy rules, and the Bedrock and Amazon Location
+settings out of the environment:
+
+```json
+{
+  "Cors": {
+    "AllowedOrigins": ["https://maps.example.com", "https://console.example.com"]
+  },
+  "Operations": {
+    "Policy": {
+      "Enabled": true,
+      "DefaultDecision": "Allow",
+      "Rules": [
+        { "OperationId": "service.publish", "Decision": "RequireApproval", "ApprovalLane": "release" },
+        { "OperationId": "*", "Role": "viewer", "Decision": "Deny" }
+      ]
+    }
+  },
+  "StudioAiProxy": {
+    "Enabled": true,
+    "DefaultProvider": "bedrock",
+    "Providers": {
+      "bedrock": {
+        "Kind": "bedrock",
+        "Region": "us-west-2",
+        "Model": "<bedrock-model-or-inference-profile-id>"
+      }
+    }
+  },
+  "Geocoding": {
+    "Providers": {
+      "AmazonLocation": {
+        "Enabled": true,
+        "Region": "us-east-1",
+        "PlaceIndexName": "honua-prod-places",
+        "UseIamRole": true
+      }
+    }
+  },
+  "AuditLog__ChainVerification__Key": "aws:secretsmanager:honua/prod/audit-chain-key"
+}
+```
+
+How the document behaves:
+
+- **Precedence:** `appsettings*.json` < settings document < environment variables < command line.
+  Any variable still set on the function overrides the same key in the document, so a one-off
+  override never needs a document edit.
+- **References inside the document:** a value can itself be an `aws:secretsmanager:` reference.
+  Startup resolves it exactly as if it had come from the environment (the admin password,
+  connection-encryption master key, audit-chain key, Redis and database connection strings,
+  license content, key-ring certificate). Keep key material in its own secret and reference it;
+  do not paste plaintext keys into the document.
+- **Fail-closed:** an unreadable secret, a value that is not JSON, a root that is not a JSON
+  object, a document larger than 64 KB, a key set twice, or a document that names another document
+  refuses startup. The error names the document reference, never its content.
+- **Logging:** startup logs one Information line with the number of keys loaded and the document
+  reference. Values are never logged.
+- **Reload:** the document is read once at cold start. A new version takes effect on the next
+  cold start (publish a new function version to force one).
+
+The execution role needs read access to the document secret, and to every secret the document
+references:
+
+```json
+{
+  "Effect": "Allow",
+  "Action": "secretsmanager:GetSecretValue",
+  "Resource": [
+    "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua/prod/settings-*",
+    "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua/prod/audit-chain-key-*"
+  ]
+}
+```
+
+If the secret uses a customer-managed KMS key, also grant `kms:Decrypt` on that key.
+
 ## Azure Container Apps
 
 - Use the generic web image (`ghcr.io/honua-io/honua-server` at a pinned digest or dated `nightly-YYYYMMDD` tag until the first release; `latest` afterwards); it is native AOT. The `latest-aot` alias is retained for compatibility.
