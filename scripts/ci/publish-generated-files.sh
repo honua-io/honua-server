@@ -70,6 +70,12 @@ git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
   push --force-with-lease="refs/heads/automation/regenerate-generated-files:${remote_branch}" \
   origin HEAD:refs/heads/automation/regenerate-generated-files
 
+# The proof upload runs only after a commit was actually published. A clean
+# tree must not record head==source as generated output.
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  echo 'published=true' >> "$GITHUB_OUTPUT"
+fi
+
 # PR lookup and creation use the REST pulls API, never `gh pr` (GraphQL). The
 # automation PAT's user shares its GraphQL budget with every other workflow
 # and agent on that account: trunk runs at d634053, 089f92b and 1b7dfca

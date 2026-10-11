@@ -17,6 +17,7 @@ on:
         default: ''
 
 permissions:
+  actions: read
   contents: read
   packages: read
 
@@ -68,6 +69,31 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN }}
         run: bash scripts/ci/publish-generated-files.sh
+
+      - name: Record validated generated-output identity
+        if: always() && steps.publish.outputs.published == 'true'
+        env:
+          PROOF_PATH: ${{ runner.temp }}/generated-output-proof.json
+        run: |
+          python3 - <<'PYPROOF'
+          import json, os, subprocess
+          def git(ref):
+              return subprocess.check_output(['git', 'rev-parse', ref], text=True).strip()
+          proof = dict(source_sha=os.environ['GITHUB_SHA'], head_sha=git('HEAD'),
+                       output_tree_sha=git('HEAD^{tree}'), run_id=os.environ['GITHUB_RUN_ID'],
+                       run_attempt=os.environ['GITHUB_RUN_ATTEMPT'])
+          with open(os.environ['PROOF_PATH'], 'w') as stream:
+              json.dump(proof, stream)
+          PYPROOF
+
+      - name: Upload validated generated-output identity
+        if: always() && steps.publish.outputs.published == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: generated-output-proof-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/generated-output-proof.json
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Retry a stale nightly source on current trunk
         if: steps.publish.outputs.stale_source == 'true'
