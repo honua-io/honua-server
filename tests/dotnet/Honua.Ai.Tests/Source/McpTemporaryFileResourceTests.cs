@@ -51,17 +51,19 @@ public sealed class McpTemporaryFileResourceTests
 
             var response = await Read(surface, owner, uri);
             response.Error.Should().BeNull();
-            var content = response.Result!.Value.GetProperty("contents")[0];
+            var result = response.Result ?? throw new InvalidOperationException("Temporary-file read returned no result.");
+            var content = result.GetProperty("contents")[0];
             content.GetProperty("uri").GetString().Should().Be(uri);
             content.GetProperty("mimeType").GetString().Should().Be("image/png");
             Convert.FromBase64String(content.GetProperty("blob").GetString()!).Should().Equal(Png);
             content.TryGetProperty("text", out _).Should().BeFalse();
-            response.Result.Value.TryGetProperty("nextCursor", out _).Should().BeFalse();
+            result.TryGetProperty("nextCursor", out _).Should().BeFalse();
 
             var alias = TemporaryFileResource.UriPrefix + uri[(uri.LastIndexOf('/') + 1)..];
             var aliasRead = await Read(surface, owner, alias);
             aliasRead.Error.Should().BeNull();
-            aliasRead.Result!.Value.GetProperty("contents")[0].GetProperty("blob").GetString()
+            var aliasResult = aliasRead.Result ?? throw new InvalidOperationException("Canonical alias read returned no result.");
+            aliasResult.GetProperty("contents")[0].GetProperty("blob").GetString()
                 .Should().Be(content.GetProperty("blob").GetString());
             var aliasDenied = await Read(surface, Context(services, "other-owner"), alias);
             aliasDenied.Error.Should().NotBeNull();
