@@ -112,7 +112,9 @@ public sealed class OperationDispatcher : IOperationInvoker
                 OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
                 OperationId = request.OperationId,
                 CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
-                Status = OperationHandleStatus.Failed,
+                Status = OperationHandleStatus.Denied,
+                PolicyDecision = PolicyDecisionKind.Deny,
+                AuthorizationOutcome = OperationAuthorizationOutcomes.ScopeDeniedBeforeAcceptance,
                 CreatedAt = createdAt,
                 UpdatedAt = _clock.GetUtcNow(),
                 Reason = string.IsNullOrWhiteSpace(context.ApprovedProposalId)

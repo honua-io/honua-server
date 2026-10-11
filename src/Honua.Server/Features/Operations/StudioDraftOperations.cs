@@ -815,6 +815,22 @@ internal sealed class StudioDraftMutationRuntime(
             RecognizedScopes = context.RecognizedScopes,
         }, cancellationToken).ConfigureAwait(false);
 
+        // Scope refusal happens before the dispatcher accepts or persists an operation.
+        // Only this explicit unpersisted outcome may bypass durable readback; every
+        // accepted operation, including persisted policy denials, must still be readable.
+        if (handle is
+            {
+                Status: OperationHandleStatus.Denied,
+                PolicyDecision: PolicyDecisionKind.Deny,
+                AuthorizationOutcome: OperationAuthorizationOutcomes.ScopeDeniedBeforeAcceptance,
+                Version: 0,
+                AuditId: null,
+                ProposalId: null,
+            })
+        {
+            return new StudioDraftMutationReceipt<TResult> { Operation = handle };
+        }
+
         var durable = await instanceStore.GetAsync(handle.OperationInstanceId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("The Studio mutation envelope was not durably readable after routing.");
         if (durable.Status == OperationHandleStatus.RequiresApproval && pendingResourceIds is not null)
