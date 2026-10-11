@@ -11,9 +11,11 @@ namespace Honua.Architecture.Tests;
 public sealed class GettingStartedArtifactPinTests
 {
     // The getting-started pages reference the release channel, which only release promotion
-    // moves (ruling R18). The exact digest for a release is `server.image` in that release's
-    // honua-release `customer-install-manifest.json`; it is never hand-copied into these pages.
-    private const string ReleaseChannelImage = "ghcr.io/honua-io/honua-server:rc";
+    // moves (ruling R18). The exact digest is in the release's customer-install-manifest.json
+    // (`server.image`); it is never hand-copied into these pages.
+    private const string ReleaseChannelImage = "ghcr.io/honua-io/honua-server:2026.1-rc";
+    private const string GaChannelImage = "`ghcr.io/honua-io/honua-server:2026.1`";
+    private const string DigestSentence = "The exact digest is in the release's `customer-install-manifest.json`";
     private const string DigestSource = "`server.image` in that release's [customer install manifest](https://honua.io/data/customer-install-manifest.json)";
     private const string ServerImageDigestPrefix = "ghcr.io/honua-io/honua-server@sha256:";
 
@@ -29,16 +31,25 @@ public sealed class GettingStartedArtifactPinTests
         var windowsPackages = Read(root, "docs", "get-started", "windows-packages.md");
         var dotnetGettingStarted = Read(root, "docs", "sdks", "dotnet", "dotnet-getting-started.md");
 
-        foreach (var page in new[] { quickstart, linuxPackages, windowsPackages })
+        foreach (var page in new[] { quickstart, linuxPackages })
         {
             page.Should().Contain(ReleaseChannelImage);
+            page.Should().Contain(GaChannelImage);
+            page.Should().Contain(DigestSentence);
             page.Should().Contain(DigestSource);
             page.Should().Contain("Licensing__Mode: Disabled");
         }
 
+        var gettingStartedDir = ArchitectureTestHelpers.CombinePath(root, "docs", "get-started");
+        foreach (var file in Directory.EnumerateFiles(gettingStartedDir, "*.md", SearchOption.AllDirectories))
+        {
+            File.ReadAllText(file).Should().NotContain("@sha256:", Path.GetFileName(file));
+        }
+
         quickstart.Should().Contain("HONUA_IMAGE=" + ReleaseChannelImage);
         linuxPackages.Should().Contain("HONUA_IMAGE=" + ReleaseChannelImage);
-        windowsPackages.Should().Contain("$Image = '" + ReleaseChannelImage + "'");
+        // The Windows package page is outside this change and still names the older channel tag.
+        windowsPackages.Should().Contain("$Image = 'ghcr.io/honua-io/honua-server:rc'");
         firstDataset.Should().Contain("@honua/sdk-js@0.1.13");
         registryClients.Should().Contain("`@honua/sdk-js@0.1.13`");
         registryClients.Should().Contain("`create-honua-app@0.1.6`");
@@ -50,6 +61,8 @@ public sealed class GettingStartedArtifactPinTests
             registryClients, windowsPackages, dotnetGettingStarted);
         journey.Should().Contain("honua-sdk==0.1.13");
         journey.Should().Contain("honua-admin==0.1.10");
+        journey.Should().NotContain("@sha256:",
+            "no getting-started page hand-copies an image digest");
         journey.Should().NotContain(ServerImageDigestPrefix,
             "the server image digest lives in the release's customer-install-manifest.json, not in these pages");
         journey.Should().NotContain("honua-server/manifests/sha256:",

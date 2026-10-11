@@ -63,9 +63,9 @@ On the generic web image (Docker Hub + GHCR), tags have distinct contracts. Pick
 > **No `v*` release tag has been cut yet**, so no `vX.Y.Z` image exists and `latest` has
 > never moved. Until the first release, pin a digest or a dated `nightly-YYYYMMDD`
 > tag — both are immutable. The getting-started pages use the 2026.1 release channel
-> `ghcr.io/honua-io/honua-server:rc` (`:ga` and `:latest` at GA), which only release
-> promotion moves; the exact digest for a release is `server.image` in that release's
-> `customer-install-manifest.json` (honua-release).
+> `ghcr.io/honua-io/honua-server:2026.1-rc` (`ghcr.io/honua-io/honua-server:2026.1` at GA), which only release
+> promotion moves. The exact digest is in the release's `customer-install-manifest.json`
+> (`server.image`).
 
 - **Production / demos**: pull `latest` (or a pinned `vX.Y.Z`). Both are native AOT. `latest` deliberately tracks the latest *release*, not trunk, so it never silently advances to an unreleased build.
 - **Trunk-following consumers** (certification harnesses, "test against current trunk" CI, bleeding-edge previews): pull `trunk`. It is the documented native-AOT moving tag for the head of the default branch. Do **not** reach for `latest` expecting trunk — it can lag a release cycle behind.
