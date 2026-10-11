@@ -53,6 +53,9 @@ internal static class NAServerMetadata
     /// </summary>
     public const string FindRoutesTask = "FindRoutes";
 
+    /// <summary>The bounded synchronous projection of the canonical service-area solve.</summary>
+    public const string GenerateServiceAreasTask = "GenerateServiceAreas";
+
     /// <summary>Impedance attribute name advertised for every travel mode.</summary>
     public const string TimeAttributeName = "TravelTime";
 
@@ -84,14 +87,17 @@ internal static class NAServerMetadata
         => taskName is not null
            && (taskName.Equals(GetTravelModesTask, StringComparison.OrdinalIgnoreCase)
                || taskName.Equals(GetToolInfoTask, StringComparison.OrdinalIgnoreCase)
-               || taskName.Equals(FindRoutesTask, StringComparison.OrdinalIgnoreCase));
+               || taskName.Equals(FindRoutesTask, StringComparison.OrdinalIgnoreCase)
+               || taskName.Equals(GenerateServiceAreasTask, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Whether the name is one of Esri's ready-to-use routing tools, which are addressed
     /// against the NAServer URL as though they were analysis layers.
     /// </summary>
     public static bool IsRoutingWebTool(string? name)
-        => name is not null && name.Equals(FindRoutesTask, StringComparison.OrdinalIgnoreCase);
+        => name is not null
+           && (name.Equals(FindRoutesTask, StringComparison.OrdinalIgnoreCase)
+               || name.Equals(GenerateServiceAreasTask, StringComparison.OrdinalIgnoreCase));
 
     public static bool IsKnownLayer(string? layerName)
         => layerName is not null && Layers.Any(l => l.Name.Equals(layerName, StringComparison.OrdinalIgnoreCase));
@@ -262,6 +268,11 @@ internal static class NAServerMetadata
         if (taskName.Equals(FindRoutesTask, StringComparison.OrdinalIgnoreCase))
         {
             return BuildFindRoutesTaskInfo();
+        }
+
+        if (taskName.Equals(GenerateServiceAreasTask, StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildGenerateServiceAreasTaskInfo();
         }
 
         var isTravelModes = taskName.Equals(GetTravelModesTask, StringComparison.OrdinalIgnoreCase);
@@ -709,6 +720,69 @@ internal static class NAServerMetadata
             ["executionType"] = "esriExecutionTypeSynchronous",
             ["parameters"] = parameters,
         };
+    }
+
+    private static JsonObject BuildGenerateServiceAreasTaskInfo()
+    {
+        var parameters = new JsonArray
+        {
+            Parameter("Facilities", "GPFeatureRecordSetLayer", "Facilities", "Facility points in input order. FacilityID is the zero-based input index; input ObjectID is retained as FacilityOID and Name prefixes polygon names. Other nondefault facility settings are unsupported.", "esriGPParameterDirectionInput", "esriGPParameterTypeRequired", null),
+            Parameter("Break_Values", "GPString", "Break Values", "Positive minute cutoffs separated by spaces, commas or semicolons.", "esriGPParameterDirectionInput", "esriGPParameterTypeRequired", "5 10 15"),
+            Parameter("Break_Units", "GPString", "Break Units", "Only Minutes is supported.", "esriGPParameterDirectionInput", "esriGPParameterTypeOptional", "Minutes"),
+            Parameter("Travel_Direction", "GPString", "Travel Direction", "Travel away from or towards facilities, subject to provider capabilities.", "esriGPParameterDirectionInput", "esriGPParameterTypeOptional", "Away From Facility"),
+            Parameter("Travel_Mode", "GPString", "Travel Mode", "A supported provider travel mode; empty uses the provider default.", "esriGPParameterDirectionInput", "esriGPParameterTypeOptional", null),
+            Parameter("Service_Areas", "GPFeatureRecordSetLayer", "Service Areas", "Canonical polygons with FacilityID and FromBreak/ToBreak in minutes.", "esriGPParameterDirectionOutput", "esriGPParameterTypeDerived", null),
+            Parameter("Solve_Succeeded", "GPBoolean", "Solve Succeeded", "Whether the solve produced service-area polygons.", "esriGPParameterDirectionOutput", "esriGPParameterTypeDerived", null),
+        };
+        parameters[0]!["defaultValue"] = new JsonObject
+        {
+            ["geometryType"] = "esriGeometryPoint",
+            ["spatialReference"] = new JsonObject { ["wkid"] = 4326 },
+            ["fields"] = new JsonArray(
+                new JsonObject
+                {
+                    ["name"] = "ObjectID",
+                    ["type"] = "esriFieldTypeOID",
+                },
+                new JsonObject
+                {
+                    ["name"] = "Name",
+                    ["type"] = "esriFieldTypeString",
+                    ["length"] = 500,
+                }),
+            ["features"] = new JsonArray(),
+        };
+        parameters[2]!["choiceList"] = new JsonArray("Minutes");
+        parameters[3]!["choiceList"] = new JsonArray("Away From Facility", "Towards Facility");
+        parameters[5]!["defaultValue"] = new JsonObject
+        {
+            ["geometryType"] = "esriGeometryPolygon",
+            ["spatialReference"] = new JsonObject { ["wkid"] = 4326 },
+            ["fields"] = BuildServiceAreaFields(),
+            ["features"] = new JsonArray(),
+        };
+        return new JsonObject
+        {
+            ["name"] = GenerateServiceAreasTask,
+            ["displayName"] = "Generate Service Areas",
+            ["category"] = "network-analysis",
+            ["helpUrl"] = "",
+            ["description"] = "Synchronous service-area polygons for positive minute breaks, using the configured provider's supported travel modes and directions. Facility ObjectID references and names are preserved. Per-facility break overrides and additional costs are unsupported.",
+            ["executionType"] = "esriExecutionTypeSynchronous",
+            ["parameters"] = parameters,
+        };
+    }
+
+    internal static JsonArray BuildServiceAreaFields()
+    {
+        static JsonObject Field(string name, string type) => new()
+        {
+            ["name"] = name,
+            ["alias"] = name,
+            ["type"] = type,
+        };
+        return new JsonArray(Field("ObjectID", "esriFieldTypeOID"), Field("FacilityID", "esriFieldTypeInteger"), Field("FacilityOID", "esriFieldTypeInteger"),
+            Field("Name", "esriFieldTypeString"), Field("FromBreak", "esriFieldTypeDouble"), Field("ToBreak", "esriFieldTypeDouble"));
     }
 
     private static JsonObject Parameter(
