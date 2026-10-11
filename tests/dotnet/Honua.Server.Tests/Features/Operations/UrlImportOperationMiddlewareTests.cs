@@ -214,6 +214,25 @@ public sealed class UrlImportOperationMiddlewareTests
         Assert.Equal(1, fixture.Actuations);
     }
 
+    [Fact]
+    public async Task InvokeAsync_UnauditedFailedAcceptance_IsUnavailableWithoutReactuation()
+    {
+        using var fixture = new Fixture();
+        var first = fixture.Context();
+        await fixture.InvokeAsync(first);
+        var instanceId = first.Response.Headers["X-Honua-Operation-Instance-Id"].ToString();
+        var queued = await fixture.Store.GetAsync(instanceId);
+        Assert.NotNull(queued);
+        await fixture.Store.SetAsync(queued with { Status = OperationHandleStatus.Failed, AuditId = null, Result = null });
+
+        var retry = fixture.Context();
+        await fixture.InvokeAsync(retry);
+        Assert.Equal(503, retry.Response.StatusCode);
+        Assert.Contains("use a new idempotency key", ReadBody(retry), StringComparison.Ordinal);
+        Assert.Equal(1, fixture.Actuations);
+        Assert.False(retry.Response.Headers.ContainsKey("X-Honua-Audit-Id"));
+    }
+
     [Theory]
     [InlineData(OperationHandleStatus.Failed)]
     [InlineData(OperationHandleStatus.Cancelled)]

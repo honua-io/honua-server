@@ -302,6 +302,11 @@ public sealed class OperationEnvelopeFactory(
             return Conflict(existing, "The idempotency key is already bound to a different request.");
         }
 
+        if (existing.Status == OperationHandleStatus.Failed && string.IsNullOrWhiteSpace(existing.AuditId))
+        {
+            return Failure(existing, "The original operation failed durable acceptance; use a new idempotency key after resolving the dependency failure.") with { Result = null };
+        }
+
         if (existing.Status == OperationHandleStatus.Accepted || string.IsNullOrWhiteSpace(existing.AuditId))
         {
             // The atomic TryCreate winner owns actuation. Never return Accepted to a

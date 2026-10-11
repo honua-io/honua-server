@@ -183,6 +183,13 @@ public sealed class BoundOperationIdempotencyTests
         Assert.Equal(OperationHandleStatus.Failed, persisted!.Status);
         Assert.Equal(1, persisted.Version);
         Assert.Null(persisted.AuditId);
+
+        store.AfterCreate = null;
+        var retry = await factory.CreateAcceptedAsync("admin.import.upload-url", context);
+        Assert.Equal(OperationHandleStatus.Failed, retry.Status);
+        Assert.Null(retry.Result);
+        Assert.Contains("use a new idempotency key", retry.Reason, StringComparison.Ordinal);
+        Assert.Equal(1, (await store.GetAsync(context.OperationInstanceId))!.Version);
     }
 
     [Fact]
