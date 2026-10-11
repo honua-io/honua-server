@@ -333,14 +333,16 @@ internal static class SharingOAuth2Endpoints
                 context.RequestAborted)
             .ConfigureAwait(false);
 
-        if (!result.Succeeded || string.IsNullOrWhiteSpace(result.RedirectUri))
+        // A validated client redirect (success or a post-session failure) is
+        // delivered to that URI. Failures before the redirect is known stay here.
+        if (!string.IsNullOrWhiteSpace(result.RedirectUri))
         {
-            return StandardErrorHelpers.CreateBadRequest(
-                context,
-                result.ErrorDescription ?? "Authorization could not be completed.");
+            return Results.Redirect(result.RedirectUri);
         }
 
-        return Results.Redirect(result.RedirectUri);
+        return StandardErrorHelpers.CreateBadRequest(
+            context,
+            result.ErrorDescription ?? "Authorization could not be completed.");
     }
 
     private static async Task<IResult> HandleTokenAsync(

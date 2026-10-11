@@ -57,9 +57,8 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
                 // Allow-list the ArcGIS client redirect (#1484 open-redirect mitigation).
                 builder.UseSetting("Authentication:PortalToken:OAuth2:AllowedRedirectUris:0", RedirectUri);
 
-                // Opt into the OIDC-backed credential verifier so the relayed id_token
-                // is validated by the shared OIDC core.
-                builder.UseSetting("Authentication:PortalCredentialVerifier:UseOidc", "true");
+                // UseOidc stays false. The bridge callback must validate the IdP token
+                // itself whenever OIDC is configured (honua-server#5424).
 
                 // A Generic OIDC provider with a static symmetric signing key: the
                 // verifier validates the id_token without JWKS discovery, and the
@@ -208,6 +207,43 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
         QueryHelpers.ParseQuery(location.Query)["error"].ToString().Should().Be("invalid_request");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/oauth2/callback")]
+    public async Task Callback_IdpExchangeFailure_RedirectsAccessDeniedToClient()
+    {
+        using var client = _fixture.CreateClient(allowAutoRedirect: false);
+        var authorizeUrl = QueryHelpers.AddQueryString("/sharing/rest/oauth2/authorize", new Dictionary<string, string?>
+        {
+            ["response_type"] = "code",
+            ["client_id"] = ClientId,
+            ["redirect_uri"] = RedirectUri,
+            ["state"] = "client-state-xyz",
+            ["code_challenge"] = "abc",
+            ["code_challenge_method"] = "S256",
+        });
+
+        using var authorizeResponse = await client.GetAsync(authorizeUrl);
+        authorizeResponse.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        var combinedState = QueryHelpers.ParseQuery(authorizeResponse.Headers.Location!.Query)["state"].ToString();
+
+        var callbackUrl = QueryHelpers.AddQueryString("/sharing/rest/oauth2/callback", new Dictionary<string, string?>
+        {
+            ["state"] = combinedState,
+            ["code"] = "reject",
+        });
+
+        using var callbackResponse = await client.GetAsync(callbackUrl);
+        callbackResponse.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        var location = callbackResponse.Headers.Location;
+        location.Should().NotBeNull();
+        location!.GetLeftPart(UriPartial.Path).Should().Be(RedirectUri);
+        var query = QueryHelpers.ParseQuery(location.Query);
+        query["error"].ToString().Should().Be("access_denied");
+        query["state"].ToString().Should().Be("client-state-xyz");
+        query.ContainsKey("code").Should().BeFalse();
+    }
+
     private static string CreateIdToken()
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(IdpSigningKey));
@@ -256,6 +292,14 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
 
             if (path.EndsWith("/token", StringComparison.Ordinal))
             {
+                var form = request.Content is null
+                    ? string.Empty
+                    : request.Content.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult();
+                if (form.Contains("code=reject", StringComparison.Ordinal))
+                {
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest));
+                }
+
                 var tokenResponse = JsonSerializer.Serialize(new
                 {
                     access_token = "mock-idp-access-token",
