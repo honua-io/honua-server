@@ -10,6 +10,8 @@ using Honua.Core.Features.FieldWorkflows.Review;
 using Honua.Server.Features.FieldWorkflows.Export;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.FieldWorkflows;
@@ -107,6 +109,8 @@ public sealed class FieldExportServiceTests
         context.Request.ContentType = "application/json";
         context.Response.Body = new MemoryStream();
         context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "operator")], "test"));
+        // Json and file results resolve ILoggerFactory from the request services.
+        context.RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider();
         return context;
     }
 
