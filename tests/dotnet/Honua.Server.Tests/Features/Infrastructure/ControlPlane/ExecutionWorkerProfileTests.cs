@@ -440,6 +440,56 @@ public sealed class ExecutionWorkerProfileTests
             .Should().Be(0);
     }
 
+    // ---------------------------------------------------------------------
+    // Process exit: the composed worker host runs to completion through disposal
+    // ---------------------------------------------------------------------
+
+    /// <summary>
+    /// e2e-cloud-aws run 38107383082: after the worker finished its job (EventId 9496) and the host
+    /// stopped, Program.cs resolved <see cref="ExecutionWorkerExitState"/> from the disposed root
+    /// provider, so the clean exit became an unhandled <see cref="ObjectDisposedException"/> and a
+    /// nonzero exit AWS Batch records as a failed attempt.
+    /// </summary>
+    [Theory]
+    [InlineData("succeeded")]
+    [InlineData("deterministic-failure")]
+    [InlineData("retryable-failure")]
+    [Trait("Tier", "Fast")]
+    public async Task WorkerHost_RunsToCompletionThroughDisposal_AndExitsZeroWhenTheRecordNoLongerNeedsThisJob(string scenario)
+    {
+        var store = new DisposalTrackingJobStore(new VersionedJobStore(SubmittedRemoteJob()));
+        var executor = new ScriptedExecutor((_, _, _) => Task.FromResult(scenario switch
+        {
+            "succeeded" => JobExecutionResult.Succeeded(),
+            "deterministic-failure" => JobExecutionResult.Failed("geometry.buffer: distance must be finite.") with { IsRetryable = false },
+            _ => JobExecutionResult.Failed("source timed out"),
+        }));
+
+        var run = () => WorkerHost(store, executor).RunExecutionWorkerAsync().WaitAsync(TimeSpan.FromSeconds(60));
+
+        (await run.Should().NotThrowAsync()).Subject.Should().Be(0);
+        executor.ExecutedOperations.Should().Equal(OperationId);
+        store.Inner.Get(OperationId).Status.Should().Be(scenario == "retryable-failure"
+            ? ExecutionJobStatus.Queued
+            : scenario == "succeeded" ? ExecutionJobStatus.Succeeded : ExecutionJobStatus.Failed);
+        store.Disposed.Should().BeTrue("the host is disposed before the process exits");
+        store.ReadAfterDisposal.Should().BeFalse("the exit code is read before the host's services are disposed");
+    }
+
+    [UnitTest]
+    public async Task WorkerHost_JobRecordMissing_ExitsNonzeroWithoutAnUnhandledException()
+    {
+        var store = new DisposalTrackingJobStore(new VersionedJobStore());
+        var executor = new ScriptedExecutor((_, _, _) => Task.FromResult(JobExecutionResult.Succeeded()));
+
+        var run = () => WorkerHost(store, executor).RunExecutionWorkerAsync().WaitAsync(TimeSpan.FromSeconds(60));
+
+        (await run.Should().NotThrowAsync()).Subject.Should().Be(1, "the provider's failure drives the reconciler");
+        executor.ExecutedOperations.Should().BeEmpty();
+        store.Disposed.Should().BeTrue();
+        store.ReadAfterDisposal.Should().BeFalse();
+    }
+
     [Theory]
     [InlineData(ExecutionJobStatus.Running, "worker-a", 1, 1)]
     [InlineData(ExecutionJobStatus.Provisioning, null, 1, 1)]
@@ -549,6 +599,21 @@ public sealed class ExecutionWorkerProfileTests
         return (exitCode, stopped);
     }
 
+    /// <summary>A real host composed with the worker profile, as Program.cs builds it.</summary>
+    private static IHost WorkerHost(IExecutionJobStore store, IJobExecutor executor)
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings
+        {
+            EnvironmentName = Environments.Production,
+        });
+        builder.Services.AddLogging();
+        builder.Services.AddSingleton(_ => store);
+        builder.Services.AddSingleton(executor);
+        builder.Services.AddSingleton(Substitute.For<IExecutionLogStore>());
+        builder.Services.ApplyExecutionWorkerProfile(Launch());
+        return builder.Build();
+    }
+
     private static void ComposeRedisConnectedControlPlane(
         IServiceCollection services,
         IConfiguration configuration,
@@ -642,6 +707,62 @@ public sealed class ExecutionWorkerProfileTests
             ExecutedOperations.Add(job.OperationId);
             return await run(job, context, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// Stands in for the Redis-backed store the container owns: it is disposed with the host, and
+    /// any read after that is recorded and fails the way a disposed connection does.
+    /// </summary>
+    private sealed class DisposalTrackingJobStore(VersionedJobStore inner) : IExecutionJobStore, IDisposable
+    {
+        public VersionedJobStore Inner { get; } = inner;
+
+        public bool Disposed { get; private set; }
+
+        public bool ReadAfterDisposal { get; private set; }
+
+        public void Dispose() => Disposed = true;
+
+        private VersionedJobStore Live()
+        {
+            if (Disposed)
+            {
+                ReadAfterDisposal = true;
+                throw new ObjectDisposedException(nameof(DisposalTrackingJobStore));
+            }
+
+            return Inner;
+        }
+
+        public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => Live().TryAcquireLeaseAsync(operationId, ownerId, leaseDuration, cancellationToken);
+
+        public Task<bool> RenewLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => Live().RenewLeaseAsync(operationId, ownerId, leaseDuration, cancellationToken);
+
+        public Task ReleaseLeaseAsync(string operationId, string ownerId, CancellationToken cancellationToken = default)
+            => Live().ReleaseLeaseAsync(operationId, ownerId, cancellationToken);
+
+        public Task<bool> TryCreateAsync(ExecutionJobRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+            => Live().TryCreateAsync(operation, ttl, cancellationToken);
+
+        public Task<ExecutionJobRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
+            => Live().GetAsync(operationId, cancellationToken);
+
+        public Task SetAsync(ExecutionJobRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+            => Live().SetAsync(operation, ttl, cancellationToken);
+
+        public Task<bool> TrySetAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+            => Live().TrySetAsync(job, ttl, cancellationToken);
+
+        public Task<ExecutionJobPage> QueryAsync(ExecutionJobQuery query, CancellationToken cancellationToken = default)
+            => Live().QueryAsync(query, cancellationToken);
+
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(
+            ExecutionJobKind? kind = null,
+            int? limit = null,
+            CancellationToken cancellationToken = default)
+            => Live().ListActiveAsync(kind, limit, cancellationToken);
     }
 
     /// <summary>An in-memory store with the version CAS the Redis store enforces.</summary>
