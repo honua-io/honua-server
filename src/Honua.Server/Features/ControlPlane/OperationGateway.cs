@@ -404,7 +404,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 : proposal.Plan with { BlockingReasons = [.. proposal.Plan.BlockingReasons, failureMessage] }
         };
 
-        await PersistResolutionAsync(resolved, cancellationToken).ConfigureAwait(false);
+        await PersistResolutionAsync(resolved, OperationProposalStatus.Executing, cancellationToken).ConfigureAwait(false);
         await RecordAutonomyProposalResolutionAsync(
                 resolved,
                 OpsAutonomyProposalResolution.Approved,
@@ -454,7 +454,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             ResolvedAt = now
         };
 
-        await PersistResolutionAsync(resolved, cancellationToken).ConfigureAwait(false);
+        await PersistResolutionAsync(resolved, OperationProposalStatus.AwaitingApproval, cancellationToken).ConfigureAwait(false);
         await PersistCanonicalRejectionAsync(resolved, cancellationToken).ConfigureAwait(false);
         await RecordAutonomyProposalResolutionAsync(
                 resolved,
@@ -838,10 +838,14 @@ internal sealed partial class OperationGateway : IOperationGateway
         return $"proposal-{Convert.ToHexString(hash)[..32].ToLowerInvariant()}";
     }
 
-    private async Task PersistResolutionAsync(OperationProposal proposal, CancellationToken cancellationToken)
+    private async Task PersistResolutionAsync(
+        OperationProposal proposal,
+        OperationProposalStatus requiredSourceStatus,
+        CancellationToken cancellationToken)
     {
         // Refresh-and-retry on optimistic version conflict so concurrent
-        // notifications/reconcilers do not lose the resolution write.
+        // notifications/reconcilers do not lose the resolution write. A retry is legal
+        // only while the stored status is still the status this caller claimed from.
         for (var attempt = 0; attempt < 3; attempt++)
         {
             if (await _proposalStore.TrySetAsync(proposal, cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -855,18 +859,18 @@ internal sealed partial class OperationGateway : IOperationGateway
                 throw new InvalidOperationException($"Proposal '{proposal.ProposalId}' disappeared during resolution.");
             }
 
-            // Do not overwrite a terminal resolution. If an operator resolved the proposal
-            // concurrently (or a previous write landed between the CAS failure and this
-            // re-read), stop retrying rather than risk overwriting the recorded resolution.
-            if (IsTerminalStatus(latest.Status))
+            // Reject may only land from AwaitingApproval. Approve completion and claim
+            // compensation may only land from Executing. Executing is not terminal, so a
+            // status check that only refuses terminal values lets a concurrent reject
+            // overwrite a claimed proposal.
+            if (latest.Status != requiredSourceStatus)
             {
                 throw new InvalidOperationException(
-                    $"Proposal '{proposal.ProposalId}' reached terminal status '{latest.Status}' " +
-                    "before the resolution write landed; aborting to avoid overwriting it.");
+                    $"Proposal '{proposal.ProposalId}' is '{latest.Status}' and can no longer be resolved from '{requiredSourceStatus}'.");
             }
 
             // Only the version was bumped (e.g. a notification write); the status is still
-            // active so it is safe to retry with the refreshed version.
+            // the required source so it is safe to retry with the refreshed version.
             proposal = proposal with { Version = latest.Version };
         }
 
@@ -924,13 +928,6 @@ internal sealed partial class OperationGateway : IOperationGateway
             $"Failed to claim proposal '{proposal.ProposalId}' for execution after repeated version conflicts.");
     }
 
-    private static bool IsTerminalStatus(OperationProposalStatus status)
-        => status is OperationProposalStatus.Succeeded
-            or OperationProposalStatus.Failed
-            or OperationProposalStatus.Rejected
-            or OperationProposalStatus.RolledBack
-            or OperationProposalStatus.Cancelled;
-
     private async Task CompensateClaimedProposalAsync(
         OperationProposal proposal,
         string actor,
@@ -948,7 +945,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             UpdatedAt = now,
             ResolutionReason = reason,
         };
-        await PersistResolutionAsync(resolved, CancellationToken.None).ConfigureAwait(false);
+        await PersistResolutionAsync(resolved, OperationProposalStatus.Executing, CancellationToken.None).ConfigureAwait(false);
         await WriteAuditAsync(resolved, auditAction, actor, auditOutcome, CancellationToken.None)
             .ConfigureAwait(false);
         await _notifier.NotifyResolvedAsync(resolved, CancellationToken.None).ConfigureAwait(false);

@@ -41,6 +41,12 @@ public sealed class ImportAuthorizationArchitectureTests
     private static void AssertGuardedAdapter(string path)
     {
         var source = File.ReadAllText(path);
+        if (path.EndsWith("ImportEndpoints.cs", StringComparison.Ordinal))
+        {
+            AssertImportEndpointSeam(source);
+            return;
+        }
+
         var authorizationIndex = source.IndexOf(AuthorizationCall, StringComparison.Ordinal);
         var importIndex = source.IndexOf(ImportCall, StringComparison.Ordinal);
 
@@ -51,6 +57,54 @@ public sealed class ImportAuthorizationArchitectureTests
             importIndex > authorizationIndex,
             $"{Path.GetFileName(path)} must authorize before invoking the import service.");
         Assert.Equal(1, CountOccurrences(source, ImportCall));
+    }
+
+    private static void AssertImportEndpointSeam(string source)
+    {
+        const string guard = "AuthorizeImportMutationAsync(";
+        var staged = ExtractMethod(source, "private static async Task ExecuteStagedImportAsync(");
+        var stagedGuard = staged.IndexOf(guard, StringComparison.Ordinal);
+        var stagedImport = staged.IndexOf(ImportCall, StringComparison.Ordinal);
+        Assert.True(stagedGuard >= 0 && stagedImport > stagedGuard,
+            "ExecuteStagedImportAsync must authorize before ImportFileAsync.");
+
+        var url = ExtractMethod(source, "private static async Task HandleImportFileFromUrl(");
+        var urlGuard = url.IndexOf(guard, StringComparison.Ordinal);
+        var download = url.IndexOf("DownloadRemoteImportSourceAsync(", StringComparison.Ordinal);
+        Assert.True(urlGuard >= 0 && download > urlGuard,
+            "HandleImportFileFromUrl must authorize before downloading the remote source.");
+
+        var cancel = ExtractMethod(source, "private static async Task HandleCancelImportJob(");
+        Assert.Contains(guard, cancel, StringComparison.Ordinal);
+
+        var helper = ExtractMethod(source, "private static async Task<bool> AuthorizeImportMutationAsync(");
+        Assert.Contains(AuthorizationCall, helper, StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(source, ImportCall));
+    }
+
+    private static string ExtractMethod(string source, string signature)
+    {
+        var start = source.IndexOf(signature, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"Missing {signature}");
+        var brace = source.IndexOf('{', start);
+        var depth = 0;
+        for (var i = brace; i < source.Length; i++)
+        {
+            if (source[i] == '{')
+            {
+                depth++;
+            }
+            else if (source[i] == '}')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    return source[start..(i + 1)];
+                }
+            }
+        }
+
+        throw new InvalidOperationException($"Unclosed method {signature}");
     }
 
     private static int CountOccurrences(string source, string value)

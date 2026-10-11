@@ -1,12 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Infrastructure.MultiTenancy;
 
 namespace Honua.ControlPlane;
 
@@ -36,6 +38,8 @@ internal sealed partial class CoordinatedReleaseControlService(
         string? reason,
         string? idempotencyKey,
         string? correlationId,
+        ClaimsPrincipal? requester = null,
+        TenantContextOptions? tenantOptions = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(container);
@@ -49,15 +53,18 @@ internal sealed partial class CoordinatedReleaseControlService(
         var operationId = CreateOperationId(metadataPlan.PackageId, effectiveIdempotencyKey);
         var requestFingerprint = CreateRequestFingerprint(container, metadataPlan, targetEnvironment);
 
-        var context = new CoordinatedReleaseContext
-        {
-            PackageId = metadataPlan.PackageId,
-            TargetEnvironment = targetEnvironment,
-            Container = container,
-            MetadataPlan = metadataPlan,
-            CurrentStep = CoordinatedReleaseStep.Preflight,
-            Steps = BuildInitialLedger(container, now)
-        };
+        var context = CoordinatedReleasePrincipal.Capture(
+            new CoordinatedReleaseContext
+            {
+                PackageId = metadataPlan.PackageId,
+                TargetEnvironment = targetEnvironment,
+                Container = container,
+                MetadataPlan = metadataPlan,
+                CurrentStep = CoordinatedReleaseStep.Preflight,
+                Steps = BuildInitialLedger(container, now)
+            },
+            requester,
+            tenantOptions);
 
         var operation = new WorkflowOperationRecord
         {
@@ -70,6 +77,7 @@ internal sealed partial class CoordinatedReleaseControlService(
             Audit = new OperationAuditInfo
             {
                 RequestedBy = requestedBy,
+                TenantId = context.RequesterTenantId,
                 Reason = reason,
                 IdempotencyKey = effectiveIdempotencyKey,
                 CorrelationId = correlationId,
@@ -125,22 +133,23 @@ internal sealed partial class CoordinatedReleaseControlService(
         }
 
         var context = operation.CoordinatedRelease;
+        var approver = string.IsNullOrWhiteSpace(requestedBy) ? context.GateApprovedBy : requestedBy;
         var updatedContext = gate switch
         {
-            CoordinatedReleaseStep.ContainerRollout => context with { ContainerGateApproved = true },
-            CoordinatedReleaseStep.MetadataAndSchema => context with { DataGateApproved = true },
+            CoordinatedReleaseStep.ContainerRollout => context with { ContainerGateApproved = true, GateApprovedBy = approver },
+            CoordinatedReleaseStep.MetadataAndSchema => context with { DataGateApproved = true, GateApprovedBy = approver },
             _ => throw new InvalidOperationException($"Coordinated release step '{gate}' is not an approvable gate.")
         };
 
         var updated = operation with
         {
             // Returning to Reconciling lets the conductor re-enter and advance the now-approved gate.
+            // The original requester stays on the audit record; the approver is stored on the context.
             Status = WorkflowOperationStatus.Reconciling,
             UpdatedAt = DateTimeOffset.UtcNow,
             CurrentPhase = $"Operator approved the {gate} gate.",
             Audit = operation.Audit with
             {
-                RequestedBy = requestedBy ?? operation.Audit.RequestedBy,
                 Reason = reason ?? operation.Audit.Reason
             },
             CoordinatedRelease = updatedContext
@@ -172,7 +181,8 @@ internal sealed partial class CoordinatedReleaseControlService(
             return null;
         }
 
-        if (operation.Status is WorkflowOperationStatus.RolledBack or WorkflowOperationStatus.Failed)
+        if (operation.Status is WorkflowOperationStatus.RolledBack or WorkflowOperationStatus.Failed
+            or WorkflowOperationStatus.RollbackRequested)
         {
             return operation;
         }
@@ -184,13 +194,22 @@ internal sealed partial class CoordinatedReleaseControlService(
             CurrentPhase = "Operator requested coordinated rollback; unwinding completed steps in reverse order.",
             Audit = operation.Audit with
             {
-                RequestedBy = requestedBy ?? operation.Audit.RequestedBy,
                 Reason = reason ?? operation.Audit.Reason
             },
-            CoordinatedRelease = operation.CoordinatedRelease with { CurrentStep = CoordinatedReleaseStep.RollingBack }
+            CoordinatedRelease = operation.CoordinatedRelease with
+            {
+                CurrentStep = CoordinatedReleaseStep.RollingBack,
+                RollbackRequestedBy = string.IsNullOrWhiteSpace(requestedBy)
+                    ? operation.CoordinatedRelease.RollbackRequestedBy
+                    : requestedBy
+            }
         };
 
-        await _workflowStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!await _workflowStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("The coordinated release changed while rollback was being requested.");
+        }
+
         return updated;
     }
 

@@ -71,4 +71,10 @@ public sealed record TileCachePackageImportResult
 
     /// <summary>Whether this was a dry-run (no tiles written).</summary>
     public required bool DryRun { get; init; }
+
+    /// <summary>
+    /// Assumption recorded while resolving the tiling scheme, when the package did not
+    /// name a WKID but its origin and resolutions matched a supported scheme.
+    /// </summary>
+    public string? Assumption { get; init; }
 }

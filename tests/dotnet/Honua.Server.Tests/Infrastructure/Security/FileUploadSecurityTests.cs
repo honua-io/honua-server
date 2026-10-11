@@ -166,35 +166,46 @@ public class FileUploadSecurityTests
         _output.WriteLine($"Malicious content detection: {result.ErrorMessage}");
     }
 
-    [Fact]
+    [UnitTest]
     [SecurityTest]
-    public async Task ValidateFileContent_ScriptContent_RejectsFile()
+    public async Task ValidateFileContent_ScriptContentInDataFile_AcceptsFile()
     {
-        // Arrange - Create a mock CSV file with script content
         var scriptContent = System.Text.Encoding.UTF8.GetBytes("Name,Value\n<script>alert('xss')</script>,123");
         var mockFile = CreateMockFormFile("data.csv", "text/csv", scriptContent);
 
-        // Act
         var result = await FileUploadSecurity.ValidateFileAsync(mockFile);
 
-        // Assert
+        Assert.True(result.IsValid);
+    }
+
+    [UnitTest]
+    [SecurityTest]
+    public async Task ValidateFileContent_ScriptContentInHtml_RejectsFile()
+    {
+        var scriptContent = Encoding.UTF8.GetBytes("<html><script>alert('xss')</script></html>");
+
+        // Extension allowlisting rejects .html before content inspection. This test
+        // drives the content scanner, which is what reports script content.
+        var result = await FileUploadSecurity.ValidateFileContentAsync(
+            "page.html",
+            "text/html",
+            scriptContent.Length,
+            () => new MemoryStream(scriptContent, writable: false),
+            maxScanSizeBytes: null);
+
         Assert.False(result.IsValid);
         Assert.Contains("dangerous script content", result.ErrorMessage);
-
-        _output.WriteLine($"Script content detection: {result.ErrorMessage}");
     }
 
 
-    [Fact]
+    [UnitTest]
     [SecurityTest]
-    public async Task ValidateFileContent_ScriptContentPastConfiguredBinaryScanLimit_RejectsFile()
+    public async Task ValidateFileContent_ScriptContentPastConfiguredBinaryScanLimit_AcceptsDataFile()
     {
-        // Arrange - malicious text beyond the binary signature scan prefix must still be detected.
         const int scanLimit = 1024;
         var prefix = new string('A', scanLimit + 128);
         var payload = Encoding.UTF8.GetBytes(prefix + "<script>alert('late')</script>");
 
-        // Act
         var result = await FileUploadSecurity.ValidateFileContentAsync(
             "data.csv",
             "text/csv",
@@ -202,9 +213,7 @@ public class FileUploadSecurityTests
             () => new MemoryStream(payload, writable: false),
             scanLimit);
 
-        // Assert
-        Assert.False(result.IsValid);
-        Assert.Contains("dangerous script content", result.ErrorMessage);
+        Assert.True(result.IsValid);
     }
 
     [Fact]

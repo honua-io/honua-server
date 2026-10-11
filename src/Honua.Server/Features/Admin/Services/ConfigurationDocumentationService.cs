@@ -431,6 +431,8 @@ public sealed class ConfigurationDocumentationService
                     "Maximum file size for general synchronous imports in bytes; direct PostGIS raster imports use the lower of this value and the fixed 50 MiB serving-process ceiling", FileSizeConstants.FiftyMB, opts.MaxSyncImportSize, "Range: 10MB-500MB"),
                 BuildPropertyWithCurrent("Limits:Imports:MaxImportSize", "Limits__Imports__MaxImportSize", "integer",
                     "Maximum import file size in bytes", FileSizeConstants.FiveHundredMB, opts.MaxImportSize, "Range: 50MB-5GB"),
+                BuildPropertyWithCurrent("Limits:Imports:MaxTilePackageSize", "Limits__Imports__MaxTilePackageSize", "integer",
+                    "Maximum Esri tile-cache package upload in bytes", 2L * FileSizeConstants.OneGB, opts.MaxTilePackageSize, "Range: 50MB-5GB"),
                 BuildPropertyWithCurrent("Limits:Imports:MaxPreviewFeatures", "Limits__Imports__MaxPreviewFeatures", "integer",
                     "Maximum features in preview", 100, opts.MaxPreviewFeatures, "Range: 10-1000"),
                 BuildPropertyWithCurrent("Limits:Imports:MaxPreviewCountScan", "Limits__Imports__MaxPreviewCountScan", "integer",

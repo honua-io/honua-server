@@ -150,6 +150,10 @@ public sealed class VerticalSliceIsolationTests
             "Resilience",
             "Scene",
             "Security",
+            "Stac",             // Hosting-resident STAC item identity and continuation
+                                // tokens shared by Honua.Protocols.Stac, the Hosting
+                                // CQL2 filter, and the portal-token cursor check, so
+                                // neither the protocol assembly nor Server owns the lookup.
             "Tiles",            // Hosting-resident shared tile-format writer
                                 // (TilePackageWriter: Esri exploded-cache TPK packaging)
                                 // shared by the GeoServices MapServer + ImageServer

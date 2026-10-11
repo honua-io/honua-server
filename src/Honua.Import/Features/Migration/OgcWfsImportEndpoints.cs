@@ -94,6 +94,8 @@ internal static partial class OgcWfsImportEndpoints
             return;
         }
 
+        pageSize = OgcWfsImportRequest.ClampPageSize(pageSize);
+
         var timeoutSeconds = request.RequestTimeoutSeconds ?? 120;
         if (timeoutSeconds <= 0)
         {

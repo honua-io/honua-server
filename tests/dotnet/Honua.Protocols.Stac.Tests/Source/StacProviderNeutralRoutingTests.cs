@@ -92,7 +92,13 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
         await _fixture.InitializeAsync();
         _fixture.UpdateV2ResourceSchemaField(
             WebAppFixture.TestLayerId,
-            new MetadataV2Field { Name = "STAC_ID", Type = MetadataV2FieldType.String, Nullable = true });
+            new MetadataV2Field
+            {
+                Name = "STAC_ID",
+                Type = MetadataV2FieldType.String,
+                Nullable = true,
+                SemanticRoles = ["id.global"]
+            });
         _fixture.UpdateV2ResourceSchemaField(
             WebAppFixture.TestLayerId,
             new MetadataV2Field { Name = "ITEM_ID", Type = MetadataV2FieldType.String, Nullable = true });
@@ -101,7 +107,13 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
             new MetadataV2Field { Name = "ID", Type = MetadataV2FieldType.String, Nullable = true });
         _fixture.UpdateV2ResourceSchemaField(
             1,
-            new MetadataV2Field { Name = "STAC_ID", Type = MetadataV2FieldType.String, Nullable = true });
+            new MetadataV2Field
+            {
+                Name = "STAC_ID",
+                Type = MetadataV2FieldType.String,
+                Nullable = true,
+                SemanticRoles = ["id.global"]
+            });
         _fixture.UpdateV2ResourceSchemaField(
             1,
             new MetadataV2Field { Name = "ITEM_ID", Type = MetadataV2FieldType.String, Nullable = true });
@@ -168,9 +180,9 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
             !query.Where!.Contains(" OR ", StringComparison.Ordinal) &&
             !query.Where.Contains("TRIM", StringComparison.OrdinalIgnoreCase) &&
             !query.Where.Contains("IS NULL", StringComparison.OrdinalIgnoreCase));
-        queries.Select(query => query.Where).Should().Contain(where => where!.Contains("STAC_ID", StringComparison.Ordinal));
-        queries.Select(query => query.Where).Should().Contain(where => where!.Contains("ITEM_ID", StringComparison.Ordinal));
-        queries.Select(query => query.Where).Should().Contain(where => where!.Contains("ID", StringComparison.Ordinal));
+        queries.Should().ContainSingle();
+        queries.Single().Where.Should().Contain("STAC_ID");
+        queries.Single().Where.Should().NotContain("ITEM_ID");
 
         var returnedIds = System.Text.Json.JsonDocument.Parse(content).RootElement
             .GetProperty("features")
@@ -309,8 +321,7 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
 
         using var page1 = System.Text.Json.JsonDocument.Parse(content);
-        page1.RootElement.GetProperty("numberMatched").GetInt32().Should().Be(3,
-            "the same routed candidates returned by each canonical-field query must be deduplicated by Feature.Id");
+        page1.RootElement.GetProperty("numberMatched").GetInt32().Should().Be(3);
         page1.RootElement.GetProperty("numberReturned").GetInt32().Should().Be(2);
         page1.RootElement.GetProperty("features").EnumerateArray()
             .Select(feature => feature.GetProperty("id").GetString())
@@ -318,9 +329,9 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
                 "sortby must be applied globally, with Feature.Id as the stable tie-breaker, before paging");
 
         var page1Queries = _capturedQueries.ToArray();
-        page1Queries.Should().HaveCount(3);
+        page1Queries.Should().ContainSingle();
         page1Queries.Should().OnlyContain(query => query.Limit == 4,
-            "each canonical-field query may fetch at most distinct requested ids plus one overflow sentinel");
+            "the item-id query may fetch at most distinct requested ids plus one overflow sentinel");
 
         var nextHref = page1.RootElement.GetProperty("links").EnumerateArray()
             .Single(link => link.GetProperty("rel").GetString() == "next")
@@ -380,13 +391,49 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.StacSearch)]
     [Endpoint("GET /stac/search")]
-    public async Task SearchGet_WhenRoutedCandidateQueryExceedsSafetyCap_ReturnsInternalServerError()
+    public async Task SearchGet_WithSortByAcrossCollections_MergesGlobalOrderWithoutIds()
+    {
+        var response = await _fixture.Client.GetAsync("/stac/search?collections=0,1&sortby=name&limit=2");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var page1 = System.Text.Json.JsonDocument.Parse(content);
+        page1.RootElement.GetProperty("numberMatched").GetInt32().Should().Be(4);
+        page1.RootElement.GetProperty("features").EnumerateArray()
+            .Select(feature => (
+                Id: feature.GetProperty("id").GetString(),
+                Collection: feature.GetProperty("collection").GetString()))
+            .Should().Equal(("800", "0"), ("820", "1"));
+
+        var nextHref = page1.RootElement.GetProperty("links").EnumerateArray()
+            .Single(link => link.GetProperty("rel").GetString() == "next")
+            .GetProperty("href").GetString();
+        nextHref.Should().Contain("next=offset");
+        nextHref.Should().NotContain("token=");
+
+        var page2Response = await _fixture.Client.GetAsync(new Uri(nextHref!).PathAndQuery);
+        var page2Content = await page2Response.Content.ReadAsStringAsync();
+        page2Response.StatusCode.Should().Be(HttpStatusCode.OK, page2Content);
+
+        using var page2 = System.Text.Json.JsonDocument.Parse(page2Content);
+        page2.RootElement.GetProperty("features").EnumerateArray()
+            .Select(feature => (
+                Id: feature.GetProperty("id").GetString(),
+                Collection: feature.GetProperty("collection").GetString()))
+            .Should().Equal(("810", "0"), ("830", "1"));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WhenRoutedCandidateQueryExceedsSafetyCap_ReturnsConflict()
     {
         var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var response = await _fixture.Client.GetAsync(
             $"/stac/search?collections={collectionId}&ids={OverflowId}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         _capturedQueries.Should().ContainSingle();
         _capturedQueries.Single().Limit.Should().Be(2,
             "one requested id permits one candidate plus one overflow sentinel");
@@ -405,7 +452,7 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        _capturedQueries.Should().HaveCount(3);
+        _capturedQueries.Should().ContainSingle();
         _capturedQueries.Should().OnlyContain(query => query.Limit == 513,
             "the maximum accepted distinct-id set still carries one overflow sentinel");
     }
@@ -439,8 +486,8 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
         using var json = System.Text.Json.JsonDocument.Parse(content);
         json.RootElement.GetProperty("numberMatched").GetInt32().Should().Be(512,
             "the global cap permits exactly 512 retained candidates across visible bound publications");
-        _capturedQueries.Should().HaveCount(6,
-            "each of the two visible bound publications queries its three canonical item-id fields");
+        _capturedQueries.Should().HaveCount(2,
+            "each of the two visible bound publications queries its unique item-id field");
     }
 
     [IntegrationTest]
@@ -453,7 +500,7 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/stac/search?ids={ids}&sortby=name");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        _capturedQueries.Should().HaveCount(6,
+        _capturedQueries.Should().HaveCount(2,
             "routing must stop immediately after the second bound target breaches the aggregate cap");
     }
 
@@ -473,13 +520,11 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
         Volatile.Read(ref _boundReaderCreations).Should().BeGreaterThan(bindingsBefore);
 
         var queries = _capturedQueries.ToArray();
-        queries.Should().HaveCount(3, "bounded fanout gathers each declared canonical field before effective-id selection");
+        queries.Should().ContainSingle("the unique STAC_ID field is the only item-id candidate");
         queries.Should().OnlyContain(query => query.SqlFilter == null);
         queries.Should().OnlyContain(query =>
             !string.IsNullOrWhiteSpace(query.Where) && query.Where.Contains(DetailId, StringComparison.Ordinal));
         queries[0].Where.Should().Contain("STAC_ID");
-        queries[1].Where.Should().Contain("ITEM_ID");
-        queries[2].Where.Should().Contain("ID");
         System.Text.Json.JsonDocument.Parse(content).RootElement.GetProperty("id").GetString().Should().Be(DetailId);
     }
 
@@ -585,9 +630,18 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
 
         if (where.Contains(DetailId, StringComparison.Ordinal))
         {
-            return where.Contains("STAC_ID", StringComparison.Ordinal)
-                ? Result(FeatureWithIds(301, stacId: "not-the-requested-id", itemId: DetailId))
-                : Result(FeatureWithIds(302, stacId: " ", itemId: DetailId));
+            return Result(FeatureWithIds(302, stacId: DetailId));
+        }
+
+        if (string.IsNullOrEmpty(where) && query.OrderBy is { IsDefaultOrEmpty: false })
+        {
+            return layerId == 0
+                ? Result(
+                    FeatureWithIds(810, name: "Charlie"),
+                    FeatureWithIds(800, name: "Alpha"))
+                : Result(
+                    FeatureWithIds(820, name: "Bravo"),
+                    FeatureWithIds(830, name: "Delta"));
         }
 
         return QueryResult<Feature>.Empty();

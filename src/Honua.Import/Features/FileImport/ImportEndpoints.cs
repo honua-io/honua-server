@@ -316,13 +316,8 @@ internal static partial class ImportEndpoints
         }
 
         CancellationToken cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        if (!await ImportAdminAuthorization.IsAuthorizedAsync(
-                context, context.User, cancellationToken).ConfigureAwait(false))
+        if (!await AuthorizeImportMutationAsync(context, cancellationToken).ConfigureAwait(false))
         {
-            var denial = context.User.Identity?.IsAuthenticated == true
-                ? Results.Forbid()
-                : Results.Unauthorized();
-            await denial.ExecuteAsync(context);
             return;
         }
 
@@ -352,6 +347,13 @@ internal static partial class ImportEndpoints
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (ImportJobQueueFullException)
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "Import job queue is full. Retry later.",
+                StatusCodes.Status429TooManyRequests);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidDataException or NotSupportedException)
         {
@@ -469,6 +471,11 @@ internal static partial class ImportEndpoints
         }
 
         CancellationToken cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        if (!await AuthorizeImportMutationAsync(context, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
         var request = await JsonSerializer.DeserializeAsync(
             context.Request.Body,
             ImportJsonContext.Default.ImportUrlImportRequest,
@@ -563,6 +570,13 @@ internal static partial class ImportEndpoints
         {
             throw;
         }
+        catch (ImportJobQueueFullException)
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "Import job queue is full. Retry later.",
+                StatusCodes.Status429TooManyRequests);
+        }
         catch (Exception ex) when (ex is ArgumentException or InvalidDataException or NotSupportedException)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
@@ -580,11 +594,30 @@ internal static partial class ImportEndpoints
         }
     }
 
+    private static async Task<bool> AuthorizeImportMutationAsync(HttpContext context, CancellationToken cancellationToken)
+    {
+        if (await ImportAdminAuthorization.IsAuthorizedAsync(context, context.User, cancellationToken).ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        var denial = context.User.Identity?.IsAuthenticated == true
+            ? Results.Forbid()
+            : Results.Unauthorized();
+        await denial.ExecuteAsync(context);
+        return false;
+    }
+
     private static async Task ExecuteStagedImportAsync(
         HttpContext context,
         ImportExecutionRequest request,
         CancellationToken cancellationToken)
     {
+        if (!await AuthorizeImportMutationAsync(context, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
         var limits = importService.Limits;
         var shouldQueueBackground = request.ForceBackground || request.File.SizeBytes > limits.BackgroundJobThresholdBytes;
@@ -707,10 +740,16 @@ internal static partial class ImportEndpoints
             // a refresh failure must not fail the import that already succeeded.
             if (importResult.Success)
             {
+                var snapshotSchema = string.IsNullOrWhiteSpace(importResult.Schema)
+                    ? importRequest.TargetSchema
+                    : importResult.Schema;
+                var snapshotTable = string.IsNullOrWhiteSpace(importResult.PhysicalTableName)
+                    ? ResolvePhysicalImportedTableName(importRequest.TableName)
+                    : importResult.PhysicalTableName;
                 await TryRefreshPublishedSnapshotAsync(
                     context,
-                    importRequest.TargetSchema,
-                    ResolvePhysicalImportedTableName(importRequest.TableName),
+                    snapshotSchema,
+                    snapshotTable,
                     cancellationToken);
             }
 
@@ -1527,6 +1566,11 @@ internal static partial class ImportEndpoints
         if (!HttpMethods.IsPost(context.Request.Method))
         {
             await HandlePostMethodNotAllowed(context);
+            return;
+        }
+
+        if (!await AuthorizeImportMutationAsync(context, context.RequestAborted).ConfigureAwait(false))
+        {
             return;
         }
 

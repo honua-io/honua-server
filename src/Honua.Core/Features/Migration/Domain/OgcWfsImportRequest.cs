@@ -76,9 +76,40 @@ public sealed record OgcWfsImportRequest
     public int? TargetSrid { get; init; }
 
     /// <summary>
+    /// Upper bound applied to <see cref="PageSize"/>. Larger operator values are clamped.
+    /// </summary>
+    public const int MaxPageSize = 10_000;
+
+    /// <summary>
     /// Page size for paged <c>GetFeature</c> requests. Default is 1000.
+    /// Values above <see cref="MaxPageSize"/> are clamped by <see cref="ClampPageSize"/>.
     /// </summary>
     public int PageSize { get; init; } = 1000;
+
+    /// <summary>
+    /// Clamps a positive page size to <see cref="MaxPageSize"/>.
+    /// </summary>
+    public static int ClampPageSize(int pageSize)
+    {
+        if (pageSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageSize), "PageSize must be greater than zero.");
+        }
+
+        return Math.Min(pageSize, MaxPageSize);
+    }
+
+    /// <summary>
+    /// Rejects a feature page that returned more features than the requested page size.
+    /// </summary>
+    public static void EnsurePageWithinRequest(int featureCount, int pageSize)
+    {
+        if (featureCount > pageSize)
+        {
+            throw new FormatException(
+                $"WFS page returned {featureCount} features, which exceeds the requested page size of {pageSize}.");
+        }
+    }
 
     /// <summary>
     /// Per-request timeout in seconds for WFS HTTP calls.

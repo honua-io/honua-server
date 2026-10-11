@@ -148,6 +148,23 @@ public sealed record ImportLimits
     public double MaxArchiveCompressionRatio { get; init; } = 200;
 
     /// <summary>
+    /// Maximum number of entries in a ZIP/KMZ/FileGDB archive. Includes directory
+    /// and zero-length entries. Default: 10000.
+    /// </summary>
+    public int MaxArchiveEntries { get; init; } = 10_000;
+
+    /// <summary>
+    /// Maximum number of background import jobs executing at once. Default: 2.
+    /// </summary>
+    public int MaxConcurrentBackgroundJobs { get; init; } = 2;
+
+    /// <summary>
+    /// Maximum number of background import jobs waiting for an execution slot.
+    /// Zero disables queuing beyond the running jobs. Default: 16.
+    /// </summary>
+    public int MaxBackgroundJobQueueDepth { get; init; } = 16;
+
+    /// <summary>
     /// Whether to skip invalid geometries or fail the import.
     /// When true, invalid geometries are skipped; when false, import fails.
     /// Default: true (skip invalid).

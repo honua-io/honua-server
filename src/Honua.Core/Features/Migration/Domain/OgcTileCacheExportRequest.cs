@@ -101,6 +101,12 @@ public sealed record OgcTileCacheExportRequest
     /// environments.
     /// </summary>
     public bool AllowUnsafeLocalUrls { get; init; }
+
+    /// <summary>
+    /// Host allowlist applied to WMTS ResourceURL tile templates.
+    /// Null does not restrict the host. An empty collection rejects every tile host.
+    /// </summary>
+    public IReadOnlyCollection<string>? AllowedServiceHostSuffixes { get; init; }
 }
 
 /// <summary>

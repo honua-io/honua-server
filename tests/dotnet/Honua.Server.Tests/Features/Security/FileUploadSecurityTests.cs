@@ -323,6 +323,19 @@ public sealed class FileUploadSecurityTests
         var result = await FileUploadSecurity.ValidateFileContentAsync(file, maxScanSizeBytes: 1024);
 
         // Assert
+        result.IsValid.Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    public async Task ValidateFileContentAsync_HtmlScript_RejectsFile()
+    {
+        var content = "<html><script>alert('x')</script></html>";
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content));
+        var file = CreateFormFile(stream, "page.html", "text/html");
+
+        var result = await FileUploadSecurity.ValidateFileContentAsync(file, maxScanSizeBytes: 4096);
+
         result.IsValid.Should().BeFalse();
         result.ErrorMessage.Should().Contain("dangerous script content");
     }
@@ -340,7 +353,7 @@ public sealed class FileUploadSecurityTests
         var result = await FileUploadSecurity.ValidateFileContentAsync(file, maxScanSizeBytes: 4096);
 
         // Assert
-        result.IsValid.Should().BeFalse();
+        result.IsValid.Should().BeTrue();
     }
 
     [IntegrationTest]

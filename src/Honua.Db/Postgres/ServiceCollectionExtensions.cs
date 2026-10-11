@@ -642,6 +642,13 @@ internal static class ServiceCollectionExtensions
                     MaxArchiveCompressionRatio = ParsePositiveDoubleOrDefault(
                         section["MaxArchiveCompressionRatio"],
                         limits.MaxArchiveCompressionRatio),
+                    MaxArchiveEntries = ParsePositiveIntOrDefault(section["MaxArchiveEntries"], limits.MaxArchiveEntries),
+                    MaxConcurrentBackgroundJobs = ParsePositiveIntOrDefault(
+                        section["MaxConcurrentBackgroundJobs"],
+                        limits.MaxConcurrentBackgroundJobs),
+                    MaxBackgroundJobQueueDepth = ParseNonNegativeIntOrDefault(
+                        section["MaxBackgroundJobQueueDepth"],
+                        limits.MaxBackgroundJobQueueDepth),
                     GeometryValidityMode = Enum.TryParse<Core.Configuration.ValidationMode>(
                         section["GeometryValidityMode"],
                         ignoreCase: true,
@@ -706,7 +713,8 @@ internal static class ServiceCollectionExtensions
             var performanceMonitor = serviceProvider.GetRequiredService<IPerformanceMonitor>();
             var logger = serviceProvider.GetRequiredService<ILogger<UniversalImportJobService>>();
             return new UniversalImportJobService(scopeFactory, progressStore, performanceMonitor, logger,
-                serviceProvider.GetService<Honua.Core.Features.Licensing.Abstractions.ILicenseOperationPolicy>());
+                serviceProvider.GetService<Honua.Core.Features.Licensing.Abstractions.ILicenseOperationPolicy>(),
+                serviceProvider.GetRequiredService<Core.Features.Import.Domain.ImportLimits>());
         });
 
         // Register ArcGIS REST client for Geoservices service imports with resilience

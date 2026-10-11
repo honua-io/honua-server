@@ -193,7 +193,11 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         }
 
         var previousUnsafeLocalUrlsAllowed = UnsafeLocalUrlsAllowed.Value;
+        var previousLinkedUrlPolicy = MigrationLinkedUrlPolicy.Current;
         UnsafeLocalUrlsAllowed.Value = request.AllowUnsafeLocalUrls;
+        MigrationLinkedUrlPolicy.Current = new MigrationLinkedUrlPolicy(
+            request.AllowUnsafeLocalUrls,
+            request.AllowedServiceHostSuffixes);
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(request.TimeoutSeconds <= 0 ? DefaultTimeoutSeconds : request.TimeoutSeconds));
@@ -432,6 +436,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         finally
         {
             UnsafeLocalUrlsAllowed.Value = previousUnsafeLocalUrlsAllowed;
+            MigrationLinkedUrlPolicy.Current = previousLinkedUrlPolicy;
         }
     }
 
@@ -777,6 +782,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
 
         for (var redirectCount = 0; ; redirectCount++)
         {
+            MigrationLinkedUrlPolicy.Current.EnsureAllows(requestUri);
             using var message = new HttpRequestMessage(HttpMethod.Get, requestUri);
             message.Headers.Accept.ParseAdd("application/geo+json");
             message.Headers.Accept.ParseAdd("application/json");
@@ -798,13 +804,16 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
                     throw new HttpRequestException("OGC API Features endpoint returned an unsafe redirect.");
                 }
 
+                MigrationLinkedUrlPolicy.Current.EnsureAllows(redirectUri);
                 requestUri = redirectUri;
                 continue;
             }
 
             response.EnsureSuccessStatusCode();
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            return await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var payload = await MigrationHttpContentReader
+                .ReadStringWithLimitAsync(response, MigrationHttpContentReader.DefaultMaxResponseBytes, cancellationToken)
+                .ConfigureAwait(false);
+            return JsonDocument.Parse(payload);
         }
     }
 

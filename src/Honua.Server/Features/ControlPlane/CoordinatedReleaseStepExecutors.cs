@@ -35,7 +35,7 @@ internal sealed class CoordinatedContainerStepExecutor(
                 priority: OperationPriority.Normal,
                 submitImmediately: true,
                 parameterOverrides: null,
-                principal: null,
+                principal: CoordinatedReleasePrincipal.Restore(context),
                 cancellationToken)
             .ConfigureAwait(false);
 

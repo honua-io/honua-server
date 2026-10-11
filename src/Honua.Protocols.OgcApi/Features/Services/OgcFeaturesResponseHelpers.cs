@@ -111,4 +111,84 @@ internal static class OgcFeaturesResponseHelpers
         var result = await featureReader.QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         return result.Items.IsDefaultOrEmpty ? null : result.Items[0];
     }
+
+    /// <summary>
+    /// Loads a projected feature and the storage snapshot it was projected from.
+    /// A second storage read after the projection must match the first. Otherwise the
+    /// response body and the entity tag would describe different row versions.
+    /// </summary>
+    public static Task<ConsistentProjectedFeatureRead> LoadProjectedConsistentWithStorageAsync(
+        IFeatureReader featureReader,
+        int layerId,
+        int storageSrid,
+        long objectId,
+        CrsDefinition responseCrs,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(featureReader);
+        return ReadUntilStorageStableAsync(
+            token => featureReader.GetAsync(layerId, objectId, token),
+            token => LoadFeatureForResponseCoreAsync(
+                featureReader, layerId, storageSrid, objectId, responseCrs, token),
+            cancellationToken);
+    }
+
+    internal static async Task<ConsistentProjectedFeatureRead> ReadUntilStorageStableAsync(
+        Func<CancellationToken, Task<Feature?>> readStorage,
+        Func<CancellationToken, Task<Feature?>> readProjected,
+        CancellationToken cancellationToken,
+        int attempts = 3)
+    {
+        ArgumentNullException.ThrowIfNull(readStorage);
+        ArgumentNullException.ThrowIfNull(readProjected);
+        ArgumentOutOfRangeException.ThrowIfLessThan(attempts, 1);
+
+        var sawFeature = false;
+        for (var attempt = 0; attempt < attempts; attempt++)
+        {
+            var before = await readStorage(cancellationToken).ConfigureAwait(false);
+            if (!before.HasValue)
+            {
+                return sawFeature
+                    ? Unstable()
+                    : new ConsistentProjectedFeatureRead(ConsistentFeatureReadStatus.NotFound, null, null);
+            }
+
+            sawFeature = true;
+            var projected = await readProjected(cancellationToken).ConfigureAwait(false);
+            if (!projected.HasValue)
+            {
+                continue;
+            }
+
+            var after = await readStorage(cancellationToken).ConfigureAwait(false);
+            if (after.HasValue &&
+                FeatureStateToken.Compute(before.Value) == FeatureStateToken.Compute(after.Value))
+            {
+                return new ConsistentProjectedFeatureRead(
+                    ConsistentFeatureReadStatus.Found,
+                    projected,
+                    before);
+            }
+        }
+
+        return Unstable();
+    }
+
+    private static ConsistentProjectedFeatureRead Unstable()
+        => new(ConsistentFeatureReadStatus.Unstable, null, null);
 }
+
+/// <summary>Whether a projected read and its storage snapshot describe one row version.</summary>
+internal enum ConsistentFeatureReadStatus
+{
+    Found,
+    NotFound,
+    Unstable,
+}
+
+/// <summary>A projected response feature paired with the storage snapshot hashed into its ETag.</summary>
+internal readonly record struct ConsistentProjectedFeatureRead(
+    ConsistentFeatureReadStatus Status,
+    Feature? Response,
+    Feature? Storage);
