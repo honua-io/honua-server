@@ -503,8 +503,12 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
                     SELECT raster AS rast, id, created_at,
                         COALESCE(acquisition_date, created_at) AS effective_acquisition
                     FROM raster_data ORDER BY id
-                ), canonical AS (
+                ), canonical_raw AS (
                     SELECT {RasterMosaicSql.CreateMosaicAggregateExpression(strategy)} AS rast FROM source
+                ), canonical AS (
+                    -- GTiff has one shared NoData tag. Compare the same encoded contract;
+                    -- distinct raw per-band markers are checked before encoding separately.
+                    SELECT ST_FromGDALRaster(ST_AsGDALRaster(rast, 'GTiff')) AS rast FROM canonical_raw
                 ), actual AS (SELECT ST_FromGDALRaster(@data) AS rast)
                 SELECT ST_BandPixelType(a.rast, n), ST_BandPixelType(c.rast, n),
                        ST_BandNoDataValue(a.rast, n), ST_BandNoDataValue(c.rast, n),

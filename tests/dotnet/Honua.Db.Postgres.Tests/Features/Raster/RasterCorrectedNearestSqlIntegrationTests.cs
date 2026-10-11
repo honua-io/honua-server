@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Raster.Domain;
 using Honua.Db.Postgres.Features.Raster;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Xunit.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
@@ -12,7 +14,7 @@ namespace Honua.Db.Postgres.Tests.Features.Raster;
 /// Verifies canonical separable sampling, target centers and original typed coverage masks.
 /// </summary>
 [Collection("Database")]
-public sealed class RasterCorrectedNearestSqlIntegrationTests(PostgresFixture fixture)
+public sealed class RasterCorrectedNearestSqlIntegrationTests(PostgresFixture fixture, ITestOutputHelper output)
 {
     [IntegrationTheory]
     [InlineData(81, 195, -123.02, 39.20, -9.0, 700.0)]
@@ -342,26 +344,41 @@ public sealed class RasterCorrectedNearestSqlIntegrationTests(PostgresFixture fi
         await using var transaction = await connection.BeginTransactionAsync();
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandTimeout = 20;
-        command.CommandText = $"""
-            SET LOCAL statement_timeout = '15s';
-            WITH source AS MATERIALIZED (
-                SELECT ST_AddBand(
+        // Fixture construction is not a production tile read. Retain the full 2048-square,
+        // two-band source, and report its setup time separately from the bounded Sample call.
+        command.CommandTimeout = 120;
+        command.CommandText = """
+            SET LOCAL statement_timeout = '120s';
+            CREATE TEMP TABLE corrected_highres_source (rast raster) ON COMMIT DROP;
+            INSERT INTO corrected_highres_source
+            SELECT ST_AddBand(
                     ST_MapAlgebra(ST_AddBand(ST_MakeEmptyRaster(2048, 2048, 0, 2048, 1, -1, 0, 0, 3857),
                         '16BUI'::text, 0, 65535), 1, '16BUI', '([rast.x] - 1)::integer % 251', 65535),
                     ST_MapAlgebra(ST_AddBand(ST_MakeEmptyRaster(2048, 2048, 0, 2048, 1, -1, 0, 0, 3857),
-                        '16BUI'::text, 0, 65535), 1, '16BUI', '([rast.y] - 1)::integer % 239', 65535)) AS rast
-            ), grid AS MATERIALIZED (
+                        '16BUI'::text, 0, 65535), 1, '16BUI', '([rast.y] - 1)::integer % 239', 65535));
+            """;
+        var setupWatch = System.Diagnostics.Stopwatch.StartNew();
+        await command.ExecuteNonQueryAsync();
+        setupWatch.Stop();
+        output.WriteLine($"HighResolution fixture setup: {setupWatch.Elapsed.TotalMilliseconds:F3} ms");
+        command.CommandTimeout = 20;
+        command.CommandText = $"""
+            SET LOCAL statement_timeout = '15s';
+            WITH source AS MATERIALIZED (SELECT rast FROM corrected_highres_source),
+            grid AS MATERIALIZED (
                 SELECT ST_MakeEmptyRaster(256, 256, 0, 2048, 8, -8, 0, 0, 3857) AS rast
             ), result AS MATERIALIZED (
                 SELECT {RasterCorrectedNearestSql.Sample("s.rast", "g.rast")} AS rast,
                        {RasterNativeWindowSql.TryWarp("s.rast", "g.rast")} IS NULL AS capped,
-                       g.rast AS grid FROM source s, grid g
+                       g.rast AS grid, ST_Width(s.rast) AS source_width,
+                       ST_Height(s.rast) AS source_height, ST_NumBands(s.rast) AS source_bands
+                FROM source s, grid g
             )
             SELECT capped, ST_DumpValues(rast, 1, FALSE), ST_DumpValues(rast, 2, FALSE),
                    ST_BandPixelType(rast, 1), ST_BandPixelType(rast, 2),
                    ST_BandNoDataValue(rast, 1), ST_BandNoDataValue(rast, 2),
-                   ST_SameAlignment(rast, grid), ST_Equals(ST_ConvexHull(rast), ST_ConvexHull(grid))
+                   ST_SameAlignment(rast, grid), ST_Equals(ST_ConvexHull(rast), ST_ConvexHull(grid)),
+                   source_width, source_height, source_bands
             FROM result;
             """;
         var watch = System.Diagnostics.Stopwatch.StartNew();
@@ -389,7 +406,11 @@ public sealed class RasterCorrectedNearestSqlIntegrationTests(PostgresFixture fi
         reader.GetDouble(6).Should().Be(65535);
         reader.GetBoolean(7).Should().BeTrue();
         reader.GetBoolean(8).Should().BeTrue();
+        reader.GetInt32(9).Should().Be(2048);
+        reader.GetInt32(10).Should().Be(2048);
+        reader.GetInt32(11).Should().Be(2);
         watch.Stop();
+        output.WriteLine($"HighResolution production Sample plus full array assertions: {watch.Elapsed.TotalMilliseconds:F3} ms");
         watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(15),
             "the larger-source fallback must meet the same bounded query deadline");
     }
@@ -476,5 +497,65 @@ public sealed class RasterCorrectedNearestSqlIntegrationTests(PostgresFixture fi
         var exception = await action.Should().ThrowAsync<Npgsql.PostgresException>();
         exception.Which.SqlState.Should().Be("22P02");
         exception.Which.MessageText.Should().Contain("raster_mosaic_64bf_nodata_collision");
+    }
+
+    [IntegrationTheory]
+    [InlineData(RasterMergeStrategy.Newest)]
+    [InlineData(RasterMergeStrategy.Average)]
+    public async Task Sample_MosaicBeforeEncoding_PreservesDistinctBandNoDataAndCanonicalValues(
+        RasterMergeStrategy strategy)
+    {
+        await using var connection = await fixture.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH original AS MATERIALIZED (
+                SELECT 1 AS id, '2024-01-01'::timestamptz AS created_at,
+                    '2024-01-01'::timestamptz AS effective_acquisition,
+                    ST_AddBand(ST_AddBand(ST_MakeEmptyRaster(1, 1, 0, 1, 1, -1, 0, 0, 4326),
+                        '32BF'::text, 2.75, -9999), '32BF'::text, 6.5, -9998) AS rast
+                UNION ALL
+                SELECT 2, '2024-01-02'::timestamptz, '2024-01-02'::timestamptz,
+                    ST_AddBand(ST_AddBand(ST_MakeEmptyRaster(1, 1, 0, 1, 1, -1, 0, 0, 4326),
+                        '8BUI'::text, 20, 255), '16BUI'::text, 40, 65535)
+            ), grid AS MATERIALIZED (
+                SELECT ST_MakeEmptyRaster(1, 1, 0, 1, 1, -1, 0, 0, 4326) AS rast
+            ), source AS MATERIALIZED (
+                SELECT {RasterCorrectedNearestSql.Sample("o.rast", "g.rast", preserveCoverageMask: true)} AS rast,
+                    o.rast AS original, id, created_at, effective_acquisition FROM original o, grid g
+            ), metadata_source AS (
+                SELECT {RasterCorrectedNearestSql.MetadataHeader("original", "(SELECT rast FROM grid)")} AS rast,
+                    id, created_at, effective_acquisition FROM source
+            ), metadata_raw AS (
+                SELECT {RasterMosaicSql.CreateMosaicAggregateExpression(strategy)} AS rast FROM metadata_source
+            ), metadata AS (
+                SELECT {RasterCorrectedNearestSql.RestoreUndeclaredNoData("rast", "source")} AS rast FROM metadata_raw
+            ), merged AS (
+                SELECT {RasterMosaicSql.CreateMosaicAggregateExpression(strategy)} AS rast FROM source
+            ), actual AS (
+                SELECT {RasterCorrectedNearestSql.RestoreAfterMosaic("rast", "(SELECT rast FROM metadata)")} AS rast FROM merged
+            ), canonical AS (
+                SELECT {RasterMosaicSql.CreateMosaicAggregateExpression(strategy)} AS rast FROM original
+            )
+            SELECT ST_BandPixelType(a.rast, n), ST_BandPixelType(c.rast, n),
+                ST_BandNoDataValue(a.rast, n), ST_BandNoDataValue(c.rast, n),
+                ST_Value(a.rast, n, 1, 1), ST_Value(c.rast, n, 1, 1)
+            FROM actual a, canonical c, generate_series(1, 2) n ORDER BY n;
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        for (var band = 0; band < 2; band++)
+        {
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetString(0).Should().Be(reader.GetString(1));
+            reader.GetDouble(2).Should().Be(reader.GetDouble(3));
+            reader.GetDouble(2).Should().Be(band == 0 ? -9999 : -9998,
+                "raw raster metadata must retain each marker before codec-specific normalization");
+            reader.GetDouble(4).Should().Be(reader.GetDouble(5));
+            if (strategy == RasterMergeStrategy.Average)
+            {
+                reader.GetDouble(4).Should().Be(band == 0 ? 11.375 : 23.25);
+            }
+        }
+
+        (await reader.ReadAsync()).Should().BeFalse();
     }
 }
