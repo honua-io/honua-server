@@ -4,6 +4,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Identity.Abstractions;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 
@@ -26,7 +27,8 @@ internal sealed class PortalOAuthTokenService(
     IOAuthScopeCatalogue scopeCatalogue,
     PortalJwtAccessTokenService jwtService,
     ClientCredentialsFederationService federation,
-    IOptions<PortalTokenAuthenticationOptions> tokenOptions)
+    IOptions<PortalTokenAuthenticationOptions> tokenOptions,
+    IPrincipalMembershipSource? membershipSource = null)
 {
     private const string AuthorizationCodeGrant = "authorization_code";
     private const string RefreshTokenGrant = "refresh_token";
@@ -45,6 +47,7 @@ internal sealed class PortalOAuthTokenService(
     private readonly PortalJwtAccessTokenService _jwtService = jwtService;
     private readonly ClientCredentialsFederationService _federation = federation;
     private readonly PortalTokenAuthenticationOptions _tokenOptions = tokenOptions.Value;
+    private readonly IPrincipalMembershipSource? _membershipSource = membershipSource;
 
     // Optional JWT access-token format (ADR-0068, #1890): when enabled the issued
     // access_token is a signed JWT whose jti is the cache reference, so revocation
@@ -406,18 +409,30 @@ internal sealed class PortalOAuthTokenService(
             }
         }
 
+        if (await IsRefreshRevokedAsync(record, cancellationToken).ConfigureAwait(false))
+        {
+            return PortalOAuthTokenResult.Failure("invalid_grant", "Refresh token has been revoked.");
+        }
+
+        var principal = await RevalidatePrincipalAsync(record.Principal, cancellationToken).ConfigureAwait(false);
+        if (principal is null)
+        {
+            return PortalOAuthTokenResult.Failure("invalid_grant", "The signed-in identity is no longer active.");
+        }
+
         if (!rotate)
         {
             // Rotation disabled (legacy ArcGIS behavior): the token is reusable, issue
-            // without consuming it.
+            // without consuming it. The refresh deadline stays the original expiry.
             return await IssueAsync(
                 record.ClientId,
-                record.Principal,
+                principal,
                 requestedMinutes: null,
                 record.ClientType ?? PortalTokenClientType.Referer,
                 record.BindingValue ?? requestBinding,
                 includeRefreshToken: false,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                absoluteRefreshExpiresAt: record.ExpiresAt).ConfigureAwait(false);
         }
 
         // BH2-023: atomically consume the refresh token so only one concurrent caller
@@ -439,12 +454,13 @@ internal sealed class PortalOAuthTokenService(
         {
             return await IssueAsync(
                 consumed.ClientId,
-                consumed.Principal,
+                principal,
                 requestedMinutes: null,
                 consumed.ClientType ?? PortalTokenClientType.Referer,
                 consumed.BindingValue ?? requestBinding,
                 includeRefreshToken: true,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                absoluteRefreshExpiresAt: consumed.ExpiresAt).ConfigureAwait(false);
         }
         catch
         {
@@ -472,11 +488,13 @@ internal sealed class PortalOAuthTokenService(
         PortalTokenClientType clientType,
         string requestBinding,
         bool includeRefreshToken,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTimeOffset? absoluteRefreshExpiresAt = null)
     {
+        var now = DateTimeOffset.UtcNow;
         // The IdP token is the backing credential (SEC-9). An already-expired source
         // must not mint a portal token or a 90-day refresh token.
-        if (principal.Source?.ExpiresAt is { } sourceExpiresAt && sourceExpiresAt <= DateTimeOffset.UtcNow)
+        if (principal.Source?.ExpiresAt is { } sourceExpiresAt && sourceExpiresAt <= now)
         {
             return PortalOAuthTokenResult.Failure(
                 "invalid_grant",
@@ -484,7 +502,11 @@ internal sealed class PortalOAuthTokenService(
         }
 
         var ttlMinutes = ResolveExpirationMinutes(requestedMinutes);
-        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(ttlMinutes);
+        var expiresAt = now.AddMinutes(ttlMinutes);
+        if (principal.Source?.ExpiresAt is { } sourceExpiry && expiresAt > sourceExpiry)
+        {
+            expiresAt = sourceExpiry;
+        }
 
         var issuance = await MintAccessTokenAsync(
             new PortalTokenIssueRequest(
@@ -506,10 +528,17 @@ internal sealed class PortalOAuthTokenService(
         string? refreshToken = null;
         if (includeRefreshToken)
         {
-            var refreshExpiresAt = DateTimeOffset.UtcNow.Add(RefreshTokenLifetime);
-            if (principal.Source?.ExpiresAt is { } sourceExpiry && sourceExpiry < refreshExpiresAt)
+            var refreshExpiresAt = absoluteRefreshExpiresAt ?? now.Add(RefreshTokenLifetime);
+            if (principal.Source?.ExpiresAt is { } refreshSourceExpiry && refreshSourceExpiry < refreshExpiresAt)
             {
-                refreshExpiresAt = sourceExpiry;
+                refreshExpiresAt = refreshSourceExpiry;
+            }
+
+            if (refreshExpiresAt <= now)
+            {
+                return PortalOAuthTokenResult.Failure(
+                    "invalid_grant",
+                    "The refresh token has expired.");
             }
 
             refreshToken = await _store.CreateRefreshTokenAsync(
@@ -519,6 +548,7 @@ internal sealed class PortalOAuthTokenService(
                     Principal = principal,
                     ClientType = clientType,
                     BindingValue = requestBinding,
+                    IssuedAt = now,
                     ExpiresAt = refreshExpiresAt,
                 },
                 cancellationToken).ConfigureAwait(false);
@@ -529,6 +559,85 @@ internal sealed class PortalOAuthTokenService(
         var expiresInSeconds = (long)Math.Max(0, (issuance.ExpiresAt - DateTimeOffset.UtcNow).TotalSeconds);
 
         return PortalOAuthTokenResult.Success(issuance.Token, expiresInSeconds, refreshToken, username: principal.PrincipalId);
+    }
+
+    private async Task<bool> IsRefreshRevokedAsync(
+        PortalOAuthRefreshToken token,
+        CancellationToken cancellationToken)
+    {
+        if (await _store.IsPrincipalRefreshRevokedAsync(
+                token.Principal.PrincipalId,
+                token.IssuedAt,
+                cancellationToken).ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        var reference = token.Principal.Source?.Reference;
+        return !string.IsNullOrWhiteSpace(reference)
+            && await _store.IsPrincipalRefreshRevokedAsync(reference, token.IssuedAt, cancellationToken)
+                .ConfigureAwait(false);
+    }
+
+    private async Task<PortalOAuthPrincipal?> RevalidatePrincipalAsync(
+        PortalOAuthPrincipal principal,
+        CancellationToken cancellationToken)
+    {
+        if (_membershipSource is null)
+        {
+            return principal;
+        }
+
+        string? issuer = null;
+        if (principal.Source?.Kind == PortalCredentialSourceKind.FederatedToken
+            && principal.Source.Reference is { } reference)
+        {
+            var separator = reference.IndexOf('|');
+            if (separator > 0)
+            {
+                issuer = reference[..separator];
+            }
+        }
+
+        PrincipalMembership? membership;
+        try
+        {
+            membership = await _membershipSource
+                .ResolveMembershipAsync(principal.PrincipalId, issuer, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A membership-store failure must not re-mint the frozen roles.
+            return null;
+        }
+
+        if (membership is null)
+        {
+            return principal;
+        }
+
+        if (!membership.IsActive)
+        {
+            return null;
+        }
+
+        var roles = membership.Roles
+            .Where(static role => !string.IsNullOrWhiteSpace(role))
+            .Select(static role => role.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return new PortalOAuthPrincipal
+        {
+            PrincipalId = principal.PrincipalId,
+            DisplayName = principal.DisplayName,
+            TenantId = principal.TenantId,
+            Roles = roles,
+            RolesRequireClaimsMappingEntitlement = false,
+            RolesWithoutClaimsMapping = roles,
+            TenantRequiresClaimsMappingEntitlement = principal.TenantRequiresClaimsMappingEntitlement,
+            Source = principal.Source,
+        };
     }
 
     private int ResolveExpirationMinutes(int? requested)

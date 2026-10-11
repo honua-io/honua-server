@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit.Attributes;
@@ -38,6 +40,57 @@ public sealed class GeoServicesSpatialFilterBuilderTests
         filter.EnvelopeMinY.Should().Be(bounds.MinY);
         filter.EnvelopeMaxX.Should().Be(bounds.MaxX);
         filter.EnvelopeMaxY.Should().Be(bounds.MaxY);
+    }
+
+    [UnitTest]
+    public void BuildSpatialFilter_OmittedUnits_UsesLinearUnitOfQuerySpatialReference()
+    {
+        var filter = GeoServicesSpatialFilterBuilder.BuildSpatialFilter(
+            new QueryParameters
+            {
+                SpatialRel = "esriSpatialRelIntersects",
+                Distance = 500
+            },
+            new GeoServicesGeometry { X = 0, Y = 0 },
+            2263,
+            linearMetersPerUnit: CrsLinearUnitFactor.UsSurveyFootMeters);
+
+        filter.Distance.Should().BeApproximately(500d * CrsLinearUnitFactor.UsSurveyFootMeters, 1e-9);
+        filter.DistanceUnit.Should().Be(DistanceUnit.Meters);
+    }
+
+    [UnitTest]
+    public void BuildSpatialFilter_ExplicitMeters_IgnoresLinearUnitFactor()
+    {
+        var filter = GeoServicesSpatialFilterBuilder.BuildSpatialFilter(
+            new QueryParameters
+            {
+                SpatialRel = "esriSpatialRelIntersects",
+                Distance = 500,
+                Units = "esriSRUnit_Meter"
+            },
+            new GeoServicesGeometry { X = 0, Y = 0 },
+            2263,
+            linearMetersPerUnit: CrsLinearUnitFactor.UsSurveyFootMeters);
+
+        filter.Distance.Should().Be(500);
+        filter.DistanceUnit.Should().Be(DistanceUnit.Meters);
+    }
+
+    [UnitTest]
+    public void BuildSpatialFilter_OmittedUnitsWithoutLinearFactor_StaysInMetres()
+    {
+        var filter = GeoServicesSpatialFilterBuilder.BuildSpatialFilter(
+            new QueryParameters
+            {
+                SpatialRel = "esriSpatialRelIntersects",
+                Distance = 500
+            },
+            new GeoServicesGeometry { X = 0, Y = 0 },
+            4326);
+
+        filter.Distance.Should().Be(500);
+        filter.DistanceUnit.Should().Be(DistanceUnit.Meters);
     }
 
     [UnitTest]

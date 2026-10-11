@@ -35,6 +35,9 @@ public sealed class IdentityEntitlementGateTests
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("Saml:Enabled", "true");
+                builder.UseSetting("Saml:EntityId", "https://honua.example.com/sp");
+                builder.UseSetting("Saml:IdpEntityId", "https://idp.example.com/metadata");
+                builder.UseSetting("Saml:AssertionConsumerServiceUrl", "https://honua.example.com/sp/saml/acs");
                 builder.UseSetting("Scim:BearerToken", ScimToken);
                 builder.UseSetting("Scim:OidcIssuer", "https://issuer.example.com");
                 if (devGrantEdition is not null)

@@ -5,7 +5,11 @@ using System.Text;
 using Honua.Server.Features.Identity.Saml;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Identity;
 
@@ -30,6 +34,7 @@ public sealed class SamlAssertionValidatorTests
             RoleAttribute = "Role",
             EmailAttribute = "email",
             DisplayNameAttribute = "displayName",
+            AssertionConsumerServiceUrl = SamlTestAssertions.AcsUrl,
         };
         configure?.Invoke(options);
         return new SamlAssertionValidator(Options.Create(options));
@@ -138,5 +143,198 @@ public sealed class SamlAssertionValidatorTests
 
         Assert.False(result.Succeeded);
         Assert.Contains("issuer", result.FailureReason!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [UnitTest]
+    public void Validate_ReplayOfAssertionId_IsRejected()
+    {
+        using var cert = SamlTestAssertions.CreateSigningCertificate();
+        var validator = CreateValidator(SamlTestAssertions.ToBase64Der(cert));
+        var response = Decode(SamlTestAssertions.CreateSignedResponse(
+            cert, "user@example.com", "user@example.com", "Display Name", ["viewer"]));
+
+        var first = validator.Validate(response);
+        var second = validator.Validate(response);
+
+        Assert.True(first.Succeeded, first.FailureReason);
+        Assert.False(second.Succeeded);
+        Assert.Contains("replay", second.FailureReason!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [UnitTest]
+    public void Validate_MissingConditions_IsRejected()
+    {
+        using var cert = SamlTestAssertions.CreateSigningCertificate();
+        var validator = CreateValidator(SamlTestAssertions.ToBase64Der(cert));
+        var response = Decode(SamlTestAssertions.CreateSignedResponse(
+            cert, "user@example.com", "u@example.com", "U", ["viewer"], includeConditions: false));
+
+        var result = validator.Validate(response);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("Conditions", result.FailureReason!, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void Validate_MissingNotOnOrAfter_IsRejected()
+    {
+        using var cert = SamlTestAssertions.CreateSigningCertificate();
+        var validator = CreateValidator(SamlTestAssertions.ToBase64Der(cert));
+        var response = Decode(SamlTestAssertions.CreateSignedResponse(
+            cert, "user@example.com", "u@example.com", "U", ["viewer"], includeNotOnOrAfter: false));
+
+        var result = validator.Validate(response);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("NotOnOrAfter", result.FailureReason!, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void Validate_MissingAudience_IsRejected()
+    {
+        using var cert = SamlTestAssertions.CreateSigningCertificate();
+        var validator = CreateValidator(SamlTestAssertions.ToBase64Der(cert));
+        var response = Decode(SamlTestAssertions.CreateSignedResponse(
+            cert, "user@example.com", "u@example.com", "U", ["viewer"], includeAudience: false));
+
+        var result = validator.Validate(response);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("audience", result.FailureReason!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [UnitTest]
+    public void Validate_WrongRecipientOrDestination_IsRejected()
+    {
+        using var cert = SamlTestAssertions.CreateSigningCertificate();
+        var validator = CreateValidator(SamlTestAssertions.ToBase64Der(cert));
+        var wrongRecipient = Decode(SamlTestAssertions.CreateSignedResponse(
+            cert, "user@example.com", "u@example.com", "U", ["viewer"],
+            recipient: "https://attacker.example/acs"));
+        var missingDestination = Decode(SamlTestAssertions.CreateSignedResponse(
+            cert, "user@example.com", "u@example.com", "U", ["viewer"], includeDestination: false));
+
+        Assert.False(validator.Validate(wrongRecipient).Succeeded);
+        Assert.False(validator.Validate(missingDestination).Succeeded);
+    }
+
+    [UnitTest]
+    public void Validate_EmptyServiceProviderSettings_FailsClosed()
+    {
+        using var cert = SamlTestAssertions.CreateSigningCertificate();
+        var validator = CreateValidator(SamlTestAssertions.ToBase64Der(cert), options => options.EntityId = "");
+        var response = Decode(SamlTestAssertions.CreateSignedResponse(
+            cert, "user@example.com", "u@example.com", "U", ["viewer"]));
+
+        var result = validator.Validate(response);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("not fully configured", result.FailureReason!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [UnitTest]
+    public void Validate_MismatchedInResponseTo_IsRejected_AndAbsentPairSucceeds()
+    {
+        using var cert = SamlTestAssertions.CreateSigningCertificate();
+        var validator = CreateValidator(SamlTestAssertions.ToBase64Der(cert));
+        var mismatched = Decode(SamlTestAssertions.CreateSignedResponse(
+            cert, "user@example.com", "u@example.com", "U", ["viewer"],
+            responseInResponseTo: "_req-a",
+            confirmationInResponseTo: "_req-b"));
+        var absent = Decode(SamlTestAssertions.CreateSignedResponse(
+            cert, "idp-initiated@example.com", "u@example.com", "U", ["viewer"]));
+
+        var mismatch = validator.Validate(mismatched);
+        var idpInitiated = validator.Validate(absent);
+
+        Assert.False(mismatch.Succeeded);
+        Assert.Contains("InResponseTo", mismatch.FailureReason!, StringComparison.Ordinal);
+        Assert.True(idpInitiated.Succeeded, idpInitiated.FailureReason);
+    }
+
+    [UnitTest]
+    public void Validate_PrefixDeclaredOnlyOnResponse_Succeeds()
+    {
+        using var cert = SamlTestAssertions.CreateSigningCertificate();
+        var validator = CreateValidator(SamlTestAssertions.ToBase64Der(cert));
+        var response = Decode(SamlTestAssertions.CreateSignedPrefixedAncestorResponse(cert, "prefixed@example.com"));
+
+        var result = validator.Validate(response);
+
+        Assert.True(result.Succeeded, result.FailureReason);
+        Assert.Equal("prefixed@example.com", result.Subject!.NameId);
+        Assert.Contains("viewer", result.Subject.Roles);
+    }
+
+    [UnitTest]
+    public void OptionsValidator_EnabledWithoutAssertionConsumer_Fails()
+    {
+        var result = new SamlAuthenticationOptionsValidator().Validate(
+            name: null,
+            new SamlAuthenticationOptions
+            {
+                Enabled = true,
+                EntityId = SamlTestAssertions.Audience,
+                IdpEntityId = SamlTestAssertions.Issuer,
+            });
+
+        Assert.False(result.Succeeded);
+    }
+
+    [UnitTest]
+    public void ReplayCache_RedisTimeout_RejectsInsteadOfAcceptingLocally()
+    {
+        var database = Substitute.For<IDatabase>();
+        database.StringSet(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<When>())
+            .Throws(new TimeoutException("redis timeout"));
+        var multiplexer = ConnectedMultiplexer(database);
+        var cache = new SamlAssertionReplayCache(new MemoryCache(new MemoryCacheOptions()), multiplexer);
+
+        Assert.False(cache.TryRemember("assertion-1", DateTimeOffset.UtcNow.AddMinutes(5)));
+        Assert.False(cache.TryRemember("assertion-1", DateTimeOffset.UtcNow.AddMinutes(5)));
+        database.Received(2).StringSet(
+            Arg.Any<RedisKey>(),
+            Arg.Any<RedisValue>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<When>());
+    }
+
+    [UnitTest]
+    public void ReplayCache_RedisDisconnected_RejectsWithoutRecordingLocally()
+    {
+        var database = Substitute.For<IDatabase>();
+        var multiplexer = Substitute.For<IConnectionMultiplexer>();
+        multiplexer.IsConnected.Returns(false);
+        multiplexer.GetDatabase().Returns(database);
+        var cache = new SamlAssertionReplayCache(new MemoryCache(new MemoryCacheOptions()), multiplexer);
+
+        Assert.False(cache.TryRemember("assertion-1", DateTimeOffset.UtcNow.AddMinutes(5)));
+        database.DidNotReceive().StringSet(
+            Arg.Any<RedisKey>(),
+            Arg.Any<RedisValue>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<When>());
+    }
+
+    [UnitTest]
+    public void ReplayCache_WithoutRedis_RemembersOnThisNode()
+    {
+        var cache = new SamlAssertionReplayCache(new MemoryCache(new MemoryCacheOptions()));
+
+        Assert.True(cache.TryRemember("assertion-1", DateTimeOffset.UtcNow.AddMinutes(5)));
+        Assert.False(cache.TryRemember("assertion-1", DateTimeOffset.UtcNow.AddMinutes(5)));
+    }
+
+    private static IConnectionMultiplexer ConnectedMultiplexer(IDatabase database)
+    {
+        var multiplexer = Substitute.For<IConnectionMultiplexer>();
+        multiplexer.IsConnected.Returns(true);
+        multiplexer.GetDatabase().Returns(database);
+        multiplexer.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(database);
+        return multiplexer;
     }
 }

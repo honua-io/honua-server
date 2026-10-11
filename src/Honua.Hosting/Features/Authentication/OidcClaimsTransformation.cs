@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Security;
@@ -22,7 +23,8 @@ namespace Honua.Infrastructure.Authentication;
 internal sealed class OidcClaimsTransformation(
     IOptions<OidcAuthenticationOptions> oidcOptions,
     ILogger<OidcClaimsTransformation> logger,
-    IServiceProvider serviceProvider) : IClaimsTransformation
+    IServiceProvider serviceProvider,
+    IPrincipalMembershipSource? membershipSource = null) : IClaimsTransformation
 {
     private readonly OidcAuthenticationOptions _options = oidcOptions.Value;
 
@@ -78,11 +80,11 @@ internal sealed class OidcClaimsTransformation(
     /// </summary>
     /// <param name="principal">The claims principal from authentication.</param>
     /// <returns>The transformed claims principal.</returns>
-    public Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
+    public async Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
     {
         if (principal.Identity is not ClaimsIdentity identity || !identity.IsAuthenticated)
         {
-            return Task.FromResult(principal);
+            return principal;
         }
 
         // The `honua:` namespace carries framework-owned request-binding state.
@@ -113,7 +115,7 @@ internal sealed class OidcClaimsTransformation(
         var authType = identity.FindFirst("auth_type")?.Value;
         if (authType is "admin" or "dev-bypass" or LayerScopedWriteKey.AuthType)
         {
-            return Task.FromResult(principal);
+            return principal;
         }
 
         // #2997: custom claims mapping is Enterprise (identity.claims-mapping). When configured
@@ -318,17 +320,20 @@ internal sealed class OidcClaimsTransformation(
         // Doing it here rather than at handler construction keeps the gate LIVE: applying or
         // expiring a license takes effect on the next request instead of at the next restart,
         // matching the other #2997/#2998 gates.
+        ClaimsPrincipal result = principal;
         if (customRoleClaimType &&
             !string.Equals(identity.RoleClaimType, ClaimTypes.Role, StringComparison.Ordinal))
         {
-            return Task.FromResult(new ClaimsPrincipal(new ClaimsIdentity(
+            result = new ClaimsPrincipal(new ClaimsIdentity(
                 identity.Claims,
                 identity.AuthenticationType,
                 identity.NameClaimType,
-                ClaimTypes.Role)));
+                ClaimTypes.Role));
         }
 
-        return Task.FromResult(principal);
+        return await ManagedMembershipRevalidation
+            .ApplyAsync(result, membershipSource)
+            .ConfigureAwait(false);
     }
 
     private static string? FindClaimValue(ClaimsIdentity identity, params string[] claimTypes)

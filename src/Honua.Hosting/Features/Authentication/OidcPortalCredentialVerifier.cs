@@ -72,8 +72,8 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
     private readonly OidcAuthenticationOptions _oidcOptions;
     private readonly IClaimsTransformation _claimsTransformation;
     private readonly ILogger<OidcPortalCredentialVerifier> _logger;
-    private readonly TokenValidationParameters _baseParameters;
-    private readonly ConfigurationManager<OpenIdConnectConfiguration>? _configurationManager;
+    private readonly OidcConfigurationManagerCache _configurationManagerCache;
+    private readonly IOidcRuntimeProviderSource? _runtimeProviders;
     private readonly JsonWebTokenHandler _handler = new();
 
     /// <summary>
@@ -86,36 +86,47 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
     /// <see cref="ConfigurationManager{T}"/> instances so JWKS metadata is shared
     /// across request scopes rather than fetched on every credential check.</param>
     /// <param name="logger">Diagnostics logger.</param>
+    /// <param name="runtimeProviders">
+    /// Admin-registered providers merged into the catalog for this process. Null keeps
+    /// validation on the options-configured providers only.
+    /// </param>
     public OidcPortalCredentialVerifier(
         IOptions<OidcAuthenticationOptions> oidcOptions,
         IClaimsTransformation claimsTransformation,
         OidcConfigurationManagerCache configurationManagerCache,
-        ILogger<OidcPortalCredentialVerifier> logger)
+        ILogger<OidcPortalCredentialVerifier> logger,
+        IOidcRuntimeProviderSource? runtimeProviders = null)
     {
         ArgumentNullException.ThrowIfNull(oidcOptions);
         ArgumentNullException.ThrowIfNull(configurationManagerCache);
         _oidcOptions = oidcOptions.Value ?? throw new ArgumentNullException(nameof(oidcOptions));
         _claimsTransformation = claimsTransformation ?? throw new ArgumentNullException(nameof(claimsTransformation));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-
-        var (parameters, authority) = OidcTokenValidationParametersFactory.Build(_oidcOptions);
-        _baseParameters = parameters;
-
-        if (!string.IsNullOrWhiteSpace(authority))
-        {
-            var metadataAddress = authority.TrimEnd('/') + "/.well-known/openid-configuration";
-            // Obtain the shared ConfigurationManager so its JWKS/metadata cache is
-            // retained across request scopes (the verifier is registered AddScoped).
-            _configurationManager = configurationManagerCache.GetOrCreate(
-                metadataAddress,
-                _oidcOptions.RequireHttps);
-        }
+        _configurationManagerCache = configurationManagerCache;
+        _runtimeProviders = runtimeProviders;
     }
 
     /// <inheritdoc />
-    public async Task<PortalCredentialPrincipal?> VerifyAsync(
+    public Task<PortalCredentialPrincipal?> VerifyAsync(
         string username,
         string password,
+        CancellationToken cancellationToken)
+        => VerifyCoreAsync(username, password, providerKey: null, cancellationToken);
+
+    /// <summary>
+    /// Validates an IdP token against the provider that started the broker flow.
+    /// A token signed by a different configured authority is rejected.
+    /// </summary>
+    public Task<PortalCredentialPrincipal?> VerifyForProviderAsync(
+        string providerKey,
+        string token,
+        CancellationToken cancellationToken)
+        => VerifyCoreAsync(username: string.Empty, token, providerKey, cancellationToken);
+
+    private async Task<PortalCredentialPrincipal?> VerifyCoreAsync(
+        string username,
+        string password,
+        string? providerKey,
         CancellationToken cancellationToken)
     {
         if (!_oidcOptions.Enabled || string.IsNullOrWhiteSpace(password))
@@ -123,7 +134,7 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
             return null;
         }
 
-        var parameters = await ResolveParametersAsync(cancellationToken).ConfigureAwait(false);
+        var parameters = await ResolveParametersAsync(providerKey, cancellationToken).ConfigureAwait(false);
         if (parameters is null)
         {
             return null;
@@ -146,6 +157,13 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
         // projected roles/name match a direct OIDC session exactly.
         var principal = new ClaimsPrincipal(result.ClaimsIdentity);
         principal = await _claimsTransformation.TransformAsync(principal).ConfigureAwait(false);
+        if (principal.Identity is not { IsAuthenticated: true })
+        {
+            // Managed membership turns a deprovisioned or unreachable account into an
+            // unauthenticated principal. That result must not still mint a portal token.
+            OidcAuthenticationLog.PortalCredentialRejected(_logger, "principal is not authenticated");
+            return null;
+        }
 
         var principalId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? principal.FindFirstValue("sub")
@@ -221,33 +239,133 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
                 ExpiresAt: bridgedExpiry));
     }
 
-    private async Task<TokenValidationParameters?> ResolveParametersAsync(CancellationToken cancellationToken)
+    private async Task<TokenValidationParameters?> ResolveParametersAsync(
+        string? providerKey,
+        CancellationToken cancellationToken)
     {
-        if (_configurationManager is null)
+        var built = OidcTokenValidationParametersFactory.Build(_oidcOptions, _runtimeProviders);
+        var parameters = built.Parameters;
+        var authorities = built.Authorities;
+
+        if (!string.IsNullOrWhiteSpace(providerKey))
         {
-            // Static symmetric signing key path: the base parameters already carry
-            // the issuer signing key and need no metadata discovery.
-            return _baseParameters.IssuerSigningKey is null ? null : _baseParameters;
+            if (!OidcProviderCatalog.TryResolveProvider(
+                    _oidcOptions,
+                    providerKey,
+                    out var provider,
+                    _runtimeProviders)
+                || string.IsNullOrWhiteSpace(provider.Authority))
+            {
+                OidcAuthenticationLog.PortalCredentialRejected(_logger, "provider was not found");
+                return null;
+            }
+
+            parameters = OidcTokenValidationParametersFactory.NarrowToProvider(parameters, provider, _oidcOptions);
+            authorities = [provider.Authority.Trim().TrimEnd('/')];
         }
 
-        OpenIdConnectConfiguration configuration;
-        try
+        if (parameters.IssuerSigningKey is not null)
         {
-            configuration = await _configurationManager.GetConfigurationAsync(cancellationToken).ConfigureAwait(false);
+            // Static symmetric signing key: no metadata discovery. Issuer and audience
+            // pairing above still apply, including a selected provider.
+            return parameters;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+
+        if (authorities.Count == 0)
         {
-            OidcAuthenticationLog.PortalCredentialMetadataUnavailable(_logger, ex.Message);
             return null;
         }
 
-        var parameters = _baseParameters.Clone();
-        parameters.IssuerSigningKeys = configuration.SigningKeys;
-        if (parameters.ValidIssuers is null || !parameters.ValidIssuers.Any())
+        var keysByIssuer = new Dictionary<string, List<SecurityKey>>(StringComparer.OrdinalIgnoreCase);
+        Exception? firstFailure = null;
+        foreach (var authority in authorities)
         {
-            parameters.ValidIssuer = configuration.Issuer;
+            var metadataAddress = authority.TrimEnd('/') + "/.well-known/openid-configuration";
+            try
+            {
+                var configuration = await _configurationManagerCache
+                    .GetOrCreate(metadataAddress, _oidcOptions.RequireHttps)
+                    .GetConfigurationAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                var signingKeys = configuration.SigningKeys?.ToList() ?? [];
+                if (signingKeys.Count == 0)
+                {
+                    continue;
+                }
+
+                // Bind the keys to the discovery issuer and to the authority URL. A union
+                // assigned to IssuerSigningKeys would let issuer A's token validate with
+                // issuer B's key, and a null resolver result falls back to that union.
+                AddIssuerKeys(keysByIssuer, configuration.Issuer, signingKeys);
+                AddIssuerKeys(keysByIssuer, authority, signingKeys);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // One unreachable authority must not hide the keys of the others.
+                firstFailure ??= ex;
+            }
         }
 
-        return parameters;
+        if (keysByIssuer.Count == 0)
+        {
+            OidcAuthenticationLog.PortalCredentialMetadataUnavailable(
+                _logger,
+                firstFailure?.Message ?? "no signing keys");
+            return null;
+        }
+
+        var merged = parameters.Clone();
+        merged.IssuerSigningKeys = null;
+        merged.TryAllIssuerSigningKeys = false;
+        merged.IssuerSigningKeyResolver = (_, securityToken, _, _) =>
+        {
+            var issuer = securityToken?.Issuer;
+            if (string.IsNullOrWhiteSpace(issuer))
+            {
+                return [];
+            }
+
+            if (keysByIssuer.TryGetValue(issuer.Trim(), out var matched))
+            {
+                return matched;
+            }
+
+            var trimmed = issuer.Trim().TrimEnd('/');
+            return keysByIssuer.TryGetValue(trimmed, out matched) ? matched : [];
+        };
+        return merged;
+    }
+
+    private static void AddIssuerKeys(
+        Dictionary<string, List<SecurityKey>> keysByIssuer,
+        string? issuer,
+        List<SecurityKey> signingKeys)
+    {
+        if (string.IsNullOrWhiteSpace(issuer))
+        {
+            return;
+        }
+
+        foreach (var candidate in new[] { issuer.Trim(), issuer.Trim().TrimEnd('/') })
+        {
+            if (candidate.Length == 0)
+            {
+                continue;
+            }
+
+            if (!keysByIssuer.TryGetValue(candidate, out var list))
+            {
+                list = [];
+                keysByIssuer[candidate] = list;
+            }
+
+            foreach (var key in signingKeys)
+            {
+                if (!list.Contains(key))
+                {
+                    list.Add(key);
+                }
+            }
+        }
     }
 }

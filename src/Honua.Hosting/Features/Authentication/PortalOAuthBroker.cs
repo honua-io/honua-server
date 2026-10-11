@@ -31,7 +31,8 @@ internal sealed class PortalOAuthBroker(
     OidcPortalCredentialVerifier oidcCredentialVerifier,
     PortalOAuthStore store,
     IHttpClientFactory httpClientFactory,
-    ILogger<PortalOAuthBroker> logger)
+    ILogger<PortalOAuthBroker> logger,
+    IOidcRuntimeProviderSource? runtimeProviders = null)
 {
     /// <summary>Named HTTP client used for IdP discovery/token/JWKS calls.</summary>
     internal const string HttpClientName = "PortalOAuthOidc";
@@ -48,7 +49,7 @@ internal sealed class PortalOAuthBroker(
     /// <summary>Whether the OIDC core is enabled and at least one valid provider exists.</summary>
     public bool IsConfigured =>
         _oidcOptions.Enabled &&
-        OidcProviderCatalog.GetProviders(_oidcOptions).Any(static p => p.IsValid);
+        OidcProviderCatalog.GetProviders(_oidcOptions, runtimeProviders).Any(static p => p.IsValid);
 
     /// <summary>
     /// Starts the authorization-code flow: resolves the OIDC provider, persists a
@@ -219,7 +220,7 @@ internal sealed class PortalOAuthBroker(
         }
 
         var verified = await _oidcCredentialVerifier
-            .VerifyAsync(string.Empty, idpToken, cancellationToken)
+            .VerifyForProviderAsync(session.ProviderKey, idpToken, cancellationToken)
             .ConfigureAwait(false);
         if (verified is null)
         {
@@ -334,14 +335,14 @@ internal sealed class PortalOAuthBroker(
             return null;
         }
 
-        var providers = OidcProviderCatalog.GetProviders(_oidcOptions).Where(static p => p.IsValid).ToArray();
+        var providers = OidcProviderCatalog.GetProviders(_oidcOptions, runtimeProviders).Where(static p => p.IsValid).ToArray();
         if (providers.Length == 0)
         {
             return null;
         }
 
         if (!string.IsNullOrWhiteSpace(providerKey) &&
-            OidcProviderCatalog.TryResolveProvider(_oidcOptions, providerKey, out var resolved))
+            OidcProviderCatalog.TryResolveProvider(_oidcOptions, providerKey, out var resolved, runtimeProviders))
         {
             return resolved;
         }

@@ -13,7 +13,8 @@ internal static class GeoServicesSpatialFilterBuilder
         QueryParameters queryParams,
         GeoServicesGeometry geometry,
         int? inputSrid,
-        int? maxCurveVertices = null)
+        int? maxCurveVertices = null,
+        double? linearMetersPerUnit = null)
     {
         var wkbBytes = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(
             geometry,
@@ -37,7 +38,7 @@ internal static class GeoServicesSpatialFilterBuilder
                 throw new ArgumentException("Distance parameter is required for distance-based spatial queries");
             }
 
-            var (distance, unit) = NormalizeDistance(queryParams.Distance.Value, queryParams.Units);
+            var (distance, unit) = NormalizeDistance(queryParams.Distance.Value, queryParams.Units, linearMetersPerUnit);
             return SpatialFilter.CreateDistanceFilter(
                 wkbBytes,
                 distance,
@@ -60,7 +61,7 @@ internal static class GeoServicesSpatialFilterBuilder
         // is left to that relationship's exact predicate.
         if (queryParams.Distance is > 0 && relationship == SpatialRelationship.Intersects)
         {
-            var (distance, unit) = NormalizeDistance(queryParams.Distance.Value, queryParams.Units);
+            var (distance, unit) = NormalizeDistance(queryParams.Distance.Value, queryParams.Units, linearMetersPerUnit);
             return SpatialFilter.CreateDistanceFilter(
                 wkbBytes,
                 distance,
@@ -162,12 +163,28 @@ internal static class GeoServicesSpatialFilterBuilder
     /// canonical enum member, so they are converted to meters here at the protocol
     /// adapter. Unrecognized unit tokens are rejected (a silent meters fallback would
     /// return wrong answers — e.g. a nautical-mile radius shrunk 1852x).
+    /// When <paramref name="units"/> is omitted, <paramref name="linearMetersPerUnit"/>
+    /// is the linear unit of the query geometry's spatial reference (metres per native
+    /// unit). Geographic or unresolved references stay in metres.
     /// </summary>
-    private static (double Distance, DistanceUnit Unit) NormalizeDistance(double distance, string? units)
+    private static (double Distance, DistanceUnit Unit) NormalizeDistance(
+        double distance,
+        string? units,
+        double? linearMetersPerUnit)
     {
-        return units?.ToLowerInvariant() switch
+        if (string.IsNullOrWhiteSpace(units))
         {
-            "esrisrunit_meter" or null => (distance, DistanceUnit.Meters),
+            if (linearMetersPerUnit is double factor && factor > 0 && double.IsFinite(factor))
+            {
+                return (distance * factor, DistanceUnit.Meters);
+            }
+
+            return (distance, DistanceUnit.Meters);
+        }
+
+        return units.ToLowerInvariant() switch
+        {
+            "esrisrunit_meter" => (distance, DistanceUnit.Meters),
             "esrisrunit_foot" => (distance, DistanceUnit.Feet),
             "esrisrunit_kilometer" => (distance, DistanceUnit.Kilometers),
             "esrisrunit_statutemile" => (distance, DistanceUnit.Miles),
