@@ -18,6 +18,15 @@ internal static class RasterNativeWindowSql
     internal static string TryWarp(string rasterExpression, string gridExpression, bool preserveCoverageMask = false)
     {
         var padded = RasterGridFrameSql.FrameAlignedRaster("w.rast", "w.grid");
+        // A single output can preserve every 64BF value without reserving a coverage marker:
+        // route a collision through the exact sampler. Mosaic coverage retains the existing
+        // RasterMosaicSql explicit reserved-sentinel collision policy.
+        var collisionGuard = preserveCoverageMask ? "" : """
+            WHERE NOT EXISTS (
+                SELECT 1 FROM generate_series(1, ST_NumBands(i.rast)) n
+                WHERE ST_BandPixelType(i.rast, n) = '64BF'
+                  AND ST_ValueCount(i.rast, n, TRUE, -1.7976931348623157e308) > 0)
+            """;
         var result = preserveCoverageMask
             ? "f.rast"
             : """
@@ -131,6 +140,7 @@ internal static class RasterNativeWindowSql
                                    1, -1.7976931348623157e308)
                                FROM generate_series(1, ST_NumBands(i.rast)) n ORDER BY n), 1) AS rast
                     FROM window_restored i
+                    {collisionGuard}
                 ), window_padded AS MATERIALIZED (
                     SELECT {padded} AS rast FROM window_masked w
                 ), window_warped AS MATERIALIZED (

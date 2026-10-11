@@ -2646,10 +2646,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
         }
 
-        var referenceSource = $"(SELECT raster FROM {_rasterDataTable} WHERE layer_id = @layerId " +
-            "AND id = ANY(@rasterIds) AND ST_Intersects(ST_ConvexHull(raster), " +
-            "ST_Transform((SELECT geom FROM tile_bounds), ST_SRID(raster))) ORDER BY id LIMIT 1)";
-        var mosaicTileExpr = RasterCorrectedNearestSql.RestoreAfterMosaic("rast", referenceSource);
+        var mosaicTileExpr = RasterCorrectedNearestSql.RestoreAfterMosaic("rast", "(SELECT rast FROM tile_metadata)");
         var mosaicTileStats = await GetMosaicStatisticsAsync(layerId, rasterIds, mergeStrategy, bands: null, cancellationToken: cancellationToken).ConfigureAwait(false);
         var mosaicTileBounds = BuildAutoTileStretchBounds(mosaicTileStats);
         if (mosaicTileBounds is { Count: > 0 })
@@ -2681,6 +2678,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             ),
             source AS (
                 SELECT {RasterCorrectedNearestSql.Sample("raster", "tile_ref.rast", preserveCoverageMask: true)} AS rast,
+                       raster AS original,
                        id,
                        created_at,
                        COALESCE(acquisition_date, created_at) AS effective_acquisition
@@ -2688,6 +2686,19 @@ internal sealed class PostgresRasterStore : IRasterStore
                 WHERE layer_id = @layerId
                   AND id IN (SELECT raster_id FROM requested)
                   AND ST_Intersects(ST_ConvexHull(raster), ST_Transform(tb.geom, ST_SRID(raster)))
+            ),
+            metadata_source AS (
+                SELECT {RasterCorrectedNearestSql.MetadataHeader("original", "(SELECT rast FROM tile_ref)")} AS rast,
+                       id, created_at, effective_acquisition
+                FROM source WHERE rast IS NOT NULL
+            ),
+            tile_metadata_raw AS (
+                SELECT {RasterMosaicSql.CreateMosaicAggregateExpression(mergeStrategy)} AS rast
+                FROM metadata_source
+            ),
+            tile_metadata AS (
+                SELECT {RasterCorrectedNearestSql.RestoreUndeclaredNoData("rast", "source")} AS rast
+                FROM tile_metadata_raw
             ),
             merged AS (
                 SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
@@ -2823,10 +2834,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
         }
 
-        var referenceSource = $"(SELECT raster FROM {_rasterDataTable} WHERE layer_id = @layerId " +
-            "AND id = ANY(@rasterIds) AND ST_Intersects(ST_ConvexHull(raster), " +
-            "ST_Transform((SELECT geom FROM tile_bounds), ST_SRID(raster))) ORDER BY id LIMIT 1)";
-        var mosaicTileExpr = RasterCorrectedNearestSql.RestoreAfterMosaic("rast", referenceSource);
+        var mosaicTileExpr = RasterCorrectedNearestSql.RestoreAfterMosaic("rast", "(SELECT rast FROM tile_metadata)");
         var mosaicTileStats = await GetMosaicStatisticsAsync(layerId, rasterIds, mergeStrategy, bands: null, cancellationToken: cancellationToken).ConfigureAwait(false);
         var mosaicTileBounds = BuildAutoTileStretchBounds(mosaicTileStats);
         if (mosaicTileBounds is { Count: > 0 })
@@ -2842,6 +2850,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             {BuildTileWindowCte(window)},
             source AS (
                 SELECT {RasterCorrectedNearestSql.Sample("raster", "tile_ref.rast", preserveCoverageMask: true)} AS rast,
+                       raster AS original,
                        id,
                        created_at,
                        COALESCE(acquisition_date, created_at) AS effective_acquisition
@@ -2849,6 +2858,19 @@ internal sealed class PostgresRasterStore : IRasterStore
                 WHERE layer_id = @layerId
                   AND id IN (SELECT raster_id FROM requested)
                   AND ST_Intersects(ST_ConvexHull(raster), ST_Transform(tb.geom, ST_SRID(raster)))
+            ),
+            metadata_source AS (
+                SELECT {RasterCorrectedNearestSql.MetadataHeader("original", "(SELECT rast FROM tile_ref)")} AS rast,
+                       id, created_at, effective_acquisition
+                FROM source WHERE rast IS NOT NULL
+            ),
+            tile_metadata_raw AS (
+                SELECT {RasterMosaicSql.CreateMosaicAggregateExpression(mergeStrategy)} AS rast
+                FROM metadata_source
+            ),
+            tile_metadata AS (
+                SELECT {RasterCorrectedNearestSql.RestoreUndeclaredNoData("rast", "source")} AS rast
+                FROM tile_metadata_raw
             ),
             merged AS (
                 SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast

@@ -413,7 +413,13 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
             var tile = await CreateStore(schemaName).GetMosaicImageTileAsync(LayerId, ids.ToArray(),
                 RasterMergeStrategy.Newest, new RasterTileWindow
                 {
-                    MinX = -1, MaxX = 3, MinY = 0, MaxY = 1, Srid = 4326, TileWidth = 4, TileHeight = 1
+                    MinX = -1,
+                    MaxX = 3,
+                    MinY = 0,
+                    MaxY = 1,
+                    Srid = 4326,
+                    TileWidth = 4,
+                    TileHeight = 1
                 }, RasterFormat.TIFF) ?? throw new InvalidOperationException("Expected a composed mosaic tile.");
             seed.CommandText = """
                 WITH decoded AS (SELECT ST_FromGDALRaster(@data) AS rast)
@@ -439,6 +445,88 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
             reader.GetDouble(3).Should().Be(0, "valid zero remains visible");
             reader.GetDouble(4).Should().Be(100, "the newer source's outside mask cannot erase the west source");
             reader.GetDouble(5).Should().Be(200, "the west source's outside mask cannot erase the east source");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(RasterMergeStrategy.Newest, false)]
+    [InlineData(RasterMergeStrategy.Oldest, false)]
+    [InlineData(RasterMergeStrategy.Average, true)]
+    [InlineData(RasterMergeStrategy.Max, true)]
+    [InlineData(RasterMergeStrategy.Min, true)]
+    public async Task GetMosaicImageTileAsync_MixedBandMetadata_MatchesCanonicalUnion(
+        RasterMergeStrategy strategy, bool floatFirst)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreGridTileIntegrationTests));
+        try
+        {
+            await CreateSchemaAsync(schemaName);
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                WITH inputs AS (
+                    SELECT ST_AddBand(ST_AddBand(ST_MakeEmptyRaster(1, 1, 0, 1, 1, -1, 0, 0, 4326),
+                        '32BF'::text, 2.75, -9999), '32BF'::text, 6.5, -9998) AS floating,
+                        ST_AddBand(ST_AddBand(ST_MakeEmptyRaster(1, 1, 0, 1, 1, -1, 0, 0, 4326),
+                        '8BUI'::text, 20, 255), '16BUI'::text, 40, 65535) AS integer
+                )
+                INSERT INTO raster_data (id, layer_id, name, raster, acquisition_date, created_at)
+                SELECT 1, @layer, 'first-id', CASE WHEN @floatFirst THEN floating ELSE integer END,
+                    CASE WHEN @floatFirst THEN '2024-01-01'::timestamptz ELSE '2024-01-02'::timestamptz END,
+                    '2024-01-01'::timestamptz FROM inputs
+                UNION ALL
+                SELECT 2, @layer, 'second-id', CASE WHEN @floatFirst THEN integer ELSE floating END,
+                    CASE WHEN @floatFirst THEN '2024-01-02'::timestamptz ELSE '2024-01-01'::timestamptz END,
+                    '2024-01-02'::timestamptz FROM inputs;
+                """;
+            command.Parameters.AddWithValue("layer", LayerId);
+            command.Parameters.AddWithValue("floatFirst", floatFirst);
+            await command.ExecuteNonQueryAsync();
+
+            var tile = await CreateStore(schemaName).GetMosaicImageTileAsync(LayerId, [1L, 2L], strategy,
+                new RasterTileWindow
+                {
+                    MinX = 0,
+                    MaxX = 1,
+                    MinY = 0,
+                    MaxY = 1,
+                    Srid = 4326,
+                    TileWidth = 1,
+                    TileHeight = 1
+                }, RasterFormat.TIFF) ?? throw new InvalidOperationException("Expected a typed mosaic.");
+            command.CommandText = $"""
+                WITH source AS MATERIALIZED (
+                    SELECT raster AS rast, id, created_at,
+                        COALESCE(acquisition_date, created_at) AS effective_acquisition
+                    FROM raster_data ORDER BY id
+                ), canonical AS (
+                    SELECT {RasterMosaicSql.CreateMosaicAggregateExpression(strategy)} AS rast FROM source
+                ), actual AS (SELECT ST_FromGDALRaster(@data) AS rast)
+                SELECT ST_BandPixelType(a.rast, n), ST_BandPixelType(c.rast, n),
+                       ST_BandNoDataValue(a.rast, n), ST_BandNoDataValue(c.rast, n),
+                       ST_Value(a.rast, n, 1, 1), ST_Value(c.rast, n, 1, 1)
+                FROM actual a, canonical c, generate_series(1, 2) n ORDER BY n;
+                """;
+            command.Parameters.AddWithValue("data", tile.Data);
+            await using var reader = await command.ExecuteReaderAsync();
+            for (var band = 0; band < 2; band++)
+            {
+                (await reader.ReadAsync()).Should().BeTrue();
+                reader.GetString(0).Should().Be(reader.GetString(1));
+                reader.GetDouble(2).Should().Be(reader.GetDouble(3));
+                reader.GetDouble(4).Should().Be(reader.GetDouble(5));
+                if (strategy == RasterMergeStrategy.Average)
+                {
+                    reader.GetDouble(4).Should().Be(band == 0 ? 11.375 : 23.25,
+                        "the canonical float aggregate must retain fractional values");
+                }
+            }
+
+            (await reader.ReadAsync()).Should().BeFalse();
         }
         finally
         {

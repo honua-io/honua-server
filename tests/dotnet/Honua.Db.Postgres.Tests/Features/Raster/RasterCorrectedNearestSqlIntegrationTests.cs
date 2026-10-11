@@ -420,11 +420,61 @@ public sealed class RasterCorrectedNearestSqlIntegrationTests(PostgresFixture fi
         reader.GetBoolean(0).Should().BeTrue("the native window exceeds its allocation cap");
         reader.GetBoolean(1).Should().BeTrue();
         var values = reader.GetFieldValue<double[,]>(2);
-        values[0, 0].Should().Be(7,"the first literal center (0.005,0.995) lies inside the only source cell");
+        values[0, 0].Should().Be(7, "the first literal center (0.005,0.995) lies inside the only source cell");
         values[0, 1].Should().Be(255);
         values[1, 0].Should().Be(255);
         values[1, 1].Should().Be(255);
-        reader.GetString(3).Should().Be("8BUI");reader.GetDouble(4).Should().Be(255);
-        reader.GetBoolean(5).Should().BeTrue();reader.GetBoolean(6).Should().BeTrue();
+        reader.GetString(3).Should().Be("8BUI");
+        reader.GetDouble(4).Should().Be(255);
+        reader.GetBoolean(5).Should().BeTrue();
+        reader.GetBoolean(6).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    public async Task Sample_ValidLowestFiniteDouble_RoutesAroundTemporaryMaskWithoutLosingValue()
+    {
+        await using var connection = await fixture.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH source AS MATERIALIZED (
+                SELECT ST_AddBand(ST_MakeEmptyRaster(1, 1, 0, 1, 1, -1, 0, 0, 4326),
+                    '64BF'::text, -1.7976931348623157e308, NULL) AS rast
+            ), grid AS MATERIALIZED (
+                SELECT ST_MakeEmptyRaster(1, 1, 0, 1, 1, -1, 0, 0, 4326) AS rast
+            ), result AS MATERIALIZED (
+                SELECT {RasterCorrectedNearestSql.Sample("s.rast", "g.rast")} AS rast,
+                    {RasterNativeWindowSql.TryWarp("s.rast", "g.rast")} IS NULL AS native_rejected
+                FROM source s, grid g
+            )
+            SELECT native_rejected, ST_BandPixelType(rast, 1), ST_BandNoDataValue(rast, 1),
+                   ST_Value(rast, 1, 1, 1, FALSE) FROM result;
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetBoolean(0).Should().BeTrue();
+        reader.GetString(1).Should().Be("64BF");
+        reader.IsDBNull(2).Should().BeTrue();
+        reader.GetDouble(3).Should().Be(double.MinValue);
+    }
+
+    [IntegrationTest]
+    public async Task Sample_MosaicReservedSentinelCollision_RetainsExplicitDiagnostic()
+    {
+        await using var connection = await fixture.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH source AS MATERIALIZED (
+                SELECT ST_AddBand(ST_MakeEmptyRaster(1, 1, 0, 1, 1, -1, 0, 0, 4326),
+                    '64BF'::text, -1.7976931348623157e308, NULL) AS rast
+            ), grid AS MATERIALIZED (
+                SELECT ST_MakeEmptyRaster(2, 1, 0, 1, 1, -1, 0, 0, 4326) AS rast
+            )
+            SELECT ST_Value({RasterCorrectedNearestSql.Sample("s.rast", "g.rast", preserveCoverageMask: true)},
+                            1, 1, 1, FALSE) FROM source s, grid g;
+            """;
+        var action = async () => await command.ExecuteScalarAsync();
+        var exception = await action.Should().ThrowAsync<Npgsql.PostgresException>();
+        exception.Which.SqlState.Should().Be("22P02");
+        exception.Which.MessageText.Should().Contain("raster_mosaic_64bf_nodata_collision");
     }
 }
