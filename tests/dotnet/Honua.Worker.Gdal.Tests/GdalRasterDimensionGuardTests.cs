@@ -94,6 +94,26 @@ public sealed class GdalRasterDimensionGuardTests
         polygonize.Should().NotContain("-if");
     }
 
+    [UnitTest]
+    public void DriverAllowlist_EmptyOrMissingFormats_RefusesRestrictedTools()
+    {
+        var empty = Options();
+        empty.AllowedRasterInputFormats = [];
+        var act = () => GdalRasterDriverAllowlist.Prefix("gdal_translate", ["src.tif", "dst.tif"], empty);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*allowlist is empty*");
+
+        var missing = Options();
+        missing.AllowedRasterInputFormats = null!;
+        var missingAct = () => GdalRasterDriverAllowlist.Prefix("gdalwarp", ["src.tif", "dst.tif"], missing);
+        missingAct.Should().Throw<InvalidOperationException>().WithMessage("*allowlist is empty*");
+
+        var unrestricted = GdalRasterDriverAllowlist.Prefix(
+            "gdal_viewshed",
+            ["dem.tif", "out.tif"],
+            missing);
+        unrestricted.Should().Equal("dem.tif", "out.tif");
+    }
+
     // --- PNG / JPEG header parsing (non-TIFF bomb vectors) ----------------------
 
     [UnitTest]

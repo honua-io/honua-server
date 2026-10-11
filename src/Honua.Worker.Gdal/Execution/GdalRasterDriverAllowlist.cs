@@ -45,7 +45,8 @@ internal static class GdalRasterDriverAllowlist
         var drivers = ResolveDrivers(options);
         if (drivers.Count == 0)
         {
-            return arguments;
+            throw new InvalidOperationException(
+                $"GDAL raster input allowlist is empty. Refusing to run '{tool}' without -if drivers.");
         }
 
         var prefixed = new List<string>(arguments.Count + (drivers.Count * 2));
