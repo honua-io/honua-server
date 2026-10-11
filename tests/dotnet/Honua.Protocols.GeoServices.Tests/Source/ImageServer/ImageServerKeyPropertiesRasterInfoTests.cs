@@ -3,6 +3,7 @@
 
 using System.Xml.Linq;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer;
 using Honua.Protocols.GeoServices.ImageServer.Models;
@@ -116,5 +117,35 @@ public sealed class ImageServerKeyPropertiesRasterInfoTests
         var value = ImageServerSoapEndpoints.BuildKeyPropertiesRasterInfo(
             Raster, Raster.Extent!.Value, [new RasterStatistics { Band = 1 }], []);
         value.Element("RasterStatistics_0").Should().BeNull();
+    }
+
+    [UnitTest]
+    public void RasterInfo_UsesAffineVectorMagnitudesForPixelSize()
+    {
+        var rotated = Raster with { GeoTransform = [10, 3, 0, 20, 4, -8] };
+        var value = ImageServerSoapEndpoints.BuildKeyPropertiesRasterInfo(
+            rotated, rotated.Extent!.Value, [], []);
+
+        value.Element("PixelSizeX")!.Value.Should().Be("5");
+        value.Element("PixelSizeY")!.Value.Should().Be("8");
+    }
+
+    [UnitTest]
+    public void KeyProperties_RejectsARenderingRuleAndAllowsANilRule()
+    {
+        var ruled = new XElement(
+            "GetKeyPropertiesX",
+            new XElement("RenderingRule", new XElement("FunctionName", "ExtractBand")));
+        ImageServerSoapEndpoints.KeyPropertyRenderingRuleCannotBeReflected(ruled, out var error, out var status)
+            .Should().BeTrue();
+        error.Should().Contain("cannot apply a rendering rule");
+        status.Should().Be(StatusCodes.Status501NotImplemented);
+
+        var nil = new XElement(
+            "GetKeyPropertiesX",
+            new XElement("RenderingRule", new XAttribute(XName.Get("nil", Xsi), "true")));
+        ImageServerSoapEndpoints.KeyPropertyRenderingRuleCannotBeReflected(nil, out _, out _).Should().BeFalse();
+        ImageServerSoapEndpoints.KeyPropertyRenderingRuleCannotBeReflected(new XElement("GetKeyProperties"), out _, out _)
+            .Should().BeFalse();
     }
 }

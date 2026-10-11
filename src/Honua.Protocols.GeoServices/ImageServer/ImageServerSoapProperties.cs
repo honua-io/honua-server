@@ -32,7 +32,10 @@ internal static partial class ImageServerSoapEndpoints
         public static ServiceInfoExtras Failed(IResult error) => new(false, null, null, null, null, error);
     }
 
+    private const int KeyPropertyHistogramBinCount = 256;
+
     private static async Task<IResult> HandleGetKeyPropertiesAsync(
+        XElement operation,
         SoapRasterRequestContext request,
         string responseName,
         CancellationToken cancellationToken)
@@ -63,15 +66,25 @@ internal static partial class ImageServerSoapEndpoints
             return CreateSoapFault("Image service extent is unavailable.", StatusCodes.Status500InternalServerError, request.SoapNamespace);
         }
 
+        // A non-nil rendering rule would describe a rendered raster. RasterInfo below is the
+        // source mosaic, so applying that rule's band count or histograms would be false.
+        if (KeyPropertyRenderingRuleCannotBeReflected(operation, out var renderingError, out var renderingStatus))
+        {
+            return CreateSoapFault(renderingError!, renderingStatus, request.SoapNamespace);
+        }
+
         // Use the same reference raster and canonical mosaic policy as GetServiceInfo.
         // RasterInfo is the native key-property carrier for statistics and histograms.
         var referenceRaster = SelectReferenceRaster(rasters);
         var statistics = await ReadServiceStatisticsAsync(
             request.HttpContext, revalidation.Resolution.LayerId, rasters,
             revalidation.Resolution.MergeStrategy, cancellationToken).ConfigureAwait(false);
-        var histograms = await ReadServiceHistogramsAsync(
-            request.HttpContext, revalidation.Resolution.LayerId,
-            request.SoapNamespace, cancellationToken).ConfigureAwait(false);
+        var histograms = await ReadRevalidatedHistogramsAsync(
+            request.HttpContext,
+            revalidation.Resolution.LayerId,
+            rasters,
+            revalidation.Resolution.MergeStrategy,
+            cancellationToken).ConfigureAwait(false);
         if (histograms.Error is not null)
         {
             return histograms.Error;
@@ -562,13 +575,12 @@ internal static partial class ImageServerSoapEndpoints
         XNamespace xsi = XmlSchemaInstanceNamespace;
         var nativeExtent = BuildEnvelope(extent);
         nativeExtent.Name = "NativeExtent";
+        var pixelSize = ResolveRasterInfoPixelSize(referenceRaster);
         var value = new XElement(
             "Value",
             new XAttribute(xsi + "type", "tns:RasterInfo"),
-            new XElement("PixelSizeX", FormatDouble(referenceRaster.Width > 0 && referenceRaster.Extent is { } sourceExtent
-                ? (sourceExtent.XMax - sourceExtent.XMin) / referenceRaster.Width : 0)),
-            new XElement("PixelSizeY", FormatDouble(referenceRaster.Height > 0 && referenceRaster.Extent is { } sourceExtentY
-                ? (sourceExtentY.YMax - sourceExtentY.YMin) / referenceRaster.Height : 0)),
+            new XElement("PixelSizeX", FormatDouble(pixelSize.X)),
+            new XElement("PixelSizeY", FormatDouble(pixelSize.Y)),
             nativeExtent,
             new XElement("BandCount", referenceRaster.BandCount),
             new XElement("PixelType", MapPixelType(referenceRaster.PixelType)),
@@ -606,6 +618,87 @@ internal static partial class ImageServerSoapEndpoints
         }
 
         return value;
+    }
+
+    /// <summary>
+    /// Column and row spacing from the affine vectors when a six-coefficient geotransform
+    /// is present. The axis-aligned envelope divided by width and height is only the fallback,
+    /// because a rotated raster's envelope includes the cross-axis contribution.
+    /// </summary>
+    internal static (double X, double Y) ResolveRasterInfoPixelSize(RasterInfo raster)
+    {
+        var transform = raster.GeoTransform;
+        if (transform is { Length: 6 }
+            && double.IsFinite(transform[1]) && double.IsFinite(transform[4])
+            && double.IsFinite(transform[2]) && double.IsFinite(transform[5]))
+        {
+            var pixelSizeX = double.Hypot(transform[1], transform[4]);
+            var pixelSizeY = double.Hypot(transform[2], transform[5]);
+            if (pixelSizeX > 0 && pixelSizeY > 0 && double.IsFinite(pixelSizeX) && double.IsFinite(pixelSizeY))
+            {
+                return (pixelSizeX, pixelSizeY);
+            }
+        }
+
+        var extent = raster.Extent;
+        var fallbackX = raster.Width > 0 && extent.HasValue
+            ? (extent.Value.XMax - extent.Value.XMin) / raster.Width
+            : 0;
+        var fallbackY = raster.Height > 0 && extent.HasValue
+            ? (extent.Value.YMax - extent.Value.YMin) / raster.Height
+            : 0;
+        return (fallbackX, fallbackY);
+    }
+
+    /// <summary>
+    /// True when GetKeyProperties carries a rendering rule. RasterInfo is the source mosaic,
+    /// so a rule that would change bands or pixel values must not be reported as if it had been applied.
+    /// A nil rule is absent and does not reject the request.
+    /// </summary>
+    internal static bool KeyPropertyRenderingRuleCannotBeReflected(
+        XElement operation,
+        out string? error,
+        out int statusCode)
+    {
+        if (!IsPresent(operation, "RenderingRule"))
+        {
+            error = null;
+            statusCode = StatusCodes.Status200OK;
+            return false;
+        }
+
+        error = "GetKeyProperties RasterInfo reflects the source mosaic and cannot apply a rendering rule.";
+        statusCode = StatusCodes.Status501NotImplemented;
+        return true;
+    }
+
+    private static async Task<(BandHistogram[]? Histograms, IResult? Error)> ReadRevalidatedHistogramsAsync(
+        HttpContext context,
+        int layerId,
+        RasterInfo[] rasters,
+        RasterMergeStrategy mergeStrategy,
+        CancellationToken cancellationToken)
+    {
+        var store = context.RequestServices.GetRequiredService<IRasterStore>();
+        var rasterIds = rasters.Select(static raster => raster.Id).ToArray();
+        var stored = await ImageServerStatisticsBudget.ResolveCancellableAsync(
+            ct => rasters.Length == 1
+                ? store.GetHistogramsAsync(
+                    layerId,
+                    rasters[0].Id,
+                    bands: null,
+                    KeyPropertyHistogramBinCount,
+                    cancellationToken: ct)
+                : store.GetMosaicHistogramsAsync(
+                    layerId,
+                    rasterIds,
+                    mergeStrategy,
+                    bands: null,
+                    KeyPropertyHistogramBinCount,
+                    cancellationToken: ct),
+            onBudgetExceeded: static () => { },
+            cancellationToken).ConfigureAwait(false);
+        return (stored.Select(ImageServerHistogramProjection.Project).ToArray(), null);
     }
 
     private static XElement BuildBandPropertySet(BandProperty band)
