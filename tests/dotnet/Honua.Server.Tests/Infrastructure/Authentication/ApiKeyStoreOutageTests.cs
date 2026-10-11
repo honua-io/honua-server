@@ -5,6 +5,7 @@ using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 

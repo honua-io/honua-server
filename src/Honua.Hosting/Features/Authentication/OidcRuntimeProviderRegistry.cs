@@ -13,7 +13,8 @@ internal sealed record OidcRuntimeProvider(
     string DisplayName,
     string Authority,
     string ClientId,
-    bool Enabled);
+    bool Enabled,
+    string? ClientSecret = null);
 
 /// <summary>
 /// Process-lifetime view of admin-registered OIDC providers.

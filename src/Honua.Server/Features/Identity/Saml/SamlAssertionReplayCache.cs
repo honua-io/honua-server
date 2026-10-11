@@ -13,14 +13,16 @@ internal interface ISamlAssertionReplayCache
 {
     /// <summary>
     /// Records <paramref name="id"/> until <paramref name="notOnOrAfter"/>.
-    /// Returns <see langword="false"/> when the id was already seen or is empty.
+    /// Returns <see langword="false"/> when the id was already seen, is empty, or a configured
+    /// Redis store cannot record the claim. Node-local memory is not a substitute for Redis.
     /// </summary>
     bool TryRemember(string id, DateTimeOffset notOnOrAfter);
 }
 
 /// <summary>
-/// Distributed replay cache with a per-node memory fallback. Redis timeouts and connection
-/// failures degrade to this node's memory rather than failing open or throwing into the ACS.
+/// Distributed replay cache. When Redis is configured, the assertion is accepted only after
+/// this node records the SET NX. A disconnect or timeout rejects the assertion. Memory is the
+/// store only when no Redis multiplexer is configured.
 /// </summary>
 internal sealed class SamlAssertionReplayCache(IMemoryCache memoryCache, IConnectionMultiplexer? redis = null)
     : ISamlAssertionReplayCache
@@ -43,26 +45,26 @@ internal sealed class SamlAssertionReplayCache(IMemoryCache memoryCache, IConnec
             : DateTimeOffset.UtcNow.AddMinutes(5);
         var key = KeyPrefix + id.Trim();
 
-        if (_redis is { IsConnected: true })
+        if (_redis is not null)
         {
+            // A configured Redis store is the only authority for this claim. Accepting from
+            // this node's memory would let another node replay the same assertion.
+            if (!_redis.IsConnected)
+            {
+                return false;
+            }
+
             try
             {
-                var added = _redis.GetDatabase().StringSet(
+                return _redis.GetDatabase().StringSet(
                     key,
                     "1",
                     expiresAt - DateTimeOffset.UtcNow,
                     when: When.NotExists);
-                if (!added)
-                {
-                    return false;
-                }
-
-                RememberInMemory(key, expiresAt);
-                return true;
             }
             catch (Exception ex) when (ex is RedisException or TimeoutException && ex is not OperationCanceledException)
             {
-                // This node still rejects a replay it has already seen.
+                return false;
             }
         }
 

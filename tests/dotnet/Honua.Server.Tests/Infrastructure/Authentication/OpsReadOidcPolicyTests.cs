@@ -70,6 +70,7 @@ public sealed class OpsReadOidcPolicyTests
             NullLogger.Instance,
             CancellationToken.None);
         Assert.Equal(ApiKeyRejection.None, validation.Rejection);
-        return validation.Success!.Principal;
+        return validation.Success?.Principal
+            ?? throw new InvalidOperationException("API key validation did not produce a principal.");
     }
 }

@@ -145,7 +145,8 @@ internal sealed class InMemoryOidcProviderStore : IOidcProviderStore
                 provider.Name,
                 provider.Authority,
                 provider.ClientId,
-                provider.Enabled))
+                provider.Enabled,
+                provider.ClientSecret))
             .ToArray();
         _registry.Replace(published);
     }

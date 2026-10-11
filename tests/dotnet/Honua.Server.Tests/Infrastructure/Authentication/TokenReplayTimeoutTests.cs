@@ -5,6 +5,7 @@ using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using StackExchange.Redis;
 using static Honua.Infrastructure.Authentication.OidcAuthenticationExtensions;
 
@@ -73,11 +74,12 @@ public sealed class TokenReplayTimeoutTests
             "jti:bind",
             DateTime.UtcNow.AddMinutes(5),
             TokenReplayStore.Redis);
+        using var cache = new MemoryCache(new MemoryCacheOptions());
         var bound = await TryBindTokenReplayContinuationAsync(
             admission,
             "continuation-1",
             multiplexer,
-            new MemoryCache(new MemoryCacheOptions()),
+            cache,
             NullLogger.Instance,
             CancellationToken.None);
 
@@ -91,8 +93,7 @@ public sealed class TokenReplayTimeoutTests
                 Arg.Any<RedisKey>(),
                 Arg.Any<RedisValue>(),
                 Arg.Any<TimeSpan?>(),
-                Arg.Any<When>(),
-                Arg.Any<CommandFlags>())
+                Arg.Any<When>())
             .ThrowsAsync(new TimeoutException("redis timeout"));
         var multiplexer = Substitute.For<IConnectionMultiplexer>();
         multiplexer.IsConnected.Returns(true);

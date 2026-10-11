@@ -8,6 +8,7 @@ using Honua.TestKit.Constants;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Identity;
@@ -281,30 +282,59 @@ public sealed class SamlAssertionValidatorTests
     }
 
     [UnitTest]
-    public void ReplayCache_RedisTimeout_FallsThroughToMemory()
+    public void ReplayCache_RedisTimeout_RejectsInsteadOfAcceptingLocally()
     {
         var database = Substitute.For<IDatabase>();
         database.StringSet(
                 Arg.Any<RedisKey>(),
                 Arg.Any<RedisValue>(),
                 Arg.Any<TimeSpan?>(),
-                Arg.Any<When>(),
-                Arg.Any<CommandFlags>())
+                Arg.Any<When>())
             .Throws(new TimeoutException("redis timeout"));
+        var multiplexer = ConnectedMultiplexer(database);
+        var cache = new SamlAssertionReplayCache(new MemoryCache(new MemoryCacheOptions()), multiplexer);
+
+        Assert.False(cache.TryRemember("assertion-1", DateTimeOffset.UtcNow.AddMinutes(5)));
+        Assert.False(cache.TryRemember("assertion-1", DateTimeOffset.UtcNow.AddMinutes(5)));
+        database.Received(2).StringSet(
+            Arg.Any<RedisKey>(),
+            Arg.Any<RedisValue>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<When>());
+    }
+
+    [UnitTest]
+    public void ReplayCache_RedisDisconnected_RejectsWithoutRecordingLocally()
+    {
+        var database = Substitute.For<IDatabase>();
+        var multiplexer = Substitute.For<IConnectionMultiplexer>();
+        multiplexer.IsConnected.Returns(false);
+        multiplexer.GetDatabase().Returns(database);
+        var cache = new SamlAssertionReplayCache(new MemoryCache(new MemoryCacheOptions()), multiplexer);
+
+        Assert.False(cache.TryRemember("assertion-1", DateTimeOffset.UtcNow.AddMinutes(5)));
+        database.DidNotReceive().StringSet(
+            Arg.Any<RedisKey>(),
+            Arg.Any<RedisValue>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<When>());
+    }
+
+    [UnitTest]
+    public void ReplayCache_WithoutRedis_RemembersOnThisNode()
+    {
+        var cache = new SamlAssertionReplayCache(new MemoryCache(new MemoryCacheOptions()));
+
+        Assert.True(cache.TryRemember("assertion-1", DateTimeOffset.UtcNow.AddMinutes(5)));
+        Assert.False(cache.TryRemember("assertion-1", DateTimeOffset.UtcNow.AddMinutes(5)));
+    }
+
+    private static IConnectionMultiplexer ConnectedMultiplexer(IDatabase database)
+    {
         var multiplexer = Substitute.For<IConnectionMultiplexer>();
         multiplexer.IsConnected.Returns(true);
         multiplexer.GetDatabase().Returns(database);
         multiplexer.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(database);
-
-        var cache = new SamlAssertionReplayCache(new MemoryCache(new MemoryCacheOptions()), multiplexer);
-
-        Assert.True(cache.TryRemember("assertion-1", DateTimeOffset.UtcNow.AddMinutes(5)));
-        Assert.False(cache.TryRemember("assertion-1", DateTimeOffset.UtcNow.AddMinutes(5)));
-        database.Received(1).StringSet(
-            Arg.Any<RedisKey>(),
-            Arg.Any<RedisValue>(),
-            Arg.Any<TimeSpan?>(),
-            Arg.Any<When>(),
-            Arg.Any<CommandFlags>());
+        return multiplexer;
     }
 }

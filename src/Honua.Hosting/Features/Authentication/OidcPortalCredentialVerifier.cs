@@ -157,6 +157,13 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
         // projected roles/name match a direct OIDC session exactly.
         var principal = new ClaimsPrincipal(result.ClaimsIdentity);
         principal = await _claimsTransformation.TransformAsync(principal).ConfigureAwait(false);
+        if (principal.Identity is not { IsAuthenticated: true })
+        {
+            // Managed membership turns a deprovisioned or unreachable account into an
+            // unauthenticated principal. That result must not still mint a portal token.
+            OidcAuthenticationLog.PortalCredentialRejected(_logger, "principal is not authenticated");
+            return null;
+        }
 
         var principalId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? principal.FindFirstValue("sub")
@@ -269,7 +276,7 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
             return null;
         }
 
-        var keys = new List<SecurityKey>();
+        var keysByIssuer = new Dictionary<string, List<SecurityKey>>(StringComparer.OrdinalIgnoreCase);
         Exception? firstFailure = null;
         foreach (var authority in authorities)
         {
@@ -280,7 +287,17 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
                     .GetOrCreate(metadataAddress, _oidcOptions.RequireHttps)
                     .GetConfigurationAsync(cancellationToken)
                     .ConfigureAwait(false);
-                keys.AddRange(configuration.SigningKeys);
+                var signingKeys = configuration.SigningKeys?.ToList() ?? [];
+                if (signingKeys.Count == 0)
+                {
+                    continue;
+                }
+
+                // Bind the keys to the discovery issuer and to the authority URL. A union
+                // assigned to IssuerSigningKeys would let issuer A's token validate with
+                // issuer B's key, and a null resolver result falls back to that union.
+                AddIssuerKeys(keysByIssuer, configuration.Issuer, signingKeys);
+                AddIssuerKeys(keysByIssuer, authority, signingKeys);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -289,7 +306,7 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
             }
         }
 
-        if (keys.Count == 0)
+        if (keysByIssuer.Count == 0)
         {
             OidcAuthenticationLog.PortalCredentialMetadataUnavailable(
                 _logger,
@@ -298,7 +315,57 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
         }
 
         var merged = parameters.Clone();
-        merged.IssuerSigningKeys = keys;
+        merged.IssuerSigningKeys = null;
+        merged.TryAllIssuerSigningKeys = false;
+        merged.IssuerSigningKeyResolver = (_, securityToken, _, _) =>
+        {
+            var issuer = securityToken?.Issuer;
+            if (string.IsNullOrWhiteSpace(issuer))
+            {
+                return [];
+            }
+
+            if (keysByIssuer.TryGetValue(issuer.Trim(), out var matched))
+            {
+                return matched;
+            }
+
+            var trimmed = issuer.Trim().TrimEnd('/');
+            return keysByIssuer.TryGetValue(trimmed, out matched) ? matched : [];
+        };
         return merged;
+    }
+
+    private static void AddIssuerKeys(
+        Dictionary<string, List<SecurityKey>> keysByIssuer,
+        string? issuer,
+        List<SecurityKey> signingKeys)
+    {
+        if (string.IsNullOrWhiteSpace(issuer))
+        {
+            return;
+        }
+
+        foreach (var candidate in new[] { issuer.Trim(), issuer.Trim().TrimEnd('/') })
+        {
+            if (candidate.Length == 0)
+            {
+                continue;
+            }
+
+            if (!keysByIssuer.TryGetValue(candidate, out var list))
+            {
+                list = [];
+                keysByIssuer[candidate] = list;
+            }
+
+            foreach (var key in signingKeys)
+            {
+                if (!list.Contains(key))
+                {
+                    list.Add(key);
+                }
+            }
+        }
     }
 }

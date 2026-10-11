@@ -130,7 +130,7 @@ internal static class OidcProviderCatalog
                     DisplayName: string.IsNullOrWhiteSpace(provider.DisplayName) ? provider.Key : provider.DisplayName,
                     Authority: provider.Authority.Trim(),
                     ClientId: provider.ClientId.Trim(),
-                    ClientSecret: null,
+                    ClientSecret: provider.ClientSecret,
                     Scopes: ["openid", "profile", "email"],
                     CallbackPath: null,
                     Enabled: true,
