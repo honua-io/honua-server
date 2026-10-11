@@ -65,6 +65,31 @@ public sealed class UrlImportOperationMiddlewareTests
         Assert.Equal(1, fixture.Actuations);
     }
 
+    [Theory]
+    [InlineData("", 4326)]
+    [InlineData(",\"targetSrid\":4326", 4326)]
+    [InlineData(",\"targetSrid\":3857", 3857)]
+    [InlineData(",\"targetSrid\":0", 0)]
+    public void UrlRequestJson_DefaultTargetSrid_PreservesExplicitValues(string property, int expected)
+    {
+        var input = JsonSerializer.Deserialize(Body[..^1] + property + "}", ImportJsonContext.Default.ImportUrlImportRequest);
+        Assert.NotNull(input);
+        Assert.Equal(expected, input.TargetSrid);
+    }
+
+    [Theory]
+    [InlineData(3857)]
+    [InlineData(0)]
+    public async Task InvokeAsync_ChangedTargetSrid_ConflictsWithoutAnotherActuation(int targetSrid)
+    {
+        using var fixture = new Fixture();
+        await fixture.InvokeAsync(fixture.Context());
+        var changed = fixture.Context(body: Body[..^1] + $",\"targetSrid\":{targetSrid}}}");
+        await fixture.InvokeAsync(changed);
+        Assert.Equal(409, changed.Response.StatusCode);
+        Assert.Equal(1, fixture.Actuations);
+    }
+
     [Fact]
     public async Task InvokeAsync_ChangedPayload_ConflictsWithoutAnotherActuation()
     {
