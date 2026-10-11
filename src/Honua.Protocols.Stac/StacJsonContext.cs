@@ -65,6 +65,7 @@ namespace Honua.Protocols.Stac;
 [JsonSerializable(typeof(DateOnly))]
 [JsonSerializable(typeof(DateTime))]
 [JsonSerializable(typeof(DateTimeOffset))]
+[JsonSerializable(typeof(TimeOnly))]
 internal sealed partial class StacJsonContext : JsonSerializerContext
 {
 }
