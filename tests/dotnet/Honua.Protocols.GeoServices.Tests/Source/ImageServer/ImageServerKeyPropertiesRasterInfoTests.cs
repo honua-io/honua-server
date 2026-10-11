@@ -8,7 +8,6 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Honua.Protocols.GeoServices.ImageServer;
