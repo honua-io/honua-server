@@ -286,6 +286,95 @@ public class SqlServerFeatureQueryBuilderTests
     }
 
     [UnitTest]
+    public void BuildSelectQuery_AttributeInListWithNoOpWhere_DoesNotLiftIntoObjectIds()
+    {
+        var mapping = BuildMapping(primaryKeyColumn: "id");
+        var query = new FeatureQuery
+        {
+            Where = "1=1",
+            SqlFilter = new SqlFragment("population IN (@p0, @p1)", new object?[] { 7L, 9L })
+        };
+
+        var select = Assert.Throws<NotSupportedException>(
+            () => SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
+        var count = Assert.Throws<NotSupportedException>(
+            () => SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query));
+
+        Assert.Contains("cannot safely combine", select.Message, StringComparison.Ordinal);
+        Assert.Contains("cannot safely combine", count.Message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void BuildSelectQuery_SqlFilterOnlyAttributeInList_DoesNotLiftIntoObjectIds()
+    {
+        var mapping = BuildMapping(primaryKeyColumn: "id");
+        var query = new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("population IN (@p0, @p1)", new object?[] { 7L, 9L })
+        };
+
+        var select = Assert.Throws<NotSupportedException>(
+            () => SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
+        var objectIds = Assert.Throws<NotSupportedException>(
+            () => SqlServerFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query));
+
+        Assert.Contains("not executable", select.Message, StringComparison.Ordinal);
+        Assert.Contains("not executable", objectIds.Message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void BuildSelectQuery_ObjectIdNotIn_DoesNotLift()
+    {
+        var mapping = BuildMapping(primaryKeyColumn: "id");
+        var query = new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("\"objectid\" NOT IN (@p0, @p1)", new object?[] { 7L, 9L })
+        };
+
+        var select = Assert.Throws<NotSupportedException>(
+            () => SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
+
+        Assert.Contains("not executable", select.Message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void BuildSelectQuery_JsonPopulationIn_DoesNotLift()
+    {
+        var mapping = BuildMapping(primaryKeyColumn: "id");
+        var fragment = new SqlFragment("attributes->>'population' IN (@p0, @p1)", new object?[] { 7L, 9L });
+        var blank = new FeatureQuery { SqlFilter = fragment };
+        var noOp = new FeatureQuery { Where = "1=1", SqlFilter = fragment };
+
+        var select = Assert.Throws<NotSupportedException>(
+            () => SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, blank, _attributeColumns));
+        var combined = Assert.Throws<NotSupportedException>(
+            () => SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, noOp, _attributeColumns));
+
+        Assert.Contains("not executable", select.Message, StringComparison.Ordinal);
+        Assert.Contains("cannot safely combine", combined.Message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void BuildSelectQuery_QuotedObjectIdInWithBlankWhere_Lifts()
+    {
+        var mapping = BuildMapping(primaryKeyColumn: "id");
+        var query = new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("\"objectid\" IN (@p0, @p1)", new object?[] { 7L, 9L })
+        };
+
+        var select = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
+        var count = SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query);
+        var objectIds = SqlServerFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query);
+        var extent = SqlServerFeatureQueryBuilder.BuildExtentQuery(mapping, query);
+
+        AssertObjectIdParameters(select, "[id] IN (@p0, @p1)");
+        AssertObjectIdParameters(count, "[id] IN (@p0, @p1)");
+        AssertObjectIdParameters(objectIds, "[id] IN (@p0, @p1)");
+        AssertObjectIdParameters(extent, "[id] IN (@p0, @p1)");
+    }
+
+    [UnitTest]
     public void BuildSelectQuery_SRV_DB_008_NoOpWhereWithTimeSqlFilterFailsClosed()
     {
         var query = new FeatureQuery

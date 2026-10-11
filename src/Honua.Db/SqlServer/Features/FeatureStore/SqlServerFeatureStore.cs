@@ -121,7 +121,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     {
         await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        query = PrepareQuery(query);
+        query = PrepareQuery(query, mapping.PrimaryKeyColumn);
 
         // Probe one extra row when a Limit is requested so HasMoreResults is reported correctly
         // without paying for a separate COUNT query. The probe row is trimmed before returning.
@@ -159,7 +159,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     {
         await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        query = PrepareQuery(query);
+        query = PrepareQuery(query, mapping.PrimaryKeyColumn);
         var sql = SqlServerFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query);
         return await _dataAccess.ExecuteObjectIdsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
@@ -169,7 +169,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     {
         await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        query = PrepareQuery(query);
+        query = PrepareQuery(query, mapping.PrimaryKeyColumn);
         var sql = SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query);
         return await _dataAccess.ExecuteCountAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
@@ -179,7 +179,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     {
         await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        query = query is { } extentQuery ? PrepareQuery(extentQuery) : null;
+        query = query is { } extentQuery ? PrepareQuery(extentQuery, mapping.PrimaryKeyColumn) : null;
         var sql = SqlServerFeatureQueryBuilder.BuildExtentQuery(mapping, query);
         return await _dataAccess.ExecuteExtentAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
@@ -302,33 +302,13 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     /// and lets the builder lift an integral object-id IN list. A missing filter service or a failed
     /// translation stays unproved so the builder still fails closed instead of executing Postgres SQL.
     /// </summary>
-    private FeatureQuery PrepareQuery(FeatureQuery query)
-    {
-        if (query.SqlFilter is null)
-        {
-            return query;
-        }
-
-        SqlFragment? translation = null;
-        var proved = false;
-        if (!string.IsNullOrWhiteSpace(query.Where)
-            && _filterExpressions is not null
-            && _binding?.Resource is { } resource)
-        {
-            var parsed = _filterExpressions.Parse(FilterLanguage.ArcGisSql, query.Where);
-            if (parsed.IsSuccess)
-            {
-                var translated = _filterExpressions.Translate(parsed.Expression, resource);
-                if (translated.IsSuccess)
-                {
-                    translation = translated.SqlFilter;
-                    proved = true;
-                }
-            }
-        }
-
-        return SqlServerFeatureQueryBuilder.NormalizeConstraints(query, translation, proved);
-    }
+    private FeatureQuery PrepareQuery(FeatureQuery query, string primaryKeyColumn)
+        => NonPostgresObjectIdConstraintNormalizer.Prepare(
+            query,
+            SqlServerFeatureQueryBuilder.ProviderLabel,
+            primaryKeyColumn,
+            _filterExpressions,
+            _binding?.Resource);
 
     private static NotSupportedException NotSupported(string operation, int layerId)
         => new($"SQL Server provider does not support '{operation}' for layer {layerId} in this slice.");

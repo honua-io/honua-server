@@ -130,7 +130,7 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     {
         await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        query = PrepareQuery(query);
+        query = PrepareQuery(query, mapping.PrimaryKeyColumn);
 
         // Probe one extra row when a Limit is requested so HasMoreResults is reported correctly
         // without paying for a separate COUNT query. The probe row is trimmed before returning.
@@ -171,7 +171,7 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     {
         await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        query = PrepareQuery(query);
+        query = PrepareQuery(query, mapping.PrimaryKeyColumn);
         var sql = OracleFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteObjectIdsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
@@ -181,7 +181,7 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     {
         await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        query = PrepareQuery(query);
+        query = PrepareQuery(query, mapping.PrimaryKeyColumn);
         var sql = OracleFeatureQueryBuilder.BuildCountQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteCountAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
@@ -191,7 +191,7 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     {
         await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        query = query is { } extentQuery ? PrepareQuery(extentQuery) : null;
+        query = query is { } extentQuery ? PrepareQuery(extentQuery, mapping.PrimaryKeyColumn) : null;
         var sql = OracleFeatureQueryBuilder.BuildExtentQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteExtentAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
@@ -318,33 +318,13 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     /// and lets the builder lift an integral object-id IN list. A missing filter service or a failed
     /// translation stays unproved so the builder still fails closed instead of executing Postgres SQL.
     /// </summary>
-    private FeatureQuery PrepareQuery(FeatureQuery query)
-    {
-        if (query.SqlFilter is null)
-        {
-            return query;
-        }
-
-        SqlFragment? translation = null;
-        var proved = false;
-        if (!string.IsNullOrWhiteSpace(query.Where)
-            && _filterExpressions is not null
-            && _binding?.Resource is { } resource)
-        {
-            var parsed = _filterExpressions.Parse(FilterLanguage.ArcGisSql, query.Where);
-            if (parsed.IsSuccess)
-            {
-                var translated = _filterExpressions.Translate(parsed.Expression, resource);
-                if (translated.IsSuccess)
-                {
-                    translation = translated.SqlFilter;
-                    proved = true;
-                }
-            }
-        }
-
-        return OracleFeatureQueryBuilder.NormalizeConstraints(query, translation, proved);
-    }
+    private FeatureQuery PrepareQuery(FeatureQuery query, string primaryKeyColumn)
+        => NonPostgresObjectIdConstraintNormalizer.Prepare(
+            query,
+            OracleFeatureQueryBuilder.ProviderLabel,
+            primaryKeyColumn,
+            _filterExpressions,
+            _binding?.Resource);
 
     private static NotSupportedException NotSupported(string operation, int layerId)
         => new($"Oracle provider does not support '{operation}' for layer {layerId} in this slice.");
