@@ -238,6 +238,38 @@ public sealed class OperationEnvelopeArchitectureTests
     }
 
     [ArchitectureTest]
+    public async Task ProductionStartup_BuiltInAdminRulesDoNotExcuseADisabledOrPermissivePolicy()
+    {
+        // Owner decision 10: the built-in Production administrator rules sit in front of the
+        // fail-closed default; they never satisfy the validator on their own.
+        foreach (var options in new[]
+                 {
+                     new OperationPolicyOptions { Enabled = false, DefaultDecision = PolicyDecisionKind.Deny },
+                     new OperationPolicyOptions { Enabled = true, DefaultDecision = PolicyDecisionKind.Allow },
+                 })
+        {
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddSingleton<IOperationInstanceStore>(new RecordingStore());
+            services.AddSingleton<IOperationProposalStore>(new StubProposalStore());
+            services.AddSingleton<IAuditLog>(new DurableAuditLog());
+            services.AddSingleton<IOptions<OperationPolicyOptions>>(Options.Create(options));
+            services.AddSingleton<IOperationPolicyDecisionPoint>(provider =>
+                new CanonicalOperationPolicyDecisionPoint(
+                    provider.GetRequiredService<IOptions<OperationPolicyOptions>>(),
+                    new BlockingGuardrailLadder(),
+                    productionEnvironment: true));
+            await using var provider = services.BuildServiceProvider();
+            var validator = new OperationRuntimeStartupValidator(provider.GetRequiredService<IServiceScopeFactory>());
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => validator.StartAsync(CancellationToken.None));
+
+            Assert.Contains("enabled policy with a fail-closed default", exception.Message, StringComparison.Ordinal);
+        }
+    }
+
+    [ArchitectureTest]
     public void LoadSoakProductionTopology_ProvisionsFailClosedOperationPolicy()
     {
         var workflow = File.ReadAllText(Path.Join(

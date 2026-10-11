@@ -339,6 +339,20 @@ internal static partial class Log
         Message = "PostGIS preflight check skipped: no database compatibility checker is registered.")]
     public static partial void PostGisPreflightCheckSkipped(ILogger logger);
 
+    /// <summary>
+    /// Logs the per-instance identity this process stamps on every response (<c>Honua-Instance</c>).
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="instanceId">The resolved instance id.</param>
+    /// <param name="instanceIdSource">Which source produced the instance id.</param>
+    /// <param name="instanceStartedAt">When the identity was resolved.</param>
+    [LoggerMessage(
+        EventId = 4059,
+        Level = LogLevel.Information,
+        Message = "Server instance identity resolved: {InstanceId} (source={InstanceIdSource}, startedAt={InstanceStartedAt:O})")]
+    public static partial void ServerInstanceIdentityResolved(
+        ILogger logger, string instanceId, string instanceIdSource, DateTimeOffset instanceStartedAt);
+
     #endregion
 
     #region Tracing Operations (6000-6999)

@@ -37,7 +37,7 @@ public sealed class SensorThingsMigrationPreservationTests : IAsyncLifetime
                 """, schema);
             await using var connection = await _postgres.GetConnectionAsync(schema);
             var before = await SnapshotAsync(connection);
-            await ApplyAsync(schema, "126_CompleteSensorThingsSensing.sql");
+            await ApplyAsync(schema, "127_CompleteSensorThingsSensing.sql");
             var after = await SnapshotAsync(connection);
             after.Should().Be(before, "the additive migration must retain identifiers, numeric values, timestamps and unresolved reference IDs");
             await using var allocate = new NpgsqlCommand("INSERT INTO sta_feature_of_interest(name,description,encoding_type,feature) VALUES ('Unrelated new feature','Synthetic','application/geo+json','{\"type\":\"Feature\",\"geometry\":null,\"properties\":{}}') RETURNING id", connection);

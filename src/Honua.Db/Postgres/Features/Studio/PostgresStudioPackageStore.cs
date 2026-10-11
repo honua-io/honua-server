@@ -348,7 +348,10 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         var provenanceJson = JsonSerializer.Serialize(
             provenance.ToArray(),
             StudioJsonContext.Default.StudioProvenanceRefArray);
-        var contentHash = StudioPackageHash.Compute(draft.Envelope);
+        // honua-server#5449: the exact bytes hashed are persisted beside the digest. The envelope
+        // column is jsonb, which reorders object keys, so the input cannot be re-derived on read.
+        var contentHashInput = StudioPackageHash.ComputeInput(draft.Envelope);
+        var contentHash = StudioPackageHash.ComputeFromInput(contentHashInput);
         var versionId = Guid.NewGuid();
 
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -400,11 +403,11 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             var insertSql = $"""
                 INSERT INTO {_versionsTable}
                     (version_id, item_id, package_key, workspace_id, owner_id, tenant_id, version_number, content_hash,
-                     envelope, validation, dependencies, provenance,
+                     content_hash_input, envelope, validation, dependencies, provenance,
                      source_draft_id, base_version_id, change_note, created_by, created_at)
                 VALUES
                     (@version_id, @item_id, @package_key, @workspace_id, @owner_id, @tenant_id, @version_number, @content_hash,
-                     @envelope, @validation, @dependencies, @provenance,
+                     @content_hash_input, @envelope, @validation, @dependencies, @provenance,
                      @source_draft_id, @base_version_id, @change_note, @created_by, @created_at)
                 """;
             await using (var command = new NpgsqlCommand(insertSql, connection, transaction))
@@ -417,6 +420,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 command.Parameters.AddWithValue("@tenant_id", (object?)draft.TenantId ?? DBNull.Value);
                 command.Parameters.AddWithValue("@version_number", versionNumber);
                 command.Parameters.AddWithValue("@content_hash", contentHash);
+                command.Parameters.Add(new NpgsqlParameter("@content_hash_input", NpgsqlDbType.Bytea) { Value = contentHashInput });
                 command.Parameters.Add(new NpgsqlParameter("@envelope", NpgsqlDbType.Jsonb) { Value = envelopeJson });
                 command.Parameters.Add(new NpgsqlParameter("@validation", NpgsqlDbType.Jsonb) { Value = validationJson });
                 command.Parameters.Add(new NpgsqlParameter("@dependencies", NpgsqlDbType.Jsonb) { Value = dependenciesJson });
@@ -490,14 +494,14 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         Guid versionId,
         CancellationToken cancellationToken = default)
     {
-        var sql = VersionSelectSql(_versionsTable) + " WHERE item_id = @item_id AND version_id = @version_id";
+        var sql = VersionSelectSql(_versionsTable, includeHashInput: true) + " WHERE item_id = @item_id AND version_id = @version_id";
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease.Connection);
         command.Parameters.AddWithValue("@item_id", itemId);
         command.Parameters.AddWithValue("@version_id", versionId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
-            ? ReadVersion(reader)
+            ? ReadVersion(reader, includeHashInput: true)
             : null;
     }
 
@@ -1473,7 +1477,9 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         };
     }
 
-    private static StudioContentVersion ReadVersion(NpgsqlDataReader reader)
+    // The canonical hash input is read only by the single-version read (honua-server#5449); list
+    // and checkpoint reads leave it out so enumerations do not ship every envelope twice.
+    private static StudioContentVersion ReadVersion(NpgsqlDataReader reader, bool includeHashInput = false)
     {
         var envelope = JsonSerializer.Deserialize(
                 reader.GetString(7),
@@ -1491,6 +1497,16 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 reader.GetString(10),
                 StudioJsonContext.Default.StudioProvenanceRefArray)
             ?? Array.Empty<StudioProvenanceRef>();
+        var contentHash = reader.GetString(6);
+        string? contentHashInput = null;
+        if (includeHashInput)
+        {
+            // A version saved before the input was persisted (migration 126) has none; rebuild
+            // it only when the re-serialized envelope still hashes to the stored digest.
+            contentHashInput = reader.IsDBNull(17)
+                ? StudioPackageHash.TryRebuildInput(envelope, contentHash)
+                : Convert.ToBase64String(reader.GetFieldValue<byte[]>(17));
+        }
 
         return new StudioContentVersion
         {
@@ -1500,7 +1516,8 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             WorkspaceId = reader.IsDBNull(3) ? null : reader.GetString(3),
             OwnerId = reader.IsDBNull(4) ? null : reader.GetString(4),
             VersionNumber = reader.GetInt32(5),
-            ContentHash = reader.GetString(6),
+            ContentHash = contentHash,
+            ContentHashInput = contentHashInput,
             Envelope = envelope,
             Validation = validation,
             Dependencies = dependencies,
@@ -1524,10 +1541,10 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             TenantId = reader.IsDBNull(4) ? null : reader.GetString(4),
         };
 
-    private static string VersionSelectSql(string versionsTable) => $"""
+    private static string VersionSelectSql(string versionsTable, bool includeHashInput = false) => $"""
         SELECT version_id, item_id, package_key, workspace_id, owner_id, version_number, content_hash,
                envelope, validation, dependencies, provenance,
-               source_draft_id, base_version_id, change_note, created_by, created_at, tenant_id
+               source_draft_id, base_version_id, change_note, created_by, created_at, tenant_id{(includeHashInput ? ", content_hash_input" : string.Empty)}
         FROM {versionsTable}
         """;
 

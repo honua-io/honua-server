@@ -475,7 +475,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         var imagePullSecrets = ParseList(parameters.GetValueOrDefault(KubernetesJobParameterKeys.ImagePullSecrets))
             ?? snapshot.DefaultImagePullSecrets;
 
-        var environmentVariables = BuildEnvironmentVariables(job, parameters);
+        var environmentVariables = BuildEnvironmentVariables(job, parameters, attemptNumber);
 
         return new KubernetesJobManifest
         {
@@ -506,16 +506,21 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
 
     private static Dictionary<string, string> BuildEnvironmentVariables(
         ExecutionJobRecord job,
-        IReadOnlyDictionary<string, string> parameters)
+        IReadOnlyDictionary<string, string> parameters,
+        int executionAttempt)
     {
         var env = new Dictionary<string, string>(StringComparer.Ordinal);
         ApplyEnvironmentVariables(env, parameters, KubernetesJobParameterKeys.GenericEnvironmentPrefix);
         ApplyEnvironmentVariables(env, parameters, KubernetesJobParameterKeys.EnvironmentPrefix);
 
-        // Serving↔worker job-contract version (ADR-0060 #3b): the worker harness re-checks this and
-        // fails closed if it exceeds the version it can run. Stamped AFTER the env.* passthrough so a
-        // workload-supplied env.HONUA_CONTRACT_VERSION can never override the gate value.
-        env["HONUA_CONTRACT_VERSION"] = job.Spec.ContractVersion.ToString(CultureInfo.InvariantCulture);
+        // The launch contract shared by every batch backend (HONUA_OPERATION_ID, kind, attempt, and the
+        // serving-to-worker contract version of ADR-0060 #3b) is stamped AFTER the passthrough, so a
+        // workload can never shadow it. A generic server image reads it to start as a single-job
+        // execution worker.
+        foreach (var variable in ExecutionWorkerLaunchEnvironment.Build(job, executionAttempt))
+        {
+            env[variable.Key] = variable.Value;
+        }
 
         return env;
     }

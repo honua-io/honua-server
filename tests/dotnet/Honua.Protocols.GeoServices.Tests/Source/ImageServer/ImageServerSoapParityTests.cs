@@ -276,22 +276,31 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         soapMultidim.Status.Should().Be(HttpStatusCode.OK, soapMultidim.Body);
         var result = soapMultidim.Document.Descendants().Single(element => element.Name.LocalName == "Result");
         result.Attribute(XName.Get("nil", XsiNamespace)).Should().BeNull();
-        var variable = result.Descendants().Single(element => element.Name.LocalName == "Name" && element.Value == "sea_surface_temperature").Parent!;
-        Child(variable, "Unit").Value.Should().Be(restVariable.GetProperty("unit").GetString());
-        Child(variable, "Description").Value.Should().Be(restVariable.GetProperty("description").GetString());
+        Child(result, "Names").Elements().Select(static element => element.Value)
+            .Should().Equal("Variables", "DimensionAttributes", "DimensionValues");
+        var sets = Child(result, "Values").Elements().ToArray();
+        sets.Should().HaveCount(3);
+        var variable = MultidimensionalPropertyValue(sets[0], "sea_surface_temperature");
+        MultidimensionalPropertyValue(variable, "Unit").Value.Should().Be(restVariable.GetProperty("unit").GetString());
+        MultidimensionalPropertyValue(variable, "Description").Value.Should().Be(restVariable.GetProperty("description").GetString());
+        var attributes = MultidimensionalPropertyValue(sets[1], "sea_surface_temperature");
+        var coordinates = MultidimensionalPropertyValue(sets[2], "sea_surface_temperature");
         foreach (var restDimension in restVariable.GetProperty("dimensions").EnumerateArray())
         {
             var name = restDimension.GetProperty("name").GetString()!;
-            var soapDimension = variable.Descendants().Single(element =>
-                element.Name.LocalName == "Name" && element.Value == name && element.Parent != variable).Parent!;
-            Child(soapDimension, "DimensionSize").Value.Should().Be(
+            var soapDimension = MultidimensionalPropertyValue(attributes, name);
+            MultidimensionalPropertyValue(soapDimension, "Count").Value.Should().Be(
                 restDimension.GetProperty("dimensionSize").GetInt64().ToString(CultureInfo.InvariantCulture));
             if (restDimension.TryGetProperty("values", out var values))
             {
-                var soapValues = Child(soapDimension, "Values").Elements()
-                    .Select(element => double.Parse(element.Value, CultureInfo.InvariantCulture))
-                    .ToArray();
-                soapValues.Should().Equal(values.EnumerateArray().Select(value => value.GetDouble()));
+                var bounds = MultidimensionalPropertyValue(coordinates, name).Elements().ToArray();
+                bounds.Should().HaveCount(2);
+                foreach (var bound in bounds)
+                {
+                    var soapValues = bound.Elements().Select(element => double.Parse(element.Value, CultureInfo.InvariantCulture));
+                    soapValues.Should().Equal(values.EnumerateArray().Select(value => name == "StdTime"
+                        ? DateTime.UnixEpoch.AddMilliseconds(value.GetDouble()).ToOADate() : value.GetDouble()));
+                }
             }
         }
     }
@@ -702,6 +711,9 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         using var document = JsonDocument.Parse(body);
         return document.RootElement.Clone();
     }
+
+    private static XElement MultidimensionalPropertyValue(XElement set, string key)
+        => Child(Child(set, "PropertyArray").Elements().Single(property => Child(property, "Key").Value == key), "Value");
 
     private static async Task<WebAppFixture> CreateFixtureAsync(bool enableTileCache)
     {

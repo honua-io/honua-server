@@ -44,14 +44,18 @@ internal static class ImageServerPixelBlockEncoder
         }
     }
 
-    internal static RasterResult Encode(RasterResult raster, ImageServerPixelBlockLayout layout)
-        => layout switch
+    internal static RasterResult Encode(RasterResult raster, ImageServerPixelBlockLayout layout, bool requireAllBandsValid = false)
+    {
+        if (requireAllBandsValid && layout != ImageServerPixelBlockLayout.Bsq)
+            throw new InvalidOperationException("Stored MatchAny override is supported only for SOAP BSQ output.");
+        return layout switch
         {
-            ImageServerPixelBlockLayout.Bsq => ImageServerBsqEncoder.Encode(raster),
+            ImageServerPixelBlockLayout.Bsq => ImageServerBsqEncoder.Encode(raster, requireAllBandsValid),
             ImageServerPixelBlockLayout.Bip => EncodeBip(raster),
             ImageServerPixelBlockLayout.Lerc => ImageServerLercEncoder.Encode(raster),
             _ => throw new ArgumentOutOfRangeException(nameof(layout)),
         };
+    }
 
     // BIP carries the same samples and the same any-band pixel mask as BSQ; only the sample
     // order differs (every band of a pixel, then the next pixel).

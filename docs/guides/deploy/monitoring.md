@@ -26,6 +26,10 @@ You'll wire up health probes, Prometheus metrics, OpenTelemetry export, and the 
 | `GET /api/v1/admin/observability/{errors,telemetry,events,migrations}` | admin | Error history, tracing status, Operate events, migration state |
 | `GET /api/v1/operate/status` | ops-reader or admin | **Server-authoritative aggregated status** — one server-computed verdict, per-domain rollups, and an explicitly sourced SLO posture |
 
+## Which replica answered (`Honua-Instance`)
+
+Every response carries a `Honua-Instance` header naming the server instance that produced it, so behind an ALB, a Kubernetes Service, or a Lambda alias you can tell replicas apart and prove that a second instance sees what the first one published. The id is resolved once at startup (and logged with event id `4059`), stays fixed for the life of the process, and comes from the first of these sources that is present: the operator-set `Server__InstanceId` (`Server:InstanceId`), the Lambda execution environment (`AWS_LAMBDA_LOG_STREAM_NAME`), the ECS task id (the task ARN suffix, parsed from `ECS_CONTAINER_METADATA_URI_V4` without calling the metadata endpoint), `HOSTNAME` (the pod name on Kubernetes), the machine name, and finally a random per-process id. Values are limited to letters, digits and `-_.:/[]$`, at most 128 characters; nothing secret is read. Admins also see the id, its `source`, and `startedAt` in the `instance` block of `GET /api/v1/admin/version` and in the `instanceId` detail of the `admin.server.status` operation. Set `Server__InstanceId` yourself when several processes share a hostname. A CDN or other shared cache in front of Honua can replay a stored response with the header of the instance that first produced it, so read the header from uncached requests.
+
 ## Aggregated operational status
 
 Instead of stitching the endpoints above and inventing your own "is the system healthy" verdict, call the one aggregated surface:

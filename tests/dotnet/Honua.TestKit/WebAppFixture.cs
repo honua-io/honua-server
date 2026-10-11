@@ -180,6 +180,14 @@ public sealed class WebAppFixture : IAsyncLifetime
     {
         var postgres = _postgres ?? throw new InvalidOperationException("Postgres fixture is not initialized.");
 
+        // Create and seed the fixture schema before the host is built so the host can
+        // configure it as an operational schema (#5391). Seeding touches only the database.
+        if (string.IsNullOrWhiteSpace(_currentSchema))
+        {
+            _currentSchema = await postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
+            await SeedSchemaAsync(_currentSchema);
+        }
+
         // Not disposed here by design: this factory is stored in the instance field
         // _factory and disposed once in DisposeAsync (see below), which owns its lifetime
         // for the whole fixture. Wrapping this in `using` would dispose it before the
@@ -197,7 +205,10 @@ public sealed class WebAppFixture : IAsyncLifetime
                 {
                     configBuilder.AddInMemoryCollection(
                         Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin
-                            .BuildAppConfigurationDictionary(postgres.ConnectionString));
+                            .BuildAppConfigurationDictionary(
+                                postgres.ConnectionString,
+                                Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin
+                                    .BuildFixtureOperationalSchemaSettings(_currentSchema)));
                 });
 
                 builder.ConfigureTestServices(services =>
@@ -227,11 +238,6 @@ public sealed class WebAppFixture : IAsyncLifetime
         Client = CreateClient();
         _serviceScope = _factory.Services.CreateScope();
 
-        if (string.IsNullOrWhiteSpace(_currentSchema))
-        {
-            _currentSchema = await postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
-            await SeedSchemaAsync(_currentSchema);
-        }
         ApplyCurrentSchemaHeader(Client);
 
         ApplySeedSpecificMetadataV2Graph();

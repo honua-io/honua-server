@@ -298,6 +298,11 @@ internal static partial class MapServerEndpoints
         // apply. Pinning every published layer here would let a caller who can read one layer receive
         // inaccessible or default-hidden layers in the queued TPKX (the worker renders without an
         // HttpContext and cannot re-check access).
+        if (!MetadataV2MapServerDrawing.UsesCachedDrawing(service))
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(context, "Dynamic MapServer drawing does not provide tile exports."));
+        }
+
         var renderSelection = ResolveRenderLayers(
             publishedLayers,
             access,

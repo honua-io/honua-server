@@ -287,6 +287,7 @@ internal static partial class MapServerEndpoints
     {
         var visibleFeatureLayers = layers.Where(static layer => HasMapServerGeometry(layer.Resource)).ToArray();
         var visibleTables = layers.Where(static layer => !HasMapServerGeometry(layer.Resource)).ToArray();
+        var cachedDrawing = MetadataV2MapServerDrawing.UsesCachedDrawing(service);
 
         return new MapServerResponse
         {
@@ -320,9 +321,9 @@ internal static partial class MapServerEndpoints
             // The current MapServer implementation only accepts a narrow dynamicLayers subset
             // for interoperability; do not advertise the full ArcGIS dynamic-layer contract.
             SupportsDynamicLayers = false,
-            SingleFusedMapCache = true,
-            ExportTilesAllowed = true,
-            MaxExportTilesCount = maxExportTilesCount,
+            SingleFusedMapCache = cachedDrawing,
+            ExportTilesAllowed = cachedDrawing,
+            MaxExportTilesCount = cachedDrawing ? maxExportTilesCount : 0,
             Units = "esriMeters",
             Capabilities = BuildMapServerCapabilities(),
             SupportedExtensions = supportedExtensions,
@@ -343,7 +344,7 @@ internal static partial class MapServerEndpoints
                 Subject = service.Metadata.Publisher ?? "",
                 Credits = service.Metadata.Attribution ?? ""
             },
-            TileInfo = BuildTileInfo(maxTileZoom)
+            TileInfo = cachedDrawing ? BuildTileInfo(maxTileZoom) : null
         };
     }
 

@@ -427,6 +427,11 @@ internal static partial class MapServerEndpoints
         // materialized every coordinate then .Take(maxTiles)'d, so a whole-world request at a
         // high zoom (e.g. z18 → ~6.9e10 entries) allocated hundreds of GB before any cap was
         // applied — an unauthenticated OOM DoS (#2065).
+        if (!MetadataV2MapServerDrawing.UsesCachedDrawing(service))
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(context, "Dynamic MapServer drawing does not provide tile exports."));
+        }
+
         var totalTileCount = CountExportTileCoordinates(bounds, requestedZooms);
         var exceededTransferLimit = totalTileCount > maxTiles;
         if (totalTileCount <= 0)

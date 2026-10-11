@@ -391,6 +391,16 @@ internal sealed class McpPublishServiceOutput
     [JsonPropertyName("handleId")]
     public string HandleId { get; set; } = string.Empty;
 
+    /// <summary>
+    /// <see langword="false"/> when the operation instance record was not durably persisted: a
+    /// direct publish on a host started without Redis (owner decision 20). The identities and
+    /// audit receipts are real, but the handle cannot be read back through the operation status
+    /// surfaces. Omitted when the record went to the composed instance store.
+    /// </summary>
+    [JsonPropertyName("durable")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Durable { get; set; }
+
     [JsonPropertyName("proposalId")]
     public string? ProposalId { get; set; }
 

@@ -6,10 +6,12 @@ using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Honua.Server.Features.Operations;
@@ -126,6 +128,7 @@ internal static class OperationsServiceCollectionExtensions
 
         // Enumerate operation identities without resolving unrelated actuator dependencies.
         services.TryAddDeferredOperationExecutor<DeferredServicePublishExecutor>(ServicePublishOperation.OperationId);
+        services.AddServerInstanceIdentity();
         services.TryAddDeferredOperationExecutor<AdminServerStatusExecutor>(AdminServerStatusExecutor.OperationName);
         services.TryAddDeferredOperationExecutor<StudioDraftCreateExecutor>(StudioDraftOperations.Create);
         services.TryAddDeferredOperationExecutor<StudioDraftUpdateExecutor>(StudioDraftOperations.Update);
@@ -251,7 +254,16 @@ internal static class OperationsServiceCollectionExtensions
             .AddOptions<OperationPolicyOptions>()
             .Bind(configuration.GetSection(OperationPolicyOptions.SectionName));
 
-        services.TryAddSingleton<IOperationPolicyDecisionPoint, CanonicalOperationPolicyDecisionPoint>();
+        // Production appends the code-declared built-in administrator rules after the operator
+        // rules (OperationPolicyBuiltInRules); the startup validator still requires an enabled,
+        // fail-closed default so every other caller is denied without an operator rule.
+        var productionEnvironment = environment.IsProduction();
+        services.TryAddSingleton<IOperationPolicyDecisionPoint>(sp => new CanonicalOperationPolicyDecisionPoint(
+            sp.GetRequiredService<IOptions<OperationPolicyOptions>>(),
+            sp.GetRequiredService<Honua.Core.Features.Guardrails.Abstractions.IGuardrailLadder>(),
+            productionEnvironment));
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHostedService, OperationPolicyStartupReporter>());
 
         // Dispatcher: resolves descriptor + executor, runs policy, executes on Allow.
         services.TryAddScoped<IOperationInvoker>(sp =>
@@ -261,7 +273,7 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetRequiredService<IOperationPolicyDecisionPoint>(),
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetService<IOperationApprovalBridge>(),
-                sp.GetRequiredService<IOperationInstanceStore>(),
+                ComposeDispatcherInstanceStore(sp.GetRequiredService<IOperationInstanceStore>()),
                 environment.IsDevelopment() || environment.IsEnvironment("Test")
                     ? new VolatileOperationAuditLog()
                     : sp.GetRequiredService<Honua.Core.Features.AuditLog.Abstractions.IAuditLog>(),
@@ -272,6 +284,29 @@ internal static class OperationsServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Operations a Redis-off host may execute directly, without the durable operation-instance
+    /// store, when the policy decision is Allow. Owner decision 20 (2026-10-10): a Redis-off cell
+    /// is a serving + configure + style/render topology and publishing a service is
+    /// configuration, so a policy-allowed direct publish involves no governed proposal and must
+    /// not be refused for a missing Redis. Governed / proposal-based paths (RequireApproval
+    /// decisions, Studio publication requests, the <c>honua_admin_*</c> catalogs) are not listed
+    /// and keep the typed capability-unavailable refusal.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> RedisOffDirectOperationIds =
+    [
+        ServicePublishOperation.OperationId,
+    ];
+
+    /// <summary>
+    /// Wraps the fail-closed Redis-off instance store in a dispatcher-scoped non-durable store for
+    /// <see cref="RedisOffDirectOperationIds"/>; every other store is used as composed.
+    /// </summary>
+    internal static IOperationInstanceStore ComposeDispatcherInstanceStore(IOperationInstanceStore store)
+        => store is UnavailableOperationInstanceStore
+            ? new NonDurableDirectOperationInstanceStore(store, RedisOffDirectOperationIds)
+            : store;
 
     private static void AddLegacyAdapter(
         IServiceCollection services,

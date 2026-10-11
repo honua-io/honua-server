@@ -197,6 +197,11 @@ internal static class WmtsRequestHandlers
             }
 
             var wmtsMaxZoom = ResolveWmtsMaxZoom(context);
+            if (context.Request.Path.Value?.Contains("/MapServer/WMTS", StringComparison.OrdinalIgnoreCase) == true &&
+                !MetadataV2MapServerDrawing.UsesCachedDrawing(svcDef))
+            {
+                return StandardErrorHelpers.CreateNotFound(context, "Dynamic MapServer drawing does not provide a cached WMTS service.");
+            }
 
             if (string.Equals(requestType, "GetTile", StringComparison.OrdinalIgnoreCase))
             {

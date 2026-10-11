@@ -69,7 +69,7 @@ internal sealed class ImageServerExportHandler
         ExportImageRequest request,
         CancellationToken cancellationToken = default)
         => ExportImageCoreAsync(
-            context, layerId, request, publicationId: null, AuthorizationOperation.Export, cancellationToken);
+            context, layerId, request, publicationId: null, AuthorizationOperation.Export, requireAllBandsValid: false, cancellationToken);
 
     /// <summary>
     /// Exports the exact publication already resolved by a service-scoped caller.
@@ -81,10 +81,20 @@ internal sealed class ImageServerExportHandler
         string publicationId,
         AuthorizationOperation authorizationOperation,
         CancellationToken cancellationToken = default)
+        => ExportImageAsync(context, layerId, request, publicationId, authorizationOperation, false, cancellationToken);
+
+    public Task<IResult> ExportImageAsync(
+        HttpContext context,
+        int layerId,
+        ExportImageRequest request,
+        string publicationId,
+        AuthorizationOperation authorizationOperation,
+        bool requireAllBandsValid,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
         return ExportImageCoreAsync(
-            context, layerId, request, publicationId, authorizationOperation, cancellationToken);
+            context, layerId, request, publicationId, authorizationOperation, requireAllBandsValid, cancellationToken);
     }
 
     private async Task<IResult> ExportImageCoreAsync(
@@ -93,6 +103,7 @@ internal sealed class ImageServerExportHandler
         ExportImageRequest request,
         string? publicationId,
         AuthorizationOperation authorizationOperation,
+        bool requireAllBandsValid,
         CancellationToken cancellationToken)
     {
         using var scope = HonuaTelemetryScope.StartFeature(
@@ -255,7 +266,7 @@ internal sealed class ImageServerExportHandler
 
                     if (exportQuery.OutputFormat == RasterFormat.Raw && emptyResult.Data.Length > 0)
                     {
-                        emptyResult = ImageServerPixelBlockEncoder.Encode(emptyResult, pixelBlockLayout);
+                        emptyResult = ImageServerPixelBlockEncoder.Encode(emptyResult, pixelBlockLayout, requireAllBandsValid);
                     }
 
                     if (emptyResult.Data is { Length: > 0 })
@@ -334,7 +345,7 @@ internal sealed class ImageServerExportHandler
 
             if (exportQuery.OutputFormat == RasterFormat.Raw)
             {
-                result = ImageServerPixelBlockEncoder.Encode(result, pixelBlockLayout);
+                result = ImageServerPixelBlockEncoder.Encode(result, pixelBlockLayout, requireAllBandsValid);
             }
 
             if (WantsInlineImageResponse(request.F))

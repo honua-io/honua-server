@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace Honua.Infrastructure.Helpers;
 
@@ -15,14 +17,14 @@ namespace Honua.Infrastructure.Helpers;
 /// </summary>
 internal static class StyleEndpointUrlResolver
 {
-    public static JsonElement Resolve(JsonElement style, string baseUrl)
+    public static JsonElement Resolve(JsonElement style, string baseUrl, HttpRequest? request = null)
     {
         if (style.ValueKind != JsonValueKind.Object)
         {
             return style;
         }
 
-        var resolved = Resolve(style.GetRawText(), baseUrl, out var changed);
+        var resolved = Resolve(style.GetRawText(), baseUrl, request, out var changed);
         if (!changed)
         {
             return style;
@@ -32,10 +34,10 @@ internal static class StyleEndpointUrlResolver
         return document.RootElement.Clone();
     }
 
-    public static string Resolve(string styleJson, string baseUrl)
-        => Resolve(styleJson, baseUrl, out _);
+    public static string Resolve(string styleJson, string baseUrl, HttpRequest? request = null)
+        => Resolve(styleJson, baseUrl, request, out _);
 
-    private static string Resolve(string styleJson, string baseUrl, out bool changed)
+    private static string Resolve(string styleJson, string baseUrl, HttpRequest? request, out bool changed)
     {
         changed = false;
 
@@ -61,7 +63,13 @@ internal static class StyleEndpointUrlResolver
         {
             foreach (var source in sources)
             {
-                if (source.Value is not JsonObject sourceObject || sourceObject["tiles"] is not JsonArray tiles)
+                if (source.Value is not JsonObject sourceObject)
+                {
+                    continue;
+                }
+
+                changed |= ResolveProperty(sourceObject, "url", baseUrl, request);
+                if (sourceObject["tiles"] is not JsonArray tiles)
                 {
                     continue;
                 }
@@ -70,7 +78,7 @@ internal static class StyleEndpointUrlResolver
                 {
                     if (tiles[index] is JsonValue value && value.TryGetValue<string>(out var url))
                     {
-                        var resolvedUrl = ResolveUrl(url, baseUrl);
+                        var resolvedUrl = ResolveUrl(url, baseUrl, request);
                         if (!string.Equals(url, resolvedUrl, StringComparison.Ordinal))
                         {
                             tiles[index] = resolvedUrl;
@@ -84,11 +92,11 @@ internal static class StyleEndpointUrlResolver
         return changed ? root.ToJsonString() : styleJson;
     }
 
-    private static bool ResolveProperty(JsonObject root, string propertyName, string baseUrl)
+    private static bool ResolveProperty(JsonObject root, string propertyName, string baseUrl, HttpRequest? request = null)
     {
         if (root[propertyName] is JsonValue value && value.TryGetValue<string>(out var url))
         {
-            var resolved = ResolveUrl(url, baseUrl);
+            var resolved = ResolveUrl(url, baseUrl, request);
             if (!string.Equals(url, resolved, StringComparison.Ordinal))
             {
                 root[propertyName] = resolved;
@@ -100,8 +108,45 @@ internal static class StyleEndpointUrlResolver
     }
 
     // Root-relative only: "//host/..." is scheme-relative and already names an origin.
-    private static string ResolveUrl(string url, string baseUrl)
-        => url.StartsWith('/') && !url.StartsWith("//", StringComparison.Ordinal)
+    private static string ResolveUrl(string url, string baseUrl, HttpRequest? request = null)
+    {
+        var resolved = url.StartsWith('/') && !url.StartsWith("//", StringComparison.Ordinal)
             ? string.Concat(baseUrl.TrimEnd('/'), url)
             : url;
+
+        // Only our known tile/TileJSON routes inherit a URL token. A stored style can
+        // reference external sources, redirects, sprites or glyphs; never disclose the
+        // caller's credential to those URLs, or overwrite a source's own credential.
+        if (request is null || !IsOwnedTileUrl(resolved, baseUrl))
+        {
+            return resolved;
+        }
+
+        var queryIndex = resolved.IndexOf('?');
+        if (queryIndex >= 0 && QueryHelpers.ParseQuery(resolved[queryIndex..]).ContainsKey("token"))
+        {
+            return resolved;
+        }
+
+        return BaseUrlResolver.PreserveToken(request, resolved);
+    }
+
+    private static bool IsOwnedTileUrl(string url, string baseUrl)
+    {
+        var prefix = string.Concat(baseUrl.TrimEnd('/'), "/tiles/");
+        if (!url.StartsWith(prefix, StringComparison.Ordinal) || url.Contains('#'))
+        {
+            return false;
+        }
+
+        var path = url[prefix.Length..].Split('?')[0];
+        var segments = path.Split('/');
+        if (!int.TryParse(segments[0], NumberStyles.None, CultureInfo.InvariantCulture, out _))
+        {
+            return false;
+        }
+
+        return (segments.Length == 2 && segments[1] == "tile.json") ||
+            (segments.Length == 4 && segments[1] == "{z}" && segments[2] == "{x}" && segments[3] == "{y}.mvt");
+    }
 }

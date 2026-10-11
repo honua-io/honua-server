@@ -144,7 +144,8 @@ public sealed class GeoservicesImportDomainPersistenceTests(PostgresFixture fixt
                 schemaContext: null,
                 schemaConfiguration: schemaConfiguration),
             graphStore,
-            NullLogger<PostgreSqlLayerPublishingService>.Instance);
+            NullLogger<PostgreSqlLayerPublishingService>.Instance,
+            schemaConfiguration: schemaConfiguration);
 
         return new GeoservicesImportService(
             restClient,

@@ -30,6 +30,7 @@ internal sealed partial class JobExecutionService(
     private const string SafeExecutionFailureMessage = "Job execution failed.";
     private const string DrainDeadlineFailureMessage = "Worker drain deadline expired.";
     private const int PreDispatchRecoveryAttempts = 2;
+    private const int FinalizeCasAttempts = 3;
 
     /// <summary>
     /// Delay before the claim loop polls the queue again after finding it empty. A submitted job
@@ -54,6 +55,16 @@ internal sealed partial class JobExecutionService(
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         await _draining.CancelAsync().ConfigureAwait(false);
+        if (RequeueOnShutdown)
+        {
+            // A run-to-completion execution worker has no replacement revision to drain into: the
+            // provider is terminating it (Spot interruption, eviction, a Kubernetes Job delete). Cancel
+            // execution now so the shutdown path hands the attempt back as Queued for the serving
+            // host's reconciler to resubmit, instead of waiting out the host deadline and failing it.
+            await base.StopAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         try
         {
             if (ExecuteTask is { } execution)
@@ -84,6 +95,12 @@ internal sealed partial class JobExecutionService(
         base.Dispose();
         _draining.Dispose();
     }
+
+    /// <summary>
+    /// When <see langword="true"/> (the execution worker profile), host shutdown cancels the running
+    /// job immediately and hands the attempt back for a provider retry rather than draining it.
+    /// </summary>
+    internal bool RequeueOnShutdown { get; set; }
 
     internal JobExecutionService(
         IJobQueue jobQueue,
@@ -882,19 +899,96 @@ internal sealed partial class JobExecutionService(
         string? partitionLeaseOwner,
         CancellationToken cancellationToken)
     {
-        var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+        ExecutionJobRecord job;
+        ExecutionJobRecord final;
+        ExecutionJobStatus effectiveStatus;
+        for (var casAttempt = 1; ; casAttempt++)
+        {
+            var current = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (current == null)
+            {
+                return true;
+            }
+
+            if (IsTerminalOrNotOwnedBy(current, workerId))
+            {
+                Log.TerminalStateSkipped(logger, operationId, current.Status.ToString());
+                return true;
+            }
+
+            job = current;
+            (final, effectiveStatus) = BuildFinalRecord(operationId, job, result);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var finalized = partitionLeaseId is null
+                ? await jobStore.TrySetAsync(final, cancellationToken: cancellationToken).ConfigureAwait(false)
+                : await jobStore.TrySetIfLeaseOwnedAsync(
+                        final,
+                        partitionLeaseId,
+                        partitionLeaseOwner!,
+                        cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+            if (finalized)
+            {
+                break;
+            }
+
+            // Without a partition lease a failed CAS only means a concurrent nonterminal write moved the
+            // version: a provider observation from the serving host's reconciler while a batch-launched
+            // execution worker owns the attempt, or a progress stamp. The next read re-checks ownership,
+            // so rebuild the terminal record from fresh state instead of handing an executed attempt back
+            // for another run. A partition-lease rejection may be a lost lease and keeps its fail path.
+            if (partitionLeaseId is not null || casAttempt >= FinalizeCasAttempts)
+            {
+                Log.TerminalStateSkipped(logger, operationId, "CAS conflict or partition lease lost on finalize");
+                return false;
+            }
+        }
+
+        // Expiry may race a store that commits before observing its cancellation token.
+        // The caller's expiry handler replaces that attempt's late success with failure.
         cancellationToken.ThrowIfCancellationRequested();
-        if (job == null)
+
+        ControlPlaneTelemetry.RecordExecutionTransition(job, final);
+
+        cancellationTokens.Remove(operationId, workerId);
+
+        // Both catches below are deliberately broad: the durable job record already
+        // transitioned to its terminal state above, so a queue/log-store failure here
+        // is best-effort cleanup that must not fail finalization — the stale-claim
+        // reconciler and log TTL cover the recovery path.
+        try
         {
-            return true;
+            await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Log.QueueRemovalFailed(logger, operationId, ex);
         }
 
-        if (IsTerminalOrNotOwnedBy(job, workerId))
+        if (logStore != null)
         {
-            Log.TerminalStateSkipped(logger, operationId, job.Status.ToString());
-            return true;
+            try
+            {
+                await logStore.SetRetentionAsync(operationId, LogRetention, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Log.LogRetentionFailed(logger, operationId, ex);
+            }
         }
 
+        await NotifyTerminalAsync(final, cancellationToken).ConfigureAwait(false);
+        Log.JobExecutionCompleted(logger, operationId, effectiveStatus.ToString());
+        return true;
+    }
+
+    private (ExecutionJobRecord Final, ExecutionJobStatus EffectiveStatus) BuildFinalRecord(
+        string operationId,
+        ExecutionJobRecord job,
+        JobExecutionResult result)
+    {
         // Ordinary output remains fenced by durable cancellation. A completed sink
         // with an already committed receipt instead reports its actual successful effect;
         // the cancellation stamp and warning explain why cancellation could not undo it.
@@ -934,57 +1028,7 @@ internal sealed partial class JobExecutionService(
             }
         };
 
-        cancellationToken.ThrowIfCancellationRequested();
-        var finalized = partitionLeaseId is null
-            ? await jobStore.TrySetAsync(final, cancellationToken: cancellationToken).ConfigureAwait(false)
-            : await jobStore.TrySetIfLeaseOwnedAsync(
-                    final,
-                    partitionLeaseId,
-                    partitionLeaseOwner!,
-                    cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-        if (!finalized)
-        {
-            Log.TerminalStateSkipped(logger, operationId, "CAS conflict or partition lease lost on finalize");
-            return false;
-        }
-
-        // Expiry may race a store that commits before observing its cancellation token.
-        // The caller's expiry handler replaces that attempt's late success with failure.
-        cancellationToken.ThrowIfCancellationRequested();
-
-        ControlPlaneTelemetry.RecordExecutionTransition(job, final);
-
-        cancellationTokens.Remove(operationId, workerId);
-
-        // Both catches below are deliberately broad: the durable job record already
-        // transitioned to its terminal state above, so a queue/log-store failure here
-        // is best-effort cleanup that must not fail finalization — the stale-claim
-        // reconciler and log TTL cover the recovery path.
-        try
-        {
-            await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            Log.QueueRemovalFailed(logger, operationId, ex);
-        }
-
-        if (logStore != null)
-        {
-            try
-            {
-                await logStore.SetRetentionAsync(operationId, LogRetention, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                Log.LogRetentionFailed(logger, operationId, ex);
-            }
-        }
-
-        await NotifyTerminalAsync(final, cancellationToken).ConfigureAwait(false);
-        Log.JobExecutionCompleted(logger, operationId, effectiveStatus.ToString());
-        return true;
+        return (final, effectiveStatus);
     }
 
     internal const string CommittedCancellationWarning = "Cancellation requested after sink data committed; committed-effect receipts are retained.";

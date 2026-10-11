@@ -114,6 +114,20 @@ StartupConfigurationHelpers.EnsureStaticWebAssetContentRootsExist();
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Owner decision 6 (2026-10-10): HONUA_SETTINGS_DOCUMENT=aws:secretsmanager:<name-or-arn> loads one
+// JSON settings document so a Lambda function can keep most settings out of its 4 KB environment.
+// It must run before anything below reads configuration, and before the per-setting secret
+// resolution steps so aws:secretsmanager: references inside the document resolve exactly as if
+// they had come from the environment. Precedence: appsettings < document < env vars < command line.
+await SettingsDocumentConfiguration.AddSettingsDocumentAsync(builder.Configuration);
+
+// Typed composition switch (resolved once, never consulted by services): a process a batch compute
+// backend launched for one execution job (HONUA_OPERATION_ID et al.) is composed as a single-job
+// execution worker, narrowed just before Build() below. Without it the worker booted as a full
+// server and, once Redis was connected, its execution-job reconciler re-dispatched the shared
+// queued jobs to AWS Batch from inside the worker (e2e-cloud-aws run 38048901509, EventId 9046).
+var hostComposition = HostCompositionSelection.Resolve(builder.Configuration);
+
 // Finalize JSON precedence before any secret becomes a process-lifetime snapshot.
 StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, builder.Environment);
 var useTestSchemaHeaders = builder.Configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
@@ -124,6 +138,9 @@ StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(builder.Configura
 await StartupConfigurationHelpers.LoadBootstrapLicenseSnapshotAsync(builder.Configuration, builder.Environment);
 // Start the license hosted service before any workload execution or reconciliation service.
 builder.Services.AddHonuaLicensing(builder.Configuration, builder.Environment);
+// Per-instance identity (Honua-Instance response header, admin status) lets the release harness
+// prove a cross-replica read behind an ALB or Lambda alias.
+builder.Services.AddServerInstanceIdentity();
 // Resolve aws:secretsmanager: Redis connection-string references before anything below reads
 // ConnectionStrings:redis — the multiplexer wiring a few lines down runs ahead of
 // WebApplicationBuilder.Build(), so it cannot use the DI-registered IConnectionSecretResolver
@@ -1171,7 +1188,20 @@ builder.Services.AddConfigurationOptionsValidation();
 // Bound EventSource logger retention after all provider registrations, while
 // preserving Serilog forwarding and the rest of the diagnostic providers.
 builder.Services.CacheEventSourceLoggersForSerilogForwarding();
+if (hostComposition.Launch is { } executionWorkerLaunch)
+{
+    builder.Services.ApplyExecutionWorkerProfile(executionWorkerLaunch);
+}
+
 var app = builder.Build();
+
+// Resolve the per-instance identity once, at startup, and record it so a response's
+// Honua-Instance header can be matched to this process's logs.
+{
+    var instanceIdentity = app.Services.GetRequiredService<IServerInstanceIdentity>();
+    Honua.Infrastructure.Logging.Log.ServerInstanceIdentityResolved(
+        app.Logger, instanceIdentity.InstanceId, instanceIdentity.Source, instanceIdentity.StartedAt);
+}
 
 // A PostgreSQL production composition is never allowed to construct an unguarded migration
 // runner or core store. Resolve the guard eagerly, before compatibility checks, migrations, or
@@ -1183,6 +1213,15 @@ if (registerProviderInfrastructure &&
     configuredPrimaryProvider is DataProviderNames.Postgis or DataProviderNames.PostgreSql)
 {
     _ = app.Services.GetRequiredService<IDatabaseSchemaGuard>();
+}
+
+if (hostComposition.IsExecutionWorker)
+{
+    // The worker serves no HTTP surface and runs no migrations: its only hosted work is the one
+    // assigned execution job. The host stops itself once the job's outcome is durable.
+    await app.RunAsync();
+    Environment.ExitCode = await app.Services.GetRequiredService<ExecutionWorkerExitState>().ResolveAsync();
+    return;
 }
 
 HostedBlazorAssetHelpers.FilterHostedBlazorStaticAssetEndpoints(
@@ -1201,6 +1240,10 @@ if (activeDbConnectionTracker != null)
 // (auth, tenancy, rate limiting, auditing, telemetry, request logging) sees the method the
 // client actually sent. See UseHonuaHeadRequestGetSemantics below for the handler side (#3389).
 app.UseHonuaHeadRequestMethod();
+
+// Stamp Honua-Instance on every response, including ones short-circuited below (host
+// validation, HTTPS redirection, auth), so callers can tell which replica answered.
+app.UseServerInstanceHeader();
 
 if (forwardedHeadersEnabled)
 {

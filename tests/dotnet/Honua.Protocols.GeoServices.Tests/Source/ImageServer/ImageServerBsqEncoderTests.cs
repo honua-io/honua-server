@@ -10,6 +10,45 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
 public sealed class ImageServerBsqEncoderTests
 {
+    [UnitTheory]
+    [InlineData(false, 0xf0)]
+    [InlineData(true, 0x50)]
+    public void Encode_StoredInterpretation_CombinesValidityWithoutChangingSamples(bool matchAny, byte expectedMask)
+    {
+        var raster = new RasterResult
+        {
+            Data = new byte[] { 0, 0, 0, 4, 0, 7, 8, 0 },
+            ContentType = "application/octet-stream",
+            Width = 4,
+            Height = 1,
+            BandCount = 2,
+            PixelType = "8BUI",
+            BandValidityMasks = [new byte[] { 0xd0 }, new byte[] { 0x70 }]
+        };
+        // First valid source sample is zero: validity comes from masks, never values.
+        ImageServerBsqEncoder.Encode(raster, matchAny).Data.Should().Equal(raster.Data.Concat(new[] { expectedMask }));
+        raster.BandValidityMasks![0].Should().Equal(0xd0);
+        raster.BandValidityMasks[1].Should().Equal(0x70);
+    }
+
+    [UnitTheory]
+    [InlineData(0x00, 0x00, 0x00)]
+    [InlineData(0xff, 0xff, 0x80)]
+    public void Encode_MatchAny_TrailingMaskBitsAndAllInvalidAreExact(byte first, byte second, byte last)
+    {
+        var raster = new RasterResult
+        {
+            Data = new byte[18],
+            ContentType = "application/octet-stream",
+            Width = 9,
+            Height = 1,
+            BandCount = 2,
+            PixelType = "8BUI",
+            BandValidityMasks = [new byte[] { first, second }, new byte[] { first, second }]
+        };
+        ImageServerBsqEncoder.Encode(raster, true).Data.Should().Equal(raster.Data.Concat(new byte[] { first, last }));
+    }
+
     [UnitTest]
     public void Encode_AsymmetricBandMasks_PreservesValidOtherBandAndStoredNoDataSamples()
     {

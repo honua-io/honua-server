@@ -1476,7 +1476,9 @@ internal static class StudioPackageEndpoints
                     isPubliclyReadable: pointers?.PublishedVersionId == version.VersionId).ConfigureAwait(false);
                 if (authResult is null)
                 {
-                    visibleVersions.Add(version);
+                    // The canonical hash input (honua-server#5449) is a single-version read: an
+                    // enumeration would otherwise carry every envelope twice.
+                    visibleVersions.Add(version with { ContentHashInput = null });
                 }
                 else
                 {

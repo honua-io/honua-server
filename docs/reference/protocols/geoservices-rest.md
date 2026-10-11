@@ -79,6 +79,33 @@ Use the `@honua/sdk-js` FeatureLayer client and call `applyEdits({ adds: [{ geom
 
 Base: `/rest/services/{serviceId}/MapServer` (service and `/{layerId}` metadata via GET or POST).
 
+### Publication drawing mode
+
+Set `options.mapServerDrawingMode` on the canonical metadata service to `"cached"`
+or `"dynamic"`. The option applies to every map publication in that service.
+An absent option preserves cached drawing. Values are case-insensitive strings;
+explicit nulls, unknown modes and other JSON types fail metadata graph validation.
+
+```json
+{
+  "options": {
+    "mapServerDrawingMode": "dynamic"
+  }
+}
+```
+
+Cached services advertise `singleFusedMapCache: true` and `tileInfo`, and provide
+cached tiles, MapServer WMTS and tile-package export. Dynamic services advertise
+`singleFusedMapCache: false`, omit `tileInfo`, and disable tile export. Their tile
+and tile-export requests return 400; MapServer WMTS requests return 404. Map
+export, identify, legend, find and REST query remain available in both modes.
+This option does not enable the separate ArcGIS `dynamicLayers` contract.
+
+The canonical `/ogc/services/{serviceId}/wmts` publication remains independent
+of MapServer drawing mode when the service enables WMTS. To expose cached and
+dynamic maps over the same data, create two services whose publications reference
+the same resources and storage bindings, with the corresponding drawing modes.
+
 | Operation | Routes | Notes |
 | --- | --- | --- |
 | Export map | `/export` (GET, POST) | `bbox`, `bboxSR`, `imageSR`, `size`, `format`, `transparent`, `layers`, `layerDefs`, `time`, `f`. |

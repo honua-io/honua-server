@@ -3431,7 +3431,7 @@
           "Metadata"
         ],
         "summary": "Get Admin Version Info",
-        "description": "Returns server version, metadata API version, and current server time.",
+        "description": "Returns server version, metadata API version, current server time, and the identity of the server instance that answered.",
         "operationId": "getAdminVersion",
         "responses": {
           "200": {
@@ -25519,6 +25519,42 @@
             "type": "string",
             "format": "date-time",
             "description": "Server time in UTC"
+          },
+          "instance": {
+            "$ref": "#/components/schemas/AdminServerInstance"
+          }
+        }
+      },
+      "AdminServerInstance": {
+        "type": "object",
+        "description": "Identity of the server instance (replica) that answered. The id equals the Honua-Instance response header.",
+        "required": [
+          "id",
+          "source",
+          "startedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable instance id for the life of the server process"
+          },
+          "source": {
+            "type": "string",
+            "description": "Source the id was resolved from",
+            "enum": [
+              "configuration",
+              "aws-lambda",
+              "aws-ecs-task",
+              "aws-ecs-container",
+              "hostname",
+              "machine-name",
+              "generated"
+            ]
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the instance resolved its identity (process start, UTC)"
           }
         }
       },

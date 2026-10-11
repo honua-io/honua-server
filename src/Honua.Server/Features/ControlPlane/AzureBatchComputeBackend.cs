@@ -514,8 +514,18 @@ internal sealed partial class AzureBatchComputeBackend(
 
         ApplyEnvironmentSettings(settings, parameters, GenericEnvPrefix);
         ApplyEnvironmentSettings(settings, parameters, EnvPrefix);
-        // Stamp after pass-through settings so a workload cannot override the contract gate.
-        settings["HONUA_CONTRACT_VERSION"] = job.Spec.ContractVersion.ToString(CultureInfo.InvariantCulture);
+
+        // Stamp after pass-through settings so a workload cannot override the identity the default
+        // command line reads, nor the launch contract shared by every batch backend
+        // (HONUA_OPERATION_ID, kind, attempt, contract version) that a generic server image reads to
+        // start as a single-job execution worker. StartAsync receives the record before the
+        // submission is counted, so this launch runs attempt AttemptCount + 1.
+        settings["HONUA_JOB_ID"] = job.OperationId;
+        settings["HONUA_WORKLOAD_KIND"] = job.Spec.Kind.ToString();
+        foreach (var variable in ExecutionWorkerLaunchEnvironment.Build(job, job.AttemptCount + 1))
+        {
+            settings[variable.Key] = variable.Value;
+        }
 
         return settings;
     }

@@ -67,6 +67,18 @@ public sealed class TileOperationJobServicePublishTests
         await sut.ProcessQueuedJobAsync(jobId);
 
         var progress = await sut.GetAsync(jobId);
+        if (operation == "publish" && !serviceScoped)
+        {
+            // #5624: the bare storage-layer id resolves to the "other" resource, which no routable
+            // publication serves. A published archive must be bound to a routable source, so the
+            // upload is refused rather than published under a source the proxy cannot authorize.
+            progress!.Status.Should().Be(OperationStatus.Failed);
+            progress.ErrorMessage.Should().Be(
+                "Publish could not bind the same routable source that generated the archive, so the object was not uploaded.");
+            stub.LastUploadBytes.Should().BeNull();
+            return;
+        }
+
         progress!.Status.Should().Be(OperationStatus.Completed, progress.ErrorMessage);
         stub.LastUploadBytes.Should().NotBeNull();
         var header = PMTilesHeader.ReadFrom(stub.LastUploadBytes!);
@@ -734,6 +746,32 @@ public sealed class TileOperationJobServicePublishTests
     internal static TileOperationJobService CreateSutForSeed(ServiceProvider serviceProvider)
         => CreateSut(serviceProvider);
 
+    /// <summary>
+    /// Storage layers the unscoped publish and archive tests address by a bare layer id.
+    /// </summary>
+    private static readonly int[] _unscopedStorageLayerIds = [1, 5, 9, 21, 22, 31, 100];
+
+    /// <summary>
+    /// Gives every bare layer id the suite publishes without a serviceId a routable source: a
+    /// resource, its storage binding and a publication in a routable service. #5624 refuses to
+    /// upload an archive whose storage layer resolves to no routable publication.
+    /// </summary>
+    private static TestMetadataV2GraphBuilder AddRoutableStorageLayers(TestMetadataV2GraphBuilder builder)
+    {
+        foreach (var layerId in _unscopedStorageLayerIds)
+        {
+            var resourceId = $"res-storage-{layerId}";
+            var bindingId = $"{resourceId}-binding";
+            builder
+                .AddResource(resourceId, $"storage-layer-{layerId}")
+                .AddStorageBinding(bindingId, resourceId, "features", storageLayerId: layerId)
+                .AddPublication($"pub-storage-{layerId}", "svc-publish-test", resourceId,
+                    layerIndex: layerId, storageBindingId: bindingId);
+        }
+
+        return builder;
+    }
+
     private static ServiceProvider BuildScope(
         StubCloudStorage stub,
         bool includeCloudStorage,
@@ -743,9 +781,12 @@ public sealed class TileOperationJobServicePublishTests
         MetadataV2Graph? graph = null)
     {
         var services = new ServiceCollection();
-        graph ??= new TestMetadataV2GraphBuilder()
+        graph ??= AddRoutableStorageLayers(new TestMetadataV2GraphBuilder()
             .AddService("svc-publish-test", "publish-test")
             .AddResource("res-publish", "publish-layer")
+            // #5624: an unscoped publish binds the archive to the routable source of its storage
+            // layer and refuses the upload when there is none, so layer 7 needs a storage binding.
+            .AddStorageBinding("res-publish-binding", "res-publish", "features", storageLayerId: 7)
             .AddPublication("pub-publish", "svc-publish-test", "res-publish", layerIndex: 7)
             .AddService("world", "world")
             .AddResource("world-42", "world-42")
@@ -754,7 +795,7 @@ public sealed class TileOperationJobServicePublishTests
             .AddResource("world-41", "world-41")
             .AddPublication("world-pub-41", "world", "world-41", layerIndex: 41)
             .AddResource("world-13", "world-13")
-            .AddPublication("world-pub-13", "world", "world-13", layerIndex: 13)
+            .AddPublication("world-pub-13", "world", "world-13", layerIndex: 13))
             .Build();
         services.AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph));
 

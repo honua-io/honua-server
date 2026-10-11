@@ -8,7 +8,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 /// <summary>Frames canonical planar samples as uncompressed Esri BSQ with a packed pixel mask.</summary>
 internal static class ImageServerBsqEncoder
 {
-    internal static RasterResult Encode(RasterResult raster)
+    internal static RasterResult Encode(RasterResult raster, bool requireAllBandsValid = false)
     {
         var bytesPerSample = raster.PixelType?.ToUpperInvariant() switch
         {
@@ -36,11 +36,14 @@ internal static class ImageServerBsqEncoder
             {
                 throw new InvalidDataException("Band validity masks do not match the raster layout.");
             }
-            // The wire mask describes whether a pixel has data in any band. Keep each band's
-            // stored NoData sample intact, rather than discarding another band's valid value.
-            // NoData overrides are rejected by the canonical export parameter validator.
+            // Default MatchAll keeps a pixel when any band is valid. A SOAP override
+            // already proven equal to stored per-band NoData may request MatchAny:
+            // then every band must be valid. Never mutate the original sample bytes.
+            if (requireAllBandsValid) mask.Fill(0xff);
             foreach (var band in bandMasks)
-                for (var index = 0; index < maskLength; index++) mask[index] |= band[index];
+                for (var index = 0; index < maskLength; index++)
+                    if (requireAllBandsValid) mask[index] &= band[index];
+                    else mask[index] |= band[index];
         }
         else
         {

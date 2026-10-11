@@ -467,6 +467,7 @@ internal static partial class ImageServerSoapEndpoints
         var referenceRaster = await rasterStore
             .GetPrimaryRasterInfoAsync(current.LayerId, cancellationToken)
             .ConfigureAwait(false);
+        var requireAllBandsValid = false;
         if (!string.IsNullOrWhiteSpace(request.NoData))
         {
             // Prove equivalence for every possible source, including the empty-extent template.
@@ -482,8 +483,9 @@ internal static partial class ImageServerSoapEndpoints
                     requestContext.SoapNamespace);
             }
 
-            // The requested value is already enforced by the canonical renderer from the
-            // raster metadata. Remove the redundant override before shared REST validation.
+            // The samples' NoData values already match every source. MatchAny still
+            // needs an AND of the canonical per-band validity masks on the BSQ wire.
+            requireAllBandsValid = string.Equals(request.NoDataInterpretation, "esriNoDataMatchAny", StringComparison.OrdinalIgnoreCase);
             request = CopyWithoutNoData(request);
         }
 
@@ -497,6 +499,7 @@ internal static partial class ImageServerSoapEndpoints
             request,
             current.PublicationId!,
             AuthorizationOperation.Export,
+            requireAllBandsValid,
             cancellationToken).ConfigureAwait(false);
 
         if (returnMimeData && exportResult is Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult
@@ -713,8 +716,6 @@ internal static partial class ImageServerSoapEndpoints
         // A tolerance would admit a different stored sentinel before conversion to byte.
         if ((!string.Equals(request.NoDataInterpretation, "esriNoDataMatchAny", StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.NoDataInterpretation, "esriNoDataMatchAll", StringComparison.OrdinalIgnoreCase)) ||
-            // BSQ uses an OR of band-validity masks (MatchAll). MatchAny agrees only for one band.
-            (raster.BandCount > 1 && !string.Equals(request.NoDataInterpretation, "esriNoDataMatchAll", StringComparison.OrdinalIgnoreCase)) ||
             !string.Equals(request.Format, "bsq", StringComparison.OrdinalIgnoreCase) ||
             !raster.HasUniformNoDataValue ||
             !raster.NoDataValue.HasValue ||

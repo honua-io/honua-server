@@ -278,7 +278,7 @@ public static class OgcStylesEndpoints
         // MapLibre sources/sprite/glyphs must be absolute (TileJSON 3.0.0 §3.2, #5442);
         // the derived SLD and drawingInfo encodings carry no endpoint URLs.
         var content = stylesheet.Encoding == OgcStyleEncoding.MapboxStyle
-            ? StyleEndpointUrlResolver.Resolve(stylesheet.Content, BaseUrlResolver.GetBaseUrl(context))
+            ? StyleEndpointUrlResolver.Resolve(stylesheet.Content, BaseUrlResolver.GetBaseUrl(context), context.Request)
             : stylesheet.Content;
 
         return Results.Content(content, stylesheet.MediaType, Encoding.UTF8);

@@ -174,6 +174,7 @@ internal sealed class MapServerResponse
     /// Tile caching information for the service (WebMercatorQuad tile matrix set).
     /// </summary>
     [JsonPropertyName("tileInfo")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public TileInfo? TileInfo { get; init; }
 
     /// <summary>

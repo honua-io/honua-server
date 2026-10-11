@@ -33,6 +33,31 @@ is not a supported output store.
    storage need (`batch.ephemeral_gib` → `s`/`m`/`l`/`xl`) and submits to the
    queue.
 
+## The worker container
+
+The job definition runs the same Honua image as the server. The backend passes the job to the
+container as environment overrides: `HONUA_OPERATION_ID`, `HONUA_JOB_KIND`,
+`HONUA_WORKLOAD_NAME`, `HONUA_EXECUTION_ATTEMPT`, `HONUA_CONTRACT_VERSION` and any `env.*`
+workload parameters. A workload parameter can never set one of the `HONUA_*` launch variables.
+
+Because `HONUA_OPERATION_ID` is set, the container starts as a **single-job execution worker**:
+
+- It claims only the attempt it was launched for in the shared Redis job store. A stale container,
+  or one AWS Batch retried on its own, never runs a newer attempt.
+- It runs the GP executor and writes the result, or the typed failure, back to the job record. The
+  serving host sees the terminal record.
+- A retryable failure, or an interruption such as a Spot reclaim, hands the attempt back. The
+  server's reconciler then submits a new Batch job.
+- It exits `0` whenever the job record no longer depends on this Batch job: the job finished, was
+  handed back, or moved to another attempt. It exits nonzero only when it could not run or report
+  the job. A Batch retry strategy therefore never competes with the server's own retry.
+
+The worker composes no job dispatch, control-plane reconcilers, scheduled background services,
+proposal gateway or HTTP surface. It never submits jobs to AWS Batch, so the job role does not need
+`batch:SubmitJob`. It does need what the server uses to run and report the job: the database
+connection, `ConnectionStrings__redis` and the operation key-ring certificate. Without Redis it
+refuses to start, because nobody could see the result.
+
 ## The activation gate
 
 The committed `geoprocessing-aws-batch` workload has **empty** ARN parameters,

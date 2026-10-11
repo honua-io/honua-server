@@ -151,6 +151,27 @@ public sealed class BaseOutputCachePolicyTests
         state.Invocations.Should().Be(2);
     }
 
+    [Theory]
+    [InlineData("TileJson")]
+    [InlineData("LayerStyle")]
+    [InlineData("OgcStylesStylesheet")]
+    public async Task TileAndStylePolicies_DoNotReadOrStoreCredentialBearingResponses(string policyName)
+    {
+        var state = new EndpointState { EchoToken = true };
+        using var host = await StartHostAsync(state, cachePolicyName: policyName);
+        using var client = host.GetTestClient();
+
+        // A real anonymous cache hit proves middleware caching is active. Credential
+        // requests must then reach the handler every time and retain caller identity.
+        (await client.GetStringAsync(Path)).Should().Be("1:");
+        (await client.GetStringAsync(Path)).Should().Be("1:");
+        (await client.GetStringAsync(Path + "?token=first")).Should().Be("2:first");
+        (await client.GetStringAsync(Path + "?token=first")).Should().Be("3:first");
+        (await client.GetStringAsync(Path + "?token=second")).Should().Be("4:second");
+        (await client.GetStringAsync(Path)).Should().Be("1:");
+        state.Invocations.Should().Be(4);
+    }
+
     private static async Task<string> SendAsync(HttpClient client, string header, string value)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, Path);
@@ -184,8 +205,12 @@ public sealed class BaseOutputCachePolicyTests
                             context.Response.Headers[HeaderNames.CacheControl] = "no-store";
                         }
 
-                        await context.Response.WriteAsync(
-                            invocation.ToString(CultureInfo.InvariantCulture));
+                        var body = invocation.ToString(CultureInfo.InvariantCulture);
+                        if (state.EchoToken)
+                        {
+                            body = string.Concat(body, ":", context.Request.Query["token"].ToString());
+                        }
+                        await context.Response.WriteAsync(body);
                     });
 
                     if (cachePolicyName is not null)
@@ -205,5 +230,7 @@ public sealed class BaseOutputCachePolicyTests
         public int Invocations;
 
         public bool NoStore { get; init; }
+
+        public bool EchoToken { get; init; }
     }
 }

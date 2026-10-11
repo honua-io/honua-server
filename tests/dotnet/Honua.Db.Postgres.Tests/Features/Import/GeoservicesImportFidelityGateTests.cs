@@ -280,7 +280,8 @@ public sealed class GeoservicesImportFidelityGateTests(PostgresFixture fixture)
                 schemaContext: null,
                 schemaConfiguration: schemaConfiguration),
             graphStore,
-            NullLogger<PostgreSqlLayerPublishingService>.Instance);
+            NullLogger<PostgreSqlLayerPublishingService>.Instance,
+            schemaConfiguration: schemaConfiguration);
 
         return new GeoservicesImportService(
             restClient,
