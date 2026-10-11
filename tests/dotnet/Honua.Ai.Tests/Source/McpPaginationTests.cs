@@ -90,6 +90,19 @@ public sealed class McpPaginationTests
     }
 
     [UnitTest]
+    public void Chunk_BinaryContentIsAtomicAndBounded()
+    {
+        IReadOnlyList<McpResourceContent> contents =
+        [new McpResourceContent { Uri = "/temp/map.png", MimeType = "image/png", Blob = "YWJjZA==" }];
+        McpPagination.Chunk(contents, null, 8, out var cursor).Should().BeSameAs(contents);
+        cursor.Should().BeNull();
+        var tooSmall = () => McpPagination.Chunk(contents, null, 7, out _);
+        tooSmall.Should().Throw<GeoprocessingValidationException>().WithMessage("*maxChars*");
+        var resume = () => McpPagination.Chunk(contents, "r1:any", 8, out _);
+        resume.Should().Throw<GeoprocessingValidationException>().WithMessage("*cursor*");
+    }
+
+    [UnitTest]
     public void Chunk_WhenDocumentFitsBudget_ReturnsVerbatimWithoutCursor()
     {
         IReadOnlyList<McpResourceContent> contents =
@@ -120,7 +133,7 @@ public sealed class McpPaginationTests
             var page = McpPagination.Chunk(contents, cursor, maxChars: 20, out cursor);
             page.Should().HaveCount(1);
             page[0].Uri.Should().Be("honua://jobs/j/results");
-            page[0].Text.Length.Should().BeLessThanOrEqualTo(20);
+            (page[0].Text ?? throw new InvalidOperationException("Expected a text resource.")).Length.Should().BeLessThanOrEqualTo(20);
             reassembled.Append(page[0].Text);
             pages++;
         }

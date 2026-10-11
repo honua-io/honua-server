@@ -1,0 +1,311 @@
+{
+  "observedAt": "2026-10-11T19:31:43.922Z",
+  "scope": "Local patched-source proof; not immutable candidate qualification",
+  "deviations": [
+    "Exact93 runtime base with locally compiled source mounted read-only",
+    "New database snapshot of the owned19804 fixture; original database and candidate containers retained",
+    "SDK runtime fetch hook redirects owned installer19804 requests to patched19809; existing installer files and image pin unchanged",
+    "API-only harness suppresses local build static-web-asset paths; no Studio UI qualification",
+    "Exact runtime image native SkiaSharp NoDependencies3.119.2 mounted over JIT distro-linked native asset; no rendering source or fixture data changed",
+    "Auxiliary HTTP pixel inspection compares the already MCP-read image hash; SDK qualification itself uses resources/read with no HTTP fallback"
+  ],
+  "serverInfo": {
+    "name": "honua.operator.mcp",
+    "version": "v1"
+  },
+  "proxyPackage": "@honua/mcp-server@0.1.14",
+  "direct": {
+    "uri": "/temp/afceb8518ae4491fbc70a6a56d6bba87.png",
+    "uriMatchesResourceLink": true,
+    "mimeType": "image/png",
+    "byteLength": 2363,
+    "sha256": "e6a27a24672ddcbe8b6fbfba0bcf24edf91f60df69a9c616826fa1ba6342efd2",
+    "decoded": {
+      "uri": "/temp/afceb8518ae4491fbc70a6a56d6bba87.png",
+      "mediaType": "image/png",
+      "width": 512,
+      "height": 512,
+      "byteLength": 2363,
+      "imageSha256": "e6a27a24672ddcbe8b6fbfba0bcf24edf91f60df69a9c616826fa1ba6342efd2",
+      "visiblePixelCount": 262144,
+      "decodedPixelSha256": "b6f18c53a34f43e0c6551738adbba4473c81613c63e4acdff66297f3432a3e30"
+    },
+    "render": {
+      "format": "image/png",
+      "width": 512,
+      "height": 512,
+      "byteLength": 2363,
+      "bbox": [
+        -157.865,
+        21.295,
+        -157.845,
+        21.315
+      ],
+      "bboxSrid": 4326,
+      "layers": [
+        {
+          "serviceId": "svc-publish-installer1401",
+          "layerId": 1,
+          "styleId": "installer1401-parcels",
+          "styleRendering": "applied"
+        }
+      ],
+      "image": {
+        "format": "image/png",
+        "width": 512,
+        "height": 512,
+        "byteLength": 2363,
+        "uri": "/temp/afceb8518ae4491fbc70a6a56d6bba87.png",
+        "inlined": false
+      }
+    }
+  },
+  "generatedStdio": {
+    "uri": "/temp/38f6c6dac0e3457d9b952b64bc6f3e7e.png",
+    "uriMatchesResourceLink": true,
+    "mimeType": "image/png",
+    "byteLength": 2363,
+    "sha256": "e6a27a24672ddcbe8b6fbfba0bcf24edf91f60df69a9c616826fa1ba6342efd2",
+    "decoded": {
+      "uri": "/temp/38f6c6dac0e3457d9b952b64bc6f3e7e.png",
+      "mediaType": "image/png",
+      "width": 512,
+      "height": 512,
+      "byteLength": 2363,
+      "imageSha256": "e6a27a24672ddcbe8b6fbfba0bcf24edf91f60df69a9c616826fa1ba6342efd2",
+      "visiblePixelCount": 262144,
+      "decodedPixelSha256": "b6f18c53a34f43e0c6551738adbba4473c81613c63e4acdff66297f3432a3e30"
+    },
+    "render": {
+      "format": "image/png",
+      "width": 512,
+      "height": 512,
+      "byteLength": 2363,
+      "bbox": [
+        -157.865,
+        21.295,
+        -157.845,
+        21.315
+      ],
+      "bboxSrid": 4326,
+      "layers": [
+        {
+          "serviceId": "svc-publish-installer1401",
+          "layerId": 1,
+          "styleId": "installer1401-parcels",
+          "styleRendering": "applied"
+        }
+      ],
+      "image": {
+        "format": "image/png",
+        "width": 512,
+        "height": 512,
+        "byteLength": 2363,
+        "uri": "/temp/38f6c6dac0e3457d9b952b64bc6f3e7e.png",
+        "inlined": false
+      }
+    }
+  },
+  "canonicalAlias": "honua://temporary-files/38f6c6dac0e3457d9b952b64bc6f3e7e.png",
+  "anonymous": {
+    "status": 200,
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "error": {
+        "code": -32000,
+        "message": "Authentication is required to use the MCP operator surface.",
+        "data": {
+          "code": "unauthenticated",
+          "requiresReauthentication": true
+        }
+      }
+    }
+  },
+  "catalogParity": {
+    "schemaVersion": "honua.setup-catalog-parity/v1",
+    "scope": "catalog-parity-only",
+    "candidateId": "local-patched-server5867-20261011",
+    "serverImage": "ghcr.io/honua-io/honua-server@sha256:785de2ae7f72e6277ce62aa1ece4f08ee0425970b71c47f9f4843c0baae2c8db",
+    "manifestSha256": "00d7097b2698a0fc53a0236ff1246f52205a13abe257f9c876bf338f8fe7925e",
+    "view": "setup",
+    "pass": true,
+    "directDescriptorSha256": "81503d95616b7b3a9ae7e229660d1be42608d68a44e445b51074763d35ffd03a",
+    "proxiedDescriptorSha256": "81503d95616b7b3a9ae7e229660d1be42608d68a44e445b51074763d35ffd03a"
+  },
+  "qualification": {
+    "schemaVersion": "honua.bounded-setup-qualification/v1",
+    "release": "2026.1",
+    "scope": "local-setup+bounded-discovery+style-render",
+    "generatedAt": "2026-10-11T19:31:39.279Z",
+    "pass": false,
+    "candidateId": "local-patched-server5867-20261011",
+    "serverImage": "ghcr.io/honua-io/honua-server@sha256:785de2ae7f72e6277ce62aa1ece4f08ee0425970b71c47f9f4843c0baae2c8db",
+    "packages": [
+      {
+        "name": "@honua/mcp-server",
+        "version": "0.1.14",
+        "integrity": "sha512-dxwoQoysTJkf3iyNDOlyrM31J4x6k8wTJZRXTAk7qy5sXnnOshqjVJqETFL1acKKvKF6owHwABPZoWZOAhHTTw=="
+      }
+    ],
+    "workflowView": "setup",
+    "revision": "setup.v3",
+    "revisionDigest": "sha256:90a621097de6ddb6b3c6a6628465934db3ce9ea6901610d811d41bedd9a820dd",
+    "unsupported": [
+      "full Admin MCP roster",
+      "analysis profile",
+      "esri-gp profile",
+      "guessed Mcp__Profiles switch",
+      "hard-coded 441-tool success denominator",
+      "dashboard publication"
+    ],
+    "install": {
+      "ready": true,
+      "serverImageMatchesPin": false,
+      "repoDigestVerified": false,
+      "baseUrl": "http://127.0.0.1:19804",
+      "mcpPackage": {
+        "name": "@honua/mcp-server",
+        "version": "0.1.14",
+        "integrity": "sha512-dxwoQoysTJkf3iyNDOlyrM31J4x6k8wTJZRXTAk7qy5sXnnOshqjVJqETFL1acKKvKF6owHwABPZoWZOAhHTTw==",
+        "matchesGeneratedConfig": true
+      }
+    },
+    "auth": {
+      "credentialId": "4a1e41d8-3d79-495f-94e4-00d4ba94c9e5",
+      "name": "honua-local-agent",
+      "requestedGrants": [
+        "admin:read",
+        "admin:write",
+        "read:*"
+      ],
+      "effectiveGrants": [
+        "admin:read",
+        "admin:write",
+        "read:*"
+      ],
+      "canAuthenticate": true,
+      "grantsMatch": true
+    },
+    "server": {
+      "adminVersion": "2026.1.1+42ee789d6a74d5eacf1c1d97a17e2a2a3c459cde",
+      "metadataApiVersion": "metadata.honua.io/v2alpha1",
+      "mcp": {
+        "name": "honua.operator.mcp",
+        "version": "v1"
+      }
+    },
+    "discovery": {
+      "pages": 1,
+      "geometryBufferTool": "honua_dry_run_plan",
+      "liveHttpDescriptorSha256": "81503d95616b7b3a9ae7e229660d1be42608d68a44e445b51074763d35ffd03a",
+      "catalogParity": {
+        "directDescriptorSha256": "81503d95616b7b3a9ae7e229660d1be42608d68a44e445b51074763d35ffd03a",
+        "proxiedDescriptorSha256": "81503d95616b7b3a9ae7e229660d1be42608d68a44e445b51074763d35ffd03a",
+        "pass": true
+      }
+    },
+    "styleRender": {
+      "styleId": "installer1401-parcels",
+      "mediaType": "image/png",
+      "width": 512,
+      "height": 512,
+      "byteLength": 2363,
+      "imageSha256": "e6a27a24672ddcbe8b6fbfba0bcf24edf91f60df69a9c616826fa1ba6342efd2",
+      "visiblePixelCount": 262144,
+      "decodedPixelSha256": "b6f18c53a34f43e0c6551738adbba4473c81613c63e4acdff66297f3432a3e30",
+      "uri": "/temp/2483717eb0514978b9dae9dd59dd2160.png"
+    },
+    "differences": [
+      "configured server image is not the immutable release pin in the setup manifest",
+      "running server image digest was not verified: Error response from daemon: No such image: ghcr.io/honua-io/honua-server:nightly-87966c3@sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a"
+    ]
+  },
+  "pixelVariation": {
+    "distinctRgbaColors": 7,
+    "largestColors": [
+      {
+        "pixelCount": 194544,
+        "rgba": [
+          255,
+          255,
+          255,
+          255
+        ]
+      },
+      {
+        "pixelCount": 63504,
+        "rgba": [
+          233,
+          121,
+          81,
+          255
+        ]
+      },
+      {
+        "pixelCount": 2048,
+        "rgba": [
+          33,
+          53,
+          71,
+          255
+        ]
+      },
+      {
+        "pixelCount": 1032,
+        "rgba": [
+          144,
+          154,
+          163,
+          255
+        ]
+      },
+      {
+        "pixelCount": 1008,
+        "rgba": [
+          133,
+          87,
+          76,
+          255
+        ]
+      },
+      {
+        "pixelCount": 4,
+        "rgba": [
+          199,
+          204,
+          209,
+          255
+        ]
+      }
+    ]
+  },
+  "sourceBuild": {
+    "sourceCommit": "42ee789d6a74d5eacf1c1d97a17e2a2a3c459cde",
+    "nativeSkiaSha256": "1b8c6c179ba8b747dd76f7c22689057cc76a8e7d2505f9fe2bf8ee32af518dd0",
+    "nativeSkiaSource": "unchanged native NoDependencies library copied from exact runtime base; both source trees pin SkiaSharp3.119.2",
+    "runtimeBase": "ghcr.io/honua-io/honua-server@sha256:785de2ae7f72e6277ce62aa1ece4f08ee0425970b71c47f9f4843c0baae2c8db",
+    "binarySha256": {
+      "Honua.Server.dll": "451abb32af4f75c3a9255540185372317addbefc21eb1ecc756760baa9399df4",
+      "Honua.Ai.dll": "9bed2bdd9fb75c56b0a11ed858719c22740cf480fa4a1eb084772d5ef3e8dd03",
+      "Honua.Core.dll": "f2e47a8724f2db10c0a8d0743a4cb6ab5d30377fcf158a987a3337318efd2c4d",
+      "Honua.Hosting.dll": "ea484972b18743bc7e3976fadc1896bb94c4fb375b3a8cfa224314b9a5d99c85"
+    }
+  },
+  "sdkQualificationRuntime": {
+    "sourceCommit": "5085634a00e4964c4c1b8359fdad67301abab092",
+    "preparedAt": "2026-10-11T17:47:04.386Z",
+    "compiledInputSha256": "5710be1d58c6667d2b5bd895cd0cc6a9ab9f83e22317677c2dac9d22814cd0dc",
+    "distSha256": "2981827e3f02c85df0d4ed4411614bfce5bfdbf4f96cb0da6e7c98f2915b1009",
+    "sourceFilesVerified": [
+      "src/cli/bounded-qualification.ts",
+      "src/cli/rendered-png.ts",
+      "src/studio-agent/mcp-client.ts"
+    ],
+    "runtimeModules": {
+      "src/cli/bounded-qualification.ts": "1da1265af5c32d80a7d2e4a3b94af9c45a23c15419ca7f98304dce542a7188f6",
+      "src/cli/rendered-png.ts": "bf9b76c93415078369991710fd3194c0246ede8db18a95bdfb70bd90e6728226",
+      "src/studio-agent/mcp-client.ts": "53a2fc4b232128cd1f57eb7d7c04a23469b603293982a5e40ba476677f680b08"
+    }
+  }
+}
