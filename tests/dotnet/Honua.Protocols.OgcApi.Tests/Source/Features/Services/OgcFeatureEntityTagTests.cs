@@ -53,6 +53,46 @@ public sealed class OgcFeatureEntityTagTests
     }
 
     [UnitTest]
+    public void SelectEntitySnapshot_SameCrs_UsesResponseFeature()
+    {
+        var response = MakeFeature(1, "response") with { Geometry = [1, 2] };
+        var storage = MakeFeature(1, "storage") with { Geometry = [9, 9] };
+        var resolved = MakeFeature(1, "resolved");
+
+        var selected = OgcFeatureEntityTag.SelectEntitySnapshot(4326, 4326, response, storage, resolved);
+
+        selected.Attributes["name"].Should().Be("response");
+        OgcFeatureEntityTag.Compute(selected, ETagService)
+            .Should().Be(OgcFeatureEntityTag.Compute(response, ETagService));
+    }
+
+    [UnitTest]
+    public void SelectEntitySnapshot_DifferentCrs_UsesStorageSnapshot()
+    {
+        var response = MakeFeature(1, "projected") with { Geometry = [1, 2, 3] };
+        var storage = MakeFeature(1, "stored") with { Geometry = [9, 9] };
+        var resolved = MakeFeature(1, "resolved");
+
+        var selected = OgcFeatureEntityTag.SelectEntitySnapshot(3857, 4326, response, storage, resolved);
+
+        OgcFeatureEntityTag.Compute(selected, ETagService)
+            .Should().Be(OgcFeatureEntityTag.Compute(storage, ETagService));
+        OgcFeatureEntityTag.Compute(response, ETagService)
+            .Should().NotBe(OgcFeatureEntityTag.Compute(storage, ETagService));
+    }
+
+    [UnitTest]
+    public void SelectEntitySnapshot_DifferentCrsWithoutStorageRead_UsesResolvedFeature()
+    {
+        var response = MakeFeature(1, "projected") with { Geometry = [1] };
+        var resolved = MakeFeature(1, "resolved") with { Geometry = [4, 5] };
+
+        var selected = OgcFeatureEntityTag.SelectEntitySnapshot(3857, 4326, response, null, resolved);
+
+        selected.Attributes["name"].Should().Be("resolved");
+    }
+
+    [UnitTest]
     public void Compute_NestedJsonNullAndAbsentProperty_ProduceDifferentEntityETags()
     {
         var original = MakeFeature(1, "original");

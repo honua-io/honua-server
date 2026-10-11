@@ -16,6 +16,7 @@ using Honua.Infrastructure.Filtering;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
+using Honua.Infrastructure.Stac;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Stac.Models;
 using Honua.Protocols.Stac.Services;
@@ -73,6 +74,7 @@ internal static class SearchEndpoints
         [FromQuery] int? limit,
         [FromQuery] int? offset,
         [FromQuery] string? token,
+        [FromQuery(Name = "next")] string? next,
         [FromQuery] string? bbox,
         [FromQuery] string? datetime,
         [FromQuery] string? collections,
@@ -118,19 +120,19 @@ internal static class SearchEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, requestError ?? "Invalid search parameters.");
         }
 
-        // STAC API token takes precedence over the legacy offset parameter.
-        // "token" uses the same opaque offset:N format as the POST next link,
-        // aligning GET and POST pagination strategies.
+        // GET pages with "next=offset:N". A query "token" is an ArcGIS portal
+        // credential unless it is exactly that cursor, in which case it is still
+        // accepted. Any other token value is ignored here so it can authenticate.
         int effectiveOffset;
-        if (token is not null)
+        if (next is not null)
         {
-            if (!TryParseContinuationToken(token, out effectiveOffset))
+            if (!StacContinuationTokens.TryParse(next, out effectiveOffset))
             {
                 StacTelemetry.SetFailed(activity, "invalid_pagination_token");
                 return StandardErrorHelpers.CreateBadRequest(context, "Invalid pagination token.");
             }
         }
-        else
+        else if (!StacContinuationTokens.TryParse(token, out effectiveOffset))
         {
             effectiveOffset = Math.Max(offset ?? 0, 0);
         }
@@ -386,6 +388,19 @@ internal static class SearchEndpoints
             return resolved;
         }
 
+        StacItem ProjectCandidate(GlobalSearchCandidate candidate)
+            => ApplyFieldProjection(
+                StacMappingService.MapFeatureToItem(
+                    candidate.Feature,
+                    candidate.Target.Resource,
+                    candidate.Target.Publication,
+                    candidate.Target.LayerIndex,
+                    baseUrl,
+                    candidate.Projection?.SelectedProperties,
+                    geometrySrid: Wgs84Srid,
+                    cogArtifact: cogByLayer.TryGetValue(candidate.Target.LayerIndex, out var artifact) ? artifact : null),
+                candidate.Projection);
+
         using var activity = StacTelemetry.StartActivity(
             StacTelemetry.Operations.SearchWork,
             "/stac/search",
@@ -402,6 +417,13 @@ internal static class SearchEndpoints
         {
             var allItems = ImmutableArray.CreateBuilder<StacItem>();
             var globallyOrderedCandidates = requestedItemIds is { Length: > 0 } &&
+                request.Sortby is { IsDefault: false, Length: > 0 }
+                    ? new List<GlobalSearchCandidate>()
+                    : null;
+            // sortby across more than one collection is a global order. Each target
+            // contributes its own ordered prefix; the prefixes are merged below.
+            var crossCollectionOrdered = globallyOrderedCandidates is null &&
+                targets.Length > 1 &&
                 request.Sortby is { IsDefault: false, Length: > 0 }
                     ? new List<GlobalSearchCandidate>()
                     : null;
@@ -468,7 +490,8 @@ internal static class SearchEndpoints
                 var query = layerQueryResult.Query;
                 var projection = layerQueryResult.Projection;
                 var layerId = target.LayerIndex;
-                if (globallyOrderedCandidates is not null && query.OrderBy.HasValue)
+                if ((globallyOrderedCandidates is not null || crossCollectionOrdered is not null) &&
+                    query.OrderBy.HasValue)
                 {
                     globalOrderBy ??= query.OrderBy.Value;
                 }
@@ -563,7 +586,7 @@ internal static class SearchEndpoints
                         cancellationToken).ConfigureAwait(false);
                     if (result.TotalCount > unboundItemIds.Length || result.Items.Length > unboundItemIds.Length || result.HasMoreResults)
                     {
-                        throw new InvalidOperationException(
+                        throw new StacItemIdConflictException(
                             $"STAC item id candidate query exceeded the {unboundItemIds.Length}-feature safety limit.");
                     }
 
@@ -578,6 +601,30 @@ internal static class SearchEndpoints
 
                     totalMatched += incomingCount;
                     globallyOrderedCandidates.AddRange(result.Items.Select(feature =>
+                        new GlobalSearchCandidate(feature, target, projection)));
+                    continue;
+                }
+
+                if (crossCollectionOrdered is not null)
+                {
+                    if (query.OrderBy is not { IsDefaultOrEmpty: false })
+                    {
+                        throw new InvalidOperationException("A cross-collection STAC sort requires a valid sort order.");
+                    }
+
+                    var windowLimit = ClampSearchWindow(offset, pageLimit);
+                    var sortedPage = await StacPageReader.ReadAsync(
+                        targetReader,
+                        storageLayerId,
+                        query with { Offset = null, Limit = windowLimit },
+                        omitCount,
+                        cancellationToken).ConfigureAwait(false);
+                    if (!omitCount)
+                    {
+                        totalMatched += sortedPage.TotalCount ?? sortedPage.Items.Length;
+                    }
+
+                    crossCollectionOrdered.AddRange(sortedPage.Items.Select(feature =>
                         new GlobalSearchCandidate(feature, target, projection)));
                     continue;
                 }
@@ -690,6 +737,26 @@ internal static class SearchEndpoints
                 return StandardErrorHelpers.CreateBadRequest(context, inapplicableFilterError);
             }
 
+            if (crossCollectionOrdered is { Count: > 0 })
+            {
+                if (globalOrderBy is not { IsDefaultOrEmpty: false } orderBy)
+                {
+                    throw new InvalidOperationException("A cross-collection STAC sort requires a valid sort order.");
+                }
+
+                SortGlobalCandidates(crossCollectionOrdered, orderBy);
+                var pageCandidates = crossCollectionOrdered
+                    .Skip(offset)
+                    .Take(effectiveLimit)
+                    .ToList();
+                foreach (var layer in pageCandidates.Select(candidate => candidate.Target.LayerIndex).Distinct())
+                {
+                    await CogForLayerAsync(layer, cancellationToken).ConfigureAwait(false);
+                }
+
+                allItems.AddRange(pageCandidates.Select(ProjectCandidate));
+            }
+
             if (globallyOrderedCandidates is not null)
             {
                 if (globallyOrderedCandidates.Count == 0)
@@ -731,23 +798,14 @@ internal static class SearchEndpoints
                     await CogForLayerAsync(layer, cancellationToken);
                 }
 
-                allItems.AddRange(pageCandidates
-                    .Select(candidate => ApplyFieldProjection(
-                        StacMappingService.MapFeatureToItem(
-                            candidate.Feature,
-                            candidate.Target.Resource,
-                            candidate.Target.Publication,
-                            candidate.Target.LayerIndex,
-                            baseUrl,
-                            candidate.Projection?.SelectedProperties,
-                            geometrySrid: Wgs84Srid,
-                            cogArtifact: cogByLayer.TryGetValue(candidate.Target.LayerIndex, out var c) ? c : null),
-                        candidate.Projection)));
+                allItems.AddRange(pageCandidates.Select(ProjectCandidate));
             }
 
-            var hasNextPage = omitCount && globallyOrderedCandidates is null
-                ? allItems.Count > effectiveLimit
-                : totalMatched > offset + allItems.Count;
+            var hasNextPage = crossCollectionOrdered is not null && omitCount
+                ? crossCollectionOrdered.Count > offset + effectiveLimit
+                : omitCount && globallyOrderedCandidates is null
+                    ? allItems.Count > effectiveLimit
+                    : totalMatched > offset + allItems.Count;
             if (allItems.Count > effectiveLimit)
             {
                 allItems.Count = effectiveLimit;
@@ -796,6 +854,13 @@ internal static class SearchEndpoints
             StacTelemetry.SetResultCount(activity, allItems.Count, omitCount ? null : totalMatched);
             return Results.Json(response, StacJsonContext.Default.StacItemCollection, MediaTypes.GeoJson);
         }
+        catch (StacItemIdConflictException ex)
+        {
+            StacTelemetry.RecordException(activity, ex);
+            StacLog.OperationFailed(logger, ex);
+            return StandardErrorHelpers.CreateConflict(
+                context, "The requested STAC item id is not unique.");
+        }
         catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
             StacTelemetry.RecordException(activity, ex);
@@ -817,6 +882,33 @@ internal static class SearchEndpoints
 
     private static bool ExceedsGlobalCandidateBudget(int currentCount, int incomingCount)
         => incomingCount > MaxItemIdCount - currentCount;
+
+    private static int ClampSearchWindow(int offset, int pageLimit)
+    {
+        var safeOffset = Math.Max(offset, 0);
+        var safeLimit = Math.Max(pageLimit, 0);
+        return safeOffset > int.MaxValue - safeLimit
+            ? int.MaxValue
+            : safeOffset + safeLimit;
+    }
+
+    private static void SortGlobalCandidates(
+        List<GlobalSearchCandidate> candidates,
+        ImmutableArray<OrderByClause> orderBy)
+    {
+        candidates.Sort((left, right) =>
+        {
+            var comparison = FeatureOrdering.Compare(
+                left.Feature,
+                left.Target.Resource,
+                right.Feature,
+                right.Target.Resource,
+                orderBy);
+            return comparison != 0
+                ? comparison
+                : left.Target.LayerIndex.CompareTo(right.Target.LayerIndex);
+        });
+    }
 
     private static async Task<(bool IsSuccess, FeatureQuery Query, StacFieldProjection? Projection, FilterExpression? CandidateFilter, string? Error, bool IsCollectionInapplicable)> TryBuildLayerQuery(
         StacSearchRequest request,
@@ -1057,19 +1149,9 @@ internal static class SearchEndpoints
 
         if (string.Equals(normalized, "id", StringComparison.OrdinalIgnoreCase))
         {
-            foreach (var candidate in new[] { "stac_id", "item_id", "id" })
-            {
-                if (availableFields.TryGetValue(candidate, out var idField))
-                {
-                    fieldName = idField.Name;
-                    fieldType = idField.Type;
-                    return true;
-                }
-            }
-
-            var primaryId = resource.FindPrimaryIdField();
-            fieldName = primaryId?.Name ?? "objectid";
-            fieldType = primaryId?.Type ?? MetadataV2FieldType.Integer;
+            var identity = StacItemIdentity.Resolve(resource);
+            fieldName = identity.Field?.Name ?? "objectid";
+            fieldType = identity.Field?.Type ?? MetadataV2FieldType.Integer;
             return true;
         }
 
@@ -1902,16 +1984,15 @@ internal static class SearchEndpoints
            name.Equals("stac_version", StringComparison.OrdinalIgnoreCase) ||
            name.Equals("stac_extensions", StringComparison.OrdinalIgnoreCase);
 
-    private static string BuildSearchQuery(int limit, int offset, StacSearchRequest request, bool defaultFilterLangIsText)
+    internal static string BuildSearchQuery(int limit, int offset, StacSearchRequest request, bool defaultFilterLangIsText)
     {
-        // Emit "token=offset:N" (same format as the POST next link) so GET and POST
-        // pagination strategies align. The legacy "offset" parameter continues to
-        // be accepted for backward compatibility.
-        var paginationToken = ContinuationTokenPrefix + offset.ToString(CultureInfo.InvariantCulture);
+        // Emit "next=offset:N". "token" remains a portal credential on the query
+        // string. POST next links still carry the same cursor in the JSON body.
+        var paginationToken = StacContinuationTokens.Prefix + offset.ToString(CultureInfo.InvariantCulture);
         var query = new List<string>
         {
             $"limit={limit}",
-            $"token={Uri.EscapeDataString(paginationToken)}"
+            $"{StacContinuationTokens.QueryParameter}={Uri.EscapeDataString(paginationToken)}"
         };
 
         if (request.Bbox is { IsDefault: false } bboxArr && bboxArr.Length >= 4)
@@ -1995,8 +2076,6 @@ internal static class SearchEndpoints
         return string.Join("&", query);
     }
 
-    private const string ContinuationTokenPrefix = "offset:";
-
     /// <summary>
     /// Parses an opaque POST-search continuation token (as emitted in the
     /// <c>next</c> link body) into the offset of the next page. A null/empty
@@ -2004,25 +2083,13 @@ internal static class SearchEndpoints
     /// </summary>
     private static bool TryParseContinuationToken(string? token, out int offset)
     {
-        offset = 0;
         if (string.IsNullOrWhiteSpace(token))
         {
+            offset = 0;
             return true;
         }
 
-        if (!token.StartsWith(ContinuationTokenPrefix, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var value = token.AsSpan(ContinuationTokenPrefix.Length);
-        if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed >= 0)
-        {
-            offset = parsed;
-            return true;
-        }
-
-        return false;
+        return StacContinuationTokens.TryParse(token, out offset);
     }
 
     /// <summary>
@@ -2032,7 +2099,7 @@ internal static class SearchEndpoints
     /// </summary>
     private static Link CreatePostNextLink(string stacBase, int nextOffset)
     {
-        var token = ContinuationTokenPrefix + nextOffset.ToString(CultureInfo.InvariantCulture);
+        var token = StacContinuationTokens.Prefix + nextOffset.ToString(CultureInfo.InvariantCulture);
         var body = JsonSerializer.SerializeToElement(
             new Dictionary<string, object?> { ["token"] = token },
             StacJsonContext.Default.DictionaryStringObject);

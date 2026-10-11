@@ -315,6 +315,7 @@ internal static class ItemEndpoints
                     readerResolution.Reader,
                     readerResolution.StorageLayerId,
                     resourceSrid,
+                    resource,
                     itemId,
                     cancellationToken);
                 if (feature is null && hasNumericItemId)
@@ -340,7 +341,7 @@ internal static class ItemEndpoints
 
             if (feature is { } resolvedFeature &&
                 !string.Equals(
-                    StacMappingService.ResolveItemId(resolvedFeature),
+                    StacMappingService.ResolveItemId(resolvedFeature, resource),
                     itemId,
                     StringComparison.Ordinal))
             {
@@ -363,6 +364,13 @@ internal static class ItemEndpoints
 
             StacTelemetry.SetResultCount(activity, 1);
             return Results.Json(item, StacJsonContext.Default.StacItem, MediaTypes.GeoJson);
+        }
+        catch (StacItemIdConflictException ex)
+        {
+            StacTelemetry.RecordException(activity, ex);
+            StacLog.OperationFailed(logger, ex);
+            return StandardErrorHelpers.CreateConflict(
+                context, "The requested STAC item id is not unique.");
         }
         catch (OperationCanceledException ex)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -394,6 +402,7 @@ internal static class ItemEndpoints
         IFeatureReader featureReader,
         int layerId,
         int layerSrid,
+        MetadataV2Resource resource,
         string itemId,
         CancellationToken cancellationToken)
     {
@@ -420,7 +429,7 @@ internal static class ItemEndpoints
                 layerSrid,
                 objectId,
                 cancellationToken);
-            var matchRank = GetCanonicalItemMatchRank(feature, itemId);
+            var matchRank = GetCanonicalItemMatchRank(feature, itemId, resource);
             if (!matchRank.HasValue)
             {
                 continue;
@@ -493,11 +502,11 @@ internal static class ItemEndpoints
         return null;
     }
 
-    private static int? GetCanonicalItemMatchRank(Feature? feature, string itemId)
+    private static int? GetCanonicalItemMatchRank(Feature? feature, string itemId, MetadataV2Resource resource)
     {
         if (feature is not { } resolvedFeature ||
             !string.Equals(
-                StacMappingService.ResolveItemId(resolvedFeature),
+                StacMappingService.ResolveItemId(resolvedFeature, resource),
                 itemId,
                 StringComparison.Ordinal))
         {

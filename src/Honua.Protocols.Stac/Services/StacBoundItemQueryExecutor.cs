@@ -57,7 +57,7 @@ internal static class StacBoundItemQueryExecutor
             var result = await StacPageReader.ReadAsync(reader, layerId, query, true, cancellationToken).ConfigureAwait(false);
             if (result.TotalCount > itemIds.Length || result.Items.Length > itemIds.Length || result.HasMoreResults)
             {
-                throw new InvalidOperationException(
+                throw new StacItemIdConflictException(
                     $"STAC item id candidate query exceeded the {itemIds.Length}-feature safety limit.");
             }
 
@@ -86,7 +86,7 @@ internal static class StacBoundItemQueryExecutor
             .FirstOrDefault(static group => group.Skip(1).Any());
         if (duplicateItemId is not null)
         {
-            throw new InvalidOperationException(
+            throw new StacItemIdConflictException(
                 $"STAC item id '{duplicateItemId.Key}' resolves to multiple provider features.");
         }
 

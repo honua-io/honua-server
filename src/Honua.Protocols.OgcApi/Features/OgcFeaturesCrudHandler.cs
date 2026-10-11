@@ -133,9 +133,15 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 },
                 cancellationToken);
             var createResult = editResult.CreateResults.FirstOrDefault();
-            if (!createResult.IsSuccess || !createResult.ObjectId.HasValue)
+            if (!createResult.IsSuccess)
             {
-                return StandardErrorHelpers.CreateInternalServerError(context, createResult.ErrorMessage ?? "An error occurred while creating the feature.");
+                return OgcFeatureEditFailureMapper.ToResult(
+                    context, createResult, "An error occurred while creating the feature.");
+            }
+
+            if (!createResult.ObjectId.HasValue)
+            {
+                return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while creating the feature.");
             }
 
             var created = await _featureReader.GetAsync(layerId, createResult.ObjectId.Value, cancellationToken);

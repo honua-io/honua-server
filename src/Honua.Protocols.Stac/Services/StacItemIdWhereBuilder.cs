@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Stac;
 
 namespace Honua.Protocols.Stac.Services;
 
@@ -12,29 +13,12 @@ namespace Honua.Protocols.Stac.Services;
 /// </summary>
 internal static class StacItemIdWhereBuilder
 {
-    private static readonly ImmutableArray<string> CanonicalKeys = ["stac_id", "item_id", "id"];
-
     public static ImmutableArray<MetadataV2Field> GetCandidateFields(MetadataV2Resource resource)
     {
-        var fields = ImmutableArray.CreateBuilder<MetadataV2Field>();
-        foreach (var canonicalKey in CanonicalKeys)
-        {
-            var field = resource.SchemaFields.FirstOrDefault(candidate =>
-                string.Equals(candidate.Name, canonicalKey, StringComparison.OrdinalIgnoreCase));
-            if (field is not null)
-            {
-                fields.Add(field);
-            }
-        }
-
-        var primaryIdField = resource.FindPrimaryIdField();
-        if (primaryIdField is not null &&
-            !CanonicalKeys.Any(key => string.Equals(key, primaryIdField.Name, StringComparison.OrdinalIgnoreCase)))
-        {
-            fields.Add(primaryIdField);
-        }
-
-        return fields.ToImmutable();
+        var source = StacItemIdentity.Resolve(resource);
+        return source.Field is null
+            ? ImmutableArray<MetadataV2Field>.Empty
+            : ImmutableArray.Create(source.Field);
     }
 
     public static bool TryBuildFieldMatch(

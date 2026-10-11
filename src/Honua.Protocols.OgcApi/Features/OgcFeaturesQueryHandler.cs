@@ -763,12 +763,22 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 return StandardErrorHelpers.CreateInternalServerError(context, "Feature response could not be projected.");
             }
 
-            // BH6-006: Derive entityETag from responseFeature (the same instance used to build
-            // the response payload) rather than storedFeature (the first read). Under a concurrent
-            // write, storedFeature and responseFeature can differ; computing the entity tag from
-            // storedFeature but the payload from responseFeature produces a mixed-state
-            // representationETag whose If-Match precondition check spuriously fails with 412.
-            var entityETag = OgcFeatureEntityTag.Compute(responseFeature.Value, _etagService);
+            // Same CRS: hash the feature that built the payload (BH6-006). A different
+            // response CRS stores projected WKB, which would never match the storage
+            // snapshot hashed by PUT, PATCH, and DELETE If-Match.
+            Feature? storageSnapshot = null;
+            if (crsDefinition.Srid != resourceSrid)
+            {
+                storageSnapshot = await featureReader.GetAsync(layerId, objectId, cancellationToken).ConfigureAwait(false);
+            }
+
+            var entityFeature = OgcFeatureEntityTag.SelectEntitySnapshot(
+                crsDefinition.Srid,
+                resourceSrid,
+                responseFeature.Value,
+                storageSnapshot,
+                resolvedFeature.Value.Feature);
+            var entityETag = OgcFeatureEntityTag.Compute(entityFeature, _etagService);
 
             var responseFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(responseFeature.Value, resource);
             ImmutableArray<Link>? featureLinks = _ogcFeaturesOptions.IncludeFeatureLinks
