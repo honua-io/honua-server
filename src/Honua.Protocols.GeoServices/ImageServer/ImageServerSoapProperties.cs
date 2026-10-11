@@ -7,7 +7,9 @@ using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
@@ -35,27 +37,53 @@ internal static partial class ImageServerSoapEndpoints
         string responseName,
         CancellationToken cancellationToken)
     {
-        var revalidation = await RevalidateMetadataAsync(request, cancellationToken).ConfigureAwait(false);
-        if (revalidation.Error is not null)
+        var revalidation = await RevalidateRasterPublicationAsync(
+            request.Resolution,
+            request.HttpContext,
+            request.HttpContext.RequestServices.GetRequiredService<IImageServerLayerResolver>(),
+            AuthorizationOperation.Metadata,
+            request.SoapNamespace,
+            cancellationToken).ConfigureAwait(false);
+        if (revalidation.ErrorResult is not null)
         {
-            return revalidation.Error;
+            return revalidation.ErrorResult;
         }
 
-        var handler = request.HttpContext.RequestServices.GetRequiredService<ImageServerKeyPropertiesHandler>();
-        var result = await handler.GetKeyPropertiesAsync(
-            request.HttpContext,
-            revalidation.LayerId,
-            cancellationToken).ConfigureAwait(false);
-        if (!TryGetPayload<KeyPropertiesResponse>(result, out var properties))
+        var rasterStore = request.HttpContext.RequestServices.GetRequiredService<IRasterStore>();
+        var rasters = await rasterStore.ListRastersAsync(
+            revalidation.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
+        if (rasters.Length == 0)
         {
-            return CreateSoapFaultFromResult(result, "Image key properties could not be read.", request.SoapNamespace);
+            return CreateSoapFault("Image service has no rasters.", StatusCodes.Status404NotFound, request.SoapNamespace);
+        }
+
+        var extent = ImageServerMosaicHelpers.ComputeAggregateExtent(rasters);
+        if (extent is null)
+        {
+            return CreateSoapFault("Image service extent is unavailable.", StatusCodes.Status500InternalServerError, request.SoapNamespace);
+        }
+
+        // Use the same reference raster and canonical mosaic policy as GetServiceInfo.
+        // RasterInfo is the native key-property carrier for statistics and histograms.
+        var referenceRaster = SelectReferenceRaster(rasters);
+        var statistics = await ReadServiceStatisticsAsync(
+            request.HttpContext, revalidation.Resolution.LayerId, rasters,
+            revalidation.Resolution.MergeStrategy, cancellationToken).ConfigureAwait(false);
+        var histograms = await ReadServiceHistogramsAsync(
+            request.HttpContext, revalidation.Resolution.LayerId,
+            request.SoapNamespace, cancellationToken).ConfigureAwait(false);
+        if (histograms.Error is not null)
+        {
+            return histograms.Error;
         }
 
         return CreateSoapResponse(
             request.SoapNamespace,
             request.OperationNamespace,
             responseName,
-            BuildKeyPropertiesResult(properties));
+            BuildKeyPropertiesResult(
+                ImageServerKeyPropertiesHandler.BuildResponse(referenceRaster),
+                BuildKeyPropertiesRasterInfo(referenceRaster, extent.Value, statistics, histograms.Histograms!)));
     }
 
     private static async Task<IResult> HandleGetRasterKeyPropertiesAsync(
@@ -442,7 +470,7 @@ internal static partial class ImageServerSoapEndpoints
             null);
     }
 
-    private static XElement BuildKeyPropertiesResult(KeyPropertiesResponse properties)
+    private static XElement BuildKeyPropertiesResult(KeyPropertiesResponse properties, XElement? rasterInfo = null)
     {
         XNamespace xsi = XmlSchemaInstanceNamespace;
         // ArcGIS SOAP exposes the band-property IArray as ArrayOfArgument;
@@ -458,6 +486,15 @@ internal static partial class ImageServerSoapEndpoints
                     new XAttribute(xsi + "type", "tns:ArrayOfArgument"),
                     properties.BandProperties.Select(BuildBandPropertySet))),
         };
+        if (rasterInfo is not null)
+        {
+            items.Add(new XElement(
+                "PropertySetProperty",
+                new XAttribute(xsi + "type", "tns:PropertySetProperty"),
+                new XElement("Key", "RasterInfo"),
+                rasterInfo));
+        }
+
         AddDoubleProperty(items, "LowCellSize", properties.LowCellSize, xsi);
         AddDoubleProperty(items, "HighCellSize", properties.HighCellSize, xsi);
         AddDoubleProperty(items, "MaxCellSize", properties.MaxCellSize, xsi);
@@ -478,6 +515,97 @@ internal static partial class ImageServerSoapEndpoints
                 "PropertyArray",
                 new XAttribute(xsi + "type", "tns:ArrayOfPropertySetProperty"),
                 items));
+    }
+
+    private static async Task<RasterStatistics[]> ReadServiceStatisticsAsync(
+        HttpContext context,
+        int layerId,
+        RasterInfo[] rasters,
+        RasterMergeStrategy mergeStrategy,
+        CancellationToken cancellationToken)
+    {
+        var rasterIds = rasters.Select(static raster => raster.Id).ToArray();
+        var schemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
+        var statistics = await ImageServerStatisticsBudget.ResolveAsync(
+            context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
+            ImageServerStatisticsBudget.CreateStatisticsOperationKey(
+                schemaName,
+                layerId,
+                rasterIds,
+                mergeStrategy),
+            schemaName,
+            (services, ct) =>
+            {
+                var scopedRasterStore = services.GetRequiredService<IRasterStore>();
+                return rasters.Length == 1
+                    ? scopedRasterStore.GetStatisticsAsync(
+                        layerId,
+                        rasters[0].Id,
+                        cancellationToken: ct)
+                    : scopedRasterStore.GetMosaicStatisticsAsync(
+                        layerId,
+                        rasterIds,
+                        mergeStrategy,
+                        cancellationToken: ct);
+            },
+            onBudgetExceeded: () => context.Response.Headers.CacheControl = "no-store",
+            cancellationToken).ConfigureAwait(false);
+        return statistics.OrderBy(static statistic => statistic.Band).ToArray();
+    }
+
+    internal static XElement BuildKeyPropertiesRasterInfo(
+        RasterInfo referenceRaster,
+        RasterExtent extent,
+        RasterStatistics[] statistics,
+        BandHistogram[] histograms)
+    {
+        XNamespace xsi = XmlSchemaInstanceNamespace;
+        var nativeExtent = BuildEnvelope(extent);
+        nativeExtent.Name = "NativeExtent";
+        var value = new XElement(
+            "Value",
+            new XAttribute(xsi + "type", "tns:RasterInfo"),
+            new XElement("PixelSizeX", FormatDouble(referenceRaster.Width > 0 && referenceRaster.Extent is { } sourceExtent
+                ? (sourceExtent.XMax - sourceExtent.XMin) / referenceRaster.Width : 0)),
+            new XElement("PixelSizeY", FormatDouble(referenceRaster.Height > 0 && referenceRaster.Extent is { } sourceExtentY
+                ? (sourceExtentY.YMax - sourceExtentY.YMin) / referenceRaster.Height : 0)),
+            nativeExtent,
+            new XElement("BandCount", referenceRaster.BandCount),
+            new XElement("PixelType", MapPixelType(referenceRaster.PixelType)),
+            BuildNoData(referenceRaster.NoDataValue));
+
+        // These zero-based extensible members match the native RasterInfo SOAP shape.
+        // Do not fabricate median/mode, sample counts, sums, or absent-band statistics.
+        foreach (var statistic in statistics.OrderBy(static statistic => statistic.Band))
+        {
+            if (statistic.Band < 1 || statistic.Band > referenceRaster.BandCount || statistic.MinValue is null || statistic.MaxValue is null)
+            {
+                continue;
+            }
+
+            value.Add(new XElement(
+                $"RasterStatistics_{statistic.Band - 1}",
+                new XAttribute(xsi + "type", "tns:RasterStatistics"),
+                new XElement("Min", FormatDouble(statistic.MinValue.Value)),
+                new XElement("Max", FormatDouble(statistic.MaxValue.Value)),
+                statistic.MeanValue is double mean ? new XElement("Mean", FormatDouble(mean)) : null,
+                statistic.StandardDeviation is double standardDeviation
+                    ? new XElement("StandardDeviation", FormatDouble(standardDeviation)) : null));
+        }
+
+        foreach (var bandHistogram in histograms.OrderBy(static histogram => histogram.SourceBand))
+        {
+            if (bandHistogram.SourceBand < 1 || bandHistogram.SourceBand > referenceRaster.BandCount)
+            {
+                continue;
+            }
+
+            var histogram = BuildRasterHistogram(bandHistogram);
+            histogram.Name = $"RasterHistogram_{bandHistogram.SourceBand - 1}";
+            value.Add(histogram);
+        }
+
+        return value;
     }
 
     private static XElement BuildBandPropertySet(BandProperty band)

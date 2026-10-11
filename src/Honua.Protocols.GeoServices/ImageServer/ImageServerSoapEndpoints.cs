@@ -332,34 +332,12 @@ internal static partial class ImageServerSoapEndpoints
         }
 
         var referenceRaster = SelectReferenceRaster(rasters);
-        var rasterIds = rasters.Select(static raster => raster.Id).ToArray();
-        var mergeStrategy = revalidation.Resolution.MergeStrategy;
-        var schemaName = request.HttpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
-        var statistics = await ImageServerStatisticsBudget.ResolveAsync(
-            request.HttpContext.RequestServices.GetRequiredService<IServiceScopeFactory>(),
-            ImageServerStatisticsBudget.CreateStatisticsOperationKey(
-                schemaName,
-                revalidation.Resolution.LayerId,
-                rasterIds,
-                mergeStrategy),
-            schemaName,
-            (services, ct) =>
-            {
-                var scopedRasterStore = services.GetRequiredService<IRasterStore>();
-                return rasters.Length == 1
-                    ? scopedRasterStore.GetStatisticsAsync(
-                        revalidation.Resolution.LayerId,
-                        referenceRaster.Id,
-                        cancellationToken: ct)
-                    : scopedRasterStore.GetMosaicStatisticsAsync(
-                        revalidation.Resolution.LayerId,
-                        rasterIds,
-                        mergeStrategy,
-                        cancellationToken: ct);
-            },
-            onBudgetExceeded: () => request.HttpContext.Response.Headers.CacheControl = "no-store",
+        var statistics = await ReadServiceStatisticsAsync(
+            request.HttpContext,
+            revalidation.Resolution.LayerId,
+            rasters,
+            revalidation.Resolution.MergeStrategy,
             cancellationToken).ConfigureAwait(false);
-        statistics = statistics.OrderBy(static statistic => statistic.Band).ToArray();
 
         var referenceExtent = referenceRaster.Extent;
         var pixelSizeX = referenceRaster.Width > 0 && referenceExtent.HasValue

@@ -116,8 +116,10 @@ public sealed class ImageServerMultidimensionalSoapTests
 
                     SetImagePublicationState(fixture, allowAnonymous: false);
                     await PostAsync(fixture, HttpStatusCode.Unauthorized);
+                    await PostAsync(fixture, HttpStatusCode.Unauthorized, "GetKeyPropertiesX");
                     SetImagePublicationState(fixture, allowAnonymous: true, enabled: false);
                     await PostAsync(fixture, HttpStatusCode.NotFound);
+                    await PostAsync(fixture, HttpStatusCode.NotFound, "GetKeyPropertiesX");
                     SetImagePublicationState(fixture, allowAnonymous: true);
                     (await store.UnregisterAsync(registration.Id)).Should().BeTrue();
                     foreach (var set in AssertShape(await PostAsync(fixture)))
@@ -199,11 +201,12 @@ public sealed class ImageServerMultidimensionalSoapTests
         ]
     };
 
-    private static async Task<XElement> PostAsync(WebAppFixture fixture, HttpStatusCode expectedStatus = HttpStatusCode.OK)
+    private static async Task<XElement> PostAsync(WebAppFixture fixture, HttpStatusCode expectedStatus = HttpStatusCode.OK,
+        string operation = "GetMultidimensionalInfo")
     {
-        using var content = new StringContent("""
+        using var content = new StringContent($"""
             <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-              <soap:Body><GetMultidimensionalInfo xmlns="http://www.esri.com/schemas/ArcGIS/10.8" /></soap:Body>
+              <soap:Body><{operation} xmlns="http://www.esri.com/schemas/ArcGIS/10.8" /></soap:Body>
             </soap:Envelope>
             """, Encoding.UTF8, "text/xml");
         using var response = await fixture.Client.PostAsync($"/services/{WebAppFixture.TestServiceId}/ImageServer", content);
