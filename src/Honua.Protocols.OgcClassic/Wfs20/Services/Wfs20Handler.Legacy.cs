@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -50,7 +51,7 @@ internal sealed partial class Wfs20Handler
 
         return IsWfs10(version)
             ? BuildWfs10Capabilities(wfsUrl, featureTypes)
-            : BuildWfs11Capabilities(wfsUrl, featureTypes);
+            : BuildWfs11Capabilities(wfsUrl, featureTypes, _featureReader);
     }
 
     internal async Task<string> HandleLegacyDescribeFeatureTypeAsync(
@@ -198,8 +199,11 @@ internal sealed partial class Wfs20Handler
         return new LegacyXmlResult(xml, "application/xml", statusCode);
     }
 
-    private static string BuildWfs11Capabilities(string wfsUrl, IReadOnlyList<FeatureType> featureTypes)
+    internal static string BuildWfs11Capabilities(string wfsUrl, IReadOnlyList<FeatureType> featureTypes, IFeatureReader reader)
     {
+        var edits = reader is IFeatureDataProvider provider
+            ? provider.Capabilities.Edits
+            : FeatureProviderEditCapabilities.ReadOnly;
         var sb = new StringBuilder(8192);
         sb.AppendLine("""<?xml version="1.0" encoding="UTF-8"?>""");
         sb.AppendLine($"""<wfs:WFS_Capabilities xmlns:wfs="{LegacyWfsNamespace}" xmlns:ows="{Ows10Namespace}" xmlns:ogc="{OgcFilterNamespace}" xmlns:gml="{GmlLegacyNamespace}" xmlns:{FeatureNamespacePrefix}="{FeatureNamespaceUri}" xmlns:cdf="http://www.opengis.net/cite/data" xmlns:cgf="http://www.opengis.net/cite/geometry" xmlns:xlink="{Wfs20Utilities.XLinkNamespace}" xmlns:xsi="{Wfs20Utilities.XsiNamespace}" version="1.1.0" updateSequence="{Wfs20Utilities.CurrentUpdateSequence}" xsi:schemaLocation="{LegacyWfsNamespace} http://schemas.opengis.net/wfs/1.1.0/wfs.xsd">""");
@@ -224,7 +228,7 @@ internal sealed partial class Wfs20Handler
         sb.AppendLine("    </ows:ServiceContact>");
         sb.AppendLine("  </ows:ServiceProvider>");
         AppendWfs11OperationsMetadata(sb, wfsUrl);
-        AppendWfs11FeatureTypeList(sb, featureTypes);
+        AppendWfs11FeatureTypeList(sb, featureTypes, edits);
         AppendWfs11FilterCapabilities(sb);
         sb.AppendLine("</wfs:WFS_Capabilities>");
         return sb.ToString();
@@ -320,9 +324,24 @@ internal sealed partial class Wfs20Handler
         sb.Append("      </").Append(name).AppendLine(">");
     }
 
-    private static void AppendWfs11FeatureTypeList(StringBuilder sb, IReadOnlyList<FeatureType> featureTypes)
+    private static void AppendWfs11FeatureTypeList(StringBuilder sb, IReadOnlyList<FeatureType> featureTypes, FeatureProviderEditCapabilities edits)
     {
         sb.AppendLine("  <wfs:FeatureTypeList>");
+        sb.AppendLine("    <wfs:Operations>");
+        sb.AppendLine("      <wfs:Operation>Query</wfs:Operation>");
+        if (edits.SupportsCreate)
+        {
+            sb.AppendLine("      <wfs:Operation>Insert</wfs:Operation>");
+        }
+        if (edits.SupportsUpdate)
+        {
+            sb.AppendLine("      <wfs:Operation>Update</wfs:Operation>");
+        }
+        if (edits.SupportsDelete)
+        {
+            sb.AppendLine("      <wfs:Operation>Delete</wfs:Operation>");
+        }
+        sb.AppendLine("    </wfs:Operations>");
         foreach (var featureType in featureTypes)
         {
             sb.AppendLine("    <wfs:FeatureType>");
