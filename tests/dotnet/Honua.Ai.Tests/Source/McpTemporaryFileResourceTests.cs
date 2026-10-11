@@ -8,7 +8,9 @@ using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
+using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Services;
 using Honua.TestKit.Attributes;
@@ -42,7 +44,7 @@ public sealed class McpTemporaryFileResourceTests
             var options = Options.Create(new TemporaryFileOptions { StorageDirectory = directory, BaseUrl = baseUrl });
             using var store = new FileSystemTemporaryFileService(options, NullLogger<FileSystemTemporaryFileService>.Instance);
             using var services = new ServiceCollection().AddSingleton<ITemporaryFileService>(store).BuildServiceProvider();
-            var resource = new TemporaryFileResource(options, NullLogger<TemporaryFileResource>.Instance);
+            var resource = new TemporaryFileResource(Substitute.For<IGeoprocessingJobService>(), options, NullLogger<TemporaryFileResource>.Instance);
             var surface = new McpDataAccessSurface([], [resource], NullLogger<McpDataAccessSurface>.Instance);
             McpRegistryCompositionValidator.FindDrift(surface, new CapabilityRegistry()).Should().BeEmpty();
             var owner = Context(services, "owner");
@@ -111,7 +113,7 @@ public sealed class McpTemporaryFileResourceTests
     [InlineData("/temp/.png")]
     public void CanHandle_RejectsNonCanonicalUris(string uri)
     {
-        var resource = new TemporaryFileResource(Options.Create(new TemporaryFileOptions()), NullLogger<TemporaryFileResource>.Instance);
+        var resource = new TemporaryFileResource(Substitute.For<IGeoprocessingJobService>(), Options.Create(new TemporaryFileOptions()), NullLogger<TemporaryFileResource>.Instance);
         resource.CanHandle(uri).Should().BeFalse();
     }
 
@@ -119,7 +121,7 @@ public sealed class McpTemporaryFileResourceTests
     public void CanHandle_AcceptsOpaqueSharedStoreTokenOnlyUnderConfiguredPrefix()
     {
         const string token = "AAbbcCDDEEFF00112233445566778899_a-bCDefGHiJ";
-        var resource = new TemporaryFileResource(Options.Create(new TemporaryFileOptions
+        var resource = new TemporaryFileResource(Substitute.For<IGeoprocessingJobService>(), Options.Create(new TemporaryFileOptions
         {
             BaseUrl = "https://maps.example.test/temp"
         }), NullLogger<TemporaryFileResource>.Instance);
@@ -140,7 +142,7 @@ public sealed class McpTemporaryFileResourceTests
         store.GetTemporaryFileAsync(Arg.Any<string>(), Arg.Any<ClaimsPrincipal?>(), Arg.Any<CancellationToken>())
             .Returns((new byte[byteCount], "image/png"));
         using var services = new ServiceCollection().AddSingleton(store).BuildServiceProvider();
-        var resource = new TemporaryFileResource(Options.Create(new TemporaryFileOptions()), NullLogger<TemporaryFileResource>.Instance);
+        var resource = new TemporaryFileResource(Substitute.For<IGeoprocessingJobService>(), Options.Create(new TemporaryFileOptions()), NullLogger<TemporaryFileResource>.Instance);
         var surface = new McpDataAccessSurface([], [resource], NullLogger<McpDataAccessSurface>.Instance);
         var response = await surface.DispatchAsync(Context(services, "owner"), new McpJsonRpcRequest
         {
@@ -167,7 +169,7 @@ public sealed class McpTemporaryFileResourceTests
     {
         var store = Substitute.For<ITemporaryFileService>();
         using var services = new ServiceCollection().AddSingleton(store).BuildServiceProvider();
-        var resource = new TemporaryFileResource(Options.Create(new TemporaryFileOptions()), NullLogger<TemporaryFileResource>.Instance);
+        var resource = new TemporaryFileResource(Substitute.For<IGeoprocessingJobService>(), Options.Create(new TemporaryFileOptions()), NullLogger<TemporaryFileResource>.Instance);
         var surface = new McpDataAccessSurface([], [resource], NullLogger<McpDataAccessSurface>.Instance);
         var context = Context(services, "owner");
         context.User = new ClaimsPrincipal(new ClaimsIdentity(
@@ -175,6 +177,35 @@ public sealed class McpTemporaryFileResourceTests
         var response = await Read(surface, context, "/temp/0123456789abcdef0123456789abcdef.png");
         response.Result.Should().BeNull();
         response.Error.Should().NotBeNull();
+        await store.DidNotReceive().GetTemporaryFileAsync(Arg.Any<string>(), Arg.Any<ClaimsPrincipal?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read")]
+    public async Task Read_AuthorizationDenialCannotReachArtifactStore()
+    {
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        jobs.EnsureCallerAuthorizedAsync(Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Process,
+                OperatorOperation.Read, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new GeoprocessingAuthorizationException(
+                false, "Read scope required.", OperatorResourceType.Process,
+                OperatorOperation.Read, AuthorizationDenialReason.InsufficientScope)));
+        var store = Substitute.For<ITemporaryFileService>();
+        using var services = new ServiceCollection().AddSingleton(store).BuildServiceProvider();
+        var resource = new TemporaryFileResource(jobs, Options.Create(new TemporaryFileOptions()),
+            NullLogger<TemporaryFileResource>.Instance);
+        var surface = new McpDataAccessSurface([], [resource], NullLogger<McpDataAccessSurface>.Instance);
+        var context = Context(services, "owner");
+
+        foreach (var uri in new[] { "/temp/known.png", "honua://temporary-files/unknown.png" })
+        {
+            var response = await Read(surface, context, uri);
+            response.Result.Should().BeNull();
+            response.Error.Should().NotBeNull();
+            response.Error!.Data!.Code.Should().Be("insufficient_scope");
+        }
+        await jobs.Received(2).EnsureCallerAuthorizedAsync(context.User, OperatorResourceType.Process,
+            OperatorOperation.Read, Arg.Any<CancellationToken>());
         await store.DidNotReceive().GetTemporaryFileAsync(Arg.Any<string>(), Arg.Any<ClaimsPrincipal?>(), Arg.Any<CancellationToken>());
     }
 

@@ -1320,7 +1320,7 @@ public sealed class McpMapToolTests
             new QueryFeaturesTool(_jobService, NullLogger<QueryFeaturesTool>.Instance),
             new RenderMapTool(_jobService, NullLogger<RenderMapTool>.Instance)
         ],
-        [new TemporaryFileResource(Options.Create(new TemporaryFileOptions()), NullLogger<TemporaryFileResource>.Instance)],
+        [new TemporaryFileResource(_jobService, Options.Create(new TemporaryFileOptions()), NullLogger<TemporaryFileResource>.Instance)],
         NullLogger<McpDataAccessSurface>.Instance);
 
     private static TestMetadataV2GraphProvider BuildGraphProvider(AccessPolicy? accessPolicy = null, AccessPolicy? servicePolicy = null)

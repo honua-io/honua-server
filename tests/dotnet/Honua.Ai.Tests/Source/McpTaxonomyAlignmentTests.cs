@@ -1001,7 +1001,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         var drafts = new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System);
         return
         [
-            new TemporaryFileResource(Options.Create(new TemporaryFileOptions()), NullLogger<TemporaryFileResource>.Instance),
+            new TemporaryFileResource(Substitute.For<IGeoprocessingJobService>(), Options.Create(new TemporaryFileOptions()), NullLogger<TemporaryFileResource>.Instance),
             new JobStatusResource(jobService, NullLogger<JobStatusResource>.Instance),
             new JobResultsResource(jobService, NullLogger<JobResultsResource>.Instance),
             new ProposalStatusResource(NullLogger<ProposalStatusResource>.Instance),

@@ -469,7 +469,7 @@ public sealed class McpRegistryCompositionTests
                 new ListCapabilitiesTool(jobService, NullLogger<ListCapabilitiesTool>.Instance),
             ],
             [
-                new TemporaryFileResource(Options.Create(new TemporaryFileOptions()), NullLogger<TemporaryFileResource>.Instance),
+                new TemporaryFileResource(Substitute.For<IGeoprocessingJobService>(), Options.Create(new TemporaryFileOptions()), NullLogger<TemporaryFileResource>.Instance),
                 new JobStatusResource(jobService, NullLogger<JobStatusResource>.Instance),
                 new WorkspaceResource(jobService, NullLogger<WorkspaceResource>.Instance),
                 new FeatureCatalogResource(jobService, NullLogger<FeatureCatalogResource>.Instance),

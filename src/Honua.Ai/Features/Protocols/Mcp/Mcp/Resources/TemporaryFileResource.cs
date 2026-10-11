@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Services;
 using Microsoft.Extensions.Options;
@@ -18,11 +19,13 @@ internal sealed class TemporaryFileResource : IMcpResource
     public const string UriPrefix = "honua://temporary-files/";
     public const string Template = UriPrefix + "{fileId}";
 
+    private readonly IGeoprocessingJobService _jobService;
     private readonly string _prefix;
     private readonly ILogger<TemporaryFileResource> _logger;
 
-    public TemporaryFileResource(IOptions<TemporaryFileOptions> options, ILogger<TemporaryFileResource> logger)
+    public TemporaryFileResource(IGeoprocessingJobService jobService, IOptions<TemporaryFileOptions> options, ILogger<TemporaryFileResource> logger)
     {
+        _jobService = jobService;
         _prefix = (options.Value.BaseUrl ?? "/temp").TrimEnd('/') + "/";
         _logger = logger;
     }
@@ -76,6 +79,11 @@ internal sealed class TemporaryFileResource : IMcpResource
     public async Task<McpResourcesReadResult> ReadAsync(HttpContext httpContext, string uri, CancellationToken cancellationToken)
     {
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        // Match the render producer's grant and OAuth scope check before any
+        // artifact lookup; ownership alone cannot widen a narrowed bearer token.
+        await _jobService.EnsureCallerAuthorizedAsync(
+                principal, OperatorResourceType.Process, OperatorOperation.Read, cancellationToken)
+            .ConfigureAwait(false);
         if (!CanHandle(uri))
         {
             throw new GeoprocessingNotFoundException("Temporary artifact not found or expired.");
