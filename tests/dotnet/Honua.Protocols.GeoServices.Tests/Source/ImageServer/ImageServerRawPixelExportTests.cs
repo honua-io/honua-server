@@ -135,9 +135,28 @@ public sealed class ImageServerRawPixelExportTests
                 FROM honua.raster_data WHERE layer_id = @layerId
                 """;
             insert.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
-            insert.Parameters.AddWithValue("ulx", overlaps ? XMin : 0d);
-            insert.Parameters.AddWithValue("uly", overlaps ? YMax : 10d);
+            insert.Parameters.AddWithValue("ulx", overlaps ? XMin : XMax + CellX);
+            insert.Parameters.AddWithValue("uly", YMax);
             (await insert.ExecuteNonQueryAsync()).Should().Be(1);
+
+            // Metadata computes whole-catalog statistics: keep the unused source disjoint
+            // without making a tiny band-layout fixture allocate a world-sized mosaic.
+            await using (var bounds = connection.CreateCommand())
+            {
+                bounds.CommandText = """
+                    SELECT (ST_XMax(extent) - ST_XMin(extent)) / @cellX,
+                           (ST_YMax(extent) - ST_YMin(extent)) / @cellY
+                    FROM (SELECT ST_Extent(ST_Envelope(raster)) AS extent
+                          FROM honua.raster_data WHERE layer_id = @layerId) AS footprint
+                    """;
+                bounds.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+                bounds.Parameters.AddWithValue("cellX", CellX);
+                bounds.Parameters.AddWithValue("cellY", CellY);
+                await using var reader = await bounds.ExecuteReaderAsync();
+                (await reader.ReadAsync()).Should().BeTrue();
+                reader.GetDouble(0).Should().BeApproximately(overlaps ? Size : (2 * Size) + 1, 1e-8);
+                reader.GetDouble(1).Should().BeApproximately(Size, 1e-8);
+            }
 
             using (var info = await PostSoapAsync(fixture, "<GetServiceInfo xmlns=\"http://www.esri.com/schemas/ArcGIS/10.8\" />"))
             {
