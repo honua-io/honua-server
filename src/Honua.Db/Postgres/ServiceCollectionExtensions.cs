@@ -194,7 +194,9 @@ internal static class ServiceCollectionExtensions
         // Register raster store implementation
         services.AddOptions<PostgresRasterStatisticsOptions>()
             .Bind(configuration.GetSection(PostgresRasterStatisticsOptions.SectionName))
-            .ValidateDataAnnotations()
+            .Validate(
+                static options => options.MaxDenseSampleSlots is >= 1 and <= PostgresRasterStatisticsOptions.MaximumDenseSampleSlots,
+                $"{PostgresRasterStatisticsOptions.SectionName}:MaxDenseSampleSlots must be between 1 and {PostgresRasterStatisticsOptions.MaximumDenseSampleSlots}.")
             .ValidateOnStart();
         services.AddPostgresRasterStore(configuration["Database:Schema"]);
 
