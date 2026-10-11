@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -120,7 +119,7 @@ internal sealed class GeoprocessingJobDispatcher
     /// <see cref="GeoprocessingAdmissionException"/> (after logging) when admission denies the request.
     /// </summary>
     public async Task<ExecutionAdmissionDecision?> EnsureAdmittedAsync(
-        ClaimsPrincipal principal,
+        string? ownerId,
         string? partitionKey,
         double costWeight,
         OperationPriority priority,
@@ -135,7 +134,7 @@ internal sealed class GeoprocessingJobDispatcher
         {
             JobKind = ExecutionJobKind.Geoprocessing,
             PartitionKey = partitionKey,
-            PrincipalId = principal.Identity?.Name,
+            PrincipalId = ExecutionAdmissionIdentity.ResolveRatePrincipal(ownerId, partitionKey),
             EstimatedCostWeight = costWeight,
             Priority = priority
         };

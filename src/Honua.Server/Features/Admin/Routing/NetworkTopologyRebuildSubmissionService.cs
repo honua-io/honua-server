@@ -28,9 +28,10 @@ internal sealed class NetworkTopologyRebuildUnavailableException(string message)
 /// Submits an isolated shadow-topology rebuild as a durable
 /// <see cref="ExecutionJobKind.NetworkTopologyRebuild"/> execution job (#2718). Creates the
 /// rebuild attempt (atomically transitioning the generation <c>dirty</c> -&gt; <c>building</c>)
-/// before creating the execution-job record, so a submission failure after the attempt was
-/// created still leaves a durably observable <c>building</c> attempt an operator can inspect
-/// or retry rather than a silently lost state transition.
+/// before creating the execution-job record. If that job record is never created, the
+/// unclaimed attempt is abandoned (<c>building</c> → <c>failed</c> → <c>dirty</c>) so the
+/// generation can be submitted again. A job that was created is left for the worker or the
+/// reconciler.
 /// </summary>
 /// <remarks>
 /// Depends on <see cref="IServiceProvider"/> rather than <see cref="IExecutionJobStore"/>
@@ -100,11 +101,22 @@ internal sealed partial class NetworkTopologyRebuildSubmissionService
             Spec = spec,
         };
 
-        var created = await jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken).ConfigureAwait(false);
+        bool created;
+        try
+        {
+            created = await jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // The request was cancelled or the store threw before a durable job existed.
+            // Abandon with a token that cannot be cancelled so the generation does not stay building.
+            await AbandonUnclaimedAsync(datasetId, generation, attempt.Attempt).ConfigureAwait(false);
+            throw;
+        }
+
         if (!created)
         {
-            // Extremely unlikely (GUID collision); the attempt is left in `building` for an
-            // operator to inspect/retry rather than silently discarded.
+            await AbandonUnclaimedAsync(datasetId, generation, attempt.Attempt).ConfigureAwait(false);
             Log.JobRecordCreateFailed(_logger, operationId, datasetId, generation);
             throw new InvalidOperationException($"Failed to create topology-rebuild execution job '{operationId}'.");
         }
@@ -119,6 +131,24 @@ internal sealed partial class NetworkTopologyRebuildSubmissionService
         return new NetworkTopologyRebuildSubmissionResult(operationId, generation, attempt.Attempt);
     }
 
+    private async Task AbandonUnclaimedAsync(string datasetId, long generation, long attempt)
+    {
+        try
+        {
+            await _rebuildStore.TryAbandonUnclaimedAttemptAsync(
+                    datasetId,
+                    generation,
+                    attempt,
+                    "routing.topology.rebuild_abandoned",
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Log.UnclaimedAttemptAbandonFailed(_logger, datasetId, generation, attempt, ex);
+        }
+    }
+
     private static partial class Log
     {
         [LoggerMessage(9270, LogLevel.Information,
@@ -128,5 +158,9 @@ internal sealed partial class NetworkTopologyRebuildSubmissionService
         [LoggerMessage(9271, LogLevel.Error,
             "Failed to create execution-job record {OperationId} for topology rebuild of dataset '{DatasetId}' generation {Generation}")]
         public static partial void JobRecordCreateFailed(ILogger logger, string operationId, string datasetId, long generation);
+
+        [LoggerMessage(9272, LogLevel.Error,
+            "Failed to abandon unclaimed topology rebuild attempt for dataset '{DatasetId}' generation {Generation} attempt {Attempt}")]
+        public static partial void UnclaimedAttemptAbandonFailed(ILogger logger, string datasetId, long generation, long attempt, Exception exception);
     }
 }

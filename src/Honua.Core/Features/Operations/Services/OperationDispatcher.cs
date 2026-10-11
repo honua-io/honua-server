@@ -367,7 +367,11 @@ public sealed class OperationDispatcher : IOperationInvoker
                 .ConfigureAwait(false);
         }
 
-        if (request.DryRun)
+        // Only executors that declare a real dry-run route are invoked. A deferred wrapper
+        // reports ExecutesDryRun from the actuator it resolves, so the production DI graph
+        // still reaches that route. Other SupportsDryRun descriptors keep the synthetic
+        // completed result so a dry-run flag cannot actuate them.
+        if (request.DryRun && executor is not IOperationDryRunExecutor { ExecutesDryRun: true })
         {
             executed = envelope with
             {

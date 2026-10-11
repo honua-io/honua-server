@@ -127,6 +127,20 @@ public interface INetworkTopologyRebuildStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Fails an unclaimed <c>building</c> attempt (no owner, fencing token still zero) and
+    /// returns the owning generation to <c>dirty</c> through the legal <c>building</c> →
+    /// <c>failed</c> → <c>dirty</c> edges. Returns <see langword="false"/> when the attempt
+    /// was already claimed or is no longer building. Does not add a direct
+    /// <c>building</c> → <c>dirty</c> transition.
+    /// </summary>
+    Task<bool> TryAbandonUnclaimedAttemptAsync(
+        string datasetId,
+        long generation,
+        long attempt,
+        string failureCode,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Drops the shadow edge/vertex tables for every attempt of a generation other than
     /// <paramref name="keepAttempt"/> (superseded attempts and terminal failures past
     /// retention). Never touches the active generation's tables. Best-effort: table absence

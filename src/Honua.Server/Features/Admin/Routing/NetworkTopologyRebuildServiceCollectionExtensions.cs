@@ -50,6 +50,7 @@ internal static class NetworkTopologyRebuildServiceCollectionExtensions
             // ValidateOnBuild would fail every Redis-less startup for a service nothing calls.
             services.TryAddScoped<NetworkTopologyRebuildReconciler>();
             services.AddHostedService<NetworkTopologyRebuildReconcilerBackgroundService>();
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IJobTerminalCallback, NetworkTopologyRebuildJobTerminalCallback>());
         }
 
         return services;
