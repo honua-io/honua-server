@@ -23,6 +23,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         "Honua.Postgres.Migrations.003_CreateRasterLayerStatistics.sql";
     internal const string RasterLateProvisioningMigration =
         "Honua.Postgres.Migrations.005_CompleteLateRasterProvisioning.sql";
+    internal const string RasterTileProvenanceMigration =
+        "Honua.Postgres.Migrations.006_AddRasterTileRendererProvenance.sql";
 
     private static readonly string[] _metadataV2Tables =
     [
@@ -409,6 +411,13 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 ["raster_layer_statistics_pkey"]);
             VerifyRequiredExternalStorageMigration(state);
             VerifyRequiredLateRasterProvisioningMigration(state);
+            VerifyRequiredMigration(
+                state,
+                RasterTileProvenanceMigration,
+                ["raster_tiles"],
+                [("raster_tiles", "renderer_version"), ("raster_tiles", "renderer_payload_sha256")],
+                []);
+            await VerifyRasterTileProvenanceColumnsAsync(connection, cancellationToken).ConfigureAwait(false);
             VerifyRequiredMigration(
                 state,
                 _migrations.RasterOverviewsMigration,
@@ -825,6 +834,40 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 migration,
                 DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
                 $"required physical object(s) are absent from schema '{_schemaName}': {string.Join(", ", missingObjects)}.");
+        }
+    }
+
+    private async Task VerifyRasterTileProvenanceColumnsAsync(
+        DbConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT count(*) = 2 AND COALESCE(bool_and(CASE a.attname
+                WHEN 'renderer_version' THEN a.atttypid = 'integer'::regtype
+                    AND a.attnotnull AND COALESCE(pg_get_expr(d.adbin, d.adrelid) = '0', FALSE)
+                WHEN 'renderer_payload_sha256' THEN a.atttypid = 'bytea'::regtype
+                    AND NOT a.attnotnull AND d.adbin IS NULL
+                ELSE FALSE END), FALSE)
+            FROM pg_catalog.pg_class c
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
+            LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = c.oid AND d.adnum = a.attnum
+            WHERE n.nspname = @schema AND c.relname = 'raster_tiles'
+              AND a.attnum > 0 AND NOT a.attisdropped
+              AND a.attname IN ('renderer_version', 'renderer_payload_sha256');
+            """;
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "schema";
+        parameter.Value = _schemaName;
+        command.Parameters.Add(parameter);
+        if (await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not true)
+        {
+            throw CreateFailure(
+                RasterTileProvenanceMigration,
+                DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
+                "raster_tiles provenance requires renderer_version integer NOT NULL DEFAULT 0 " +
+                "and renderer_payload_sha256 nullable bytea without a default; the recorded migration's column contract differs.");
         }
     }
 

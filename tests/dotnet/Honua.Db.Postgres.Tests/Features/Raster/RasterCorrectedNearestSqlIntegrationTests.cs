@@ -336,6 +336,92 @@ public sealed class RasterCorrectedNearestSqlIntegrationTests(PostgresFixture fi
         reader.GetBoolean(6).Should().BeTrue();
     }
 
+    [IntegrationTheory]
+    [InlineData(true, 100.0)]
+    [InlineData(true, -100.0)]
+    [InlineData(false, 100.0)]
+    [InlineData(false, -100.0)]
+    public async Task Sample_IntersectingTinySourceWithUnrepresentableOutsideCoordinates_PreservesInsideAndNoData(
+        bool horizontal, double step)
+    {
+        await using var connection = await fixture.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        var width = horizontal ? 2 : 1;
+        var height = horizontal ? 1 : 2;
+        command.CommandText = $"""
+            WITH source AS MATERIALIZED (
+                SELECT ST_AddBand(ST_AddBand(ST_MakeEmptyRaster(1, 1, 0, 0,
+                    1e-8, -1e-8, 0, 0, 3857), '16BSI'::text, 0, -9999),
+                    '32BF'::text, 7, -9998) AS rast
+            ), grid AS MATERIALIZED (
+                SELECT ST_MakeEmptyRaster({width}, {height},
+                    5e-9 - @sx / 2, -5e-9 - @sy / 2, @sx, @sy, 0, 0, 3857) AS rast
+            ), result AS MATERIALIZED (
+                SELECT {RasterCorrectedNearestSql.Sample("s.rast", "g.rast")} AS rast,
+                       {RasterNativeWindowSql.TryWarp("s.rast", "g.rast")} IS NULL AS window_rejected,
+                       {RasterSeparableNearestSql.TrySample("s.rast", "g.rast")} IS NULL AS axes_rejected,
+                       ST_Intersects(ST_ConvexHull(s.rast), ST_ConvexHull(g.rast)) AS intersects,
+                       g.rast AS grid FROM source s, grid g
+            )
+            SELECT window_rejected, axes_rejected, intersects,
+                   ST_DumpValues(rast, 1, FALSE), ST_DumpValues(rast, 2, FALSE),
+                   ST_BandPixelType(rast,1), ST_BandPixelType(rast,2),
+                   ST_BandNoDataValue(rast,1), ST_BandNoDataValue(rast,2),
+                   ST_SameAlignment(rast,grid), ST_Equals(ST_ConvexHull(rast),ST_ConvexHull(grid)),
+                   ST_DumpValues(mask.rast,1,FALSE), ST_DumpValues(mask.rast,2,FALSE)
+            FROM result,
+                 LATERAL (SELECT {RasterGeneralNearestSql.Sample("s.rast", "g.rast", true)} AS rast
+                          FROM source s, grid g) mask;
+            """;
+        command.Parameters.AddWithValue("sx", horizontal ? step : 1e-8);
+        command.Parameters.AddWithValue("sy", horizontal ? -1e-8 : step);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetBoolean(0).Should().BeTrue();
+        reader.GetBoolean(1).Should().BeTrue();
+        reader.GetBoolean(2).Should().BeTrue("the tiny source intersects this distant-center output grid");
+        var first = reader.GetFieldValue<double[,]>(3);
+        var second = reader.GetFieldValue<double[,]>(4);
+        first[0, 0].Should().Be(0, "valid zero remains a source sample");
+        second[0, 0].Should().Be(7);
+        first[height - 1, width - 1].Should().Be(-9999);
+        second[height - 1, width - 1].Should().Be(-9998);
+        reader.GetString(5).Should().Be("16BSI");
+        reader.GetString(6).Should().Be("32BF");
+        reader.GetDouble(7).Should().Be(-9999);
+        reader.GetDouble(8).Should().Be(-9998);
+        reader.GetBoolean(9).Should().BeTrue();
+        reader.GetBoolean(10).Should().BeTrue();
+        var maskedFirst = reader.GetFieldValue<double[,]>(11);
+        var maskedSecond = reader.GetFieldValue<double[,]>(12);
+        maskedFirst[0, 0].Should().Be(0);
+        maskedSecond[0, 0].Should().Be(7);
+        maskedFirst[height - 1, width - 1].Should().Be(double.MinValue,
+            "uncovered cells remain transparent to a coverage-aware mosaic");
+        maskedSecond[height - 1, width - 1].Should().Be(double.MinValue);
+    }
+
+    [IntegrationTheory]
+    [InlineData(0.0, 7.0)]
+    [InlineData(1.0, 11.0)]
+    [InlineData(2.0, 255.0)]
+    public async Task GeneralSample_ExactSourceCellBoundary_RetainsCanonicalPostgisRounding(
+        double center, double expected)
+    {
+        await using var connection = await fixture.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH source AS MATERIALIZED (
+                SELECT ST_SetValues(ST_AddBand(ST_MakeEmptyRaster(2,1,0,1,1,-1,0,0,4326),
+                    '8BUI'::text, 7, 255),1,1,1,ARRAY[[7,11]]::double precision[][]) AS rast
+            ), grid AS (SELECT ST_MakeEmptyRaster(1,1,@center - 0.5,1,1,-1,0,0,4326) AS rast)
+            SELECT ST_Value({RasterGeneralNearestSql.Sample("s.rast", "g.rast")},1,1,1,FALSE)
+            FROM source s, grid g;
+            """;
+        command.Parameters.AddWithValue("center", center);
+        ((double)(await command.ExecuteScalarAsync())!).Should().Be(expected);
+    }
+
     [IntegrationTest]
     [Trait("Category", "Performance")]
     public async Task Sample_HighResolutionCappedWindow_MatchesEveryLiteralPixelWithinDeadline()

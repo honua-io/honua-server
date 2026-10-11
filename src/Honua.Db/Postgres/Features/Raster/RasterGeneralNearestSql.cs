@@ -36,6 +36,9 @@ internal static class RasterGeneralNearestSql
                            ST_UpperLeftX(s.grid) AS ulx, ST_UpperLeftY(s.grid) AS uly,
                            ST_ScaleX(s.grid) AS sx, ST_ScaleY(s.grid) AS sy,
                            ST_SkewX(s.grid) AS kx, ST_SkewY(s.grid) AS ky,
+                           ST_UpperLeftX(s.rast)::numeric AS sulx, ST_UpperLeftY(s.rast)::numeric AS suly,
+                           ST_ScaleX(s.rast)::numeric AS ssx, ST_ScaleY(s.rast)::numeric AS ssy,
+                           ST_SkewX(s.rast)::numeric AS skx, ST_SkewY(s.rast)::numeric AS sky,
                            ST_SRID(s.grid) AS grid_srid
                     FROM (SELECT {rasterExpression} AS rast, {gridExpression} AS grid) s
                 ),
@@ -55,13 +58,31 @@ internal static class RasterGeneralNearestSql
                         ELSE ST_Transform(c.points, ST_SRID(i.rast)) END AS points
                     FROM nearest_input i, nearest_centers c
                 ),
-                nearest_coordinates AS MATERIALIZED (
+                nearest_affine AS MATERIALIZED (
                     SELECT (p.path[1] - 1) % i.w + 1 AS x,
                            (p.path[1] - 1) / i.w + 1 AS y,
-                           c.columnx, c.rowy
+                           ST_X(p.geom) AS wx, ST_Y(p.geom) AS wy,
+                           ((ST_X(p.geom)::numeric - i.sulx) * i.ssy
+                            - (ST_Y(p.geom)::numeric - i.suly) * i.skx)
+                                / NULLIF(i.ssx * i.ssy - i.skx * i.sky, 0) AS cx,
+                           ((ST_Y(p.geom)::numeric - i.suly) * i.ssx
+                            - (ST_X(p.geom)::numeric - i.sulx) * i.sky)
+                                / NULLIF(i.ssx * i.ssy - i.skx * i.sky, 0) AS cy
                     FROM nearest_input i, nearest_projected t,
-                         LATERAL ST_DumpPoints(t.points) p,
-                         LATERAL ST_WorldToRasterCoord(i.header, ST_X(p.geom), ST_Y(p.geom)) c
+                         LATERAL ST_DumpPoints(t.points) p
+                ),
+                nearest_coordinates AS MATERIALIZED (
+                    -- Numeric affine bounds are only an overflow guard. PostGIS retains
+                    -- canonical cell-boundary rounding for every representable point.
+                    -- CASE protects the native calls independently of planner WHERE ordering.
+                    SELECT p.x, p.y,
+                           CASE WHEN p.cx BETWEEN -2147483644 AND 2147483644
+                                     AND p.cy BETWEEN -2147483644 AND 2147483644
+                                THEN ST_WorldToRasterCoordX(i.header, p.wx, p.wy) END AS columnx,
+                           CASE WHEN p.cx BETWEEN -2147483644 AND 2147483644
+                                     AND p.cy BETWEEN -2147483644 AND 2147483644
+                                THEN ST_WorldToRasterCoordY(i.header, p.wx, p.wy) END AS rowy
+                    FROM nearest_input i, nearest_affine p
                 ),
                 nearest_metadata AS MATERIALIZED (
                     SELECT n, ST_BandPixelType(i.rast, n) AS pixeltype,
