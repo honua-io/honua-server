@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using System.Net;
 using System.Net.Http.Json;
-using System.Reflection;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Alerts.Abstractions;
@@ -149,13 +148,12 @@ public sealed class AlertOpsAdminEndpointsTests : IAsyncLifetime
     [Endpoint("DELETE /api/v1/admin/alerts/rules/{ruleId}")]
     public async Task DeleteRule_AfterDeliveredOrDeadLetterIncident_RetainsHistoricalEvidence()
     {
-        var migrationSchema = await _fixture.Postgres.CreateIsolatedSchemaAsync(nameof(AlertOpsAdminEndpointsTests));
+        // Keep migration history beside the global alert catalog it describes.
         var migration = await _fixture.Postgres.RunEmbeddedMigrationsUnderLockAsync(
-            migrationSchema,
+            "honua",
             _fixture.Postgres.ConnectionString,
-            Assembly.GetAssembly(typeof(Program))!);
+            typeof(Program).Assembly);
         migration.Successful.Should().BeTrue(migration.Error?.ToString());
-        await _fixture.Postgres.DropSchemaAsync(migrationSchema);
 
         foreach (var dispatchStatus in new short[] { 0, 1, 2, 3, 4 })
         {
