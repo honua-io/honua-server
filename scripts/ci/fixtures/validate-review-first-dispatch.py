@@ -139,20 +139,22 @@ def main() -> None:
     docs_gated_condition = (
         f"if: ({review_clause}) && steps.docs-only.outputs.docs_only != 'true'"
     )
+    generated_gated_condition = (
+        f"if: ({review_clause}) && steps.generated-only.outputs.generated_only != 'true'"
+    )
 
     def review_gated(step: str) -> bool:
-        return full_condition in step or docs_gated_condition in step
+        return full_condition in step or docs_gated_condition in step or generated_gated_condition in step
 
     # Trunk's fourteen expensive steps (the real remote-source, raster and GDAL CLI
     # proofs, PostGIS pre-pull and server boot smoke in build/test, plus four in
     # parallel format), the two production PDAL proof steps, and the docs-only
-    # exit's own gating of each. The Buildx setup that feeds the PDAL build its
-    # registry cache stays attempt-2-only but is never docs-gated (it is cheap
-    # and warms the cache even on a docs-only diff). The secondary proof-image
-    # preparation is also gated. All eighteen conditions
-    # (bare attempt-2-only plus docs-gated attempt-2-only) must remain
+    # exit's own gating of each. Buildx stays attempt-2-only and is additionally
+    # generated-only gated; the GHCR login for that cache is too. The secondary
+    # proof-image preparation is also gated. All nineteen conditions
+    # (bare attempt-2-only, docs-gated, and generated-only-gated) must remain
     # attempt-2-only in review-first enforcement.
-    if pr_gate.count(full_condition) + pr_gate.count(docs_gated_condition) != 18:
+    if pr_gate.count(full_condition) + pr_gate.count(docs_gated_condition) + pr_gate.count(generated_gated_condition) != 19:
         raise AssertionError("every expensive PR Gate step must be attempt-2-only in enforce mode")
     for name, message in [
         ("Prepare secondary Testcontainers proof images", "secondary proof-image preparation must remain behind exact-head review"),

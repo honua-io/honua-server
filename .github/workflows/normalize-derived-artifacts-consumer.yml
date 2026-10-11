@@ -49,6 +49,8 @@ jobs:
 
       - name: Resolve exact PR and download artifact as bytes
         id: artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
         uses: actions/github-script@v9
         with:
           script: |
@@ -84,6 +86,47 @@ jobs:
             }
             const sameRepository = pr.head.repo.full_name === pr.base.repo.full_name;
             const eventBaseSha = eventAssociated[0]?.base?.sha || '';
+            // Skipping the untrusted producer leaves no envelope. Independently
+            // prove the exemption using immutable base policy before returning;
+            // a skipped job or missing artifact alone never authorizes it.
+            try {
+              const cp = require('child_process');
+              const repository = `${context.repo.owner}/${context.repo.repo}`;
+              if (pr.base.ref !== 'trunk' || pr.base.repo.full_name !== repository ||
+                  pr.head.repo.full_name !== repository) {
+                throw new Error('Generated-output policy requires a canonical same-repository trunk base');
+              }
+              const base = eventBaseSha;
+              if (!/^[0-9a-f]{40}$/.test(base) || !/^[0-9a-f]{40}$/.test(pr.head.sha)) {
+                throw new Error('Invalid exact PR identity');
+              }
+              // The producer event supplies the frozen comparison base. Before
+              // executing any bytes from it, prove it belongs to the immutable
+              // trusted default-branch checkout (not a retargeted candidate ref).
+              const trustedTrunk = cp.execFileSync('git', ['rev-parse', 'HEAD']).toString().trim();
+              const { data: ancestry } = await github.rest.repos.compareCommitsWithBasehead({
+                ...context.repo, basehead: `${base}...${trustedTrunk}`,
+              });
+              if (ancestry.base_commit?.sha !== base || ancestry.merge_base_commit?.sha !== base ||
+                  !['ahead', 'identical'].includes(ancestry.status)) {
+                throw new Error('Producer base is not in trusted trunk history');
+              }
+              cp.execFileSync('git', ['fetch', '--no-tags', '--depth=1', 'origin', base, pr.head.sha]);
+              const policy = path.join(process.env.RUNNER_TEMP, 'generated-output-diff.py');
+              fs.writeFileSync(policy, cp.execFileSync('git', ['show', `${base}:scripts/ci/generated-output-diff.py`]));
+              const event = path.join(process.env.RUNNER_TEMP, 'generated-output-event.json');
+              fs.writeFileSync(event, JSON.stringify({ repository: { full_name: `${context.repo.owner}/${context.repo.repo}` }, pull_request: { ...pr, base: { ...pr.base, sha: base } } }));
+              const answer = cp.execFileSync('python3', [policy], {
+                env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event },
+              }).toString();
+              if (answer.split('\n').includes('generated_only=true')) {
+                core.setOutput('generated_only', 'true');
+                core.notice('Exact successful nightly producer proof; duplicate normalization skipped.');
+                return;
+              }
+            } catch (error) {
+              core.notice(`Generated-output admission unavailable; normal envelope validation: ${error.message}`);
+            }
             if (sameRepository && !eventBaseSha) {
               throw new Error('Same-repository producer lacks event-time base identity.');
             }
@@ -126,6 +169,7 @@ jobs:
             core.setOutput('tree_sha', commit.tree.sha);
 
       - name: Validate archive and data envelope with trusted policy
+        if: steps.artifact.outputs.generated_only != 'true'
         env:
           ARCHIVE: ${{ steps.artifact.outputs.archive }}
           BASE_SHA: ${{ steps.artifact.outputs.base_sha }}
@@ -152,6 +196,7 @@ jobs:
 
       - name: Compare prospective blobs without checking out PR code
         id: compare
+        if: steps.artifact.outputs.generated_only != 'true'
         uses: actions/github-script@v9
         env:
           HEAD_SHA: ${{ steps.artifact.outputs.head_sha }}
@@ -263,6 +308,7 @@ jobs:
       - name: Mint scoped normalization credential
         id: app-token
         if: >
+          steps.artifact.outputs.generated_only != 'true' &&
           env.NORMALIZATION_MODE == 'enforce' &&
           env.NORMALIZATION_CREDENTIAL_PRESENT == 'true' &&
           steps.artifact.outputs.same_repository == 'true' &&
@@ -277,6 +323,7 @@ jobs:
 
       - name: Advance the same-repository head with validated blobs
         if: >
+          steps.artifact.outputs.generated_only != 'true' &&
           env.NORMALIZATION_MODE == 'enforce' &&
           env.NORMALIZATION_CREDENTIAL_PRESENT == 'true' &&
           steps.artifact.outputs.same_repository == 'true' &&

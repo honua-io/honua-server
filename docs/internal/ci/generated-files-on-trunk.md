@@ -163,3 +163,32 @@ emitters via PATH's lane-capped `dotnet`/`dotnet vstest`, both Python
 generators, and CITE/OpenAPI/architecture validation against fresh
 projections all passed then and are not touched by this packet. The full
 pre-PR build/test matrix was not run for this CI-only change.
+
+## Validated generated-only admission
+
+PR Gate can skip product build, test, format, affected-shard, conformance, and
+repeat normalization steps when the entire base-to-head diff is one commit whose
+only changes are regular files under four allowlisted outputs: the feature
+catalog, the capability matrix, `docs/okf/capabilities`, and `examples/manifest.json`.
+Those paths must still appear in the base copy of `scripts/ci/generated-files.sh`.
+Other allowlisted projections, including GeoServices parity and the admin
+exports, keep ordinary product checks. So do source, generator, workflow, and
+mixed diffs, renames, deletions, mode changes, symlinks, forks, and any
+classifier or proof failure.
+
+The executable policy is `scripts/ci/generated-output-diff.py` from the immutable
+PR base, never the candidate copy. An allowlisted diff is not proof by itself.
+The nightly producer, after it publishes a commit, uploads
+`generated-output-proof-<run>-attempt-<attempt>` binding the triggering source,
+the output commit, the output tree, and the run id and attempt. Admission reads
+that artifact only from a successful completed trunk schedule or manual run of
+`.github/workflows/generated-files-on-trunk.yml` in this repository. Branch
+names, authors, labels, and `Generated-From` trailers do not confer trust.
+Admission waits up to 90 seconds for an already-running producer to finish the
+receipt. It does not dispatch another regeneration.
+
+The named PR Gate jobs still run and complete; they skip the expensive steps.
+The normalization consumer proves the same exemption from base policy before it
+will skip a missing envelope. CodeQL's `pull_request` path filter does not
+include these four outputs. A generated-only pull request opened after this
+policy is on trunk is the hosted demonstration that the expensive steps skip.
