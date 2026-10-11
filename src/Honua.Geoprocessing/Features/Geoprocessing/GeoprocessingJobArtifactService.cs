@@ -7,6 +7,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Options;
 
@@ -37,6 +38,7 @@ internal sealed class GeoprocessingJobArtifactService
     private readonly GeoprocessingRasterOutputRegistrar? _outputRegistrar;
     private readonly IGeoprocessingOutputObjectStore? _outputStore;
     private readonly TimeProvider _timeProvider;
+    private readonly IReadOnlyList<IJobTerminalCallback> _terminalCallbacks;
 
     /// <summary>
     /// Creates the artifact coordinator over the catalog, the optional result-package store,
@@ -50,7 +52,8 @@ internal sealed class GeoprocessingJobArtifactService
         IGeoprocessingRasterSourceResolver? rasterSourceResolver = null,
         GeoprocessingRasterOutputRegistrar? outputRegistrar = null,
         IGeoprocessingOutputObjectStore? outputStore = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IEnumerable<IJobTerminalCallback>? terminalCallbacks = null)
     {
         _logger = logger;
         _executorOptions = executorOptions;
@@ -60,6 +63,27 @@ internal sealed class GeoprocessingJobArtifactService
         _outputRegistrar = outputRegistrar;
         _outputStore = outputStore;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _terminalCallbacks = terminalCallbacks?.ToArray() ?? [];
+    }
+
+    /// <summary>
+    /// Replays terminal callbacks against the job as stored, before a result package is read.
+    /// Callbacks use <see cref="CancellationToken.None"/> so a cancelled result read cannot
+    /// skip the durability notification that may flip the job to failed.
+    /// </summary>
+    internal async Task ReplayTerminalCallbacksAsync(ExecutionJobRecord job)
+    {
+        foreach (var callback in _terminalCallbacks)
+        {
+            try
+            {
+                await callback.OnTerminalAsync(job, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                GeoprocessingServiceLog.TerminalCallbackReplayFailed(_logger, job.OperationId, ex);
+            }
+        }
     }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;

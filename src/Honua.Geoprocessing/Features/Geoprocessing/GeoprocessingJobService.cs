@@ -64,7 +64,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
     private readonly RbacOptions _rbacOptions;
     private readonly DurableJobSubstrateOptions _substrateOptions;
-    private readonly IReadOnlyList<IJobTerminalCallback> _terminalCallbacks;
 
     /// <summary>
     /// Production constructor. Composes the durable stores and process catalog with the four
@@ -84,12 +83,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IExecutionJobStore? jobStore = null,
         IOptions<LimitsOptions>? limitsOptions = null,
         IOptions<RbacOptions>? rbacOptions = null,
-        IOptions<DurableJobSubstrateOptions>? substrateOptions = null,
-        IEnumerable<IJobTerminalCallback>? terminalCallbacks = null)
+        IOptions<DurableJobSubstrateOptions>? substrateOptions = null)
     {
         _rbacOptions = rbacOptions?.Value ?? new RbacOptions();
         _substrateOptions = substrateOptions?.Value ?? new DurableJobSubstrateOptions();
-        _terminalCallbacks = terminalCallbacks?.ToArray() ?? [];
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
         _processCatalog = processCatalog;
@@ -169,13 +166,17 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             new CustomCodeJobSubmissionGate(
                 logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier),
             new GeoprocessingJobArtifactService(
-                logger, executorOptions, processCatalog, resultPackageStore, rasterSourceResolver),
+                logger,
+                executorOptions,
+                processCatalog,
+                resultPackageStore,
+                rasterSourceResolver,
+                terminalCallbacks: terminalCallbacks),
             logger,
             executorOptions,
             jobStore,
             limitsOptions,
-            rbacOptions: null,
-            terminalCallbacks: terminalCallbacks)
+            rbacOptions: null)
     {
     }
 
@@ -1203,7 +1204,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 $"Job '{jobId}' has not reached a terminal state (current: {job.Status}).");
         }
 
-        await ReplayTerminalCallbacksAsync(job).ConfigureAwait(false);
+        await _artifacts.ReplayTerminalCallbacksAsync(job).ConfigureAwait(false);
         var refreshed = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
         if (refreshed == null)
         {
@@ -1218,21 +1219,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         return await _artifacts.GetOrSynthesizeResultPackageAsync(refreshed, cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task ReplayTerminalCallbacksAsync(ExecutionJobRecord job)
-    {
-        foreach (var callback in _terminalCallbacks)
-        {
-            try
-            {
-                await callback.OnTerminalAsync(job, CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                GeoprocessingServiceLog.TerminalCallbackReplayFailed(_logger, job.OperationId, ex);
-            }
-        }
     }
 
     public Task CancelJobAsync(
