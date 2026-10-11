@@ -5,10 +5,13 @@ namespace Honua.Worker.Gdal.Execution;
 
 /// <summary>
 /// Positive GDAL driver restriction for raster tools that accept <c>-if</c>.
-/// Multidim <c>gdalinfo</c> on <c>/vsi</c>, <c>gdaldem</c>, <c>gdal_viewshed</c>,
-/// <c>gdal_polygonize.py</c>, <c>gdal_grid</c>, <c>ogr2ogr</c>, and Python calc
-/// scripts are left unrestricted: those tools either do not accept <c>-if</c> or
-/// must open NetCDF/HDF5/Zarr/GRIB.
+/// Legacy <c>gdal_contour</c> does not accept <c>-if</c> (its synopsis is the
+/// classic executable, not <c>gdal raster contour</c>). Multidim <c>gdalinfo</c>
+/// on <c>/vsi</c>, <c>gdaldem</c>, <c>gdal_viewshed</c>, <c>gdal_polygonize.py</c>,
+/// <c>gdal_grid</c>, <c>ogr2ogr</c>, and Python calc scripts are also left
+/// unrestricted: those tools either do not accept <c>-if</c> or must open
+/// NetCDF/HDF5/Zarr/GRIB. Contour inputs are still admitted by the byte guard
+/// before the process is spawned.
 /// </summary>
 internal static class GdalRasterDriverAllowlist
 {
@@ -27,7 +30,8 @@ internal static class GdalRasterDriverAllowlist
 
     /// <summary>
     /// Prefixes <c>-if &lt;driver&gt;</c> for <c>gdal_translate</c>, <c>gdalwarp</c>,
-    /// <c>gdal_contour</c>, and non-VSI <c>gdalinfo</c>. Other tools are returned unchanged.
+    /// and non-VSI <c>gdalinfo</c>. <c>gdal_contour</c> and every other tool are
+    /// returned unchanged.
     /// </summary>
     public static IReadOnlyList<string> Prefix(
         string tool,
@@ -62,7 +66,7 @@ internal static class GdalRasterDriverAllowlist
 
     private static bool ShouldRestrict(string tool, IReadOnlyList<string> arguments)
     {
-        if (tool is "gdal_translate" or "gdalwarp" or "gdal_contour")
+        if (tool is "gdal_translate" or "gdalwarp")
         {
             return true;
         }

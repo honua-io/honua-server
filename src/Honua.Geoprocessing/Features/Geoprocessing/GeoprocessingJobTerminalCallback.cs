@@ -231,11 +231,39 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
                 UpdatedAt = now,
                 CurrentPhase = "Failed"
             };
-            await executionJobStore.TrySetAsync(failed, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+            if (!await executionJobStore.TrySetAsync(failed, cancellationToken: CancellationToken.None).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            // Earlier callbacks already observed the Succeeded snapshot. Ops ignores
+            // anything but Failed, so deliver the persisted failure before this callback returns.
+            await NotifyCorrectedTerminalStatusAsync(failed).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.DurableStatusFailFailed(logger, job.OperationId, ex);
+        }
+    }
+
+    private async Task NotifyCorrectedTerminalStatusAsync(ExecutionJobRecord failed)
+    {
+        using var scope = serviceScopeFactory.CreateScope();
+        foreach (var callback in scope.ServiceProvider.GetServices<IJobTerminalCallback>())
+        {
+            if (ReferenceEquals(callback, this))
+            {
+                continue;
+            }
+
+            try
+            {
+                await callback.OnTerminalAsync(failed, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Log.StatusCorrectionNotifyFailed(logger, failed.OperationId, ex);
+            }
         }
     }
 
@@ -396,5 +424,8 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
 
         [LoggerMessage(8033, LogLevel.Error, "Failed to mark durable job {OperationId} Failed after artifact persistence failure")]
         public static partial void DurableStatusFailFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(8034, LogLevel.Warning, "Failed to re-notify terminal callbacks after job {OperationId} was marked Failed")]
+        public static partial void StatusCorrectionNotifyFailed(ILogger logger, string operationId, Exception exception);
     }
 }

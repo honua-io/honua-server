@@ -81,7 +81,7 @@ public sealed class GdalRasterDimensionGuardTests
         warp.Should().Contain("/vsis3/bucket/a.tif");
 
         var contour = GdalRasterDriverAllowlist.Prefix("gdal_contour", ["in.tif", "out.geojson"], options);
-        contour.Should().Contain("-if");
+        contour.Should().Equal("in.tif", "out.geojson");
 
         var multidim = GdalRasterDriverAllowlist.Prefix("gdalinfo", ["-json", "/vsis3/bucket/coverage.nc"], options);
         multidim.Should().NotContain("-if");
@@ -112,6 +112,12 @@ public sealed class GdalRasterDimensionGuardTests
             ["dem.tif", "out.tif"],
             missing);
         unrestricted.Should().Equal("dem.tif", "out.tif");
+
+        var contour = GdalRasterDriverAllowlist.Prefix(
+            "gdal_contour",
+            ["in.tif", "out.geojson"],
+            missing);
+        contour.Should().Equal("in.tif", "out.geojson");
     }
 
     // --- PNG / JPEG header parsing (non-TIFF bomb vectors) ----------------------
