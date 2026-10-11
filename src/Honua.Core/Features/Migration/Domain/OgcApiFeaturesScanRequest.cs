@@ -40,4 +40,10 @@ public sealed record OgcApiFeaturesScanRequest
     /// Whether HTTP and local URLs are allowed for test or controlled operator environments.
     /// </summary>
     public bool AllowUnsafeLocalUrls { get; init; }
+
+    /// <summary>
+    /// Host allowlist applied to collection and items links discovered after the submitted URL.
+    /// Null does not restrict the host. An empty collection rejects every linked host.
+    /// </summary>
+    public IReadOnlyCollection<string>? AllowedServiceHostSuffixes { get; init; }
 }

@@ -64,6 +64,12 @@ public sealed record OgcApiFeaturesImportRequest
     public bool AllowUnsafeLocalUrls { get; init; }
 
     /// <summary>
+    /// Host allowlist applied to items links discovered after the submitted service URL.
+    /// Null does not restrict the host. An empty collection rejects every linked host.
+    /// </summary>
+    public IReadOnlyCollection<string>? AllowedServiceHostSuffixes { get; init; }
+
+    /// <summary>
     /// Optional CQL2-text filter passed through to the source items endpoint as
     /// <c>filter=...&amp;filter-lang=cql2-text</c>. When set, the importer requests only the matching
     /// subset of features. The filter is supplied verbatim to the source after URL escaping; the

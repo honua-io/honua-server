@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Sockets;
+using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using Honua.Core.Features.Import.Abstractions;
@@ -161,10 +163,21 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
     /// arbitrary operator-supplied services, so an unbounded <c>GetStringAsync</c> would let a
     /// hostile or broken source stream a multi-GB document into memory.
     /// </summary>
-    private async Task<string> GetBoundedStringAsync(Uri url, CancellationToken cancellationToken)
+    private async Task<string> GetBoundedStringAsync(
+        Uri url,
+        OgcServiceScanRequest request,
+        CancellationToken cancellationToken)
     {
+        using var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
+        if (!string.IsNullOrWhiteSpace(request.Username))
+        {
+            var token = Convert.ToBase64String(
+                Encoding.ASCII.GetBytes($"{request.Username}:{request.Password ?? string.Empty}"));
+            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Basic", token);
+        }
+
         using var response = await _httpClient
-            .GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         return await MigrationHttpContentReader
@@ -179,7 +192,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         Uri capabilitiesUrl,
         CancellationToken cancellationToken)
     {
-        var capabilitiesXml = await GetBoundedStringAsync(capabilitiesUrl, cancellationToken).ConfigureAwait(false);
+        var capabilitiesXml = await GetBoundedStringAsync(capabilitiesUrl, request, cancellationToken).ConfigureAwait(false);
         var capabilities = XDocument.Parse(capabilitiesXml, LoadOptions.None);
         return normalizedServiceType switch
         {
@@ -218,6 +231,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         foreach (var coverageId in coverageIds)
         {
             var description = await TryDescribeCoverageAsync(
+                    request,
                     serviceUri,
                     version,
                     coverageId,
@@ -248,7 +262,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         CancellationToken cancellationToken)
     {
         var collectionsUri = BuildOgcApiCoveragesCollectionsUrl(serviceUri);
-        var payload = await GetBoundedStringAsync(collectionsUri, cancellationToken).ConfigureAwait(false);
+        var payload = await GetBoundedStringAsync(collectionsUri, request, cancellationToken).ConfigureAwait(false);
         using var document = JsonDocument.Parse(payload);
         var root = document.RootElement;
         var serviceMetadata = new OgcCoverageServiceMetadata
@@ -322,7 +336,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             var resourceId = $"feature-type:{ToStableId(name)}";
             var crsValues = ReadWfsCrsValues(featureType);
             var spatialReferences = await BuildSpatialReferencesAsync(crsValues, cancellationToken).ConfigureAwait(false);
-            var schema = await TryDescribeFeatureTypeAsync(serviceUri, request.Version ?? version, name, request.TimeoutSeconds, cancellationToken)
+            var schema = await TryDescribeFeatureTypeAsync(request, serviceUri, request.Version ?? version, name, request.TimeoutSeconds, cancellationToken)
                 .ConfigureAwait(false);
 
             if (!schema.Success)
@@ -719,6 +733,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         };
 
     private async Task<(bool Success, MigrationInventoryField[] Fields, string Warning)> TryDescribeFeatureTypeAsync(
+        OgcServiceScanRequest request,
         Uri serviceUri,
         string version,
         string featureTypeName,
@@ -730,7 +745,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             var url = BuildDescribeFeatureTypeUrl(serviceUri, version, featureTypeName);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds <= 0 ? 60 : timeoutSeconds));
-            var schemaXml = await GetBoundedStringAsync(url, timeout.Token).ConfigureAwait(false);
+            var schemaXml = await GetBoundedStringAsync(url, request, timeout.Token).ConfigureAwait(false);
             var schema = XDocument.Parse(schemaXml, LoadOptions.None);
             var fields = ExtractFields(schema, featureTypeName);
             return (fields.Length > 0, fields, fields.Length > 0 ? string.Empty : "DescribeFeatureType returned no importable field metadata.");
@@ -742,6 +757,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
     }
 
     private async Task<OgcCoverageDescription> TryDescribeCoverageAsync(
+        OgcServiceScanRequest request,
         Uri serviceUri,
         string version,
         string coverageId,
@@ -754,7 +770,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             var url = BuildDescribeCoverageUrl(serviceUri, version, coverageId);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds <= 0 ? 60 : timeoutSeconds));
-            var coverageXml = await GetBoundedStringAsync(url, timeout.Token).ConfigureAwait(false);
+            var coverageXml = await GetBoundedStringAsync(url, request, timeout.Token).ConfigureAwait(false);
             var document = XDocument.Parse(coverageXml, LoadOptions.None);
             return BuildCoverageDescription(coverageId, document, serviceFormats);
         }

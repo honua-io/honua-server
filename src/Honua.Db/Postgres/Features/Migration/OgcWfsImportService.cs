@@ -87,6 +87,8 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             throw new ArgumentException("PageSize must be greater than zero.", nameof(request));
         }
 
+        request = request with { PageSize = OgcWfsImportRequest.ClampPageSize(request.PageSize) };
+
         var stopwatch = Stopwatch.StartNew();
         var jobId = string.IsNullOrWhiteSpace(request.JobId)
             ? Guid.NewGuid().ToString("N")[..8]
@@ -106,7 +108,9 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
                     ServiceUrl = request.ServiceUrl,
                     Version = request.Version,
                     TimeoutSeconds = request.RequestTimeoutSeconds,
-                    AllowUnsafeLocalUrls = request.AllowUnsafeLocalUrls
+                    AllowUnsafeLocalUrls = request.AllowUnsafeLocalUrls,
+                    Username = request.Username,
+                    Password = request.Password
                 },
                 cancellationToken).ConfigureAwait(false);
         }
@@ -137,10 +141,21 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
         var version = inventory.Source.Version ?? request.Version ?? "2.0.0";
         var serviceUri = new Uri(request.ServiceUrl, UriKind.Absolute);
-        var selectedResources = SelectResources(inventory, request.FeatureTypeNames);
+        var selection = SelectResources(inventory, request.FeatureTypeNames);
+        var selectedResources = selection.Resources;
+        var topLevelWarnings = new List<string>(selection.Warnings);
+        if (selection.NoneMatched)
+        {
+            return CreateFailureResult(
+                request,
+                jobId,
+                "None of the requested feature types were found in the WFS inventory.",
+                stopwatch.Elapsed,
+                inventory: inventory,
+                warnings: topLevelWarnings);
+        }
 
         var perFeatureType = new List<OgcWfsImportedFeatureType>();
-        var topLevelWarnings = new List<string>();
         var featuresCopied = 0;
         var featuresFailed = 0;
         var imported = 0;
@@ -541,11 +556,15 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         using var response = await _httpClient.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
-        await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
+        var payload = await MigrationHttpContentReader
+            .ReadStringWithLimitAsync(response, MigrationHttpContentReader.DefaultMaxResponseBytes, timeout.Token)
+            .ConfigureAwait(false);
         try
         {
-            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: timeout.Token).ConfigureAwait(false);
-            return ParseFeatureCollection(document);
+            using var document = JsonDocument.Parse(payload);
+            var page = ParseFeatureCollection(document);
+            OgcWfsImportRequest.EnsurePageWithinRequest(page.Features.Count, request.PageSize);
+            return page;
         }
         catch (JsonException)
         {
@@ -849,7 +868,12 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
     internal static string BuildSpatialIndexName(string tableName)
         => PostgresDerivedRelationNames.BuildUnique(tableName, "geom_idx");
 
-    private static MigrationInventoryResource[] SelectResources(
+    private readonly record struct ResourceSelection(
+        MigrationInventoryResource[] Resources,
+        IReadOnlyList<string> Warnings,
+        bool NoneMatched);
+
+    private static ResourceSelection SelectResources(
         MigrationSourceInventoryArtifact inventory,
         string[]? requestedFeatureTypes)
     {
@@ -859,11 +883,24 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
         if (requestedFeatureTypes == null || requestedFeatureTypes.Length == 0)
         {
-            return allFeatureTypes;
+            return new ResourceSelection(allFeatureTypes, [], false);
         }
 
         var requested = new HashSet<string>(requestedFeatureTypes, StringComparer.OrdinalIgnoreCase);
-        return allFeatureTypes.Where(r => requested.Contains(r.Name)).ToArray();
+        var selected = allFeatureTypes.Where(r => requested.Contains(r.Name)).ToArray();
+        var matched = new HashSet<string>(selected.Select(static resource => resource.Name), StringComparer.OrdinalIgnoreCase);
+        var warnings = new List<string>();
+        foreach (var name in requestedFeatureTypes)
+        {
+            if (string.IsNullOrWhiteSpace(name) || matched.Contains(name))
+            {
+                continue;
+            }
+
+            warnings.Add($"Requested feature type '{name}' was not found in the WFS inventory.");
+        }
+
+        return new ResourceSelection(selected, warnings, selected.Length == 0);
     }
 
     private static bool IsUnsupported(MigrationInventoryResource resource)
@@ -1091,7 +1128,8 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         string jobId,
         string errorMessage,
         TimeSpan duration,
-        MigrationSourceInventoryArtifact? inventory = null)
+        MigrationSourceInventoryArtifact? inventory = null,
+        IReadOnlyList<string>? warnings = null)
     {
         var safeSourceUrl = ToSafeSourceUrl(request.ServiceUrl);
         inventory ??= new MigrationSourceInventoryArtifact
@@ -1129,7 +1167,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             SourceServiceUrl = safeSourceUrl,
             ErrorMessage = errorMessage,
             FeatureTypes = [],
-            Warnings = [errorMessage],
+            Warnings = warnings is { Count: > 0 } ? [errorMessage, .. warnings] : [errorMessage],
             Manifest = manifest,
             ParityEvidence = MigrationParityEvidenceGenerator.Generate(inventory, manifest),
             Duration = duration

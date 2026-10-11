@@ -26,6 +26,14 @@ public class ImportLimits
     public long MaxImportSize { get; set; } = FileSizeConstants.FiveHundredMB;
 
     /// <summary>
+    /// Maximum uploaded Esri tile-cache package (.tpk/.tpkx/.vtpk) in bytes.
+    /// The tile-package route and the import handler share this value so a package
+    /// is not rejected by the edit-payload ceiling before the package cap applies.
+    /// </summary>
+    [Range(52_428_800, 5_368_709_120L)]
+    public long MaxTilePackageSize { get; set; } = 2L * FileSizeConstants.OneGB;
+
+    /// <summary>
     /// Maximum number of features returned in a preview.
     /// </summary>
     [Range(10, 1000)]

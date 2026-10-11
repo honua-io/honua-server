@@ -159,6 +159,7 @@ internal static partial class OgcApiFeaturesImportEndpoints
             MaxPages = request.MaxPages ?? 1_000,
             TimeoutSeconds = request.TimeoutSeconds ?? 300,
             AllowUnsafeLocalUrls = allowUnsafeLocalUrls,
+            AllowedServiceHostSuffixes = allowedHostSuffixes,
             Filter = request.Filter,
             Bbox = request.Bbox,
             Datetime = request.Datetime

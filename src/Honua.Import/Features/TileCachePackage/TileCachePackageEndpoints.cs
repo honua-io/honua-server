@@ -2,10 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Core.Configuration;
 using Honua.Core.Features.TileCachePackage.Abstractions;
 using Honua.Core.Features.TileCachePackage.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Helpers;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Import.TileCachePackage;
 
@@ -21,9 +24,8 @@ namespace Honua.Import.TileCachePackage;
 /// </summary>
 internal static class TileCachePackageEndpoints
 {
-    // Hard cap on the uploaded package body. Tile packages can be large, but the
-    // admin import path streams to a temp file; this bounds disk usage per request.
-    private const long MaxPackageBytes = 2L * 1024 * 1024 * 1024; // 2 GiB
+    // Fallback when Limits options are not registered. Matches Imports.MaxTilePackageSize.
+    private const long DefaultMaxPackageBytes = 2L * 1024 * 1024 * 1024;
 
     /// <summary>
     /// Maps the tile-cache package import + serving endpoints.
@@ -63,6 +65,8 @@ internal static class TileCachePackageEndpoints
         bool dryRun = false)
     {
         var cancellationToken = context.RequestAborted;
+        var maxPackageBytes = context.RequestServices.GetService<IOptions<LimitsOptions>>()?.Value.Imports.MaxTilePackageSize
+            ?? DefaultMaxPackageBytes;
 
         // Resolve the import service from the request scope rather than as a route-handler
         // parameter. The service is provider-specific (registered only when the active
@@ -97,7 +101,7 @@ internal static class TileCachePackageEndpoints
             long written;
             await using (var temp = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, FileOptions.SequentialScan))
             {
-                written = await CopyBoundedAsync(context.Request.Body, temp, MaxPackageBytes, cancellationToken).ConfigureAwait(false);
+                written = await CopyBoundedAsync(context.Request.Body, temp, maxPackageBytes, cancellationToken).ConfigureAwait(false);
             }
 
             if (written == 0)
@@ -105,7 +109,7 @@ internal static class TileCachePackageEndpoints
                 return Results.BadRequest("Request body is empty; upload the package bytes as the request body.");
             }
 
-            if (written >= MaxPackageBytes)
+            if (written >= maxPackageBytes)
             {
                 return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
             }
@@ -139,6 +143,10 @@ internal static class TileCachePackageEndpoints
             {
                 return Results.BadRequest($"The uploaded file is not a readable tile-cache package: {ex.Message}");
             }
+            catch (IOException ex)
+            {
+                return Results.BadRequest($"The uploaded file is not a readable tile-cache package: {ex.Message}");
+            }
 
             return Results.Json(ToApiResult(result), TileCachePackageJsonContext.Default.TileCachePackageImportApiResult);
         }
@@ -160,9 +168,8 @@ internal static class TileCachePackageEndpoints
             return Results.NotFound();
         }
 
-        var scheme = context.Request.Scheme;
-        var host = context.Request.Host.Value;
-        var tileTemplate = $"{scheme}://{host}/tiles/imported/{info.TileCacheId}/{{z}}/{{x}}/{{y}}";
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
+        var tileTemplate = $"{baseUrl}/tiles/imported/{Uri.EscapeDataString(info.TileCacheId)}/{{z}}/{{x}}/{{y}}";
 
         var json = new TileCachePackageTileSetJson
         {
@@ -200,7 +207,10 @@ internal static class TileCachePackageEndpoints
             return Results.NotFound();
         }
 
-        return Results.Bytes(tile.Content, tile.ContentType);
+        return new EncodedTileResult(
+            tile.Content,
+            tile.ContentType,
+            TileCachePackageTileEncoding.ContentEncoding(tile.Content));
     }
 
     private static string? DeriveFileNameFromContentType(string? contentType)
@@ -281,8 +291,26 @@ internal static class TileCachePackageEndpoints
         TilesImported = result.TilesImported,
         TilesSkipped = result.TilesSkipped,
         DryRun = result.DryRun,
-        ServeUrl = result.TileCacheId is null ? null : $"/tiles/imported/{result.TileCacheId}"
+        ServeUrl = result.TileCacheId is null ? null : $"/tiles/imported/{result.TileCacheId}",
+        Assumption = result.Assumption
     };
+
+    private sealed class EncodedTileResult(byte[] content, string contentType, string? contentEncoding) : IResult
+    {
+        public Task ExecuteAsync(HttpContext httpContext)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status200OK;
+            httpContext.Response.ContentType = contentType;
+            if (!string.IsNullOrEmpty(contentEncoding))
+            {
+                httpContext.Response.Headers.ContentEncoding = contentEncoding;
+                httpContext.Response.Headers.Append("Vary", "Accept-Encoding");
+            }
+
+            httpContext.Response.ContentLength = content.Length;
+            return httpContext.Response.Body.WriteAsync(content, httpContext.RequestAborted).AsTask();
+        }
+    }
 }
 
 /// <summary>
@@ -325,6 +353,9 @@ internal sealed record TileCachePackageImportApiResult
 
     /// <summary>Relative URL the imported tileset is served from.</summary>
     public string? ServeUrl { get; init; }
+
+    /// <summary>Tiling-scheme assumption, when the package WKID was missing or zero.</summary>
+    public string? Assumption { get; init; }
 }
 
 /// <summary>

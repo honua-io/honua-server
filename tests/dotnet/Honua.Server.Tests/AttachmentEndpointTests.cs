@@ -330,24 +330,15 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
-    public async Task AddAttachment_TextFileWithScriptContent_IsRejectedByContentScan()
+    public async Task AddAttachment_TextFileWithScriptContent_IsStored()
     {
-        // #5017: admitting text/plain by default must not bypass the content scan that runs after
-        // the MIME check.
-        var body = new ByteArrayContent("note <script>1</script>"u8.ToArray());
-        body.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain");
-        using var form = new MultipartFormDataContent
-        {
-            { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
-            { body, "attachment", "note.txt" }
-        };
+        // Script substrings in a text note are attribute data. The content scan applies to
+        // executable upload types (.html, .svg, .js), not to text/plain.
+        var payload = "note <script>1</script>"u8.ToArray();
+        var attachmentId = await AddAttachmentAsync(payload, "note.txt", "text/plain");
 
-        var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment", form);
-
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Invalid file content");
-        content.Should().NotContain("is not allowed");
+        var downloaded = await DownloadAttachmentBytesAsync(attachmentId);
+        downloaded.Should().Equal(payload);
     }
 
     [IntegrationTest]

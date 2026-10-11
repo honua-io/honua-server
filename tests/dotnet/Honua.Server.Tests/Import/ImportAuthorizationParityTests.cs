@@ -238,6 +238,46 @@ public sealed class ImportAuthorizationParityTests : IAsyncLifetime
         _effects.Should().ContainSingle("the exact approved upload grant must survive the shared semantic gate");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Import)]
+    [Endpoint("POST /api/v1/admin/import/upload-url")]
+    [Endpoint("POST /api/v1/admin/imports")]
+    public async Task UrlImport_ReadScopedAdminBearer_IsDeniedBeforeDownload()
+    {
+        foreach (var path in new[] { "/api/v1/admin/import/upload-url", "/api/v1/admin/imports" })
+        {
+            _importService.ClearReceivedCalls();
+            _effects.Clear();
+            using var readScoped = CreateBearerClient(roles: ["admin"], scope: OperatorScopeCatalog.Read);
+            using var deniedRequest = new HttpRequestMessage(HttpMethod.Post, path)
+            {
+                Content = new StringContent(
+                    """{"sourceUrl":"https://bucket.s3.amazonaws.com/x.geojson","tableName":"parcels","overwriteExisting":true}""",
+                    Encoding.UTF8,
+                    "application/json"),
+            };
+            using var denied = await readScoped.SendAsync(deniedRequest);
+            denied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            await _importService.DidNotReceive().ImportFileAsync(
+                Arg.Any<ImportRequest>(),
+                Arg.Any<CancellationToken>());
+            _effects.Should().BeEmpty();
+
+            _importService.ClearReceivedCalls();
+            using var createScoped = CreateBearerClient(roles: ["admin"], scope: OperatorScopeCatalog.Create);
+            using var allowedRequest = new HttpRequestMessage(HttpMethod.Post, path)
+            {
+                Content = new StringContent(
+                    """{"sourceUrl":"https://bucket.s3.amazonaws.com/x.geojson","tableName":"parcels","overwriteExisting":true}""",
+                    Encoding.UTF8,
+                    "application/json"),
+            };
+            using var allowed = await createScoped.SendAsync(allowedRequest);
+            allowed.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+            allowed.StatusCode.Should().NotBe(HttpStatusCode.Forbidden);
+        }
+    }
+
     [Theory]
     [InlineData("POST", "/api/v1/admin/import/preview")]
     [InlineData("GET", "/api/v1/admin/services/test/layers/0/export")]

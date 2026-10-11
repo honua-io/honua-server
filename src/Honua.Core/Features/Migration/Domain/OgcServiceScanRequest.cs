@@ -40,4 +40,10 @@ public sealed record OgcServiceScanRequest
     /// Whether HTTP and local URLs are allowed for test or controlled operator environments.
     /// </summary>
     public bool AllowUnsafeLocalUrls { get; init; }
+
+    /// <summary>Optional username for HTTP Basic authentication. Not logged.</summary>
+    public string? Username { get; init; }
+
+    /// <summary>Optional password for HTTP Basic authentication. Not logged.</summary>
+    public string? Password { get; init; }
 }
