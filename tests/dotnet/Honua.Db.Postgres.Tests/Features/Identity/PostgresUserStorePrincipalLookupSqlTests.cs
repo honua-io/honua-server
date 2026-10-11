@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Db.Postgres.Features.Identity;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.Identity;
 
@@ -11,7 +12,7 @@ namespace Honua.Db.Postgres.Tests.Features.Identity;
 /// </summary>
 public sealed class PostgresUserStorePrincipalLookupSqlTests
 {
-    [Fact]
+    [UnitTest]
     public void SRV_DB_PrincipalLookup_WhereIsParenthesizedAndRankIsNullSafe()
     {
         PostgresUserStore.IssuerlessPrincipalWhere.Should().Be(

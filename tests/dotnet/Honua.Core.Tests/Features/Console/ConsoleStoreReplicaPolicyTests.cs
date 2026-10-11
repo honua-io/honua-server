@@ -2,12 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Console;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Console;
 
 public sealed class ConsoleStoreReplicaPolicyTests
 {
-    [Fact]
+    [UnitTest]
     public void Issue5635_ResolveExpectedReplicas_PrefersTheFirstPositiveValue()
     {
         ConsoleStoreReplicaPolicy.ResolveExpectedReplicas("2", "4", "8").Should().Be(2);
@@ -15,7 +16,7 @@ public sealed class ConsoleStoreReplicaPolicyTests
         ConsoleStoreReplicaPolicy.ResolveExpectedReplicas(null, "", null).Should().Be(1);
     }
 
-    [Fact]
+    [UnitTest]
     public void Issue5635_EnsureSingleReplicaWhenNotDurable_RejectsMultipleReplicas()
     {
         var act = () => ConsoleStoreReplicaPolicy.EnsureSingleReplicaWhenNotDurable(durable: false, expectedReplicas: 2);
@@ -24,7 +25,7 @@ public sealed class ConsoleStoreReplicaPolicyTests
             .WithMessage("*process-local*content, share, and open-data*2*");
     }
 
-    [Fact]
+    [UnitTest]
     public void Issue5635_EnsureSingleReplicaWhenNotDurable_AllowsOneReplicaOrADurableStore()
     {
         ConsoleStoreReplicaPolicy.EnsureSingleReplicaWhenNotDurable(durable: false, expectedReplicas: 1);

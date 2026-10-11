@@ -2,12 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Logging;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Infrastructure.Logging;
 
 public sealed class CredentialPathRedactionTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData("/api/v1/console/share/link/opaque-token", "/api/v1/console/share/link/[REDACTED]")]
     [InlineData("/api/v1.0/console/share/embed/embed-token?x=1", "/api/v1.0/console/share/embed/[REDACTED]?x=1")]
     [InlineData("/wps/conformance/results/job-secret", "/wps/conformance/results/[REDACTED]")]
