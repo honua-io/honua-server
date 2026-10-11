@@ -26,6 +26,28 @@ public sealed class GenerateServiceAreasExecuteTests(GenerateServiceAreasExecute
 {
     private const string Facilities = """{"spatialReference":{"wkid":4326},"features":[{"geometry":{"x":-157.858333,"y":21.306944}},{"geometry":{"x":-157.862,"y":21.31}}]}""";
 
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("GET /rest/services/{serviceId}/NAServer/GenerateServiceAreas/execute")]
+    public async Task ExecuteGet_PublishedNaServerAlias_ReturnsCanonicalPolygons()
+    {
+        fixture.Requests.Clear();
+        using var content = new FormUrlEncodedContent(Inputs());
+        using var response = await fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/NAServer/GenerateServiceAreas/execute?{await content.ReadAsStringAsync()}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        result.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        fixture.Requests.Should().ContainSingle();
+        fixture.Requests.Single().Facilities.Should().Equal(
+            new RoutePoint(-157.858333, 21.306944), new RoutePoint(-157.862, 21.31));
+        fixture.Requests.Single().Breaks.Should().Equal(5d, 10d, 15d);
+        var results = result.RootElement.GetProperty("results");
+        results[0].GetProperty("value").GetProperty("features").GetArrayLength().Should().Be(6);
+        results[1].GetProperty("value").GetBoolean().Should().BeTrue();
+    }
+
     [IntegrationTheory]
     [InlineData("GPServer", false, "Away From Facility")]
     [InlineData("GPServer", true, "Away From Facility")]
