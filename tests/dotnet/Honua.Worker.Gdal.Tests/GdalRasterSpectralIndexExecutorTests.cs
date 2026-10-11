@@ -39,8 +39,8 @@ public sealed class GdalRasterSpectralIndexExecutorTests
             var job = GdalJobFactory.Job(
                 GdalRasterSpectralIndexJobExecutor.HandledProcessId,
                 ("index", "NDVI"),
-                ("nir", GdalCli.AdmittedRaster("nir-raster")),
-                ("red", GdalCli.AdmittedRaster("red-raster")));
+                ("nir", GdalCli.RasterBase64("nir-raster")),
+                ("red", GdalCli.RasterBase64("red-raster")));
             var context = new RecordingJobExecutionContext(job.OperationId);
 
             var result = await executor.ExecuteAsync(job, context, default);
@@ -69,8 +69,8 @@ public sealed class GdalRasterSpectralIndexExecutorTests
             var job = GdalJobFactory.Job(
                 GdalRasterSpectralIndexJobExecutor.HandledProcessId,
                 ("index", "SAVI"),
-                ("nir", GdalCli.AdmittedRaster("nir")),
-                ("red", GdalCli.AdmittedRaster("red")),
+                ("nir", GdalCli.RasterBase64("nir")),
+                ("red", GdalCli.RasterBase64("red")),
                 ("L", "0.25"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -96,8 +96,8 @@ public sealed class GdalRasterSpectralIndexExecutorTests
             var job = GdalJobFactory.Job(
                 GdalRasterSpectralIndexJobExecutor.HandledProcessId,
                 ("index", "EVI"),
-                ("nir", GdalCli.AdmittedRaster("nir")),
-                ("red", GdalCli.AdmittedRaster("red")));
+                ("nir", GdalCli.RasterBase64("nir")),
+                ("red", GdalCli.RasterBase64("red")));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
@@ -121,7 +121,7 @@ public sealed class GdalRasterSpectralIndexExecutorTests
             var job = GdalJobFactory.Job(
                 GdalRasterSpectralIndexJobExecutor.HandledProcessId,
                 ("index", "NDXX"),
-                ("nir", GdalCli.AdmittedRaster("nir")));
+                ("nir", GdalCli.RasterBase64("nir")));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 

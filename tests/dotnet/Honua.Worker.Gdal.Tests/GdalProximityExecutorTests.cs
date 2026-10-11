@@ -43,7 +43,7 @@ public sealed class GdalProximityExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalProximityJobExecutor.DistanceProcessId,
-                ("source", GdalCli.AdmittedRaster("fake-raster")),
+                ("source", GdalCli.RasterBase64("fake-raster")),
                 ("maxDistance", "500"),
                 ("distUnits", "GEO"),
                 ("values", "1,2"));
@@ -78,7 +78,7 @@ public sealed class GdalProximityExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalProximityJobExecutor.DistanceProcessId,
-                ("source", GdalCli.AdmittedRaster("fake-raster")),
+                ("source", GdalCli.RasterBase64("fake-raster")),
                 ("distUnits", "MILES"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -102,7 +102,7 @@ public sealed class GdalProximityExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalProximityJobExecutor.AllocationProcessId,
-                ("source", GdalCli.AdmittedRaster("fake-raster")));
+                ("source", GdalCli.RasterBase64("fake-raster")));
             var context = new RecordingJobExecutionContext(job.OperationId);
 
             var result = await executor.ExecuteAsync(job, context, default);
@@ -132,7 +132,7 @@ public sealed class GdalProximityExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalProximityJobExecutor.AllocationProcessId,
-                ("source", GdalCli.AdmittedRaster("fake-raster")),
+                ("source", GdalCli.RasterBase64("fake-raster")),
                 ("maxDistance", "750"),
                 ("distUnits", "PIXEL"),
                 ("values", "3,7"));
@@ -161,7 +161,7 @@ public sealed class GdalProximityExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalProximityJobExecutor.AllocationProcessId,
-                ("source", GdalCli.AdmittedRaster("fake-raster")),
+                ("source", GdalCli.RasterBase64("fake-raster")),
                 ("distUnits", "MILES"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);

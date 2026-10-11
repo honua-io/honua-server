@@ -40,7 +40,7 @@ public sealed class GdalRasterResampleExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterResampleJobExecutor.HandledProcessId,
-                ("source", GdalCli.AdmittedRaster("fake-raster")),
+                ("source", GdalCli.RasterBase64("fake-raster")),
                 ("cellSize", "30"));
             var context = new RecordingJobExecutionContext(job.OperationId);
 
@@ -70,7 +70,7 @@ public sealed class GdalRasterResampleExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterResampleJobExecutor.HandledProcessId,
-                ("source", GdalCli.AdmittedRaster("fake-raster")),
+                ("source", GdalCli.RasterBase64("fake-raster")),
                 ("cellSize", "30"),
                 ("cellSizeY", "20"),
                 ("resampling", "nearestneighbor"));
@@ -97,7 +97,7 @@ public sealed class GdalRasterResampleExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterResampleJobExecutor.HandledProcessId,
-                ("source", GdalCli.AdmittedRaster("fake-raster")));
+                ("source", GdalCli.RasterBase64("fake-raster")));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
@@ -120,7 +120,7 @@ public sealed class GdalRasterResampleExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterResampleJobExecutor.HandledProcessId,
-                ("source", GdalCli.AdmittedRaster("fake-raster")),
+                ("source", GdalCli.RasterBase64("fake-raster")),
                 ("cellSize", "30"),
                 ("resampling", "spline"));
 
@@ -145,7 +145,7 @@ public sealed class GdalRasterResampleExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterResampleJobExecutor.HandledProcessId,
-                ("source", GdalCli.AdmittedRaster("fake-raster")),
+                ("source", GdalCli.RasterBase64("fake-raster")),
                 ("cellSize", "30"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);

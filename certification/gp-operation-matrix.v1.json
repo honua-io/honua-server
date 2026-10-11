@@ -1020,7 +1020,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterConversionExecutorTests.cs",
           "test": "RasterFormat_GTiff_RunsGdalTranslate_AndPublishesGeoTiff",
           "assertion": "Fake-runner driver/arguments and artifact shape only.",
-          "bodyDigest": "sha256:1d5696fa9a94a44ba17a0b30c6d04767feb8d93c8a29dcf2c3d2fbd730834e63"
+          "bodyDigest": "sha256:3b560ffabbe9791ec951345489f454f478f5578776879228ce071ae7f6ed099c"
         },
         {
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Conversion.cs",
@@ -1039,7 +1039,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterConversionExecutorTests.cs",
           "test": "RasterReproject_ConversionId_RunsGdalwarp_WithTargetSrs",
           "assertion": "Fake-runner target-SRS argument only.",
-          "bodyDigest": "sha256:427e70ff25691446db0398769f3e9039e497c30a5f9376c0fe00c9dd90cc7a44"
+          "bodyDigest": "sha256:2ad816ed040e8423de694c12f2cf0a30d753ff93b51df45f992f10de2339153a"
         },
         {
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
@@ -1058,7 +1058,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalPolygonizeExecutorTests.cs",
           "test": "Polygonize_EightConnected_ProjectsFlagsAndField_AndPublishesGeoJson",
           "assertion": "Fake-runner flags/artifact shape only.",
-          "bodyDigest": "sha256:1055db8bf7746ecd3f40137177a009360092072d4c2a68925004f300c1920f5b"
+          "bodyDigest": "sha256:53a2cf54b5720cfd7dfa77c7e3792d5c2760dd12b42d42b09db85c1c123b647b"
         },
         {
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Conversion.cs",

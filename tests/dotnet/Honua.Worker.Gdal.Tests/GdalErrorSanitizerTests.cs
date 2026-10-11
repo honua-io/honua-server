@@ -87,7 +87,7 @@ public sealed class GdalErrorSanitizerTests
         {
             var job = GdalJobFactory.Job(
                 GdalSurfaceJobExecutor.SlopeProcessId,
-                ("source", GdalCli.AdmittedRaster("dem")));
+                ("source", GdalCli.RasterBase64("dem")));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 

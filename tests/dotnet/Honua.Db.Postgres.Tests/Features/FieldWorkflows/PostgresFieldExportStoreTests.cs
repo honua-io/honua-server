@@ -44,6 +44,7 @@ public sealed class PostgresFieldExportStoreTests(PostgresFixture fixture)
             package.Truncated.Should().BeTrue();
             package.Items.Select(item => item.SubmissionId).Should().Equal(newest, middle);
             package.Record.RecordCount.Should().Be(2);
+            // The filter round-trips through a JSONB column, so assert on parsed values, not text.
             using var filter = JsonDocument.Parse(package.Record.Filter);
             filter.RootElement.GetProperty("truncated").GetBoolean().Should().BeTrue();
             filter.RootElement.GetProperty("rowLimit").GetInt32().Should().Be(2);

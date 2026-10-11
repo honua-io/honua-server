@@ -20,11 +20,13 @@ public sealed class GdalRasterMapAlgebraExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-mapalgebra-test";
 
+    private static string Base64(string text) => GdalCli.Base64(text);
+
     private static string RasterSources(params string[] entries)
-        => string.Join(GdalRasterMapAlgebraJobExecutor.SourceSeparator, entries.Select(GdalCli.AdmittedRaster));
+        => string.Join(GdalRasterMapAlgebraJobExecutor.SourceSeparator, entries.Select(GdalCli.RasterBase64));
 
     private static string Sources(params string[] entries)
-        => string.Join(GdalRasterMapAlgebraJobExecutor.SourceSeparator, entries.Select(GdalCli.Base64));
+        => string.Join(GdalRasterMapAlgebraJobExecutor.SourceSeparator, entries.Select(Base64));
 
     [UnitTest]
     public void GdalRasterMapAlgebraExecutor_DeclaresNativeRuntimeProfile()

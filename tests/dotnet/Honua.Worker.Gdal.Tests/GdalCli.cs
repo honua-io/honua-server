@@ -60,14 +60,15 @@ internal static class GdalCli
     public static string Base64(string text) => Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
 
     /// <summary>
-    /// A bounded TIFF header for fake-runner input admission, with a distinct marker.
-    /// This is not a decodable image: real-CLI tests use GenerateSampleDemAsync instead.
-    /// Keep Base64 unchanged for malformed-content and byte-budget rejection controls.
+    /// Base64-encodes a stand-in raster payload: a little-endian TIFF byte-order mark with
+    /// no parseable IFD, followed by <paramref name="label"/>. The worker's raster admission
+    /// guard refuses unidentified magic (#5628), so fake-runner tests must present a
+    /// recognisable container; the header declares no dimensions, so it is admitted.
     /// </summary>
-    public static string AdmittedRaster(string marker)
-        => Convert.ToBase64String([
-            .. TiffHeaderBuilder.ClassicWithPixelScale(16, 16, 1, 1, bands: 4, bits: 32),
-            .. Encoding.UTF8.GetBytes(marker)]);
+    public static string RasterBase64(string label)
+        => Convert.ToBase64String([.. TiffStandInMagic, .. Encoding.UTF8.GetBytes(label)]);
+
+    private static readonly byte[] TiffStandInMagic = [0x49, 0x49, 0x2A, 0x00, 0x00, 0x00, 0x00, 0x00];
 
     /// <summary>
     /// Allocates a unique scratch directory path under the OS temp root for an

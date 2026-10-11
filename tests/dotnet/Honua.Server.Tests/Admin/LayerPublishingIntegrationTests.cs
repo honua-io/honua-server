@@ -666,7 +666,9 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         var failedItemResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items/1");
         failedItemResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
 
-        await SetPublishedStacStorageLayerIdAsync(storageLayerId);
+        // #5827: a plain TEXT stac_id column is not an item identity by name alone; the
+        // resource must declare it (extensions.stac.idField) for it to win over the key.
+        await SetPublishedStacStorageLayerIdAsync(storageLayerId, declaredStacIdField: "stac_id");
         await PoisonCanonicalFeatureStoreAsync(_layerId.Value);
         await InsertCanonicalIdCollisionAsync();
 
@@ -730,8 +732,10 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
                 .Be(0);
         }
 
+        // #5827: a blank declared id publishes the object id; item_id is no longer a
+        // second-precedence identity.
         var blankCanonicalIdSearchResponse = await _client.GetAsync(
-            $"/stac/search?collections={collectionId}&ids=fallback-item&limit=10");
+            $"/stac/search?collections={collectionId}&ids=901&limit=10");
         var blankCanonicalIdSearchPayload = await blankCanonicalIdSearchResponse.Content.ReadAsStringAsync();
         blankCanonicalIdSearchResponse.StatusCode.Should().Be(
             HttpStatusCode.OK,
@@ -743,11 +747,11 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
                 .EnumerateArray()
                 .Select(feature => feature.GetProperty("id").ToString())
                 .Should()
-                .Equal("fallback-item");
+                .Equal("901");
         }
 
         var multipleIdSearchResponse = await _client.GetAsync(
-            $"/stac/search?collections={collectionId}&ids=123,fallback-item&limit=10");
+            $"/stac/search?collections={collectionId}&ids=123,901&limit=10");
         var multipleIdSearchPayload = await multipleIdSearchResponse.Content.ReadAsStringAsync();
         multipleIdSearchResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {multipleIdSearchPayload}");
         using (var multipleIdSearchDocument = JsonDocument.Parse(multipleIdSearchPayload))
@@ -757,7 +761,7 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
                 .EnumerateArray()
                 .Select(feature => feature.GetProperty("id").ToString())
                 .Should()
-                .BeEquivalentTo(["123", "fallback-item"]);
+                .BeEquivalentTo(["123", "901"]);
         }
 
         var itemsResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items?limit=10");
@@ -3104,7 +3108,7 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         await command.ExecuteNonQueryAsync();
     }
 
-    private async Task SetPublishedStacStorageLayerIdAsync(int storageLayerId)
+    private async Task SetPublishedStacStorageLayerIdAsync(int storageLayerId, string? declaredStacIdField = null)
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.Single(publication =>
@@ -3123,10 +3127,27 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
                 : candidate)
             .ToArray();
 
+        var resources = snapshot.Graph.Resources;
+        if (declaredStacIdField is not null)
+        {
+            using var stacExtension = JsonDocument.Parse(
+                JsonSerializer.Serialize(new Dictionary<string, string> { ["idField"] = declaredStacIdField }));
+            var stac = stacExtension.RootElement.Clone();
+            resources = resources
+                .Select(candidate => candidate.Metadata.Id == publication.ResourceId
+                    ? candidate with
+                    {
+                        Extensions = new Dictionary<string, JsonElement>(candidate.Extensions) { ["stac"] = stac }
+                    }
+                    : candidate)
+                .ToArray();
+        }
+
         await SaveMetadataGraphAsync(snapshot.Graph with
         {
             Revision = snapshot.Graph.Revision + 1,
             Publications = publications,
+            Resources = resources,
             StorageBindings = bindings
         });
     }

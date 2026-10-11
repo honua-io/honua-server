@@ -49,7 +49,7 @@ public sealed class GdalRasterConversionExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterFormatConvertJobExecutor.HandledProcessId,
-                ("source", GdalCli.AdmittedRaster("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("targetFormat", "GTiff"));
             var context = new RecordingJobExecutionContext(job.OperationId);
 
@@ -76,7 +76,7 @@ public sealed class GdalRasterConversionExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterFormatConvertJobExecutor.HandledProcessId,
-                ("source", GdalCli.AdmittedRaster("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("targetFormat", "PNG"));
             var context = new RecordingJobExecutionContext(job.OperationId);
 
@@ -101,7 +101,7 @@ public sealed class GdalRasterConversionExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterFormatConvertJobExecutor.HandledProcessId,
-                ("source", GdalCli.AdmittedRaster("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("targetFormat", "GTiff"),
                 ("compression", "DEFLATE"));
 
@@ -140,7 +140,7 @@ public sealed class GdalRasterConversionExecutorTests
             {
                 var job = GdalJobFactory.Job(
                     GdalRasterFormatConvertJobExecutor.HandledProcessId,
-                    ("source", GdalCli.AdmittedRaster("fake-input-raster")),
+                    ("source", GdalCli.RasterBase64("fake-input-raster")),
                     ("targetFormat", publishedFormat));
 
                 var result = await executor.ExecuteAsync(
@@ -192,7 +192,7 @@ public sealed class GdalRasterConversionExecutorTests
             {
                 var job = GdalJobFactory.Job(
                     GdalRasterFormatConvertJobExecutor.HandledProcessId,
-                    ("source", GdalCli.AdmittedRaster("fake-input-raster")),
+                    ("source", GdalCli.RasterBase64("fake-input-raster")),
                     ("targetFormat", alias));
                 var context = new RecordingJobExecutionContext(job.OperationId);
 
@@ -218,7 +218,7 @@ public sealed class GdalRasterConversionExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterFormatConvertJobExecutor.HandledProcessId,
-                ("source", GdalCli.AdmittedRaster("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("targetFormat", "BOGUS"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -240,7 +240,7 @@ public sealed class GdalRasterConversionExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterFormatConvertJobExecutor.HandledProcessId,
-                ("source", GdalCli.AdmittedRaster("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("targetFormat", "GTiff"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -263,7 +263,7 @@ public sealed class GdalRasterConversionExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterReprojectCatalogJobExecutor.ConversionProcessId,
-                ("source", GdalCli.AdmittedRaster("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("targetSrid", "3857"));
             var context = new RecordingJobExecutionContext(job.OperationId);
 

@@ -1628,7 +1628,8 @@ def test_nb_page_03_next_link_shape(
     ).json()
     get_next = next(link for link in get_body["links"] if link["rel"] == "next")
     assert get_next["href"].startswith(search_url), f"GET next href is {get_next['href']!r}"
-    assert "token=" in get_next["href"], "GET next link carries no pagination token"
+    # GET pages with next=offset:N; a query "token" is an ArcGIS portal credential (#5827).
+    assert "next=" in get_next["href"], "GET next link carries no pagination cursor"
 
     post_body = cert_lane.post_json(
         search_url, {"collections": [COLLECTION_ID], "limit": canonical_fixture.PAGE_SIZE}
@@ -1662,7 +1663,7 @@ def test_nb_page_03_next_link_shape(
         duration_ms=_elapsed_ms(started),
         measured_count=len(next_ids),
         notes=(
-            "GET next uses a token query parameter; POST next is a body-bearing "
+            "GET next uses a next cursor query parameter; POST next is a body-bearing "
             "method=POST merge=true link whose token advanced the cursor to a disjoint page."
         ),
     )
@@ -1706,13 +1707,13 @@ def test_nb_page_05_token_past_end(
     base_url: str,
     cert_collector: CertificationEvidenceCollector,
 ) -> None:
-    """A token past the end returns an empty page; a bogus token is rejected."""
+    """A cursor past the end returns an empty page; a bogus cursor is rejected."""
     started = time.perf_counter()
     search_url = f"{base_url.rstrip('/')}/stac/search"
 
     past_end = cert_lane.get_json(
         search_url,
-        params={"collections": COLLECTION_ID, "limit": 3, "token": "offset:1000"},
+        params={"collections": COLLECTION_ID, "limit": 3, "next": "offset:1000"},
     )
     assert past_end.status_code == 200, (
         f"a token past the end must not error: {cert_lane.problem_summary(past_end)}"
@@ -1724,7 +1725,7 @@ def test_nb_page_05_token_past_end(
     )
 
     bogus = cert_lane.get_json(
-        search_url, params={"collections": COLLECTION_ID, "limit": 3, "token": "not-a-token"}
+        search_url, params={"collections": COLLECTION_ID, "limit": 3, "next": "not-a-token"}
     )
     assert bogus.status_code == 400, f"bogus token returned {bogus.status_code}"
     assert bogus.json().get("status") == 400

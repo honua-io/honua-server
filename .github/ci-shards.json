@@ -190,7 +190,7 @@
     },
     {
       "name": "Infra and Security",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure|FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.Security|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure|FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.Security|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp.RedisMcpSessionStoreTests",
       "children": [
         "Caching File Storage Styling and Infrastructure",
         "Security and Authorization"
@@ -696,12 +696,12 @@
       "dispatch_rank": 13.3,
       "artifact_suffix": "featureserver-endpoints-query-services-and-replication",
       "log_name": "server-tests-featureserver-endpoints-query-services-and-replication",
-      "timeout_minutes": 36,
-      "test_timeout_minutes": 26,
+      "timeout_minutes": 47,
+      "test_timeout_minutes": 37,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "Offline TRX rebalance (#3711): returns the 0.9m query, 0.2m services, and 2.7m replication micro-shards to their 7.6m-p90 endpoint owner in the same GeoServices test assembly.",
+      "_comment": "Offline TRX rebalance (#3711): returns the 0.9m query, 0.2m services, and 2.7m replication micro-shards to their 7.6m-p90 endpoint owner in the same GeoServices test assembly. October 2026 re-base (#5884): the run-shard step measured 22.5m, 23.0m, 23.3m and 25.7m on full-matrix runs 38141804546 / 38151528023 / 38095435801 / 38158644558 and exhausted the 26m cap on 38164919834; 37m keeps that p90 at the 0.7 target_utilization.",
       "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Models&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests&FullyQualifiedName!~FeatureServerQuery&FullyQualifiedName!~MvtTile&FullyQualifiedName!~Replica&FullyQualifiedName!~FeatureServerMaintenance&FullyQualifiedName!~FeatureServerTemporal&FullyQualifiedName!~GeoServicesTemporalQueryBuilder&FullyQualifiedName!~FeatureServerExtrusion)|(FullyQualifiedName~FeatureServerQuery&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Models)|(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Models|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GeoServicesSpatialFilterBuilderTests|FullyQualifiedName~Honua.Protocols.GeoServices.Tests.Source.FeatureServer.Services)|(FullyQualifiedName~CachingReplicaStoreTests|FullyQualifiedName~DistributedReplicaStoreTests|FullyQualifiedName~FeatureServerReplicationTests|FullyQualifiedName~ReplicationDurabilityTests|FullyQualifiedName~PostgresChangeTrackerTests)|FullyQualifiedName~Honua.Protocols.GeoServices.Tests.Source.FeatureServer.GeoServicesGeometryConverterAuditTests",
       "paths": [
         "src/Honua.Core/Features/Validation/",
@@ -1325,10 +1325,11 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling)|(FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure)",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling)|(FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure)|(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp.RedisMcpSessionStoreTests)",
       "_paths_comment": "Capacity split of the former Infra and Security shard. This child isolates the cache, file-storage, and style endpoint/integration suites that previously shared one 39-minute budget with the control-plane and security suites. The OGC API - Styles protocol slice (src/Honua.Protocols.OgcApi/Styles/) maps here too: its /ogc/styles integration tests live under tests/.../Features/Styling, which this shard's filter selects (#3188).",
       "paths": [
         "observability/",
+        "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpSessionStore.cs",
         "src/Honua.Core/Features/Caching/",
         "src/Honua.Core/Features/ControlPlane/",
         "src/Honua.Core/Features/Styling/",
@@ -1347,6 +1348,7 @@
         "tests/dotnet/Honua.Server.Tests/Features/Export/",
         "tests/dotnet/Honua.Server.Tests/Features/FileStorage/",
         "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/RedisMcpSessionStoreTests.cs",
         "tests/dotnet/Honua.Server.Tests/Features/Styling/"
       ],
       "_comment": "Round-2 offline TRX rebalance (#3770): folds the 4.1m-p90 Infrastructure micro-shard into the same-project caching/file-storage/styling neighbor."

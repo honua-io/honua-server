@@ -37,7 +37,7 @@ public sealed class GdalViewshedExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalViewshedJobExecutor.HandledProcessId,
-                ("source", GdalCli.AdmittedRaster("fake-dem")),
+                ("source", GdalCli.RasterBase64("fake-dem")),
                 ("observerX", "100.5"),
                 ("observerY", "200.25"),
                 ("observerHeight", "1.8"),
@@ -74,7 +74,7 @@ public sealed class GdalViewshedExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalViewshedJobExecutor.HandledProcessId,
-                ("source", GdalCli.AdmittedRaster("fake-dem")),
+                ("source", GdalCli.RasterBase64("fake-dem")),
                 ("observerX", "100"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);

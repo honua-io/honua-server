@@ -22,7 +22,7 @@ public sealed class GdalRasterMosaicExecutorTests
     private static string Base64(string text) => GdalCli.Base64(text);
 
     private static string RasterSources(params string[] entries)
-        => string.Join(GdalRasterMosaicJobExecutor.SourceSeparator, entries.Select(GdalCli.AdmittedRaster));
+        => string.Join(GdalRasterMosaicJobExecutor.SourceSeparator, entries.Select(GdalCli.RasterBase64));
 
     private static string Sources(params string[] entries)
         => string.Join(GdalRasterMosaicJobExecutor.SourceSeparator, entries.Select(Base64));
