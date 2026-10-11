@@ -494,19 +494,43 @@ public sealed class ImageServerRenderingRuleMappingTests
 
         mapping.Supported.Should().BeTrue();
         mapping.ClipRegion.Should().NotBeNull();
-        mapping.ClipRegion!.Value.Inverted.Should().BeTrue();
+        mapping.ClipRegion!.Value.Inverted.Should().BeFalse();
     }
 
     [UnitTest]
     public void MapRenderingRule_ClipKeepInsideType_ResolvesNonInvertedClip()
     {
         var document = Parse(
-            """{"rasterFunction":"Clip","rasterFunctionArguments":{"ClippingType":0,"Extent":{"xmin":0,"ymin":0,"xmax":5,"ymax":5}}}""");
+            """{"rasterFunction":"Clip","rasterFunctionArguments":{"ClipType":1,"Extent":{"xmin":0,"ymin":0,"xmax":5,"ymax":5}}}""");
 
         var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
 
         mapping.Supported.Should().BeTrue();
         mapping.ClipRegion!.Value.Inverted.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ClipType2_KeepsOutside()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Clip","rasterFunctionArguments":{"ClippingType":2,"Extent":{"xmin":0,"ymin":0,"xmax":5,"ymax":5}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.ClipRegion!.Value.Inverted.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ClipTypeOnlyOutside_KeepsOutside()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Clip","rasterFunctionArguments":{"ClipType":2,"Extent":{"xmin":0,"ymin":0,"xmax":5,"ymax":5}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.ClipRegion!.Value.Inverted.Should().BeTrue();
     }
 
     [UnitTest]
@@ -518,7 +542,19 @@ public sealed class ImageServerRenderingRuleMappingTests
         var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
 
         mapping.Supported.Should().BeFalse();
-        mapping.IsNotImplemented.Should().BeTrue();
+        mapping.IsNotImplemented.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ClipTypeZero_IsInvalid()
+    {
+        var document = Parse(
+            """{"rasterFunction":"Clip","rasterFunctionArguments":{"ClippingType":0,"Extent":{"xmin":0,"ymin":0,"xmax":5,"ymax":5}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeFalse();
     }
 
     [UnitTest]

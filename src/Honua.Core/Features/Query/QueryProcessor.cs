@@ -585,7 +585,10 @@ public sealed class QueryProcessor : IQueryProcessor
             OutputAxisOrder = outputAxisOrder,
             SpatialFilter = query.SpatialFilter,
             TemporalFilter = query.TemporalFilter,
-            Distinct = query.Aggregation?.Distinct ?? false
+            Distinct = query.Aggregation?.Distinct ?? false,
+            SqlFilterSupplementsWhere = query.Extensions != null &&
+                query.Extensions.TryGetValue(FeatureQuery.SqlFilterSupplementsWhereExtensionKey, out var supplementsWhere) &&
+                supplementsWhere is true
         };
 
         if (query.Extensions?.TryGetValue("includeNullGeometry", out var includeNullGeometryValue) == true &&

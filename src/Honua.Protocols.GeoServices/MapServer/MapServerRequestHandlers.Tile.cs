@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -137,7 +138,9 @@ internal static partial class MapServerEndpoints
                 fieldMaskSource,
                 renderResources,
                 cancellationToken).ConfigureAwait(false);
-            var tileCacheKey = BuildMapServerTileCacheKey(
+            var tileCacheKey = await BuildMapServerTileCacheKeyAsync(
+                context.RequestServices.GetService<IChangeTracker>(),
+                cancellationToken,
                 storageOptions,
                 snapshot,
                 serviceId,
@@ -149,7 +152,7 @@ internal static partial class MapServerEndpoints
                 fieldMaskFingerprint,
                 z,
                 y,
-                x);
+                x).ConfigureAwait(false);
 
             if (await GeoServicesCloudTileCache.TryReadAsync(storage, storageOptions, tileCacheKey, cancellationToken, tileCacheKeyIndex).ConfigureAwait(false) is { } cachedTile)
             {
@@ -372,7 +375,9 @@ internal static partial class MapServerEndpoints
         return (GeoServicesCloudTileCache.Hash(string.Join('|', parts)), [.. renderLayers]);
     }
 
-    private static string BuildMapServerTileCacheKey(
+    internal static async Task<string> BuildMapServerTileCacheKeyAsync(
+        IChangeTracker? changeTracker,
+        CancellationToken cancellationToken,
         CloudStorageOptions? storageOptions,
         MetadataV2GraphSnapshot snapshot,
         string serviceId,
@@ -386,6 +391,12 @@ internal static partial class MapServerEndpoints
         int y,
         int x)
     {
+        // Feature edits advance the change-log generation without changing the
+        // metadata etag. Fold that generation into the key so a rendered tile is
+        // not served after an edit. A missing tracker keeps the previous stable key.
+        var generation = changeTracker is null
+            ? 0L
+            : await changeTracker.GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false);
         var renderLayerKey = string.Join(
             ',',
             renderLayers
@@ -403,7 +414,8 @@ internal static partial class MapServerEndpoints
             maxFeatures.ToString(CultureInfo.InvariantCulture),
             renderLayerKey,
             rlsFingerprint,
-            fieldMaskFingerprint));
+            fieldMaskFingerprint,
+            generation.ToString(CultureInfo.InvariantCulture)));
 
         return GeoServicesCloudTileCache.BuildObjectKey(
             storageOptions,

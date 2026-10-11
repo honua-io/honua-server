@@ -198,16 +198,20 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         shared.StatusCode.Should().Be(HttpStatusCode.OK);
         var sharedPayload = await ReadAsync<SharingPayload>(shared);
         sharedPayload.ItemId.Should().Be(itemId);
-        sharedPayload.Sharing!.Org.Should().BeTrue();
-        sharedPayload.Sharing.Groups.Should().Contain(groupId);
+        sharedPayload.NotSharedWith.Should().Contain(groupId);
+        sharedPayload.NotSharedWith.Should().Contain("org");
+        sharedPayload.Sharing!.Org.Should().BeFalse();
+        sharedPayload.Sharing.Everyone.Should().BeFalse();
+        sharedPayload.Sharing.Groups.Should().BeEmpty();
 
         using var unshared = await PostFormAsync(client, $"/sharing/rest/content/items/{itemId}/unshare?token={token}",
             ("groups", groupId),
             ("org", "true"));
         unshared.StatusCode.Should().Be(HttpStatusCode.OK);
         var unsharedPayload = await ReadAsync<SharingPayload>(unshared);
+        unsharedPayload.NotSharedWith.Should().NotBeEmpty();
         unsharedPayload.Sharing!.Org.Should().BeFalse();
-        unsharedPayload.Sharing.Groups.Should().NotContain(groupId);
+        unsharedPayload.Sharing.Groups.Should().BeEmpty();
     }
 
     [IntegrationTest]
@@ -227,21 +231,28 @@ public sealed class SharingCommunityTests : IAsyncLifetime
     [Endpoint("POST /sharing/rest/content/items/{itemId}/share")]
     public async Task ShareItem_ByNonOwnerNonAdmin_Returns403()
     {
-        // alice shares the item first and becomes its sharing owner.
+        // Sharing does not record an overlay owner or change item access.
         var aliceToken = await IssueUserTokenAsync("alice");
         using var aliceClient = CreateUserClient();
         const string itemId = "svc-owned";
         using var firstShare = await PostFormAsync(aliceClient, $"/sharing/rest/content/items/{itemId}/share?token={aliceToken}",
             ("org", "true"));
         firstShare.StatusCode.Should().Be(HttpStatusCode.OK);
+        var firstPayload = await ReadAsync<SharingPayload>(firstShare);
+        firstPayload.NotSharedWith.Should().Contain("org");
+        firstPayload.Sharing!.Org.Should().BeFalse();
 
-        // mallory (a different non-admin user) cannot change the item's sharing.
+        // A second user also cannot apply a share. The response must not claim the
+        // item became public while access is unchanged.
         var malloryToken = await IssueUserTokenAsync("mallory");
         using var malloryClient = CreateUserClient();
         using var response = await PostFormAsync(malloryClient, $"/sharing/rest/content/items/{itemId}/share?token={malloryToken}",
             ("everyone", "true"));
-
-        await response.AssertGeoServicesErrorAsync(403);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadAsync<SharingPayload>(response);
+        payload.NotSharedWith.Should().Contain("everyone");
+        payload.Sharing!.Everyone.Should().BeFalse();
+        payload.Sharing.Org.Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -355,6 +366,9 @@ public sealed class SharingCommunityTests : IAsyncLifetime
     {
         [System.Text.Json.Serialization.JsonPropertyName("itemId")]
         public string ItemId { get; init; } = string.Empty;
+
+        [System.Text.Json.Serialization.JsonPropertyName("notSharedWith")]
+        public IReadOnlyList<string> NotSharedWith { get; init; } = [];
 
         [System.Text.Json.Serialization.JsonPropertyName("sharing")]
         public SharingStatePayload? Sharing { get; init; }

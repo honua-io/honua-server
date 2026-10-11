@@ -101,7 +101,11 @@ internal static partial class MapServerEndpoints
             return await SubmitDurableExportAsync(context, preRead.Values, cancellationToken).ConfigureAwait(false);
         }
 
-        var (plan, error) = await TryBuildExportTilesPlanAsync(context, cancellationToken, preRead).ConfigureAwait(false);
+        var (plan, error) = await TryBuildExportTilesPlanAsync(
+            context,
+            cancellationToken,
+            preRead,
+            rejectExceededTransferLimit: true).ConfigureAwait(false);
         if (error is not null)
         {
             return error;
@@ -303,10 +307,21 @@ internal static partial class MapServerEndpoints
         }
     }
 
+    /// <summary>
+    /// Client-facing rejection for a synchronous export whose tile count exceeds
+    /// <paramref name="maxTiles"/>. The estimate operation reports the same counts
+    /// with <c>exceededTransferLimit</c> instead of failing.
+    /// </summary>
+    internal static string DescribeExportTilesTransferLimit(long requestedTileCount, int maxTiles)
+        => string.Create(
+            CultureInfo.InvariantCulture,
+            $"exportTiles requested {requestedTileCount} tiles, which exceeds the permitted maximum of {maxTiles}. Use estimateExportTilesSize to inspect the full count. The package was not created.");
+
     private static async Task<(ExportTilesPlan? Plan, IResult? Error)> TryBuildExportTilesPlanAsync(
         HttpContext context,
         CancellationToken cancellationToken,
-        (Dictionary<string, StringValues>? Values, string? Error)? preReadValues = null)
+        (Dictionary<string, StringValues>? Values, string? Error)? preReadValues = null,
+        bool rejectExceededTransferLimit = false)
     {
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out var serviceId);
         if (serviceError is not null)
@@ -439,9 +454,17 @@ internal static partial class MapServerEndpoints
             return (null, StandardErrorHelpers.CreateBadRequest(context, "exportTiles selected no tiles."));
         }
 
-        // Bound the build to maxTiles tiles. When the request exceeds the transfer limit the
-        // estimate path still reports exceededTransferLimit; the export path returns only the
-        // first maxTiles tiles (never the unbounded full grid).
+        // Synchronous export must not cut the package to maxTiles and report success.
+        // estimateExportTilesSize keeps the bounded build so it can report the true count.
+        if (rejectExceededTransferLimit && exceededTransferLimit)
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(
+                context,
+                DescribeExportTilesTransferLimit(totalTileCount, maxTiles)));
+        }
+
+        // Bound the build to maxTiles tiles so a whole-world estimate cannot allocate the
+        // full grid. The estimate response still reports TotalTileCount and exceededTransferLimit.
         var buildLimit = (int)Math.Min(totalTileCount, maxTiles);
         var selectedTiles = BuildExportTileCoordinates(bounds, requestedZooms, buildLimit);
         if (selectedTiles.Length == 0)

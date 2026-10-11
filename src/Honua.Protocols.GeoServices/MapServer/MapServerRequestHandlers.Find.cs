@@ -169,16 +169,15 @@ internal static partial class MapServerEndpoints
 
             var searchFieldNames = ParseSearchFields(searchFieldsParam);
 
-            var outputSrid = service.SpatialReference?.ResolveSrid() ?? SpatialReference.WGS84.Wkid;
-            if (!string.IsNullOrWhiteSpace(srValue))
+            if (!TryResolveMapServerRequestSrid(
+                    srValue,
+                    geometryLatestWkid: null,
+                    geometryWkid: null,
+                    service.SpatialReference?.ResolveSrid() ?? SpatialReference.WGS84.Wkid,
+                    out var outputSrid,
+                    out var srError))
             {
-                var parsed = SpatialReferenceHelpers.TryParseSrid(srValue);
-                if (!parsed.HasValue)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context, "Invalid sr parameter.");
-                }
-
-                outputSrid = parsed.Value;
+                return StandardErrorHelpers.CreateBadRequest(context, srError ?? "Invalid sr parameter.");
             }
 
             MapServerLog.FindRequested(logger, serviceId, searchText);

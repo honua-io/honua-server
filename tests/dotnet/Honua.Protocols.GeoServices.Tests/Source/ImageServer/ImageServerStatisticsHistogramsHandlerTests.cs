@@ -9,6 +9,7 @@ using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
@@ -21,9 +22,8 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
 /// <summary>
-/// Tests for <see cref="ImageServerStatisticsHistogramsHandler"/>. Verifies the
-/// internal whole-raster statistics/histogram helper retained behind the public
-/// ImageServer contract until geometry-scoped support is implemented.
+/// Tests for <see cref="ImageServerStatisticsHistogramsHandler"/>. A polygon AOI
+/// is clipped to the polygon; raster selection still uses the bounding envelope.
 /// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerStatisticsHistogramsHandlerTests
@@ -617,6 +617,86 @@ public class ImageServerStatisticsHistogramsHandlerTests
         // ExtractBand changes the band set; computeStatisticsHistograms does not yet honour it, so it
         // returns NotImplemented (501), which GeoServices passes through as body error.code 501 (#2795).
         await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task ComputeAsync_PolygonAoi_ClipsToPolygonRatherThanEnvelope()
+    {
+        byte[]? capturedClip = null;
+        _rasterStore.GetRasterInfoAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns((RasterInfo?)CreateTestRasterInfo());
+        _rasterStore.GetClippedStatisticsAsync(
+                Arg.Any<int>(),
+                Arg.Any<long>(),
+                Arg.Any<byte[]>(),
+                Arg.Any<int?>(),
+                Arg.Any<int[]?>(),
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                capturedClip = call.Arg<byte[]>();
+                return new[]
+                {
+                    new RasterStatistics { Band = 1, MinValue = 0, MaxValue = 1, MeanValue = 0, StandardDeviation = 0, ValidPixelCount = 1 }
+                };
+            });
+        _rasterStore.GetClippedHistogramsAsync(
+                Arg.Any<int>(),
+                Arg.Any<long>(),
+                Arg.Any<byte[]>(),
+                Arg.Any<int?>(),
+                Arg.Any<int[]?>(),
+                Arg.Any<int>(),
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new[]
+            {
+                new RasterHistogram { Band = 1, BinCount = 1, Min = 0, Max = 1, Counts = [1L] }
+            });
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["geometry"] = """{"rings":[[[0,0],[10,0],[0,10],[0,0]]]}""",
+            ["geometryType"] = "esriGeometryPolygon",
+            ["rasterIds"] = "100",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
+
+        result.Should().BeOfType<JsonHttpResult<ComputeStatisticsHistogramsResponse>>();
+        capturedClip.Should().NotBeNull();
+        var envelope = ImageServerMosaicHelpers.CreateEnvelopeGeometry(0, 0, 10, 10);
+        capturedClip.Should().NotBeEquivalentTo(envelope);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task ComputeAsync_MosaicWhere_ReturnsNotImplemented()
+    {
+        _rasterStore.GetRasterInfoAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns((RasterInfo?)CreateTestRasterInfo());
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["rasterIds"] = "100",
+            ["mosaicRule"] = """{"mosaicMethod":"esriMosaicNone","where":"Category = 2","fids":[4]}""",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
+        await _rasterStore.DidNotReceive().GetClippedStatisticsAsync(
+            Arg.Any<int>(),
+            Arg.Any<long>(),
+            Arg.Any<byte[]>(),
+            Arg.Any<int?>(),
+            Arg.Any<int[]?>(),
+            Arg.Any<RasterIdentifyRendering?>(),
+            Arg.Any<CancellationToken>());
     }
 
     private void SetupSuccessfulCompute()
