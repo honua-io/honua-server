@@ -182,10 +182,16 @@ public class FileUploadSecurityTests
     [SecurityTest]
     public async Task ValidateFileContent_ScriptContentInHtml_RejectsFile()
     {
-        var scriptContent = System.Text.Encoding.UTF8.GetBytes("<html><script>alert('xss')</script></html>");
-        var mockFile = CreateMockFormFile("page.html", "text/html", scriptContent);
+        var scriptContent = Encoding.UTF8.GetBytes("<html><script>alert('xss')</script></html>");
 
-        var result = await FileUploadSecurity.ValidateFileAsync(mockFile);
+        // Extension allowlisting rejects .html before content inspection. This test
+        // drives the content scanner, which is what reports script content.
+        var result = await FileUploadSecurity.ValidateFileContentAsync(
+            "page.html",
+            "text/html",
+            scriptContent.Length,
+            () => new MemoryStream(scriptContent, writable: false),
+            maxScanSizeBytes: null);
 
         Assert.False(result.IsValid);
         Assert.Contains("dangerous script content", result.ErrorMessage);
