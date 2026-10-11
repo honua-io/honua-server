@@ -16,18 +16,27 @@ internal sealed class HostValidationMiddleware(
     IHostEnvironment environment,
     ILogger<HostValidationMiddleware> logger)
 {
+    /// <summary>
+    /// Set only on the control-plane event-handler Lambdas (reconcile, backstop, scheduled tick).
+    /// Their one client is the AWS Lambda Web Adapter in the same sandbox, which posts each
+    /// EventBridge invocation to <c>http://127.0.0.1:{port}/events</c>; there is no public ingress.
+    /// </summary>
+    internal const string ControlPlaneLambdaHandlerKey = "HONUA_CONTROL_PLANE_LAMBDA_HANDLER";
+
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
     private readonly ILogger<HostValidationMiddleware> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly bool _enabled = ResolveEnabled(configuration, environment);
     private readonly string[] _allowedHosts = ResolveAllowedHosts(configuration);
     private readonly string? _publicBaseUrlHost = ResolvePublicBaseUrlHost(configuration);
     private readonly bool _allowNullLocalIpForLocalhost = environment.IsEnvironment("Test");
+    private readonly bool _allowLambdaAdapterLoopback = IsControlPlaneEventHandler(configuration);
 
     public async Task InvokeAsync(HttpContext context)
     {
         if (IsHealthProbeRequest(context.Request.Path) ||
             !_enabled ||
-            IsRequestHostAllowed(context, context.Request.Host))
+            IsRequestHostAllowed(context, context.Request.Host) ||
+            (_allowLambdaAdapterLoopback && IsLambdaAdapterLoopbackRequest(context)))
         {
             await _next(context).ConfigureAwait(false);
             return;
@@ -45,6 +54,32 @@ internal sealed class HostValidationMiddleware(
 
     private static bool IsHealthProbeRequest(PathString path)
         => path.StartsWithSegments("/healthz", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsControlPlaneEventHandler(IConfiguration configuration)
+        => !string.IsNullOrWhiteSpace(configuration[ControlPlaneLambdaHandlerKey]);
+
+    /// <summary>
+    /// The web adapter's own request on an event-handler Lambda: a loopback Host header on a
+    /// connection that is loopback at both ends. The configured allowlist names the public hosts,
+    /// which an EventBridge invocation never carries, so without this the adapter is rejected and
+    /// the function does no work. A request that arrived from anywhere else is still validated.
+    /// </summary>
+    private static bool IsLambdaAdapterLoopbackRequest(HttpContext context)
+    {
+        if (!IsLoopbackConnection(context.Connection.RemoteIpAddress) ||
+            !IsLoopbackConnection(context.Connection.LocalIpAddress))
+        {
+            return false;
+        }
+
+        var host = context.Request.Host.Host;
+        if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return IPAddress.TryParse(host.Trim('[', ']'), out var requestedIp) && IPAddress.IsLoopback(requestedIp);
+    }
 
     private bool IsRequestHostAllowed(HttpContext context, HostString requestHost)
     {

@@ -9,15 +9,20 @@ using Amazon.Lambda.Serialization.SystemTextJson;
 namespace Honua.ControlPlane.Lambda;
 
 /// <summary>
-/// Thin AWS Lambda entrypoint for the cloud (event-driven) control-plane reconcile. Two handlers,
+/// Thin AWS Lambda entrypoint for the cloud (event-driven) control-plane reconcile. Three handlers,
 /// selected by the <c>HONUA_CONTROL_PLANE_LAMBDA_HANDLER</c> environment variable so a single image
-/// serves both EventBridge targets:
+/// serves every EventBridge target:
 /// <list type="bullet">
 /// <item><c>batch-event</c>: deserializes an EventBridge "Batch Job State Change" event, extracts
 /// <c>detail.jobId</c>, and drives one execution-job reconcile, then exits.</item>
 /// <item><c>backstop</c>: invoked by EventBridge Scheduler on a coarse timer; runs one backstop
 /// sweep (reconcile stale non-terminal ops) and exits.</item>
+/// <item><c>scheduled-tick</c>: invoked by EventBridge Scheduler with <c>{"kind": "..."}</c>; runs
+/// that periodic tick once and exits.</item>
 /// </list>
+/// An unrecognised selector fails the bootstrap at start-up rather than running the wrong handler.
+/// The API image serves the same selector values in-process at the web adapter's <c>/events</c>
+/// path (<c>ControlPlaneLambdaEventEndpoint</c> in Honua.Server).
 /// Each invocation cold-starts (or warm-reuses), reconciles exactly once via the in-process
 /// Honua.Server host (LWA), and returns — there is no always-on control-plane host.
 /// </summary>
@@ -26,6 +31,8 @@ internal static class Function
     internal const string HandlerEnvVar = "HONUA_CONTROL_PLANE_LAMBDA_HANDLER";
     internal const string BatchEventHandler = "batch-event";
     internal const string BackstopHandler = "backstop";
+    internal const string ScheduledTickHandler = "scheduled-tick";
+    internal const string ReconcileHandlerAlias = "reconcile";
 
     private static readonly HttpClient HttpClient = new()
     {
@@ -35,11 +42,31 @@ internal static class Function
     public static async Task Main()
     {
         var env = ReadEnvironment();
-        var handlerMode = env.GetValueOrDefault(HandlerEnvVar) ?? BatchEventHandler;
+        var configured = env.GetValueOrDefault(HandlerEnvVar);
+        var handlerMode = ResolveHandler(configured)
+            ?? throw new InvalidOperationException(
+                $"{HandlerEnvVar} '{configured}' is not one of {BatchEventHandler}, {ReconcileHandlerAlias}, "
+                + $"{BackstopHandler}, {ScheduledTickHandler}.");
         var forwarder = new ReconcileForwarder(HttpClient, ReconcileForwarderOptions.FromEnvironment(env));
         var serializer = new SourceGeneratorLambdaJsonSerializer<ControlPlaneLambdaJsonContext>();
 
-        if (string.Equals(handlerMode, BackstopHandler, StringComparison.OrdinalIgnoreCase))
+        if (handlerMode == ScheduledTickHandler)
+        {
+            Func<ScheduledTickEvent, ILambdaContext, Task> scheduledTick = async (evt, context) =>
+            {
+                context.Logger.LogInformation($"Control-plane scheduled tick {evt?.Kind}");
+                using var cts = context.CreateDeadlineTokenSource();
+                await RunScheduledTickAsync(forwarder, evt, cts.Token).ConfigureAwait(false);
+            };
+
+            using var tickBootstrap = LambdaBootstrapBuilder
+                .Create(scheduledTick, serializer)
+                .Build();
+            await tickBootstrap.RunAsync().ConfigureAwait(false);
+            return;
+        }
+
+        if (handlerMode == BackstopHandler)
         {
             // The Scheduler tick payload is opaque and ignored; the handler simply sweeps once.
             Func<BackstopTickEvent, ILambdaContext, Task> backstop = async (_, context) =>
@@ -74,6 +101,51 @@ internal static class Function
             .Create(batchEvent, serializer)
             .Build();
         await bootstrap.RunAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Normalises the selector to one of the handler constants: unset means <c>batch-event</c> (the
+    /// image default), <c>reconcile</c> is an alias for it, and anything unrecognised is
+    /// <see langword="null"/>.
+    /// </summary>
+    internal static string? ResolveHandler(string? configured)
+    {
+        var value = configured?.Trim();
+        if (string.IsNullOrEmpty(value)
+            || string.Equals(value, BatchEventHandler, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, ReconcileHandlerAlias, StringComparison.OrdinalIgnoreCase))
+        {
+            return BatchEventHandler;
+        }
+
+        if (string.Equals(value, BackstopHandler, StringComparison.OrdinalIgnoreCase))
+        {
+            return BackstopHandler;
+        }
+
+        return string.Equals(value, ScheduledTickHandler, StringComparison.OrdinalIgnoreCase)
+            ? ScheduledTickHandler
+            : null;
+    }
+
+    /// <summary>
+    /// Forwards one scheduled tick. A payload without a kind is a mis-wired schedule, so it fails the
+    /// invocation (visible in the function's error metric) instead of silently doing nothing.
+    /// </summary>
+    internal static Task RunScheduledTickAsync(
+        ReconcileForwarder forwarder,
+        ScheduledTickEvent? evt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(forwarder);
+        var kind = evt?.Kind?.Trim();
+        if (string.IsNullOrEmpty(kind))
+        {
+            throw new InvalidOperationException(
+                "The scheduled-tick event carried no 'kind'; the schedule input must be {\"kind\": \"<ScheduledTickKind>\"}.");
+        }
+
+        return forwarder.RunScheduledTickAsync(kind, cancellationToken);
     }
 
     private static int GetTimeoutSeconds()
