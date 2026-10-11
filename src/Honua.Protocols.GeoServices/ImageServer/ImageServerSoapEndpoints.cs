@@ -472,11 +472,25 @@ internal static partial class ImageServerSoapEndpoints
         {
             // NoData describes output bands, which can differ from a source's native band count.
             // Prove the stored sentinel for every possible source, including the empty-extent template.
-            var outputBandCount = referenceRaster?.BandCount ?? 0;
-            var rasters = referenceRaster.HasValue && IsStoredNoDataOverride(request, referenceRaster.Value, outputBandCount)
+            if (!ImageServerExportHandler.TryParseBandIds(request.BandIds, out var selectedBands, out var bandError))
+            {
+                return CreateSoapFault(bandError!, StatusCodes.Status400BadRequest, requestContext.SoapNamespace);
+            }
+
+            var serviceBandCount = referenceRaster?.BandCount ?? 0;
+            if (referenceRaster.HasValue && selectedBands is { Length: > 0 } && selectedBands.Any(band => band > serviceBandCount))
+            {
+                return CreateSoapFault(
+                    "bandIds entries must be within the service band range.",
+                    StatusCodes.Status400BadRequest,
+                    requestContext.SoapNamespace);
+            }
+
+            var outputBandCount = selectedBands is { Length: > 0 } ? selectedBands.Length : serviceBandCount;
+            var rasters = referenceRaster.HasValue && IsStoredNoDataOverride(request, referenceRaster.Value, serviceBandCount, outputBandCount)
                 ? await rasterStore.ListRastersAsync(current.LayerId, cancellationToken).ConfigureAwait(false)
                 : Array.Empty<RasterInfo>();
-            if (rasters.Length == 0 || !rasters.All(raster => IsStoredNoDataOverride(request, raster, outputBandCount)))
+            if (rasters.Length == 0 || !rasters.All(raster => IsStoredNoDataOverride(request, raster, serviceBandCount, outputBandCount)))
             {
                 return CreateSoapFault(
                     "SOAP NoData overrides without proven equivalent stored values and masking semantics are not supported by the canonical raster renderer.",
@@ -711,14 +725,14 @@ internal static partial class ImageServerSoapEndpoints
                 StatusCodes.Status501NotImplemented,
                 soapNamespace);
 
-    private static bool IsStoredNoDataOverride(ExportImageRequest request, RasterInfo raster, int outputBandCount)
+    private static bool IsStoredNoDataOverride(ExportImageRequest request, RasterInfo raster, int serviceBandCount, int outputBandCount)
     {
         // Exact equality is intentional: U8 sentinels must be integers in [0, 255].
         // A tolerance would admit a different stored sentinel before conversion to byte.
         if ((!string.Equals(request.NoDataInterpretation, "esriNoDataMatchAny", StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.NoDataInterpretation, "esriNoDataMatchAll", StringComparison.OrdinalIgnoreCase)) ||
             !string.Equals(request.Format, "bsq", StringComparison.OrdinalIgnoreCase) ||
-            raster.BandCount < 1 || raster.BandCount > outputBandCount ||
+            raster.BandCount < 1 || raster.BandCount > serviceBandCount ||
             !raster.HasUniformNoDataValue ||
             !raster.NoDataValue.HasValue ||
             !string.Equals(raster.PixelType, "8BUI", StringComparison.OrdinalIgnoreCase) ||

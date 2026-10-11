@@ -949,7 +949,7 @@ internal sealed class ImageServerExportHandler
     // indices). Honua's raster store uses 1-based band indexing, so each index is
     // shifted by one. The selection is forwarded to the shared export pipeline via
     // RasterQuery.Bands; an empty or whitespace value means "all bands".
-    private static bool TryParseBandIds(string? bandIds, out int[]? bands, out string? error)
+    internal static bool TryParseBandIds(string? bandIds, out int[]? bands, out string? error)
     {
         bands = null;
         error = null;

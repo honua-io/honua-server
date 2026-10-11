@@ -233,6 +233,102 @@ public sealed class ImageServerRawPixelExportTests
     }
 
     [IntegrationTheory]
+    [InlineData("esriNoDataMatchAny", "1", "AA==")]
+    [InlineData("esriNoDataMatchAll", "1", "AA==")]
+    [InlineData("esriNoDataMatchAny", "2,0,1", "AAAA")]
+    [InlineData("esriNoDataMatchAll", "2,0,1", "AAAA")]
+    [InlineData("esriNoDataMatchAny", "0,0,0", "AAAA")]
+    [InlineData("esriNoDataMatchAll", "0,0,0", "AAAA")]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task SoapExportImage_SelectedBandsNoDataVector_PreservesSqlSamplesAndMask(
+        string interpretation, string bandSelection, string noData)
+    {
+        await RunWithFixtureRasterAsync(async fixture =>
+        {
+            await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema!);
+            await using var update = connection.CreateCommand();
+            update.CommandText = "UPDATE honua.raster_data SET raster = ST_SetValue(raster, 2, @x, @y, 7) WHERE layer_id = @layerId";
+            update.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+            update.Parameters.AddWithValue("x", NoDataColumn + 1);
+            update.Parameters.AddWithValue("y", NoDataRow + 1);
+            (await update.ExecuteNonQueryAsync()).Should().Be(1);
+            await using var readback = connection.CreateCommand();
+            readback.CommandText = """
+                SELECT jsonb_agg(jsonb_build_object('samples', ST_DumpValues(raster, band, false),
+                    'valid', ST_DumpValues(raster, band, true)) ORDER BY band)::text
+                FROM honua.raster_data CROSS JOIN generate_series(1, ST_NumBands(raster)) band
+                WHERE layer_id = @layerId
+                """;
+            readback.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+            using var sql = JsonDocument.Parse((string)(await readback.ExecuteScalarAsync())!);
+            var operation = XElement.Parse(BuildSoapExportImage(XMin, YMin, XMax, YMax, Size, Size,
+                "RSP_NearestNeighbor", "esriImageReturnMimeData", interpretation));
+            var description = operation.Elements().Single(element => element.Name.LocalName == "ImageDescription");
+            description.Elements().Single(element => element.Name.LocalName == "NoData").Value = noData;
+            var selectedBands = bandSelection.Split(',')
+                .Select(static band => int.Parse(band, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+            description.Add(new XElement(operation.Name.Namespace + "BandSelection",
+                selectedBands.Select(band => new XElement(operation.Name.Namespace + "Int", band))));
+
+            using var response = await PostSoapAsync(fixture, operation.ToString(SaveOptions.DisableFormatting));
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            var result = XDocument.Parse(body).Descendants().Single(element => element.Name.LocalName == "Result");
+            var block = await ReadSoapImageAsync(fixture, result, "esriImageReturnMimeData");
+            const int pixels = Size * Size;
+            block.Should().HaveCount((pixels * selectedBands.Length) + ((pixels + 7) / 8));
+            for (var row = 0; row < Size; row++)
+            {
+                for (var column = 0; column < Size; column++)
+                {
+                    var pixel = (row * Size) + column;
+                    var validity = new bool[selectedBands.Length];
+                    for (var band = 0; band < selectedBands.Length; band++)
+                    {
+                        var expected = sql.RootElement[selectedBands[band]];
+                        block[(band * pixels) + pixel].Should().Be((byte)expected.GetProperty("samples")[row][column].GetDouble());
+                        validity[band] = expected.GetProperty("valid")[row][column].ValueKind != JsonValueKind.Null;
+                    }
+
+                    var valid = interpretation == "esriNoDataMatchAny" ? validity.All(value => value) : validity.Any(value => value);
+                    var actual = (block[(pixels * selectedBands.Length) + (pixel / 8)] & (0x80 >> (pixel % 8))) != 0;
+                    actual.Should().Be(valid, $"SQL-derived selected-band mask at ({column},{row})");
+                }
+            }
+        });
+    }
+
+    [IntegrationTheory]
+    [InlineData("0", "AAAA", HttpStatusCode.NotImplemented)]
+    [InlineData("2,0,1", "AA==", HttpStatusCode.NotImplemented)]
+    [InlineData("0,0,0", "AA==", HttpStatusCode.NotImplemented)]
+    [InlineData("3", "AA==", HttpStatusCode.BadRequest)]
+    [InlineData("-1", "AA==", HttpStatusCode.BadRequest)]
+    [InlineData("2147483647", "AA==", HttpStatusCode.BadRequest)]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task SoapExportImage_InvalidSelectedBandsNoDataVector_ReturnsFault(
+        string bandSelection, string noData, HttpStatusCode expectedStatus)
+    {
+        await RunWithFixtureRasterAsync(async fixture =>
+        {
+            var operation = XElement.Parse(BuildSoapExportImage(XMin, YMin, XMax, YMax, Size, Size,
+                "RSP_NearestNeighbor", "esriImageReturnMimeData", "esriNoDataMatchAny"));
+            var description = operation.Elements().Single(element => element.Name.LocalName == "ImageDescription");
+            description.Elements().Single(element => element.Name.LocalName == "NoData").Value = noData;
+            description.Add(new XElement(operation.Name.Namespace + "BandSelection",
+                bandSelection.Split(',').Select(band => new XElement(operation.Name.Namespace + "Int", band))));
+            using var response = await PostSoapAsync(fixture, operation.ToString(SaveOptions.DisableFormatting));
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(expectedStatus, body);
+            XDocument.Parse(body).Descendants().Should().Contain(element => element.Name.LocalName == "Fault");
+        });
+    }
+
+    [IntegrationTheory]
     [InlineData("esriNoDataMatchAll", "different-band")]
     [InlineData("esriNoDataMatchAll", "missing-band")]
     [InlineData("esriNoDataMatchAll", "mosaic")]
