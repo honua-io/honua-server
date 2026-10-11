@@ -543,6 +543,20 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 }
             }
 
+            var route = request.Intent?.Route;
+            if (request.Status == StudioPublicationRequestStatus.Accepted &&
+                !string.IsNullOrWhiteSpace(route))
+            {
+                var governing = FindGoverningPublicationRequest(route);
+                if (governing is not null && governing.ItemId != request.ItemId)
+                {
+                    throw new StudioPublicationRouteConflictException(
+                        route,
+                        request.ItemId,
+                        governing.ItemId);
+                }
+            }
+
             _publicationRequests.Add(request.RequestId, request);
             if (request.Status != StudioPublicationRequestStatus.Accepted)
             {
@@ -596,21 +610,25 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         cancellationToken.ThrowIfCancellationRequested();
         lock (_gate)
         {
-            // Mirrors PostgresStudioPackageStore: each item is governed by its newest accepted
-            // request, and the newest governing request bound to the route owns it.
-            var active = _publicationRequests.Values
-                .Where(static request => request.Status == StudioPublicationRequestStatus.Accepted)
-                .GroupBy(static request => request.ItemId)
-                .Select(static requests => requests
-                    .OrderByDescending(static request => request.CreatedAt)
-                    .ThenByDescending(static request => request.RequestId)
-                    .First())
-                .Where(request => string.Equals(request.Intent?.Route, route, StringComparison.Ordinal))
+            return Task.FromResult(FindGoverningPublicationRequest(route));
+        }
+    }
+
+    private StudioPublicationRequest? FindGoverningPublicationRequest(string route)
+    {
+        // Each item is governed by its newest accepted request. A route has one governing
+        // item; CreatePublicationRequestAsync rejects a different item's claim.
+        return _publicationRequests.Values
+            .Where(static request => request.Status == StudioPublicationRequestStatus.Accepted)
+            .GroupBy(static request => request.ItemId)
+            .Select(static requests => requests
                 .OrderByDescending(static request => request.CreatedAt)
                 .ThenByDescending(static request => request.RequestId)
-                .FirstOrDefault();
-            return Task.FromResult(active);
-        }
+                .First())
+            .Where(request => string.Equals(request.Intent?.Route, route, StringComparison.Ordinal))
+            .OrderByDescending(static request => request.CreatedAt)
+            .ThenByDescending(static request => request.RequestId)
+            .FirstOrDefault();
     }
 
     /// <inheritdoc />

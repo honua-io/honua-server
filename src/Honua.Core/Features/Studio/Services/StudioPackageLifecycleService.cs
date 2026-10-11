@@ -513,12 +513,26 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         var status = version.Validation.Status == StudioPackageValidationStatus.Invalid
             ? StudioPublicationRequestStatus.Rejected
             : StudioPublicationRequestStatus.Accepted;
+        var effectiveIntent = intent ?? version.Envelope.PublicationIntent;
+        var effectiveRoute = effectiveIntent?.Route;
+        if (status == StudioPublicationRequestStatus.Accepted &&
+            !string.IsNullOrWhiteSpace(effectiveRoute))
+        {
+            var governing = await _store.GetActivePublicationRequestByRouteAsync(
+                effectiveRoute,
+                cancellationToken).ConfigureAwait(false);
+            if (governing is not null && governing.ItemId != itemId)
+            {
+                throw new StudioPublicationRouteConflictException(effectiveRoute, itemId, governing.ItemId);
+            }
+        }
+
         var request = new StudioPublicationRequest
         {
             RequestId = publicationRequestId,
             ItemId = itemId,
             VersionId = versionId,
-            Intent = intent ?? version.Envelope.PublicationIntent,
+            Intent = effectiveIntent,
             Status = status,
             Validation = version.Validation,
             WarningAcknowledgement = NormalizeOptional(warningAcknowledgement),

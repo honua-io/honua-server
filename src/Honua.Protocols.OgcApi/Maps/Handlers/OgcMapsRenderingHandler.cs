@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -105,7 +106,12 @@ internal sealed class OgcMapsRenderingHandler
 
             if (context is not null)
             {
-                var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+                var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                    context,
+                    resource,
+                    AuthorizationOperation.Query,
+                    service,
+                    cancellationToken).ConfigureAwait(false);
                 if (accessError != null)
                 {
                     return accessError;
@@ -238,10 +244,20 @@ internal sealed class OgcMapsRenderingHandler
                         }
 
                         sawEnabledLayer = true;
-                        var decision = AccessPolicyHelpers.EvaluateResourceAccess(
+                        // A foreign-tenant layer is not part of this dataset. Skipping it
+                        // silently keeps the response from turning into 401/403 merely
+                        // because another tenant published a Maps layer.
+                        if (!TenantScopeHelpers.IsTenantVisible(context, entry.Resource, entry.Service))
+                        {
+                            continue;
+                        }
+
+                        var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
                             context,
                             entry.Resource,
-                            entry.Service);
+                            entry.Service,
+                            AuthorizationOperation.Query,
+                            cancellationToken).ConfigureAwait(false);
 
                         if (decision.IsAllowed)
                         {
@@ -321,7 +337,12 @@ internal sealed class OgcMapsRenderingHandler
 
                     if (context is not null)
                     {
-                        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+                        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                            context,
+                            resource,
+                            AuthorizationOperation.Query,
+                            service,
+                            cancellationToken).ConfigureAwait(false);
                         if (accessError != null)
                         {
                             return accessError;
@@ -486,7 +507,12 @@ internal sealed class OgcMapsRenderingHandler
 
             if (context is not null)
             {
-                var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+                var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                    context,
+                    resource,
+                    AuthorizationOperation.Query,
+                    service,
+                    cancellationToken).ConfigureAwait(false);
                 if (accessError != null)
                 {
                     return accessError;

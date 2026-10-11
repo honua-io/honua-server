@@ -469,6 +469,27 @@ internal sealed class StudioCreatePublicationRequestExecutor(
             };
         }
 
+        // A non-null payload intent replaces the envelope intent entirely. Only a null
+        // payload intent falls back to the version envelope, matching actuation.
+        var effectiveIntent = payload.Intent ?? version.Envelope.PublicationIntent;
+        var effectiveRoute = effectiveIntent?.Route;
+        if (!string.IsNullOrWhiteSpace(effectiveRoute))
+        {
+            var governing = await Lifecycle.GetActivePublicationRequestByRouteAsync(
+                effectiveRoute,
+                cancellationToken).ConfigureAwait(false);
+            if (governing is not null && governing.ItemId != payload.ItemId)
+            {
+                return new OperationValidation
+                {
+                    IsValid = false,
+                    Status = "invalid",
+                    ErrorKind = "conflict",
+                    Messages = [$"Route '{effectiveRoute}' is already claimed by another Studio publication."],
+                };
+            }
+        }
+
         return new OperationValidation
         {
             IsValid = true,

@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security;
@@ -16,6 +18,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using System.Security.Claims;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
@@ -290,6 +294,35 @@ public class OgcMapsTileSetHandlerTests
         statusCodeResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
     }
 
+    [UnitTest]
+    [Operation(Operations.GetTileMetadata)]
+    public async Task GetMapTileSetsAsync_QueryGrant_SucceedsWhenCoarsePolicyDenies()
+    {
+        var restricted = new AccessPolicy { AllowedRoles = ["gis-admin"] };
+        var provider = new TestMetadataV2GraphBuilder()
+            .AddResource("resource-1", "test-layer", MetadataV2ResourceType.FeatureDataset, accessPolicy: restricted)
+            .AddStorageBinding("binding-1", "resource-1", "test", storageLayerId: 1)
+            .AddService("restricted-service", "restricted-service", protocols: [OgcApiMapsProtocol], accessPolicy: restricted)
+            .AddPublication("pub-1", "restricted-service", "resource-1", layerIndex: 1)
+            .BuildProvider();
+        var services = new ServiceCollection()
+            .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
+            .AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()))
+            .AddSingleton<IPermissionResolver>(new AllowQueryResolver())
+            .BuildServiceProvider();
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "analyst")], "Test"))
+        };
+        context.Request.Path = "/ogc/maps/collections/1/map/tiles";
+
+        var result = await CreateHandler(provider).GetMapTileSetsAsync(1, context);
+
+        result.Should().BeOfType<Ok<TileSetsList>>();
+    }
+
     private static OgcMapsTileSetHandler CreateHandler(TestMetadataV2GraphProvider provider)
         => new(provider, NullLogger<OgcMapsTileSetHandler>.Instance);
 
@@ -359,5 +392,32 @@ public class OgcMapsTileSetHandlerTests
         context.Request.Scheme = "http";
         context.Request.Path = "/ogc/maps/collections/1/map/tiles";
         return context;
+    }
+
+    private sealed class AllowQueryResolver : IPermissionResolver
+    {
+        public PermissionDecision Authorize(
+            EffectivePermissions effectivePermissions,
+            string service,
+            string? layer,
+            AuthorizationOperation operation)
+            => PermissionDecision.NoMatch();
+
+        public Task<PermissionDecision> AuthorizeAsync(
+            string userId,
+            IReadOnlyList<string> roles,
+            string service,
+            string? layer,
+            AuthorizationOperation operation,
+            bool isAuthenticated,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(operation == AuthorizationOperation.Query
+                ? PermissionDecision.Allow(new PermissionGrant
+                {
+                    Service = service,
+                    Layer = layer ?? "*",
+                    Operation = "query"
+                })
+                : PermissionDecision.NoMatch());
     }
 }

@@ -98,7 +98,9 @@ public sealed class Wfs20StoredQueryCancellationTests
         var context = new DefaultHttpContext
         {
             RequestServices = services,
-            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "test")], "test"))
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.Name, "test"), new Claim(ClaimTypes.Role, "admin")],
+                "test"))
         };
         context.Request.Path = "/wfs";
         context.Items["LimitsTimeoutToken"] = cancellation.Token;

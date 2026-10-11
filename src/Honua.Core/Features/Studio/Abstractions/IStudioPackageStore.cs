@@ -93,6 +93,10 @@ public interface IStudioPackageStore
     /// The item's current pointer no longer equals <paramref name="expectedCurrentVersionId"/>;
     /// nothing is persisted.
     /// </exception>
+    /// <exception cref="StudioPublicationRouteConflictException">
+    /// An accepted request names a route already governed by a different content item.
+    /// Nothing is persisted.
+    /// </exception>
     Task<StudioPublicationRequest> CreatePublicationRequestAsync(
         StudioPublicationRequest request,
         Guid? expectedCurrentVersionId,
@@ -107,11 +111,12 @@ public interface IStudioPackageStore
 
     /// <summary>
     /// Gets the accepted publication request that currently governs <paramref name="route"/>
-    /// (honua-server#4907). Each item is governed by its newest accepted publication request;
-    /// the newest governing request whose intent route equals <paramref name="route"/> (ordinal)
-    /// owns the route, so republishing an item at another route retires the old one. Returns
-    /// <see langword="null"/> when nothing is published at the route. Callers serve the item's
-    /// published pointer rather than the request's version, so a rollback is honoured.
+    /// (honua-server#4907). Each item is governed by its newest accepted publication request.
+    /// A route has one governing item: creating an accepted request for a route another item
+    /// already governs is rejected. Republishing an item at another route retires the old
+    /// one. Returns <see langword="null"/> when nothing is published at the route. Callers
+    /// serve the item's published pointer rather than the request's version, so a rollback
+    /// is honoured.
     /// </summary>
     Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
         string route,
@@ -161,6 +166,36 @@ public sealed class StudioPublicationPointerConflictException : InvalidOperation
     public Guid? ActualCurrentVersionId { get; }
 
     private static string Describe(Guid? versionId) => versionId?.ToString("D") ?? "(none)";
+}
+
+/// <summary>
+/// Raised when an accepted publication request names a route that another content item
+/// already governs. Derives from <see cref="InvalidOperationException"/> so it flows
+/// through the existing Studio conflict mapping (<c>409 Conflict</c> on the REST surface,
+/// a failed operation handle with <c>errorKind=conflict</c> on the durable operation runtime).
+/// </summary>
+public sealed class StudioPublicationRouteConflictException : InvalidOperationException
+{
+    /// <summary>Initializes the conflict for a route owned by another item.</summary>
+    /// <param name="route">The intent route that is already claimed.</param>
+    /// <param name="itemId">The item that tried to claim <paramref name="route"/>.</param>
+    /// <param name="owningItemId">The item whose governing request already owns the route.</param>
+    public StudioPublicationRouteConflictException(string route, Guid itemId, Guid owningItemId)
+        : base($"Route '{route}' is already claimed by another Studio publication.")
+    {
+        Route = route;
+        ItemId = itemId;
+        OwningItemId = owningItemId;
+    }
+
+    /// <summary>Intent route that is already claimed.</summary>
+    public string Route { get; }
+
+    /// <summary>Content item that tried to claim <see cref="Route"/>.</summary>
+    public Guid ItemId { get; }
+
+    /// <summary>Content item whose governing request already owns <see cref="Route"/>.</summary>
+    public Guid OwningItemId { get; }
 }
 
 /// <summary>
@@ -301,6 +336,9 @@ public interface IStudioPackageLifecycleService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <exception cref="StudioPublicationPointerConflictException">
     /// The item's current pointer moved after the proposal was validated.
+    /// </exception>
+    /// <exception cref="StudioPublicationRouteConflictException">
+    /// The effective route is already governed by a different content item.
     /// </exception>
     Task<StudioPublicationRequest?> CreatePublicationRequestAsync(
         Guid itemId,

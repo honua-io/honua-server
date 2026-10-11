@@ -844,9 +844,10 @@ internal static class Wfs20DispatcherEndpoint
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         try
         {
-            if (!(context.User.Identity?.IsAuthenticated ?? false))
+            var editorError = Wfs20Handler.RequireStoredQueryEditor(context);
+            if (editorError is not null)
             {
-                return Results.Unauthorized();
+                return editorError;
             }
 
             var validationError = ValidateOperationRequestParameters(parameters);
@@ -889,9 +890,10 @@ internal static class Wfs20DispatcherEndpoint
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         try
         {
-            if (!(context.User.Identity?.IsAuthenticated ?? false))
+            var editorError = Wfs20Handler.RequireStoredQueryEditor(context);
+            if (editorError is not null)
             {
-                return Results.Unauthorized();
+                return editorError;
             }
 
             var validationError = ValidateOperationRequestParameters(parameters);

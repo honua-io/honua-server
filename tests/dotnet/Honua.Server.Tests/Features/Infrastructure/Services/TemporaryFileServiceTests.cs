@@ -52,7 +52,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
     }
 
     [UnitTest]
-    public async Task SRV_AUTH_003_PrefixedProviderTemporaryKeyRemainsReadableAfterCacheEviction()
+    public async Task SRV_AUTH_003_ClientChosenProviderTemporaryKeyIsNotReadable()
     {
         var doubledPrefixKey = CloudStoragePath.BuildObjectKey(
             "0123456789abcdef0123456789abcdef",
@@ -97,10 +97,38 @@ public sealed class TemporaryFileServiceTests : IDisposable
             distributedCache,
             redis: CreateRedisLeaseMultiplexer());
 
-        await AssertReadableAfterCacheEvictionAsync(service, distributedCache, doubledPrefixKey, [4, 5, 6], "image/png");
-        await AssertReadableAfterCacheEvictionAsync(service, distributedCache, nestedPrefixKey, [7, 8, 9], "application/pdf");
-        await AssertReadableAfterCacheEvictionAsync(service, distributedCache, ordinaryPrefixKey, [1, 2, 3], "image/jpeg");
-        await AssertReadableAfterCacheEvictionAsync(service, distributedCache, extensionlessKey, [9, 8, 7], "application/octet-stream");
+        await AssertClientChosenKeyIsNotReadableAsync(service, distributedCache, doubledPrefixKey);
+        await AssertClientChosenKeyIsNotReadableAsync(service, distributedCache, nestedPrefixKey);
+        await AssertClientChosenKeyIsNotReadableAsync(service, distributedCache, ordinaryPrefixKey);
+        await AssertClientChosenKeyIsNotReadableAsync(service, distributedCache, extensionlessKey);
+        cloudStorage.MetadataRequests.Should().BeEmpty(
+            "a client-chosen encoding of a well-formed provider key must not be resolved after the cache mapping is gone");
+    }
+
+    [UnitTest]
+    public async Task SRV_AUTH_003_IgnoresPoisonedCachedObjectKey()
+    {
+        var objectKey = "temporary-files/../exports/package.zip";
+        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AzureBlob);
+        cloudStorage.SeedObject(objectKey, [1, 2, 3], "application/zip");
+        var distributedCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var service = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
+                BaseUrl = "/temp"
+            },
+            cloudStorage,
+            distributedCache,
+            redis: CreateRedisLeaseMultiplexer());
+        const string token = "client-chosen-token";
+        await distributedCache.SetStringAsync("honua:temporary-files:cloud:" + token, objectKey);
+
+        var result = await service.GetTemporaryFileAsync(token + ".bin");
+
+        result.Should().BeNull();
+        cloudStorage.MetadataRequests.Should().BeEmpty(
+            "a cached object key with a parent segment must be rejected before storage lookup");
     }
 
     [UnitTheory]
@@ -132,12 +160,10 @@ public sealed class TemporaryFileServiceTests : IDisposable
             "a client-chosen key outside the provider temporary-file shape must be rejected before storage lookup");
     }
 
-    private static async Task AssertReadableAfterCacheEvictionAsync(
+    private static async Task AssertClientChosenKeyIsNotReadableAsync(
         CloudBackedTemporaryFileService service,
         MemoryDistributedCache distributedCache,
-        string objectKey,
-        byte[] expected,
-        string expectedContentType)
+        string objectKey)
     {
         var token = WebEncoders.Base64UrlEncode(System.Text.Encoding.UTF8.GetBytes(objectKey));
         var cacheKey = "honua:temporary-files:cloud:" + token;
@@ -149,9 +175,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
             : token + Path.GetExtension(objectKey);
         var retrieved = await service.GetTemporaryFileAsync(publicFileName);
 
-        var file = Assert.NotNull(retrieved);
-        file.data.Should().Equal(expected);
-        file.contentType.Should().Be(expectedContentType);
+        retrieved.Should().BeNull();
     }
 
     [Fact]

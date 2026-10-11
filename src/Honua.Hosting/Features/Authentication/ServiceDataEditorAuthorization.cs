@@ -225,6 +225,33 @@ internal static class ServiceDataEditorAuthorization
         return AccessDecision.Forbidden("The supplied write key is not scoped to this resource.");
     }
 
+    /// <summary>
+    /// Authorizes a tenant-wide configuration mutation that is not tied to one
+    /// service id. Admins and global data-editor roles are allowed. A
+    /// service-scoped editor role is not, because the mutation is shared by
+    /// every service in the tenant.
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <returns>The access decision.</returns>
+    internal static AccessDecision EvaluateGlobalDataEditor(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (context.User?.Identity?.IsAuthenticated != true)
+        {
+            return AccessDecision.RequiresAuth("Authentication is required.");
+        }
+
+        var options = context.RequestServices.GetService<IOptions<RbacOptions>>()?.Value ?? new RbacOptions();
+        if (IsAdmin(context.User, options, context.RequestServices) ||
+            HasGlobalDataEditorRole(context.User, options, context.RequestServices))
+        {
+            return AccessDecision.Allowed();
+        }
+
+        return AccessDecision.Forbidden("User does not have the required data editor role.");
+    }
+
     internal static Task<AccessDecision> EvaluateServiceAccessAsync(
         HttpContext context,
         string serviceId,

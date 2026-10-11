@@ -1,9 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Security.Claims;
-using System.Text;
+using System.Security.Cryptography;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Infrastructure.Events;
@@ -48,6 +49,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
     private readonly IDistributedCache? _distributedCache;
     private readonly IConnectionMultiplexer? _redis;
     private readonly SemaphoreSlim _cloudWriteGate = new(1, 1);
+    private readonly ConcurrentDictionary<string, IssuedCloudToken> _issuedCloudTokens = new(StringComparer.Ordinal);
 
     public CloudBackedTemporaryFileService(
         FileSystemTemporaryFileService localFileService,
@@ -484,7 +486,9 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         TimeSpan retention,
         CancellationToken cancellationToken)
     {
-        var publicToken = EncodeCloudObjectKey(cloudObjectKey);
+        // The public id is opaque. It is never a client-decodable object key.
+        var publicToken = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+        RememberIssuedCloudToken(publicToken, cloudObjectKey, retention);
 
         if (_distributedCache != null)
         {
@@ -508,15 +512,53 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
             var cachedObjectKey = await _distributedCache.GetStringAsync(
                 GetCloudTemporaryFileCacheKey(publicToken),
                 cancellationToken).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(cachedObjectKey))
+            if (TryAcceptIssuedObjectKey(cachedObjectKey, out var cached))
             {
-                return cachedObjectKey;
+                return cached;
             }
         }
 
-        return TryDecodeCloudObjectKey(publicToken, out var decodedObjectKey)
-            ? decodedObjectKey
-            : null;
+        if (_issuedCloudTokens.TryGetValue(publicToken, out var issued))
+        {
+            if (issued.ExpiresAt > DateTimeOffset.UtcNow &&
+                TryAcceptIssuedObjectKey(issued.ObjectKey, out var local))
+            {
+                return local;
+            }
+
+            _issuedCloudTokens.TryRemove(publicToken, out _);
+        }
+
+        return null;
+    }
+
+    private void RememberIssuedCloudToken(string publicToken, string cloudObjectKey, TimeSpan retention)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (_issuedCloudTokens.Count > 256)
+        {
+            foreach (var entry in _issuedCloudTokens)
+            {
+                if (entry.Value.ExpiresAt <= now)
+                {
+                    _issuedCloudTokens.TryRemove(entry.Key, out _);
+                }
+            }
+        }
+
+        _issuedCloudTokens[publicToken] = new IssuedCloudToken(cloudObjectKey, now.Add(retention));
+    }
+
+    private static bool TryAcceptIssuedObjectKey(string? objectKey, out string accepted)
+    {
+        if (!string.IsNullOrWhiteSpace(objectKey) && IsProviderGeneratedTemporaryObjectKey(objectKey))
+        {
+            accepted = objectKey;
+            return true;
+        }
+
+        accepted = string.Empty;
+        return false;
     }
 
     private async Task<RedisLeaseCoordinator?> AcquireCloudQuotaLeaseAsync(CancellationToken cancellationToken)
@@ -562,6 +604,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
 
     private Task DeletePublicTokenAsync(string publicToken, CancellationToken cancellationToken)
     {
+        _issuedCloudTokens.TryRemove(publicToken, out _);
         return _distributedCache == null
             ? Task.CompletedTask
             : _distributedCache.RemoveAsync(GetCloudTemporaryFileCacheKey(publicToken), cancellationToken);
@@ -572,35 +615,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         return CloudTemporaryFileKeyPrefix + publicToken;
     }
 
-    private static string EncodeCloudObjectKey(string cloudObjectKey)
-    {
-        return WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(cloudObjectKey));
-    }
-
-    private static bool TryDecodeCloudObjectKey(string publicToken, out string? cloudObjectKey)
-    {
-        try
-        {
-            var decoded = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(publicToken));
-            // The public /temp token is the object key itself once the distributed-cache
-            // mapping is gone. Accept only a key the storage providers generate
-            // (optional KeyPrefix/BlobPrefix, then temporary-files/<32-hex><ext>) so a
-            // client cannot retarget the endpoint at another object in the container.
-            if (!IsProviderGeneratedTemporaryObjectKey(decoded))
-            {
-                cloudObjectKey = null;
-                return false;
-            }
-
-            cloudObjectKey = decoded;
-            return true;
-        }
-        catch (FormatException)
-        {
-            cloudObjectKey = null;
-            return false;
-        }
-    }
+    private readonly record struct IssuedCloudToken(string ObjectKey, DateTimeOffset ExpiresAt);
 
     private static bool IsProviderGeneratedTemporaryObjectKey(string objectKey)
     {
