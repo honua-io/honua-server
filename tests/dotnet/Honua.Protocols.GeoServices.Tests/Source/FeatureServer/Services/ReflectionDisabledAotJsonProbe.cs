@@ -28,6 +28,9 @@ internal static class ReflectionDisabledAotJsonProbe
     public const string Command = "aot-json-5633";
     public const string OperationId = "probe-upload-5633";
 
+    // A static field keeps the reflection canary off CA1861's per-call array allocation.
+    private static readonly string[] GeometryTypeCanary = ["Point"];
+
     public static async Task<int> ExecuteChildAsync(string[] args)
     {
         if (args is not [Command])
@@ -39,7 +42,7 @@ internal static class ReflectionDisabledAotJsonProbe
         Console.WriteLine($"{ReflectionDisabledCloudNativeProbe.ReflectionStatePrefix}{JsonSerializer.IsReflectionEnabledByDefault}");
         try
         {
-            _ = JsonSerializer.Serialize(new[] { "Point" });
+            _ = JsonSerializer.Serialize(GeometryTypeCanary);
             Console.WriteLine($"{ReflectionDisabledCloudNativeProbe.CanaryPrefix}serialized");
             return 1;
         }
@@ -342,7 +345,7 @@ internal static class ReflectionDisabledAotJsonProbe
         throw new InvalidOperationException($"Missing JSON property '{name}' in {element.GetRawText()}");
     }
 
-    private static JsonElement RequireProperty(IReadOnlyDictionary<string, JsonElement> properties, string name)
+    private static JsonElement RequireProperty(Dictionary<string, JsonElement> properties, string name)
     {
         if (!properties.TryGetValue(name, out var value))
         {
