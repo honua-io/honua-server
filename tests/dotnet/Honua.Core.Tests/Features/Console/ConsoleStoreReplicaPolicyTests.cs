@@ -22,7 +22,9 @@ public sealed class ConsoleStoreReplicaPolicyTests
         var act = () => ConsoleStoreReplicaPolicy.EnsureSingleReplicaWhenNotDurable(durable: false, expectedReplicas: 2);
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*process-local*content, share, and open-data*2*");
+            .WithMessage(
+                "Console content, share, and open-data stores are process-local and are not shared across replicas. "
+                + "Configured replica count is 2. Use a durable store or run a single replica.");
     }
 
     [UnitTest]
