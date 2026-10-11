@@ -38,7 +38,7 @@ internal static partial class MapServerEndpoints
     /// </summary>
     internal const int CachedMapSpatialReferenceId = 3857;
 
-    private sealed record MapServerMetadataLayerDescriptor(
+    internal sealed record MapServerMetadataLayerDescriptor(
         int PublicLayerId,
         int StorageLayerId,
         string Name,
@@ -275,7 +275,7 @@ internal static partial class MapServerEndpoints
         return false;
     }
 
-    private static MapServerResponse MapServiceToMapServerResponse(
+    internal static MapServerResponse MapServiceToMapServerResponse(
         MetadataV2Service service,
         IReadOnlyList<MapServerMetadataLayerDescriptor> layers,
         EsriExtent serviceExtent,
@@ -431,7 +431,7 @@ internal static partial class MapServerEndpoints
         };
     }
 
-    private static MapServerLayerResponse MapLayerToMapServerLayerResponse(
+    internal static MapServerLayerResponse MapLayerToMapServerLayerResponse(
         MetadataV2Service service,
         MetadataV2Publication publication,
         MetadataV2Resource resource,
@@ -665,7 +665,7 @@ internal static partial class MapServerEndpoints
         => await ResolveCachedExtentAsync(service, layers.Select(static layer => layer.Resource),
             transformService, cancellationToken).ConfigureAwait(false);
 
-    private static async Task<EsriExtent> ResolveCachedExtentAsync(
+    internal static async Task<EsriExtent> ResolveCachedExtentAsync(
         MetadataV2Service service,
         IEnumerable<MetadataV2Resource> resources,
         ICoordinateTransformService transformService,
@@ -686,14 +686,22 @@ internal static partial class MapServerEndpoints
             },
             transformService,
             cancellationToken).ConfigureAwait(false);
-        if (projected is { } extent)
+        // WebMercatorMaxLatitude projects a few ulps past the closed 3857 square.
+        // A cache client rejects that layer extent and does not open the sublayer
+        // as a dataset (#5556).
+        if (projected is { } extent
+            && double.IsFinite(extent.Xmin)
+            && double.IsFinite(extent.Ymin)
+            && double.IsFinite(extent.Xmax)
+            && double.IsFinite(extent.Ymax))
         {
+            var limit = SpatialConstants.WebMercatorExtent;
             return new EsriExtent
             {
-                Xmin = extent.Xmin,
-                Ymin = extent.Ymin,
-                Xmax = extent.Xmax,
-                Ymax = extent.Ymax,
+                Xmin = Math.Clamp(extent.Xmin, -limit, limit),
+                Ymin = Math.Clamp(extent.Ymin, -limit, limit),
+                Xmax = Math.Clamp(extent.Xmax, -limit, limit),
+                Ymax = Math.Clamp(extent.Ymax, -limit, limit),
                 SpatialReference = spatialReference
             };
         }
