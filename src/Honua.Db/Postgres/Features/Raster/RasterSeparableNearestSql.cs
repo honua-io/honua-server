@@ -17,6 +17,8 @@ internal static class RasterSeparableNearestSql
     /// Larger request sets dump only a bounded native-cell rectangle once per band. Raw values
     /// preserve valid zero even if clipping temporarily supplies a default NoData marker.
     /// An unaligned or over-budget rectangle retains canonical individual cell reads.
+    /// The lateral offset barrier holds each band's raster/array outside the requested-cell
+    /// scan, avoiding repeated materialization of large tuples for individual pixel lookups.
     /// </summary>
     internal static string TrySample(string rasterExpression, string gridExpression, bool preserveCoverageMask = false)
     {
@@ -125,11 +127,16 @@ internal static class RasterSeparableNearestSql
                       AND ST_SameAlignment(v.rast, v.grid)
                       AND ST_Equals(ST_ConvexHull(v.rast), ST_ConvexHull(v.grid))
                 ), sample_values AS MATERIALIZED (
-                    SELECT r.columnx, r.rowy, m.n,
-                           CASE WHEN a.n IS NOT NULL THEN a.vals[r.rowy - a.r0 + 1][r.columnx - a.c0 + 1]
-                                ELSE ST_Value(i.rast, m.n, r.columnx, r.rowy, FALSE) END AS value
-                    FROM sample_requested r CROSS JOIN sample_metadata m CROSS JOIN sample_guard i
+                    SELECT v.columnx, v.rowy, m.n, v.value
+                    FROM sample_metadata m CROSS JOIN sample_guard i
                     LEFT JOIN sample_value_arrays a ON a.n = m.n
+                    CROSS JOIN LATERAL (
+                        SELECT r.columnx, r.rowy,
+                               CASE WHEN a.n IS NOT NULL THEN a.vals[r.rowy - a.r0 + 1][r.columnx - a.c0 + 1]
+                                    ELSE ST_Value(i.rast, m.n, r.columnx, r.rowy, FALSE) END AS value
+                        FROM sample_requested r
+                        OFFSET 0
+                    ) v
                 ), sample_row_arrays AS MATERIALIZED (
                     SELECT m.n, y, array_agg(CASE WHEN v.columnx IS NOT NULL THEN {inside}
                                                ELSE {outside} END ORDER BY x) AS vals
