@@ -234,6 +234,72 @@ public sealed class McpSessionSharedStoreTests
     }
 
     [UnitTest]
+    public async Task PrincipalMismatch_OnAColdReplica_DoesNotSlideTheSharedExpiry()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var store = new FakeSharedSessionStore(time);
+        var a = NewManager(store, time);
+        var b = NewManager(store, time);
+
+        var id = await a.TryCreateSessionAsync("sub:alice", false, "setup", CancellationToken.None);
+        var expiry = store.ExpiresAt(id!);
+        time.Advance(TimeSpan.FromMinutes(5));
+
+        (await b.ValidateAccessAsync(id!, "sub:mallory", CancellationToken.None))
+            .Should().Be(McpSessionValidation.PrincipalMismatch);
+        store.ExpiresAt(id!).Should().Be(expiry, "a cold replica must not slide the TTL before the principal matches");
+        b.ActiveSessionIds.Should().NotContain(id!);
+    }
+
+    [UnitTest]
+    public async Task AdoptingAnotherSession_DoesNotCloseALocallyIdleSharedSession()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var store = new FakeSharedSessionStore(time);
+        var a = NewManager(store, time);
+        var b = NewManager(store, time);
+
+        var alice = await a.TryCreateSessionAsync("sub:alice", false, "setup", CancellationToken.None);
+        var lifetimeOnA = a.GetLifetimeToken(alice!);
+
+        // Step inside the idle window. One jump past the timeout would expire the
+        // shared record before B can refresh it, which is a different failure.
+        time.Advance(TimeSpan.FromMinutes(20));
+        (await b.ValidateAccessAsync(alice!, "sub:alice", CancellationToken.None))
+            .Should().Be(McpSessionValidation.Valid);
+        time.Advance(TimeSpan.FromMinutes(20));
+        (await b.ValidateAccessAsync(alice!, "sub:alice", CancellationToken.None))
+            .Should().Be(McpSessionValidation.Valid, "replica B refreshes the authoritative expiry");
+
+        var carol = await b.TryCreateSessionAsync("sub:carol", false, null, CancellationToken.None);
+        (await a.ValidateAccessAsync(carol!, "sub:carol", CancellationToken.None))
+            .Should().Be(McpSessionValidation.Valid);
+
+        lifetimeOnA.IsCancellationRequested.Should().BeFalse();
+        a.ActiveSessionIds.Should().Contain(alice!);
+        store.Contains(alice!).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task AdoptingAnAnonymousSession_DoesNotEvictAuthenticatedSessions()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var store = new FakeSharedSessionStore(time);
+        var a = new McpSessionManager(maxSessions: 4, maxAnonymousSessions: 2, idleTimeout: IdleTimeout, timeProvider: time, store: store);
+        var b = new McpSessionManager(maxSessions: 2, maxAnonymousSessions: 1, idleTimeout: IdleTimeout, timeProvider: time, store: store);
+
+        var bob = await b.TryCreateSessionAsync("sub:bob", false, null, CancellationToken.None);
+        var carol = await b.TryCreateSessionAsync("sub:carol", false, null, CancellationToken.None);
+        var anon = await a.TryCreateSessionAsync(McpSessionManager.AnonymousPrincipalKey, false, null, CancellationToken.None);
+
+        (await b.ValidateAccessAsync(anon!, McpSessionManager.AnonymousPrincipalKey, CancellationToken.None))
+            .Should().Be(McpSessionValidation.Valid, "the shared anonymous session is live even when this cache cannot hold it");
+        b.ActiveSessionIds.Should().Contain(bob!);
+        b.ActiveSessionIds.Should().Contain(carol!);
+        b.ActiveSessionIds.Should().NotContain(anon!);
+    }
+
+    [UnitTest]
     public async Task PrincipalMismatch_OnASessionGoneElsewhere_IsUnknown_AndDoesNotSlideTheExpiry()
     {
         var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
@@ -382,6 +448,13 @@ public sealed class McpSessionSharedStoreTests
             return Task.FromResult<McpSessionRecord?>(snapshot);
         }
 
+        public Task<McpSessionRecord?> GetAsync(string sessionId, CancellationToken cancellationToken)
+        {
+            ThrowIfFailing();
+            Interlocked.Increment(ref _reads);
+            return Task.FromResult(TryGetLive(sessionId, out var record) ? record : null);
+        }
+
         public Task<bool> TouchAsync(string sessionId, TimeSpan idleTimeout, CancellationToken cancellationToken)
         {
             ThrowIfFailing();
@@ -391,6 +464,10 @@ public sealed class McpSessionSharedStoreTests
             }
 
             _records[sessionId] = (record, time.GetUtcNow() + idleTimeout);
+            // The read path touches only after the principal matches. A delete that
+            // races that touch has already extended the TTL, then publishes, and
+            // Adopt must still refuse the snapshot.
+            OnRead?.Invoke(sessionId);
             return Task.FromResult(true);
         }
 

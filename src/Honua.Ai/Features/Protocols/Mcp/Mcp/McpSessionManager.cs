@@ -429,7 +429,8 @@ internal sealed class McpSessionManager
         McpSessionRecord? record;
         try
         {
-            record = await _store.GetAndTouchAsync(sessionId, _idleTimeout, cancellationToken).ConfigureAwait(false);
+            // Read without sliding. A mismatched principal must not keep the session alive.
+            record = await _store.GetAsync(sessionId, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (IsStoreFailure(ex))
         {
@@ -442,8 +443,37 @@ internal sealed class McpSessionManager
             return McpSessionValidation.Unknown;
         }
 
-        Adopt(record);
-        return ValidateAccess(sessionId, principalKey);
+        if (!string.Equals(record.PrincipalKey, callerKey, StringComparison.Ordinal))
+        {
+            return McpSessionValidation.PrincipalMismatch;
+        }
+
+        bool sharedAlive;
+        try
+        {
+            sharedAlive = await _store.TouchAsync(sessionId, _idleTimeout, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsStoreFailure(ex))
+        {
+            LogStoreFailure(ex, "touch");
+            sharedAlive = true;
+        }
+
+        if (!sharedAlive)
+        {
+            return McpSessionValidation.Unknown;
+        }
+
+        // The shared record is live for this principal even when this replica cannot
+        // cache it without displacing a protected session. A removal published
+        // after the snapshot was copied is not live: Adopt refuses it, and this
+        // request must not succeed from that snapshot.
+        if (!Adopt(record) && IsRememberedRemoval(record.SessionId))
+        {
+            return McpSessionValidation.Unknown;
+        }
+
+        return McpSessionValidation.Valid;
     }
 
     /// <summary>
@@ -477,27 +507,55 @@ internal sealed class McpSessionManager
     }
 
     /// <summary>
-    /// Caches a session record read from the shared store. Capacity pressure here
-    /// evicts least-recently-used entries from this instance's cache only; the
-    /// store keeps them, so they are read through again on their next request.
+    /// Caches a session record read from the shared store. Returns <c>false</c> when
+    /// the record was removed, or when admitting it would exceed the anonymous pool
+    /// or the session cap without a victim this admission is allowed to displace.
+    /// Capacity pressure evicts least-recently-used entries from this instance's
+    /// cache only; the store keeps them. The local idle clock is not consulted:
+    /// another replica may be refreshing the authoritative expiry, and closing the
+    /// node-local channel here would drop a session the store still considers live.
+    /// An anonymous record never displaces an authenticated session.
     /// </summary>
-    private void Adopt(McpSessionRecord record)
+    private bool Adopt(McpSessionRecord record)
     {
         var now = _timeProvider.GetUtcNow();
         lock (_capacityGate)
         {
-            if (WasRemoved(record.SessionId, now) || _sessions.ContainsKey(record.SessionId))
+            if (WasRemoved(record.SessionId, now))
             {
-                return;
+                return false;
             }
 
-            SweepExpired(now);
-            EvictLeastRecentlyUsed(_sessions.Count - _maxSessions + 1, anonymousOnly: false);
+            if (_sessions.ContainsKey(record.SessionId))
+            {
+                return true;
+            }
+
+            var anonymous = IsAnonymous(record.PrincipalKey);
+            var excess = _sessions.Count - _maxSessions + 1;
+            if (anonymous)
+            {
+                excess = Math.Max(
+                    excess,
+                    _sessions.Values.Count(static session => session.IsAnonymous) - _maxAnonymousSessions + 1);
+            }
+
+            if (excess > 0)
+            {
+                EvictLeastRecentlyUsed(excess, anonymousOnly: anonymous);
+                if (_sessions.Count >= _maxSessions
+                    || (anonymous && _sessions.Values.Count(static session => session.IsAnonymous) >= _maxAnonymousSessions))
+                {
+                    return false;
+                }
+            }
+
             _sessions[record.SessionId] = new McpSession(
                 record.PrincipalKey,
                 now,
                 record.ElicitationSupported,
                 record.WorkflowView);
+            return true;
         }
     }
 
@@ -653,6 +711,14 @@ internal sealed class McpSessionManager
                     _removedSessions.Remove(id);
                 }
             }
+        }
+    }
+
+    private bool IsRememberedRemoval(string sessionId)
+    {
+        lock (_capacityGate)
+        {
+            return WasRemoved(sessionId, _timeProvider.GetUtcNow());
         }
     }
 
