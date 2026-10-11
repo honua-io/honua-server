@@ -113,36 +113,51 @@ internal sealed class ImageServerRasterMetadataHandler
                 return (StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer."), 0);
             }
 
-            // Bounded: a cold-cache mosaic histogram pass carries the same unbounded-compute
-            // risk as statistics (#2991) — degrade to an empty histogram set rather than
-            // hang past the host's own request/function deadline.
-            var histograms = await ImageServerStatisticsBudget.ResolveCancellableAsync(
-                ct => rasters.Length == 1
-                    ? _rasterStore.GetHistogramsAsync(
-                        layerId, rasters[0].Id, bands: null, DefaultBinCount, cancellationToken: ct)
-                    : _rasterStore.GetMosaicHistogramsAsync(
-                        layerId,
-                        rasters.Select(r => r.Id).ToArray(),
-                        ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null),
-                        bands: null,
-                        DefaultBinCount,
-                        cancellationToken: ct),
-                onBudgetExceeded: () => ImageServerLog.StatisticsComputeBudgetExceeded(
-                    _logger, layerId, ImageServerStatisticsBudget.Timeout.TotalSeconds),
-                cancellationToken);
-
-            histograms = histograms.OrderBy(static histogram => histogram.Band).ToArray();
-            var entries = new BandHistogram[histograms.Length];
-            for (var i = 0; i < histograms.Length; i++)
-            {
-                var h = histograms[i];
-                entries[i] = ImageServerHistogramProjection.Project(h);
-            }
+            var entries = await ReadHistogramsAsync(layerId, rasters,
+                ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null),
+                cancellationToken).ConfigureAwait(false);
 
             ImageServerLog.StatisticsHistogramsComputed(_logger, layerId, entries.Length);
             return (Results.Json(new HistogramsResourceResponse { Histograms = entries },
                 ImageServerJsonContext.Default.HistogramsResourceResponse), entries.Length);
         });
+
+    // The caller has already authorized and resolved the publication. SOAP passes
+    // that exact publication's mosaic policy instead of re-resolving a storage ID.
+    internal async Task<BandHistogram[]> ReadHistogramsAsync(
+        int layerId,
+        IReadOnlyList<RasterInfo> rasters,
+        RasterMergeStrategy mergeStrategy,
+        CancellationToken cancellationToken)
+    {
+        // Bounded: a cold-cache mosaic histogram pass carries the same unbounded-compute
+        // risk as statistics (#2991) — degrade to an empty histogram set rather than
+        // hang past the host's own request/function deadline.
+        var histograms = await ImageServerStatisticsBudget.ResolveCancellableAsync(
+            ct => rasters.Count == 1
+                ? _rasterStore.GetHistogramsAsync(
+                layerId, rasters[0].Id, bands: null, DefaultBinCount, cancellationToken: ct)
+                : _rasterStore.GetMosaicHistogramsAsync(
+                layerId,
+                rasters.Select(r => r.Id).ToArray(),
+                mergeStrategy,
+                bands: null,
+                DefaultBinCount,
+                cancellationToken: ct),
+            onBudgetExceeded: () => ImageServerLog.StatisticsComputeBudgetExceeded(
+                _logger, layerId, ImageServerStatisticsBudget.Timeout.TotalSeconds),
+            cancellationToken);
+
+        histograms = histograms.OrderBy(static histogram => histogram.Band).ToArray();
+        var entries = new BandHistogram[histograms.Length];
+        for (var i = 0; i < histograms.Length; i++)
+        {
+            var h = histograms[i];
+            entries[i] = ImageServerHistogramProjection.Project(h);
+        }
+
+        return entries;
+    }
 
     /// <summary>
     /// Returns the raster functions the service can apply, in the Esri
