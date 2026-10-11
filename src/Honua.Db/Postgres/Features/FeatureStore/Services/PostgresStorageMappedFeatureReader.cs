@@ -552,7 +552,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var storageSrid = _storageSrid;
         if (query.OutputSrid.HasValue && query.OutputSrid.Value != storageSrid)
         {
-            geometryExpression = DatumTransformSql.BuildTransformExpression(geometryExpression, query.OutputSrid.Value, query.OutputDatumTransformation);
+            geometryExpression = DatumTransformSql.BuildTransformExpression(
+                geometryExpression, query.OutputSrid.Value, query.OutputDatumTransformation, storageSrid);
         }
 
         return geometryExpression;
@@ -1218,7 +1219,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var targetSrid = _storageSrid;
         return sourceSrid == targetSrid
             ? geometryExpression
-            : DatumTransformSql.BuildTransformExpression(geometryExpression, targetSrid, selection);
+            : DatumTransformSql.BuildTransformExpression(geometryExpression, targetSrid, selection, sourceSrid);
     }
 
     private string BuildDistancePredicate(

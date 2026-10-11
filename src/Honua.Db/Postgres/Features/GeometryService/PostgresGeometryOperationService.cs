@@ -143,7 +143,8 @@ internal sealed class PostgresGeometryOperationService(
         var transformExpression = DatumTransformSql.BuildTransformExpression(
             "ST_SetSRID($1::geometry, $2)",
             toSrid,
-            selection);
+            selection,
+            fromSrid);
         cmd.CommandText = $"SELECT ST_AsBinary({transformExpression})";
 
         cmd.Parameters.Add(new NpgsqlParameter { Value = wkb });
