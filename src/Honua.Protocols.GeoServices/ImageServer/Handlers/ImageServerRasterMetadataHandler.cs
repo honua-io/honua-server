@@ -128,7 +128,8 @@ internal sealed class ImageServerRasterMetadataHandler
         int layerId,
         IReadOnlyList<RasterInfo> rasters,
         RasterMergeStrategy mergeStrategy,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int[]? bands = null)
     {
         // Bounded: a cold-cache mosaic histogram pass carries the same unbounded-compute
         // risk as statistics (#2991) — degrade to an empty histogram set rather than
@@ -136,19 +137,20 @@ internal sealed class ImageServerRasterMetadataHandler
         var histograms = await ImageServerStatisticsBudget.ResolveCancellableAsync(
             ct => rasters.Count == 1
                 ? _rasterStore.GetHistogramsAsync(
-                layerId, rasters[0].Id, bands: null, DefaultBinCount, cancellationToken: ct)
+                layerId, rasters[0].Id, bands, DefaultBinCount, cancellationToken: ct)
                 : _rasterStore.GetMosaicHistogramsAsync(
                 layerId,
                 rasters.Select(r => r.Id).ToArray(),
                 mergeStrategy,
-                bands: null,
+                bands,
                 DefaultBinCount,
                 cancellationToken: ct),
             onBudgetExceeded: () => ImageServerLog.StatisticsComputeBudgetExceeded(
                 _logger, layerId, ImageServerStatisticsBudget.Timeout.TotalSeconds),
             cancellationToken);
 
-        histograms = histograms.OrderBy(static histogram => histogram.Band).ToArray();
+        histograms = histograms.Where(histogram => bands is null || bands.Contains(histogram.Band))
+            .OrderBy(static histogram => histogram.Band).ToArray();
         var entries = new BandHistogram[histograms.Length];
         for (var i = 0; i < histograms.Length; i++)
         {

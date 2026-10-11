@@ -341,6 +341,83 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         info.Elements().Select(item => item.Name.LocalName).Should().NotContain(["RasterStatistics_2", "RasterHistogram_2"]);
     }
 
+    [IntegrationTheory]
+    [InlineData(257)]
+    [InlineData(87000)]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetKeyPropertiesX")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task KeyPropertiesRenderingRule_RejectsExcessiveDuplicatesBeforeStatisticsOrHistogramWork(int count)
+    {
+        var store = _fixture.GetService<IRasterStore>();
+        store.ClearReceivedCalls();
+        var values = string.Concat(Enumerable.Repeat("<Int>0</Int>", count));
+        var response = await PostSoapAsync($"""
+            <GetKeyPropertiesX xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+              <RenderingRule><FunctionName>ExtractBand</FunctionName><Arguments>
+                <PropertySetProperty><Key>BandIds</Key><Value xsi:type="tns:ArrayOfInt">{values}</Value></PropertySetProperty>
+              </Arguments></RenderingRule>
+            </GetKeyPropertiesX>
+            """);
+        response.Status.Should().Be(HttpStatusCode.BadRequest, response.Body);
+        response.Body.Should().Contain("256 output bands");
+        response.Document.Descendants().Select(item => item.Name.LocalName).Should().NotContain("RasterInfo");
+        store.ReceivedCalls().Select(call => call.GetMethodInfo().Name).Should().NotContain([
+            nameof(IRasterStore.GetStatisticsAsync), nameof(IRasterStore.GetMosaicStatisticsAsync),
+            nameof(IRasterStore.GetHistogramsAsync), nameof(IRasterStore.GetMosaicHistogramsAsync)
+        ]);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetKeyPropertiesX")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task KeyPropertiesRenderingRule_NestedSelectionReadsOnlyUniqueRequestedSourceBands()
+    {
+        var store = _fixture.GetService<IRasterStore>();
+        store.ClearReceivedCalls();
+        store.GetMosaicStatisticsAsync(Arg.Any<int>(), Arg.Any<long[]>(), Arg.Any<RasterMergeStrategy>(),
+            Arg.Is<int[]>(bands => bands.SequenceEqual(new[] { 1, 3 })),
+            Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns([
+                new RasterStatistics { Band = 3, MinValue = 31, MaxValue = 39, MeanValue = 35 },
+                new RasterStatistics { Band = 1, MinValue = 11, MaxValue = 19, MeanValue = 15 }
+            ]);
+        store.GetMosaicHistogramsAsync(Arg.Any<int>(), Arg.Any<long[]>(), Arg.Any<RasterMergeStrategy>(),
+            Arg.Is<int[]>(bands => bands.SequenceEqual(new[] { 1, 3 })), Arg.Any<int>(),
+            Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns([
+                new RasterHistogram { Band = 1, BinCount = 1, Min = 10, Max = 19, Counts = [100] },
+                new RasterHistogram { Band = 2, BinCount = 2, Min = 20, Max = 29, Counts = [200] },
+                new RasterHistogram { Band = 3, BinCount = 1, Min = 30, Max = 39, Counts = [300] }
+            ]);
+        var response = await PostSoapAsync($"""
+            <GetKeyPropertiesX xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+              <RenderingRule><FunctionName>Identity</FunctionName><Arguments>
+                <PropertySetProperty><Key>Raster</Key><Value xsi:type="tns:RasterFunction">
+                  <FunctionName>ExtractBand</FunctionName><Arguments>
+                    <PropertySetProperty><Key>BandIds</Key><Value xsi:type="tns:ArrayOfInt"><Int>2</Int><Int>0</Int><Int>2</Int></Value></PropertySetProperty>
+                  </Arguments>
+                </Value></PropertySetProperty>
+              </Arguments></RenderingRule>
+            </GetKeyPropertiesX>
+            """);
+        response.Status.Should().Be(HttpStatusCode.OK, response.Body);
+        var info = MultidimensionalPropertyValue(Element(response.Document, "Result"), "RasterInfo");
+        Child(info, "BandCount").Value.Should().Be("3");
+        Child(info, "RasterStatistics_0").Element("Min")!.Value.Should().Be("31");
+        Child(info, "RasterStatistics_1").Element("Min")!.Value.Should().Be("11");
+        Child(info, "RasterStatistics_2").Element("Min")!.Value.Should().Be("31");
+        Child(info, "RasterHistogram_0").Element("Counts")!.Element("Double")!.Value.Should().Be("300");
+        Child(info, "RasterHistogram_1").Element("Counts")!.Element("Double")!.Value.Should().Be("100");
+        Child(info, "RasterHistogram_2").Element("Counts")!.Element("Double")!.Value.Should().Be("300");
+        await store.Received(1).GetMosaicStatisticsAsync(Arg.Any<int>(), Arg.Any<long[]>(), Arg.Any<RasterMergeStrategy>(),
+            Arg.Is<int[]>(bands => bands.SequenceEqual(new[] { 1, 3 })), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
+        await store.Received(1).GetMosaicHistogramsAsync(Arg.Any<int>(), Arg.Any<long[]>(), Arg.Any<RasterMergeStrategy>(),
+            Arg.Is<int[]>(bands => bands.SequenceEqual(new[] { 1, 3 })), Arg.Any<int>(),
+            Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
+    }
+
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [InterfaceOperation(TestProtocols.ImageServer, "GetKeyPropertiesX")]
