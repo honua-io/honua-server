@@ -281,6 +281,19 @@ internal sealed partial class Wfs20Handler
     }
 
 
+    private async Task<bool> RequiresAuthenticationForWithheldTypesAsync(
+        HttpContext context,
+        string[] unknownTypes,
+        CancellationToken cancellationToken)
+    {
+        var allPublishedTypes = await GetPublishedFeatureTypesAsync(
+            context,
+            cancellationToken,
+            enforceAccess: false).ConfigureAwait(false);
+        return unknownTypes.Any(name => GetUnknownRequestedFeatureTypes(allPublishedTypes, [name]).Length == 0)
+            && context.User.Identity?.IsAuthenticated != true;
+    }
+
     private static bool MatchesRequestedType(WfsFeatureTypeDescriptor featureType, string requestedType)
     {
         var normalizedRequested = FilterExpressionHelpers.NormalizeIdentifier(requestedType);
