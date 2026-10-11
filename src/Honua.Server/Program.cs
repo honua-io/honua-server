@@ -1245,6 +1245,11 @@ if (activeDbConnectionTracker != null)
 // client actually sent. See UseHonuaHeadRequestGetSemantics below for the handler side (#3389).
 app.UseHonuaHeadRequestMethod();
 
+// Control-plane event-handler Lambdas (reconcile, backstop, scheduled tick) close their pooled
+// database connections at the end of every invocation, because a frozen Lambda instance never
+// prunes its pool. Off for the API host. Ahead of host validation so rejected requests release too.
+app.UseControlPlaneLambdaConnectionRelease(builder.Configuration);
+
 // Stamp Honua-Instance on every response, including ones short-circuited below (host
 // validation, HTTPS redirection, auth), so callers can tell which replica answered.
 app.UseServerInstanceHeader();
