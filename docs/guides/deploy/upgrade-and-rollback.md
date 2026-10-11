@@ -289,6 +289,25 @@ kubectl rollout status deployment/honua-server --namespace honua --timeout=600s
 
 For deploy-API-managed rollouts, `POST .../operations/{operationId}/rollback` drives the platform backend (re-point alias, shift ALB weights back, reverse slot swap). Single-instance Docker: restart the previous image tag.
 
+### Rollback completion proof
+
+Moving traffic back is not enough for a rollback to report `RolledBack`. The operation stays `RollbackRequested` (`reason=rollback.awaiting_data_plane` in its current phase) until three things hold on the restored target:
+
+- the serving revision is the operation's prior revision;
+- at least one restored endpoint is healthy;
+- a functional query against the restored target returns the expected answer.
+
+The functional query is not inferred. Configure it on the deploy operation's parameters, or the rollback cannot be proven:
+
+| Parameter | Used by | Purpose |
+|---|---|---|
+| `rollback.functional_query.path` | Self-hosted rolling (`honua-yarp-rolling`) | Path probed on the restored replica's host port, for example `/golden`. Without it, the backend checks the body of its health probe. |
+| `rollback.functional_query.expected_contains` or `rollback.functional_query.expected_sha256` | Self-hosted rolling | Required: text the correct answer contains, such as a marker only the prior revision returns, or the exact SHA-256 of the body. |
+| `rollback.functional_query.forbidden_contains` | Self-hosted rolling | Optional: text the answer must not contain. On its own it does not configure the query. |
+| `telemetry.golden_query.url` with `telemetry.golden_query.expected_contains` or `expected_sha256` (and optionally `forbidden_contains`) | Cloud backends; also the candidate correctness gate | Public HTTPS query and expectations. When set, these expectations take precedence over the `rollback.functional_query.*` ones and must also hold for the restored prior revision. |
+
+An expectation the correct answer cannot meet, such as the same text as both expected and forbidden, makes every rollback fail. The rollback window is `deployment.rollback.observation_timeout_seconds` (default 300, at most 1800). If proof does not arrive in time, the operation does not report a restore. It becomes `Failed` with `rollback.functional_query_failed` when the functional query got a wrong answer, an error envelope or no answer from the restored target. It becomes `ManualInterventionRequired` with `rollback.functional_query_unproven` when no functional query was configured or attempted, or with `rollback.readiness_unproven` when no restored endpoint was healthy. A serving revision that is not the prior one is `ManualInterventionRequired` with `rollback.identity_mismatch` at once.
+
 Restore the database only when a destructive migration already ran or data was corrupted: roll the app back first to stop writes, restore the last known-good snapshot, validate schema/version alignment, then readmit traffic — see [Back up and restore](backup-and-restore.md).
 
 ## Verify
@@ -302,7 +321,8 @@ Expected: `Ready`, then a preflight payload with `readyForCoordinatedDeploy: tru
 - **New pods never ready after upgrade** — check logs for migration failure; roll back the image (migrations that already applied are additive by policy, so the old version still runs).
 - **Preflight reports pending migrations you didn't expect** — the image tag is newer than intended, or a prior out-of-band migration run was skipped; reconcile via `GET /api/v1/admin/observability/migrations` before proceeding.
 - **Deploy operation stuck in `Reconciling`** — the platform hasn't converged (ECS draining, Argo mid-ramp) or telemetry hasn't accumulated minimum samples; check `GET .../operations/{operationId}` for the specific pending gate. If the promotion gate can never clear (a `telemetry`-gated target whose metrics connection is unreachable, or a `manual`-gated rollout), force the cutover with `POST .../operations/{operationId}/promote`. On-prem rolling targets promote on the health gate by default and need no telemetry backend — see [Promotion requirements](#promotion-requirements).
-- **Rollback returns `ManualInterventionRequired`** — the backend never captured the previous revision; re-point the alias/weights/slot manually through the cloud console or CLI.
+- **Rollback returns `ManualInterventionRequired`** — read the reason in the operation's current phase. With no captured previous revision, re-point the alias/weights/slot manually through the cloud console or CLI. With `rollback.functional_query_unproven`, traffic may already be back on the prior revision but nothing proved it answers correctly: verify it yourself, and set the functional query parameters in [Rollback completion proof](#rollback-completion-proof) on later deploys.
+- **Rollback stays `RollbackRequested`** — routing converged but the restored target has not passed the [completion proof](#rollback-completion-proof) yet; it settles when the proof passes or the rollback window ends.
 
 ## Next steps
 
