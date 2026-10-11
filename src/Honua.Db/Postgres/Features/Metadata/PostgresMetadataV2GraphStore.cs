@@ -27,6 +27,12 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
     // The environment hash is the second key so unrelated environments can publish concurrently.
     internal const int MetadataWriteLockNamespace = 144047714;
 
+    // Kept in addition to the current revision, any revision still ahead of current,
+    // and revisions named by an in-flight release package or content publication.
+    // Once a later save passes a staged candidate, that candidate survives only while
+    // it remains inside this window or a package/publication still references it.
+    internal const int MetadataV2RetainedSnapshotCount = 32;
+
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly IMetadataV2GraphCacheInvalidator? _cacheInvalidator;
     private readonly IDatabaseSchemaGuard _schemaGuard;
@@ -295,6 +301,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         await UpsertSnapshotAsync(connection, transaction, graph, json, etag, cancellationToken).ConfigureAwait(false);
         await RefreshSidecarsAsync(connection, transaction, graph, clearStaleEnvironmentRows: isBootstrap, cancellationToken).ConfigureAwait(false);
         await UpsertCurrentAsync(connection, transaction, graph.Revision, etag, cancellationToken).ConfigureAwait(false);
+        await PruneSnapshotsAsync(connection, transaction, graph.Revision, cancellationToken).ConfigureAwait(false);
 
         var snapshot = new MetadataV2GraphSnapshot(graph, etag, DateTimeOffset.UtcNow);
         var commitWasReconciled = false;
@@ -381,6 +388,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
             clearStaleEnvironmentRows: false,
             cancellationToken).ConfigureAwait(false);
         await UpsertCurrentAsync(connection, transaction, revision, target.Etag, cancellationToken).ConfigureAwait(false);
+        await PruneSnapshotsAsync(connection, transaction, revision, cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
         _cachedCurrent = target;
@@ -417,6 +425,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         var etag = ComputeEtag(json);
 
         await UpsertSnapshotAsync(connection, transaction, graph, json, etag, cancellationToken).ConfigureAwait(false);
+        await PruneSnapshotsAsync(connection, transaction, graph.Revision, cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
         return new MetadataV2GraphSnapshot(graph, etag, DateTimeOffset.UtcNow);
@@ -646,105 +655,331 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
             await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        foreach (var resource in graph.Resources)
+        if (graph.Resources.Count > 0)
         {
-            var sql = $"""
-                INSERT INTO {_resourcesIdxTable}
-                    (environment, revision, resource_id, name, namespace, type, primary_storage_binding_id)
-                VALUES
-                    (@environment, @revision, @id, @name, @namespace, @type, @primary)
-                """;
-            await using var cmd = new NpgsqlCommand(sql, connection, transaction);
-            cmd.Parameters.AddWithValue("@environment", _environment);
-            cmd.Parameters.AddWithValue("@revision", graph.Revision);
-            cmd.Parameters.AddWithValue("@id", resource.Metadata.Id);
-            cmd.Parameters.AddWithValue("@name", resource.Metadata.Name);
-            // Namespace column kept in the SQL schema for forward-compat;
-            // MetadataV2ObjectMetadata.Namespace was removed in design slice 65/N.
-            cmd.Parameters.AddWithValue("@namespace", DBNull.Value);
-            cmd.Parameters.AddWithValue("@type", resource.Type.ToString());
-            cmd.Parameters.AddWithValue("@primary", (object?)resource.PrimaryStorageBindingId ?? DBNull.Value);
-            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await InsertResourceSidecarsAsync(connection, transaction, graph, cancellationToken).ConfigureAwait(false);
         }
 
-        foreach (var service in graph.Services)
+        if (graph.Services.Count > 0)
         {
-            var sql = $"""
-                INSERT INTO {_servicesIdxTable}
-                    (environment, revision, service_id, name, service_type, route)
-                VALUES
-                    (@environment, @revision, @id, @name, @type, @route)
-                """;
-            await using var cmd = new NpgsqlCommand(sql, connection, transaction);
-            cmd.Parameters.AddWithValue("@environment", _environment);
-            cmd.Parameters.AddWithValue("@revision", graph.Revision);
-            cmd.Parameters.AddWithValue("@id", service.Metadata.Id);
-            cmd.Parameters.AddWithValue("@name", service.Metadata.Name);
-            cmd.Parameters.AddWithValue("@type", (object?)service.PrimaryProtocol ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@route", (object?)service.Route ?? DBNull.Value);
-            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await InsertServiceSidecarsAsync(connection, transaction, graph, cancellationToken).ConfigureAwait(false);
         }
 
-        foreach (var pub in graph.Publications)
+        if (graph.Publications.Count > 0)
         {
-            var sql = $"""
-                INSERT INTO {_publicationsIdxTable}
-                    (environment, revision, publication_id, service_id, resource_id, storage_binding_id,
-                     publication_type, path, layer_index, service_local_id)
-                VALUES
-                    (@environment, @revision, @id, @service_id, @resource_id, @sb,
-                     @type, @path, @layer_index, @local_id)
-                """;
-            await using var cmd = new NpgsqlCommand(sql, connection, transaction);
-            cmd.Parameters.AddWithValue("@environment", _environment);
-            cmd.Parameters.AddWithValue("@revision", graph.Revision);
-            cmd.Parameters.AddWithValue("@id", pub.Metadata.Id);
-            cmd.Parameters.AddWithValue("@service_id", pub.ServiceId);
-            cmd.Parameters.AddWithValue("@resource_id", pub.ResourceId);
-            cmd.Parameters.AddWithValue("@sb", (object?)pub.StorageBindingId ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@type", pub.PublicationType.ToString());
-            cmd.Parameters.AddWithValue("@path", (object?)pub.Path ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@layer_index", (object?)pub.LayerIndex ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@local_id", (object?)pub.ServiceLocalId ?? DBNull.Value);
-            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await InsertPublicationSidecarsAsync(connection, transaction, graph, cancellationToken).ConfigureAwait(false);
         }
 
-        foreach (var binding in graph.StorageBindings)
+        if (graph.StorageBindings.Count > 0)
         {
-            var sql = $"""
-                INSERT INTO {_storageBindingsIdxTable}
-                    (environment, revision, storage_binding_id, resource_id, connection_id, storage_type, locator)
-                VALUES
-                    (@environment, @revision, @id, @resource_id, @connection_id, @type, @locator)
-                """;
-            await using var cmd = new NpgsqlCommand(sql, connection, transaction);
-            cmd.Parameters.AddWithValue("@environment", _environment);
-            cmd.Parameters.AddWithValue("@revision", graph.Revision);
-            cmd.Parameters.AddWithValue("@id", binding.Metadata.Id);
-            cmd.Parameters.AddWithValue("@resource_id", binding.ResourceId);
-            cmd.Parameters.AddWithValue("@connection_id", (object?)binding.ConnectionId ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@type", binding.StorageType.ToString());
-            cmd.Parameters.AddWithValue("@locator", binding.Locator);
-            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await InsertStorageBindingSidecarsAsync(connection, transaction, graph, cancellationToken).ConfigureAwait(false);
         }
 
-        foreach (var conn in graph.Connections)
+        if (graph.Connections.Count > 0)
         {
-            var sql = $"""
-                INSERT INTO {_connectionsIdxTable}
-                    (environment, revision, connection_id, name, type, provider)
-                VALUES
-                    (@environment, @revision, @id, @name, @type, @provider)
-                """;
-            await using var cmd = new NpgsqlCommand(sql, connection, transaction);
-            cmd.Parameters.AddWithValue("@environment", _environment);
-            cmd.Parameters.AddWithValue("@revision", graph.Revision);
-            cmd.Parameters.AddWithValue("@id", conn.Metadata.Id);
-            cmd.Parameters.AddWithValue("@name", conn.Metadata.Name);
-            cmd.Parameters.AddWithValue("@type", conn.Type.ToString());
-            cmd.Parameters.AddWithValue("@provider", (object?)conn.Provider ?? DBNull.Value);
-            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await InsertConnectionSidecarsAsync(connection, transaction, graph, cancellationToken).ConfigureAwait(false);
         }
+
+        // Lookup rows are for the active revision. Older revisions stay readable from their documents.
+        await DeleteSupersededSidecarsAsync(connection, transaction, graph.Revision, cancellationToken).ConfigureAwait(false);
+    }
+
+    private Task InsertResourceSidecarsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        MetadataV2Graph graph,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            INSERT INTO {_resourcesIdxTable}
+                (environment, revision, resource_id, name, namespace, type, primary_storage_binding_id)
+            SELECT @environment, @revision, resource_id, name, namespace, type, primary_storage_binding_id
+            FROM unnest(
+                @resource_ids::text[],
+                @names::text[],
+                @namespaces::text[],
+                @types::text[],
+                @primary_storage_binding_ids::text[])
+                AS sidecar(resource_id, name, namespace, type, primary_storage_binding_id)
+            """;
+        // Namespace stays null: MetadataV2ObjectMetadata.Namespace was removed in design slice 65/N.
+        return InsertSidecarRowsAsync(
+            connection,
+            transaction,
+            sql,
+            graph.Revision,
+            command =>
+            {
+                AddTextArray(command, "@resource_ids", SelectArray(graph.Resources, resource => resource.Metadata.Id));
+                AddTextArray(command, "@names", SelectArray(graph.Resources, resource => resource.Metadata.Name));
+                AddTextArray(command, "@namespaces", new string?[graph.Resources.Count]);
+                AddTextArray(command, "@types", SelectArray(graph.Resources, resource => resource.Type.ToString()));
+                AddTextArray(command, "@primary_storage_binding_ids", SelectArray(graph.Resources, resource => resource.PrimaryStorageBindingId));
+            },
+            cancellationToken);
+    }
+
+    private Task InsertServiceSidecarsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        MetadataV2Graph graph,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            INSERT INTO {_servicesIdxTable}
+                (environment, revision, service_id, name, service_type, route)
+            SELECT @environment, @revision, service_id, name, service_type, route
+            FROM unnest(@service_ids::text[], @names::text[], @service_types::text[], @routes::text[])
+                AS sidecar(service_id, name, service_type, route)
+            """;
+        return InsertSidecarRowsAsync(
+            connection,
+            transaction,
+            sql,
+            graph.Revision,
+            command =>
+            {
+                AddTextArray(command, "@service_ids", SelectArray(graph.Services, service => service.Metadata.Id));
+                AddTextArray(command, "@names", SelectArray(graph.Services, service => service.Metadata.Name));
+                AddTextArray(command, "@service_types", SelectArray(graph.Services, service => service.PrimaryProtocol));
+                AddTextArray(command, "@routes", SelectArray(graph.Services, service => service.Route));
+            },
+            cancellationToken);
+    }
+
+    private Task InsertPublicationSidecarsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        MetadataV2Graph graph,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            INSERT INTO {_publicationsIdxTable}
+                (environment, revision, publication_id, service_id, resource_id, storage_binding_id,
+                 publication_type, path, layer_index, service_local_id)
+            SELECT @environment, @revision, publication_id, service_id, resource_id, storage_binding_id,
+                   publication_type, path, layer_index, service_local_id
+            FROM unnest(
+                @publication_ids::text[],
+                @service_ids::text[],
+                @resource_ids::text[],
+                @storage_binding_ids::text[],
+                @publication_types::text[],
+                @paths::text[],
+                @layer_indexes::int[],
+                @service_local_ids::text[])
+                AS sidecar(
+                    publication_id, service_id, resource_id, storage_binding_id,
+                    publication_type, path, layer_index, service_local_id)
+            """;
+        return InsertSidecarRowsAsync(
+            connection,
+            transaction,
+            sql,
+            graph.Revision,
+            command =>
+            {
+                AddTextArray(command, "@publication_ids", SelectArray(graph.Publications, publication => publication.Metadata.Id));
+                AddTextArray(command, "@service_ids", SelectArray(graph.Publications, publication => publication.ServiceId));
+                AddTextArray(command, "@resource_ids", SelectArray(graph.Publications, publication => publication.ResourceId));
+                AddTextArray(command, "@storage_binding_ids", SelectArray(graph.Publications, publication => publication.StorageBindingId));
+                AddTextArray(command, "@publication_types", SelectArray(graph.Publications, publication => publication.PublicationType.ToString()));
+                AddTextArray(command, "@paths", SelectArray(graph.Publications, publication => publication.Path));
+                command.Parameters.Add(new NpgsqlParameter("@layer_indexes", NpgsqlDbType.Array | NpgsqlDbType.Integer)
+                {
+                    Value = SelectArray(graph.Publications, publication => publication.LayerIndex),
+                });
+                AddTextArray(command, "@service_local_ids", SelectArray(graph.Publications, publication => publication.ServiceLocalId));
+            },
+            cancellationToken);
+    }
+
+    private Task InsertStorageBindingSidecarsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        MetadataV2Graph graph,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            INSERT INTO {_storageBindingsIdxTable}
+                (environment, revision, storage_binding_id, resource_id, connection_id, storage_type, locator)
+            SELECT @environment, @revision, storage_binding_id, resource_id, connection_id, storage_type, locator
+            FROM unnest(
+                @storage_binding_ids::text[],
+                @resource_ids::text[],
+                @connection_ids::text[],
+                @storage_types::text[],
+                @locators::text[])
+                AS sidecar(storage_binding_id, resource_id, connection_id, storage_type, locator)
+            """;
+        return InsertSidecarRowsAsync(
+            connection,
+            transaction,
+            sql,
+            graph.Revision,
+            command =>
+            {
+                AddTextArray(command, "@storage_binding_ids", SelectArray(graph.StorageBindings, binding => binding.Metadata.Id));
+                AddTextArray(command, "@resource_ids", SelectArray(graph.StorageBindings, binding => binding.ResourceId));
+                AddTextArray(command, "@connection_ids", SelectArray(graph.StorageBindings, binding => binding.ConnectionId));
+                AddTextArray(command, "@storage_types", SelectArray(graph.StorageBindings, binding => binding.StorageType.ToString()));
+                AddTextArray(command, "@locators", SelectArray(graph.StorageBindings, binding => binding.Locator));
+            },
+            cancellationToken);
+    }
+
+    private Task InsertConnectionSidecarsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        MetadataV2Graph graph,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            INSERT INTO {_connectionsIdxTable}
+                (environment, revision, connection_id, name, type, provider)
+            SELECT @environment, @revision, connection_id, name, type, provider
+            FROM unnest(@connection_ids::text[], @names::text[], @types::text[], @providers::text[])
+                AS sidecar(connection_id, name, type, provider)
+            """;
+        return InsertSidecarRowsAsync(
+            connection,
+            transaction,
+            sql,
+            graph.Revision,
+            command =>
+            {
+                AddTextArray(command, "@connection_ids", SelectArray(graph.Connections, item => item.Metadata.Id));
+                AddTextArray(command, "@names", SelectArray(graph.Connections, item => item.Metadata.Name));
+                AddTextArray(command, "@types", SelectArray(graph.Connections, item => item.Type.ToString()));
+                AddTextArray(command, "@providers", SelectArray(graph.Connections, item => item.Provider));
+            },
+            cancellationToken);
+    }
+
+    private async Task InsertSidecarRowsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string sql,
+        long revision,
+        Action<NpgsqlCommand> bindArrays,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@environment", _environment);
+        command.Parameters.AddWithValue("@revision", revision);
+        bindArrays(command);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void AddTextArray(NpgsqlCommand command, string name, Array values)
+        => command.Parameters.Add(new NpgsqlParameter(name, NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = values });
+
+    private static TResult[] SelectArray<TSource, TResult>(IReadOnlyList<TSource> source, Func<TSource, TResult> selector)
+    {
+        var values = new TResult[source.Count];
+        for (var index = 0; index < source.Count; index++)
+        {
+            values[index] = selector(source[index]);
+        }
+
+        return values;
+    }
+
+    private async Task DeleteSupersededSidecarsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        long revision,
+        CancellationToken cancellationToken)
+    {
+        var statements = new[]
+        {
+            $"DELETE FROM {_resourcesIdxTable} WHERE environment = @environment AND revision <> @revision",
+            $"DELETE FROM {_servicesIdxTable} WHERE environment = @environment AND revision <> @revision",
+            $"DELETE FROM {_publicationsIdxTable} WHERE environment = @environment AND revision <> @revision",
+            $"DELETE FROM {_storageBindingsIdxTable} WHERE environment = @environment AND revision <> @revision",
+            $"DELETE FROM {_connectionsIdxTable} WHERE environment = @environment AND revision <> @revision",
+        };
+        foreach (var statement in statements)
+        {
+            await using var command = new NpgsqlCommand(statement, connection, transaction);
+            command.Parameters.AddWithValue("@environment", _environment);
+            command.Parameters.AddWithValue("@revision", revision);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task PruneSnapshotsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        long keepRevision,
+        CancellationToken cancellationToken)
+    {
+        var current = await ReadCurrentStateAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        var releasePackagesExist = await RelationExistsAsync(
+            connection, transaction, "metadata_v2_release_packages", cancellationToken).ConfigureAwait(false);
+        var contentVersionsExist = await RelationExistsAsync(
+            connection, transaction, "content_publication_versions", cancellationToken).ConfigureAwait(false);
+        var releaseClause = releasePackagesExist
+            ? $"""
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM {Infrastructure.SchemaSearchPath.QualifyTable("metadata_v2_release_packages", _schemaName)} AS package
+                  WHERE package.source_environment = s.environment
+                    AND package.source_revision = s.revision
+                    AND package.status IN ('draft', 'ready', 'staged'))
+              """
+            : string.Empty;
+        var contentClause = contentVersionsExist
+            ? $"""
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM {Infrastructure.SchemaSearchPath.QualifyTable("content_publication_versions", _schemaName)} AS version
+                  WHERE version.source_metadata_revision = s.revision)
+              """
+            : string.Empty;
+        var sql = $"""
+            DELETE FROM {_snapshotsTable} AS s
+            WHERE s.environment = @environment
+              AND s.revision <> @keep_revision
+              AND (@current_revision IS NULL OR s.revision <> @current_revision)
+              AND (@current_revision IS NULL OR s.revision <= @current_revision)
+              AND s.revision NOT IN (
+                  SELECT retained.revision
+                  FROM {_snapshotsTable} AS retained
+                  WHERE retained.environment = @environment
+                  ORDER BY retained.revision DESC
+                  LIMIT @retain)
+              {releaseClause}
+              {contentClause}
+            """;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@environment", _environment);
+        command.Parameters.AddWithValue("@keep_revision", keepRevision);
+        command.Parameters.Add(new NpgsqlParameter("@current_revision", NpgsqlDbType.Bigint)
+        {
+            Value = current is { } state ? state.Revision : DBNull.Value,
+        });
+        command.Parameters.AddWithValue("@retain", MetadataV2RetainedSnapshotCount);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> RelationExistsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = @schema
+                  AND table_name = @table)
+            """;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@schema", _schemaName);
+        command.Parameters.AddWithValue("@table", tableName);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
     }
 
     /// <summary>

@@ -43,7 +43,75 @@ internal sealed partial class LayerPublishingStorageOptionJsonContext : JsonSeri
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {
-    private async Task<MetadataV2GraphMutation> UpsertPublishedLayerMetadataV2Async(
+    internal const int MetadataGraphConflictAttempts = 4;
+
+    private static async Task<T> RetryMetadataGraphConflictAsync<T>(Func<Task<T>> mutation)
+    {
+        var attempt = 1;
+        while (true)
+        {
+            try
+            {
+                return await mutation().ConfigureAwait(false);
+            }
+            catch (MetadataV2GraphConcurrencyException) when (attempt < MetadataGraphConflictAttempts)
+            {
+                // The next attempt reloads the persisted graph and rebuilds the mutation.
+                attempt++;
+            }
+        }
+    }
+
+    private static async Task RetryMetadataGraphConflictAsync(Func<Task> mutation)
+    {
+        var attempt = 1;
+        while (true)
+        {
+            try
+            {
+                await mutation().ConfigureAwait(false);
+                return;
+            }
+            catch (MetadataV2GraphConcurrencyException) when (attempt < MetadataGraphConflictAttempts)
+            {
+                // The next attempt reloads the persisted graph and rebuilds the mutation.
+                attempt++;
+            }
+        }
+    }
+
+    private Task<MetadataV2GraphMutation> UpsertPublishedLayerMetadataV2Async(
+        string serviceName,
+        LayerPublishRequest request,
+        int layerId,
+        PublishedLayerStorage storage,
+        string resourcePrimaryKeyColumn,
+        string? resourceGeometryColumn,
+        string geometryType,
+        int srid,
+        IReadOnlyList<LayerFieldInsert> fields,
+        LayerExtentInsert? extent,
+        IReadOnlyList<string> capabilities,
+        PublicationScope publicationScope,
+        bool requireExistingScopedService,
+        CancellationToken cancellationToken)
+        => RetryMetadataGraphConflictAsync(() => UpsertPublishedLayerMetadataV2CoreAsync(
+            serviceName,
+            request,
+            layerId,
+            storage,
+            resourcePrimaryKeyColumn,
+            resourceGeometryColumn,
+            geometryType,
+            srid,
+            fields,
+            extent,
+            capabilities,
+            publicationScope,
+            requireExistingScopedService,
+            cancellationToken));
+
+    private async Task<MetadataV2GraphMutation> UpsertPublishedLayerMetadataV2CoreAsync(
         string serviceName,
         LayerPublishRequest request,
         int layerId,
@@ -198,7 +266,17 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .ConfigureAwait(false);
     }
 
-    private async Task<MetadataV2GraphMutation> UpsertLinkedLayerMetadataV2Async(
+    private Task<MetadataV2GraphMutation> UpsertLinkedLayerMetadataV2Async(
+        string serviceName,
+        PublishedLayerSummary layer,
+        LayerStorageScope storageScope, CancellationToken cancellationToken)
+        => RetryMetadataGraphConflictAsync(() => UpsertLinkedLayerMetadataV2CoreAsync(
+            serviceName,
+            layer,
+            storageScope,
+            cancellationToken));
+
+    private async Task<MetadataV2GraphMutation> UpsertLinkedLayerMetadataV2CoreAsync(
         string serviceName,
         PublishedLayerSummary layer,
         LayerStorageScope storageScope, CancellationToken cancellationToken)
@@ -228,7 +306,17 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .ConfigureAwait(false);
     }
 
-    private async Task<MetadataV2GraphMutation?> UpdateLayerLifecycleMetadataV2Async(
+    private Task<MetadataV2GraphMutation?> UpdateLayerLifecycleMetadataV2Async(
+        HashSet<int> layerIds,
+        bool enabled,
+        LayerStorageScope storageScope, CancellationToken cancellationToken)
+        => RetryMetadataGraphConflictAsync(() => UpdateLayerLifecycleMetadataV2CoreAsync(
+            layerIds,
+            enabled,
+            storageScope,
+            cancellationToken));
+
+    private async Task<MetadataV2GraphMutation?> UpdateLayerLifecycleMetadataV2CoreAsync(
         HashSet<int> layerIds,
         bool enabled,
         LayerStorageScope storageScope, CancellationToken cancellationToken)
@@ -3019,7 +3107,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
     }
 
-    private async Task SyncRefreshedExtentsIntoV2GraphAsync(
+    private Task SyncRefreshedExtentsIntoV2GraphAsync(
+        Dictionary<int, LayerExtentInsert?> refreshedExtents,
+        LayerStorageScope storageScope, CancellationToken cancellationToken)
+        => RetryMetadataGraphConflictAsync(() => SyncRefreshedExtentsIntoV2GraphCoreAsync(
+            refreshedExtents,
+            storageScope,
+            cancellationToken));
+
+    private async Task SyncRefreshedExtentsIntoV2GraphCoreAsync(
         Dictionary<int, LayerExtentInsert?> refreshedExtents,
         LayerStorageScope storageScope, CancellationToken cancellationToken)
     {
