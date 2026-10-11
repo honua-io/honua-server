@@ -3609,6 +3609,10 @@ sql:
   - |
       CREATE INDEX IF NOT EXISTS ix_network_topology_promotions_dataset_history
           ON honua.network_topology_promotions (dataset_id, promoted_at DESC);
+  # Mirrors migration 128_AddNetworkTopologyPromotionRequestHash (#5828).
+  - |
+      ALTER TABLE honua.network_topology_promotions
+          ADD COLUMN IF NOT EXISTS request_hash TEXT;
   # Tile-cache catalog (#1016 slice 4) + package-import serving columns (#1269).
   # Mirrors migrations 033_CreateTileCacheCatalog + 067_AddTileCachePackageImport so
   # the WMTS exporter sink and the .tpk/.tpkx/.vtpk import + serving binding have their
