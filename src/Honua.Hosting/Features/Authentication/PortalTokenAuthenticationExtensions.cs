@@ -181,6 +181,9 @@ public static class PortalTokenAuthenticationExtensions
         // auth subsystem (ADR-0049). The store/broker/token-service are scoped to
         // the request like the credential verifier; the store is registered as a
         // singleton because it is stateless over the shared distributed/memory cache.
+        services.TryAddSingleton<OidcRuntimeProviderRegistry>();
+        services.TryAddSingleton<IOidcRuntimeProviderSource>(static provider =>
+            provider.GetRequiredService<OidcRuntimeProviderRegistry>());
         services.TryAddSingleton<PortalOAuthStore>();
 
         // First-class OAuth2 client registry + scope catalogue (ADR-0053 Increment 2,

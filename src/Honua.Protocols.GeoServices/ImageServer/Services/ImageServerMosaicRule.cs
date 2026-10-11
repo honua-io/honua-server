@@ -198,11 +198,18 @@ public readonly record struct ImageServerMosaicRule
         var trimmed = mosaicRule.Trim();
         if (!trimmed.StartsWith('{'))
         {
-            // A bare token (e.g. "last"/"mean") only carries a merge-strategy hint.
+            // A bare token (e.g. "first"/"mean") only carries a merge-strategy hint.
+            if (!TryParseOperationToken(trimmed, out var bareStrategy))
+            {
+                error = $"mosaicRule operation '{trimmed}' is not implemented.";
+                isNotImplemented = true;
+                return false;
+            }
+
             rule = new ImageServerMosaicRule
             {
                 Method = MosaicMethod.None,
-                Operation = TryParseOperationToken(trimmed, out var bareStrategy) ? bareStrategy : null
+                Operation = bareStrategy
             };
             return true;
         }
@@ -228,7 +235,17 @@ public readonly record struct ImageServerMosaicRule
                 return true;
             }
 
-            var operation = ResolveOperation(root);
+            if (TryRejectUnimplementedConstraints(root, out error))
+            {
+                isNotImplemented = true;
+                return false;
+            }
+
+            if (!TryResolveOperation(root, out var operation, out error))
+            {
+                isNotImplemented = true;
+                return false;
+            }
             var ascending = ResolveAscending(root);
             var sortField = ReadString(root, "sortField");
             var sortValue = ReadString(root, "sortValue");
@@ -432,21 +449,80 @@ public readonly record struct ImageServerMosaicRule
         return false;
     }
 
-    private static RasterMergeStrategy? ResolveOperation(JsonElement root)
+    private static bool TryRejectUnimplementedConstraints(JsonElement root, out string error)
     {
-        if (TryReadStringInsensitive(root, "mergeStrategy", out var mergeStrategy) &&
-            TryParseOperationToken(mergeStrategy, out var fromMerge))
+        error = string.Empty;
+        if (TryReadStringInsensitive(root, "where", out var where) && !IsTrivialMosaicWhere(where))
         {
-            return fromMerge;
+            error = "mosaicRule where is not implemented.";
+            return true;
         }
 
-        if (TryReadStringInsensitive(root, "operation", out var operation) &&
-            TryParseOperationToken(operation, out var fromOperation))
+        if (HasNonEmptyFids(root))
         {
-            return fromOperation;
+            error = "mosaicRule fids is not implemented.";
+            return true;
         }
 
-        return null;
+        return false;
+    }
+
+    private static bool IsTrivialMosaicWhere(string? where)
+    {
+        if (string.IsNullOrWhiteSpace(where))
+        {
+            return true;
+        }
+
+        var compact = where.Trim().Replace(" ", string.Empty, StringComparison.Ordinal);
+        return compact is "1=1" or "(1=1)";
+    }
+
+    private static bool HasNonEmptyFids(JsonElement root)
+    {
+        foreach (var property in root.EnumerateObject())
+        {
+            if (property.Name.Equals("fids", StringComparison.OrdinalIgnoreCase) &&
+                property.Value.ValueKind == JsonValueKind.Array &&
+                property.Value.GetArrayLength() > 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryResolveOperation(JsonElement root, out RasterMergeStrategy? operation, out string error)
+    {
+        operation = null;
+        error = string.Empty;
+        string? token = null;
+        if (TryReadStringInsensitive(root, "mergeStrategy", out var mergeStrategy))
+        {
+            token = mergeStrategy;
+        }
+        else if (TryReadStringInsensitive(root, "operation", out var operationToken))
+        {
+            token = operationToken;
+        }
+        else if (TryReadStringInsensitive(root, "mosaicOperation", out var mosaicOperation))
+        {
+            token = mosaicOperation;
+        }
+        else
+        {
+            return true;
+        }
+
+        if (!TryParseOperationToken(token, out var strategy))
+        {
+            error = $"mosaicRule operation '{token}' is not implemented.";
+            return false;
+        }
+
+        operation = strategy;
+        return true;
     }
 
     private static bool TryReadLockRasterIds(JsonElement root, out long[]? lockIds)
@@ -513,13 +589,16 @@ public readonly record struct ImageServerMosaicRule
         {
             case "newest":
             case "latest":
-            case "last":
-            case "mt_last":
+            case "first":
+            case "mt_first":
+                // Esri mosaicOperator "First" / MT_FIRST is the first raster in the
+                // mosaic order. The store's Newest aggregate keeps the last sorted
+                // raster, which is the same winner the service advertises as First.
                 strategy = RasterMergeStrategy.Newest;
                 return true;
             case "oldest":
-            case "first":
-            case "mt_first":
+            case "last":
+            case "mt_last":
                 strategy = RasterMergeStrategy.Oldest;
                 return true;
             case "average":

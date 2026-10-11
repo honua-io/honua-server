@@ -29,16 +29,18 @@ public sealed class PostgresWorkflowPackageStoreTests(PostgresFixture fixture)
             await ApplyMigrationAsync(schema);
             var writer = new PostgresWorkflowPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
             var package = await writer.SavePackageAsync(SamplePackage("pkg-restart"));
+            var hash = WorkflowPackageGraphHasher.Compute(package.Graph);
             var version = await writer.CreateVersionAsync(
                 package.PackageId,
-                "hash-1",
-                WorkflowPackageValidationResult.Success("hash-1"),
+                hash,
+                package.Graph,
+                WorkflowPackageValidationResult.Success(hash),
                 "author");
             var publication = await writer.SavePublicationAsync(SamplePublication(package.PackageId, version.Version, "pub-restart"));
 
             var peer = new PostgresWorkflowPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
             (await peer.GetPackageAsync(package.PackageId))!.Name.Should().Be("pkg-restart");
-            (await peer.GetVersionAsync(package.PackageId, version.Version))!.PackageHash.Should().Be("hash-1");
+            (await peer.GetVersionAsync(package.PackageId, version.Version))!.PackageHash.Should().Be(hash);
             (await peer.GetPublicationAsync(publication.PublicationId))!.WorkflowDefinitionId.Should().Be("workflow-package:pkg-restart:v1");
             (await peer.ListPublicationsAsync(package.PackageId)).Should().ContainSingle(item => item.PublicationId == publication.PublicationId);
 
@@ -55,6 +57,84 @@ public sealed class PostgresWorkflowPackageStoreTests(PostgresFixture fixture)
             (await restarted.DeletePublicationAsync(publication.PublicationId))!.PublicationId.Should().Be(publication.PublicationId);
             (await peer.GetPublicationAsync(publication.PublicationId)).Should().BeNull();
             (await restarted.GetVersionAsync(package.PackageId, 1)).Should().NotBeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task CreateVersion_WhenDraftChangedAfterValidation_RejectsTheVersion()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresWorkflowPackageStoreTests) + "Conflict");
+        try
+        {
+            await ApplyMigrationAsync(schema);
+            var writer = new PostgresWorkflowPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var package = await writer.SavePackageAsync(SamplePackage("pkg-conflict"));
+            var validated = package.Graph;
+            var hash = WorkflowPackageGraphHasher.Compute(validated);
+            var drifted = validated with
+            {
+                Nodes =
+                [
+                    validated.Nodes[0] with
+                    {
+                        Parameters = new Dictionary<string, string> { ["wkb"] = "changed" }
+                    }
+                ]
+            };
+            await writer.SavePackageAsync(package with { Graph = drifted });
+
+            var act = async () => await writer.CreateVersionAsync(
+                package.PackageId,
+                hash,
+                validated,
+                WorkflowPackageValidationResult.Success(hash),
+                "author");
+
+            await act.Should().ThrowAsync<WorkflowPackageGraphConflictException>();
+            (await writer.ListVersionsAsync(package.PackageId)).Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task CreateVersion_StoresValidatedGraph_WhenUnhashedScheduleDrifts()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresWorkflowPackageStoreTests) + "Snapshot");
+        try
+        {
+            await ApplyMigrationAsync(schema);
+            var writer = new PostgresWorkflowPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var package = await writer.SavePackageAsync(SamplePackage("pkg-snapshot"));
+            var validated = package.Graph;
+            var hash = WorkflowPackageGraphHasher.Compute(validated);
+            var drifted = validated with
+            {
+                Schedule = new WorkflowSchedule
+                {
+                    CronExpression = "15 1 * * *",
+                    TimeZone = "UTC",
+                    Enabled = false
+                }
+            };
+            await writer.SavePackageAsync(package with { Graph = drifted });
+
+            var version = await writer.CreateVersionAsync(
+                package.PackageId,
+                hash,
+                validated,
+                WorkflowPackageValidationResult.Success(hash),
+                "author");
+
+            version.Graph.Schedule.Should().BeNull();
+            version.Graph.Nodes.Should().ContainSingle(node => node.Parameters["wkb"] == "0101");
+            (await writer.GetPackageAsync(package.PackageId))!.Graph.Schedule!.CronExpression.Should().Be("15 1 * * *");
         }
         finally
         {

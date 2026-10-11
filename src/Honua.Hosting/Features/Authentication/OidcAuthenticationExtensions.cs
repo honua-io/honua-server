@@ -296,7 +296,9 @@ public static partial class OidcAuthenticationExtensions
                 adminRoles,
                 schemes);
 
-            UpdateRolePolicy(authzOptions, AuthenticationExtensions.OpsReadPolicy, adminRoles, schemes);
+            // OpsRead stays an ops:read policy. UpdateRolePolicy would replace
+            // OpsReadRequirement with an admin-role assertion.
+            UpdateOpsReadPolicy(authzOptions, schemes);
             UpdateRolePolicy(authzOptions, AuthenticationExtensions.ConformanceMutatePolicy, adminRoles, schemes);
         });
 
@@ -371,6 +373,27 @@ public static partial class OidcAuthenticationExtensions
             // claims and are treated as full admin by the requirement, so they are
             // unaffected.
             policy.AddRequirements(new AdminPermissionRequirement());
+
+            foreach (var scheme in schemes)
+            {
+                policy.AuthenticationSchemes.Add(scheme);
+            }
+        });
+    }
+
+    private static void UpdateOpsReadPolicy(
+        Microsoft.AspNetCore.Authorization.AuthorizationOptions authzOptions,
+        IReadOnlyCollection<string> schemes)
+    {
+        if (authzOptions.GetPolicy(AuthenticationExtensions.OpsReadPolicy) == null)
+        {
+            return;
+        }
+
+        authzOptions.AddPolicy(AuthenticationExtensions.OpsReadPolicy, policy =>
+        {
+            policy.RequireAuthenticatedUser();
+            policy.AddRequirements(new OpsReadRequirement());
 
             foreach (var scheme in schemes)
             {
@@ -799,8 +822,9 @@ public static partial class OidcAuthenticationExtensions
 
                 OidcAuthenticationLog.TokenReplayRedisDisconnected(logger);
             }
-            catch (RedisException ex)
+            catch (Exception ex) when (ex is RedisException or TimeoutException && ex is not OperationCanceledException)
             {
+                // RedisTimeoutException derives from TimeoutException, not RedisException.
                 OidcAuthenticationLog.TokenReplayRedisAccessFailed(logger, ex);
             }
 

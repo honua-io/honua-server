@@ -309,6 +309,40 @@ internal sealed class GeometryServiceHandler(
         }
     }
 
+    /// <summary>
+    /// Chooses the datum selection GeometryServer project applies. An explicit
+    /// client transformation is kept even when an endpoint is projected; the SQL
+    /// chokepoint composes it with the CRS defining conversions. Implicit catalog
+    /// defaults stay on PROJ's SRID-only transform, except a geographic noop.
+    /// </summary>
+    internal static DatumTransformationSelection? SelectProjectDatumTransformation(
+        string? transformationValue,
+        DatumTransformationSelection? datumSelection,
+        int inputSrid,
+        int outputSrid,
+        int geodeticInputSrid,
+        int geodeticOutputSrid)
+    {
+        if (datumSelection is null)
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(transformationValue))
+        {
+            return datumSelection;
+        }
+
+        if (geodeticInputSrid == inputSrid &&
+            geodeticOutputSrid == outputSrid &&
+            datumSelection.ProjPipeline == "+proj=noop")
+        {
+            return datumSelection;
+        }
+
+        return null;
+    }
+
     public async Task<IResult> HandleProjectAsync(HttpContext context, CancellationToken ct)
     {
         using var scope = HonuaTelemetryScope.StartFeature(
@@ -420,15 +454,17 @@ internal sealed class GeometryServiceHandler(
                 GeometryType = geomType,
                 InSR = inputSrid,
                 OutSR = outputSrid,
-                // Explicit geographic operations execute through ST_TransformPipeline.
-                // With no requested operation, retain PROJ's available SRID-only choice.
-                // Projected endpoints require a composed CRS/operation pipeline.
-                DatumTransformation = transformationInSr == inputSrid &&
-                                      transformationOutSr == outputSrid &&
-                                      (!string.IsNullOrWhiteSpace(transformationValue) ||
-                                       datumSelection is { ProjPipeline: "+proj=noop" })
-                    ? datumSelection
-                    : null
+                // Explicit operations, including projected endpoints, execute through
+                // ST_TransformPipeline. Composition with the defining conversion lives
+                // in DatumTransformSql. With no requested operation, retain PROJ's
+                // SRID-only choice except a geographic noop.
+                DatumTransformation = SelectProjectDatumTransformation(
+                    transformationValue,
+                    datumSelection,
+                    inputSrid,
+                    outputSrid,
+                    transformationInSr,
+                    transformationOutSr)
             };
 
             GeometryServiceLog.RequestParsed(_logger, "project", parameters.GeometryJsonStrings.Length, parameters.GeometryType);

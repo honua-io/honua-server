@@ -149,7 +149,7 @@ internal sealed partial class GdalRasterReclassifyJobExecutor(
             // (best-effort). --hideNoData is never used (it would DISABLE masking).
             var effectiveNoData = explicitNoData
                 ?? await GdalNoData.TryReadSourceNoDataAsync(
-                    runner, inputPath, workspace, opts.ToolTimeout, cancellationToken, sourceInput.ExpectedETag).ConfigureAwait(false);
+                    runner, inputPath, workspace, opts.ToolTimeout, cancellationToken, sourceInput.ExpectedETag, opts).ConfigureAwait(false);
             GdalNoData.AppendNoDataArg(args, effectiveNoData);
 
             args.Add("--overwrite");

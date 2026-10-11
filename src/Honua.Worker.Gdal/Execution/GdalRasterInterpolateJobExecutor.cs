@@ -487,7 +487,9 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
     /// Runs one GDAL/OGR CLI <paramref name="tool"/> invocation with the shared
     /// per-command timeout, logging and error-sanitization the kriging pipeline applies
     /// to every step (two <c>gdal_translate</c> band conversions and one
-    /// <c>gdal_merge.py</c> combine). Returns <see langword="null"/> on success, or the
+    /// <c>gdal_merge.py</c> combine). The two translates read worker-written AAIGrid,
+    /// which is outside the raster input allowlist, so they are not prefixed with
+    /// <c>-if</c>. Returns <see langword="null"/> on success, or the
     /// caller-facing <see cref="JobExecutionResult"/> to return on failure.
     /// </summary>
     private async Task<JobExecutionResult?> RunGdalToolAsync(

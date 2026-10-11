@@ -52,6 +52,7 @@ internal sealed partial class ProcessGdalCommandRunner(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(tool);
         ArgumentNullException.ThrowIfNull(arguments);
+        GdalErrorSanitizer.UseConfiguredEndpoints(s3Options.Value, azureOptions.Value);
 
         var startInfo = new ProcessStartInfo
         {

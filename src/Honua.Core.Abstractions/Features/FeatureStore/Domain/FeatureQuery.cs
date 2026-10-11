@@ -25,6 +25,20 @@ public readonly record struct FeatureQuery
     /// </summary>
     public SqlFragment? SqlFilter { get; init; }
 
+    /// <summary>
+    /// Extension key set on <c>UnifiedQuery.Extensions</c> when <see cref="SqlFilter"/>
+    /// contains predicates that <see cref="Where"/> does not represent (a time filter or
+    /// object ids that were not forwarded on <see cref="ObjectIds"/>).
+    /// </summary>
+    public const string SqlFilterSupplementsWhereExtensionKey = "sqlFilterSupplementsWhere";
+
+    /// <summary>
+    /// True when <see cref="SqlFilter"/> is not just the translation of <see cref="Where"/>.
+    /// Providers that forward <see cref="Where"/> and cannot translate parameterized SQL
+    /// must fail closed instead of dropping the extra predicates.
+    /// </summary>
+    public bool SqlFilterSupplementsWhere { get; init; }
+
     /// <summary>Provider-neutral literal text search, composed with other query filters.</summary>
     public FeatureTextSearch? TextSearch { get; init; }
 

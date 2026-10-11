@@ -21,6 +21,7 @@ internal sealed class InputValidationMiddleware
     private readonly ILogger<InputValidationMiddleware> _logger;
     private readonly InputValidationOptions _options;
     private readonly GeometryLimits _geometryLimits;
+    private readonly long _maxProtocolPayloadLength;
 
     // Common injection patterns to detect and block
     private static readonly Regex _sqlInjectionPattern = new(
@@ -107,6 +108,8 @@ internal sealed class InputValidationMiddleware
         _logger = logger;
         _options = options.Value;
         _geometryLimits = limits.Value.Geometry;
+        var maxPayloadSize = limits.Value.Edits.MaxPayloadSize;
+        _maxProtocolPayloadLength = maxPayloadSize > 0 ? maxPayloadSize : 26_214_400;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -313,8 +316,19 @@ internal sealed class InputValidationMiddleware
                     return InputValidationResult.Invalid(geometryError, isSuspicious: false);
                 }
             }
-            else if (value.Length > _options.MaxParameterLength &&
-                     !IsGeoServicesProtocolPayloadField(request, paramType, name))
+            else if (IsGeoServicesProtocolPayloadField(request, paramType, name))
+            {
+                // Edit and query payloads are bounded by the edit body limit, not the
+                // generic 8192-character text cap. A where clause or object-id list
+                // longer than that cap is a valid GeoServices request.
+                if (value.Length > _maxProtocolPayloadLength)
+                {
+                    return InputValidationResult.Invalid(
+                        $"Parameter '{name}' exceeds maximum length of {_maxProtocolPayloadLength.ToString(CultureInfo.InvariantCulture)}",
+                        isSuspicious: false);
+                }
+            }
+            else if (value.Length > _options.MaxParameterLength)
             {
                 return InputValidationResult.Invalid($"Parameter '{name}' exceeds maximum length of {_options.MaxParameterLength}", isSuspicious: false);
             }
@@ -475,7 +489,16 @@ internal sealed class InputValidationMiddleware
     private static readonly HashSet<string> _geoServicesQueryPayloadFields = new(StringComparer.OrdinalIgnoreCase)
     {
         "objectIds",
-        "outFields"
+        "outFields",
+        "where",
+        "orderByFields",
+        "definitionExpression",
+        "quantizationParameters",
+        "layerDefs",
+        "datumTransformation",
+        "outStatistics",
+        "groupByFieldsForStatistics",
+        "having"
     };
 
     private static bool IsGeoServicesProtocolPayloadField(HttpRequest request, string paramType, string name)
@@ -485,7 +508,7 @@ internal sealed class InputValidationMiddleware
             return true;
         }
 
-        if (!paramType.Equals("form", StringComparison.Ordinal) ||
+        if (paramType is not ("form" or "query") ||
             !_geoServicesQueryPayloadFields.Contains(name))
         {
             return false;

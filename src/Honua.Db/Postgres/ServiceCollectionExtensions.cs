@@ -148,6 +148,10 @@ internal static class ServiceCollectionExtensions
             return PostgresDataSourceFactory.Create(connectionString, schemaHeadersEnabled, connectionLimits, defaultSchema);
         });
 
+        // Lets a per-invocation host (the control-plane event-handler Lambdas) close its pooled
+        // connections before the instance is frozen; long-lived hosts never call it.
+        services.TryAddSingleton<IDatabaseConnectionReleaser, PostgresDatabaseConnectionReleaser>();
+
         // Saved-map collaboration operation cursors and checkpoint cursors share the same
         // restart-durable Postgres implementation (#3067). AddSavedMapOperationLog runs later
         // and retains its in-memory repository only for non-Postgres providers.

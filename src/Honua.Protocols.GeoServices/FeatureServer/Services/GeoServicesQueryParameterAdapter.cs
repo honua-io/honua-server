@@ -40,10 +40,12 @@ internal readonly record struct GeoServicesQueryRequest
 /// </summary>
 internal sealed class GeoServicesQueryParameterAdapter(
     ILogger<GeoServicesQueryParameterAdapter> logger,
-    IOptions<LimitsOptions>? limitsOptions = null) : IQueryParameterAdapter<GeoServicesQueryRequest>
+    IOptions<LimitsOptions>? limitsOptions = null,
+    IGeographicSridClassifier? geographicSridClassifier = null) : IQueryParameterAdapter<GeoServicesQueryRequest>
 {
     private readonly ILogger<GeoServicesQueryParameterAdapter> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
+    private readonly IGeographicSridClassifier? _geographicSridClassifier = geographicSridClassifier;
 
     public string ProtocolName => "GeoServices";
 
@@ -53,7 +55,7 @@ internal sealed class GeoServicesQueryParameterAdapter(
     /// Converts query parameters against a Metadata v2 canonical resource. Spatial-filter and SQL-filter
     /// translation paths are prepared by the caller.
     /// </summary>
-    public Task<QueryAdapterResult> ConvertAsync(
+    public async Task<QueryAdapterResult> ConvertAsync(
         GeoServicesQueryRequest request,
         MetadataV2Resource resource,
         CancellationToken cancellationToken = default)
@@ -65,12 +67,17 @@ internal sealed class GeoServicesQueryParameterAdapter(
             var hasObjectIdRequest = queryParams.ObjectIds is { Length: > 0 };
             var hasObjectIds = request.UseObjectIdsFastPath && hasObjectIdRequest;
             var outFields = ResolveOutFields(queryParams, resource);
+            var linearMetersPerUnit = await ResolveOmittedDistanceUnitAsync(
+                queryParams,
+                request.InputSrid ?? resource.ReadSrid(),
+                cancellationToken).ConfigureAwait(false);
             var spatialFilter = ResolveSpatialFilter(
                 queryParams,
                 request.ParsedGeometry,
                 request.InputSrid,
                 GeoServicesGeometryConverter.ResolveCurveVertexBudget(
-                    limitsOptions?.Value.Geometry.MaxVerticesPerGeometry));
+                    limitsOptions?.Value.Geometry.MaxVerticesPerGeometry),
+                linearMetersPerUnit);
             // When outStatistics is present the response columns are the declared statistic
             // aliases plus the groupByFieldsForStatistics columns, not the layer's source
             // fields, so validating orderByFields against the layer schema here would reject
@@ -118,10 +125,19 @@ internal sealed class GeoServicesQueryParameterAdapter(
                 metadata["maxAllowableOffset"] = queryParams.MaxAllowableOffset.Value;
             }
 
+            ImmutableDictionary<string, object>? extensions = null;
+            if (SqlFilterSupplementsWhere(queryParams, request.UseObjectIdsFastPath))
+            {
+                extensions = ImmutableDictionary<string, object>.Empty.Add(
+                    FeatureQuery.SqlFilterSupplementsWhereExtensionKey,
+                    true);
+            }
+
             var unifiedQuery = new UnifiedQuery
             {
                 Filter = filter,
                 SpatialFilter = spatialFilter,
+                Extensions = extensions,
                 // `hasObjectIds`/`hasObjectIdRequest` are both derived from
                 // `queryParams.ObjectIds is { Length: > 0 }` above, so ObjectIds is provably
                 // non-null in these true branches; the null-forgiving operator documents that
@@ -145,7 +161,12 @@ internal sealed class GeoServicesQueryParameterAdapter(
                     requireExactCount: queryParams.ReturnCountOnly || queryParams.ReturnExtentOnly || queryParams.ReturnIdsOnly)
             };
 
-            return Task.FromResult(QueryAdapterResult.Success(unifiedQuery, metadata));
+            return QueryAdapterResult.Success(unifiedQuery, metadata);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A canceled distance-unit lookup is an aborted request, not a malformed query.
+            throw;
         }
         // Intentionally generic: this is the adapter boundary that converts protocol query
         // parameters into the canonical UnifiedQuery; any unanticipated failure must map to a
@@ -153,8 +174,66 @@ internal sealed class GeoServicesQueryParameterAdapter(
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeoServicesPreparedAdaptersLog.QueryParameterConversionFailed(_logger, ex);
-            return Task.FromResult(QueryAdapterResult.Failure("Invalid query parameters."));
+            return QueryAdapterResult.Failure("Invalid query parameters.");
         }
+    }
+
+    /// <summary>
+    /// True when the SQL fragment passed in with this request contains a time filter or
+    /// object-id predicate that the GeoServices handler folded into <see cref="SqlFragment"/>
+    /// and that <see cref="QueryParameters.Where"/> does not carry by itself.
+    /// </summary>
+    private static bool SqlFilterSupplementsWhere(QueryParameters queryParams, bool useObjectIdsFastPath)
+    {
+        if (IsActiveTimeParameter(queryParams.Time))
+        {
+            return true;
+        }
+
+        return !useObjectIdsFastPath && queryParams.ObjectIds is { Length: > 0 };
+    }
+
+    /// <summary>
+    /// A blank time parameter and the <c>time=null,null</c> no-op are not filters.
+    /// Any other time value is a real temporal constraint.
+    /// </summary>
+    private static bool IsActiveTimeParameter(string? time)
+    {
+        if (string.IsNullOrWhiteSpace(time))
+        {
+            return false;
+        }
+
+        var parts = time.Split(',');
+        if (parts.Length == 2 &&
+            parts.All(static part =>
+                string.IsNullOrWhiteSpace(part) ||
+                part.Trim().Equals("null", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private async ValueTask<double?> ResolveOmittedDistanceUnitAsync(
+        QueryParameters queryParams,
+        int? unitSrid,
+        CancellationToken cancellationToken)
+    {
+        if (queryParams.Distance is not > 0 || !string.IsNullOrWhiteSpace(queryParams.Units))
+        {
+            return null;
+        }
+
+        if (_geographicSridClassifier is null || unitSrid is not int srid)
+        {
+            return null;
+        }
+
+        return await _geographicSridClassifier
+            .TryResolveLinearUnitFactorAsync(srid, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static ImmutableArray<string>? ResolveOutFields(QueryParameters queryParams, MetadataV2Resource resource)
@@ -192,7 +271,8 @@ internal sealed class GeoServicesQueryParameterAdapter(
         QueryParameters queryParams,
         GeoServicesGeometry? parsedGeometry,
         int? inputSrid,
-        int maxCurveVertices)
+        int maxCurveVertices,
+        double? linearMetersPerUnit)
     {
         if (parsedGeometry == null && !queryParams.NearestCount.HasValue)
         {
@@ -208,6 +288,7 @@ internal sealed class GeoServicesQueryParameterAdapter(
             queryParams,
             parsedGeometry!,
             inputSrid,
-            maxCurveVertices);
+            maxCurveVertices,
+            linearMetersPerUnit);
     }
 }

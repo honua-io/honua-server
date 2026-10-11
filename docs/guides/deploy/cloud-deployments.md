@@ -232,6 +232,10 @@ references:
 
 If the secret uses a customer-managed KMS key, also grant `kms:Decrypt` on that key.
 
+### Budget database connections on Lambda
+
+Every Lambda instance has its own connection pool, and an instance that is frozen between invocations runs nothing, pool pruning included, so it keeps its idle connections open. The three control-plane event functions (`batch-event` reconcile, `backstop`, `scheduled-tick`) are invoked by EventBridge and EventBridge Scheduler every minute, often on new instances, and on a small RDS class they can use up every connection slot (`53300: remaining connection slots are reserved`, after which new instances abort at the PostGIS preflight). The event functions therefore close their pooled database connections at the end of every invocation. This is `ControlPlane:Lambda:ReleaseConnectionsAfterInvocation` (`ControlPlane__Lambda__ReleaseConnectionsAfterInvocation`). It defaults to `true` when `HONUA_CONTROL_PLANE_LAMBDA_HANDLER` is set and `false` everywhere else, including the API function, which keeps its pool warm between requests. Each function's pool is still capped by `Limits__Connections__MaxConnectionPoolSize`: the `aws-serverless` module sets 8 for the API (`lambda_db_max_pool_size`), 2 for each control-plane function (`control_plane_db_max_pool_size`), and 4 for each GP Batch job (`gp_batch_db_max_pool_size`). Reserved concurrency caps how many instances each function can run. The worst case is the sum over functions of reserved concurrency times pool size, plus the Batch workers; keep that below the instance's `max_connections`. For production, put RDS Proxy between the functions and the database so that instance churn never reaches the database's connection limit.
+
 ## Azure Container Apps
 
 - Use the generic web image (`ghcr.io/honua-io/honua-server` at a pinned digest or dated `nightly-YYYYMMDD` tag until the first release; `latest` afterwards); it is native AOT. The `latest-aot` alias is retained for compatibility.

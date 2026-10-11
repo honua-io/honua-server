@@ -248,6 +248,63 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetKeyProperties")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetKeyPropertiesX")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task KeyPropertiesRasterInfo_UsesServiceMosaicStatisticsAndOrderedHistograms()
+    {
+        var store = _fixture.GetService<IRasterStore>();
+        RasterStatistics[] statistics = [
+            new() { Band = 3, MinValue = 31, MaxValue = 39, MeanValue = 35, StandardDeviation = 3 },
+            new() { Band = 1, MinValue = 11, MaxValue = 19, MeanValue = 15, StandardDeviation = 1 },
+            new() { Band = 2, MinValue = 21, MaxValue = 29, MeanValue = 25, StandardDeviation = 2 }
+        ];
+        store.GetStatisticsAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<int[]?>(),
+            Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns([new RasterStatistics { Band = 1, MinValue = 777, MaxValue = 777 }]);
+        store.GetMosaicStatisticsAsync(Arg.Any<int>(), Arg.Any<long[]>(), Arg.Any<RasterMergeStrategy>(),
+            Arg.Any<int[]?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>()).Returns(statistics);
+        store.GetMosaicHistogramsAsync(Arg.Any<int>(), Arg.Any<long[]>(), Arg.Any<RasterMergeStrategy>(),
+            Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns([
+                new RasterHistogram { Band = 3, BinCount = 1, Min = 30, Max = 39, Counts = [300] },
+                new RasterHistogram { Band = 1, BinCount = 1, Min = 10, Max = 19, Counts = [100] },
+                new RasterHistogram { Band = 2, BinCount = 1, Min = 20, Max = 29, Counts = [200] }
+            ]);
+
+        using var restHistograms = await _fixture.Client.GetAsync($"{ServicePath()}/histograms?f=json");
+        var histogramJson = await ReadJsonAsync(restHistograms);
+        histogramJson.GetProperty("histograms")[0].TryGetProperty("SourceBand", out _).Should().BeFalse();
+        histogramJson.GetProperty("histograms")[0].TryGetProperty("sourceBand", out _).Should().BeFalse();
+        var serviceInfo = await PostSoapAsync($"""<GetServiceInfo xmlns="{ArcGisNamespace}" />""");
+        serviceInfo.Status.Should().Be(HttpStatusCode.OK, serviceInfo.Body);
+        foreach (var operation in new[] { "GetKeyProperties", "GetKeyPropertiesX" })
+        {
+            var response = await PostSoapAsync($"""<{operation} xmlns="{ArcGisNamespace}" />""");
+            response.Status.Should().Be(HttpStatusCode.OK, response.Body);
+            var rasterInfo = MultidimensionalPropertyValue(Element(response.Document, "Result"), "RasterInfo");
+            rasterInfo.Attribute(XName.Get("type", XsiNamespace))!.Value.Should().Be("tns:RasterInfo");
+            Child(rasterInfo, "BandCount").Value.Should().Be(Element(serviceInfo.Document, "BandCount").Value);
+            Child(rasterInfo, "PixelType").Value.Should().Be(Element(serviceInfo.Document, "PixelType").Value);
+            Child(rasterInfo, "PixelSizeX").Value.Should().Be(Element(serviceInfo.Document, "PixelSizeX").Value);
+            Child(rasterInfo, "NoData").Descendants().Single(element => element.Name.LocalName == "AnyType").Value.Should().Be("0");
+            for (var band = 0; band < 3; band++)
+            {
+                var statistic = Child(rasterInfo, $"RasterStatistics_{band}");
+                statistic.Attribute(XName.Get("type", XsiNamespace))!.Value.Should().Be("tns:RasterStatistics");
+                Child(statistic, "Min").Value.Should().Be((11 + band * 10).ToString(CultureInfo.InvariantCulture));
+                Child(statistic, "Mean").Value.Should().Be((15 + band * 10).ToString(CultureInfo.InvariantCulture));
+                Child(statistic, "StandardDeviation").Value.Should().Be((1 + band).ToString(CultureInfo.InvariantCulture));
+                var histogram = Child(rasterInfo, $"RasterHistogram_{band}");
+                histogram.Attribute(XName.Get("type", XsiNamespace))!.Value.Should().Be("tns:RasterHistogram");
+                Child(histogram, "Counts").Elements().Single().Value.Should().Be(((band + 1) * 100).ToString(CultureInfo.InvariantCulture));
+                statistic.Elements().Select(element => element.Name.LocalName).Should().NotContain(["Count", "Sum", "Median", "Mode"]);
+            }
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
     [InterfaceOperation(TestProtocols.ImageServer, "GetMultidimensionalInfo")]
     [Endpoint("POST /services/{serviceId}/ImageServer")]

@@ -86,7 +86,7 @@ internal static partial class Wps20Endpoint
         return string.Equals(operation, "Execute", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static async Task<IResult> DispatchAsync(
+    internal static async Task<IResult> DispatchAsync(
         HttpContext context,
         IProcessCatalog catalog,
         IGeoprocessingJobService jobs,
@@ -162,6 +162,19 @@ internal static partial class Wps20Endpoint
                 null,
                 StatusCodes.Status503ServiceUnavailable,
                 BuildCapabilityUnavailableTexts(storeEx));
+        }
+        catch (GeoprocessingPreconditionFailedException ex)
+        {
+            return Exception("ResultNotReady", ex.Message, "jobId");
+        }
+        catch (GeoprocessingAdmissionException ex)
+        {
+            if (ex.RetryAfterSeconds > 0)
+            {
+                context.Response.Headers.RetryAfter = ex.RetryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+            }
+
+            return Exception("ServerBusy", ex.Message, null, StatusCodes.Status503ServiceUnavailable);
         }
         catch (Wps20EchoException ex)
         {

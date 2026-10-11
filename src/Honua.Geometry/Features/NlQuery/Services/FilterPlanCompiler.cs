@@ -55,11 +55,38 @@ public static class FilterPlanCompiler
         try
         {
             var expression = CompileClauses(plan.Combinator, plan.Clauses, resource);
+            FilterParserGuard.EnsureExpressionTree(expression);
             return FilterPlanCompileResult.Success(expression);
         }
         catch (FilterPlanCompilationException ex)
         {
             return FilterPlanCompileResult.Failure(ex.Message);
+        }
+        catch (ArgumentException ex)
+        {
+            return FilterPlanCompileResult.Failure(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Checks clause shape that does not need a resource schema: null clauses, a null
+    /// type discriminator, and AND/OR sequences longer than the expression depth cap.
+    /// Returns the failure message, or <see langword="null"/> when the shape is acceptable.
+    /// Schema errors are left to <see cref="Compile"/>.
+    /// </summary>
+    /// <param name="plan">Filter plan to inspect.</param>
+    /// <returns>A caller-facing failure message, or <see langword="null"/>.</returns>
+    public static string? DescribeStructureFailure(FilterPlan plan)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        try
+        {
+            EnsureClauseStructure(plan.Clauses);
+            return null;
+        }
+        catch (Exception ex) when (ex is FilterPlanCompilationException or ArgumentException)
+        {
+            return ex.Message;
         }
     }
 
@@ -68,6 +95,7 @@ public static class FilterPlanCompiler
         FilterPlanClause[] clauses,
         MetadataV2Resource resource)
     {
+        EnsureClauseStructure(clauses);
         if (clauses.Length == 0)
         {
             throw new FilterPlanCompilationException("Empty clause list.");
@@ -85,8 +113,35 @@ public static class FilterPlanCompiler
         return compiled;
     }
 
+    private static void EnsureClauseStructure(FilterPlanClause[]? clauses)
+    {
+        if (clauses is null)
+        {
+            throw new FilterPlanCompilationException("Filter clause list is required.");
+        }
+
+        FilterParserGuard.EnsureLogicalOperandCount(clauses.Length);
+        foreach (var clause in clauses)
+        {
+            if (clause is null || clause.Type is null)
+            {
+                throw new FilterPlanCompilationException("Filter clause type is required.");
+            }
+
+            if (string.Equals(clause.Type, "nested", StringComparison.OrdinalIgnoreCase))
+            {
+                EnsureClauseStructure(clause.Nested?.Clauses ?? []);
+            }
+        }
+    }
+
     private static FilterExpression CompileClause(FilterPlanClause clause, MetadataV2Resource resource)
     {
+        if (clause.Type is null)
+        {
+            throw new FilterPlanCompilationException("Filter clause type is required.");
+        }
+
         return clause.Type.ToLowerInvariant() switch
         {
             "comparison" => CompileComparison(

@@ -648,6 +648,13 @@ internal sealed class FeatureServerEditsHandler(
             return;
         }
 
+        var ownerSnapshots = await ReadOwnerSnapshotsAsync(
+            resource,
+            storageLayerId,
+            existingFeatures.Values,
+            principal,
+            cancellationToken).ConfigureAwait(false);
+
         for (var i = 0; i < request.Updates.Length; i++)
         {
             if (slotObjectIds[i] is not { } objectId)
@@ -713,7 +720,8 @@ internal sealed class FeatureServerEditsHandler(
                     AttributeRuleEditEvent.Update,
                     principal,
                     cancellationToken,
-                    existingFeature).ConfigureAwait(false);
+                    existingFeature,
+                    ownerSnapshots).ConfigureAwait(false);
                 context.UpdateFeatures.Add(updateFeature);
                 context.UpdateIndexes.Add(i);
                 context.UpdateObjectIds.Add(objectId);
@@ -816,6 +824,12 @@ internal sealed class FeatureServerEditsHandler(
                 .Select(static precondition => precondition.ObjectId)
                 .ToHashSet();
         var usesInternalObjectIds = ShouldUseInternalObjectIdFastPath(resource);
+        var ownerSnapshots = await ReadOwnerSnapshotsAsync(
+            resource,
+            storageLayerId,
+            existingFeatures.Values,
+            principal,
+            cancellationToken).ConfigureAwait(false);
 
         for (var i = 0; i < request.Deletes.Length; i++)
         {
@@ -862,14 +876,14 @@ internal sealed class FeatureServerEditsHandler(
                 continue;
             }
 
-            // Owner-based edit policy (#2132): a non-owning, non-admin principal may not
-            // delete a row owned by another principal. Surfaces an Esri-shaped per-edit error
-            // rather than a 500 or silent success.
-            var ownerDecision = EvaluateOwnerPolicy(
-                resource,
+            // Owner-based edit policy (#2132, #5426): the batch owner read is not copied
+            // onto the masked feature the caller already holds. A non-owner is still refused.
+            var deleteSnapshot = SnapshotFor(ownerSnapshots, existingFeature.Value.Id);
+            var ownerDecision = OwnerEditPolicyFieldAccess.Decide(
+                resource.OwnerEditPolicy,
                 AttributeRuleEditEvent.Delete,
-                existingFeature.Value.Attributes,
-                principal);
+                principal,
+                deleteSnapshot);
             if (!ownerDecision.IsAllowed)
             {
                 context.HasValidationErrors = true;
@@ -1658,7 +1672,8 @@ internal sealed class FeatureServerEditsHandler(
         AttributeRuleEditEvent editEvent,
         EditPrincipal principal,
         CancellationToken cancellationToken,
-        Feature? existingFeature = null)
+        Feature? existingFeature = null,
+        IReadOnlyDictionary<long, OwnerFieldSnapshot>? ownerSnapshots = null)
     {
         byte[]? geometry = existingFeature?.Geometry;
         if (feature.ClearGeometry)
@@ -1832,23 +1847,22 @@ internal sealed class FeatureServerEditsHandler(
             }
         }
 
-        // Owner-based edit policy (#2132): authorize update against the existing row's owner
-        // and stamp the owner on insert. Anonymous edits are rejected while the policy is
-        // active; admins bypass the ownership check. A denial throws ArgumentException so the
-        // per-feature try/catch converts it into a clean Esri-shaped edit failure, not a 500.
+        // Owner-based edit policy (#2132, #5426): authorize update against the batch's
+        // unmasked owner read and stamp the owner on insert. That read is not copied into
+        // attributes. When the owner was masked, the writer keeps the stored value via
+        // PreserveOmittedMaskedAttributes, so the response still omits it.
         if (resource.OwnerEditPolicy is { Enabled: true } ownerPolicy)
         {
-            var existingOwner = existingFeature is { } existing &&
-                existing.Attributes.TryGetValue(ownerPolicy.OwnerField, out var existingOwnerValue)
-                ? existingOwnerValue
-                : null;
-            var ownerDecision = OwnerEditPolicyEvaluator.Evaluate(
-                ownerPolicy, editEvent, existingOwner, principal);
+            var updateSnapshot = editEvent == AttributeRuleEditEvent.Insert || existingFeature is not { } existing
+                ? null
+                : SnapshotFor(ownerSnapshots, existing.Id);
+            var ownerDecision = OwnerEditPolicyFieldAccess.Decide(
+                ownerPolicy,
+                editEvent,
+                principal,
+                updateSnapshot);
             if (!ownerDecision.IsAllowed)
             {
-                // Owner-policy denial is an authorization failure, not invalid data: throw a
-                // typed exception so the per-feature catch maps it to the stable
-                // GeoServicesEditErrorCodes.NotPermitted code rather than ValidationFailed.
                 throw new EditNotPermittedException(SanitizeEditErrorMessage(ownerDecision.Reason!, "Edit not permitted."));
             }
 
@@ -1869,29 +1883,60 @@ internal sealed class FeatureServerEditsHandler(
                 SanitizeEditErrorMessage(contingentResult.Violations[0].Message, "Invalid attribute combination."));
         }
 
-        return Feature.Create(objectId, geometry, attributes.ToImmutable());
+        var edited = Feature.Create(objectId, geometry, attributes.ToImmutable());
+        if (OwnerEditPolicyFieldAccess.ShouldPreserveStoredOwner(
+                resource.OwnerEditPolicy,
+                existingFeature is not null && !feature.ReplaceAttributes,
+                attributes.Keys))
+        {
+            edited = edited with { PreserveOmittedMaskedAttributes = true };
+        }
+
+        return edited;
     }
 
     /// <summary>
-    /// Evaluates the resource's owner-based edit policy for a delete (which does not flow
-    /// through <see cref="BuildFeatureFromGeoServicesAsync"/>) against the existing row's
-    /// owner-field value.
+    /// Loads owner values for a whole update or delete batch. Returns null when this caller
+    /// does not need the stored owner, so inserts and administrators do not query.
     /// </summary>
-    private static OwnerEditDecision EvaluateOwnerPolicy(
+    private async Task<IReadOnlyDictionary<long, OwnerFieldSnapshot>?> ReadOwnerSnapshotsAsync(
         MetadataV2Resource resource,
-        AttributeRuleEditEvent editEvent,
-        ImmutableDictionary<string, object?> existingAttributes,
-        EditPrincipal principal)
+        int storageLayerId,
+        IEnumerable<Feature> existingFeatures,
+        EditPrincipal principal,
+        CancellationToken cancellationToken)
     {
-        if (resource.OwnerEditPolicy is not { Enabled: true } ownerPolicy)
+        if (!OwnerEditPolicyFieldAccess.RequiresStoredOwner(resource.OwnerEditPolicy, principal))
         {
-            return OwnerEditDecision.Allow;
+            return null;
         }
 
-        var existingOwner = existingAttributes.TryGetValue(ownerPolicy.OwnerField, out var ownerValue)
-            ? ownerValue
-            : null;
-        return OwnerEditPolicyEvaluator.Evaluate(ownerPolicy, editEvent, existingOwner, principal);
+        var ids = new List<long>();
+        foreach (var feature in existingFeatures)
+        {
+            ids.Add(feature.Id);
+        }
+
+        return await OwnerEditPolicyFieldAccess.ReadOwnersAsync(
+            _featureReader,
+            storageLayerId,
+            ids,
+            resource.OwnerEditPolicy!.OwnerField,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static OwnerFieldSnapshot? SnapshotFor(
+        IReadOnlyDictionary<long, OwnerFieldSnapshot>? snapshots,
+        long storageFeatureId)
+    {
+        if (snapshots is null)
+        {
+            return null;
+        }
+
+        return snapshots.TryGetValue(storageFeatureId, out var snapshot)
+            ? snapshot
+            : OwnerFieldSnapshot.Hidden;
     }
 
     /// <summary>

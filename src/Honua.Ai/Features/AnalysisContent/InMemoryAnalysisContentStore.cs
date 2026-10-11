@@ -153,6 +153,33 @@ internal sealed class InMemoryAnalysisContentStore : IAnalysisContentStore
         return Task.FromResult<IReadOnlyList<AnalysisContentVersion>>(snapshot);
     }
 
+    public Task<bool> TryAbandonVersionAsync(
+        string itemId,
+        int version,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            if (!_versions.TryGetValue(itemId, out var versions) || !versions.Remove(version))
+            {
+                return Task.FromResult(false);
+            }
+
+            if (_items.TryGetValue(itemId, out var item) && item.CurrentVersion == version && versions.Count > 0)
+            {
+                var latest = versions.Last().Value;
+                _items[itemId] = item with
+                {
+                    CurrentVersion = latest.Version,
+                    CurrentVersionId = latest.VersionId,
+                    UpdatedAt = _timeProvider.GetUtcNow()
+                };
+            }
+        }
+
+        return Task.FromResult(true);
+    }
+
     public Task<AnalysisContentItemPage> ListItemsAsync(
         AnalysisContentItemQuery query,
         CancellationToken cancellationToken = default)

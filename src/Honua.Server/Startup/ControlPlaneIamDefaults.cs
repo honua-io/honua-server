@@ -5,6 +5,7 @@
 
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Identity.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -27,6 +28,9 @@ internal static class ControlPlaneIamDefaults
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        services.TryAddSingleton<OidcRuntimeProviderRegistry>();
+        services.TryAddSingleton<IOidcRuntimeProviderSource>(static provider =>
+            provider.GetRequiredService<OidcRuntimeProviderRegistry>());
         services.TryAddSingleton<IOidcProviderStore, InMemoryOidcProviderStore>();
 
         // The in-memory user store backs both the admin IUserStore surface and the SCIM

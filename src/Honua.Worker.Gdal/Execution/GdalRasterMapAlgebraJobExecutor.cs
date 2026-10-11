@@ -153,7 +153,7 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
             // gdal_calc's default-masked cells with it; --hideNoData is never used.
             var effectiveNoData = explicitNoData
                 ?? await GdalNoData.TryReadSourceNoDataAsync(
-                    runner, firstInputPath, workspace, opts.ToolTimeout, cancellationToken).ConfigureAwait(false);
+                    runner, firstInputPath, workspace, opts.ToolTimeout, cancellationToken, options: opts).ConfigureAwait(false);
             var noDataLiteral = effectiveNoData?.ToString("R", CultureInfo.InvariantCulture);
             if (effectiveNoData is null)
             {

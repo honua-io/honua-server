@@ -29,6 +29,10 @@ internal static class DatumTransformSql
     /// pipeline, the explicit <c>ST_TransformPipeline(geom, '&lt;pipeline&gt;', toSrid)</c>
     /// form is emitted so PostGIS uses the selected (Esri-parity) pipeline. Otherwise
     /// the 2-argument form is emitted and PROJ chooses its default pipeline.
+    /// A pipeline whose geographic pair differs from <paramref name="fromSrid"/> or
+    /// <paramref name="toSrid"/> is composed between those defining conversions:
+    /// unproject to <see cref="DatumTransformationSelection.FromSrid"/>, run the
+    /// pipeline, then project to <paramref name="toSrid"/>.
     /// </param>
     /// <param name="fromSrid">
     /// Source SRID of <paramref name="operand"/>, when known. A geographic source
@@ -46,6 +50,17 @@ internal static class DatumTransformSql
     {
         if (selection?.ProjPipeline is { Length: > 0 } pipeline)
         {
+            // The catalog pair is geographic. Projected endpoints keep that pipeline
+            // and let PROJ's defining conversion move between the projected CRS and
+            // the geographic CRS the grid expects (#5630).
+            var needsInner = fromSrid is int sourceSrid && sourceSrid != selection.FromSrid;
+            var needsOuter = toSrid != selection.ToSrid;
+            if (needsInner || needsOuter)
+            {
+                return BuildComposedTransformExpression(
+                    operand, toSrid, selection, pipeline, fromSrid, needsInner);
+            }
+
             // ST_Transform's text argument is a source CRS, not an operation.
             // A catalog null transformation preserves every ordinate in either
             // direction; only the destination SRID changes. Do not clip: a noop
@@ -69,6 +84,41 @@ internal static class DatumTransformSql
 
         var transformedOperand = ClampGeographicOperandForWebMercator(operand, fromSrid, toSrid);
         return $"ST_Transform({transformedOperand}, {toSrid})";
+    }
+
+    private static string BuildComposedTransformExpression(
+        string operand,
+        int toSrid,
+        DatumTransformationSelection selection,
+        string pipeline,
+        int? fromSrid,
+        bool needsInner)
+    {
+        var current = operand;
+        if (needsInner)
+        {
+            var innerOperand = ClampGeographicOperandForWebMercator(current, fromSrid, selection.FromSrid);
+            current = $"ST_Transform({innerOperand}, {selection.FromSrid})";
+        }
+
+        if (pipeline.Trim().Equals("+proj=noop", StringComparison.Ordinal))
+        {
+            current = $"ST_SetSRID({current}, {selection.ToSrid})";
+        }
+        else
+        {
+            var orientedPipeline = ProjPipelineInverter.Orient(pipeline, selection.TransformForward);
+            var pipelineOperand = ClampGeographicOperandForWebMercator(current, selection.FromSrid, selection.ToSrid);
+            current = $"ST_TransformPipeline({pipelineOperand}, {QuoteLiteral(orientedPipeline)}, {selection.ToSrid})";
+        }
+
+        if (toSrid != selection.ToSrid)
+        {
+            var outerOperand = ClampGeographicOperandForWebMercator(current, selection.ToSrid, toSrid);
+            current = $"ST_Transform({outerOperand}, {toSrid})";
+        }
+
+        return current;
     }
 
     /// <summary>

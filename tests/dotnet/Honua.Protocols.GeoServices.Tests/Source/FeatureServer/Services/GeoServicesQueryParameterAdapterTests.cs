@@ -3,7 +3,10 @@
 
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
@@ -92,5 +95,123 @@ public sealed class GeoServicesQueryParameterAdapterTests
         var cappedResult = await capped.ConvertAsync(request, resource);
 
         cappedResult.IsSuccess.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task ConvertAsync_OmittedDistanceUnits_UsesGeometrySpatialReferenceLinearUnit()
+    {
+        var adapter = new GeoServicesQueryParameterAdapter(
+            NullLogger<GeoServicesQueryParameterAdapter>.Instance,
+            geographicSridClassifier: new FixedLinearUnitClassifier(2263, CrsLinearUnitFactor.UsSurveyFootMeters));
+        var request = DistanceRequest(2263, units: null);
+        var resource = PointResource();
+
+        var result = await adapter.ConvertAsync(request, resource);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        var filter = result.Query!.Value.SpatialFilter!.Value;
+        filter.Distance.Should().BeApproximately(500d * CrsLinearUnitFactor.UsSurveyFootMeters, 1e-9);
+        filter.DistanceUnit.Should().Be(DistanceUnit.Meters);
+    }
+
+    [UnitTest]
+    public async Task ConvertAsync_ExplicitMetres_IgnoresGeometryLinearUnit()
+    {
+        var adapter = new GeoServicesQueryParameterAdapter(
+            NullLogger<GeoServicesQueryParameterAdapter>.Instance,
+            geographicSridClassifier: new FixedLinearUnitClassifier(2263, CrsLinearUnitFactor.UsSurveyFootMeters));
+        var request = DistanceRequest(2263, units: "esriSRUnit_Meter");
+
+        var result = await adapter.ConvertAsync(request, PointResource());
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        var filter = result.Query!.Value.SpatialFilter!.Value;
+        filter.Distance.Should().Be(500);
+        filter.DistanceUnit.Should().Be(DistanceUnit.Meters);
+    }
+
+    [UnitTest]
+    public async Task ConvertAsync_GeographicDistanceWithoutUnits_StaysInMetres()
+    {
+        var adapter = new GeoServicesQueryParameterAdapter(
+            NullLogger<GeoServicesQueryParameterAdapter>.Instance,
+            geographicSridClassifier: new FixedLinearUnitClassifier(2263, CrsLinearUnitFactor.UsSurveyFootMeters));
+        var request = DistanceRequest(4326, units: null);
+
+        var result = await adapter.ConvertAsync(request, PointResource());
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Query!.Value.SpatialFilter!.Value.Distance.Should().Be(500);
+    }
+
+    [UnitTest]
+    public async Task ConvertAsync_CancelledDistanceUnitLookup_PropagatesCancellation()
+    {
+        var adapter = new GeoServicesQueryParameterAdapter(
+            NullLogger<GeoServicesQueryParameterAdapter>.Instance,
+            geographicSridClassifier: new CancelledLinearUnitClassifier());
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        var act = () => adapter.ConvertAsync(DistanceRequest(2263, units: null), PointResource(), cancellation.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    private static GeoServicesQueryRequest DistanceRequest(int inputSrid, string? units)
+        => new()
+        {
+            Parameters = new QueryParameters
+            {
+                F = "json",
+                Distance = 500,
+                Units = units,
+                SpatialRel = "esriSpatialRelIntersects"
+            },
+            ParsedGeometry = new GeoServicesGeometry { X = 0, Y = 0 },
+            InputSrid = inputSrid,
+            QueryLimits = new QueryLimits
+            {
+                MaxRecordCount = 1000,
+                DefaultRecordCount = 100
+            }
+        };
+
+    private static MetadataV2Resource PointResource()
+        => new()
+        {
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger }
+            ],
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = new MetadataV2SpatialReference { Srid = 2263 },
+                GeometryType = MetadataV2GeometryType.Point
+            }
+        };
+
+    private sealed class FixedLinearUnitClassifier(int projectedSrid, double metersPerUnit) : IGeographicSridClassifier
+    {
+        public ValueTask<bool> IsGeographicAsync(int srid, CancellationToken cancellationToken = default)
+            => new(srid != projectedSrid);
+
+        public ValueTask<bool> IsGeographicForMeasurementAsync(int srid, CancellationToken cancellationToken = default)
+            => new(srid != projectedSrid);
+
+        public ValueTask<double?> TryResolveLinearUnitFactorAsync(int srid, CancellationToken cancellationToken = default)
+            => new(srid == projectedSrid ? metersPerUnit : null);
+    }
+
+    private sealed class CancelledLinearUnitClassifier : IGeographicSridClassifier
+    {
+        public ValueTask<bool> IsGeographicAsync(int srid, CancellationToken cancellationToken = default)
+            => new(false);
+
+        public ValueTask<bool> IsGeographicForMeasurementAsync(int srid, CancellationToken cancellationToken = default)
+            => new(false);
+
+        public ValueTask<double?> TryResolveLinearUnitFactorAsync(int srid, CancellationToken cancellationToken = default)
+            => throw new OperationCanceledException(cancellationToken);
     }
 }

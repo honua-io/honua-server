@@ -1059,7 +1059,7 @@
         "find",
         "measure (Basic mensuration)",
         "computeStatisticsHistograms",
-        "AOI-clipped computeStatisticsHistograms (envelope-scoped)",
+        "AOI-clipped computeStatisticsHistograms (polygon rings clipped as polygons)",
         "computeHistograms",
         "getSamples",
         "queryBoundary",
@@ -1072,7 +1072,7 @@
         "exportImage Stretch renderingRule (MinMax/StandardDeviation/PercentClip)",
         "exportImage Colormap renderingRule (explicit [value, r, g, b] stops, named ColorrampName, or inline algorithmic/multipart Colorramp object)",
         "colormap resource (returns the active renderer's colormap resolved from renderingRule; not-available response otherwise)",
-        "exportImage Clip renderingRule (envelope/polygon, including ClippingType=1 keep-outside)",
+        "exportImage Clip renderingRule (envelope/polygon, including ClippingType=1 keep-inside and ClippingType=2 keep-outside)",
         "exportImage ExtractBand renderingRule (0-based BandIds selection/reorder)",
         "renderingRule honoured by identify (Stretch + Colormap + Clip; renders the sampled pixel)",
         "auto display stretch for non-8-bit dynamic tiles",
@@ -1279,7 +1279,7 @@
           "esriPaths": [
             "/ImageServer/computeStatisticsHistograms"
           ],
-          "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the selected layer mosaic), the Honua-extension bandIds selector (0-based, the same base as exportImage bandIds), mosaicRule, single-instant time filtering to the newest layer-wide effective acquisition batch, and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. An AOI geometry/geometryType clips the analysis to that area (envelope-scoped) for both single rasters and mosaics; without a geometry the full selected raster or mosaic is analysed. Stretch, Colormap, and Clip renderingRule chains are applied; ExtractBand, BandArithmetic, and pixelSize remain deferred."
+          "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the selected layer mosaic), the Honua-extension bandIds selector (0-based, the same base as exportImage bandIds), mosaicRule, single-instant time filtering to the newest layer-wide effective acquisition batch, and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. An AOI geometry/geometryType clips the analysis to that area (polygon rings are clipped as polygons, not only the bounding envelope) for both single rasters and mosaics; without a geometry the full selected raster or mosaic is analysed. Stretch, Colormap, and Clip renderingRule chains are applied; ExtractBand, BandArithmetic, and pixelSize remain deferred."
         },
         {
           "name": "Compute Histograms",
@@ -1287,7 +1287,7 @@
           "esriPaths": [
             "/ImageServer/computeHistograms"
           ],
-          "notes": "Returns per-band histograms without the parallel statistics array. Supports the same rasterIds, bandIds, mosaicRule, time, and histogramParameters.size selection path as computeStatisticsHistograms; An AOI geometry clips the analysis to that area (envelope-scoped); renderingRule execution remains deferred."
+          "notes": "Returns per-band histograms without the parallel statistics array. Supports the same rasterIds, bandIds, mosaicRule, time, and histogramParameters.size selection path as computeStatisticsHistograms; An AOI geometry clips the analysis to that area (polygon rings are clipped as polygons, not only the bounding envelope); renderingRule execution remains deferred."
         },
         {
           "name": "Get Samples",
@@ -1495,7 +1495,7 @@
           {
             "name": "renderingRule",
             "status": "implemented",
-            "notes": "Executes a Stretch (MinMax/StandardDeviation/PercentClip, optional per-band Statistics), a Colormap (explicit [value,r,g,b] stops or a named ColorrampName), and a Clip (envelope/polygon, including ClippingType=1 keep-outside). Identity / StretchType=0 are no-ops. Unrecognized stretch/colorramp variants and inline Colorramp objects return 501; unknown functions return 400. Chain planning/validation is internal (there is no computeClass route): the planner walks Identity / Stretch / Colormap / Clip / ExtractBand nodes (max chain depth 8) and rejects unknown functions with a 400 naming the offending node. Output pixel type defaults to U8 when the chain includes Stretch and F32 otherwise, unless the document overrides outputPixelType."
+            "notes": "Executes a Stretch (MinMax/StandardDeviation/PercentClip, optional per-band Statistics), a Colormap (explicit [value,r,g,b] stops or a named ColorrampName), and a Clip (envelope/polygon, including ClippingType=1 keep-inside and ClippingType=2 keep-outside). Identity / StretchType=0 are no-ops. Unrecognized stretch/colorramp variants and inline Colorramp objects return 501; unknown functions return 400. Chain planning/validation is internal (there is no computeClass route): the planner walks Identity / Stretch / Colormap / Clip / ExtractBand nodes (max chain depth 8) and rejects unknown functions with a 400 naming the offending node. Output pixel type defaults to U8 when the chain includes Stretch and F32 otherwise, unless the document overrides outputPixelType."
           },
           {
             "name": "bandIds",
@@ -1541,7 +1541,7 @@
           {
             "name": "renderingRule",
             "status": "implemented",
-            "notes": "When supplied, identify returns the rendered pixel value (post clip/stretch/colormap, matching exportImage) instead of the raw source value; omitting it preserves the raw-value contract. Executes the same Stretch (MinMax/StandardDeviation/PercentClip), Colormap (explicit stops or named ColorrampName), and Clip (envelope/polygon, including ClippingType=1 keep-outside) support as exportImage; unsupported chains return 400/501."
+            "notes": "When supplied, identify returns the rendered pixel value (post clip/stretch/colormap, matching exportImage) instead of the raw source value; omitting it preserves the raw-value contract. Executes the same Stretch (MinMax/StandardDeviation/PercentClip), Colormap (explicit stops or named ColorrampName), and Clip (envelope/polygon, including ClippingType=1 keep-inside and ClippingType=2 keep-outside) support as exportImage; unsupported chains return 400/501."
           },
           {
             "name": "pixelSize, returnGeometry",
@@ -1676,7 +1676,7 @@
         "Temporal mosaic uses newest-batch semantics: a time filter selects rasters from the single most-recent layer-wide effective acquisition batch (AcquisitionDate, falling back to CreatedAt) at or before the requested instant before applying request geometry, so mixed-date scenes can leave spatial coverage gaps until per-pixel temporal mosaicking is implemented.",
         "The query catalog reader applies WHERE/objectIds filters in-memory and reprojects footprint geometry to outSR when a coordinate transform is available.",
         "computeStatisticsHistograms clips analysis to the supplied geometry envelope and executes Stretch, Colormap, and Clip renderingRule chains; ExtractBand, BandArithmetic, and pixelSize remain deferred.",
-        "exportImage and identify execute the renderingRule (Stretch MinMax/StandardDeviation/PercentClip with optional per-band Statistics; Colormap by explicit stops or named ColorrampName; Clip envelope/polygon including ClippingType=1 keep-outside; ExtractBand 0-based BandIds selection superseding the bandIds parameter), and the legend honours a Colormap renderingRule; identify with a renderingRule returns the rendered pixel (raw value otherwise); other stretch types, inline Colorramp objects, and extract-band-by-name are not yet honoured.",
+        "exportImage and identify execute the renderingRule (Stretch MinMax/StandardDeviation/PercentClip with optional per-band Statistics; Colormap by explicit stops or named ColorrampName; Clip envelope/polygon including ClippingType=1 keep-inside and ClippingType=2 keep-outside; ExtractBand 0-based BandIds selection superseding the bandIds parameter), and the legend honours a Colormap renderingRule; identify with a renderingRule returns the rendered pixel (raw value otherwise); other stretch types, inline Colorramp objects, and extract-band-by-name are not yet honoured.",
         "Legend swatches use a fixed 5-class equal-interval ramp; per-layer renderer persistence and renderingRule overrides are not yet wired up.",
         "Service info exposes timeInfo when the layer metadata declares temporal fields or raster catalog items carry acquisition timestamps.",
         "Rendered ImageServer byte output still depends on the PostGIS raster output drivers configured in the database.",

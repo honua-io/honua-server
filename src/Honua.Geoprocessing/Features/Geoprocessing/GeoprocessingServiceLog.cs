@@ -255,4 +255,10 @@ internal static partial class GeoprocessingServiceLog
     public static partial void ReservedMetadataKeyRejected(
         ILogger logger,
         string metadataKey);
+
+    [LoggerMessage(8043, LogLevel.Warning, "Terminal callback failed during job result replay for {JobId}")]
+    public static partial void TerminalCallbackReplayFailed(
+        ILogger logger,
+        string jobId,
+        Exception exception);
 }

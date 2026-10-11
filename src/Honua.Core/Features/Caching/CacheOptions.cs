@@ -87,9 +87,9 @@ public sealed class CacheOptions
     public bool MetadataGraphCacheEnabled { get; set; } = true;
 
     /// <summary>
-    /// Time-to-live for the in-process Metadata v2 graph snapshot cache in seconds. Kept short to
-    /// bound cross-node staleness in multi-node deployments (a catalog write on one node does not
-    /// reach another node's in-process cache); same-node writes invalidate immediately. Set to 0 to
+    /// Time-to-live for the in-process Metadata v2 graph snapshot cache in seconds. Writes invalidate
+    /// the writing node immediately and, when Redis is composed, every other node via a pub/sub
+    /// broadcast; the TTL is kept short as the backstop for a lost broadcast. Set to 0 to
     /// disable the snapshot cache. Default is 10 seconds.
     /// </summary>
     [Range(0, 3600, ErrorMessage = "MetadataGraphTtlSeconds must be between 0 and 3600 seconds.")]

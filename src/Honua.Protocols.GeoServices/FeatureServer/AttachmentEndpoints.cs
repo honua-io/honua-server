@@ -16,6 +16,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
@@ -257,21 +258,47 @@ internal static partial class AttachmentEndpoints
         // Apply published-source visibility even when no definitionExpression was
         // supplied. Attachment metadata must not reveal a deleted or hidden parent
         // merely because a stale row remains in the default feature-store snapshot.
-        featureIds = await FilterVisibleAttachmentParentsAsync(
-            resource.Value.Reader, layerId, featureIds, definitionExpression, cancellationToken);
+        // Custom object-id layers publish a different id than the storage row, so
+        // visibility and the attachment store both use the resolved storage id.
+        var objectIdFilterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+        IReadOnlyDictionary<long, long> storageIdsByPublic;
+        try
+        {
+            storageIdsByPublic = await GeoServicesFeatureObjectIdResolver.ResolveStorageIdsAsync(
+                resource.Value.Reader,
+                objectIdFilterService,
+                resource.Value.Resource,
+                layerId,
+                featureIds,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (ArgumentException ex)
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, ex.Message);
+            return;
+        }
+
+        var visibleStorageIds = await FilterVisibleAttachmentParentsAsync(
+            resource.Value.Reader,
+            layerId,
+            storageIdsByPublic.Values.Distinct().ToArray(),
+            definitionExpression,
+            cancellationToken).ConfigureAwait(false);
+        var visibleByPublic = VisibleAttachmentStorageIds(featureIds, storageIdsByPublic, visibleStorageIds);
 
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
         var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
 
         var result = await AttachmentHandler.QueryAttachmentsAsync(
             layerId,
-            featureIds,
+            visibleByPublic.Keys.ToArray(),
             returnUrl,
             filter,
             attachmentStore,
             logger,
             context,
-            cancellationToken);
+            cancellationToken,
+            visibleByPublic);
 
         await result.ExecuteAsync(context);
     }
@@ -301,6 +328,25 @@ internal static partial class AttachmentEndpoints
         }
 
         return Array.FindAll(featureIds, allowed.Contains);
+    }
+
+    internal static Dictionary<long, long> VisibleAttachmentStorageIds(
+        IReadOnlyList<long> publicObjectIds,
+        IReadOnlyDictionary<long, long> storageIdByPublicObjectId,
+        IReadOnlyCollection<long> visibleStorageIds)
+    {
+        var visible = visibleStorageIds as ISet<long> ?? visibleStorageIds.ToHashSet();
+        var result = new Dictionary<long, long>(publicObjectIds.Count);
+        foreach (var publicObjectId in publicObjectIds)
+        {
+            if (storageIdByPublicObjectId.TryGetValue(publicObjectId, out var storageId) &&
+                visible.Contains(storageId))
+            {
+                result[publicObjectId] = storageId;
+            }
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -359,7 +405,15 @@ internal static partial class AttachmentEndpoints
             return;
         }
 
-        if (!await EnsureFeatureVisibleAsync(context, resource.Value.Reader, layerId, featureId).ConfigureAwait(false))
+        var feature = await RequireAttachmentFeatureAsync(
+            context,
+            resource.Value.Reader,
+            context.RequestServices.GetRequiredService<IFilterExpressionService>(),
+            resource.Value.Resource,
+            layerId,
+            featureId,
+            context.RequestAborted).ConfigureAwait(false);
+        if (feature is null)
         {
             return;
         }
@@ -372,14 +426,6 @@ internal static partial class AttachmentEndpoints
 
         var file = form.Files[0];
         var keywords = form.TryGetValue("keywords", out var keywordsValue) ? keywordsValue.ToString() : null;
-
-        var featureReader = resource.Value.Reader;
-        var feature = await featureReader.GetAsync(layerId, featureId, context.RequestAborted);
-        if (feature == null)
-        {
-            await StandardErrorHelpers.CreateNotFound(context, $"Feature {featureId} not found").ExecuteAsync(context);
-            return;
-        }
 
         if (!await AuthorizeAttachmentOwnerEditAsync(
                 context,
@@ -408,7 +454,8 @@ internal static partial class AttachmentEndpoints
             limitsOptions.Value.Attachments,
             securityOptions.Value,
             logger,
-            context.RequestAborted);
+            context.RequestAborted,
+            feature.Value.Id);
 
         await result.ExecuteAsync(context);
     }
@@ -465,13 +512,27 @@ internal static partial class AttachmentEndpoints
             return;
         }
 
+        var feature = await RequireAttachmentFeatureAsync(
+            context,
+            resource.Value.Reader,
+            context.RequestServices.GetRequiredService<IFilterExpressionService>(),
+            resource.Value.Resource,
+            layerId,
+            featureId,
+            context.RequestAborted).ConfigureAwait(false);
+        if (feature is null)
+        {
+            return;
+        }
+
         if (!await AuthorizeAttachmentOwnerEditAsync(
                 context,
                 resource.Value.Reader,
                 resource.Value.Resource,
                 layerId,
                 featureId,
-                AttributeRuleEditEvent.Update).ConfigureAwait(false))
+                AttributeRuleEditEvent.Update,
+                feature).ConfigureAwait(false))
         {
             return;
         }
@@ -507,7 +568,8 @@ internal static partial class AttachmentEndpoints
             limitsOptions.Value.Attachments,
             securityOptions.Value,
             logger,
-            context.RequestAborted);
+            context.RequestAborted,
+            feature.Value.Id);
 
         await result.ExecuteAsync(context);
     }
@@ -564,13 +626,27 @@ internal static partial class AttachmentEndpoints
             return;
         }
 
+        var feature = await RequireAttachmentFeatureAsync(
+            context,
+            resource.Value.Reader,
+            context.RequestServices.GetRequiredService<IFilterExpressionService>(),
+            resource.Value.Resource,
+            layerId,
+            featureId,
+            context.RequestAborted).ConfigureAwait(false);
+        if (feature is null)
+        {
+            return;
+        }
+
         if (!await AuthorizeAttachmentOwnerEditAsync(
                 context,
                 resource.Value.Reader,
                 resource.Value.Resource,
                 layerId,
                 featureId,
-                AttributeRuleEditEvent.Delete).ConfigureAwait(false))
+                AttributeRuleEditEvent.Delete,
+                feature).ConfigureAwait(false))
         {
             return;
         }
@@ -619,7 +695,8 @@ internal static partial class AttachmentEndpoints
             attachmentIds.ToArray(),
             attachmentStore,
             logger,
-            context.RequestAborted);
+            context.RequestAborted,
+            feature.Value.Id);
 
         await result.ExecuteAsync(context);
     }
@@ -656,11 +733,16 @@ internal static partial class AttachmentEndpoints
             return;
         }
 
-        var featureReader = resource.Value.Reader;
-        var feature = await featureReader.GetAsync(resource.Value.StorageLayerId, featureId, context.RequestAborted);
-        if (feature == null)
+        var feature = await RequireAttachmentFeatureAsync(
+            context,
+            resource.Value.Reader,
+            context.RequestServices.GetRequiredService<IFilterExpressionService>(),
+            resource.Value.Resource,
+            resource.Value.StorageLayerId,
+            featureId,
+            context.RequestAborted).ConfigureAwait(false);
+        if (feature is null)
         {
-            await StandardErrorHelpers.CreateNotFound(context, $"Feature {featureId} not found").ExecuteAsync(context);
             return;
         }
 
@@ -673,7 +755,8 @@ internal static partial class AttachmentEndpoints
             featureId,
             attachmentStore,
             logger,
-            context.RequestAborted);
+            context.RequestAborted,
+            feature.Value.Id);
 
         await result.ExecuteAsync(context);
     }
@@ -703,7 +786,15 @@ internal static partial class AttachmentEndpoints
             return;
         }
 
-        if (!await EnsureFeatureVisibleAsync(context, resource.Value.Reader, layerId, featureId).ConfigureAwait(false))
+        var feature = await RequireAttachmentFeatureAsync(
+            context,
+            resource.Value.Reader,
+            context.RequestServices.GetRequiredService<IFilterExpressionService>(),
+            resource.Value.Resource,
+            layerId,
+            featureId,
+            context.RequestAborted).ConfigureAwait(false);
+        if (feature is null)
         {
             return;
         }
@@ -718,9 +809,47 @@ internal static partial class AttachmentEndpoints
             attachmentId,
             attachmentStore,
             logger,
-            context.RequestAborted);
+            context.RequestAborted,
+            feature.Value.Id);
 
         await result.ExecuteAsync(context);
+    }
+
+    internal static async Task<Feature?> RequireAttachmentFeatureAsync(
+        HttpContext context,
+        IFeatureReader featureReader,
+        IFilterExpressionService filterExpressionService,
+        MetadataV2Resource resource,
+        int storageLayerId,
+        long publicObjectId,
+        CancellationToken cancellationToken)
+    {
+        Feature? feature;
+        try
+        {
+            feature = await GeoServicesFeatureObjectIdResolver.ResolveAsync(
+                featureReader,
+                filterExpressionService,
+                resource,
+                storageLayerId,
+                publicObjectId,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (ArgumentException ex)
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, ex.Message).ConfigureAwait(false);
+            return null;
+        }
+
+        if (feature is null)
+        {
+            await StandardErrorHelpers.CreateNotFound(context, $"Feature {publicObjectId} not found")
+                .ExecuteAsync(context)
+                .ConfigureAwait(false);
+            return null;
+        }
+
+        return feature;
     }
 
     private static async Task<bool> EnsureFeatureVisibleAsync(
@@ -802,10 +931,16 @@ internal static partial class AttachmentEndpoints
                 IsAuthenticated: true,
                 IsAdmin: ServiceDataEditorAuthorization.IsAdminPrincipal(context))
             : EditPrincipal.Anonymous;
-        var existingOwner = existing.Attributes.TryGetValue(ownerPolicy.OwnerField, out var ownerValue)
-            ? ownerValue
-            : null;
-        var decision = OwnerEditPolicyEvaluator.Evaluate(ownerPolicy, editEvent, existingOwner, principal);
+        // The feature above is the masked read used for existence. The owner check uses a
+        // separate policy query and does not copy that value onto the feature (#5426).
+        var decision = await OwnerEditPolicyFieldAccess.AuthorizeAsync(
+            featureReader,
+            layerId,
+            existing.Id,
+            ownerPolicy,
+            editEvent,
+            principal,
+            context.RequestAborted).ConfigureAwait(false);
         if (decision.IsAllowed)
         {
             return true;
