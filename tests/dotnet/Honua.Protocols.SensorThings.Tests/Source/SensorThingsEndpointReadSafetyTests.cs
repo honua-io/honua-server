@@ -52,7 +52,7 @@ public sealed class SensorThingsEndpointReadSafetyTests
         var context = Context(CyclicPath(SensorThingsRelationships.MaxRelationshipDepth + 2));
         context.Request.Method = write ? "DELETE" : "GET";
         var result = write
-            ? await SensorThingsEndpoints.HandleCoreWrite(context, store, NullLogger<SensorThingsEndpointsLog>.Instance)
+            ? await SensorThingsEndpoints.HandleCoreWrite(context, store, NullLogger<SensorThingsEndpoints.SensorThingsEndpointsLog>.Instance)
             : await SensorThingsEndpoints.HandleCoreRead(context, store, Translator());
         Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
         Assert.Empty(store.ReceivedCalls());
