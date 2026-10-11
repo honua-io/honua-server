@@ -320,6 +320,12 @@ internal sealed partial class Wfs20Handler
     private static void AppendWfs11FeatureTypeList(StringBuilder sb, IReadOnlyList<FeatureType> featureTypes)
     {
         sb.AppendLine("  <wfs:FeatureTypeList>");
+        sb.AppendLine("    <wfs:Operations>");
+        sb.AppendLine("      <wfs:Operation>Query</wfs:Operation>");
+        sb.AppendLine("      <wfs:Operation>Insert</wfs:Operation>");
+        sb.AppendLine("      <wfs:Operation>Update</wfs:Operation>");
+        sb.AppendLine("      <wfs:Operation>Delete</wfs:Operation>");
+        sb.AppendLine("    </wfs:Operations>");
         foreach (var featureType in featureTypes)
         {
             sb.AppendLine("    <wfs:FeatureType>");

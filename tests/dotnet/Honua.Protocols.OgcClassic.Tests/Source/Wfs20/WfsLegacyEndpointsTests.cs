@@ -47,6 +47,18 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WebAppFixture>
         transaction.Descendants(ows + "Post").Should().ContainSingle();
         operations.Single(operation => operation.Attribute("name")?.Value == "GetFeature")
             .Descendants(ows + "Get").Should().ContainSingle();
+        XNamespace wfs = "http://www.opengis.net/wfs";
+        var featureTypeList = XElement.Parse(content).Element(wfs + "FeatureTypeList")!;
+        // WFS 1.1 OperationsType uses Operation text, unlike WFS 1.0's empty
+        // Insert/Update/Delete elements. Stock QGIS reads this list for edit flags.
+        featureTypeList.Elements().First().Name.Should().Be(wfs + "Operations");
+        var featureOperations = featureTypeList.Elements(wfs + "Operations").Should().ContainSingle().Subject;
+        featureOperations.Elements().Select(element => element.Name)
+            .Should().OnlyContain(name => name == wfs + "Operation");
+        featureOperations.Elements(wfs + "Operation").Select(element => element.Value)
+            .Should().Equal("Query", "Insert", "Update", "Delete");
+        featureOperations.Descendants(wfs + "Insert").Should().BeEmpty();
+        featureTypeList.Elements(wfs + "FeatureType").Should().NotBeEmpty();
     }
 
     [IntegrationTest]
