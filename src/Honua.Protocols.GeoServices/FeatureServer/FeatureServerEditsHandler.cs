@@ -713,7 +713,8 @@ internal sealed class FeatureServerEditsHandler(
                     AttributeRuleEditEvent.Update,
                     principal,
                     cancellationToken,
-                    existingFeature).ConfigureAwait(false);
+                    existingFeature,
+                    storageLayerId).ConfigureAwait(false);
                 context.UpdateFeatures.Add(updateFeature);
                 context.UpdateIndexes.Add(i);
                 context.UpdateObjectIds.Add(objectId);
@@ -862,14 +863,17 @@ internal sealed class FeatureServerEditsHandler(
                 continue;
             }
 
-            // Owner-based edit policy (#2132): a non-owning, non-admin principal may not
-            // delete a row owned by another principal. Surfaces an Esri-shaped per-edit error
-            // rather than a 500 or silent success.
-            var ownerDecision = EvaluateOwnerPolicy(
-                resource,
+            // Owner-based edit policy (#2132, #5426): read the owner past a field mask.
+            // The masked pre-read stays the caller's feature; this decision does not copy
+            // the owner onto it. A non-owner is still refused.
+            var ownerDecision = await OwnerEditPolicyFieldAccess.AuthorizeAsync(
+                _featureReader,
+                storageLayerId,
+                existingFeature.Value.Id,
+                resource.OwnerEditPolicy,
                 AttributeRuleEditEvent.Delete,
-                existingFeature.Value.Attributes,
-                principal);
+                principal,
+                cancellationToken).ConfigureAwait(false);
             if (!ownerDecision.IsAllowed)
             {
                 context.HasValidationErrors = true;
@@ -1658,7 +1662,8 @@ internal sealed class FeatureServerEditsHandler(
         AttributeRuleEditEvent editEvent,
         EditPrincipal principal,
         CancellationToken cancellationToken,
-        Feature? existingFeature = null)
+        Feature? existingFeature = null,
+        int storageLayerId = 0)
     {
         byte[]? geometry = existingFeature?.Geometry;
         if (feature.ClearGeometry)
@@ -1832,23 +1837,24 @@ internal sealed class FeatureServerEditsHandler(
             }
         }
 
-        // Owner-based edit policy (#2132): authorize update against the existing row's owner
-        // and stamp the owner on insert. Anonymous edits are rejected while the policy is
-        // active; admins bypass the ownership check. A denial throws ArgumentException so the
-        // per-feature try/catch converts it into a clean Esri-shaped edit failure, not a 500.
+        // Owner-based edit policy (#2132, #5426): authorize update against an unmasked
+        // owner read and stamp the owner on insert. The policy read is not merged into
+        // attributes, so a masked owner stays out of the edit document and the response.
+        // Anonymous edits are rejected while the policy is active; admins bypass the
+        // ownership check. A denial throws EditNotPermittedException so the per-feature
+        // catch maps it to GeoServicesEditErrorCodes.NotPermitted rather than ValidationFailed.
         if (resource.OwnerEditPolicy is { Enabled: true } ownerPolicy)
         {
-            var existingOwner = existingFeature is { } existing &&
-                existing.Attributes.TryGetValue(ownerPolicy.OwnerField, out var existingOwnerValue)
-                ? existingOwnerValue
-                : null;
-            var ownerDecision = OwnerEditPolicyEvaluator.Evaluate(
-                ownerPolicy, editEvent, existingOwner, principal);
+            var ownerDecision = await OwnerEditPolicyFieldAccess.AuthorizeAsync(
+                _featureReader,
+                storageLayerId,
+                existingFeature?.Id,
+                ownerPolicy,
+                editEvent,
+                principal,
+                cancellationToken).ConfigureAwait(false);
             if (!ownerDecision.IsAllowed)
             {
-                // Owner-policy denial is an authorization failure, not invalid data: throw a
-                // typed exception so the per-feature catch maps it to the stable
-                // GeoServicesEditErrorCodes.NotPermitted code rather than ValidationFailed.
                 throw new EditNotPermittedException(SanitizeEditErrorMessage(ownerDecision.Reason!, "Edit not permitted."));
             }
 
@@ -1870,28 +1876,6 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         return Feature.Create(objectId, geometry, attributes.ToImmutable());
-    }
-
-    /// <summary>
-    /// Evaluates the resource's owner-based edit policy for a delete (which does not flow
-    /// through <see cref="BuildFeatureFromGeoServicesAsync"/>) against the existing row's
-    /// owner-field value.
-    /// </summary>
-    private static OwnerEditDecision EvaluateOwnerPolicy(
-        MetadataV2Resource resource,
-        AttributeRuleEditEvent editEvent,
-        ImmutableDictionary<string, object?> existingAttributes,
-        EditPrincipal principal)
-    {
-        if (resource.OwnerEditPolicy is not { Enabled: true } ownerPolicy)
-        {
-            return OwnerEditDecision.Allow;
-        }
-
-        var existingOwner = existingAttributes.TryGetValue(ownerPolicy.OwnerField, out var ownerValue)
-            ? ownerValue
-            : null;
-        return OwnerEditPolicyEvaluator.Evaluate(ownerPolicy, editEvent, existingOwner, principal);
     }
 
     /// <summary>
