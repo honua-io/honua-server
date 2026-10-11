@@ -648,6 +648,13 @@ internal sealed class FeatureServerEditsHandler(
             return;
         }
 
+        var ownerSnapshots = await ReadOwnerSnapshotsAsync(
+            resource,
+            storageLayerId,
+            existingFeatures.Values,
+            principal,
+            cancellationToken).ConfigureAwait(false);
+
         for (var i = 0; i < request.Updates.Length; i++)
         {
             if (slotObjectIds[i] is not { } objectId)
@@ -714,7 +721,7 @@ internal sealed class FeatureServerEditsHandler(
                     principal,
                     cancellationToken,
                     existingFeature,
-                    storageLayerId).ConfigureAwait(false);
+                    ownerSnapshots).ConfigureAwait(false);
                 context.UpdateFeatures.Add(updateFeature);
                 context.UpdateIndexes.Add(i);
                 context.UpdateObjectIds.Add(objectId);
@@ -817,6 +824,12 @@ internal sealed class FeatureServerEditsHandler(
                 .Select(static precondition => precondition.ObjectId)
                 .ToHashSet();
         var usesInternalObjectIds = ShouldUseInternalObjectIdFastPath(resource);
+        var ownerSnapshots = await ReadOwnerSnapshotsAsync(
+            resource,
+            storageLayerId,
+            existingFeatures.Values,
+            principal,
+            cancellationToken).ConfigureAwait(false);
 
         for (var i = 0; i < request.Deletes.Length; i++)
         {
@@ -863,17 +876,14 @@ internal sealed class FeatureServerEditsHandler(
                 continue;
             }
 
-            // Owner-based edit policy (#2132, #5426): read the owner past a field mask.
-            // The masked pre-read stays the caller's feature; this decision does not copy
-            // the owner onto it. A non-owner is still refused.
-            var ownerDecision = await OwnerEditPolicyFieldAccess.AuthorizeAsync(
-                _featureReader,
-                storageLayerId,
-                existingFeature.Value.Id,
+            // Owner-based edit policy (#2132, #5426): the batch owner read is not copied
+            // onto the masked feature the caller already holds. A non-owner is still refused.
+            var deleteSnapshot = SnapshotFor(ownerSnapshots, existingFeature.Value.Id);
+            var ownerDecision = OwnerEditPolicyFieldAccess.Decide(
                 resource.OwnerEditPolicy,
                 AttributeRuleEditEvent.Delete,
                 principal,
-                cancellationToken).ConfigureAwait(false);
+                deleteSnapshot);
             if (!ownerDecision.IsAllowed)
             {
                 context.HasValidationErrors = true;
@@ -1663,7 +1673,7 @@ internal sealed class FeatureServerEditsHandler(
         EditPrincipal principal,
         CancellationToken cancellationToken,
         Feature? existingFeature = null,
-        int storageLayerId = 0)
+        IReadOnlyDictionary<long, OwnerFieldSnapshot>? ownerSnapshots = null)
     {
         byte[]? geometry = existingFeature?.Geometry;
         if (feature.ClearGeometry)
@@ -1837,22 +1847,20 @@ internal sealed class FeatureServerEditsHandler(
             }
         }
 
-        // Owner-based edit policy (#2132, #5426): authorize update against an unmasked
-        // owner read and stamp the owner on insert. The policy read is not merged into
-        // attributes, so a masked owner stays out of the edit document and the response.
-        // Anonymous edits are rejected while the policy is active; admins bypass the
-        // ownership check. A denial throws EditNotPermittedException so the per-feature
-        // catch maps it to GeoServicesEditErrorCodes.NotPermitted rather than ValidationFailed.
+        // Owner-based edit policy (#2132, #5426): authorize update against the batch's
+        // unmasked owner read and stamp the owner on insert. That read is not copied into
+        // attributes. When the owner was masked, the writer keeps the stored value via
+        // PreserveOmittedMaskedAttributes, so the response still omits it.
         if (resource.OwnerEditPolicy is { Enabled: true } ownerPolicy)
         {
-            var ownerDecision = await OwnerEditPolicyFieldAccess.AuthorizeAsync(
-                _featureReader,
-                storageLayerId,
-                existingFeature?.Id,
+            var updateSnapshot = editEvent == AttributeRuleEditEvent.Insert || existingFeature is not { } existing
+                ? null
+                : SnapshotFor(ownerSnapshots, existing.Id);
+            var ownerDecision = OwnerEditPolicyFieldAccess.Decide(
                 ownerPolicy,
                 editEvent,
                 principal,
-                cancellationToken).ConfigureAwait(false);
+                updateSnapshot);
             if (!ownerDecision.IsAllowed)
             {
                 throw new EditNotPermittedException(SanitizeEditErrorMessage(ownerDecision.Reason!, "Edit not permitted."));
@@ -1875,7 +1883,60 @@ internal sealed class FeatureServerEditsHandler(
                 SanitizeEditErrorMessage(contingentResult.Violations[0].Message, "Invalid attribute combination."));
         }
 
-        return Feature.Create(objectId, geometry, attributes.ToImmutable());
+        var edited = Feature.Create(objectId, geometry, attributes.ToImmutable());
+        if (OwnerEditPolicyFieldAccess.ShouldPreserveStoredOwner(
+                resource.OwnerEditPolicy,
+                existingFeature is not null && !feature.ReplaceAttributes,
+                attributes.Keys))
+        {
+            edited = edited with { PreserveOmittedMaskedAttributes = true };
+        }
+
+        return edited;
+    }
+
+    /// <summary>
+    /// Loads owner values for a whole update or delete batch. Returns null when this caller
+    /// does not need the stored owner, so inserts and administrators do not query.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<long, OwnerFieldSnapshot>?> ReadOwnerSnapshotsAsync(
+        MetadataV2Resource resource,
+        int storageLayerId,
+        IEnumerable<Feature> existingFeatures,
+        EditPrincipal principal,
+        CancellationToken cancellationToken)
+    {
+        if (!OwnerEditPolicyFieldAccess.RequiresStoredOwner(resource.OwnerEditPolicy, principal))
+        {
+            return null;
+        }
+
+        var ids = new List<long>();
+        foreach (var feature in existingFeatures)
+        {
+            ids.Add(feature.Id);
+        }
+
+        return await OwnerEditPolicyFieldAccess.ReadOwnersAsync(
+            _featureReader,
+            storageLayerId,
+            ids,
+            resource.OwnerEditPolicy!.OwnerField,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static OwnerFieldSnapshot? SnapshotFor(
+        IReadOnlyDictionary<long, OwnerFieldSnapshot>? snapshots,
+        long storageFeatureId)
+    {
+        if (snapshots is null)
+        {
+            return null;
+        }
+
+        return snapshots.TryGetValue(storageFeatureId, out var snapshot)
+            ? snapshot
+            : OwnerFieldSnapshot.Hidden;
     }
 
     /// <summary>

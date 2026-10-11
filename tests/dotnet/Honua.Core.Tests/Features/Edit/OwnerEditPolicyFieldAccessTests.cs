@@ -108,14 +108,72 @@ public sealed class OwnerEditPolicyFieldAccessTests
     private static void AssertPolicyQuery(FeatureQuery query)
     {
         query.EnforcedSqlFilter.Should().BeNull();
-        query.EnforcedMaskedFields.Should().NotBeNull();
-        query.EnforcedMaskedFields!.Value.IsDefault.Should().BeFalse();
-        query.EnforcedMaskedFields.Value.IsEmpty.Should().BeTrue();
-        query.ObjectIds.Should().NotBeNull();
-        query.ObjectIds!.Value.Should().Equal(42L);
-        query.OutFields.Should().NotBeNull();
-        query.OutFields!.Value.Should().Equal("owner");
+        var maskedFields = query.EnforcedMaskedFields
+            ?? throw new InvalidOperationException("policy query omitted the field mask");
+        maskedFields.IsDefault.Should().BeFalse();
+        maskedFields.IsEmpty.Should().BeTrue();
+        var objectIds = query.ObjectIds
+            ?? throw new InvalidOperationException("policy query omitted object ids");
+        objectIds.Should().Equal(42L);
+        var outFields = query.OutFields
+            ?? throw new InvalidOperationException("policy query omitted out fields");
+        outFields.Should().Equal("owner");
         query.Limit.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task ReadOwnersAsync_TwoRows_UsesOneUnmaskedQuery()
+    {
+        var reader = new RecordingReader(RecordingReader.Mode.PolicyOwner);
+
+        var owners = await OwnerEditPolicyFieldAccess.ReadOwnersAsync(
+            reader,
+            layerId: 7,
+            storageFeatureIds: [42L, 43L],
+            ownerField: "owner");
+
+        reader.QueryCount.Should().Be(1);
+        var objectIds = reader.LastQuery.ObjectIds
+            ?? throw new InvalidOperationException("policy query omitted object ids");
+        objectIds.Should().Equal(42L, 43L);
+        reader.LastQuery.Limit.Should().Be(2);
+        var maskedFields = reader.LastQuery.EnforcedMaskedFields
+            ?? throw new InvalidOperationException("policy query omitted the field mask");
+        maskedFields.IsEmpty.Should().BeTrue();
+        reader.LastQuery.EnforcedSqlFilter.Should().BeNull();
+        var alice = OwnerEditPolicyFieldAccess.Decide(
+            Policy,
+            AttributeRuleEditEvent.Update,
+            new EditPrincipal("alice", true, false),
+            owners[42]);
+        var bobOnAlice = OwnerEditPolicyFieldAccess.Decide(
+            Policy,
+            AttributeRuleEditEvent.Delete,
+            new EditPrincipal("bob", true, false),
+            owners[42]);
+        var bob = OwnerEditPolicyFieldAccess.Decide(
+            Policy,
+            AttributeRuleEditEvent.Update,
+            new EditPrincipal("bob", true, false),
+            owners[43]);
+        alice.IsAllowed.Should().BeTrue();
+        bobOnAlice.IsAllowed.Should().BeFalse();
+        bobOnAlice.Reason.Should().NotContain(Secret);
+        bobOnAlice.Reason.Should().NotContain("alice");
+        bob.IsAllowed.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void ShouldPreserveStoredOwner_WhenTheUpdateOmitsTheMaskedField()
+    {
+        OwnerEditPolicyFieldAccess.ShouldPreserveStoredOwner(Policy, isPartialUpdate: true, ["name"])
+            .Should().BeTrue();
+        OwnerEditPolicyFieldAccess.ShouldPreserveStoredOwner(Policy, isPartialUpdate: true, ["name", "owner"])
+            .Should().BeFalse();
+        OwnerEditPolicyFieldAccess.ShouldPreserveStoredOwner(Policy, isPartialUpdate: false, ["name"])
+            .Should().BeFalse();
+        OwnerEditPolicyFieldAccess.ShouldPreserveStoredOwner(Policy with { Enabled = false }, true, ["name"])
+            .Should().BeFalse();
     }
 
     /// <summary>
@@ -148,27 +206,34 @@ public sealed class OwnerEditPolicyFieldAccessTests
 
                 return Task.FromResult(QueryResult<Feature>.Create(
                     1,
-                    ImmutableArray.Create(Feature.Create(
-                        42,
-                        null,
-                        ImmutableDictionary.CreateRange(new Dictionary<string, object?>
-                        {
-                            ["name"] = "visible",
-                            ["secret"] = Secret
-                        })))));
+                    ImmutableArray.Create(MaskedFeature(42))));
             }
 
-            return Task.FromResult(QueryResult<Feature>.Create(
-                1,
-                ImmutableArray.Create(Feature.Create(
-                    42,
+            var features = ImmutableArray.CreateBuilder<Feature>();
+            foreach (var id in query.ObjectIds!.Value)
+            {
+                features.Add(Feature.Create(
+                    id,
                     null,
                     ImmutableDictionary.CreateRange(new Dictionary<string, object?>
                     {
-                        ["owner"] = "alice",
+                        ["owner"] = id == 43 ? "bob" : "alice",
                         ["secret"] = Secret
-                    })))));
+                    })));
+            }
+
+            return Task.FromResult(QueryResult<Feature>.Create(features.Count, features.ToImmutable()));
         }
+
+        private static Feature MaskedFeature(long id)
+            => Feature.Create(
+                id,
+                null,
+                ImmutableDictionary.CreateRange(new Dictionary<string, object?>
+                {
+                    ["name"] = "visible",
+                    ["secret"] = Secret
+                }));
 
         public Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
@@ -231,10 +296,10 @@ public sealed class OwnerEditPolicyFieldAccessTests
         private static bool IsPolicyQuery(FeatureQuery query)
             => query.EnforcedMaskedFields is { IsDefault: false, IsEmpty: true }
                 && query.EnforcedSqlFilter is null
-                && query.Limit == 1
                 && query.ObjectIds is { } ids
-                && ids.Length == 1
-                && ids[0] == 42
+                && ids.Length > 0
+                && query.Limit == ids.Length
+                && ids.All(static id => id is 42 or 43)
                 && query.OutFields is { } fields
                 && fields.Length == 1
                 && string.Equals(fields[0], "owner", StringComparison.Ordinal);
