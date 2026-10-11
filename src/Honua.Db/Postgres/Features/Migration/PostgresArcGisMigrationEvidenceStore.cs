@@ -25,18 +25,8 @@ namespace Honua.Db.Postgres.Features.Migration;
 /// artifacts as JSONB so schema evolution is owned by the artifact records themselves
 /// (#1025 slice 6).
 /// </summary>
-[System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
-    "Trimming",
-    "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code",
-    Justification = "Evidence store persists artifact records as opaque JSONB; the AOT host registers the artifact types via ImportJsonContext source-gen used elsewhere, and this store is never reached from native-AOT-published binaries (PostgreSQL provider lights up only in the JIT host).")]
-[System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
-    "AOT",
-    "IL3050:Calling members annotated with 'RequiresDynamicCodeAttribute' may break functionality when AOT compiling",
-    Justification = "Evidence store persists artifact records as opaque JSONB; the AOT host registers the artifact types via ImportJsonContext source-gen used elsewhere, and this store is never reached from native-AOT-published binaries (PostgreSQL provider lights up only in the JIT host).")]
 internal sealed class PostgresArcGisMigrationEvidenceStore : IArcGisMigrationEvidenceStore
 {
-    private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
-
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _table;
 
@@ -87,7 +77,7 @@ internal sealed class PostgresArcGisMigrationEvidenceStore : IArcGisMigrationEvi
         command.Parameters.AddWithValue("@target_resource_count", manifest.TargetResources.Length);
         command.Parameters.Add(new NpgsqlParameter("@manifest_json", NpgsqlDbType.Jsonb)
         {
-            Value = JsonSerializer.Serialize(manifest, _jsonOptions)
+            Value = SerializeManifest(manifest)
         });
 
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -114,7 +104,7 @@ internal sealed class PostgresArcGisMigrationEvidenceStore : IArcGisMigrationEvi
         command.Parameters.AddWithValue("@classification", parity.Classification);
         command.Parameters.Add(new NpgsqlParameter("@parity_json", NpgsqlDbType.Jsonb)
         {
-            Value = JsonSerializer.Serialize(parity, _jsonOptions)
+            Value = SerializeParity(parity)
         });
 
         var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -240,7 +230,7 @@ internal sealed class PostgresArcGisMigrationEvidenceStore : IArcGisMigrationEvi
             return null;
         }
 
-        return JsonSerializer.Deserialize<MigrationManifestArtifact>((string)result, _jsonOptions);
+        return DeserializeManifest((string)result);
     }
 
     public async Task<ArcGisMigrationParityArtifact?> GetParityAsync(
@@ -261,8 +251,20 @@ internal sealed class PostgresArcGisMigrationEvidenceStore : IArcGisMigrationEvi
             return null;
         }
 
-        return JsonSerializer.Deserialize<ArcGisMigrationParityArtifact>((string)result, _jsonOptions);
+        return DeserializeParity((string)result);
     }
+
+    internal static string SerializeManifest(MigrationManifestArtifact manifest)
+        => JsonSerializer.Serialize(manifest, MigrationEvidencePackJsonContext.Default.MigrationManifestArtifact);
+
+    internal static MigrationManifestArtifact? DeserializeManifest(string json)
+        => JsonSerializer.Deserialize(json, MigrationEvidencePackJsonContext.Default.MigrationManifestArtifact);
+
+    internal static string SerializeParity(ArcGisMigrationParityArtifact parity)
+        => JsonSerializer.Serialize(parity, MigrationEvidencePackJsonContext.Default.ArcGisMigrationParityArtifact);
+
+    internal static ArcGisMigrationParityArtifact? DeserializeParity(string json)
+        => JsonSerializer.Deserialize(json, MigrationEvidencePackJsonContext.Default.ArcGisMigrationParityArtifact);
 
     private static string MapStatus(string? parityClassification)
     {
