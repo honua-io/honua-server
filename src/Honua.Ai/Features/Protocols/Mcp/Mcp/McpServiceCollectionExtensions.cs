@@ -27,6 +27,56 @@ namespace Honua.Ai.Protocols.Mcp;
 internal static class McpServiceCollectionExtensions
 {
     /// <summary>
+    /// Registers the Streamable-HTTP session registry (honua-server#1954).
+    /// </summary>
+    internal static IServiceCollection AddMcpSessionManager(this IServiceCollection services)
+    {
+        // Streamable-HTTP session registry (honua-server#1954). A process-wide
+        // singleton constructed via a factory so it picks up the configured
+        // lifecycle bounds and the host TimeProvider (defaults to
+        // TimeProvider.System when none is registered). When Redis is connected
+        // (the governed control plane requires it) session records are shared
+        // through RedisMcpSessionStore, so a session negotiated on any instance is
+        // honoured by every instance (honua-release#531 journey stage 1.5); without
+        // a multiplexer the registry stays single-instance. An explicitly
+        // registered IMcpSessionStore wins (tests compose a shared fake).
+        services.TryAddSingleton(static sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<McpOptions>>().Value;
+            var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
+            var store = sp.GetService<IMcpSessionStore>()
+                ?? (sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is { } redis
+                    ? new RedisMcpSessionStore(redis)
+                    : null);
+            return new McpSessionManager(
+                options.MaxSessions,
+                options.SessionIdleTimeout,
+                options.SessionEvictionPolicy,
+                timeProvider,
+                options.MaxAnonymousSessions,
+                store,
+                sp.GetService<ILogger<McpSessionManager>>());
+        });
+        return services;
+    }
+
+    /// <summary>
+    /// Binds <see cref="McpOptions"/> from the <c>Mcp</c> section. The
+    /// stateless-session fallback defaults by environment (on only in
+    /// Development); that default is applied before binding, so an explicit
+    /// <c>Mcp:StatelessSessionFallback</c> setting still wins.
+    /// </summary>
+    internal static IServiceCollection AddMcpOptions(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddOptions<McpOptions>()
+            .Configure<IServiceProvider>(static (options, sp) =>
+                options.StatelessSessionFallback =
+                    McpOptions.DefaultStatelessSessionFallback(sp.GetService<IHostEnvironment>()))
+            .Bind(configuration.GetSection(McpOptions.SectionName));
+        return services;
+    }
+
+    /// <summary>
     /// Registers MCP tools, core resources (jobs, workspaces, catalog), and the
     /// JSON-RPC dispatcher. The hosted-promotion surface (published services,
     /// deployments, map/app packages) is intentionally not registered here —
@@ -357,25 +407,9 @@ internal static class McpServiceCollectionExtensions
         // MCP transport + session-lifecycle options (A3 hardening; #2537):
         // server-initiated GET-stream toggle, idle TTL, session cap, and eviction
         // policy. Bound from the `Mcp` section; defaults live on McpOptions.
-        services.AddOptions<McpOptions>()
-            .Bind(configuration.GetSection(McpOptions.SectionName));
+        services.AddMcpOptions(configuration);
 
-        // Streamable-HTTP session registry (honua-server#1954). A process-wide
-        // singleton so a session id issued on initialize is recognized on every
-        // subsequent POST/GET/DELETE handled by the same host. Constructed via a
-        // factory so it picks up the configured lifecycle bounds and the host
-        // TimeProvider (defaults to TimeProvider.System when none is registered).
-        services.TryAddSingleton(static sp =>
-        {
-            var options = sp.GetRequiredService<IOptions<McpOptions>>().Value;
-            var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
-            return new McpSessionManager(
-                options.MaxSessions,
-                options.SessionIdleTimeout,
-                options.SessionEvictionPolicy,
-                timeProvider,
-                options.MaxAnonymousSessions);
-        });
+        services.AddMcpSessionManager();
 
         // honua-server#4909: a bearer token admitted on a session's initialize (or on a
         // refreshed-token request that session accepted) may be reused on that session

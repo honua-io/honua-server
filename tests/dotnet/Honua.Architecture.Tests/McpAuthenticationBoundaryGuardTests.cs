@@ -194,7 +194,9 @@ public sealed class McpAuthenticationBoundaryGuardTests
             "the POST, GET/SSE, and DELETE transport entrypoints each resolve the canonical binding key");
 
         var accessSites = CountOccurrences(source, "sessions.ValidateAccess(")
-            + CountOccurrences(source, "sessions.TryCreateSession(");
+            + CountOccurrences(source, "sessions.ValidateAccessAsync(")
+            + CountOccurrences(source, "sessions.TryCreateSession(")
+            + CountOccurrences(source, "sessions.TryCreateSessionAsync(");
         accessSites.Should().Be(4,
             "every session create/access call site is accounted for by this guard; a new one must be "
             + "reviewed for canonical binding before the count is raised");

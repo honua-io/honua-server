@@ -103,8 +103,15 @@ internal static partial class McpLog
     /// multi-instance deployments without sticky routing). Only a short prefix
     /// of the id is logged because a session id names a live session elsewhere.
     /// </summary>
-    [LoggerMessage(8174, LogLevel.Debug, "MCP unknown session served statelessly: SessionIdPrefix={SessionIdPrefix}")]
+    [LoggerMessage(8174, LogLevel.Information, "MCP unknown session served statelessly (Mcp:StatelessSessionFallback): SessionIdPrefix={SessionIdPrefix}")]
     public static partial void SessionServedStateless(ILogger logger, string sessionIdPrefix);
+
+    /// <summary>
+    /// The shared MCP session store (Redis) failed an operation. A session held
+    /// locally keeps being served; an id this instance does not hold answers 404.
+    /// </summary>
+    [LoggerMessage(8192, LogLevel.Warning, "MCP shared session store unavailable: Operation={Operation}")]
+    public static partial void SessionStoreUnavailable(ILogger logger, string operation, Exception exception);
 
     /// <summary>
     /// A <c>POST /mcp</c> body exceeded <see cref="McpOptions.MaxRequestBodyBytes"/>

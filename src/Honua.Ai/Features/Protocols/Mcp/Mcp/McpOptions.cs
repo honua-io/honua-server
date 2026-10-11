@@ -60,22 +60,28 @@ internal sealed class McpOptions
     public bool ServerInitiatedStreamEnabled { get; set; }
 
     /// <summary>
-    /// When <see langword="true"/> (the default) a <c>POST /mcp</c> request that
-    /// presents a well-formed but unknown <c>Mcp-Session-Id</c> is served as if it
-    /// were session-less instead of being rejected with HTTP 404. Session state is
-    /// per instance, so on a multi-instance deployment without sticky routing
-    /// (e.g. the multi-container Lambda demo) a spec-compliant client that
-    /// initialized against one instance would otherwise 404 on every POST routed
-    /// to a different instance (honua-server#3027). Serving the request
-    /// statelessly is safe because every POST is independently authenticated and
-    /// authorized; the only session-negotiated state (elicitation capability,
-    /// SSE progress routing) degrades to the documented session-less fallbacks.
-    /// When <see langword="false"/> the strict Streamable-HTTP (MCP 2025-03-26)
-    /// behavior is kept: an unknown id answers HTTP 404 so the client
-    /// re-initializes. Malformed ids (non visible-ASCII or overlong) always 404
-    /// regardless of this setting.
+    /// Development convenience. When <see langword="true"/> a <c>POST /mcp</c>
+    /// request that presents a well-formed <c>Mcp-Session-Id</c> no instance holds
+    /// is served as if it were session-less instead of being rejected with
+    /// HTTP 404 (honua-server#3027). That silently drops whatever the client
+    /// negotiated at <c>initialize</c> (the workflow view, so <c>tools/list</c>
+    /// changes mid-session, and the elicitation capability), which is why it is
+    /// <em>off</em> by default everywhere except the Development environment: a
+    /// session negotiated on any instance is honoured by every instance (through
+    /// the shared Redis session store when Redis is connected) or refused with
+    /// HTTP 404 so a conforming client re-initializes, never silently downgraded.
+    /// An explicit <c>Mcp:StatelessSessionFallback</c> setting overrides the
+    /// environment default. Malformed ids (non visible-ASCII or overlong) always
+    /// 404 regardless of this setting.
     /// </summary>
-    public bool StatelessSessionFallback { get; set; } = true;
+    public bool StatelessSessionFallback { get; set; }
+
+    /// <summary>
+    /// Environment default for <see cref="StatelessSessionFallback"/>: on only in
+    /// Development. Applied before configuration binding, so an explicit setting wins.
+    /// </summary>
+    internal static bool DefaultStatelessSessionFallback(IHostEnvironment? environment) =>
+        environment?.IsDevelopment() == true;
 
     /// <summary>
     /// Maximum number of concurrently tracked sessions. When reached, a new

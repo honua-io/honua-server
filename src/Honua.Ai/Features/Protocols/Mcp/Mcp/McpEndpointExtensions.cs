@@ -19,11 +19,12 @@ namespace Honua.Ai.Protocols.Mcp;
 /// and JSON-RPC 2.0 batches on <c>POST /mcp</c>, enforces the MCP request-id
 /// rules (string or integer only), and manages <c>Mcp-Session-Id</c> sessions:
 /// a session id is issued on <c>initialize</c> and validated on every subsequent
-/// request. By default a well-formed but unknown id on POST is served
-/// statelessly (<see cref="McpOptions.StatelessSessionFallback"/>;
-/// honua-server#3027) so multi-instance deployments without sticky routing keep
-/// working; with the fallback disabled — and always for malformed ids — the
-/// strict spec answer is HTTP 404. The transport negotiates the
+/// request. When a shared session store is composed (Redis connected) a session
+/// minted on any instance is honoured by every instance; an id no instance holds
+/// answers the strict spec HTTP 404 so the client re-initializes. Serving a
+/// well-formed unknown id session-less instead is an explicit development
+/// convenience (<see cref="McpOptions.StatelessSessionFallback"/>, on by default
+/// only in Development); malformed ids always 404. The transport negotiates the
 /// response content type from the client's <c>Accept</c> header — emitting a
 /// single Server-Sent-Events <c>message</c> frame when the client accepts
 /// <c>text/event-stream</c>, and plain JSON otherwise. <c>GET /mcp</c> opens an
@@ -209,19 +210,21 @@ internal static class McpEndpointExtensions
                 && context.Request.Headers.TryGetValue(McpSessionManager.SessionHeaderName, out var presented)
                 && !string.IsNullOrEmpty(presented.ToString()))
             {
-                switch (sessions.ValidateAccess(presented.ToString(), principalKey))
+                switch (await sessions.ValidateAccessAsync(presented.ToString(), principalKey, cancellationToken).ConfigureAwait(false))
                 {
                     case McpSessionValidation.Unknown:
                         {
-                            // Session state is per instance, so on a multi-instance
-                            // deployment without sticky routing an id minted by one
-                            // container is unknown to its peers and a strict 404 would
-                            // break every spec-compliant client (honua-server#3027).
-                            // Every POST is independently authenticated, so by default
-                            // a well-formed unknown id is served statelessly: strip
-                            // the header so downstream session consumers (elicitation
-                            // capability lookup, SSE progress routing) observe the
-                            // request as session-less, and do not echo a session id.
+                            // The id is unknown to this instance AND to the shared
+                            // session store when one is composed, so no instance can
+                            // honour the session it names. The spec answer is 404 so
+                            // the client re-initializes; serving it session-less would
+                            // silently drop the negotiated state (workflow view,
+                            // elicitation) and change what tools/list returns mid-
+                            // session. The stateless fallback (honua-server#3027) is
+                            // kept only as an explicit development convenience: when
+                            // enabled, strip the header so downstream session
+                            // consumers observe the request as session-less, and do
+                            // not echo a session id.
                             if (options.StatelessSessionFallback
                                 && IsWellFormedSessionId(presented.ToString()))
                             {
@@ -308,7 +311,9 @@ internal static class McpEndpointExtensions
                     context.Items.TryGetValue(Views.McpWorkflowViewNegotiation.HttpContextItemKey, out var view)
                         ? view as string
                         : null;
-                if (sessions.TryCreateSession(principalKey, elicitationSupported, negotiatedView, out var sessionId))
+                var sessionId = await sessions.TryCreateSessionAsync(
+                    principalKey, elicitationSupported, negotiatedView, cancellationToken).ConfigureAwait(false);
+                if (sessionId is not null)
                 {
                     context.Response.Headers[McpSessionManager.SessionHeaderName] = sessionId;
                     await BindTokenReplayContinuationAsync(context, sessionId).ConfigureAwait(false);
@@ -379,7 +384,7 @@ internal static class McpEndpointExtensions
 
         var validation = string.IsNullOrEmpty(sessionId)
             ? McpSessionValidation.Unknown
-            : sessions.ValidateAccess(sessionId, principalKey);
+            : await sessions.ValidateAccessAsync(sessionId, principalKey, cancellationToken).ConfigureAwait(false);
         if (validation == McpSessionValidation.PrincipalMismatch)
         {
             // A live session bound to another identity: refuse the stream rather
@@ -442,7 +447,7 @@ internal static class McpEndpointExtensions
     /// <c>Mcp-Session-Id</c> header. Returns 204 when a session was removed and
     /// 404 when the id is unknown, per the Streamable-HTTP transport.
     /// </summary>
-    private static Task HandleDeleteAsync(HttpContext context, CancellationToken cancellationToken)
+    private static async Task HandleDeleteAsync(HttpContext context, CancellationToken cancellationToken)
     {
         var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
         var logger = context.RequestServices.GetRequiredService<ILogger<McpDataAccessSurface>>();
@@ -451,7 +456,7 @@ internal static class McpEndpointExtensions
         if (string.IsNullOrEmpty(sessionId))
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            return Task.CompletedTask;
+            return;
         }
 
         // Only the principal that owns the session may terminate it (A3 binding;
@@ -461,28 +466,33 @@ internal static class McpEndpointExtensions
         {
             McpLog.SessionRejected(logger, "durable-actor-required");
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            return Task.CompletedTask;
+            return;
         }
 
-        switch (sessions.ValidateAccess(sessionId, principalKey))
+        switch (await sessions.ValidateAccessAsync(sessionId, principalKey, cancellationToken).ConfigureAwait(false))
         {
             case McpSessionValidation.PrincipalMismatch:
                 McpLog.SessionRejected(logger, "principal-mismatch");
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                return Task.CompletedTask;
+                return;
 
             case McpSessionValidation.Unknown:
                 McpLog.SessionTerminated(logger, sessionId, found: false);
                 context.Response.StatusCode = StatusCodes.Status404NotFound;
-                return Task.CompletedTask;
+                return;
         }
 
-        var found = sessions.Terminate(sessionId);
-        McpLog.SessionTerminated(logger, sessionId, found);
-        context.Response.StatusCode = found
-            ? StatusCodes.Status204NoContent
-            : StatusCodes.Status404NotFound;
-        return Task.CompletedTask;
+        // Removes the session from the shared store too, so DELETE on any instance
+        // ends the session on every instance. A 204 is only returned once the shared
+        // record is gone; otherwise other replicas could still honour the session.
+        var termination = await sessions.TerminateAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        McpLog.SessionTerminated(logger, sessionId, termination == McpSessionTermination.Terminated);
+        context.Response.StatusCode = termination switch
+        {
+            McpSessionTermination.Terminated => StatusCodes.Status204NoContent,
+            McpSessionTermination.StoreUnavailable => StatusCodes.Status503ServiceUnavailable,
+            _ => StatusCodes.Status404NotFound
+        };
     }
 
     /// <summary>
