@@ -164,10 +164,12 @@ internal static partial class ImageServerSoapEndpoints
                     "GetFieldsResponse",
                     BuildFields()),
                 "GetKeyProperties" => await HandleGetKeyPropertiesAsync(
+                    operation,
                     rasterRequest,
                     "GetKeyPropertiesResponse",
                     cancellationToken).ConfigureAwait(false),
                 "GetKeyPropertiesX" => await HandleGetKeyPropertiesAsync(
+                    operation,
                     rasterRequest,
                     "GetKeyPropertiesXResponse",
                     cancellationToken).ConfigureAwait(false),
