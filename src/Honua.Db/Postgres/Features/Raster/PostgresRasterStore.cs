@@ -2481,17 +2481,20 @@ internal sealed class PostgresRasterStore : IRasterStore
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        // Check pre-computed tiles first
+        // Only admit provenance-bearing tiles. The payload hash also detects an old binary
+        // overwriting tile_data without updating the sampling version on an existing row.
         await using var tileCommand = connection.CreateCommand();
         tileCommand.CommandText = $"""
             SELECT tile_data, content_type
             FROM {_rasterTilesTable}
             WHERE raster_data_id = @rasterId AND zoom_level = @level AND tile_x = @col AND tile_y = @row
+              AND {RasterTileProvenanceSql.AdmissionPredicate}
             """;
         AddParameter(tileCommand, "@rasterId", rasterId);
         AddParameter(tileCommand, "@level", level);
         AddParameter(tileCommand, "@col", col);
         AddParameter(tileCommand, "@row", row);
+        AddParameter(tileCommand, "@rendererVersion", RasterCorrectedNearestSql.RendererVersion);
 
         await using (var tileReader = await tileCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
         {
@@ -2542,11 +2545,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         var tileStats = await GetStatisticsAsync(layerId, rasterId, bands: null, cancellationToken: cancellationToken).ConfigureAwait(false);
         var tileStretchBounds = BuildAutoTileStretchBounds(tileStats);
 
-        // Prefer a persisted overview pyramid (#1836): if one was built at import time whose
-        // resolution matches this tile's ground resolution, read it directly (it is already in
-        // EPSG:3857) instead of scanning the full-resolution raster + reducing on the fly.
-        var overviewId = await ResolveBestOverviewIdAsync(connection, rasterId, level, cancellationToken).ConfigureAwait(false);
-
+        // Persisted overviews have no native-source lineage proof. Retain their rows, but
+        // sample the original raster so a previously clipped warp cannot re-enter the tile path.
         await using var dynCommand = connection.CreateCommand();
 
         // Build a 256Ã—256 reference raster exactly aligned to the WebMercatorQuad tile
@@ -2573,50 +2573,22 @@ internal sealed class PostgresRasterStore : IRasterStore
             )
             """;
 
-        if (overviewId is { } persistedOverviewId)
+        var sourceResampleExpr = RasterCorrectedNearestSql.Sample("raster", "tile_ref.rast");
+        if (tileStretchBounds is { Count: > 0 })
         {
-            // The persisted overview is already EPSG:3857, so ST_Transform is the identity and the
-            // intersect uses 3857 directly. This reads the reduced pyramid level â€” no full-res scan.
-            var overviewResampleExpr = "ST_Resample(raster, tile_ref.rast)";
-            if (tileStretchBounds is { Count: > 0 })
-            {
-                overviewResampleExpr = BuildStretchedRasterExpression(overviewResampleExpr, tileStretchBounds);
-            }
-
-            dynCommand.CommandText = $"""
-                {tileBoundsCte}
-                SELECT ST_AsGDALRaster(
-                    {RasterGridFrameSql.FrameAlignedRaster(overviewResampleExpr, "tile_ref.rast")},
-                    '{effectiveTileFormat}'{tileCreationOptions}
-                ) AS data
-                FROM {_rasterOverviewsTable}, tile_bounds tb, tile_ref
-                WHERE id = @overviewId
-                  AND ST_Intersects(ST_ConvexHull(raster), tb.geom)
-                """;
-            AddParameter(dynCommand, "@overviewId", persistedOverviewId);
+            sourceResampleExpr = BuildStretchedRasterExpression(sourceResampleExpr, tileStretchBounds);
         }
-        else
-        {
-            // No persisted overview: reduce the source toward the tile's ground resolution at low
-            // zoom (no-op at native/finer zoom) so wide tiles do not resample full-res pixels.
-            var overviewSource = BuildOverviewSourceExpression(level);
-            var sourceResampleExpr = $"ST_Transform({overviewSource}, tile_ref.rast)";
-            if (tileStretchBounds is { Count: > 0 })
-            {
-                sourceResampleExpr = BuildStretchedRasterExpression(sourceResampleExpr, tileStretchBounds);
-            }
 
-            dynCommand.CommandText = $"""
-                {tileBoundsCte}
-                SELECT ST_AsGDALRaster(
-                    {RasterGridFrameSql.FrameAlignedRaster(sourceResampleExpr, "tile_ref.rast")},
-                    '{effectiveTileFormat}'{tileCreationOptions}
-                ) AS data
-                FROM {_rasterDataTable}, tile_bounds tb, tile_ref
-                WHERE layer_id = @layerId AND id = @rasterId
-                  AND ST_Intersects(ST_ConvexHull(raster), ST_Transform(tb.geom, ST_SRID(raster)))
-                """;
-        }
+        dynCommand.CommandText = $"""
+            {tileBoundsCte}
+            SELECT ST_AsGDALRaster(
+                {RasterGridFrameSql.FrameAlignedRaster(sourceResampleExpr, "tile_ref.rast")},
+                '{effectiveTileFormat}'{tileCreationOptions}
+            ) AS data
+            FROM {_rasterDataTable}, tile_bounds tb, tile_ref
+            WHERE layer_id = @layerId AND id = @rasterId
+              AND ST_Intersects(ST_ConvexHull(raster), ST_Transform(tb.geom, ST_SRID(raster)))
+            """;
 
         AddParameter(dynCommand, "@layerId", layerId);
         AddParameter(dynCommand, "@rasterId", rasterId);
@@ -2674,16 +2646,16 @@ internal sealed class PostgresRasterStore : IRasterStore
                 includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
         }
 
-        var mosaicTileExpr = "rast";
+        var referenceSource = $"(SELECT raster FROM {_rasterDataTable} WHERE layer_id = @layerId " +
+            "AND id = ANY(@rasterIds) AND ST_Intersects(ST_ConvexHull(raster), " +
+            "ST_Transform((SELECT geom FROM tile_bounds), ST_SRID(raster))) ORDER BY id LIMIT 1)";
+        var mosaicTileExpr = RasterCorrectedNearestSql.RestoreAfterMosaic("rast", referenceSource);
         var mosaicTileStats = await GetMosaicStatisticsAsync(layerId, rasterIds, mergeStrategy, bands: null, cancellationToken: cancellationToken).ConfigureAwait(false);
         var mosaicTileBounds = BuildAutoTileStretchBounds(mosaicTileStats);
         if (mosaicTileBounds is { Count: > 0 })
         {
             mosaicTileExpr = BuildStretchedRasterExpression(mosaicTileExpr, mosaicTileBounds);
         }
-
-        // Same on-the-fly overview reduction as GetImageTileAsync (no-op at native/finer zoom).
-        var overviewSource = BuildOverviewSourceExpression(level);
 
         await using var command = connection.CreateCommand();
         // Same tile-envelope-aligned approach as GetImageTileAsync: build a 256Ã—256
@@ -2708,7 +2680,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM tile_bounds tb
             ),
             source AS (
-                SELECT ST_Transform({overviewSource}, tile_ref.rast) AS rast,
+                SELECT {RasterCorrectedNearestSql.Sample("raster", "tile_ref.rast", preserveCoverageMask: true)} AS rast,
                        id,
                        created_at,
                        COALESCE(acquisition_date, created_at) AS effective_acquisition
@@ -2779,7 +2751,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         // The tile reference raster is aligned to the gridset window bounds in the gridset SRID, so
         // ST_Transform uses that reference directly to reproject into the gridset CRS and register the
         // output onto the exact tile envelope (nodata for uncovered pixels).
-        var resampleExpr = "ST_Transform(src.rast, tile_ref.rast)";
+        var resampleExpr = RasterCorrectedNearestSql.Sample("src.rast", "tile_ref.rast");
         if (tileStretchBounds is { Count: > 0 })
         {
             resampleExpr = BuildStretchedRasterExpression(resampleExpr, tileStretchBounds);
@@ -2851,7 +2823,10 @@ internal sealed class PostgresRasterStore : IRasterStore
                 includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
         }
 
-        var mosaicTileExpr = "rast";
+        var referenceSource = $"(SELECT raster FROM {_rasterDataTable} WHERE layer_id = @layerId " +
+            "AND id = ANY(@rasterIds) AND ST_Intersects(ST_ConvexHull(raster), " +
+            "ST_Transform((SELECT geom FROM tile_bounds), ST_SRID(raster))) ORDER BY id LIMIT 1)";
+        var mosaicTileExpr = RasterCorrectedNearestSql.RestoreAfterMosaic("rast", referenceSource);
         var mosaicTileStats = await GetMosaicStatisticsAsync(layerId, rasterIds, mergeStrategy, bands: null, cancellationToken: cancellationToken).ConfigureAwait(false);
         var mosaicTileBounds = BuildAutoTileStretchBounds(mosaicTileStats);
         if (mosaicTileBounds is { Count: > 0 })
@@ -2866,7 +2841,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             ),
             {BuildTileWindowCte(window)},
             source AS (
-                SELECT ST_Transform(raster, tile_ref.rast) AS rast,
+                SELECT {RasterCorrectedNearestSql.Sample("raster", "tile_ref.rast", preserveCoverageMask: true)} AS rast,
                        id,
                        created_at,
                        COALESCE(acquisition_date, created_at) AS effective_acquisition

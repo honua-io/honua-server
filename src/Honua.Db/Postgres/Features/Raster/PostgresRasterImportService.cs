@@ -793,7 +793,6 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         // Geographic ±90 corners fail bare ST_Transform to EPSG:3857. Clip through the
         // shared geometry chokepoint before the tile-index math and the raster warp.
         var mercatorEnvelope = RasterWebMercatorSql.BuildEnvelopeExpression("ST_Envelope(r.raster)", sourceSrid);
-        var mercatorRaster = RasterWebMercatorSql.BuildRasterExpression("r.raster", sourceSrid);
 
         foreach (var zoom in zoomLevels)
         {
@@ -812,8 +811,10 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                     -((ST_YMax({envelope}) - ST_YMin({envelope})) / 256.0),
                     0.0, 0.0, 3857)
                 """;
-            var framedRaster = RasterGridFrameSql.FrameAlignedRaster(
-                $"ST_Resample({mercatorRaster}, {grid})", grid);
+            var framedRaster = RasterCorrectedNearestSql.Sample("r.raster", grid);
+            // Keep one encoded payload per tile for both the body and its digest. OFFSET 0
+            // prevents expression flattening without materializing an entire zoom's tiles.
+            var encodedTile = $"(SELECT ST_AsGDALRaster({framedRaster}, 'PNG') AS tile_data OFFSET 0)";
 
             if (zoom == 0)
             {
@@ -824,17 +825,17 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                 // seeded tile covers exactly the world bbox (not just the raster's own extent
                 // stretched to fill the tile, which misregisters partial-world datasets).
                 command.CommandText = $"""
-                    INSERT INTO {_rasterTilesTable} (raster_data_id, zoom_level, tile_x, tile_y, tile_data, content_type)
+                    INSERT INTO {_rasterTilesTable} (raster_data_id, zoom_level, tile_x, tile_y, tile_data, content_type,
+                        renderer_version, renderer_payload_sha256)
                     SELECT @rasterId, 0, 0, 0,
-                        ST_AsGDALRaster(
-                            {framedRaster},
-                            'PNG'
-                        ),
-                        'image/png'
+                        encoded.tile_data, 'image/png', @rendererVersion, sha256(encoded.tile_data)
                     FROM {_rasterDataTable} r
+                    CROSS JOIN LATERAL {encodedTile} encoded
                     WHERE r.id = @rasterId
                     ON CONFLICT (raster_data_id, zoom_level, tile_x, tile_y) DO UPDATE SET
                         tile_data = EXCLUDED.tile_data,
+                        renderer_version = EXCLUDED.renderer_version,
+                        renderer_payload_sha256 = EXCLUDED.renderer_payload_sha256,
                         created_at = NOW()
                     """;
                 command.AddParameter("@rasterId", rasterId);
@@ -848,13 +849,10 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                 // the frame â€” fixing the spatial misregistration the previous ST_Clip+ST_Resize
                 // approach produced for edge tiles and non-3857 source rasters.
                 command.CommandText = $"""
-                    INSERT INTO {_rasterTilesTable} (raster_data_id, zoom_level, tile_x, tile_y, tile_data, content_type)
+                    INSERT INTO {_rasterTilesTable} (raster_data_id, zoom_level, tile_x, tile_y, tile_data, content_type,
+                        renderer_version, renderer_payload_sha256)
                     SELECT @rasterId, @zoom, t.x, t.y,
-                        ST_AsGDALRaster(
-                            {framedRaster},
-                            'PNG'
-                        ),
-                        'image/png'
+                        encoded.tile_data, 'image/png', @rendererVersion, sha256(encoded.tile_data)
                     FROM {_rasterDataTable} r
                     CROSS JOIN LATERAL (
                         SELECT x, y
@@ -867,16 +865,20 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                             LEAST((1 << @zoom) - 1, ((1 << (@zoom - 1)) - floor(ST_YMin({mercatorEnvelope}) / (40075016.686 / (1 << @zoom)))::int))
                         ) AS y
                     ) t
+                    CROSS JOIN LATERAL {encodedTile} encoded
                     WHERE r.id = @rasterId
                       AND ST_Intersects(ST_ConvexHull(r.raster), ST_Transform(ST_TileEnvelope(@zoom, t.x, t.y), ST_SRID(r.raster)))
                     ON CONFLICT (raster_data_id, zoom_level, tile_x, tile_y) DO UPDATE SET
                         tile_data = EXCLUDED.tile_data,
+                        renderer_version = EXCLUDED.renderer_version,
+                        renderer_payload_sha256 = EXCLUDED.renderer_payload_sha256,
                         created_at = NOW()
                     """;
                 command.AddParameter("@rasterId", rasterId);
                 command.AddParameter("@zoom", zoom);
             }
 
+            command.AddParameter("@rendererVersion", RasterCorrectedNearestSql.RendererVersion);
             var tilesInserted = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             totalTiles += tilesInserted;
 

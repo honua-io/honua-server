@@ -220,6 +220,8 @@ public sealed class RasterSurfaceServiceTests : IAsyncLifetime
                 tile_x INTEGER NOT NULL,
                 tile_y INTEGER NOT NULL,
                 tile_data BYTEA NOT NULL,
+                renderer_version INTEGER NOT NULL DEFAULT 0,
+                renderer_payload_sha256 BYTEA,
                 content_type VARCHAR(50) NOT NULL DEFAULT 'image/png',
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );

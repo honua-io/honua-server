@@ -180,4 +180,26 @@ public sealed class RasterNativeWindowSqlIntegrationTests(PostgresFixture fixtur
         command.Parameters.AddWithValue("scale", scale);
         (await command.ExecuteScalarAsync()).Should().Be(true);
     }
+
+    [IntegrationTheory]
+    [InlineData(0.00001, -1.0)]
+    [InlineData(1.0, -0.00001)]
+    public async Task TryWarp_ProjectedAxisExceedsRasterLimit_ReturnsNullBeforeWarp(double scaleX, double scaleY)
+    {
+        await using var connection = await fixture.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH source AS (
+                SELECT ST_AddBand(ST_MakeEmptyRaster(2, 1, 0, 1, 1, -1, 0, 0, 4326),
+                    '8BUI'::text, 7, 255) AS rast
+            ), grid AS (
+                SELECT ST_MakeEmptyRaster(1, 1, 0, 1, @sx, @sy, 0, 0, 4326) AS rast
+            )
+            SELECT {RasterNativeWindowSql.TryWarp("s.rast", "g.rast")} IS NULL FROM source s, grid g;
+            """;
+        command.Parameters.AddWithValue("sx", scaleX);
+        command.Parameters.AddWithValue("sy", scaleY);
+        (await command.ExecuteScalarAsync()).Should().Be(true,
+            "an intermediate with a legal area but over-wide axis must be rejected before ST_Transform");
+    }
 }

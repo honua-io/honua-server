@@ -186,7 +186,8 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             await using var connection = await fixture.GetConnectionAsync(schemaName);
             await using var command = connection.CreateCommand();
             command.CommandText = """
-                SELECT zoom_level, ST_Width(ST_FromGDALRaster(tile_data)), ST_Height(ST_FromGDALRaster(tile_data))
+                SELECT zoom_level, ST_Width(ST_FromGDALRaster(tile_data)), ST_Height(ST_FromGDALRaster(tile_data)),
+                       renderer_version, renderer_payload_sha256 = sha256(tile_data)
                 FROM raster_tiles WHERE raster_data_id = @id;
                 """;
             command.Parameters.AddWithValue("id", result.RasterId!.Value);
@@ -197,6 +198,9 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
                 zooms.Add(reader.GetInt32(0));
                 reader.GetInt32(1).Should().Be(256, "cached PNG bytes must span the complete tile grid");
                 reader.GetInt32(2).Should().Be(256);
+                reader.GetInt32(3).Should().Be(RasterCorrectedNearestSql.RendererVersion,
+                    "the importer uses the corrected nearest-grid sampler");
+                reader.GetBoolean(4).Should().BeTrue("the stored digest must bind the exact generated PNG bytes");
             }
             zooms.Should().BeEquivalentTo(new[] { 0, 1 });
         }
@@ -280,6 +284,8 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
                 tile_x INTEGER NOT NULL,
                 tile_y INTEGER NOT NULL,
                 tile_data BYTEA NOT NULL,
+                renderer_version INTEGER NOT NULL DEFAULT 0,
+                renderer_payload_sha256 BYTEA,
                 content_type VARCHAR(50) NOT NULL DEFAULT 'image/png',
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 CONSTRAINT raster_tiles_unique_tile UNIQUE (raster_data_id, zoom_level, tile_x, tile_y)
