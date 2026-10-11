@@ -44,7 +44,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<SqlServerFeatureStore>(sp => new SqlServerFeatureStore(
             sp.GetRequiredService<SqlServerFeatureDataAccess>(),
             sp.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>(),
-            Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp)));
+            Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp),
+            sp.GetService<IFilterExpressionService>()));
 
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<SqlServerFeatureStore>());
 
