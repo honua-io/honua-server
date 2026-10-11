@@ -164,10 +164,12 @@ internal static partial class ImageServerSoapEndpoints
                     "GetFieldsResponse",
                     BuildFields()),
                 "GetKeyProperties" => await HandleGetKeyPropertiesAsync(
+                    operation,
                     rasterRequest,
                     "GetKeyPropertiesResponse",
                     cancellationToken).ConfigureAwait(false),
                 "GetKeyPropertiesX" => await HandleGetKeyPropertiesAsync(
+                    operation,
                     rasterRequest,
                     "GetKeyPropertiesXResponse",
                     cancellationToken).ConfigureAwait(false),
@@ -339,18 +341,13 @@ internal static partial class ImageServerSoapEndpoints
             revalidation.Resolution.MergeStrategy,
             cancellationToken).ConfigureAwait(false);
 
-        var referenceExtent = referenceRaster.Extent;
-        var pixelSizeX = referenceRaster.Width > 0 && referenceExtent.HasValue
-            ? (referenceExtent.Value.XMax - referenceExtent.Value.XMin) / referenceRaster.Width
-            : 0;
-        var pixelSizeY = referenceRaster.Height > 0 && referenceExtent.HasValue
-            ? (referenceExtent.Value.YMax - referenceExtent.Value.YMin) / referenceRaster.Height
-            : 0;
+        var (pixelSizeX, pixelSizeY) = ImageServerKeyPropertiesHandler.ComputePixelSizes(referenceRaster);
         XNamespace xsi = XmlSchemaInstanceNamespace;
         var extras = await BuildServiceInfoExtrasAsync(
             request.HttpContext,
             revalidation.Resolution.LayerId,
             rasters,
+            revalidation.Resolution.MergeStrategy,
             request.SoapNamespace,
             cancellationToken).ConfigureAwait(false);
         if (extras.Error is not null)

@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.Multidimensional.Abstractions;
@@ -302,6 +303,45 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
                 statistic.Elements().Select(element => element.Name.LocalName).Should().NotContain(["Count", "Sum", "Median", "Mode"]);
             }
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetKeyPropertiesX")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task KeyPropertiesRenderingRule_ExtractBandReordersCanonicalServiceMetadata()
+    {
+        var response = await PostSoapAsync($"""
+            <GetKeyPropertiesX xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
+              <RenderingRule><FunctionName>ExtractBand</FunctionName><Arguments>
+                <PropertySetProperty><Key>BandIds</Key><Value xsi:type="tns:ArrayOfInt"><Int>2</Int><Int>0</Int></Value></PropertySetProperty>
+              </Arguments></RenderingRule>
+            </GetKeyPropertiesX>
+            """);
+        response.Status.Should().Be(HttpStatusCode.OK, response.Body);
+        Property(response.Document, "BandCount").Should().Be(2);
+        var info = MultidimensionalPropertyValue(Element(response.Document, "Result"), "RasterInfo");
+        Child(info, "BandCount").Value.Should().Be("2");
+        Child(info, "RasterStatistics_0").Element("Min")!.Value.Should().Be("60");
+        Child(info, "RasterStatistics_1").Element("Min")!.Value.Should().Be("200");
+        Child(info, "RasterHistogram_0").Element("Counts")!.Elements().Select(item => long.Parse(item.Value, CultureInfo.InvariantCulture))
+            .Should().Equal(HistogramCountsBand3);
+        info.Elements().Select(item => item.Name.LocalName).Should().NotContain("RasterHistogram_2");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetKeyPropertiesX")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task KeyPropertiesRenderingRule_PixelTransformReturnsExplicitUnsupportedFault()
+    {
+        var response = await PostSoapAsync($"""
+            <GetKeyPropertiesX xmlns="{ArcGisNamespace}">
+              <RenderingRule><FunctionName>Slope</FunctionName></RenderingRule>
+            </GetKeyPropertiesX>
+            """);
+        response.Status.Should().Be(HttpStatusCode.NotImplemented, response.Body);
+        response.Document.Descendants().Select(item => item.Name.LocalName).Should().NotContain("RasterInfo");
     }
 
     [IntegrationTest]
