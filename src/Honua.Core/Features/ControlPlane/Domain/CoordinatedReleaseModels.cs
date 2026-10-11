@@ -224,6 +224,46 @@ public sealed record CoordinatedReleaseContext
     /// Blocking reasons that currently prevent the coordinated op from advancing.
     /// </summary>
     public IReadOnlyList<string> Blockers { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Name-identifier or <c>sub</c> of the principal that created the release, when one was present.
+    /// </summary>
+    public string? RequesterSubject { get; init; }
+
+    /// <summary>
+    /// Display name of the creating principal. Not used as an authorization key.
+    /// </summary>
+    public string? RequesterName { get; init; }
+
+    /// <summary>
+    /// Authentication type of the creating principal, restored onto the child deploy principal.
+    /// </summary>
+    public string? RequesterAuthenticationType { get; init; }
+
+    /// <summary>
+    /// Role claim values captured from the creating principal.
+    /// </summary>
+    public IReadOnlyList<string> RequesterRoles { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Tenant binding of the creating principal, from the same claims <c>PlatformDeployAuthority</c> reads.
+    /// </summary>
+    public string? RequesterTenantId { get; init; }
+
+    /// <summary>
+    /// Claim type that supplied <see cref="RequesterTenantId"/>.
+    /// </summary>
+    public string? RequesterTenantClaimType { get; init; }
+
+    /// <summary>
+    /// Operator that approved the most recent coordinated gate. Does not replace the original requester.
+    /// </summary>
+    public string? GateApprovedBy { get; init; }
+
+    /// <summary>
+    /// Operator that requested coordinated rollback. Does not replace the original requester.
+    /// </summary>
+    public string? RollbackRequestedBy { get; init; }
 }
 
 /// <summary>

@@ -168,7 +168,8 @@ internal static class OperationsServiceCollectionExtensions
                     sp.GetRequiredService<IHttpContextAccessor>(),
                     sp.GetRequiredService<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(),
                     sp.GetRequiredService<TimeProvider>(),
-                    sp.GetRequiredService<OperationLineageAttestationStore>()));
+                    sp.GetRequiredService<OperationLineageAttestationStore>(),
+                    sp.GetService<Honua.Core.Features.FileImport.Abstractions.IImportJobService>()));
             }
             services.AddHttpClient(AdminConnectImportOperationExecutor.HttpClientName);
             services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();

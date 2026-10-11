@@ -7,6 +7,8 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.MultiTenancy;
+using Microsoft.Extensions.Options;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Operations;
@@ -134,7 +136,9 @@ internal static class CoordinatedReleaseControlEndpoints
                     request.Reason,
                     request.IdempotencyKey,
                     request.CorrelationId,
-                    context.RequestAborted)
+                    context.RequestAborted,
+                    requester: context.User,
+                    tenantOptions: context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value)
                 .ConfigureAwait(false);
 
             return Results.Json(

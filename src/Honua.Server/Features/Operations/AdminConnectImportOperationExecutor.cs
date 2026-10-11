@@ -5,6 +5,8 @@ using System.Net.Http.Headers;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.FileImport.Abstractions;
+using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
@@ -17,7 +19,8 @@ internal sealed class AdminConnectImportOperationExecutor(
     IHttpContextAccessor httpContextAccessor,
     IAdminApiKeyStore adminApiKeyStore,
     TimeProvider clock,
-    OperationLineageAttestationStore lineageAttestationStore) : IOperationExecutor
+    OperationLineageAttestationStore lineageAttestationStore,
+    IImportJobService? importJobs = null) : IOperationExecutor, IOperationDryRunExecutor
 {
     public const string HttpClientName = "admin-connect-import-operation-loopback";
     public string OperationId => definition.OperationId;
@@ -32,8 +35,8 @@ internal sealed class AdminConnectImportOperationExecutor(
         var messages = missing.ToList();
         // Read-only connection tests take the same credential body as create/update. An inline
         // password is rejected there too (#4880); callers pass secretReference instead.
-        if (request.Parameters.TryGetValue("password", out var password) &&
-            !string.IsNullOrEmpty(password))
+        // The check is case-insensitive so "Password" cannot bypass the ordinal dictionary lookup.
+        if (AdminConnectImportApprovalPayload.HasInlinePassword(request.Parameters))
         {
             messages.Add("Inline passwords cannot be persisted for approval; use secretReference.");
         }
@@ -148,10 +151,65 @@ internal sealed class AdminConnectImportOperationExecutor(
         }
     }
 
-    public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
+    public async Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(handle);
-        return Task.FromResult(new OperationStatus { OperationInstanceId = handle.OperationInstanceId, OperationId = OperationId, CorrelationId = handle.CorrelationId, AuditId = handle.AuditId, ProposalId = handle.ProposalId, CreatedAt = handle.CreatedAt, UpdatedAt = handle.UpdatedAt, AuthorizationOutcome = handle.AuthorizationOutcome, PolicyDecision = handle.PolicyDecision, Status = handle.Status, Result = handle.Result, JobId = handle.JobId, ApprovalLane = handle.ApprovalLane, MetadataRevision = handle.MetadataRevision, Reason = handle.Reason, ResourceIds = handle.ResourceIds, EvidenceRefs = handle.EvidenceRefs });
+        var status = handle.Status;
+        var reason = handle.Reason;
+        if (handle.Status == OperationHandleStatus.Queued && importJobs is not null)
+        {
+            if (string.IsNullOrWhiteSpace(handle.JobId))
+            {
+                status = OperationHandleStatus.Indeterminate;
+                reason = "Queued import did not record a job id.";
+            }
+            else
+            {
+                var progress = await importJobs.GetProgressAsync(handle.JobId, cancellationToken).ConfigureAwait(false);
+                if (progress is null)
+                {
+                    status = OperationHandleStatus.Indeterminate;
+                    reason = "Queued import job is no longer present.";
+                }
+                else
+                {
+                    status = progress.Status switch
+                    {
+                        ImportStatus.Completed => OperationHandleStatus.Completed,
+                        ImportStatus.Failed => OperationHandleStatus.Failed,
+                        ImportStatus.Cancelled => OperationHandleStatus.Cancelled,
+                        ImportStatus.Processing => OperationHandleStatus.Running,
+                        ImportStatus.Queued => OperationHandleStatus.Queued,
+                        _ => OperationHandleStatus.Indeterminate,
+                    };
+                    if (progress.Status == ImportStatus.Failed)
+                    {
+                        reason = string.IsNullOrWhiteSpace(progress.ErrorMessage) ? "Import failed." : progress.ErrorMessage;
+                    }
+                }
+            }
+        }
+
+        return new OperationStatus
+        {
+            OperationInstanceId = handle.OperationInstanceId,
+            OperationId = OperationId,
+            CorrelationId = handle.CorrelationId,
+            AuditId = handle.AuditId,
+            ProposalId = handle.ProposalId,
+            CreatedAt = handle.CreatedAt,
+            UpdatedAt = handle.UpdatedAt,
+            AuthorizationOutcome = handle.AuthorizationOutcome,
+            PolicyDecision = handle.PolicyDecision,
+            Status = status,
+            Result = handle.Result,
+            JobId = handle.JobId,
+            ApprovalLane = handle.ApprovalLane,
+            MetadataRevision = handle.MetadataRevision,
+            Reason = reason,
+            ResourceIds = handle.ResourceIds,
+            EvidenceRefs = handle.EvidenceRefs,
+        };
     }
 
     private static string BindPath(OperationRequest request, string path)

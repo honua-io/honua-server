@@ -367,7 +367,9 @@ public sealed class OperationDispatcher : IOperationInvoker
                 .ConfigureAwait(false);
         }
 
-        if (request.DryRun)
+        // Only executors that declare a real dry-run route are invoked. Other SupportsDryRun
+        // descriptors keep the synthetic completed result so a dry-run flag cannot actuate them.
+        if (request.DryRun && executor is not IOperationDryRunExecutor)
         {
             executed = envelope with
             {

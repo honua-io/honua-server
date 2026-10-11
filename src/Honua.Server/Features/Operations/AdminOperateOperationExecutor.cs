@@ -12,7 +12,7 @@ using Honua.Infrastructure.Authentication;
 namespace Honua.Server.Features.Operations;
 
 /// <summary>Thin executor that binds a release/operate operation to its existing Admin REST route.</summary>
-internal sealed class AdminOperateOperationExecutor : IOperationExecutor
+internal sealed class AdminOperateOperationExecutor : IOperationExecutor, IOperationDryRunExecutor
 {
     public const string HttpClientName = "admin-operate-operation-loopback";
     private readonly IAdminHttpOperationDefinition _definition;
