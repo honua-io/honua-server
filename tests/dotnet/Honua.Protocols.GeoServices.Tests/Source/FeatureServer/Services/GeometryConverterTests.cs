@@ -264,6 +264,41 @@ public class GeometryConverterTests
         polygon.NumInteriorRings.Should().Be(1);
     }
 
+    [UnitTest]
+    public void ConvertGeoServicesJsonToWkb_NestedHole_AssignsHoleToSmallestContainingShell()
+    {
+        // Outer shell, a hole, an island inside that hole, and a lake inside the island.
+        // Assigning each hole to the first covering shell puts the lake on the outer shell.
+        var geoServicesJson = """
+        {
+            "rings": [
+                [[0, 0], [0, 100], [100, 100], [100, 0], [0, 0]],
+                [[10, 10], [90, 10], [90, 90], [10, 90], [10, 10]],
+                [[20, 20], [20, 80], [80, 80], [80, 20], [20, 20]],
+                [[30, 30], [70, 30], [70, 70], [30, 70], [30, 30]]
+            ]
+        }
+        """;
+
+        var result = _converter.ConvertGeoServicesJsonToWkb(geoServicesJson);
+
+        var geometry = ReadGeometry(result!);
+        geometry.Should().BeOfType<MultiPolygon>();
+        var multi = (MultiPolygon)geometry;
+        multi.NumGeometries.Should().Be(2);
+
+        var holes = new List<(double ShellMinX, double HoleMinX)>();
+        for (var index = 0; index < multi.NumGeometries; index++)
+        {
+            var polygon = (Polygon)multi.GetGeometryN(index);
+            polygon.NumInteriorRings.Should().Be(1);
+            holes.Add((polygon.ExteriorRing.EnvelopeInternal.MinX, polygon.GetInteriorRingN(0).EnvelopeInternal.MinX));
+        }
+
+        holes.Should().Contain(pair => pair.ShellMinX == 0 && pair.HoleMinX == 10);
+        holes.Should().Contain(pair => pair.ShellMinX == 20 && pair.HoleMinX == 30);
+    }
+
     #endregion
 
     #region Envelope Geometry Tests

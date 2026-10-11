@@ -214,6 +214,26 @@ public sealed class DatumTransformSqlTests
         sql.Should().NotContain("ST_ClipByBox2D");
     }
 
+    [UnitTest]
+    public void BuildTransformExpression_ProjectedEndpoints_ComposeExplicitDatumPipeline()
+    {
+        var selection = new DatumTransformationSelection
+        {
+            Name = "NAD_1927_To_NAD_1983_NADCON",
+            FromSrid = 4267,
+            ToSrid = 4269,
+            Wkid = 1241,
+            ProjPipeline = "+proj=pipeline +step +proj=hgridshift +grids=us_noaa_conus.tif",
+            TransformForward = true
+        };
+
+        var sql = DatumTransformSql.BuildTransformExpression("geom", 26917, selection, fromSrid: 26717);
+
+        sql.Should().Be(
+            "ST_Transform(ST_TransformPipeline(ST_Transform(geom, 4267), '+proj=pipeline +step +proj=hgridshift +grids=us_noaa_conus.tif', 4269), 26917)");
+        sql.Should().NotBe("ST_Transform(geom, 26917)");
+    }
+
     private static void AssertPointClamp(string sql, string operand, int fromSrid, int toSrid)
     {
         sql.Should().StartWith("ST_Transform(CASE ST_GeometryType(" + operand + ")");
