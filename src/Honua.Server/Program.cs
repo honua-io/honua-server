@@ -702,22 +702,30 @@ if (connectedRedis != null && redisCacheEntitled)
             builder.Services.AddHostedService<Honua.ControlPlane.CoordinatedReleaseReconcilerBackgroundService>();
         }
 
-        // The backstop sweeps ship in BOTH modes so a dropped/missed event (or, under poll, a wedged
-        // loop) self-heals. They are low-frequency and are a no-op when the active operations are
-        // fresh. The execution-job backstop covers Batch jobs; the workflow backstop covers the
-        // deploy/metadata/coordinated operations and walks any wedged staged release forward.
-        builder.Services.AddHostedService<Honua.ControlPlane.ExecutionJobBackstopSweepService>();
-        builder.Services.AddHostedService<Honua.ControlPlane.WorkflowOperationBackstopSweepService>();
+        // A control-plane event-handler Lambda (HONUA_CONTROL_PLANE_LAMBDA_HANDLER set) hosts none
+        // of the loops below: EventBridge drives its backstop and ticks, it is frozen between
+        // invocations, and a loop still holding a database connection when it freezes would keep
+        // that connection open past the per-invocation pool release. The API host and long-lived
+        // hosts keep them.
+        if (!Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.IsEventHandlerProfile(builder.Configuration))
+        {
+            // The backstop sweeps ship in BOTH modes so a dropped/missed event (or, under poll, a wedged
+            // loop) self-heals. They are low-frequency and are a no-op when the active operations are
+            // fresh. The execution-job backstop covers Batch jobs; the workflow backstop covers the
+            // deploy/metadata/coordinated operations and walks any wedged staged release forward.
+            builder.Services.AddHostedService<Honua.ControlPlane.ExecutionJobBackstopSweepService>();
+            builder.Services.AddHostedService<Honua.ControlPlane.WorkflowOperationBackstopSweepService>();
 
-        // GP-plane observability spine (#2463): sample the execution-job store on a low-frequency
-        // loop and publish per-(status, backend) queue depth for the honua.execution.queue.depth
-        // gauge. Runs in both trigger modes since it only reads state to emit telemetry.
-        builder.Services.AddHostedService<Honua.ControlPlane.ExecutionQueueDepthCollectorBackgroundService>();
+            // GP-plane observability spine (#2463): sample the execution-job store on a low-frequency
+            // loop and publish per-(status, backend) queue depth for the honua.execution.queue.depth
+            // gauge. Runs in both trigger modes since it only reads state to emit telemetry.
+            builder.Services.AddHostedService<Honua.ControlPlane.ExecutionQueueDepthCollectorBackgroundService>();
 
-        // Graduated ops-findings autonomy (#2557): a leased singleton evaluator that can
-        // route auto-safe remediation findings back through the operation gateway. It is
-        // only hosted when Redis/job-store coordination is active; no-Redis hosts stay inert.
-        builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsFindingsAutonomyEvaluationService>();
+            // Graduated ops-findings autonomy (#2557): a leased singleton evaluator that can
+            // route auto-safe remediation findings back through the operation gateway. It is
+            // only hosted when Redis/job-store coordination is active; no-Redis hosts stay inert.
+            builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsFindingsAutonomyEvaluationService>();
+        }
     }
 
     // Agent-operation approval surface (#1692/#1693): durable proposal store +
@@ -1244,6 +1252,11 @@ if (activeDbConnectionTracker != null)
 // (auth, tenancy, rate limiting, auditing, telemetry, request logging) sees the method the
 // client actually sent. See UseHonuaHeadRequestGetSemantics below for the handler side (#3389).
 app.UseHonuaHeadRequestMethod();
+
+// Control-plane event-handler Lambdas (reconcile, backstop, scheduled tick) close their pooled
+// database connections at the end of every invocation, because a frozen Lambda instance never
+// prunes its pool. Off for the API host. Ahead of host validation so rejected requests release too.
+app.UseControlPlaneLambdaConnectionRelease(builder.Configuration);
 
 // Stamp Honua-Instance on every response, including ones short-circuited below (host
 // validation, HTTPS redirection, auth), so callers can tell which replica answered.
