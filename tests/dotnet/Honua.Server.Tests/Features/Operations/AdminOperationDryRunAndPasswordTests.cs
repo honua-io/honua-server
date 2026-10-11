@@ -55,6 +55,41 @@ public sealed class AdminOperationDryRunAndPasswordTests
     }
 
     [UnitTest]
+    public async Task DryRun_DeferredWrapper_PreservesInnerMarker()
+    {
+        var marker = new MarkerProbeExecutor("admin.marker", OperationHandleStatus.Failed);
+        var plain = new ProbeExecutor("admin.plain", OperationHandleStatus.Failed);
+        var wrappedMarker = new DeferredOperationExecutor("admin.marker", () => marker);
+        var wrappedPlain = new DeferredOperationExecutor("admin.plain", () => plain);
+        var catalog = new OperationCatalog(
+            [
+                new SingleDescriptorProvider(Descriptor("admin.marker")),
+                new SingleDescriptorProvider(Descriptor("admin.plain")),
+            ],
+            TimeProvider.System);
+        var dispatcher = new OperationDispatcher(
+            catalog,
+            [wrappedMarker, wrappedPlain],
+            new AllowAllPolicyDecisionPoint(),
+            TimeProvider.System);
+
+        var marked = await dispatcher.SubmitAsync(
+            new OperationRequest { OperationId = "admin.marker", DryRun = true },
+            new OperationPolicyContext(),
+            CancellationToken.None);
+        var synthetic = await dispatcher.SubmitAsync(
+            new OperationRequest { OperationId = "admin.plain", DryRun = true },
+            new OperationPolicyContext(),
+            CancellationToken.None);
+
+        marker.SubmitCalls.Should().Be(1);
+        marked.Status.Should().Be(OperationHandleStatus.Failed);
+        plain.SubmitCalls.Should().Be(0);
+        synthetic.Status.Should().Be(OperationHandleStatus.Completed);
+        synthetic.Reason.Should().Be("Dry run completed; no actuator was invoked.");
+    }
+
+    [UnitTest]
     public async Task Validate_PasswordAnyCase_IsRejected()
     {
         var executor = Executor();
@@ -122,9 +157,16 @@ public sealed class AdminOperationDryRunAndPasswordTests
         missing.Status.Should().Be(OperationHandleStatus.Indeterminate);
         missing.Reason.Should().Be("Queued import job is no longer present.");
 
+        jobs.GetProgressAsync("job-3", Arg.Any<CancellationToken>()).Returns(new ImportProgress
+        {
+            JobId = "job-3",
+            Status = ImportStatus.Completed,
+            TableName = "features",
+            Format = SupportedFileFormat.GeoJson,
+        });
         var running = await executor.GetStatusAsync(Handle(OperationHandleStatus.Running, "job-3"));
-        running.Status.Should().Be(OperationHandleStatus.Running);
-        await jobs.DidNotReceive().GetProgressAsync("job-3", Arg.Any<CancellationToken>());
+        running.Status.Should().Be(OperationHandleStatus.Completed);
+        await jobs.Received(1).GetProgressAsync("job-3", Arg.Any<CancellationToken>());
     }
 
     private static AdminConnectImportOperationExecutor Executor(

@@ -136,9 +136,9 @@ internal static class CoordinatedReleaseControlEndpoints
                     request.Reason,
                     request.IdempotencyKey,
                     request.CorrelationId,
-                    context.RequestAborted,
                     requester: context.User,
-                    tenantOptions: context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value)
+                    tenantOptions: context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value,
+                    cancellationToken: context.RequestAborted)
                 .ConfigureAwait(false);
 
             return Results.Json(

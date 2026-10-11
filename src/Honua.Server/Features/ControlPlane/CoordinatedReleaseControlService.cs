@@ -38,9 +38,9 @@ internal sealed partial class CoordinatedReleaseControlService(
         string? reason,
         string? idempotencyKey,
         string? correlationId,
-        CancellationToken cancellationToken = default,
         ClaimsPrincipal? requester = null,
-        TenantContextOptions? tenantOptions = null)
+        TenantContextOptions? tenantOptions = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(container);
         ArgumentNullException.ThrowIfNull(metadataPlan);

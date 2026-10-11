@@ -156,7 +156,8 @@ internal sealed class AdminConnectImportOperationExecutor(
         ArgumentNullException.ThrowIfNull(handle);
         var status = handle.Status;
         var reason = handle.Reason;
-        if (handle.Status == OperationHandleStatus.Queued && importJobs is not null)
+        if (handle.Status is OperationHandleStatus.Queued or OperationHandleStatus.Running &&
+            importJobs is not null)
         {
             if (string.IsNullOrWhiteSpace(handle.JobId))
             {
