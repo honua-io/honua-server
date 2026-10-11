@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
+using System.Net.Http.Json;
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -42,6 +44,7 @@ public sealed class ProductionOperationPolicyHostTests
     private const string ConnectionEncryptionMasterKey = "ProductionPolicyConnectionMasterKey-123456";
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/operations/{id}/submit")]
     public async Task ProductionHost_AdminWriteKeyIsAllowed_WriteKeyIsDenied()
     {
         using var factory = CreateProductionFactory(new Dictionary<string, string?>());
@@ -53,18 +56,35 @@ public sealed class ProductionOperationPolicyHostTests
 
         var keys = services.GetRequiredService<IAdminApiKeyStore>();
         var adminWrite = await keys.CreateAsync("policy-admin-write", ["admin:write"], null, "test", CancellationToken.None);
+        var approver = await keys.CreateAsync("policy-approver", ["admin:approve"], null, "test", CancellationToken.None);
         var layerWrite = await keys.CreateAsync("policy-layer-write", ["write:*"], null, "test", CancellationToken.None);
 
+        // admin:write confers the full "admin" role, so the full-administrator built-in admits it.
         var allowed = await EvaluateAsKeyAsync(services, adminWrite.Key);
         allowed.Kind.Should().Be(PolicyDecisionKind.Allow);
-        allowed.Reason.Should().Be(OperationPolicyBuiltInRules.AdministrativeKeyReason);
+        allowed.Reason.Should().Be(OperationPolicyBuiltInRules.FullAdministratorReason);
+
+        // A narrower administrative grant carries "scoped-admin-key" and the second built-in.
+        var scoped = await EvaluateAsKeyAsync(services, approver.Key);
+        scoped.Kind.Should().Be(PolicyDecisionKind.Allow);
+        scoped.Reason.Should().Be(OperationPolicyBuiltInRules.AdministrativeKeyReason);
 
         var denied = await EvaluateAsKeyAsync(services, layerWrite.Key);
         denied.Kind.Should().Be(PolicyDecisionKind.Deny);
         denied.Reason.Should().Be("No policy rule matched this caller; Production denies by default.");
+
+        // Over HTTP the layer write key is refused by the operation surface before policy.
+        using var client = factory.CreateClient();
+        using var submit = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/operations/{ServicePublishOperation.OperationId}/submit")
+        {
+            Content = JsonContent.Create(new { parameters = new Dictionary<string, string>() }),
+        };
+        submit.Headers.Add("X-API-Key", layerWrite.Key);
+        (await client.SendAsync(submit)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/operations")]
     public async Task ProductionHost_BuiltInOptOut_DeniesAdminWriteKey()
     {
         using var factory = CreateProductionFactory(new Dictionary<string, string?>
@@ -78,6 +98,12 @@ public sealed class ProductionOperationPolicyHostTests
 
         var decision = await EvaluateAsKeyAsync(services, adminWrite.Key);
         decision.Kind.Should().Be(PolicyDecisionKind.Deny);
+
+        // The key itself is still admitted to the operations surface; only the policy denies.
+        using var client = factory.CreateClient();
+        using var list = new HttpRequestMessage(HttpMethod.Get, "/api/v1/operations");
+        list.Headers.Add("X-API-Key", adminWrite.Key);
+        (await client.SendAsync(list)).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     private static async Task<PolicyDecision> EvaluateAsKeyAsync(IServiceProvider services, string apiKey)

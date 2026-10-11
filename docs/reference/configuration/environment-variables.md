@@ -86,8 +86,8 @@ Typed operations (the `/api/v1/operations/{id}/submit` surface and the MCP opera
 
 **Production semantics.** With the shipped `appsettings.Production.json`, the effective policy is: your operator rules, then two built-in rules declared in code, then the fail-closed `Deny` default.
 
-1. `OperationId=*`, `Role=admin`, `Decision=Allow`, reason `built-in: full administrators execute directly`. Matches the bootstrap password admin and API keys with `admin`, `*`, or `admin:*` grants.
-2. `OperationId=*`, `Role=scoped-admin-key`, `Decision=Allow`, reason `built-in: administrative keys execute directly`. Matches API keys with narrow administrative grants such as `admin:write` or `admin:approve`.
+1. `OperationId=*`, `Role=admin`, `Decision=Allow`, reason `built-in: full administrators execute directly`. Matches the bootstrap password admin and API keys with `admin`, `*`, `admin:*`, `admin:write`, or `admin:manage` grants.
+2. `OperationId=*`, `Role=scoped-admin-key`, `Decision=Allow`, reason `built-in: administrative keys execute directly`. Matches API keys with narrower administrative grants such as `admin:read` or `admin:approve`. The policy decision does not widen authority: the operation surface still checks the key's grants against each operation's side effect, so an `admin:read` key cannot run a mutating operation.
 
 Every other caller, for example a `write:*` layer write key (`layer-write-key`), an ordinary scoped key (`scoped-api-key`), or an anonymous caller, is denied with the default reason. Approved-operation credentials (`approved-operation`) need no rule: they are minted only to replay an already-approved proposal, and that replay does not consult the policy again. A decision produced by a built-in rule carries its `built-in:` reason, and startup logs the effective policy, for example `Operation policy: 0 operator rules + 2 built-in rules, default Deny (builtInRules: True)`.
 

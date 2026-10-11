@@ -276,10 +276,10 @@ The operator-grant model includes a `StudioDraft` resource type — a distinct g
 
 Every typed operation an agent runs, including `honua_apply_style_preset` and the published `honua_admin_*` operation tools, passes through the `Operations:Policy` decision point. A Production install ships a fail-closed policy (`Enabled=true`, `DefaultDecision=Deny`) and appends two built-in rules after any rules you configure:
 
-- callers with the `admin` role (the bootstrap admin, and API keys with `admin`, `*`, or `admin:*` grants) execute directly, with reason `built-in: full administrators execute directly`;
-- callers with the `scoped-admin-key` role (API keys with narrow administrative grants such as `admin:write`) execute directly, with reason `built-in: administrative keys execute directly`.
+- callers with the `admin` role (the bootstrap admin, and API keys with `admin`, `*`, `admin:*`, `admin:write`, or `admin:manage` grants) execute directly, with reason `built-in: full administrators execute directly`;
+- callers with the `scoped-admin-key` role (API keys with narrower administrative grants such as `admin:read` or `admin:approve`) execute directly, with reason `built-in: administrative keys execute directly`.
 
-So an agent holding an `admin:write` key can publish without any operator-authored rule, while a `write:*` layer write key or an ordinary scoped key is denied with `No policy rule matched this caller; Production denies by default.` Your own rules are evaluated first, so you can still deny administrators or require approval for them, and `Operations:Policy:BuiltInProductionRules=false` removes the built-ins for a pure fail-closed policy. See [Operation policy](../../reference/configuration/environment-variables.md#operation-policy) for the settings and an example rule.
+So an agent holding an `admin:write` key can publish without any operator-authored rule, while a `write:*` layer write key or an ordinary scoped key is denied with `No policy rule matched this caller; Production denies by default.` The policy decision does not widen a key's authority: the operation surface still checks the key's grants against each operation's side effect, so an `admin:read` key cannot run a mutating operation. Your own rules are evaluated first, so you can still deny administrators or require approval for them, and `Operations:Policy:BuiltInProductionRules=false` removes the built-ins for a pure fail-closed policy. See [Operation policy](../../reference/configuration/environment-variables.md#operation-policy) for the settings and an example rule.
 
 ## Harden the MCP endpoint (production)
 

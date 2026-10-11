@@ -22,10 +22,10 @@ namespace Honua.Core.Features.Operations.Policy;
 /// </remarks>
 public static class OperationPolicyBuiltInRules
 {
-    /// <summary>Role carried by full administrators (bootstrap password admin, <c>admin</c>/<c>*</c>/<c>admin:*</c> keys).</summary>
+    /// <summary>Role carried by full administrators (bootstrap password admin, <c>admin</c>/<c>*</c>/<c>admin:*</c>/<c>admin:write</c>/<c>admin:manage</c> keys).</summary>
     public const string FullAdministratorRole = "admin";
 
-    /// <summary>Role carried by API keys with narrow administrative grants such as <c>admin:write</c>.</summary>
+    /// <summary>Role carried by API keys with narrower administrative grants such as <c>admin:read</c> or <c>admin:approve</c>.</summary>
     public const string AdministrativeKeyRole = "scoped-admin-key";
 
     /// <summary>Reason carried by a decision produced by the full-administrator built-in rule.</summary>
