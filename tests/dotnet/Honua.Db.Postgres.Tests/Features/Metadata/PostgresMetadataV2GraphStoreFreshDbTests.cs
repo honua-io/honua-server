@@ -458,6 +458,259 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
         }
     }
 
+    [IntegrationTest]
+    public async Task SaveAsync_BulkSidecarsReplaceOnlyTheCurrentRevision()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
+        try
+        {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(
+                provider,
+                environment: "Test",
+                schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance,
+                schemaName: schema);
+            var first = await store.SaveAsync(FullSidecarGraph(), expectedEtag: null);
+            var second = await store.SaveAsync(
+                new MetadataV2Graph
+                {
+                    Environment = "Test",
+                    GeneratedAt = DateTimeOffset.UtcNow,
+                    Resources =
+                    [
+                        new MetadataV2Resource
+                        {
+                            Metadata = new MetadataV2ObjectMetadata { Id = "res-next", Name = "next" },
+                            Type = MetadataV2ResourceType.FeatureDataset,
+                        },
+                    ],
+                },
+                first.Etag);
+
+            (await CountAsync(schema, $"metadata_v2_snapshots WHERE environment = 'Test' AND revision = {first.Revision}"))
+                .Should().Be(1, "the previous document stays retained");
+            (await CountAsync(schema, $"metadata_v2_resources_idx WHERE environment = 'Test' AND revision = {first.Revision}"))
+                .Should().Be(0);
+            (await CountAsync(schema, $"metadata_v2_services_idx WHERE environment = 'Test' AND revision = {first.Revision}"))
+                .Should().Be(0);
+            (await CountAsync(schema, $"metadata_v2_publications_idx WHERE environment = 'Test' AND revision = {first.Revision}"))
+                .Should().Be(0);
+            (await CountAsync(schema, $"metadata_v2_resources_idx WHERE environment = 'Test' AND revision = {second.Revision}"))
+                .Should().Be(1);
+            (await CountAsync(schema, $"metadata_v2_services_idx WHERE environment = 'Test' AND revision = {second.Revision}"))
+                .Should().Be(0);
+
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            await store.SaveAsync(FullSidecarGraph(), second.Etag);
+            var current = await store.GetCurrentAsync();
+            command.CommandText = $"""
+                SELECT namespace IS NULL, type, primary_storage_binding_id
+                FROM "{schema}".metadata_v2_resources_idx
+                WHERE environment = 'Test' AND revision = {current.Revision} AND resource_id = 'res-1';
+                """;
+            await using (var reader = await command.ExecuteReaderAsync())
+            {
+                (await reader.ReadAsync()).Should().BeTrue();
+                reader.GetBoolean(0).Should().BeTrue();
+                reader.GetString(1).Should().Be("FeatureDataset");
+                reader.GetString(2).Should().Be("bind-1");
+            }
+
+            command.CommandText = $"""
+                SELECT route IS NULL, service_type
+                FROM "{schema}".metadata_v2_services_idx
+                WHERE environment = 'Test' AND revision = {current.Revision} AND service_id = 'svc-1';
+                """;
+            await using (var reader = await command.ExecuteReaderAsync())
+            {
+                (await reader.ReadAsync()).Should().BeTrue();
+                reader.GetBoolean(0).Should().BeTrue();
+                reader.GetString(1).Should().Be("FeatureServer");
+            }
+
+            command.CommandText = $"""
+                SELECT publication_id, path IS NULL, layer_index IS NULL, layer_index, service_local_id, publication_type
+                FROM "{schema}".metadata_v2_publications_idx
+                WHERE environment = 'Test' AND revision = {current.Revision}
+                ORDER BY publication_id;
+                """;
+            await using (var reader = await command.ExecuteReaderAsync())
+            {
+                (await reader.ReadAsync()).Should().BeTrue();
+                reader.GetString(0).Should().Be("pub-1");
+                reader.GetBoolean(1).Should().BeTrue();
+                reader.GetBoolean(2).Should().BeFalse();
+                reader.GetInt32(3).Should().Be(7);
+                reader.GetString(4).Should().Be("7");
+                reader.GetString(5).Should().Be("EsriFeatureLayer");
+                (await reader.ReadAsync()).Should().BeTrue();
+                reader.GetString(0).Should().Be("pub-2");
+                reader.GetBoolean(1).Should().BeTrue();
+                reader.GetBoolean(2).Should().BeTrue();
+                reader.IsDBNull(4).Should().BeTrue();
+                reader.GetString(5).Should().Be("StacCollection");
+            }
+
+            command.CommandText = $"""
+                SELECT provider IS NULL, type
+                FROM "{schema}".metadata_v2_connections_idx
+                WHERE environment = 'Test' AND revision = {current.Revision} AND connection_id = 'conn-1';
+                """;
+            await using (var reader = await command.ExecuteReaderAsync())
+            {
+                (await reader.ReadAsync()).Should().BeTrue();
+                reader.GetBoolean(0).Should().BeTrue();
+                reader.GetString(1).Should().Be("Managed");
+            }
+
+            (await CountAsync(schema, $"metadata_v2_publications_idx WHERE environment = 'Test' AND revision = {second.Revision}"))
+                .Should().Be(0);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+
+        static MetadataV2Graph FullSidecarGraph() => new()
+        {
+            Environment = "Test",
+            GeneratedAt = DateTimeOffset.UtcNow,
+            Connections =
+            [
+                new MetadataV2Connection
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "conn-1", Name = "warehouse" },
+                    Type = MetadataV2ConnectionType.Managed,
+                    Provider = null,
+                },
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "bind-1", Name = "bind-1" },
+                    ResourceId = "res-1",
+                    ConnectionId = "conn-1",
+                    StorageType = MetadataV2StorageType.RelationalTable,
+                    Locator = "public.parcels",
+                    StorageLayerId = 7,
+                },
+            ],
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "res-1", Name = "parcels" },
+                    Type = MetadataV2ResourceType.FeatureDataset,
+                    StorageBindingIds = ["bind-1"],
+                },
+            ],
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "svc-1", Name = "parcels" },
+                    Protocols = ["FeatureServer"],
+                },
+            ],
+            Publications =
+            [
+                new MetadataV2Publication
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "pub-1", Name = "pub-1" },
+                    ResourceId = "res-1",
+                    ServiceId = "svc-1",
+                    StorageBindingId = "bind-1",
+                    PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+                    Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true },
+                    IsPrimary = true,
+                },
+                new MetadataV2Publication
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "pub-2", Name = "pub-2" },
+                    ResourceId = "res-1",
+                    ServiceId = "svc-1",
+                    StorageBindingId = "bind-1",
+                    PublicationType = MetadataV2PublicationType.StacCollection,
+                    Identifier = new MetadataV2PublicationIdentifier { Value = string.Empty, IsNumeric = false },
+                    IsPrimary = false,
+                },
+            ],
+        };
+    }
+
+    [IntegrationTest]
+    public async Task SaveAsync_PrunesSnapshotsBeyondRetentionUnlessReleasePackageReferencesThem()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
+        try
+        {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(
+                provider,
+                environment: "Test",
+                schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance,
+                schemaName: schema);
+            var retained = await store.SaveAsync(
+                new MetadataV2Graph { Environment = "Test", GeneratedAt = DateTimeOffset.UtcNow },
+                expectedEtag: null);
+
+            await using (var connection = await fixture.DataSource.OpenConnectionAsync())
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"""
+                    CREATE TABLE "{schema}".metadata_v2_release_packages (
+                        source_environment text NOT NULL,
+                        source_revision bigint NOT NULL,
+                        status text NOT NULL);
+                    INSERT INTO "{schema}".metadata_v2_release_packages
+                        (source_environment, source_revision, status)
+                    VALUES ('Test', {retained.Revision}, 'staged');
+                    """;
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var current = retained;
+            for (var index = 0; index < PostgresMetadataV2GraphStore.MetadataV2RetainedSnapshotCount; index++)
+            {
+                current = await store.SaveAsync(
+                    new MetadataV2Graph { Environment = "Test", GeneratedAt = DateTimeOffset.UtcNow },
+                    current.Etag);
+            }
+
+            (await CountAsync(schema, $"metadata_v2_snapshots WHERE environment = 'Test' AND revision = {retained.Revision}"))
+                .Should().Be(1, "an in-flight release package keeps its source revision past the retention window");
+
+            await using (var connection = await fixture.DataSource.OpenConnectionAsync())
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"""
+                    UPDATE "{schema}".metadata_v2_release_packages
+                       SET status = 'cancelled'
+                     WHERE source_revision = {retained.Revision};
+                    """;
+                await command.ExecuteNonQueryAsync();
+            }
+
+            current = await store.SaveAsync(
+                new MetadataV2Graph { Environment = "Test", GeneratedAt = DateTimeOffset.UtcNow },
+                current.Etag);
+
+            (await CountAsync(schema, $"metadata_v2_snapshots WHERE environment = 'Test' AND revision = {retained.Revision}"))
+                .Should().Be(0);
+            (await CountAsync(schema, "metadata_v2_snapshots WHERE environment = 'Test'"))
+                .Should().Be(PostgresMetadataV2GraphStore.MetadataV2RetainedSnapshotCount);
+            (await store.GetCurrentAsync()).Revision.Should().Be(current.Revision);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private static PostgresCoreSchemaGuard CreateGuard(string schema)
         => new(
             TestCoreSchemaMigrations.Manifest,

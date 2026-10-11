@@ -26,6 +26,45 @@ public sealed class ImageServerStatisticsBudgetTests
     ];
 
     [UnitTest]
+    public async Task ResolveAsync_AllocationRejected_UsesFallbackAndDisposesCompletedScope()
+    {
+        var budgetExceeded = false;
+        ScopeLifetime? lifetime = null;
+        using var services = new ServiceCollection().AddScoped<ScopeLifetime>().BuildServiceProvider();
+        var result = await ImageServerStatisticsBudget.ResolveAsync(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            $"test:{Guid.NewGuid()}", schemaName: null,
+            (provider, _) =>
+            {
+                lifetime = provider.GetRequiredService<ScopeLifetime>();
+                return Task.FromException<RasterStatistics[]>(new RasterStatisticsBudgetExceededException(16_777_216));
+            },
+            onBudgetExceeded: () => budgetExceeded = true,
+            budget: TimeSpan.FromSeconds(5), CancellationToken.None);
+
+        result.Should().BeEmpty();
+        budgetExceeded.Should().BeTrue();
+        lifetime.Should().NotBeNull();
+        await lifetime!.Disposed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_UnrelatedProviderFailure_IsNotPromotedToBudgetFallback()
+    {
+        var budgetExceeded = false;
+        using var services = new ServiceCollection().BuildServiceProvider();
+        var operation = () => ImageServerStatisticsBudget.ResolveAsync(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            $"test:{Guid.NewGuid()}", schemaName: null,
+            (_, _) => Task.FromException<RasterStatistics[]>(new InvalidOperationException("provider fault")),
+            onBudgetExceeded: () => budgetExceeded = true,
+            budget: TimeSpan.FromSeconds(5), CancellationToken.None);
+
+        await operation.Should().ThrowAsync<InvalidOperationException>().WithMessage("provider fault");
+        budgetExceeded.Should().BeFalse();
+    }
+
+    [UnitTest]
     public async Task ResolveAsync_OperationCompletesWithinBudget_ReturnsComputedStatistics()
     {
         var budgetExceeded = false;

@@ -268,6 +268,74 @@ Apply the same digest-pinned command used for the single-node install. The
 chart fails closed when more than one replica or HPA is combined with
 `SingleInstance`.
 
+## Geoprocessing on Kubernetes Jobs
+
+The `honua-kubernetes-job` batch backend runs each asynchronous geoprocessing
+job as a `batch/v1` Job that starts the server image as a single-job worker.
+The worker needs the same database, Redis and master key as the server. Give it
+those through Kubernetes Secret references, not through literal values. Literal
+`env.*` and `k8s.env.*` values are written into the Job object.
+
+The server never reads the Secret. It writes only the Secret's name, and for
+single variables the data key, into the Job's container spec. The kubelet
+resolves the values when the pod starts. They do not appear in the Job object,
+the durable job record or the server logs.
+
+| Setting | Renders as | Use |
+|---|---|---|
+| `ControlPlane:Kubernetes:DefaultEnvFromSecrets:<i>` = `<secret>` or `<secret>:<prefix>` | `envFrom[].secretRef` on every Job | The chart's runtime Secret, set once |
+| `ControlPlane:Kubernetes:DefaultEnvFromConfigMaps:<i>` = `<configMap>` or `<configMap>:<prefix>` | `envFrom[].configMapRef` on every Job | Shared non-secret settings |
+| Workload `k8s.envFrom.secret.<n>` = `<secret>` or `<secret>:<prefix>` | `envFrom[].secretRef` | An extra Secret for one workload |
+| Workload `k8s.envFrom.configMap.<n>` = `<configMap>` or `<configMap>:<prefix>` | `envFrom[].configMapRef` | An extra ConfigMap for one workload |
+| Workload `k8s.env.<NAME>.secretKeyRef` = `<secret>:<key>` | `env[].valueFrom.secretKeyRef` | One variable from one Secret key |
+| Workload `k8s.env.<NAME>.configMapKeyRef` = `<configMap>:<key>` | `env[].valueFrom.configMapKeyRef` | One variable from one ConfigMap key |
+| Workload `k8s.env.<NAME>` / `env.<NAME>` = `<value>` | `env[].value` | Non-secret literals only |
+
+The rules:
+
+- Configured defaults come first, then the workload's `k8s.envFrom.*` entries
+  ordered by `<n>` (numerically when `<n>` is a number). On a duplicate key,
+  the later source wins.
+- Explicit `env` entries always win over `envFrom`. That includes the launch
+  variables (`HONUA_OPERATION_ID`, `HONUA_JOB_KIND`, `HONUA_WORKLOAD_NAME`,
+  `HONUA_EXECUTION_ATTEMPT`, `HONUA_CONTRACT_VERSION`), which the backend always
+  writes as literals. A literal `env.*` or `k8s.env.*` passthrough can never set
+  a launch variable. A `secretKeyRef` or `configMapKeyRef` that names one is
+  refused. `HONUA_WORKLOAD_ID` and `HONUA_RUNTIME_PROFILE` are written only
+  when the job has them, so keep them out of an imported Secret.
+- The server refuses malformed references with a typed error that names the
+  parameter key, never its value. At startup it checks the configured defaults
+  and the parameters of every `honua-kubernetes-job` workload. At submission a
+  bad reference fails the job before any Job is created. Secret and ConfigMap
+  names must be DNS-1123 subdomains. Data keys use letters, digits, `-`, `_`
+  and `.`. A misspelled suffix such as `.secretkeyref` is refused rather than
+  treated as a literal variable name.
+- The Secret must live in the Job's namespace. The Job's ServiceAccount needs
+  no Secret access, because the kubelet resolves `envFrom` and `secretKeyRef`.
+  The server's Role does not need Secret access either.
+- Defaults reach every Job this backend launches. Only list Secrets that every
+  Kubernetes worker image may hold. Custom-code workloads cannot use this
+  backend (ADR-0063).
+
+Point every worker at the chart's runtime Secret once, through the server's
+environment:
+
+```yaml
+config:
+  env:
+    ControlPlane__Kubernetes__DefaultEnvFromSecrets__0: "honua-runtime"
+```
+
+To wire a single variable on one workload, use `ParameterEntries`, because
+dotted parameter keys cannot be written as environment variable names:
+
+```yaml
+config:
+  env:
+    ControlPlane__ExecutionWorkloads__2__ParameterEntries__0__Key: "k8s.env.ConnectionStrings__DefaultConnection.secretKeyRef"
+    ControlPlane__ExecutionWorkloads__2__ParameterEntries__0__Value: "honua-db:connection-string"
+```
+
 ## Upgrade and roll back
 
 Back up PostGIS and file storage before every upgrade. The chart's default

@@ -95,7 +95,23 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             };
         }
 
-        var manifest = BuildManifest(job, image);
+        KubernetesJobManifest manifest;
+        try
+        {
+            manifest = BuildManifest(job, image);
+        }
+        catch (KubernetesJobParameterException ex)
+        {
+            // The message names the parameter key and the reason only — never a parameter value.
+            Log.InvalidParameter(logger, job.OperationId, ex.ParameterKey, ex.Error);
+            ControlPlaneTelemetry.RecordExecutionRequest(job, "start", "invalid_parameters");
+            return new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Failed,
+                Message = ex.Message
+            };
+        }
+
         // Pin the resolved namespace onto the durable record so subsequent observe, cancel,
         // and retry paths do not re-resolve it against potentially-changed current options.
         // Without this, mutating ControlPlane:Kubernetes:DefaultNamespace (or restarting with
@@ -475,7 +491,8 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         var imagePullSecrets = ParseList(parameters.GetValueOrDefault(KubernetesJobParameterKeys.ImagePullSecrets))
             ?? snapshot.DefaultImagePullSecrets;
 
-        var environmentVariables = BuildEnvironmentVariables(job, parameters, attemptNumber);
+        // Throws KubernetesJobParameterException on a malformed Secret/ConfigMap reference.
+        var environment = KubernetesJobEnvironmentBuilder.Build(job, parameters, attemptNumber, snapshot);
 
         return new KubernetesJobManifest
         {
@@ -500,49 +517,10 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             ImagePullSecrets = (IReadOnlyList<string>?)imagePullSecrets ?? Array.Empty<string>(),
             ActiveDeadlineSeconds = ResolveActiveDeadlineSeconds(job, parameters, snapshot),
             TtlSecondsAfterFinished = ResolveTtlSeconds(parameters, snapshot),
-            EnvironmentVariables = environmentVariables
+            EnvironmentVariables = environment.Literals,
+            EnvironmentReferences = environment.References,
+            EnvFrom = environment.EnvFrom
         };
-    }
-
-    private static Dictionary<string, string> BuildEnvironmentVariables(
-        ExecutionJobRecord job,
-        IReadOnlyDictionary<string, string> parameters,
-        int executionAttempt)
-    {
-        var env = new Dictionary<string, string>(StringComparer.Ordinal);
-        ApplyEnvironmentVariables(env, parameters, KubernetesJobParameterKeys.GenericEnvironmentPrefix);
-        ApplyEnvironmentVariables(env, parameters, KubernetesJobParameterKeys.EnvironmentPrefix);
-
-        // The launch contract shared by every batch backend (HONUA_OPERATION_ID, kind, attempt, and the
-        // serving-to-worker contract version of ADR-0060 #3b) is stamped AFTER the passthrough, so a
-        // workload can never shadow it. A generic server image reads it to start as a single-job
-        // execution worker.
-        foreach (var variable in ExecutionWorkerLaunchEnvironment.Build(job, executionAttempt))
-        {
-            env[variable.Key] = variable.Value;
-        }
-
-        return env;
-    }
-
-    private static void ApplyEnvironmentVariables(
-        Dictionary<string, string> environmentVariables,
-        IReadOnlyDictionary<string, string> parameters,
-        string prefix)
-    {
-        foreach (var (key, value) in parameters)
-        {
-            if (!key.StartsWith(prefix, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var name = key[prefix.Length..];
-            if (!string.IsNullOrWhiteSpace(name))
-            {
-                environmentVariables[name] = value;
-            }
-        }
     }
 
     private static int? ResolveActiveDeadlineSeconds(
@@ -882,6 +860,10 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         [LoggerMessage(9065, LogLevel.Warning,
             "Kubernetes Job conflict lookup failed for execution job {OperationId} ({Namespace}/{Name}); resuming observation with manifest name")]
         public static partial void ConflictLookupFailed(ILogger logger, string operationId, string @namespace, string name, Exception exception);
+
+        [LoggerMessage(9066, LogLevel.Warning,
+            "Kubernetes execution backend refused execution job {OperationId}: parameter {ParameterKey} is invalid ({Error})")]
+        public static partial void InvalidParameter(ILogger logger, string operationId, string parameterKey, KubernetesJobParameterError error);
     }
 }
 
@@ -905,6 +887,50 @@ internal static class KubernetesJobParameterKeys
     public const string MemoryLimit = "k8s.memory_limit";
     public const string ActiveDeadlineSeconds = "k8s.active_deadline_seconds";
     public const string TtlSecondsAfterFinished = "k8s.ttl_seconds_after_finished";
+
+    /// <summary>
+    /// Literal container environment variable: <c>k8s.env.&lt;NAME&gt;=&lt;value&gt;</c>. Wins over
+    /// <see cref="GenericEnvironmentPrefix"/>. Reserved execution-worker launch variables
+    /// (<see cref="ExecutionWorkerLaunchEnvironment.ReservedNames"/>) are never taken from a workload.
+    /// The value is written into the Job object, so never put a secret here — use
+    /// <see cref="SecretKeyRefSuffix"/> or <see cref="EnvFromSecretPrefix"/>.
+    /// </summary>
     public const string EnvironmentPrefix = "k8s.env.";
+
+    /// <summary>
+    /// Provider-agnostic literal passthrough <c>env.&lt;NAME&gt;=&lt;value&gt;</c>, shared with the other
+    /// batch backends.
+    /// </summary>
     public const string GenericEnvironmentPrefix = "env.";
+
+    /// <summary>
+    /// Suffix of <c>k8s.env.&lt;NAME&gt;.secretKeyRef=&lt;secretName&gt;:&lt;key&gt;</c>: one variable read by
+    /// the kubelet from a key of a Kubernetes Secret (<c>env[].valueFrom.secretKeyRef</c>). The server
+    /// only sees the Secret and key names.
+    /// </summary>
+    public const string SecretKeyRefSuffix = ".secretKeyRef";
+
+    /// <summary>
+    /// Suffix of <c>k8s.env.&lt;NAME&gt;.configMapKeyRef=&lt;configMapName&gt;:&lt;key&gt;</c>
+    /// (<c>env[].valueFrom.configMapKeyRef</c>).
+    /// </summary>
+    public const string ConfigMapKeyRefSuffix = ".configMapKeyRef";
+
+    /// <summary>Prefix shared by the whole-object <c>envFrom</c> parameters.</summary>
+    public const string EnvFromPrefix = "k8s.envFrom.";
+
+    /// <summary>
+    /// <c>k8s.envFrom.secret.&lt;n&gt;=&lt;secretName&gt;[:&lt;prefix&gt;]</c>: imports every key of a Secret
+    /// as environment variables (container <c>envFrom[].secretRef</c>). Entries are ordered by
+    /// <c>&lt;n&gt;</c> (numeric when integral) after the configured
+    /// <c>ControlPlane:Kubernetes:DefaultEnvFromSecrets</c>; later entries win on duplicate keys, and
+    /// explicit <c>env</c> entries (including the launch variables) always win over <c>envFrom</c>.
+    /// </summary>
+    public const string EnvFromSecretPrefix = "k8s.envFrom.secret.";
+
+    /// <summary>
+    /// <c>k8s.envFrom.configMap.&lt;n&gt;=&lt;configMapName&gt;[:&lt;prefix&gt;]</c> (container
+    /// <c>envFrom[].configMapRef</c>), ordered like <see cref="EnvFromSecretPrefix"/>.
+    /// </summary>
+    public const string EnvFromConfigMapPrefix = "k8s.envFrom.configMap.";
 }

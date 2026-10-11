@@ -8,6 +8,7 @@ using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Admin.Models;
@@ -28,6 +29,7 @@ internal static class LayerPublishingEndpoints
     private const string LayerPublishingValidationMessage = "Layer publishing request is invalid.";
     private const string LayerPublishingConflictMessage = "Layer publishing operation conflicted with existing data.";
     private const string LayerPublishingNotFoundMessage = "The requested resource was not found.";
+    private const string LayerPublishingConcurrencyMessage = "The catalog was updated concurrently. Retry the request.";
 
     internal sealed class LayerPublishingEndpointsLog;
 
@@ -95,7 +97,7 @@ internal static class LayerPublishingEndpoints
             .ProducesProblem(StatusCodes.Status500InternalServerError);
     }
 
-    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
         HandleListLayers(
             string id,
             string? serviceName,
@@ -134,6 +136,10 @@ internal static class LayerPublishingEndpoints
         {
             LayerPublishingLog.LayerListConnectionNotFound(logger, ex);
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
+        }
+        catch (MetadataV2GraphConcurrencyException ex)
+        {
+            return CatalogConcurrencyConflict(logger, LayerPublishingLog.LayerListInvalidOperation, ex);
         }
         catch (InvalidOperationException ex)
         {
@@ -299,6 +305,10 @@ internal static class LayerPublishingEndpoints
             LayerPublishingLog.LayerPublishConnectionNotFound(logger, ex);
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
+        catch (MetadataV2GraphConcurrencyException ex)
+        {
+            return CatalogConcurrencyConflict(logger, LayerPublishingLog.LayerPublishInvalidOperation, ex);
+        }
         catch (InvalidOperationException ex)
         {
             LayerPublishingLog.LayerPublishInvalidOperation(logger, ex);
@@ -393,6 +403,10 @@ internal static class LayerPublishingEndpoints
             LayerPublishingLog.LayerListConnectionNotFound(logger, ex);
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
+        catch (MetadataV2GraphConcurrencyException ex)
+        {
+            return CatalogConcurrencyConflict(logger, LayerPublishingLog.LayerPublishInvalidOperation, ex);
+        }
         catch (InvalidOperationException ex)
         {
             LayerPublishingLog.LayerPublishInvalidOperation(logger, ex);
@@ -481,6 +495,10 @@ internal static class LayerPublishingEndpoints
             LayerPublishingLog.LayerExtentRefreshConnectionNotFound(logger, ex);
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
+        catch (MetadataV2GraphConcurrencyException ex)
+        {
+            return CatalogConcurrencyConflict(logger, LayerPublishingLog.LayerExtentRefreshInvalidOperation, ex);
+        }
         catch (InvalidOperationException ex)
         {
             LayerPublishingLog.LayerExtentRefreshInvalidOperation(logger, ex);
@@ -563,6 +581,10 @@ internal static class LayerPublishingEndpoints
             LayerPublishingLog.LayerFeatureRefreshConnectionNotFound(logger, ex);
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
+        catch (MetadataV2GraphConcurrencyException ex)
+        {
+            return CatalogConcurrencyConflict(logger, LayerPublishingLog.LayerFeatureRefreshInvalidOperation, ex);
+        }
         catch (InvalidOperationException ex)
         {
             LayerPublishingLog.LayerFeatureRefreshInvalidOperation(logger, ex);
@@ -577,7 +599,7 @@ internal static class LayerPublishingEndpoints
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<PublishedLayerSummary>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<PublishedLayerSummary>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
         HandleSetLayerEnabled(
             string id,
             int layerId,
@@ -644,6 +666,10 @@ internal static class LayerPublishingEndpoints
             LayerPublishingLog.LayerToggleConnectionNotFound(logger, ex);
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
+        catch (MetadataV2GraphConcurrencyException ex)
+        {
+            return CatalogConcurrencyConflict(logger, LayerPublishingLog.LayerToggleInvalidOperation, ex);
+        }
         catch (InvalidOperationException ex)
         {
             LayerPublishingLog.LayerToggleInvalidOperation(logger, ex);
@@ -658,7 +684,7 @@ internal static class LayerPublishingEndpoints
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
         HandleSetServiceLayersEnabled(
             string id,
             LayerEnabledRequest request,
@@ -721,6 +747,10 @@ internal static class LayerPublishingEndpoints
             LayerPublishingLog.LayerBulkToggleConnectionNotFound(logger, ex);
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
+        catch (MetadataV2GraphConcurrencyException ex)
+        {
+            return CatalogConcurrencyConflict(logger, LayerPublishingLog.LayerBulkToggleInvalidOperation, ex);
+        }
         catch (InvalidOperationException ex)
         {
             LayerPublishingLog.LayerBulkToggleInvalidOperation(logger, ex);
@@ -733,6 +763,15 @@ internal static class LayerPublishingEndpoints
         {
             return TypedResults.Forbid();
         }
+    }
+
+    private static Conflict<ApiResponse<object>> CatalogConcurrencyConflict(
+        ILogger<LayerPublishingEndpointsLog> logger,
+        Action<ILogger, Exception> log,
+        MetadataV2GraphConcurrencyException exception)
+    {
+        log(logger, exception);
+        return TypedResults.Conflict(ApiResponse<object>.Failure(LayerPublishingConcurrencyMessage));
     }
 
     private static async Task<Guid> ResolveConnectionIdAsync(string id, HttpContext context)

@@ -192,6 +192,10 @@ internal static class ServiceCollectionExtensions
                 DataProviderNames.Postgis));
 
         // Register raster store implementation
+        services.AddOptions<PostgresRasterStatisticsOptions>()
+            .Bind(configuration.GetSection(PostgresRasterStatisticsOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
         services.AddPostgresRasterStore(configuration["Database:Schema"]);
 
         // Register alert persistence services
