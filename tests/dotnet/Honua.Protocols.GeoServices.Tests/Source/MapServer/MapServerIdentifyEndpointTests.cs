@@ -195,7 +195,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
     public async Task MapServer_Identify_WithDatelineCrossingMapExtent_ReturnsOk()
     {
         var response = await Fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=179.5,0&geometryType=esriGeometryPoint&mapExtent=170,-10,-170,10&imageDisplay=800,600,96&f=json");
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=179.5,0&geometryType=esriGeometryPoint&sr=4326&mapExtent=170,-10,-170,10&imageDisplay=800,600,96&f=json");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -209,6 +209,54 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-13636637.62,4509031.39&geometryType=esriGeometryPoint&sr=3857&mapExtent=-13700000,4490000,-13600000,4600000&imageDisplay=800,600,96&f=json");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Identify)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/identify")]
+    public async Task MapServer_Identify_OmittedSrid_UsesAdvertisedWebMercator(bool usePost)
+    {
+        using var expected = await RequestAsync(includeSrid: true);
+        var expectedResults = expected.RootElement.GetProperty("results");
+        expectedResults.GetArrayLength().Should().BeGreaterThan(0);
+        using var actual = await RequestAsync(includeSrid: false);
+
+        actual.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        actual.RootElement.GetProperty("results").GetRawText().Should().Be(expectedResults.GetRawText(),
+            "omitting sr uses the service's advertised 3857 CRS for both the query and returned geometry");
+        var point = expectedResults[0].GetProperty("geometry");
+        point.GetProperty("x").GetDouble().Should().BeApproximately(-13636637.62, 1);
+        point.GetProperty("y").GetDouble().Should().BeApproximately(4509031.39, 1);
+
+        async Task<JsonDocument> RequestAsync(bool includeSrid)
+        {
+            var parameters = new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["geometry"] = "-13636637.62,4509031.39",
+                ["geometryType"] = "esriGeometryPoint",
+                ["layers"] = "all:0",
+                ["tolerance"] = "10",
+                ["mapExtent"] = "-13700000,4490000,-13600000,4600000",
+                ["imageDisplay"] = "800,600,96"
+            };
+            if (includeSrid)
+            {
+                parameters["sr"] = "3857";
+            }
+
+            using var payload = new FormUrlEncodedContent(parameters);
+            var url = $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify";
+            using var response = usePost
+                ? await Fixture.Client.PostAsync(url, payload)
+                : await Fixture.Client.GetAsync(url + "?" + await payload.ReadAsStringAsync());
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+            return JsonDocument.Parse(content);
+        }
     }
 
     [IntegrationTest]
