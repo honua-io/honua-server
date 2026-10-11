@@ -501,10 +501,7 @@ internal sealed partial class StreamingFileImportService
     internal static void EnsureArchiveEntryCount(ZipArchive archive, int maxEntries)
     {
         ArgumentNullException.ThrowIfNull(archive);
-        if (maxEntries < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maxEntries));
-        }
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxEntries, 1);
 
         if (archive.Entries.Count > maxEntries)
         {

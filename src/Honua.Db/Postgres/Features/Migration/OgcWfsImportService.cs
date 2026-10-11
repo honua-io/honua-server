@@ -1167,7 +1167,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             SourceServiceUrl = safeSourceUrl,
             ErrorMessage = errorMessage,
             FeatureTypes = [],
-            Warnings = warnings is { Count: > 0 } ? [errorMessage, ..warnings] : [errorMessage],
+            Warnings = warnings is { Count: > 0 } ? [errorMessage, .. warnings] : [errorMessage],
             Manifest = manifest,
             ParityEvidence = MigrationParityEvidenceGenerator.Generate(inventory, manifest),
             Duration = duration

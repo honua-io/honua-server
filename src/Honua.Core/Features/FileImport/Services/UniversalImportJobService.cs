@@ -88,7 +88,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         var started = false;
         try
         {
-        return await QueueReservedImportAsync(request, fileSize, () => started = true, cancellationToken).ConfigureAwait(false);
+            return await QueueReservedImportAsync(request, fileSize, () => started = true, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
