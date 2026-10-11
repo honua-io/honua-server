@@ -57,8 +57,10 @@ public sealed class ApprovedReplayLoopbackTests
             Parameters = new Dictionary<string, string?> { ["sourceUrl"] = "https://example.com/a.geojson", ["tableName"] = "a" }
         }, new OperationPolicyContext
         {
-            OperationInstanceId = "opinst-original", AuditId = "audit-original",
-            PrincipalId = "original-actor", TenantId = "tenant-a"
+            OperationInstanceId = "opinst-original",
+            AuditId = "audit-original",
+            PrincipalId = "original-actor",
+            TenantId = "tenant-a"
         });
 
         if (failTransport)
