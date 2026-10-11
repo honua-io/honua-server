@@ -351,6 +351,14 @@ public sealed class StudioPublishedArtifact
     [JsonPropertyName("contentHash")]
     public required string ContentHash { get; init; }
 
+    /// <summary>
+    /// Canonical hash input of the Active version (honua-server#5449): base64 of the exact bytes
+    /// whose lower-case hex SHA-256 is <see cref="ContentHash"/>. Absent when the server cannot
+    /// supply bytes that hash to it (see <c>StudioContentVersion.ContentHashInput</c>).
+    /// </summary>
+    [JsonPropertyName("contentHashInput")]
+    public string? ContentHashInput { get; init; }
+
     /// <summary>When the governing publication request was accepted.</summary>
     [JsonPropertyName("publishedAt")]
     public required DateTimeOffset PublishedAt { get; init; }

@@ -113,6 +113,7 @@ internal static class StudioPublishedRouteEndpoints
                 PackageKey = version.PackageKey,
                 Family = version.Envelope.Family,
                 ContentHash = version.ContentHash,
+                ContentHashInput = version.ContentHashInput,
                 PublishedAt = publication.CreatedAt,
                 Envelope = version.Envelope,
             };

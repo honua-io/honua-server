@@ -224,6 +224,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
 
             var item = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.TenantId, draft.CreatedBy, draft.CreatedAt);
             var versions = GetVersions(draft.ItemId);
+            var hashInput = StudioPackageHash.ComputeInput(draft.Envelope);
             var version = new StudioContentVersion
             {
                 ItemId = draft.ItemId,
@@ -233,7 +234,8 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 TenantId = draft.TenantId,
                 VersionId = Guid.NewGuid(),
                 VersionNumber = versions.Count == 0 ? 1 : versions[^1].VersionNumber + 1,
-                ContentHash = StudioPackageHash.Compute(draft.Envelope),
+                ContentHash = StudioPackageHash.ComputeFromInput(hashInput),
+                ContentHashInput = Convert.ToBase64String(hashInput),
                 Envelope = draft.Envelope,
                 Validation = draft.Validation,
                 Dependencies = draft.Envelope.Dependencies,
