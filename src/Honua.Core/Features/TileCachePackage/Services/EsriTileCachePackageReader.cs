@@ -244,24 +244,24 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
                 switch (reader.LocalName)
                 {
                     case "CacheTileFormat":
-                        format = reader.ReadElementContentAsString();
+                        format = ReadElementText(reader);
                         break;
                     case "WKID":
-                        if (int.TryParse(reader.ReadElementContentAsString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedWkid))
+                        if (int.TryParse(ReadElementText(reader), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedWkid))
                         {
                             wkid = parsedWkid;
                         }
 
                         break;
                     case "LatestWKID":
-                        if (int.TryParse(reader.ReadElementContentAsString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedLatest))
+                        if (int.TryParse(ReadElementText(reader), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedLatest))
                         {
                             latestWkid = parsedLatest;
                         }
 
                         break;
                     case "TileCols":
-                        if (int.TryParse(reader.ReadElementContentAsString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedCols))
+                        if (int.TryParse(ReadElementText(reader), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedCols))
                         {
                             tileCols = parsedCols;
                         }
@@ -285,12 +285,12 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
                                 }
 
                                 if (origin.LocalName == "X" &&
-                                    double.TryParse(origin.ReadElementContentAsString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var x))
+                                    double.TryParse(ReadElementText(origin), NumberStyles.Float, CultureInfo.InvariantCulture, out var x))
                                 {
                                     originX = x;
                                 }
                                 else if (origin.LocalName == "Y" &&
-                                         double.TryParse(origin.ReadElementContentAsString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var y))
+                                         double.TryParse(ReadElementText(origin), NumberStyles.Float, CultureInfo.InvariantCulture, out var y))
                                 {
                                     originY = y;
                                 }
@@ -323,21 +323,21 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
                                 switch (lod.LocalName)
                                 {
                                     case "LevelID":
-                                        if (int.TryParse(lod.ReadElementContentAsString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var levelId))
+                                        if (int.TryParse(ReadElementText(lod), NumberStyles.Integer, CultureInfo.InvariantCulture, out var levelId))
                                         {
                                             level = levelId;
                                         }
 
                                         break;
                                     case "Resolution":
-                                        if (double.TryParse(lod.ReadElementContentAsString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedResolution))
+                                        if (double.TryParse(ReadElementText(lod), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedResolution))
                                         {
                                             resolution = parsedResolution;
                                         }
 
                                         break;
                                     case "Scale":
-                                        if (double.TryParse(lod.ReadElementContentAsString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedScale))
+                                        if (double.TryParse(ReadElementText(lod), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedScale))
                                         {
                                             scale = parsedScale;
                                         }
@@ -613,6 +613,19 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
     /// A declared length of zero is still copied under the cap, so a length-less
     /// deflate stream cannot expand without bound.
     /// </summary>
+    /// <summary>
+    /// Reads the current element's text through a subtree so the caller's Read() loop lands on
+    /// the next sibling. ReadElementContentAsString already advances past the end tag, so a
+    /// following Read() would silently skip an adjacent element (Y after X, Resolution after
+    /// LevelID, LatestWKID after WKID).
+    /// </summary>
+    private static string ReadElementText(XmlReader reader)
+    {
+        using var element = reader.ReadSubtree();
+        element.Read();
+        return element.ReadElementContentAsString();
+    }
+
     private static byte[] ReadBounded(ZipArchiveEntry entry, int maxEntryBytes, DecompressionBudget budget)
     {
         ArgumentNullException.ThrowIfNull(entry);
