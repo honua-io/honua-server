@@ -13,7 +13,7 @@ using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using NSubstitute;
 
-namespace Honua.Server.Tests.Features.Operations;
+namespace Honua.Server.Tests.Features.OperationsToolset;
 
 /// <summary>
 /// Unit coverage for dry-run dispatch, case-insensitive inline passwords, and
