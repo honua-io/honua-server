@@ -364,12 +364,12 @@ public sealed class RasterCorrectedNearestSqlIntegrationTests(PostgresFixture fi
                        g.rast AS grid FROM source s, grid g
             )
             SELECT window_rejected, axes_rejected, intersects,
-                   ST_DumpValues(rast, 1, FALSE), ST_DumpValues(rast, 2, FALSE),
-                   ST_BandPixelType(rast,1), ST_BandPixelType(rast,2),
-                   ST_BandNoDataValue(rast,1), ST_BandNoDataValue(rast,2),
-                   ST_SameAlignment(rast,grid), ST_Equals(ST_ConvexHull(rast),ST_ConvexHull(grid)),
+                   ST_DumpValues(r.rast, 1, FALSE), ST_DumpValues(r.rast, 2, FALSE),
+                   ST_BandPixelType(r.rast,1), ST_BandPixelType(r.rast,2),
+                   ST_BandNoDataValue(r.rast,1), ST_BandNoDataValue(r.rast,2),
+                   ST_SameAlignment(r.rast,r.grid), ST_Equals(ST_ConvexHull(r.rast),ST_ConvexHull(r.grid)),
                    ST_DumpValues(mask.rast,1,FALSE), ST_DumpValues(mask.rast,2,FALSE)
-            FROM result,
+            FROM result r,
                  LATERAL (SELECT {RasterGeneralNearestSql.Sample("s.rast", "g.rast", true)} AS rast
                           FROM source s, grid g) mask;
             """;
