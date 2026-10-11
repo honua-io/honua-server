@@ -13,6 +13,7 @@ using Honua.Core.Features.Studio;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
+using Honua.Core.Features.Studio.Services.Bridging;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
@@ -258,6 +259,35 @@ public sealed class StudioDraftOperationRuntimeTests
         validation.Messages.Should().ContainSingle()
             .Which.Should().Be("Route '/studio/parcels' is already claimed by another Studio publication.");
         (await store.GetPointersAsync(other!.ItemId))!.PublishedVersionId.Should().BeNull();
+    }
+
+    // honua-server#5825: the pre-policy route check must not reject a bridged family whose
+    // native store, not the Studio store, owns the publication.
+    [UnitTest]
+    public async Task PublicationRequestValidation_BridgedFamily_AllowsRouteOwnedByNativeItem()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var bridge = new SingleItemFamilyBridge(StudioPackageFamily.Form);
+        var lifecycle = BuildLifecycle(store, new StudioFamilyPersistenceBridgeCatalog([bridge]));
+        var executor = PublicationExecutor(lifecycle);
+        var owner = await SaveFirstVersionAsync(lifecycle);
+        await lifecycle.CreatePublicationRequestAsync(
+            owner.ItemId,
+            owner.VersionId,
+            expectedCurrentVersionId: owner.VersionId,
+            intent: null,
+            warningAcknowledgement: null,
+            actorId: "studio-author");
+
+        var bridged = bridge.Seed();
+        var validation = await executor.ValidateAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, PublicationPayload(bridged)));
+
+        validation.IsValid.Should().BeTrue();
+        validation.Status.Should().Be("valid");
+        validation.ErrorKind.Should().BeNull();
+        validation.ApprovalPlan.Should().NotBeNull();
+        (await store.GetPointersAsync(owner.ItemId))!.PublishedVersionId.Should().Be(owner.VersionId);
     }
 
     [UnitTest]
@@ -575,10 +605,17 @@ public sealed class StudioDraftOperationRuntimeTests
         },
         StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload);
 
-    private static IStudioPackageLifecycleService BuildLifecycle(IStudioPackageStore store)
+    private static IStudioPackageLifecycleService BuildLifecycle(
+        IStudioPackageStore store,
+        StudioFamilyPersistenceBridgeCatalog? bridgeCatalog = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton(store);
+        if (bridgeCatalog is not null)
+        {
+            services.AddSingleton(bridgeCatalog);
+        }
+
         services.AddStudioPackageLifecycle();
         return services.BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
     }
@@ -1104,6 +1141,83 @@ public sealed class StudioDraftOperationRuntimeTests
 
         public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
+    }
+
+    private sealed class SingleItemFamilyBridge : IStudioFamilyPersistenceBridge
+    {
+        private StudioContentVersion? _version;
+
+        public SingleItemFamilyBridge(StudioPackageFamily family) => Family = family;
+
+        public StudioPackageFamily Family { get; }
+
+        public string Format => "native-format.v1";
+
+        public bool PublishSupported => true;
+
+        public IReadOnlyList<StudioPackageOperation> SupportedOperations { get; } =
+            [StudioPackageOperation.PublishRequestCreate];
+
+        public IReadOnlyList<string> Limitations { get; } = ["test bridge"];
+
+        public StudioContentVersion Seed()
+        {
+            var itemId = Guid.NewGuid();
+            var versionId = Guid.NewGuid();
+            _version = new StudioContentVersion
+            {
+                ItemId = itemId,
+                PackageKey = "bridged-form",
+                VersionId = versionId,
+                VersionNumber = 1,
+                ContentHash = "bridged-hash",
+                Envelope = new StudioPackageEnvelope
+                {
+                    Family = Family,
+                    SchemaVersion = "1.0",
+                    Format = Format,
+                    PublicationIntent = new StudioPublicationIntent
+                    {
+                        Route = "/studio/parcels",
+                        Visibility = "organization",
+                    },
+                },
+                Validation = StudioValidationSummary.NotValidated,
+                CreatedAt = DateTimeOffset.UnixEpoch,
+            };
+            return _version;
+        }
+
+        public Task<IReadOnlyList<StudioContentItemSummary>> ListItemSummariesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<StudioContentItemSummary>>([]);
+
+        public Task<StudioContentItemPointers?> GetPointersAsync(Guid itemId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_version is { } version && version.ItemId == itemId
+                ? new StudioContentItemPointers
+                {
+                    ItemId = itemId,
+                    CurrentVersionId = version.VersionId,
+                }
+                : null);
+
+        public Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(Guid itemId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<StudioContentVersion>>(
+                _version is { } version && version.ItemId == itemId ? [version] : []);
+
+        public Task<StudioContentVersion?> GetVersionAsync(Guid itemId, Guid versionId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_version is { } version && version.ItemId == itemId && version.VersionId == versionId
+                ? version
+                : null);
+
+        public Task<StudioContentVersion> SaveVersionAsync(
+            StudioPackageDraft draft,
+            string? changeNote,
+            string? actorId,
+            CancellationToken cancellationToken = default)
+            => Task.FromException<StudioContentVersion>(new NotSupportedException());
+
+        public Task<StudioPublicationRequest> PublishAsync(StudioPublicationRequest request, CancellationToken cancellationToken = default)
+            => Task.FromResult(request);
     }
 
     private sealed class RequireApprovalPolicy : IOperationPolicyDecisionPoint

@@ -268,6 +268,14 @@ public sealed record StudioPackageFamilyDescriptor
     /// <summary>True when publication requests are available.</summary>
     [JsonPropertyName("publishSupported")]
     public bool PublishSupported { get; init; }
+
+    /// <summary>
+    /// True when an accepted publication for this family owns its Studio route.
+    /// Bridged families publish through their native store, so a native Studio item
+    /// on the same route must not block them (honua-server#5825). Server-side only.
+    /// </summary>
+    [JsonIgnore]
+    public bool GovernsStudioRoutes { get; init; } = true;
 }
 
 /// <summary>
