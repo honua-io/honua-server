@@ -24,6 +24,12 @@ internal interface IFeatureServerQueryServices
     /// </summary>
     Task<int?> ParseSridAsync(string? srValue, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Resolves a projected CRS to the EPSG identifier of its geodetic base.
+    /// Geographic and unresolvable definitions retain <paramref name="srid"/>.
+    /// </summary>
+    Task<int> ResolveGeodeticBaseSridAsync(int srid, CancellationToken cancellationToken = default);
+
     ValueTask<(object Response, string ContentType)> FormatQueryResultAsync(
         QueryResult<Feature> result,
         MetadataV2Resource resource,

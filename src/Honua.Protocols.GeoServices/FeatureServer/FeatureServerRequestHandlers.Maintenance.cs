@@ -112,7 +112,16 @@ internal static partial class FeatureServerEndpoints
             return parseError;
         }
 
-        return await ExecuteAppendAsync(context, serviceId, layerId, features ?? [], cancellationToken);
+        return await ExecuteAppendAsync(
+            context,
+            serviceId,
+            layerId,
+            validationResult.Publication!,
+            service,
+            resource,
+            values,
+            features ?? [],
+            cancellationToken);
     }
 
     private static async Task<IResult> HandleLayerAppend(
@@ -184,20 +193,122 @@ internal static partial class FeatureServerEndpoints
             return parseError;
         }
 
-        return await ExecuteAppendAsync(context, serviceId, layerId, features ?? [], cancellationToken);
+        return await ExecuteAppendAsync(
+            context,
+            serviceId,
+            layerId,
+            validationResult.Publication!,
+            service,
+            resource,
+            values,
+            features ?? [],
+            cancellationToken);
     }
 
     private static async Task<IResult> ExecuteAppendAsync(
         HttpContext context,
         string serviceId,
         int layerId,
+        MetadataV2Publication publication,
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        IReadOnlyDictionary<string, StringValues> values,
         GeoServicesFeature[] features,
         CancellationToken cancellationToken)
     {
+        if (!TryReadAppendOptions(values, out var appendOptions, out var optionsError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid append request",
+                [optionsError ?? "Invalid append parameter."]);
+        }
+
+        var unsupported = FindUnsupportedAppendControl(values);
+        if (unsupported is not null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                $"{unsupported} is not supported",
+                [$"Omit {unsupported}. Append applies the edits array directly."]);
+        }
+
+        GeoServicesFeature[] updates = [];
+        var adds = features;
+        if (appendOptions.Upsert)
+        {
+            if (string.IsNullOrWhiteSpace(appendOptions.UpsertMatchingField))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid append request",
+                    ["upsertMatchingField is required when upsert is true."]);
+            }
+
+            if (!IsAppendMatchField(resource, appendOptions.UpsertMatchingField))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid upsertMatchingField",
+                    [$"Field '{appendOptions.UpsertMatchingField}' does not exist on the layer."]);
+            }
+
+            var updateAccessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                context, resource, AuthorizationOperation.Update, service, cancellationToken).ConfigureAwait(false);
+            if (updateAccessError != null)
+            {
+                return updateAccessError;
+            }
+
+            var updateRbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+                context,
+                resource,
+                service,
+                AuthorizationOperation.Update,
+                cancellationToken).ConfigureAwait(false);
+            if (updateRbacError != null)
+            {
+                return updateRbacError;
+            }
+
+            var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+            var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var storageLayerId = ResolveFeatureServerStorageLayerIdV2(snapshot, publication, resource);
+            if (storageLayerId is null)
+            {
+                var layerName = resource.Metadata.Name.Length == 0
+                    ? layerId.ToString(CultureInfo.InvariantCulture)
+                    : resource.Metadata.Name;
+                return StandardErrorHelpers.CreateNotFound(context,
+                    $"Layer '{layerName}' is not bound to a storage layer.");
+            }
+
+            var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+            var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+            var (matches, matchError) = await LoadAppendUpsertMatchesAsync(
+                featureReader,
+                filterService,
+                resource,
+                storageLayerId.Value,
+                features,
+                appendOptions.UpsertMatchingField,
+                cancellationToken).ConfigureAwait(false);
+            if (matchError is not null)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid upsertMatchingField",
+                    [matchError]);
+            }
+
+            var partition = PartitionAppendFeatures(
+                features,
+                matches ?? new Dictionary<string, long>(StringComparer.Ordinal),
+                appendOptions.UpsertMatchingField,
+                GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource));
+            adds = partition.Adds;
+            updates = partition.Updates;
+        }
+
         var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
         var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
 
-        var request = new ApplyEditsRequest { Adds = features, RollbackOnFailure = false };
+        var request = CreateAppendApplyEditsRequest(adds, updates, appendOptions.RollbackOnFailure);
         var result = await editsHandler.HandleApplyEditsAsync(
             serviceId, layerId, request, limitsOptions.Value.Edits, cancellationToken);
 
@@ -206,8 +317,10 @@ internal static partial class FeatureServerEndpoints
             jsonResult.Value != null)
         {
             var editsResponse = jsonResult.Value;
-            var appended = editsResponse.AddResults?.Count(r => r.Success) ?? 0;
-            var failed = editsResponse.AddResults?.Count(r => !r.Success) ?? 0;
+            var appended = (editsResponse.AddResults?.Count(r => r.Success) ?? 0)
+                + (editsResponse.UpdateResults?.Count(r => r.Success) ?? 0);
+            var failed = (editsResponse.AddResults?.Count(r => !r.Success) ?? 0)
+                + (editsResponse.UpdateResults?.Count(r => !r.Success) ?? 0);
 
             var response = new AppendResponse
             {

@@ -6,6 +6,7 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Infrastructure.Security;
 using Honua.Protocols.GeoServices;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -39,13 +40,48 @@ public sealed class GeometryInputBudgetTests
     }
 
     [Theory]
-    [InlineData("where")]
+    [InlineData("gdbVersion")]
     [InlineData("Authorization")]
     public async Task OtherParametersAndHeaders_RetainTextLimit(string name)
     {
         var result = await InvokeAsync(new string('a', 8193), name: name);
         Assert.False(result.Passed);
         Assert.Contains("8192", result.Body, StringComparison.Ordinal);
+    }
+
+    [UnitTheory]
+    [InlineData("POST")]
+    [InlineData("GET")]
+    public async Task FeatureServerWhere_OverGenericTextLimit_IsAccepted(string method)
+    {
+        var where = "name='" + new string('a', 9000) + "'";
+
+        var result = await InvokeAsync(where, method, name: "where");
+
+        Assert.True(result.Passed, result.Body);
+        Assert.Equal(where, result.ForwardedValue);
+    }
+
+    [UnitTest]
+    public async Task NonFeatureServerWhere_OverGenericTextLimit_IsRejected()
+    {
+        var where = "name='" + new string('a', 9000) + "'";
+
+        var result = await InvokeAsync(where, name: "where", path: "/rest/services/test/GPServer/query");
+
+        Assert.False(result.Passed);
+        Assert.Contains("8192", result.Body, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public async Task FeatureServerWhere_OverProtocolPayloadLimit_IsRejected()
+    {
+        var where = "name='" + new string('a', 200) + "'";
+
+        var result = await InvokeAsync(where, name: "where", maxPayloadSize: 100);
+
+        Assert.False(result.Passed);
+        Assert.Contains("maximum length of 100", result.Body, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -157,7 +193,7 @@ public sealed class GeometryInputBudgetTests
     [InlineData("multipart/form-data")]
     public async Task StructuredBody_OtherParametersRetainLimitsAndInjectionChecks(string contentType)
     {
-        Assert.False((await InvokeAsync(new string('a', 8193), name: "where", contentType: contentType)).Passed);
+        Assert.False((await InvokeAsync(new string('a', 8193), name: "gdbVersion", contentType: contentType)).Passed);
         var injection = await InvokeAsync("<script>alert(1)</script>", name: "where", contentType: contentType);
         Assert.False(injection.Passed);
         Assert.Contains("XSS", injection.Body, StringComparison.Ordinal);
@@ -251,11 +287,13 @@ public sealed class GeometryInputBudgetTests
         string? contentType = null,
         string? queryGeometry = null,
         string? rawBody = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? path = null,
+        long? maxPayloadSize = null)
     {
         using var services = new ServiceCollection().AddLogging().AddOptions().BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = services };
-        context.Request.Path = "/rest/services/test/FeatureServer/1/query";
+        context.Request.Path = path ?? "/rest/services/test/FeatureServer/1/query";
         context.Request.Method = method;
         context.RequestAborted = cancellationToken;
         context.Response.Body = new MemoryStream();
@@ -321,7 +359,10 @@ public sealed class GeometryInputBudgetTests
             Options.Create(new InputValidationOptions()),
             Options.Create(new LimitsOptions
             {
-                Geometry = new GeometryLimits { MaxGeometrySize = maxBytes, MaxVerticesPerGeometry = maxVertices }
+                Geometry = new GeometryLimits { MaxGeometrySize = maxBytes, MaxVerticesPerGeometry = maxVertices },
+                Edits = maxPayloadSize is long payload
+                    ? new EditLimits { MaxPayloadSize = payload }
+                    : new EditLimits()
             }));
         await middleware.InvokeAsync(context);
         context.Response.Body.Position = 0;
