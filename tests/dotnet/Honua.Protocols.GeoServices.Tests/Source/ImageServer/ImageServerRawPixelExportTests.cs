@@ -107,6 +107,132 @@ public sealed class ImageServerRawPixelExportTests
     }
 
     [IntegrationTheory]
+    [InlineData("esriNoDataMatchAny", "esriImageReturnURL", false)]
+    [InlineData("esriNoDataMatchAny", "esriImageReturnMimeData", false)]
+    [InlineData("esriNoDataMatchAll", "esriImageReturnURL", false)]
+    [InlineData("esriNoDataMatchAll", "esriImageReturnMimeData", false)]
+    [InlineData("esriNoDataMatchAny", "esriImageReturnURL", true)]
+    [InlineData("esriNoDataMatchAny", "esriImageReturnMimeData", true)]
+    [InlineData("esriNoDataMatchAll", "esriImageReturnURL", true)]
+    [InlineData("esriNoDataMatchAll", "esriImageReturnMimeData", true)]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task SoapExportImage_OutputNoDataVectorWithSingleBandSource_PreservesSqlSamplesAndMask(
+        string interpretation, string returnType, bool overlaps)
+    {
+        await RunWithFixtureRasterAsync(async fixture =>
+        {
+            await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema!);
+            await using var insert = connection.CreateCommand();
+            // The catalog can retain an older single-band source while the service describes RGB.
+            // Exercise both an unused catalog source and the native fixture's overlapping sources.
+            insert.CommandText = """
+                INSERT INTO honua.raster_data (layer_id, name, raster, acquisition_date, created_at)
+                SELECT layer_id, 'older-single-band',
+                       ST_SetUpperLeft(ST_Band(raster, 1), @ulx, @uly),
+                       acquisition_date - interval '1 day', created_at - interval '1 day'
+                FROM honua.raster_data WHERE layer_id = @layerId
+                """;
+            insert.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+            insert.Parameters.AddWithValue("ulx", overlaps ? XMin : 0d);
+            insert.Parameters.AddWithValue("uly", overlaps ? YMax : 10d);
+            (await insert.ExecuteNonQueryAsync()).Should().Be(1);
+
+            using (var info = await PostSoapAsync(fixture, "<GetServiceInfo xmlns=\"http://www.esri.com/schemas/ArcGIS/10.8\" />"))
+            {
+                info.Be200Ok();
+                XDocument.Parse(await info.Content.ReadAsStringAsync()).Descendants()
+                    .Single(element => element.Name.LocalName == "BandCount").Value.Should().Be("3");
+            }
+
+            await using var readback = connection.CreateCommand();
+            readback.CommandText = """
+                SELECT jsonb_agg(jsonb_build_object('bands', ST_NumBands(raster),
+                    'nodata', ST_BandNoDataValue(raster, 1),
+                    'samples', ST_DumpValues(raster, 1, false)) ORDER BY ST_NumBands(raster))::text
+                FROM honua.raster_data WHERE layer_id = @layerId
+                """;
+            readback.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+            using var sql = JsonDocument.Parse((string)(await readback.ExecuteScalarAsync())!);
+            sql.RootElement.GetArrayLength().Should().Be(2);
+            sql.RootElement[0].GetProperty("bands").GetInt32().Should().Be(1);
+            sql.RootElement[1].GetProperty("bands").GetInt32().Should().Be(BandCount);
+            foreach (var source in sql.RootElement.EnumerateArray())
+            {
+                source.GetProperty("nodata").GetDouble().Should().Be(0);
+            }
+
+            using var response = await PostSoapAsync(fixture, BuildSoapExportImage(
+                XMin, YMin, XMax, YMax, Size, Size, "RSP_NearestNeighbor", returnType, interpretation));
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            var result = XDocument.Parse(body).Descendants().Single(element => element.Name.LocalName == "Result");
+            var block = await ReadSoapImageAsync(fixture, result, returnType);
+            AssertBsqBlockMatchesFixture(block, 0, 0, Size, Size);
+            for (var row = 0; row < Size; row++)
+            {
+                for (var column = 0; column < Size; column++)
+                {
+                    block[(row * Size) + column].Should().Be(
+                        (byte)sql.RootElement[1].GetProperty("samples")[row][column].GetDouble());
+                }
+            }
+        });
+    }
+
+    [IntegrationTheory]
+    [InlineData("AA==", null)]
+    [InlineData("AAAAAA==", null)]
+    [InlineData("AAcA", null)]
+    [InlineData("not-base64", null)]
+    [InlineData("AAAA", "missing-nodata")]
+    [InlineData("AAAA", "valid-zero")]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task SoapExportImage_UnprovenOutputNoDataVector_DoesNotMaskValidZero(
+        string noData, string? sourceScenario)
+    {
+        await RunWithFixtureRasterAsync(async fixture =>
+        {
+            if (sourceScenario is not null)
+            {
+                await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema!);
+                await using var insert = connection.CreateCommand();
+                insert.CommandText = """
+                    INSERT INTO honua.raster_data (layer_id, name, raster, acquisition_date, created_at)
+                    SELECT layer_id, 'older-valid-zero',
+                           ST_SetBandNoDataValue(ST_SetValue(ST_Band(raster, 1), 1, 1, 1, 0), 1, @nodata),
+                           acquisition_date - interval '1 day', created_at - interval '1 day'
+                    FROM honua.raster_data WHERE layer_id = @layerId
+                    """;
+                insert.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+                insert.Parameters.Add(new Npgsql.NpgsqlParameter("nodata", NpgsqlTypes.NpgsqlDbType.Double)
+                {
+                    Value = sourceScenario == "missing-nodata" ? DBNull.Value : 255d
+                });
+                (await insert.ExecuteNonQueryAsync()).Should().Be(1);
+                await using var readback = connection.CreateCommand();
+                readback.CommandText = """
+                    SELECT ST_Value(raster, 1, 1, 1, true)
+                    FROM honua.raster_data WHERE layer_id = @layerId AND name = 'older-valid-zero'
+                    """;
+                readback.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+                ((double)(await readback.ExecuteScalarAsync())!).Should().Be(0, "SQL declares this zero sample valid");
+            }
+
+            var operation = BuildSoapExportImage(XMin, YMin, XMax, YMax, Size, Size,
+                "RSP_NearestNeighbor", "esriImageReturnMimeData", "esriNoDataMatchAny")
+                .Replace(">AAAA</NoData>", $">{noData}</NoData>", StringComparison.Ordinal);
+            using var response = await PostSoapAsync(fixture, operation);
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, body);
+            XDocument.Parse(body).Descendants().Should().Contain(element => element.Name.LocalName == "Fault");
+        });
+    }
+
+    [IntegrationTheory]
     [InlineData("esriNoDataMatchAll", "different-band")]
     [InlineData("esriNoDataMatchAll", "missing-band")]
     [InlineData("esriNoDataMatchAll", "mosaic")]
