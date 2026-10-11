@@ -321,6 +321,11 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WebAppFixture>
         content.Should().NotContain("http://schemas.opengis.net/wfs/1.0.0/WFS-basic.xsd");
         content.Should().Contain("<FeatureTypeList>");
         content.Should().Contain("<SRS>EPSG:");
+
+        // Service/OnlineResource is this deployment's WFS endpoint, not a vendor URL.
+        var serviceOnlineResource = XElement.Parse(content).Element(wfs + "Service")!.Element(wfs + "OnlineResource")!.Value;
+        serviceOnlineResource.Should().EndWith("/wfs");
+        serviceOnlineResource.Should().NotContain("honua.io");
     }
 
     [IntegrationTest]

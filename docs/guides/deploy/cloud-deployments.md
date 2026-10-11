@@ -77,6 +77,34 @@ On the generic web image (Docker Hub + GHCR), tags have distinct contracts. Pick
 - **Production, single region (5–50)**: managed Postgres with backups, Redis (required for durable jobs/queued imports/workflows), one container service from the table above, edge TLS and rate limiting.
 - **Enterprise (50+)**: multi-region or active/standby, database replication and failover, global load balancing/WAF, centralized logging and alerting. Honua replicas stay stateless in every tier — scale-out is adding replicas.
 
+## Serve Honua on your own domain
+
+Honua runs on any domain you own: any FQDN, any TLD, no `honua.io` name required. Three settings
+make a deployment correct on that domain:
+
+- **`Public__BaseUrl`** (or `PUBLIC_BASE_URL`): the public origin, for example
+  `https://gis.example.com`. Honua builds its absolute links (OGC API and STAC self links, OGC
+  capabilities operation URLs, admin OIDC redirect URIs) from it rather than from the request
+  `Host` header. Without it, those links fall back to a loopback origin such as `http://localhost`, and
+  admin OIDC refuses to start outside Development. The value must be an absolute `http`/`https` URL;
+  a port and a path prefix are kept (`https://example.org:8443/gis`) and a trailing `/` is ignored.
+  A bare host name such as `gis.example.com` is **ignored** (links fall back to loopback), so
+  always include the scheme. Studio publication URLs (`activeUrl`, `publicationUrl`) are
+  root-relative and resolve against whatever origin the client used.
+- **Host validation**: outside Development the server answers only allowed hosts. With no
+  `HostValidation__AllowedHosts__<n>` list, the host of `Public__BaseUrl` is allowed. With a list,
+  include your domain in it.
+- **`Cors__AllowedOrigins__<n>`**: the browser origins on your domain (Console, your web app), not
+  the API host.
+
+The honua-iac AWS modules set `Public__BaseUrl` for you when you give them a custom domain:
+`aws-ecs` and `aws-serverless` render `https://<domain_name>` (the Lambda module also adds the
+domain to host validation), and `aws-eks` puts it in `chart_config_env` for the Helm chart's
+`config.env`. Each takes a `public_base_url` input that overrides it, for example when a CDN on your
+domain fronts the service, and a `Public__BaseUrl` you already pass in `additional_env` is kept.
+On Azure, Helm, Docker Compose, and other targets, set `Public__BaseUrl` yourself (the production
+Compose file derives it from `HONUA_HOST`).
+
 ## AWS ECS/Fargate
 
 The release-certified AWS runtime target is `x86_64` Fargate behind an ALB. The release
