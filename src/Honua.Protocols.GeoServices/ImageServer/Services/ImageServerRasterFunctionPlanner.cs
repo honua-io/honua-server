@@ -395,8 +395,23 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
                     return mapping;
                 }
 
-                // A later (outer) ExtractBand supersedes an inner one.
-                bands = mapping.Bands ?? bands;
+                // The walk visits the outer function first. Its BandIds are positions in
+                // the inner function's output, not a replacement source selection.
+                if (mapping.Bands is { } selected)
+                {
+                    if (bands is null)
+                    {
+                        bands = selected;
+                    }
+                    else if (!TryComposeExtractBandSelection(bands, selected, out var composed, out var reason))
+                    {
+                        return RenderingRuleMapping.Invalid(reason);
+                    }
+                    else
+                    {
+                        bands = composed;
+                    }
+                }
             }
             else if (string.Equals(current.RasterFunction, "BandArithmetic", StringComparison.OrdinalIgnoreCase))
             {
@@ -653,6 +668,33 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         }
 
         return RenderingRuleMapping.Executable(null, null, null, bands.ToArray());
+    }
+
+    // outerOneBasedIndexes addresses the inner selection. Index 1 is the first
+    // band that selection emits, which may itself be a reordered source band.
+    private static bool TryComposeExtractBandSelection(
+        int[] outerOneBasedIndexes,
+        int[] innerOneBasedBands,
+        out int[] composed,
+        out string reason)
+    {
+        composed = new int[outerOneBasedIndexes.Length];
+        for (var i = 0; i < outerOneBasedIndexes.Length; i++)
+        {
+            var position = outerOneBasedIndexes[i];
+            if (position < 1 || position > innerOneBasedBands.Length)
+            {
+                composed = [];
+                reason =
+                    $"ExtractBand selection index {(position - 1).ToString(CultureInfo.InvariantCulture)} is outside the {innerOneBasedBands.Length.ToString(CultureInfo.InvariantCulture)} band(s) produced by the inner ExtractBand.";
+                return false;
+            }
+
+            composed[i] = innerOneBasedBands[position - 1];
+        }
+
+        reason = string.Empty;
+        return true;
     }
 
     private static bool TryGetBandIdsElement(Dictionary<string, object?> arguments, out JsonElement element)

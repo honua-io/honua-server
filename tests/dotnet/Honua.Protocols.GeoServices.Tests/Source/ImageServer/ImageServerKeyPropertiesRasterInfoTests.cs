@@ -179,6 +179,27 @@ public sealed class ImageServerKeyPropertiesRasterInfoTests
         bands.Should().Equal(3, 1, 3);
     }
 
+    [UnitTest]
+    public void NestedExtractBand_ComposesOuterIndexIntoInnerSelection()
+    {
+        var inner = ExtractBandOperation("<Int>2</Int><Int>0</Int>").Element("RenderingRule")!;
+        var operation = XElement.Parse("""
+            <GetKeyPropertiesX xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+              <RenderingRule><FunctionName>ExtractBand</FunctionName><Arguments>
+                <PropertySetProperty><Key>BandIds</Key><Value xsi:type="tns:ArrayOfInt"><Int>1</Int></Value></PropertySetProperty>
+              </Arguments></RenderingRule>
+            </GetKeyPropertiesX>
+            """);
+        operation.Element("RenderingRule")!.Element("Arguments")!.Add(
+            new XElement("PropertySetProperty",
+                new XElement("Key", "Raster"),
+                new XElement("Value", inner.Elements())));
+
+        ImageServerSoapEndpoints.TryReadKeyPropertiesBands(operation, 3, out var bands, out var error, out _)
+            .Should().BeTrue(error);
+        bands.Should().Equal(1);
+    }
+
     [UnitTheory]
     [InlineData("Stretch", "<PropertySetProperty><Key>StretchType</Key><Value>5</Value></PropertySetProperty><PropertySetProperty><Key>Statistics</Key><Value xsi:type='tns:ArrayOfDouble'><Double>0</Double><Double>255</Double></Value></PropertySetProperty>")]
     [InlineData("Colormap", "<PropertySetProperty><Key>Colormap</Key><Value xsi:type='tns:ArrayOfArrayOfDouble'><ArrayOfDouble><Double>0</Double><Double>0</Double><Double>0</Double><Double>0</Double></ArrayOfDouble><ArrayOfDouble><Double>255</Double><Double>255</Double><Double>255</Double><Double>255</Double></ArrayOfDouble></Value></PropertySetProperty>")]
