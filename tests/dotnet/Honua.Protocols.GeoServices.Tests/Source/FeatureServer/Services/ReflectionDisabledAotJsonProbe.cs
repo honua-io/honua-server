@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -302,10 +303,9 @@ internal static class ReflectionDisabledAotJsonProbe
             || RequireProperty(bag["extra"], "nested").GetBoolean() != true
             || RequireProperty(bag, "objectid").GetInt64() != 42
             || RequireProperty(bag, "population").GetInt64() != 350000
-            || !string.Equals(
-                RequireProperty(bag, "observed").GetString(),
-                "13:05:09.123456",
-                StringComparison.Ordinal))
+            || TimeOnly.Parse(
+                RequireProperty(bag, "observed").GetString()!,
+                CultureInfo.InvariantCulture) != new TimeOnly(13, 5, 9, 123, 456))
         {
             throw new InvalidOperationException("STAC ids+filter property bag did not preserve attribute values.");
         }

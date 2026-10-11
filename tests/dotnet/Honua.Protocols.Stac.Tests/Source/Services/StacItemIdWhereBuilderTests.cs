@@ -50,7 +50,7 @@ public sealed class StacItemIdWhereBuilderTests
     }
 
     [UnitTest]
-    public void GetCandidateFields_UniqueCanonicalRole_SkipsPrimaryKeyAndNonUniqueNames()
+    public void GetCandidateFields_UniqueCanonicalRole_IncludesPrimaryFallbackAndSkipsNonUniqueNames()
     {
         var resource = new MetadataV2Resource
         {
@@ -64,7 +64,10 @@ public sealed class StacItemIdWhereBuilderTests
 
         var fields = StacItemIdWhereBuilder.GetCandidateFields(resource);
 
-        Assert.Collection(fields, field => Assert.Equal("stac_id", field.Name));
+        Assert.Collection(
+            fields,
+            field => Assert.Equal("stac_id", field.Name),
+            field => Assert.Equal("objectid", field.Name));
     }
 
     [UnitTest]
