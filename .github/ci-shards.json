@@ -1329,6 +1329,7 @@
       "_paths_comment": "Capacity split of the former Infra and Security shard. This child isolates the cache, file-storage, and style endpoint/integration suites that previously shared one 39-minute budget with the control-plane and security suites. The OGC API - Styles protocol slice (src/Honua.Protocols.OgcApi/Styles/) maps here too: its /ogc/styles integration tests live under tests/.../Features/Styling, which this shard's filter selects (#3188).",
       "paths": [
         "observability/",
+        "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpSessionStore.cs",
         "src/Honua.Core/Features/Caching/",
         "src/Honua.Core/Features/ControlPlane/",
         "src/Honua.Core/Features/Styling/",
@@ -1347,6 +1348,7 @@
         "tests/dotnet/Honua.Server.Tests/Features/Export/",
         "tests/dotnet/Honua.Server.Tests/Features/FileStorage/",
         "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/RedisMcpSessionStoreTests.cs",
         "tests/dotnet/Honua.Server.Tests/Features/Styling/"
       ],
       "_comment": "Round-2 offline TRX rebalance (#3770): folds the 4.1m-p90 Infrastructure micro-shard into the same-project caching/file-storage/styling neighbor."
