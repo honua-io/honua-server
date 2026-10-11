@@ -125,7 +125,10 @@ internal sealed class McpSessionManager
     // Serializes capacity enforcement (prune + evict + admit) so the cap is never
     // transiently exceeded under a burst of concurrent initializes. Reads
     // (validation, enqueue, reader lookup) stay lock-free on the concurrent map.
+    // Also serializes removal tombstones with Adopt: a broadcast can arrive before
+    // the cache-miss read installs the record, and Terminate then finds nothing.
     private readonly object _capacityGate = new();
+    private readonly Dictionary<string, DateTimeOffset> _removedSessions = new(StringComparer.Ordinal);
 
     private readonly int _maxSessions;
     private readonly int _maxAnonymousSessions;
@@ -170,7 +173,14 @@ internal sealed class McpSessionManager
         {
             try
             {
-                _removalSubscription = _store.SubscribeToRemovals(id => Terminate(id));
+                _removalSubscription = _store.SubscribeToRemovals(id =>
+                {
+                    // Record the removal even when this replica has not adopted the
+                    // session yet. A read already in flight can otherwise install it
+                    // after Terminate finds no local entry.
+                    RememberRemoval(id);
+                    Terminate(id);
+                });
             }
             catch (Exception ex) when (IsStoreFailure(ex))
             {
@@ -476,7 +486,7 @@ internal sealed class McpSessionManager
         var now = _timeProvider.GetUtcNow();
         lock (_capacityGate)
         {
-            if (_sessions.ContainsKey(record.SessionId))
+            if (WasRemoved(record.SessionId, now) || _sessions.ContainsKey(record.SessionId))
             {
                 return;
             }
@@ -607,6 +617,59 @@ internal sealed class McpSessionManager
         session.Channel.Writer.TryComplete();
         session.Lifetime.Cancel();
         session.Lifetime.Dispose();
+        return true;
+    }
+
+    private void RememberRemoval(string sessionId)
+    {
+        if (string.IsNullOrEmpty(sessionId))
+        {
+            return;
+        }
+
+        var now = _timeProvider.GetUtcNow();
+        lock (_capacityGate)
+        {
+            _removedSessions[sessionId] = now;
+            if (_removedSessions.Count <= _maxSessions)
+            {
+                return;
+            }
+
+            var cutoff = now - _idleTimeout;
+            List<string>? stale = null;
+            foreach (var pair in _removedSessions)
+            {
+                if (pair.Value < cutoff)
+                {
+                    (stale ??= []).Add(pair.Key);
+                }
+            }
+
+            if (stale is not null)
+            {
+                foreach (var id in stale)
+                {
+                    _removedSessions.Remove(id);
+                }
+            }
+        }
+    }
+
+    // Caller holds _capacityGate.
+    private bool WasRemoved(string sessionId, DateTimeOffset now)
+    {
+        if (!_removedSessions.TryGetValue(sessionId, out var removedAt))
+        {
+            return false;
+        }
+
+        if (removedAt < now - _idleTimeout)
+        {
+            _removedSessions.Remove(sessionId);
+            return false;
+        }
+
         return true;
     }
 

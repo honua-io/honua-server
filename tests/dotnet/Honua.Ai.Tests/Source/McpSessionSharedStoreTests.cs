@@ -102,6 +102,25 @@ public sealed class McpSessionSharedStoreTests
     }
 
     [UnitTest]
+    public async Task RemovalPublishedBeforeAdopt_DoesNotInstallTheDeletedSession()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var store = new FakeSharedSessionStore(time);
+        var origin = NewManager(store, time);
+        var reader = NewManager(store, time);
+        var id = await origin.TryCreateSessionAsync("sub:alice", false, "setup", CancellationToken.None);
+
+        // The shared read has already copied the record when the other replica's
+        // DELETE publishes. Terminate on this replica finds no local entry.
+        store.OnRead = sessionId => store.RemoveAsync(sessionId, CancellationToken.None).GetAwaiter().GetResult();
+
+        (await reader.ValidateAccessAsync(id!, "sub:alice", CancellationToken.None))
+            .Should().Be(McpSessionValidation.Unknown);
+        reader.TryGetReader(id!, out _).Should().BeFalse();
+        reader.GetLifetimeToken(id!).CanBeCanceled.Should().BeFalse();
+    }
+
+    [UnitTest]
     public async Task EveryAcceptedRequest_SlidesTheSharedExpiry_OnAnyInstance()
     {
         var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
@@ -335,6 +354,8 @@ public sealed class McpSessionSharedStoreTests
 
         public int Reads => _reads;
 
+        public Action<string>? OnRead { get; set; }
+
         public bool Contains(string sessionId) => TryGetLive(sessionId, out _);
 
         public DateTimeOffset ExpiresAt(string sessionId) => _records[sessionId].ExpiresAt;
@@ -355,8 +376,10 @@ public sealed class McpSessionSharedStoreTests
                 return Task.FromResult<McpSessionRecord?>(null);
             }
 
+            var snapshot = record;
             _records[sessionId] = (record, time.GetUtcNow() + idleTimeout);
-            return Task.FromResult<McpSessionRecord?>(record);
+            OnRead?.Invoke(sessionId);
+            return Task.FromResult<McpSessionRecord?>(snapshot);
         }
 
         public Task<bool> TouchAsync(string sessionId, TimeSpan idleTimeout, CancellationToken cancellationToken)
