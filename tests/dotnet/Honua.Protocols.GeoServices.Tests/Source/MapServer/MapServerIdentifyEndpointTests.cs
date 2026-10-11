@@ -33,7 +33,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         var time = Uri.EscapeDataString("2025-01-01T00:00:00Z,2025-01-31T00:00:00Z");
         var layerTimeOptions = Uri.EscapeDataString("{\"0\":{\"useTime\":false}}");
         var response = await Fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&time={time}&layerTimeOptions={layerTimeOptions}&f=json");
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&sr=4326&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&time={time}&layerTimeOptions={layerTimeOptions}&f=json");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -49,7 +49,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
     public async Task MapServer_Identify_ReturnsResults()
     {
         var response = await Fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json");
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&sr=4326&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -97,6 +97,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
                 ["f"] = "json",
                 ["geometry"] = value,
                 ["geometryType"] = "esriGeometryPoint",
+                ["sr"] = "4326",
                 ["layers"] = "all:0",
                 ["tolerance"] = "10",
                 ["mapExtent"] = "-122.52,37.48,-122.48,37.52",
@@ -177,7 +178,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         var mapExtent = Uri.EscapeDataString(
             """{"xmin":-180,"ymin":-90,"xmax":180,"ymax":90,"spatialReference":{"wkid":4326}}""");
         var response = await Fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent={mapExtent}&imageDisplay=800,600,96&f=json");
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&sr=4326&mapExtent={mapExtent}&imageDisplay=800,600,96&f=json");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -216,7 +217,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
     public async Task MapServer_Identify_WithGdbVersion_IgnoresParameter()
     {
         var response = await Fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json&gdbVersion=QA");
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&sr=4326&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json&gdbVersion=QA");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -236,6 +237,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         [
             new KeyValuePair<string, string>("geometry", "-122.5,37.5"),
             new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
+            new KeyValuePair<string, string>("sr", "4326"),
             new KeyValuePair<string, string>("mapExtent", "-180,-90,180,90"),
             new KeyValuePair<string, string>("imageDisplay", "800,600,96"),
             new KeyValuePair<string, string>("f", "json")

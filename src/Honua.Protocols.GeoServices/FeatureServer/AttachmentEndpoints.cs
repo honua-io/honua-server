@@ -841,6 +841,20 @@ internal static partial class AttachmentEndpoints
             return null;
         }
 
+        // Resolving a custom object id reads through the row query, which can still see a
+        // stale default-store row. Apply the same published-source visibility check as
+        // queryAttachments so a parent removed from the bound table stays hidden.
+        if (feature is not null &&
+            (await FilterVisibleAttachmentParentsAsync(
+                featureReader,
+                storageLayerId,
+                [feature.Value.Id],
+                validatedDefinitionExpression: null,
+                cancellationToken).ConfigureAwait(false)).Length == 0)
+        {
+            feature = null;
+        }
+
         if (feature is null)
         {
             await StandardErrorHelpers.CreateNotFound(context, $"Feature {publicObjectId} not found")

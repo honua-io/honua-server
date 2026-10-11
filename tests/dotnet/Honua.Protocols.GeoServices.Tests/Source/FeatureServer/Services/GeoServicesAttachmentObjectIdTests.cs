@@ -15,6 +15,7 @@ using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -92,6 +93,8 @@ public sealed class GeoServicesAttachmentObjectIdTests
             .Returns(Task.FromException<Feature?>(new InvalidOperationException("public object id used as storage id")));
         reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(QueryResult<Feature>.Create(1, ImmutableArray.Create(stored))));
+        reader.QueryObjectIdsAsync(3, Arg.Is<FeatureQuery>(q => q.ObjectIds != null && q.ObjectIds.Value.Contains(99L)), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(ImmutableArray.Create(99L)));
         var context = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
 
         var feature = await AttachmentEndpoints.RequireAttachmentFeatureAsync(
@@ -105,6 +108,31 @@ public sealed class GeoServicesAttachmentObjectIdTests
 
         feature!.Value.Id.Should().Be(99);
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+    }
+
+    [UnitTest]
+    public async Task RequireAttachmentFeature_ResolvedParentNotVisibleInPublishedSource_IsNotFound()
+    {
+        var stale = Feature.Create(99, null, ImmutableDictionary<string, object?>.Empty.Add("gid", 7L));
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(QueryResult<Feature>.Create(1, ImmutableArray.Create(stale))));
+        reader.QueryObjectIdsAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(ImmutableArray<long>.Empty));
+        await using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services, Response = { Body = new MemoryStream() } };
+
+        var feature = await AttachmentEndpoints.RequireAttachmentFeatureAsync(
+            context,
+            reader,
+            SuccessFilters(),
+            CustomObjectIdLayer(),
+            3,
+            7,
+            CancellationToken.None);
+
+        feature.Should().BeNull("a parent the published source no longer returns must not expose attachments");
+        context.Response.Body.Length.Should().BePositive("the caller receives a not-found response");
     }
 
     [UnitTest]
