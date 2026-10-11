@@ -20,7 +20,8 @@ internal static class PostgresDataSourceFactory
         ArgumentNullException.ThrowIfNull(configuration);
         var limits = ResolveConnectionLimits(configuration);
         var defaultSchema = configuration["Database:Schema"];
-        return Create(connectionString, schemaHeadersEnabled, limits, defaultSchema);
+        var sessionSettingsMode = DatabaseSessionSettingsOptions.ResolveMode(configuration);
+        return Create(connectionString, schemaHeadersEnabled, limits, defaultSchema, sessionSettingsMode);
     }
 
     public static ConnectionLimits ResolveConnectionLimits(IConfiguration configuration)
@@ -53,13 +54,23 @@ internal static class PostgresDataSourceFactory
         return limits;
     }
 
-    public static NpgsqlDataSource Create(string connectionString, bool schemaHeadersEnabled, ConnectionLimits limits, string? defaultSchema = null)
+    public static NpgsqlDataSource Create(
+        string connectionString,
+        bool schemaHeadersEnabled,
+        ConnectionLimits limits,
+        string? defaultSchema = null,
+        DatabaseSessionSettingsMode sessionSettingsMode = DatabaseSessionSettingsMode.Connection)
     {
         var builder = new NpgsqlDataSourceBuilder(connectionString);
-        Configure(builder, schemaHeadersEnabled, limits, defaultSchema);
+        Configure(builder, schemaHeadersEnabled, limits, defaultSchema, sessionSettingsMode);
         return Track(builder.Build());
     }
 
+    /// <summary>
+    /// Builds a data source for a bound (secure-connection) source database. Bound sources
+    /// always use <see cref="DatabaseSessionSettingsMode.Connection"/>: their role is not the
+    /// primary database role an operator configures for <c>role-defaults</c>.
+    /// </summary>
     public static NpgsqlDataSource CreateForBoundSource(string connectionString, ConnectionLimits limits)
     {
         var builder = new NpgsqlDataSourceBuilder(connectionString);
@@ -110,7 +121,12 @@ internal static class PostgresDataSourceFactory
         return dataSource;
     }
 
-    public static void Configure(NpgsqlDataSourceBuilder builder, bool schemaHeadersEnabled, ConnectionLimits limits, string? defaultSchema = null)
+    public static void Configure(
+        NpgsqlDataSourceBuilder builder,
+        bool schemaHeadersEnabled,
+        ConnectionLimits limits,
+        string? defaultSchema = null,
+        DatabaseSessionSettingsMode sessionSettingsMode = DatabaseSessionSettingsMode.Connection)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(limits);
@@ -200,6 +216,19 @@ internal static class PostgresDataSourceFactory
         //   every pool return; initializer-applied SETs would be wiped by the first
         //   reset, while startup options survive RESET ALL as session defaults. This
         //   mode is test-only and never runs behind a connection proxy.
+        //
+        // - Database:SessionSettings:Mode=role-defaults: emit nothing. The settings
+        //   come from the database role's defaults (ALTER ROLE ... SET ...), which
+        //   PostgreSQL applies at session start and which survive RESET ALL. No
+        //   session SET means RDS Proxy can multiplex instead of pinning each client
+        //   connection (honua-server#5870). The role defaults are verified once at
+        //   startup by PostgresSessionSettingsVerificationService, which warns with
+        //   the ALTER ROLE statements to run; the server never runs ALTER ROLE.
+        if (sessionSettingsMode == DatabaseSessionSettingsMode.RoleDefaults)
+        {
+            return;
+        }
+
         var searchPathSchema = ResolveSearchPathSchema(schemaHeadersEnabled, defaultSchema);
 
         if (useMultiplexing || schemaHeadersEnabled)

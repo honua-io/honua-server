@@ -146,6 +146,9 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
         // Construction opens no database connection. Build before replacing the
         // entry so a failed rotation preserves the old pool. Source-bound pools use
         // common limits/timeouts without inheriting the primary database's schema.
+        // Named pools always apply the session settings per connection, even with
+        // Database:SessionSettings:Mode=role-defaults: their role can differ from the
+        // DefaultConnection role the startup check verifies (honua-server#5870).
         var dataSource = _createDataSource?.Invoke(connectionString) ?? (preservePrimarySchema
             ? PostgresDataSourceFactory.Create(connectionString, _schemaHeadersEnabled, _connectionLimits, _defaultSchema)
             : PostgresDataSourceFactory.CreateForBoundSource(connectionString, _connectionLimits));
