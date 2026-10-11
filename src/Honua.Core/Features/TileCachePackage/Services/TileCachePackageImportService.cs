@@ -91,7 +91,8 @@ public sealed partial class TileCachePackageImportService : ITileCachePackageImp
                 MaxZoom = maxZoom,
                 TilesImported = 0,
                 TilesSkipped = 0,
-                DryRun = true
+                DryRun = true,
+                Assumption = descriptor.Assumption
             };
         }
 
@@ -155,7 +156,8 @@ public sealed partial class TileCachePackageImportService : ITileCachePackageImp
             MaxZoom = maxZoom,
             TilesImported = imported,
             TilesSkipped = skipped,
-            DryRun = false
+            DryRun = false,
+            Assumption = descriptor.Assumption
         };
     }
 

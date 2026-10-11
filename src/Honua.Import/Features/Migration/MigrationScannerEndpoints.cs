@@ -190,7 +190,8 @@ internal static partial class MigrationScannerEndpoints
                             {
                                 ServiceUrl = request.SourceUrl,
                                 TimeoutSeconds = request.TimeoutSeconds ?? 60,
-                                AllowUnsafeLocalUrls = allowUnsafeLocalUrls
+                                AllowUnsafeLocalUrls = allowUnsafeLocalUrls,
+                                AllowedServiceHostSuffixes = allowedHostSuffixes
                             },
                             cancellationToken).ConfigureAwait(false);
                         break;

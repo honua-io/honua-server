@@ -176,6 +176,97 @@ public sealed class EsriTileCachePackageReaderTests
     }
 
     [Fact]
+    public async Task ReadDescriptor_StatePlanePackage_IsRejected()
+    {
+        using var package = BuildCompactV2Package(prefix: string.Empty, format: "PNG", wkid: 2263, name: "ny");
+        var reader = new EsriTileCachePackageReader();
+        var act = async () => await reader.ReadDescriptorAsync(package);
+        await act.Should().ThrowAsync<NotSupportedException>()
+            .WithMessage("*2263*");
+    }
+
+    [Fact]
+    public async Task ReadDescriptor_MissingWkidMatchingMercator_RecordsAssumption()
+    {
+        using var package = BuildCompactV2Package(prefix: string.Empty, format: "PNG", wkid: 0, name: "unknown");
+        var reader = new EsriTileCachePackageReader();
+        var descriptor = await reader.ReadDescriptorAsync(package);
+        descriptor.TileMatrixSetIdentifier.Should().Be("WebMercatorQuad");
+        descriptor.Assumption.Should().Be(TileCachePackageScheme.MissingWkidWebMercatorAssumption);
+    }
+
+    [Fact]
+    public async Task ReadTiles_GzipVectorTile_PreservesMagicAndEncoding()
+    {
+        byte[] gzip;
+        using (var ms = new MemoryStream())
+        {
+            using (var gzipStream = new GZipStream(ms, CompressionLevel.Fastest, leaveOpen: true))
+            {
+                gzipStream.Write(Encoding.ASCII.GetBytes("mvt"));
+            }
+
+            gzip = ms.ToArray();
+        }
+
+        gzip[0].Should().Be(0x1F);
+        gzip[1].Should().Be(0x8B);
+        var tiles = new (int Row, int Col, byte[] Bytes)[] { (1, 2, gzip) };
+        using var package = BuildCompactV2Package(prefix: "p12", format: "pbf", wkid: 4326, name: "streets", level: 0, tiles: tiles);
+        var reader = new EsriTileCachePackageReader();
+        var descriptor = await reader.ReadDescriptorAsync(package);
+        var read = new List<TileCachePackageTile>();
+        await foreach (var tile in reader.ReadTilesAsync(package, descriptor, 0, 5))
+        {
+            read.Add(tile);
+        }
+
+        read.Should().ContainSingle();
+        TileCachePackageTileEncoding.IsGzipCompressed(read[0].Content).Should().BeTrue();
+        TileCachePackageTileEncoding.ContentEncoding(read[0].Content).Should().Be("gzip");
+    }
+
+    [Fact]
+    public void ReadBounded_DeclaredLengthOverEntryCap_Throws()
+    {
+        using var stream = new MemoryStream([1, 2, 3, 4]);
+        long remaining = EsriTileCachePackageReader.MaxDecompressedBytes;
+        var act = () => EsriTileCachePackageReader.ReadBounded(
+            stream,
+            EsriTileCachePackageReader.MaxDescriptorBytes + 1,
+            EsriTileCachePackageReader.MaxDescriptorBytes,
+            ref remaining);
+        act.Should().Throw<InvalidDataException>();
+    }
+
+    [Fact]
+    public void ReadBounded_ZeroDeclaredLengthThatExpands_StopsAtCap()
+    {
+        using var stream = new MemoryStream(new byte[32]);
+        long remaining = 8;
+        var act = () => EsriTileCachePackageReader.ReadBounded(stream, 0, 8, ref remaining);
+        act.Should().Throw<InvalidDataException>();
+    }
+
+    [Fact]
+    public void Scheme_CustomMercatorOrigin_IsRejected()
+    {
+        var lods = new[]
+        {
+            new TileCacheLodSample(0, (2d * TileCachePackageScheme.WebMercatorHalfWorldMeters) / 256d, null)
+        };
+        var act = () => TileCachePackageScheme.Resolve(3857, -400, 400, 256, lods);
+        act.Should().Throw<NotSupportedException>().WithMessage("*3857*WebMercatorQuad*");
+    }
+
+    [Fact]
+    public void Scheme_BritishNationalGrid_IsRejected()
+    {
+        var act = () => TileCachePackageScheme.Resolve(27700, 0, 0, 256, [new TileCacheLodSample(0, 1, null)]);
+        act.Should().Throw<NotSupportedException>().WithMessage("*27700*");
+    }
+
+    [Fact]
     public async Task ReadDescriptor_MissingDescriptor_Throws()
     {
         using var buffer = new MemoryStream();
@@ -215,7 +306,7 @@ public sealed class EsriTileCachePackageReaderTests
                   "tileInfo": {
                     "rows": 256, "cols": 256, "format": "{{format}}",
                     "spatialReference": { "wkid": {{wkid.ToString(CultureInfo.InvariantCulture)}}, "latestWkid": {{wkid.ToString(CultureInfo.InvariantCulture)}} },
-                    "lods": [ { "level": {{level.ToString(CultureInfo.InvariantCulture)}} } ]
+                    {{SchemeJson(wkid, level)}}
                   }
                 }
                 """));
@@ -268,17 +359,21 @@ public sealed class EsriTileCachePackageReaderTests
         var buffer = new MemoryStream();
         using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
         {
-            WriteEntry(archive, "conf.xml", Encoding.UTF8.GetBytes("""
+            WriteEntry(archive, "conf.xml", Encoding.UTF8.GetBytes($$"""
                 <?xml version="1.0"?>
                 <CacheInfo>
                   <TileCacheInfo>
                     <SpatialReference><WKID>3857</WKID></SpatialReference>
                     <TileCols>256</TileCols>
                     <TileRows>256</TileRows>
+                    <TileOrigin>
+                      <X>-20037508.342789244</X>
+                      <Y>20037508.342789244</Y>
+                    </TileOrigin>
                     <LODInfos>
-                      <LODInfo><LevelID>0</LevelID></LODInfo>
-                      <LODInfo><LevelID>1</LevelID></LODInfo>
-                      <LODInfo><LevelID>2</LevelID></LODInfo>
+                      <LODInfo><LevelID>0</LevelID><Resolution>{{Resolution(3857, 0)}}</Resolution></LODInfo>
+                      <LODInfo><LevelID>1</LevelID><Resolution>{{Resolution(3857, 1)}}</Resolution></LODInfo>
+                      <LODInfo><LevelID>2</LevelID><Resolution>{{Resolution(3857, 2)}}</Resolution></LODInfo>
                     </LODInfos>
                   </TileCacheInfo>
                   <TileImageInfo><CacheTileFormat>JPEG</CacheTileFormat></TileImageInfo>
@@ -291,6 +386,30 @@ public sealed class EsriTileCachePackageReaderTests
 
         buffer.Position = 0;
         return buffer;
+    }
+
+    private static string SchemeJson(int wkid, int level)
+    {
+        if (wkid == 4326)
+        {
+            return
+                "\"origin\": { \"x\": -180, \"y\": 90 }, " +
+                "\"lods\": [ { \"level\": " + level.ToString(CultureInfo.InvariantCulture) +
+                ", \"resolution\": " + Resolution(wkid, level) + " } ]";
+        }
+
+        return
+            "\"origin\": { \"x\": -20037508.342789244, \"y\": 20037508.342789244 }, " +
+            "\"lods\": [ { \"level\": " + level.ToString(CultureInfo.InvariantCulture) +
+            ", \"resolution\": " + Resolution(wkid, level) + " } ]";
+    }
+
+    private static string Resolution(int wkid, int level)
+    {
+        var resolution0 = wkid == 4326
+            ? 180d / 256d
+            : (2d * 20037508.342789244) / 256d;
+        return (resolution0 / Math.Pow(2d, level)).ToString("R", CultureInfo.InvariantCulture);
     }
 
     private static void WriteEntry(ZipArchive archive, string name, byte[] content)

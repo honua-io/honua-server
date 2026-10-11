@@ -137,36 +137,7 @@ internal sealed class LimitsEnforcementMiddleware(
     }
 
     private long ResolveMaxPayloadSize(HttpContext context)
-    {
-        var path = context.Request.Path.Value ?? string.Empty;
-
-        if (IsImportPreview(path))
-        {
-            return _limits.Imports.MaxPreviewSize;
-        }
-
-        if (IsRasterImportUpload(path))
-        {
-            return _limits.Imports.MaxSyncImportSize;
-        }
-
-        if (IsImportUpload(path))
-        {
-            return _limits.Imports.MaxImportSize;
-        }
-
-        if (IsGeocoderReferenceImportUpload(path))
-        {
-            return _limits.Imports.MaxImportSize;
-        }
-
-        if (IsAttachmentUpload(path))
-        {
-            return _limits.Attachments.MaxAttachmentSize;
-        }
-
-        return _limits.Edits.MaxPayloadSize;
-    }
+        => ImportPayloadSize.Resolve(context.Request.Path.Value, _limits);
 
     private static void ApplyRequestBodyLimit(HttpContext context, long maxPayloadSize)
     {
@@ -178,23 +149,6 @@ internal sealed class LimitsEnforcementMiddleware(
 
         feature.MaxRequestBodySize = maxPayloadSize;
     }
-
-    private static bool IsImportPreview(string path)
-        => path.Contains("/admin/import/preview", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsImportUpload(string path)
-        => path.Contains("/admin/import/upload", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsGeocoderReferenceImportUpload(string path)
-        => path.Contains("/admin/geocoding/reference-data/import", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsRasterImportUpload(string path)
-        => path.Contains("/admin/import/raster", StringComparison.OrdinalIgnoreCase) &&
-           !path.EndsWith("/formats", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsAttachmentUpload(string path)
-        => path.EndsWith("/addAttachment", StringComparison.OrdinalIgnoreCase) ||
-           path.EndsWith("/updateAttachment", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Writes a standardized error response for limit violations.

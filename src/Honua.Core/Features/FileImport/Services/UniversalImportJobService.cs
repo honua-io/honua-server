@@ -37,6 +37,9 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
     private readonly ILogger<UniversalImportJobService> _logger;
     private readonly ConcurrentDictionary<string, ImportJobState> _jobs = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellationTokens = new();
+    private readonly SemaphoreSlim _backgroundSlots;
+    private readonly int _maxOutstanding;
+    private int _outstanding;
     private int _disposed;
 
     public UniversalImportJobService(
@@ -44,13 +47,30 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         IUniversalProgressStore progressStore,
         IPerformanceMonitor performanceMonitor,
         ILogger<UniversalImportJobService> logger,
-        ILicenseOperationPolicy? licensePolicy = null)
+        ILicenseOperationPolicy? licensePolicy = null,
+        ImportLimits? limits = null)
     {
         _licensePolicy = licensePolicy;
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _progressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
         _performanceMonitor = performanceMonitor ?? throw new ArgumentNullException(nameof(performanceMonitor));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        var maxConcurrent = Math.Max(1, limits?.MaxConcurrentBackgroundJobs ?? 2);
+        var queueDepth = Math.Max(0, limits?.MaxBackgroundJobQueueDepth ?? 16);
+        _backgroundSlots = new SemaphoreSlim(maxConcurrent, maxConcurrent);
+        _maxOutstanding = maxConcurrent + queueDepth;
+    }
+
+    internal bool TryReserveBackgroundSlot()
+    {
+        var next = Interlocked.Increment(ref _outstanding);
+        if (next <= _maxOutstanding)
+        {
+            return true;
+        }
+
+        Interlocked.Decrement(ref _outstanding);
+        return false;
     }
 
     /// <inheritdoc/>
@@ -60,7 +80,31 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         CancellationToken cancellationToken = default)
     {
         request.Validate();
+        if (!TryReserveBackgroundSlot())
+        {
+            throw new ImportJobQueueFullException();
+        }
 
+        var started = false;
+        try
+        {
+        return await QueueReservedImportAsync(request, fileSize, () => started = true, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (!started)
+            {
+                Interlocked.Decrement(ref _outstanding);
+            }
+        }
+    }
+
+    private async Task<string> QueueReservedImportAsync(
+        ImportRequest request,
+        long fileSize,
+        Action markStarted,
+        CancellationToken cancellationToken)
+    {
         SupportedFileFormat format;
         using (var scope = _scopeFactory.CreateScope())
         {
@@ -193,7 +237,10 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             }
         }
 
-        // Start background processing
+        // Start background processing. The reservation moves to ProcessJobAsync, which
+        // releases it when the job finishes. markStarted runs before the call returns so a
+        // job that completes synchronously is not released twice.
+        markStarted();
         _ = ProcessJobAsync(jobId, backgroundRequest, tempFilePath, cts.Token);
 
         return jobId;
@@ -230,9 +277,13 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         string? errorMessage = null;
         var stream = request.FileStream;
         SerializedImportProgressWriter? progressWriter = null;
+        var slotAcquired = false;
 
         try
         {
+            await _backgroundSlots.WaitAsync(cancellationToken).ConfigureAwait(false);
+            slotAcquired = true;
+
             if (_jobs.TryGetValue(jobId, out var state))
             {
                 activity?.SetTag("honua.import.format", state.Format);
@@ -396,6 +447,12 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         }
         finally
         {
+            if (slotAcquired)
+            {
+                _backgroundSlots.Release();
+            }
+
+            Interlocked.Decrement(ref _outstanding);
             stopwatch.Stop();
             if (_jobs.TryGetValue(jobId, out var state))
             {
@@ -554,6 +611,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         }
 
         _jobs.Clear();
+        _backgroundSlots.Dispose();
     }
 
     private static partial class UniversalImportJobLog

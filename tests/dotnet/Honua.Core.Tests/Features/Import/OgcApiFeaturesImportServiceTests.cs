@@ -375,6 +375,98 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.FeatureCountParity.Summary.Should().Contain("skipped");
     }
 
+    [Fact]
+    public async Task ImportCollectionAsync_OversizedContentLength_FailsBeforeWritingFeatures()
+    {
+        var handler = new StubItemsHandler(request =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path == "/ogcapi/collections/roads")
+            {
+                return new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """
+                        {"id":"roads","links":[{"rel":"items","href":"https://demo.example/ogcapi/collections/roads/items"}]}
+                        """,
+                        System.Text.Encoding.UTF8,
+                        "application/json")
+                };
+            }
+
+            var oversized = new StringContent("{}", System.Text.Encoding.UTF8, "application/geo+json");
+            oversized.Headers.ContentLength = MigrationHttpContentReader.DefaultMaxResponseBytes + 1;
+            return new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK) { Content = oversized };
+        });
+        using var httpClient = new HttpClient(handler);
+        var sink = new RecordingSink();
+        var service = CreateService(httpClient, sink);
+
+        var result = await service.ImportCollectionAsync(NewRequest());
+
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be(OgcApiFeaturesImportErrorCodes.SourceUnreachable);
+        sink.WrittenFeatures.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ImportCollectionAsync_NextLinkOffAllowlist_Fails()
+    {
+        var handler = new StubItemsHandler(request =>
+        {
+            var path = request.RequestUri!.PathAndQuery;
+            var body = path.Contains("/items", StringComparison.Ordinal)
+                ? """
+                  {"type":"FeatureCollection","features":[{"type":"Feature","id":"road.1","geometry":{"type":"Point","coordinates":[-157.85,21.30]},"properties":{"name":"King"}}],"links":[{"rel":"next","href":"https://evil.example/items"}]}
+                  """
+                : """
+                  {"id":"roads","links":[{"rel":"items","href":"https://demo.example/ogcapi/collections/roads/items"}]}
+                  """;
+            return new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/geo+json")
+            };
+        });
+        using var httpClient = new HttpClient(handler);
+        var sink = new RecordingSink();
+        var service = CreateService(httpClient, sink);
+
+        var result = await service.ImportCollectionAsync(NewRequest() with
+        {
+            AllowedServiceHostSuffixes = ["demo.example"]
+        });
+
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be(OgcApiFeaturesImportErrorCodes.SourceUnreachable);
+    }
+
+    [Fact]
+    public async Task ImportCollectionAsync_HttpNextLink_FailsWhenHttpsIsRequired()
+    {
+        var handler = new StubItemsHandler(request =>
+        {
+            var path = request.RequestUri!.PathAndQuery;
+            var body = path.Contains("/items", StringComparison.Ordinal)
+                ? """
+                  {"type":"FeatureCollection","features":[],"links":[{"rel":"next","href":"http://demo.example/ogcapi/collections/roads/items?offset=2"}]}
+                  """
+                : """
+                  {"id":"roads","links":[{"rel":"items","href":"https://demo.example/ogcapi/collections/roads/items"}]}
+                  """;
+            return new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/geo+json")
+            };
+        });
+        using var httpClient = new HttpClient(handler);
+        var service = CreateService(httpClient, new RecordingSink());
+
+        var result = await service.ImportCollectionAsync(NewRequest());
+
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be(OgcApiFeaturesImportErrorCodes.SourceUnreachable);
+    }
+
     private static OgcApiFeaturesImportService CreateService(HttpClient httpClient, IOgcApiFeaturesCollectionSink sink)
         => new(
             httpClient,
