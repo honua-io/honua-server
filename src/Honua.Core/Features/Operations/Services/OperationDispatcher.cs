@@ -499,7 +499,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         CancellationToken cancellationToken,
         string? errorKind = null)
     {
-        var failed = envelope with
+        var failed = MarkInstanceDurability(envelope) with
         {
             Status = OperationHandleStatus.Failed,
             UpdatedAt = _clock.GetUtcNow(),
@@ -573,6 +573,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         OperationHandle envelope,
         CancellationToken cancellationToken)
     {
+        envelope = MarkInstanceDurability(envelope);
         await _instanceStore.SetAsync(envelope, cancellationToken).ConfigureAwait(false);
         return await _instanceStore.GetAsync(envelope.OperationInstanceId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("The persisted operation instance could not be reloaded.");
@@ -604,6 +605,28 @@ public sealed class OperationDispatcher : IOperationInvoker
             "The approval transition was refused because the operation instance version changed.");
     }
 
+    /// <summary>
+    /// Whether the instance record was accepted by the invocation-scoped non-durable store a
+    /// Redis-off host composes for direct configuration operations (owner decision 20).
+    /// </summary>
+    private bool IsNonDurableInstance(string? operationInstanceId)
+        => _instanceStore is NonDurableDirectOperationInstanceStore direct
+            && direct.IsNonDurable(operationInstanceId);
+
+    /// <summary>
+    /// Stamps <see cref="NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef"/> on a
+    /// handle whose instance record lives only in process memory, so every adapter can tell the
+    /// caller the handle cannot be read back through the operation status surfaces.
+    /// </summary>
+    private OperationHandle MarkInstanceDurability(OperationHandle envelope)
+        => !IsNonDurableInstance(envelope.OperationInstanceId)
+            || envelope.EvidenceRefs.Contains(NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef, StringComparer.Ordinal)
+                ? envelope
+                : envelope with
+                {
+                    EvidenceRefs = [.. envelope.EvidenceRefs, NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef],
+                };
+
     private static bool IsTerminal(OperationHandleStatus status)
         => status is OperationHandleStatus.Completed
             or OperationHandleStatus.Denied
@@ -630,7 +653,9 @@ public sealed class OperationDispatcher : IOperationInvoker
             Action = action,
             Outcome = outcome,
             CorrelationId = envelope.CorrelationId,
-            Details = $"operationId={envelope.OperationId};status={envelope.Status}",
+            Details = IsNonDurableInstance(envelope.OperationInstanceId)
+                ? $"operationId={envelope.OperationId};status={envelope.Status};instanceRecord=non-durable"
+                : $"operationId={envelope.OperationId};status={envelope.Status}",
         }, cancellationToken);
 
     /// <summary>
