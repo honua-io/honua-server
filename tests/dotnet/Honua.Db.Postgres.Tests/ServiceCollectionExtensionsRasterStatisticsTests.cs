@@ -10,6 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Db.Postgres.Tests;
 
+/// <summary>Verifies configured raster statistics budgets are validated during startup.</summary>
 public sealed class ServiceCollectionExtensionsRasterStatisticsTests
 {
     [UnitTheory]
