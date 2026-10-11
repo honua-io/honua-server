@@ -88,9 +88,14 @@ public sealed class McpSessionSharedStoreTests
         var id = await a.TryCreateSessionAsync("sub:alice", false, "setup", CancellationToken.None);
         (await b.ValidateAccessAsync(id!, "sub:alice", CancellationToken.None)).Should().Be(McpSessionValidation.Valid);
 
-        (await b.TerminateAsync(id!, CancellationToken.None)).Should().BeTrue();
+        var lifetimeOnA = a.GetLifetimeToken(id!);
+        lifetimeOnA.IsCancellationRequested.Should().BeFalse();
 
-        // A still holds a cached copy; the store is authoritative, so A drops it.
+        (await b.TerminateAsync(id!, CancellationToken.None)).Should().Be(McpSessionTermination.Terminated);
+
+        // The removal broadcast ends A's node-local session work (SSE channel,
+        // progress bridges) at once, not on A's next request.
+        lifetimeOnA.IsCancellationRequested.Should().BeTrue();
         (await a.ValidateAccessAsync(id!, "sub:alice", CancellationToken.None))
             .Should().Be(McpSessionValidation.Unknown);
         a.GetWorkflowView(id!).Should().BeNull();
@@ -161,26 +166,87 @@ public sealed class McpSessionSharedStoreTests
         (await a.ValidateAccessAsync(id!, "sub:alice", CancellationToken.None)).Should().Be(McpSessionValidation.Valid);
         a.GetWorkflowView(id!).Should().Be("setup");
         (await b.ValidateAccessAsync(id!, "sub:alice", CancellationToken.None)).Should().Be(McpSessionValidation.Unknown);
-        (await a.TerminateAsync(id!, CancellationToken.None)).Should().BeTrue();
+        (await a.TerminateAsync(id!, CancellationToken.None)).Should().Be(McpSessionTermination.Terminated);
         (await a.ValidateAccessAsync(id!, "sub:alice", CancellationToken.None)).Should().Be(McpSessionValidation.Unknown);
     }
 
     [UnitTest]
-    public async Task CapacityEviction_EndsTheEvictedSessionOnEveryInstance()
+    public async Task CapacityEviction_OnlyDropsTheLocalCacheEntry()
     {
+        // The local LRU order reflects only this replica's traffic, so evicting to
+        // admit a new session must not end a session that may be active elsewhere.
         var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
         var store = new FakeSharedSessionStore(time);
         var a = new McpSessionManager(maxSessions: 1, idleTimeout: IdleTimeout, timeProvider: time, store: store);
         var b = NewManager(store, time);
 
-        var first = await a.TryCreateSessionAsync("sub:alice", false, null, CancellationToken.None);
+        var first = await a.TryCreateSessionAsync("sub:alice", false, "setup", CancellationToken.None);
         time.Advance(TimeSpan.FromSeconds(1));
         var second = await a.TryCreateSessionAsync("sub:bob", false, null, CancellationToken.None);
 
         second.Should().NotBeNull();
-        store.Contains(first!).Should().BeFalse("the capacity cap still ends the least-recently-used session");
-        (await b.ValidateAccessAsync(first!, "sub:alice", CancellationToken.None)).Should().Be(McpSessionValidation.Unknown);
-        (await b.ValidateAccessAsync(second!, "sub:bob", CancellationToken.None)).Should().Be(McpSessionValidation.Valid);
+        store.Contains(first!).Should().BeTrue();
+        (await b.ValidateAccessAsync(first!, "sub:alice", CancellationToken.None)).Should().Be(McpSessionValidation.Valid);
+        b.GetWorkflowView(first!).Should().Be("setup");
+        (await a.ValidateAccessAsync(first!, "sub:alice", CancellationToken.None)).Should().Be(McpSessionValidation.Valid);
+    }
+
+    [UnitTest]
+    public async Task LocallyIdleCopy_OfASessionActiveElsewhere_KeepsItsNodeLocalState()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var store = new FakeSharedSessionStore(time);
+        var a = NewManager(store, time);
+        var b = NewManager(store, time);
+
+        var id = await a.TryCreateSessionAsync("sub:alice", false, "setup", CancellationToken.None);
+        var lifetimeOnA = a.GetLifetimeToken(id!);
+        for (var i = 0; i < 3; i++)
+        {
+            time.Advance(TimeSpan.FromMinutes(20));
+            (await b.ValidateAccessAsync(id!, "sub:alice", CancellationToken.None)).Should().Be(McpSessionValidation.Valid);
+        }
+
+        // A's copy is older than the idle window, but the shared record is live:
+        // A confirms with the store first and keeps its SSE channel and lifetime.
+        (await a.ValidateAccessAsync(id!, "sub:alice", CancellationToken.None)).Should().Be(McpSessionValidation.Valid);
+        lifetimeOnA.IsCancellationRequested.Should().BeFalse();
+        a.GetLifetimeToken(id!).Should().Be(lifetimeOnA);
+    }
+
+    [UnitTest]
+    public async Task PrincipalMismatch_OnASessionGoneElsewhere_IsUnknown_AndDoesNotSlideTheExpiry()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var store = new FakeSharedSessionStore(time);
+        var a = NewManager(store, time);
+
+        var id = await a.TryCreateSessionAsync("sub:alice", false, "setup", CancellationToken.None);
+        var expiry = store.ExpiresAt(id!);
+        time.Advance(TimeSpan.FromMinutes(5));
+        (await a.ValidateAccessAsync(id!, "sub:mallory", CancellationToken.None))
+            .Should().Be(McpSessionValidation.PrincipalMismatch);
+        store.ExpiresAt(id!).Should().Be(expiry, "another identity must not keep the session alive");
+
+        // Removed elsewhere without a broadcast reaching A (a missed message).
+        store.RemoveSilently(id!);
+        (await a.ValidateAccessAsync(id!, "sub:mallory", CancellationToken.None))
+            .Should().Be(McpSessionValidation.Unknown, "a gone session must not leak that it was bound to someone else");
+    }
+
+    [UnitTest]
+    public async Task Delete_WhenTheStoreIsUnavailable_IsNotAcknowledged()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var store = new FakeSharedSessionStore(time);
+        var a = NewManager(store, time);
+        var id = await a.TryCreateSessionAsync("sub:alice", false, "setup", CancellationToken.None);
+
+        store.Fail = true;
+        (await a.TerminateAsync(id!, CancellationToken.None)).Should().Be(McpSessionTermination.StoreUnavailable);
+
+        store.Fail = false;
+        store.Contains(id!).Should().BeTrue("the shared record survived, so the delete was not acknowledged");
     }
 
     [UnitTest]
@@ -261,6 +327,8 @@ public sealed class McpSessionSharedStoreTests
         private readonly ConcurrentDictionary<string, (McpSessionRecord Record, DateTimeOffset ExpiresAt)> _records =
             new(StringComparer.Ordinal);
 
+        private readonly ConcurrentBag<Action<string>> _subscribers = [];
+
         private int _reads;
 
         public bool Fail { get; set; }
@@ -303,12 +371,31 @@ public sealed class McpSessionSharedStoreTests
             return Task.FromResult(true);
         }
 
+        public Task<bool> ExistsAsync(string sessionId, CancellationToken cancellationToken)
+        {
+            ThrowIfFailing();
+            return Task.FromResult(TryGetLive(sessionId, out _));
+        }
+
         public Task RemoveAsync(string sessionId, CancellationToken cancellationToken)
         {
             ThrowIfFailing();
             _records.TryRemove(sessionId, out _);
+            foreach (var subscriber in _subscribers.ToArray())
+            {
+                subscriber(sessionId);
+            }
+
             return Task.CompletedTask;
         }
+
+        public IDisposable? SubscribeToRemovals(Action<string> onRemoved)
+        {
+            _subscribers.Add(onRemoved);
+            return null;
+        }
+
+        public void RemoveSilently(string sessionId) => _records.TryRemove(sessionId, out _);
 
         private bool TryGetLive(string sessionId, out McpSessionRecord record)
         {

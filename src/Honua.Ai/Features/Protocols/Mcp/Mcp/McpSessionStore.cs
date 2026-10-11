@@ -59,8 +59,25 @@ internal interface IMcpSessionStore
     /// </summary>
     Task<bool> TouchAsync(string sessionId, TimeSpan idleTimeout, CancellationToken cancellationToken);
 
-    /// <summary>Removes a session so every instance answers it with HTTP 404.</summary>
+    /// <summary>
+    /// Returns whether the session record exists, without sliding its expiry (used
+    /// for callers that are not the session's principal).
+    /// </summary>
+    Task<bool> ExistsAsync(string sessionId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Removes a session so every instance answers it with HTTP 404, and broadcasts
+    /// the removal to subscribers (see <see cref="SubscribeToRemovals"/>).
+    /// </summary>
     Task RemoveAsync(string sessionId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Subscribes to session removals made by any instance, so a replica holding
+    /// node-local session work (an SSE stream, progress bridges) ends it at once.
+    /// Delivery is best effort; every request still confirms existence against the
+    /// store, so a missed broadcast only delays local teardown.
+    /// </summary>
+    IDisposable? SubscribeToRemovals(Action<string> onRemoved);
 }
 
 /// <summary>
@@ -119,10 +136,41 @@ internal sealed class RedisMcpSessionStore(IConnectionMultiplexer redis) : IMcpS
         return redis.GetDatabase().KeyExpireAsync(Key(sessionId), idleTimeout);
     }
 
+    public Task<bool> ExistsAsync(string sessionId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return redis.GetDatabase().KeyExistsAsync(Key(sessionId));
+    }
+
     public async Task RemoveAsync(string sessionId, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         await redis.GetDatabase().KeyDeleteAsync(Key(sessionId)).ConfigureAwait(false);
+        await redis.GetSubscriber().PublishAsync(RemovalChannel, sessionId).ConfigureAwait(false);
+    }
+
+    public IDisposable? SubscribeToRemovals(Action<string> onRemoved)
+    {
+        ArgumentNullException.ThrowIfNull(onRemoved);
+        var subscriber = redis.GetSubscriber();
+        void Handler(RedisChannel channel, RedisValue message)
+        {
+            if (message.HasValue)
+            {
+                onRemoved(message.ToString());
+            }
+        }
+
+        subscriber.Subscribe(RemovalChannel, Handler);
+        return new Subscription(subscriber, Handler);
+    }
+
+    /// <summary>Pub/sub channel carrying ids of sessions removed by any instance.</summary>
+    internal static readonly RedisChannel RemovalChannel = RedisChannel.Literal("mcp:session:removed");
+
+    private sealed class Subscription(ISubscriber subscriber, Action<RedisChannel, RedisValue> handler) : IDisposable
+    {
+        public void Dispose() => subscriber.Unsubscribe(RemovalChannel, handler);
     }
 }
 

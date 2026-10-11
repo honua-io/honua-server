@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 /// </summary>
 /// <remarks>These store-level integration tests issue no HTTP requests and claim no endpoint coverage.</remarks>
 [Collection(RedisFixture.CollectionName)]
-[Protocol(TestProtocols.Mcp)]
+[Protocol(TestProtocols.TestQuality)]
 [Operation(Operations.GetMetadata)]
 public sealed class RedisMcpSessionStoreTests(RedisFixture redis)
 {
@@ -97,7 +97,16 @@ public sealed class RedisMcpSessionStoreTests(RedisFixture redis)
         // Deleted on B: A's cached copy is dropped on its next request.
         var deleted = await a.TryCreateSessionAsync("sub:alice", false, "setup", CancellationToken.None);
         Assert.Equal(McpSessionValidation.Valid, await b.ValidateAccessAsync(deleted!, "sub:alice", CancellationToken.None));
-        Assert.True(await b.TerminateAsync(deleted!, CancellationToken.None));
+        var lifetimeOnA = a.GetLifetimeToken(deleted!);
+        Assert.Equal(McpSessionTermination.Terminated, await b.TerminateAsync(deleted!, CancellationToken.None));
+        // The pub/sub removal broadcast ends A's node-local session work promptly.
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (!lifetimeOnA.IsCancellationRequested && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(50);
+        }
+
+        Assert.True(lifetimeOnA.IsCancellationRequested);
         Assert.False(await connectionA.GetDatabase().KeyExistsAsync(RedisMcpSessionStore.Key(deleted!)));
         Assert.Equal(McpSessionValidation.Unknown, await a.ValidateAccessAsync(deleted!, "sub:alice", CancellationToken.None));
 

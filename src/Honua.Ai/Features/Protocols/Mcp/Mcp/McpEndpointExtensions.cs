@@ -311,9 +311,8 @@ internal static class McpEndpointExtensions
                     context.Items.TryGetValue(Views.McpWorkflowViewNegotiation.HttpContextItemKey, out var view)
                         ? view as string
                         : null;
-                var sessionId = await sessions
-                    .TryCreateSessionAsync(principalKey, elicitationSupported, negotiatedView, cancellationToken)
-                    .ConfigureAwait(false);
+                var sessionId = await sessions.TryCreateSessionAsync(
+                    principalKey, elicitationSupported, negotiatedView, cancellationToken).ConfigureAwait(false);
                 if (sessionId is not null)
                 {
                     context.Response.Headers[McpSessionManager.SessionHeaderName] = sessionId;
@@ -484,12 +483,16 @@ internal static class McpEndpointExtensions
         }
 
         // Removes the session from the shared store too, so DELETE on any instance
-        // ends the session on every instance.
-        var found = await sessions.TerminateAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        McpLog.SessionTerminated(logger, sessionId, found);
-        context.Response.StatusCode = found
-            ? StatusCodes.Status204NoContent
-            : StatusCodes.Status404NotFound;
+        // ends the session on every instance. A 204 is only returned once the shared
+        // record is gone; otherwise other replicas could still honour the session.
+        var termination = await sessions.TerminateAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        McpLog.SessionTerminated(logger, sessionId, termination == McpSessionTermination.Terminated);
+        context.Response.StatusCode = termination switch
+        {
+            McpSessionTermination.Terminated => StatusCodes.Status204NoContent,
+            McpSessionTermination.StoreUnavailable => StatusCodes.Status503ServiceUnavailable,
+            _ => StatusCodes.Status404NotFound
+        };
     }
 
     /// <summary>
