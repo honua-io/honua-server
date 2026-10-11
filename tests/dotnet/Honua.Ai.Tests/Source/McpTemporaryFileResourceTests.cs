@@ -147,14 +147,15 @@ public sealed class McpTemporaryFileResourceTests
             Method = "resources/read",
             Params = McpTestFactory.ParseJson($$"""{"uri":"{{uri}}","maxChars":1000000}""")
         }, CancellationToken.None);
+        response.Should().NotBeNull();
         if (accepted)
         {
-            response.Error.Should().BeNull();
+            response!.Error.Should().BeNull();
             response.Result!.Value.GetProperty("contents")[0].GetProperty("blob").GetString()!.Length.Should().Be(1_000_000);
         }
         else
         {
-            response.Result.Should().BeNull();
+            response!.Result.Should().BeNull();
             response.Error!.Message.Should().Contain("smaller image");
         }
     }
@@ -182,12 +183,12 @@ public sealed class McpTemporaryFileResourceTests
         User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, owner)], "test"))
     };
 
-    private static Task<McpJsonRpcResponse> Read(McpDataAccessSurface surface, HttpContext context, string uri) =>
-        surface.DispatchAsync(context, new McpJsonRpcRequest
+    private static async Task<McpJsonRpcResponse> Read(McpDataAccessSurface surface, HttpContext context, string uri) =>
+        await surface.DispatchAsync(context, new McpJsonRpcRequest
         {
             JsonRpc = "2.0",
             Id = McpTestFactory.ParseJson("1"),
             Method = "resources/read",
             Params = McpTestFactory.ParseJson("{\"uri\":" + JsonSerializer.Serialize(uri) + "}")
-        }, CancellationToken.None);
+        }, CancellationToken.None) ?? throw new InvalidOperationException("Resource requests must produce a response.");
 }

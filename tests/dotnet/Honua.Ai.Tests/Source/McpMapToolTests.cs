@@ -875,7 +875,8 @@ public sealed class McpMapToolTests
                 Method = "resources/read",
                 Params = Json($$"""{"uri":"{{href}}"}""")
             }, CancellationToken.None);
-        read.Error.Should().BeNull();
+        read.Should().NotBeNull();
+        read!.Error.Should().BeNull();
         var image = read.Result!.Value.GetProperty("contents")[0];
         image.GetProperty("uri").GetString().Should().Be(href);
         image.GetProperty("mimeType").GetString().Should().Be("image/png");
