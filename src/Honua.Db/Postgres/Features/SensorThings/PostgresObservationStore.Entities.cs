@@ -273,7 +273,7 @@ internal sealed partial class PostgresObservationStore
                 // The conformant profile rejects that write before the insert is committed.
                 if (inferred is null)
                 {
-                    if (_configuration?.GetValue<bool>("SensorThings:ConformantProfile") == true)
+                    if (IsConformantProfileEnabled(_configuration))
                         throw new SensorThingsValidationException("A locationless Thing requires an explicit FeatureOfInterest.");
                     continue;
                 }
@@ -291,6 +291,26 @@ internal sealed partial class PostgresObservationStore
         await ApplyCollectionsAsync(connection, transaction, set, id, body, depth, ct).ConfigureAwait(false);
         if (set == "HistoricalLocations") await SynchronizeCurrentLocationAsync(connection, transaction, id, ct).ConfigureAwait(false);
         return id;
+    }
+
+    internal static bool IsConformantProfileEnabled(IConfiguration? configuration)
+    {
+        var value = configuration?["SensorThings:ConformantProfile"];
+        if (value is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return bool.Parse(value);
+        }
+        catch (FormatException exception)
+        {
+            throw new InvalidOperationException(
+                "Failed to convert configuration value at 'SensorThings:ConformantProfile' to type 'System.Boolean'.",
+                exception);
+        }
     }
 
     private static JsonNode? FindValue(JsonObject body, string name)

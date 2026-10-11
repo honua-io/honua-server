@@ -54,8 +54,10 @@ public sealed class FeatureServerAnalyticsFilterTests
     [UnitTest]
     public async Task ApplyAnalyticsFilters_TimeOnNonTimeAwareLayer_IsRejected()
     {
+        await using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
         var context = new DefaultHttpContext
         {
+            RequestServices = services,
             Request = { Path = "/rest/services/test/FeatureServer/0/queryBins" },
             Response = { Body = new MemoryStream() }
         };
