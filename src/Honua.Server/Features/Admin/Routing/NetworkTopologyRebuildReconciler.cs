@@ -22,6 +22,7 @@ namespace Honua.Server.Features.Admin.Routing;
 internal sealed partial class NetworkTopologyRebuildReconciler
 {
     private const string OrphanedFailureCode = "routing.topology.rebuild_orphaned";
+    private const string AbandonedFailureCode = "routing.topology.rebuild_abandoned";
 
     private readonly INetworkTopologyRebuildStore _rebuildStore;
     private readonly IExecutionJobStore _jobStore;
@@ -59,17 +60,40 @@ internal sealed partial class NetworkTopologyRebuildReconciler
             var job = await _jobStore.GetAsync(attempt.OperationId, cancellationToken).ConfigureAwait(false);
             if (job is null || IsTerminalFailure(job.Status))
             {
-                var failed = await _rebuildStore.TryFailAsync(
-                        attempt.DatasetId, attempt.Generation, attempt.Attempt, attempt.FencingToken,
-                        OrphanedFailureCode, cancellationToken)
-                    .ConfigureAwait(false);
-                if (failed)
+                if (string.IsNullOrWhiteSpace(attempt.OwnerId))
                 {
-                    await _rebuildStore.CleanupOrphanShadowArtifactsAsync(
-                            attempt.DatasetId, attempt.Generation, keepAttempt: null, cancellationToken)
+                    // Unclaimed attempts have no fencing owner. Fail them and return the
+                    // generation to dirty so a later submit can start again.
+                    var abandoned = await _rebuildStore.TryAbandonUnclaimedAttemptAsync(
+                            attempt.DatasetId,
+                            attempt.Generation,
+                            attempt.Attempt,
+                            AbandonedFailureCode,
+                            CancellationToken.None)
                         .ConfigureAwait(false);
-                    Log.AttemptOrphanedAndFailed(_logger, attempt.DatasetId, attempt.Generation, attempt.Attempt);
-                    adopted++;
+                    if (abandoned)
+                    {
+                        await _rebuildStore.CleanupOrphanShadowArtifactsAsync(
+                                attempt.DatasetId, attempt.Generation, keepAttempt: null, CancellationToken.None)
+                            .ConfigureAwait(false);
+                        Log.AttemptAbandoned(_logger, attempt.DatasetId, attempt.Generation, attempt.Attempt);
+                        adopted++;
+                    }
+                }
+                else
+                {
+                    var failed = await _rebuildStore.TryFailAsync(
+                            attempt.DatasetId, attempt.Generation, attempt.Attempt, attempt.FencingToken,
+                            OrphanedFailureCode, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (failed)
+                    {
+                        await _rebuildStore.CleanupOrphanShadowArtifactsAsync(
+                                attempt.DatasetId, attempt.Generation, keepAttempt: null, cancellationToken)
+                            .ConfigureAwait(false);
+                        Log.AttemptOrphanedAndFailed(_logger, attempt.DatasetId, attempt.Generation, attempt.Attempt);
+                        adopted++;
+                    }
                 }
 
                 continue;
@@ -102,6 +126,10 @@ internal sealed partial class NetworkTopologyRebuildReconciler
         [LoggerMessage(9281, LogLevel.Information,
             "Topology rebuild reconciler requeued expired-lease attempt for dataset '{DatasetId}' generation {Generation} attempt {Attempt} for takeover")]
         public static partial void AttemptRequeuedForTakeover(ILogger logger, string datasetId, long generation, long attempt);
+
+        [LoggerMessage(9284, LogLevel.Warning,
+            "Topology rebuild reconciler abandoned unclaimed attempt for dataset '{DatasetId}' generation {Generation} attempt {Attempt}")]
+        public static partial void AttemptAbandoned(ILogger logger, string datasetId, long generation, long attempt);
     }
 }
 

@@ -246,12 +246,14 @@ internal sealed record AdminConnectImportApprovalPayload
 
     public static AdminConnectImportApprovalPayload From(OperationRequest request, OperationPolicyContext context)
     {
-        if (request.Parameters.TryGetValue("password", out var password) && !string.IsNullOrEmpty(password))
+        if (HasInlinePassword(request.Parameters))
             throw new InvalidOperationException("Inline passwords cannot be persisted for approval; use secretReference.");
         return new AdminConnectImportApprovalPayload
         {
             OperationId = request.OperationId,
-            Parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal),
+            Parameters = request.Parameters
+                .Where(pair => !string.Equals(pair.Key, "password", StringComparison.OrdinalIgnoreCase))
+                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal),
             ConnectionId = request.ConnectionId,
             ServiceName = request.ServiceName,
             Fields = request.Fields.ToArray(),
@@ -260,6 +262,14 @@ internal sealed record AdminConnectImportApprovalPayload
             SchemaName = context.SchemaName
         };
     }
+
+    /// <summary>
+    /// True when any parameter key equal to <c>password</c>, regardless of case, carries a value.
+    /// </summary>
+    internal static bool HasInlinePassword(IEnumerable<KeyValuePair<string, string?>> parameters) =>
+        parameters.Any(pair =>
+            string.Equals(pair.Key, "password", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrEmpty(pair.Value));
 
     public OperationRequest ToOperationRequest() => new()
     {

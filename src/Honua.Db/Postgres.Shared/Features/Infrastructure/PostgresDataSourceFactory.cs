@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Honua.Core.Configuration;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
@@ -10,6 +11,10 @@ namespace Honua.Db.Postgres.Features.Infrastructure;
 
 internal static class PostgresDataSourceFactory
 {
+    // Every data source this factory builds, held weakly so tracking never extends a data
+    // source's lifetime. ReleasePooledConnections enumerates it to clear each pool.
+    private static readonly ConditionalWeakTable<NpgsqlDataSource, object?> BuiltDataSources = new();
+
     public static NpgsqlDataSource Create(string connectionString, IConfiguration configuration, bool schemaHeadersEnabled)
     {
         ArgumentNullException.ThrowIfNull(configuration);
@@ -52,7 +57,7 @@ internal static class PostgresDataSourceFactory
     {
         var builder = new NpgsqlDataSourceBuilder(connectionString);
         Configure(builder, schemaHeadersEnabled, limits, defaultSchema);
-        return builder.Build();
+        return Track(builder.Build());
     }
 
     public static NpgsqlDataSource CreateForBoundSource(string connectionString, ConnectionLimits limits)
@@ -68,7 +73,41 @@ internal static class PostgresDataSourceFactory
             builder.ConnectionStringBuilder.Options = $"{sourceOptions} {builder.ConnectionStringBuilder.Options}";
         }
 
-        return builder.Build();
+        return Track(builder.Build());
+    }
+
+    /// <summary>
+    /// Closes the idle physical connections of every data source this factory has built, plus
+    /// the connection-string pools that bare <see cref="NpgsqlConnection"/> instances use.
+    /// In-use connections are closed when returned instead of being reused, and every pool
+    /// stays usable (the next open connects afresh). A data source that was already disposed
+    /// is skipped.
+    /// </summary>
+    /// <returns>The number of data-source pools that were cleared.</returns>
+    public static int ReleasePooledConnections()
+    {
+        var cleared = 0;
+        foreach (var (dataSource, _) in BuiltDataSources)
+        {
+            try
+            {
+                dataSource.Clear();
+                cleared++;
+            }
+            catch (ObjectDisposedException)
+            {
+                // Disposed data sources hold no connections; nothing to release.
+            }
+        }
+
+        NpgsqlConnection.ClearAllPools();
+        return cleared;
+    }
+
+    private static NpgsqlDataSource Track(NpgsqlDataSource dataSource)
+    {
+        BuiltDataSources.AddOrUpdate(dataSource, null);
+        return dataSource;
     }
 
     public static void Configure(NpgsqlDataSourceBuilder builder, bool schemaHeadersEnabled, ConnectionLimits limits, string? defaultSchema = null)

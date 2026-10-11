@@ -174,6 +174,15 @@ internal static partial class FeatureServerEndpoints
             return whereError!;
         }
 
+        var (filteredQuery, filterError) = await ApplyAnalyticsFiltersAsync(
+            context, resource, values, query, cancellationToken).ConfigureAwait(false);
+        if (filterError != null)
+        {
+            return filterError;
+        }
+
+        query = filteredQuery;
+
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var rows = await featureReader.QueryBinsAsync(storageLayerId.Value, query, binDefinition, cancellationToken);
 

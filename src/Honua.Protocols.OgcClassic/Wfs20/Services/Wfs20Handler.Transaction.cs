@@ -1507,7 +1507,7 @@ internal sealed partial class Wfs20Handler
             .FirstOrDefault(element => string.Equals(element.Name.LocalName, "pos", StringComparison.OrdinalIgnoreCase))
             ?? throw new ArgumentException("Point geometry must contain a gml:pos element.");
 
-        return geometryFactory.CreatePoint(ParseTransactionCoordinate(positionElement.Value, axisOrder));
+        return geometryFactory.CreatePoint(ParseTransactionCoordinate(positionElement, axisOrder));
     }
 
 
@@ -1641,28 +1641,13 @@ internal sealed partial class Wfs20Handler
             .FirstOrDefault(element => string.Equals(element.Name.LocalName, "posList", StringComparison.OrdinalIgnoreCase));
         if (posListElement != null)
         {
-            // Read srsDimension from the posList element first, then from the containing geometry element.
-            // Default per GML 3.2 §9.2.4: 2.
-            var srsDimension = 2;
-            var srsDimensionAttr = posListElement
-                .Attributes()
-                .FirstOrDefault(a => string.Equals(a.Name.LocalName, "srsDimension", StringComparison.OrdinalIgnoreCase))
-                ?? geometryElement
-                    .Attributes()
-                    .FirstOrDefault(a => string.Equals(a.Name.LocalName, "srsDimension", StringComparison.OrdinalIgnoreCase));
-            if (srsDimensionAttr != null &&
-                int.TryParse(srsDimensionAttr.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedDim) &&
-                parsedDim >= 2)
-            {
-                srsDimension = parsedDim;
-            }
-
+            var srsDimension = ResolveTransactionSrsDimension(posListElement);
             return ParseTransactionPosList(posListElement.Value, axisOrder, srsDimension);
         }
 
         var positions = geometryElement.Descendants()
             .Where(element => string.Equals(element.Name.LocalName, "pos", StringComparison.OrdinalIgnoreCase))
-            .Select(element => ParseTransactionCoordinate(element.Value, axisOrder))
+            .Select(element => ParseTransactionCoordinate(element, axisOrder))
             .ToArray();
         if (positions.Length > 0)
         {
@@ -1691,26 +1676,57 @@ internal sealed partial class Wfs20Handler
         var coordinates = new Coordinate[ordinates.Length / stride];
         for (var index = 0; index < ordinates.Length; index += stride)
         {
-            // Only X/Y are captured; Z (index+2) is read and discarded when srsDimension=3.
-            coordinates[index / stride] = CreateTransactionCoordinate(ordinates[index], ordinates[index + 1], axisOrder);
+            var z = srsDimension == 3 ? ordinates[index + 2] : (double?)null;
+            coordinates[index / stride] = CreateTransactionCoordinate(
+                ordinates[index], ordinates[index + 1], axisOrder, z);
         }
 
         return coordinates;
     }
 
 
-    private static Coordinate ParseTransactionCoordinate(string rawPosition, AxisOrder axisOrder)
+    private static Coordinate ParseTransactionCoordinate(XElement positionElement, AxisOrder axisOrder)
     {
-        var ordinates = rawPosition
+        var dimension = ResolveTransactionSrsDimension(positionElement);
+        var ordinates = positionElement.Value
             .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(ParseTransactionOrdinate)
             .ToArray();
-        if (ordinates.Length < 2)
+        if (ordinates.Length < dimension)
         {
-            throw new ArgumentException("GML position must contain at least two ordinates.");
+            throw new ArgumentException("GML position must contain at least srsDimension ordinates.");
         }
 
-        return CreateTransactionCoordinate(ordinates[0], ordinates[1], axisOrder);
+        var z = dimension == 3 ? ordinates[2] : (double?)null;
+        return CreateTransactionCoordinate(ordinates[0], ordinates[1], axisOrder, z);
+    }
+
+    /// <summary>
+    /// Reads srsDimension from the coordinate element or the nearest enclosing geometry.
+    /// Missing means 2. Only 2 and 3 are accepted.
+    /// </summary>
+    private static int ResolveTransactionSrsDimension(XElement element)
+    {
+        foreach (var ancestor in element.AncestorsAndSelf())
+        {
+            var attribute = ancestor.Attributes()
+                .FirstOrDefault(candidate => string.Equals(
+                    candidate.Name.LocalName, "srsDimension", StringComparison.OrdinalIgnoreCase));
+            if (attribute is null)
+            {
+                continue;
+            }
+
+            if (!int.TryParse(attribute.Value.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var dimension) ||
+                dimension is < 2 or > 3)
+            {
+                throw new ArgumentException("srsDimension must be 2 or 3; other coordinate dimensions are not supported.");
+            }
+
+            return dimension;
+        }
+
+        return 2;
     }
 
 
@@ -1727,11 +1743,15 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static Coordinate CreateTransactionCoordinate(double first, double second, AxisOrder axisOrder)
+    private static Coordinate CreateTransactionCoordinate(
+        double first,
+        double second,
+        AxisOrder axisOrder,
+        double? z = null)
     {
-        return axisOrder == AxisOrder.NorthEast
-            ? new Coordinate(second, first)
-            : new Coordinate(first, second);
+        var x = axisOrder == AxisOrder.NorthEast ? second : first;
+        var y = axisOrder == AxisOrder.NorthEast ? first : second;
+        return z.HasValue ? new CoordinateZ(x, y, z.Value) : new Coordinate(x, y);
     }
 
 

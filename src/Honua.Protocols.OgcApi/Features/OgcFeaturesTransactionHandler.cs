@@ -562,7 +562,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
                     }
 
-                    return StandardErrorHelpers.CreateInternalServerError(context, updateResult.ErrorMessage ?? "An error occurred while replacing the feature.");
+                    return OgcFeatureEditFailureMapper.ToResult(
+                        context, updateResult, "An error occurred while replacing the feature.");
                 }
 
                 var updated = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
@@ -934,7 +935,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
                     }
 
-                    return StandardErrorHelpers.CreateInternalServerError(context, updateResult.ErrorMessage ?? "An error occurred while patching the feature.");
+                    return OgcFeatureEditFailureMapper.ToResult(
+                        context, updateResult, "An error occurred while patching the feature.");
                 }
 
                 var updated = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
@@ -1920,20 +1922,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     }
 
     private static int DetermineBatchFailureStatus(EditOperationResult editResult)
-    {
-        if (string.Equals(editResult.ErrorMessage, "Operation rolled back.", StringComparison.Ordinal))
-        {
-            return 424;
-        }
-
-        if (!string.IsNullOrWhiteSpace(editResult.ErrorMessage) &&
-            editResult.ErrorMessage.Contains("not found", StringComparison.OrdinalIgnoreCase))
-        {
-            return 404;
-        }
-
-        return editResult.ErrorCode >= 500 ? 500 : 400;
-    }
+        => OgcFeatureEditFailureMapper.DetermineStatus(editResult);
 
     private static BatchOperationResult CreateBatchFailure(string? operationId, string message, int statusCode)
         => new()

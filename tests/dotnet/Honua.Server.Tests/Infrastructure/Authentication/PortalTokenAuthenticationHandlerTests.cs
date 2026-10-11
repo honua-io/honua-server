@@ -5,6 +5,7 @@ using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -104,6 +105,47 @@ public sealed class PortalTokenAuthenticationHandlerTests
         result.Failure.Should().NotBeNull();
     }
 
+    [UnitTest]
+    public async Task AuthenticateAsync_StacPaginationCursor_FallsThroughToAuthorizationHeader()
+    {
+        await using var services = CreateServices();
+        var issued = await IssueAsync(services);
+        var context = StacContext(services, "/stac/search", "offset:10");
+        context.Request.Headers.Authorization = "Bearer " + issued.Token;
+
+        var result = await context.AuthenticateAsync(PortalTokenAuthenticationExtensions.PortalTokenScheme);
+
+        result.Succeeded.Should().BeTrue();
+        result.Principal!.Identity!.Name.Should().Be("native-reader");
+    }
+
+    [UnitTest]
+    public async Task AuthenticateAsync_StacQueryPortalToken_WinsOverAuthorizationHeader()
+    {
+        await using var services = CreateServices();
+        var issued = await IssueAsync(services);
+        var context = StacContext(services, "/stac/search", issued.Token);
+        context.Request.Headers.Authorization = "Bearer not-the-portal-token";
+
+        var result = await context.AuthenticateAsync(PortalTokenAuthenticationExtensions.PortalTokenScheme);
+
+        result.Succeeded.Should().BeTrue();
+        result.Principal!.Identity!.Name.Should().Be("native-reader");
+    }
+
+    [UnitTest]
+    public async Task AuthenticateAsync_RestPaginationCursor_DoesNotFallThroughToAuthorizationHeader()
+    {
+        await using var services = CreateServices();
+        var issued = await IssueAsync(services);
+        var context = StacContext(services, "/rest/services/test/FeatureServer", "offset:10");
+        context.Request.Headers.Authorization = "Bearer " + issued.Token;
+
+        var result = await context.AuthenticateAsync(PortalTokenAuthenticationExtensions.PortalTokenScheme);
+
+        result.Succeeded.Should().BeFalse();
+    }
+
     private static ServiceProvider CreateServices()
     {
         var services = new ServiceCollection();
@@ -141,6 +183,16 @@ public sealed class PortalTokenAuthenticationHandlerTests
             context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("<GetServiceInfo/>"));
         }
 
+        return context;
+    }
+
+    private static DefaultHttpContext StacContext(IServiceProvider services, string path, string token)
+    {
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.Request.Path = path;
+        context.Request.Method = "GET";
+        context.Request.Headers.Referer = Referer;
+        context.Request.QueryString = new QueryString("?token=" + Uri.EscapeDataString(token));
         return context;
     }
 }

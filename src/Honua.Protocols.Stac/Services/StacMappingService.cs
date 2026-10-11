@@ -11,6 +11,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Geometries;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Services;
+using Honua.Infrastructure.Stac;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Stac.Models;
 using NetTopologySuite.IO;
@@ -459,23 +460,50 @@ internal sealed class StacMappingService
 
     internal static string ResolveItemId(Feature feature, MetadataV2Resource? resource = null)
     {
-        foreach (var key in new[] { "stac_id", "item_id", "id" })
+        var source = StacItemIdentity.Resolve(resource);
+        if (source.IsDeclaredIdentity && source.Field is { } declared &&
+            TryReadItemIdValue(feature, declared.Name, out var declaredId))
         {
-            var actualName = resource?.SchemaFields.FirstOrDefault(field =>
-                string.Equals(field.Name, key, StringComparison.OrdinalIgnoreCase))?.Name ?? key;
-            if (!TryGetAttribute(feature.Attributes, actualName, out var value) || value is null)
-            {
-                continue;
-            }
+            return declaredId;
+        }
 
-            var resolved = Convert.ToString(value, CultureInfo.InvariantCulture);
-            if (!string.IsNullOrWhiteSpace(resolved))
+        if (!source.IsDeclaredIdentity)
+        {
+            foreach (var key in StacItemIdentity.CanonicalNames)
             {
-                return resolved;
+                // A schema column that failed the uniqueness check is not an item id,
+                // even when every row stores the same attribute value.
+                if (resource is not null && StacItemIdentity.FindSchemaField(resource, key) is not null)
+                {
+                    continue;
+                }
+
+                if (TryReadItemIdValue(feature, key, out var attributeId))
+                {
+                    return attributeId;
+                }
             }
         }
 
         return feature.ObjectId?.ToString(CultureInfo.InvariantCulture) ?? "0";
+    }
+
+    private static bool TryReadItemIdValue(Feature feature, string name, out string itemId)
+    {
+        itemId = string.Empty;
+        if (!TryGetAttribute(feature.Attributes, name, out var value) || value is null)
+        {
+            return false;
+        }
+
+        var resolved = Convert.ToString(value, CultureInfo.InvariantCulture);
+        if (string.IsNullOrWhiteSpace(resolved))
+        {
+            return false;
+        }
+
+        itemId = resolved;
+        return true;
     }
 
     private static bool TryGetAttribute(

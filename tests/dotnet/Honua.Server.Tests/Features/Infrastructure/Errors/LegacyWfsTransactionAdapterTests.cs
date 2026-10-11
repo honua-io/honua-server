@@ -7,12 +7,83 @@ using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Fes20;
 using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using Honua.TestKit.Attributes;
+using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Errors;
 
 public sealed class LegacyWfsTransactionAdapterTests
 {
+    [UnitTest]
+    public void ParseTransactionGeometry_MultiCurveInheritsSrsDimensionAndKeepsZ()
+    {
+        var geometry = Wfs20Handler.ParseTransactionGeometry(XElement.Parse("""
+            <gml:MultiCurve srsDimension="3" srsName="EPSG:3857" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <gml:curveMember>
+                <gml:LineString>
+                  <gml:posList>1 2 10 4 5 20</gml:posList>
+                </gml:LineString>
+              </gml:curveMember>
+            </gml:MultiCurve>
+            """), 3857);
+
+        geometry.NumPoints.Should().Be(2);
+        geometry.Coordinates[0].Should().BeOfType<CoordinateZ>();
+        geometry.Coordinates[0].X.Should().Be(1);
+        geometry.Coordinates[0].Y.Should().Be(2);
+        geometry.Coordinates[0].Z.Should().Be(10);
+        geometry.Coordinates[1].Z.Should().Be(20);
+    }
+
+    [UnitTest]
+    public void ParseTransactionGeometry_MultiSurfaceInheritsSrsDimensionAndKeepsClosedRing()
+    {
+        var geometry = Wfs20Handler.ParseTransactionGeometry(XElement.Parse("""
+            <gml:MultiSurface srsDimension="3" srsName="EPSG:3857" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <gml:surfaceMember>
+                <gml:Polygon>
+                  <gml:exterior>
+                    <gml:LinearRing>
+                      <gml:posList>0 0 5 1 0 5 1 1 5 0 0 5</gml:posList>
+                    </gml:LinearRing>
+                  </gml:exterior>
+                </gml:Polygon>
+              </gml:surfaceMember>
+            </gml:MultiSurface>
+            """), 3857);
+
+        var ring = ((Polygon)geometry.GetGeometryN(0)).ExteriorRing;
+        ring.NumPoints.Should().Be(4);
+        ring.Coordinates[0].Z.Should().Be(5);
+    }
+
+    [UnitTest]
+    public void ParseTransactionGeometry_PointPosInheritsSrsDimension()
+    {
+        var geometry = Wfs20Handler.ParseTransactionGeometry(XElement.Parse("""
+            <gml:Point srsDimension="3" srsName="EPSG:3857" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <gml:pos>10 20 30</gml:pos>
+            </gml:Point>
+            """), 3857);
+
+        geometry.Coordinate.Should().BeOfType<CoordinateZ>();
+        geometry.Coordinate.X.Should().Be(10);
+        geometry.Coordinate.Y.Should().Be(20);
+        geometry.Coordinate.Z.Should().Be(30);
+    }
+
+    [UnitTest]
+    public void ParseTransactionGeometry_InvalidSrsDimension_Throws()
+    {
+        var act = () => Wfs20Handler.ParseTransactionGeometry(XElement.Parse("""
+            <gml:LineString srsDimension="4" srsName="EPSG:3857" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <gml:posList>1 2 3 4 5 6 7 8</gml:posList>
+            </gml:LineString>
+            """), 3857);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
     private static readonly XNamespace Gml = "http://www.opengis.net/gml/3.2";
     private static readonly XNamespace Fes = "http://www.opengis.net/fes/2.0";
     private static readonly XNamespace Wfs = "http://www.opengis.net/wfs";

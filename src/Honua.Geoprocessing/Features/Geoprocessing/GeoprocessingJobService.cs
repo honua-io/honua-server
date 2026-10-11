@@ -909,7 +909,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 }
 
                 var admission = await _dispatcher.EnsureAdmittedAsync(
-                    principal, partitionKey, costWeight, priority, cancellationToken).ConfigureAwait(false);
+                    ownerId, partitionKey, costWeight, priority, cancellationToken).ConfigureAwait(false);
 
                 if (admission != null)
                 {
