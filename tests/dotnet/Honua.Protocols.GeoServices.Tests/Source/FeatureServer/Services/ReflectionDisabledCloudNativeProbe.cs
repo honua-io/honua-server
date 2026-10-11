@@ -61,6 +61,11 @@ internal static class ReflectionDisabledCloudNativeProbe
 
     public static async Task<int> Main(string[] args)
     {
+        if (args is [ReflectionDisabledAotJsonProbe.Command, ..])
+        {
+            return await ReflectionDisabledAotJsonProbe.ExecuteChildAsync(args);
+        }
+
         if (args is not [var format, var outputPath])
         {
             await Console.Error.WriteLineAsync("usage: <geoparquet|geoarrow> <output-path>");

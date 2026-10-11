@@ -10,6 +10,7 @@ using System.Security;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Configuration;
@@ -100,7 +101,7 @@ internal sealed partial class Wfs20Handler
             bucket.Clear();
             foreach (var definition in values
                          .Where(static value => value.HasValue)
-                         .Select(static value => JsonSerializer.Deserialize<StoredQueryDefinition>((string)value!))
+                         .Select(static value => DeserializeStoredQueryDefinition((string)value!))
                          .OfType<StoredQueryDefinition>())
             {
                 bucket[definition.Id] = definition;
@@ -120,7 +121,7 @@ internal sealed partial class Wfs20Handler
         cancellationToken.ThrowIfCancellationRequested();
         var scope = ResolveStoredQueryScope(context);
         var database = redis.GetDatabase();
-        var serialized = JsonSerializer.Serialize(definition);
+        var serialized = SerializeStoredQueryDefinition(definition);
         cancellationToken.ThrowIfCancellationRequested();
         // Dispatch the bounded mutation pair before awaiting either command. Redis
         // commands cannot be retracted: cancellation must not strand a definition
@@ -794,7 +795,13 @@ internal sealed partial class Wfs20Handler
             : null;
     }
 
-    private sealed record StoredQueryDefinition(
+    internal static string SerializeStoredQueryDefinition(StoredQueryDefinition definition)
+        => JsonSerializer.Serialize(definition, WfsStoredQueryJsonContext.Default.StoredQueryDefinition);
+
+    internal static StoredQueryDefinition? DeserializeStoredQueryDefinition(string json)
+        => JsonSerializer.Deserialize(json, WfsStoredQueryJsonContext.Default.StoredQueryDefinition);
+
+    internal sealed record StoredQueryDefinition(
         string Id,
         string? Title,
         string? Abstract,
@@ -804,6 +811,17 @@ internal sealed partial class Wfs20Handler
         string? FilterXml,
         IReadOnlyList<StoredQueryParameter> Parameters);
 
-    private sealed record StoredQueryParameter(string Name, string Type);
+    internal sealed record StoredQueryParameter(string Name, string Type);
 
 }
+
+/// <summary>
+/// PascalCase source-generated metadata for Redis stored-query payloads.
+/// The parameterless serializer wrote these property names; a camelCase context would
+/// strand definitions already stored by other replicas.
+/// </summary>
+[JsonSourceGenerationOptions]
+[JsonSerializable(typeof(Wfs20Handler.StoredQueryDefinition))]
+[JsonSerializable(typeof(Wfs20Handler.StoredQueryParameter))]
+[JsonSerializable(typeof(IReadOnlyList<Wfs20Handler.StoredQueryParameter>))]
+internal sealed partial class WfsStoredQueryJsonContext : JsonSerializerContext;

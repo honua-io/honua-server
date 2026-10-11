@@ -155,7 +155,10 @@ internal static partial class OperationsProgressEndpoints
         NormalizeCanonicalProperty(operation, "operationId", JsonValue.Create(progress.OperationId));
         NormalizeCanonicalProperty(operation, "type", JsonValue.Create((int)progress.Type));
 
-        return JsonSerializer.SerializeToElement(operation);
+        // JsonObject has no reflection metadata when the shipped image sets
+        // JsonSerializerIsReflectionEnabledByDefault=false. The parameterless overload
+        // then throws, and the list fails only once an operation is actually present.
+        return JsonSerializer.SerializeToElement(operation, OperationsProgressJsonContext.Default.JsonObject);
     }
 
     private static async Task<IResult> HandleOrchestrationCancelAsync(
@@ -859,7 +862,7 @@ internal static partial class OperationsProgressEndpoints
     /// <summary>
     /// List all active operations, optionally filtered by type.
     /// </summary>
-    private static async Task<IResult> HandleListActiveOperations(
+    internal static async Task<IResult> HandleListActiveOperations(
         [FromServices] IUniversalProgressStore progressStore,
         string? type = null,
         CancellationToken cancellationToken = default)
@@ -904,7 +907,7 @@ internal static partial class OperationsProgressEndpoints
     /// <summary>
     /// Get all operations of a specific type.
     /// </summary>
-    private static async Task<IResult> HandleGetOperationsByType(
+    internal static async Task<IResult> HandleGetOperationsByType(
         string operationType,
         [FromServices] IUniversalProgressStore progressStore,
         CancellationToken cancellationToken)
@@ -1036,6 +1039,7 @@ internal sealed record OperationsByTypeResponse
 [System.Text.Json.Serialization.JsonSerializable(typeof(OperationsByTypeResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(OperationType))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(OperationStatus))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(System.Text.Json.Nodes.JsonObject))]
 internal sealed partial class OperationsProgressJsonContext : System.Text.Json.Serialization.JsonSerializerContext
 {
 }

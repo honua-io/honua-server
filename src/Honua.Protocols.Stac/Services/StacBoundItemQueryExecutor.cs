@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -102,22 +103,51 @@ internal static class StacBoundItemQueryExecutor
             .ToImmutableArray();
     }
 
-    private static Dictionary<string, JsonElement> BuildPropertyBag(
+    internal static Dictionary<string, JsonElement> BuildPropertyBag(
         Feature feature,
         MetadataV2Resource resource)
     {
         var properties = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
         foreach (var attribute in feature.Attributes)
         {
-            properties[attribute.Key] = JsonSerializer.SerializeToElement(attribute.Value);
+            properties[attribute.Key] = SerializePropertyValue(attribute.Value);
         }
 
         var primaryIdField = resource.FindPrimaryIdField();
         if (primaryIdField is not null && !properties.ContainsKey(primaryIdField.Name))
         {
-            properties[primaryIdField.Name] = JsonSerializer.SerializeToElement(feature.Id);
+            properties[primaryIdField.Name] = SerializePropertyValue(feature.Id);
         }
 
         return properties;
+    }
+
+    /// <summary>
+    /// Projects one feature attribute onto a <see cref="JsonElement"/> using
+    /// <see cref="StacJsonContext"/>. The parameterless <c>SerializeToElement</c>
+    /// overload throws when reflection JSON is disabled, which is how the shipped
+    /// image runs, so an ids-plus-CQL2 search failed for every storage-bound item.
+    /// </summary>
+    private static JsonElement SerializePropertyValue(object? value)
+    {
+        if (value is null or DBNull)
+        {
+            return JsonSerializer.SerializeToElement((string?)null, StacJsonContext.Default.String);
+        }
+
+        if (value is JsonElement { ValueKind: JsonValueKind.Undefined })
+        {
+            return JsonSerializer.SerializeToElement((string?)null, StacJsonContext.Default.String);
+        }
+
+        var typeInfo = StacJsonContext.Default.GetTypeInfo(value.GetType());
+        if (typeInfo is not null)
+        {
+            return JsonSerializer.SerializeToElement(value, typeInfo);
+        }
+
+        return JsonSerializer.SerializeToElement(
+            Convert.ToString(value, CultureInfo.InvariantCulture),
+            StacJsonContext.Default.String);
     }
 }
