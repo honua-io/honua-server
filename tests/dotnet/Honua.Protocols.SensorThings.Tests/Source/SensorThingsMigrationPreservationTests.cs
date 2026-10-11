@@ -53,6 +53,17 @@ public sealed class SensorThingsMigrationPreservationTests : IAsyncLifetime
                 INSERT INTO sta_datastream(id,name,description,observation_type,unit_name,unit_symbol,unit_definition,thing_id,sensor_id,observed_property_id)
                     VALUES (9001,'Unrelated new datastream','Synthetic','http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_TruthObservation',NULL,NULL,NULL,1,1,1);
                 """, schema);
+            // A restored or per-fixture journal can replay 127 after unrelated rows appeared.
+            // Replaying must neither reconcile those historical references nor reuse an ID
+            // already reserved from a sequence but not yet inserted into the catalog.
+            await using var reserve = new NpgsqlCommand("SELECT nextval('sta_feature_of_interest_id_seq')", connection);
+            var reservedId = (long)(await reserve.ExecuteScalarAsync())!;
+            await ApplyAsync(schema, "127_CompleteSensorThingsSensing.sql");
+            (await SnapshotAsync(connection)).Should().Be(before, "migration replay must preserve legacy values");
+            var nextId = (long)(await reserve.ExecuteScalarAsync())!;
+            nextId.Should().BeGreaterThan(reservedId, "migration replay must not rewind a live identifier sequence");
+            await using (var stillUnresolved = new NpgsqlCommand("SELECT feature_of_interest_reference_id FROM sta_observation WHERE id=1", connection))
+                (await stillUnresolved.ExecuteScalarAsync()).Should().Be(DBNull.Value, "migration replay must not link an unrelated matching ID");
             var fixture = new WebAppFixture().ConfigureServices(services => services.AddScoped<ISchemaContext>(_ => new FixedSchema(schema)));
             try
             {
