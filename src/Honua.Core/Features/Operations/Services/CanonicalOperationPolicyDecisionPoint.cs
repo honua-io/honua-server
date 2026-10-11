@@ -21,13 +21,23 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
     private readonly IGuardrailLadder _legacyGuardrails;
 
     /// <summary>Initializes the canonical policy decision point.</summary>
+    /// <param name="options">The bound typed operation policy options.</param>
+    /// <param name="legacyGuardrails">The legacy guardrail ladder for compatibility requests.</param>
+    /// <param name="productionEnvironment">
+    /// Whether the host runs in the Production environment, which appends the built-in
+    /// administrator rules (<see cref="OperationPolicyBuiltInRules.Production"/>) to the typed policy.
+    /// </param>
     public CanonicalOperationPolicyDecisionPoint(
         IOptions<OperationPolicyOptions> options,
-        IGuardrailLadder legacyGuardrails)
+        IGuardrailLadder legacyGuardrails,
+        bool productionEnvironment = false)
     {
-        _typedPolicy = new ConfigurableOperationPolicyDecisionPoint(options);
+        _typedPolicy = new ConfigurableOperationPolicyDecisionPoint(options, productionEnvironment);
         _legacyGuardrails = legacyGuardrails;
     }
+
+    /// <summary>The effective typed operation policy (operator rules, built-in rules, default).</summary>
+    public OperationPolicyComposition TypedPolicy => _typedPolicy.Composition;
 
     /// <inheritdoc />
     public Task<PolicyDecision> EvaluateAsync(

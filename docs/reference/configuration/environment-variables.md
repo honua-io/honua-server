@@ -77,6 +77,37 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 
 OIDC provider configuration (`Oidc__*` — Azure AD, Google, Okta, Auth0, generic) and API-key management are covered in the [authentication guide](../../guides/secure/authentication.md).
 
+### Operation policy
+
+Typed operations (the `/api/v1/operations/{id}/submit` surface and the MCP operation tools) pass through one policy decision point configured under `Operations:Policy`. Rules are evaluated first-match-wins; when none matches, the default decision applies.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `Operations__Policy__Enabled` | `false` (`true` in `appsettings.Production.json`) | Enforce the policy. Disabled is a pass-through allow. Production refuses to start unless it is `true`. |
+| `Operations__Policy__DefaultDecision` | `Allow` (`Deny` in `appsettings.Production.json`) | `Allow`, `Deny`, `RequireApproval`, or `DryRunFirst` when no rule matches. Production refuses to start with `Allow`. |
+| `Operations__Policy__DefaultReason` | — (`No policy rule matched this caller; Production denies by default.` in Production) | Reason returned with a default decision. |
+| `Operations__Policy__DefaultApprovalLane` | — | Approval lane for a `RequireApproval` default. |
+| `Operations__Policy__Rules__N__OperationId` / `__Tier` / `__Role` / `__Decision` / `__Reason` / `__ApprovalLane` | none | Operator rules. `OperationId` `*` matches any operation; an unset `Tier` or `Role` matches any caller. `Role` is matched against the caller's role claims. |
+| `Operations__Policy__BuiltInProductionRules` | `true` | In Production, append the two built-in administrator rules after the operator rules. Set `false` for a policy where only operator rules can allow an operation. Ignored outside Production. |
+
+**Production semantics.** With the shipped `appsettings.Production.json`, the effective policy is: your operator rules, then two built-in rules declared in code, then the fail-closed `Deny` default.
+
+1. `OperationId=*`, `Role=admin`, `Decision=Allow`, reason `built-in: full administrators execute directly`. Matches the bootstrap password admin and API keys with `admin`, `*`, `admin:*`, `admin:write`, or `admin:manage` grants.
+2. `OperationId=*`, `Role=scoped-admin-key`, `Decision=Allow`, reason `built-in: administrative keys execute directly`. Matches API keys with narrower administrative grants such as `admin:read` or `admin:approve`. The policy decision does not widen authority: the operation surface still checks the key's grants against each operation's side effect, so an `admin:read` key cannot run a mutating operation.
+
+Every other caller, for example a `write:*` layer write key (`layer-write-key`), an ordinary scoped key (`scoped-api-key`), or an anonymous caller, is denied with the default reason. Approved-operation credentials (`approved-operation`) need no rule: they are minted only to replay an already-approved proposal, and that replay does not consult the policy again. A decision produced by a built-in rule carries its `built-in:` reason, and startup logs the effective policy, for example `Operation policy: 0 operator rules + 2 built-in rules, default Deny (builtInRules: True)`.
+
+Because operator rules come first, you can still restrict administrators. For example, to require approval before any administrator publishes a service:
+
+```bash
+Operations__Policy__Rules__0__OperationId=service.publish
+Operations__Policy__Rules__0__Role=admin
+Operations__Policy__Rules__0__Decision=RequireApproval
+Operations__Policy__Rules__0__ApprovalLane=publish-review
+```
+
+To run a pure fail-closed policy instead, set `Operations__Policy__BuiltInProductionRules=false` and allow each caller with your own rules. The startup check that `Enabled` is `true` and `DefaultDecision` is not `Allow` applies either way.
+
 ## Licensing
 
 | Variable | Default | Purpose |

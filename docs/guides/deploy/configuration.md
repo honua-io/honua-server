@@ -52,6 +52,7 @@ Options are validated at startup (`ValidateOnStart`), so a malformed value fails
 - `Security__ConnectionEncryption__MasterKey` must be at least 32 characters.
 - `HONUA_DEV_AUTH=true` in a Production environment refuses to start.
 - A missing database connection string skips migrations and logs an error in Production.
+- A Production host with a durable operation runtime refuses to start unless `Operations__Policy__Enabled=true` and `Operations__Policy__DefaultDecision` is not `Allow`. The shipped Production policy denies by default and appends two built-in rules that let administrators (`admin`, including `admin:write` keys) and other administrative API keys (`scoped-admin-key`, for example `admin:approve`) execute typed operations; startup logs the effective policy. See [Operation policy](../../reference/configuration/environment-variables.md#operation-policy) for the built-ins, the `Operations__Policy__BuiltInProductionRules=false` opt-out, and how to add your own rules.
 
 Confirm effective values at runtime with `GET /api/v1/admin/config` (admin auth).
 

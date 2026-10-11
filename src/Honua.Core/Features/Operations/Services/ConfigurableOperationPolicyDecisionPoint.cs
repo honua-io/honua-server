@@ -14,7 +14,11 @@ namespace Honua.Core.Features.Operations.Services;
 /// role(s) on a first-match-wins basis, falling back to <see cref="OperationPolicyOptions.DefaultDecision"/>.
 /// When <see cref="OperationPolicyOptions.Enabled"/> is <see langword="false"/> it is a pass-through
 /// allow, identical to <see cref="AllowAllPolicyDecisionPoint"/>, so the default deployment stays
-/// permissive. Evaluation is deterministic and reflection-free (AOT-safe).
+/// permissive. In the Production environment the effective rule set is the operator rules followed
+/// by <see cref="OperationPolicyBuiltInRules.Production"/> (unless
+/// <see cref="OperationPolicyOptions.BuiltInProductionRules"/> opts out); a decision produced by a
+/// built-in rule carries that rule's <c>built-in:</c> reason. Evaluation is deterministic and
+/// reflection-free (AOT-safe).
 /// </summary>
 public sealed class ConfigurableOperationPolicyDecisionPoint : IOperationPolicyDecisionPoint
 {
@@ -24,11 +28,24 @@ public sealed class ConfigurableOperationPolicyDecisionPoint : IOperationPolicyD
     /// Initializes a new instance of <see cref="ConfigurableOperationPolicyDecisionPoint"/>.
     /// </summary>
     /// <param name="options">The bound policy options.</param>
-    public ConfigurableOperationPolicyDecisionPoint(IOptions<OperationPolicyOptions> options)
+    /// <param name="productionEnvironment">
+    /// Whether the host runs in the Production environment, which appends the built-in
+    /// administrator rules after the operator rules.
+    /// </param>
+    public ConfigurableOperationPolicyDecisionPoint(
+        IOptions<OperationPolicyOptions> options,
+        bool productionEnvironment = false)
     {
         ArgumentNullException.ThrowIfNull(options);
         _options = options.Value ?? new OperationPolicyOptions();
+        Composition = OperationPolicyBuiltInRules.Compose(_options, productionEnvironment);
     }
+
+    /// <summary>
+    /// The effective policy this decision point evaluates: operator rules, built-in rules, and the
+    /// default decision.
+    /// </summary>
+    public OperationPolicyComposition Composition { get; }
 
     /// <inheritdoc />
     public Task<PolicyDecision> EvaluateAsync(
@@ -47,10 +64,23 @@ public sealed class ConfigurableOperationPolicyDecisionPoint : IOperationPolicyD
             return Task.FromResult(PolicyDecision.Allowed);
         }
 
-        var matchedRule = _options.Rules.FirstOrDefault(rule => rule is not null && Matches(rule, request, context));
-        if (matchedRule is not null)
+        var rules = Composition.Rules;
+        for (var i = 0; i < rules.Count; i++)
         {
-            return Task.FromResult(ResolveDecision(matchedRule.Decision, matchedRule.Reason, matchedRule.ApprovalLane, request));
+            var rule = rules[i];
+            if (!Matches(rule, request, context))
+            {
+                continue;
+            }
+
+            // A built-in allow names itself so the decision evidence shows why an administrator
+            // executed without an operator-authored rule.
+            if (i >= Composition.OperatorRuleCount && rule.Decision == PolicyDecisionKind.Allow)
+            {
+                return Task.FromResult(new PolicyDecision { Kind = PolicyDecisionKind.Allow, Reason = rule.Reason });
+            }
+
+            return Task.FromResult(ResolveDecision(rule.Decision, rule.Reason, rule.ApprovalLane, request));
         }
 
         return Task.FromResult(ResolveDecision(

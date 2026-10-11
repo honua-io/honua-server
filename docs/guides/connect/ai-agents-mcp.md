@@ -122,7 +122,7 @@ To upgrade the platform, an agent reads `honua_platform_release_status` and `GET
 
 ### Apply a catalog style
 
-`honua_apply_style_preset` applies a catalog style to a layer. It requires admin write access in addition to the published-service publish grant, uses the `style.apply-preset` operation, and honors operator approval and `Operations:Policy` rules before changing the layer. An approval-required result has `approvalRequired: true`; when a durable proposal is created, use its returned `proposalId` and resource URI to track approval. Only a completed application returns `applied: true`. Set `dryRun: true` to validate without changing the layer; a completed preview returns `dryRun: true` and `applied: false`. Approval plans pin the service, layer, preset, publication, resource and storage binding; replay refuses a rebound target and requires a new approval request. If the binding commits but metadata reconciliation fails, the result keeps `applied: true` with a `warning`; re-apply the preset to retry.
+`honua_apply_style_preset` applies a catalog style to a layer. It requires admin write access in addition to the published-service publish grant, uses the `style.apply-preset` operation, and honors operator approval and `Operations:Policy` rules (see [Operation policy in Production](#operation-policy-in-production)) before changing the layer. An approval-required result has `approvalRequired: true`; when a durable proposal is created, use its returned `proposalId` and resource URI to track approval. Only a completed application returns `applied: true`. Set `dryRun: true` to validate without changing the layer; a completed preview returns `dryRun: true` and `applied: false`. Approval plans pin the service, layer, preset, publication, resource and storage binding; replay refuses a rebound target and requires a new approval request. If the binding commits but metadata reconciliation fails, the result keeps `applied: true` with a `warning`; re-apply the preset to retry.
 
 Every completed result, including a dry run, carries the `style.apply-preset` operation handle in the same shape as `honua_publish_service`: `status`, `operationId`, `operationInstanceId` (also as `handleId`), `correlationId` and `auditId`, with `createdAt`, `updatedAt`, `authorizationOutcome` and `policyOutcome`. Use these to join the style change to its audit record.
 
@@ -271,6 +271,15 @@ The operator-grant model includes a `StudioDraft` resource type — a distinct g
 **Fail-closed default.** A bearer token that presents **no recognized `honua.mcp.*` scope** authorizes nothing — every tool call returns `insufficient_scope` — even when its principal's grants (or `admin` role) would allow the operation. This is deliberate: least-privilege delegation is the reason to issue an agent an OAuth token rather than a shared API key. To restore full grant-bounded authority explicitly, include `honua.mcp.full`.
 
 **Least-privilege example.** Issue an ops-monitoring agent a token scoped `honua.mcp.discover honua.mcp.read`: it can browse the catalog and read job results and ops-evidence, but a `tools/call` that submits a geoprocessing plan is denied with `insufficient_scope` — without ever touching the principal's grants.
+
+## Operation policy in Production
+
+Every typed operation an agent runs, including `honua_apply_style_preset` and the published `honua_admin_*` operation tools, passes through the `Operations:Policy` decision point. A Production install ships a fail-closed policy (`Enabled=true`, `DefaultDecision=Deny`) and appends two built-in rules after any rules you configure:
+
+- callers with the `admin` role (the bootstrap admin, and API keys with `admin`, `*`, `admin:*`, `admin:write`, or `admin:manage` grants) execute directly, with reason `built-in: full administrators execute directly`;
+- callers with the `scoped-admin-key` role (API keys with narrower administrative grants such as `admin:read` or `admin:approve`) execute directly, with reason `built-in: administrative keys execute directly`.
+
+So an agent holding an `admin:write` key can publish without any operator-authored rule, while a `write:*` layer write key or an ordinary scoped key is denied with `No policy rule matched this caller; Production denies by default.` The policy decision does not widen a key's authority: the operation surface still checks the key's grants against each operation's side effect, so an `admin:read` key cannot run a mutating operation. Your own rules are evaluated first, so you can still deny administrators or require approval for them, and `Operations:Policy:BuiltInProductionRules=false` removes the built-ins for a pure fail-closed policy. See [Operation policy](../../reference/configuration/environment-variables.md#operation-policy) for the settings and an example rule.
 
 ## Harden the MCP endpoint (production)
 

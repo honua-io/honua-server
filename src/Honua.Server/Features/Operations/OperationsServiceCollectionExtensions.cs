@@ -11,6 +11,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Honua.Server.Features.Operations;
@@ -253,7 +254,16 @@ internal static class OperationsServiceCollectionExtensions
             .AddOptions<OperationPolicyOptions>()
             .Bind(configuration.GetSection(OperationPolicyOptions.SectionName));
 
-        services.TryAddSingleton<IOperationPolicyDecisionPoint, CanonicalOperationPolicyDecisionPoint>();
+        // Production appends the code-declared built-in administrator rules after the operator
+        // rules (OperationPolicyBuiltInRules); the startup validator still requires an enabled,
+        // fail-closed default so every other caller is denied without an operator rule.
+        var productionEnvironment = environment.IsProduction();
+        services.TryAddSingleton<IOperationPolicyDecisionPoint>(sp => new CanonicalOperationPolicyDecisionPoint(
+            sp.GetRequiredService<IOptions<OperationPolicyOptions>>(),
+            sp.GetRequiredService<Honua.Core.Features.Guardrails.Abstractions.IGuardrailLadder>(),
+            productionEnvironment));
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHostedService, OperationPolicyStartupReporter>());
 
         // Dispatcher: resolves descriptor + executor, runs policy, executes on Allow.
         services.TryAddScoped<IOperationInvoker>(sp =>
