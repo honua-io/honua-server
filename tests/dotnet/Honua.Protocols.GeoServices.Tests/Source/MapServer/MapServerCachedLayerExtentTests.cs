@@ -7,7 +7,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices.MapServer;
 using Honua.Protocols.GeoServices.MapServer.Models;
-using Xunit;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 /// </summary>
 public sealed class MapServerCachedLayerExtentTests
 {
-    [Fact]
+    [UnitTest]
     public async Task PolarWgs84Layer_CachedMapExtent_StaysInsideTheAdvertisedSquare()
     {
         var (service, publication, resource, snapshot) = Layer(-180, -90, 180, 90);
@@ -64,7 +64,7 @@ public sealed class MapServerCachedLayerExtentTests
         layer.Extent.Xmax.Should().BeGreaterThan(limit - 1);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task RegionalWgs84Layer_CachedMapExtent_StaysTheProjectedBbox()
     {
         var (service, publication, resource, snapshot) = Layer(-123, 37, -122, 38);
