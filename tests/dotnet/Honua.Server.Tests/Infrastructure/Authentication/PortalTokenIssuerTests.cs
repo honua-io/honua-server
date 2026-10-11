@@ -33,8 +33,6 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 public sealed class PortalTokenIssuerTests
 {
     [Theory]
-    [InlineData(null, false)]
-    [InlineData("   ", false)]
     [InlineData("https://other.example.com/private?token=sensitive#fragment", true)]
     [InlineData("http://app.example.com/private", true)]
     [InlineData("https://app.example.com:8443/private", true)]
@@ -72,6 +70,38 @@ public sealed class PortalTokenIssuerTests
         var message = entry[2]!.ToString()!;
         message.Should().NotContain(issuance.Token).And.NotContain("sensitive").And.NotContain("private");
         message.Should().NotContain("app.example.com").And.NotContain("other.example.com");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("   ")]
+    [Trait("Tier", "Fast")]
+    public async Task ValidateAsync_RefererBoundToken_AcceptsRequestThatOmitsReferer(string? requestReferer)
+    {
+        var logger = Substitute.For<ILogger<PortalTokenIssuer>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var issuer = new PortalTokenIssuer(cache, logger);
+        var issuance = await issuer.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: "alice",
+                DisplayName: "Alice",
+                TenantId: null,
+                Roles: ["editor"],
+                ClientType: PortalTokenClientType.Referer,
+                BindingValue: "https://app.example.com/private?password=sensitive",
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5)),
+            CancellationToken.None);
+
+        var validation = await issuer.ValidateAsync(
+            issuance.Token, new PortalTokenBinding(requestReferer, null), CancellationToken.None);
+
+        validation.Should().NotBeNull();
+        validation!.Principal.FindFirstValue(ClaimTypes.Name).Should().Be("alice");
+        logger.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(ILogger.Log))
+            .Select(call => call.GetArguments())
+            .Should().NotContain(arguments => arguments[1] is EventId { Id: 7003 });
     }
 
     [UnitTest]

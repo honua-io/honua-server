@@ -232,8 +232,8 @@ public sealed record PortalTokenBinding(string? Referer, string? ClientIp);
 public enum PortalTokenClientType
 {
     /// <summary>
-    /// Bind to a referer URL. The token is honored only when the request supplies a
-    /// matching <c>Referer</c> header.
+    /// Bind to a referer URL. A request that supplies a different <c>Referer</c> is
+    /// refused. A request that omits the header is accepted.
     /// </summary>
     Referer = 0,
 

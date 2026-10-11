@@ -335,10 +335,14 @@ internal sealed partial class PortalTokenIssuer(
         return record.ClientType switch
         {
             PortalTokenClientType.Bearer => true,
-            PortalTokenClientType.Referer => string.Equals(
-                record.BindingValue,
-                NormalizeRefererValue(binding.Referer ?? string.Empty),
-                StringComparison.OrdinalIgnoreCase),
+            // A desktop client mints client=referer and then omits Referer on later
+            // calls (honua-server#5558). Reference portals accept that. A different
+            // Referer is still a mismatch.
+            PortalTokenClientType.Referer => string.IsNullOrWhiteSpace(binding.Referer)
+                || string.Equals(
+                    record.BindingValue,
+                    NormalizeRefererValue(binding.Referer),
+                    StringComparison.OrdinalIgnoreCase),
             PortalTokenClientType.Ip => string.Equals(
                 record.BindingValue,
                 (binding.ClientIp ?? string.Empty).Trim(),
