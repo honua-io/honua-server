@@ -13,6 +13,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Import;
 
@@ -52,7 +53,7 @@ public sealed class OgcServiceMigrationScannerTests
                 record.TargetKind == "feature-layer");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task ScanSourceAsync_BasicCredentials_AreSentOnCapabilitiesAndDescribe()
     {
         var handler = new RecordingAuthHandler();

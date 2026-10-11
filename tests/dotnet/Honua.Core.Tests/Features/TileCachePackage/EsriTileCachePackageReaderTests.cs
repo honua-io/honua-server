@@ -8,6 +8,7 @@ using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.TileCachePackage.Domain;
 using Honua.Core.Features.TileCachePackage.Services;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.TileCachePackage;
 
@@ -175,7 +176,7 @@ public sealed class EsriTileCachePackageReaderTests
         read[0].Content[^1].Should().Be(0xCD);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task ReadDescriptor_StatePlanePackage_IsRejected()
     {
         using var package = BuildCompactV2Package(prefix: string.Empty, format: "PNG", wkid: 2263, name: "ny");
@@ -185,7 +186,7 @@ public sealed class EsriTileCachePackageReaderTests
             .WithMessage("*2263*");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task ReadDescriptor_MissingWkidMatchingMercator_RecordsAssumption()
     {
         using var package = BuildCompactV2Package(prefix: string.Empty, format: "PNG", wkid: 0, name: "unknown");
@@ -195,7 +196,7 @@ public sealed class EsriTileCachePackageReaderTests
         descriptor.Assumption.Should().Be(TileCachePackageScheme.MissingWkidWebMercatorAssumption);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task ReadTiles_GzipVectorTile_PreservesMagicAndEncoding()
     {
         byte[] gzip;
@@ -226,7 +227,7 @@ public sealed class EsriTileCachePackageReaderTests
         TileCachePackageTileEncoding.ContentEncoding(read[0].Content).Should().Be("gzip");
     }
 
-    [Fact]
+    [UnitTest]
     public void ReadBounded_DeclaredLengthOverEntryCap_Throws()
     {
         using var stream = new MemoryStream([1, 2, 3, 4]);
@@ -239,7 +240,7 @@ public sealed class EsriTileCachePackageReaderTests
         act.Should().Throw<InvalidDataException>();
     }
 
-    [Fact]
+    [UnitTest]
     public void ReadBounded_ZeroDeclaredLengthThatExpands_StopsAtCap()
     {
         using var stream = new MemoryStream(new byte[32]);
@@ -248,7 +249,7 @@ public sealed class EsriTileCachePackageReaderTests
         act.Should().Throw<InvalidDataException>();
     }
 
-    [Fact]
+    [UnitTest]
     public void Scheme_CustomMercatorOrigin_IsRejected()
     {
         var lods = new[]
@@ -259,7 +260,7 @@ public sealed class EsriTileCachePackageReaderTests
         act.Should().Throw<NotSupportedException>().WithMessage("*3857*WebMercatorQuad*");
     }
 
-    [Fact]
+    [UnitTest]
     public void Scheme_BritishNationalGrid_IsRejected()
     {
         var act = () => TileCachePackageScheme.Resolve(27700, 0, 0, 256, [new TileCacheLodSample(0, 1, null)]);

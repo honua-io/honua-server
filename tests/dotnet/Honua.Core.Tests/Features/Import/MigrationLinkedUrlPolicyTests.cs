@@ -3,12 +3,13 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Migration.Services;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Import;
 
 public sealed class MigrationLinkedUrlPolicyTests
 {
-    [Fact]
+    [UnitTest]
     public void Allows_NullAllowlist_AcceptsHttpsAndRejectsHttp()
     {
         var policy = new MigrationLinkedUrlPolicy(false, null);
@@ -17,7 +18,7 @@ public sealed class MigrationLinkedUrlPolicyTests
         policy.Allows(new Uri("http://demo.example/items")).Should().BeFalse();
     }
 
-    [Fact]
+    [UnitTest]
     public void Allows_EmptyAllowlist_RejectsEveryHost()
     {
         var policy = new MigrationLinkedUrlPolicy(false, []);
@@ -25,7 +26,7 @@ public sealed class MigrationLinkedUrlPolicyTests
         policy.Allows(new Uri("https://demo.example/items")).Should().BeFalse();
     }
 
-    [Fact]
+    [UnitTest]
     public void EnsureAllows_OffHostNextLink_Throws()
     {
         var policy = new MigrationLinkedUrlPolicy(false, ["demo.example"]);
@@ -35,7 +36,7 @@ public sealed class MigrationLinkedUrlPolicyTests
         act.Should().Throw<HttpRequestException>();
     }
 
-    [Fact]
+    [UnitTest]
     public void Allows_SuffixMatch_AcceptsChildHost()
     {
         var policy = new MigrationLinkedUrlPolicy(true, ["example"]);

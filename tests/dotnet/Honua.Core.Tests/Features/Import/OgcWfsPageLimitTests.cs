@@ -3,19 +3,20 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Migration.Domain;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Import;
 
 public sealed class OgcWfsPageLimitTests
 {
-    [Fact]
+    [UnitTest]
     public void ClampPageSize_CapsAtTenThousand()
     {
         OgcWfsImportRequest.ClampPageSize(50_000_000).Should().Be(OgcWfsImportRequest.MaxPageSize);
         OgcWfsImportRequest.ClampPageSize(25).Should().Be(25);
     }
 
-    [Fact]
+    [UnitTest]
     public void EnsurePageWithinRequest_RejectsAPageLargerThanRequested()
     {
         var act = () => OgcWfsImportRequest.EnsurePageWithinRequest(11, 10);

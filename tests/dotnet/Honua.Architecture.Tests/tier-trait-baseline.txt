@@ -2526,8 +2526,6 @@ Honua.Server.Tests:Honua.Server.Tests.Infrastructure.Security.FileUploadSecurity
 Honua.Server.Tests:Honua.Server.Tests.Infrastructure.Security.FileUploadSecurityTests.SanitizeFileName_VeryLongExtension_DoesNotThrow`0()
 Honua.Server.Tests:Honua.Server.Tests.Infrastructure.Security.FileUploadSecurityTests.ValidateFileContent_LegitimateCSV_AcceptsFile`0()
 Honua.Server.Tests:Honua.Server.Tests.Infrastructure.Security.FileUploadSecurityTests.ValidateFileContent_MaliciousExecutable_RejectsFile`0()
-Honua.Server.Tests:Honua.Server.Tests.Infrastructure.Security.FileUploadSecurityTests.ValidateFileContent_ScriptContentPastConfiguredBinaryScanLimit_RejectsFile`0()
-Honua.Server.Tests:Honua.Server.Tests.Infrastructure.Security.FileUploadSecurityTests.ValidateFileContent_ScriptContent_RejectsFile`0()
 Honua.Server.Tests:Honua.Server.Tests.Infrastructure.Security.FileUploadSecurityTests.ValidateFileExtension_VariousExtensions_ReturnsExpectedResult`0(System.String,System.Boolean)
 Honua.Server.Tests:Honua.Server.Tests.Infrastructure.Security.FileUploadSecurityTests.ValidateFileName_BrowserFakePath_AcceptsFile`0(System.String)
 Honua.Server.Tests:Honua.Server.Tests.Infrastructure.Security.FileUploadSecurityTests.ValidateFileName_DangerousCharacters_RejectsFile`0(System.String)

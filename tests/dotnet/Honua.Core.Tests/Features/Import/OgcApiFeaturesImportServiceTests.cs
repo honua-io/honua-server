@@ -13,6 +13,7 @@ using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Services;
 using Microsoft.Extensions.Logging.Abstractions;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Import;
 
@@ -375,7 +376,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.FeatureCountParity.Summary.Should().Contain("skipped");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task ImportCollectionAsync_OversizedContentLength_FailsBeforeWritingFeatures()
     {
         var handler = new StubItemsHandler(request =>
@@ -409,7 +410,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         sink.WrittenFeatures.Should().BeEmpty();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task ImportCollectionAsync_NextLinkOffAllowlist_Fails()
     {
         var handler = new StubItemsHandler(request =>
@@ -440,7 +441,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.ErrorCode.Should().Be(OgcApiFeaturesImportErrorCodes.SourceUnreachable);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task ImportCollectionAsync_HttpNextLink_FailsWhenHttpsIsRequired()
     {
         var handler = new StubItemsHandler(request =>

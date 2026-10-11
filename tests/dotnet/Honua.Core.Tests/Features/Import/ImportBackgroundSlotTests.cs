@@ -9,12 +9,13 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Import;
 
 public sealed class ImportBackgroundSlotTests
 {
-    [Fact]
+    [UnitTest]
     public void TryReserveBackgroundSlot_StopsAtConcurrentPlusQueueDepth()
     {
         var limits = new ImportLimits

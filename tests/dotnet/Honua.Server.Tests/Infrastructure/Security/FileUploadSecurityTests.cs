@@ -166,7 +166,7 @@ public class FileUploadSecurityTests
         _output.WriteLine($"Malicious content detection: {result.ErrorMessage}");
     }
 
-    [Fact]
+    [UnitTest]
     [SecurityTest]
     public async Task ValidateFileContent_ScriptContentInDataFile_AcceptsFile()
     {
@@ -178,7 +178,7 @@ public class FileUploadSecurityTests
         Assert.True(result.IsValid);
     }
 
-    [Fact]
+    [UnitTest]
     [SecurityTest]
     public async Task ValidateFileContent_ScriptContentInHtml_RejectsFile()
     {
@@ -192,7 +192,7 @@ public class FileUploadSecurityTests
     }
 
 
-    [Fact]
+    [UnitTest]
     [SecurityTest]
     public async Task ValidateFileContent_ScriptContentPastConfiguredBinaryScanLimit_AcceptsDataFile()
     {

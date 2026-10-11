@@ -11,12 +11,13 @@ using Honua.Db.Postgres.Features.FileImport;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Migration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
 public sealed class ImportLimitBehaviorTests
 {
-    [Fact]
+    [UnitTest]
     public void EnsureArchiveEntryCount_RejectsArchivesOverTheCap()
     {
         using var buffer = new MemoryStream();
@@ -35,7 +36,7 @@ public sealed class ImportLimitBehaviorTests
         StreamingFileImportService.EnsureArchiveEntryCount(zip, 10);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task ImportFeaturesAsync_UnmatchedFeatureType_FailsBeforeDatabase()
     {
         var scanner = new RecordingScanner(BuildInventory("demo:cities"));
@@ -62,7 +63,7 @@ public sealed class ImportLimitBehaviorTests
         scanner.LastRequest.Password.Should().Be("p");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task ImportFeaturesAsync_PartialFeatureTypeMatch_WarnsAndContinues()
     {
         var scanner = new RecordingScanner(BuildInventory("demo:cities"));

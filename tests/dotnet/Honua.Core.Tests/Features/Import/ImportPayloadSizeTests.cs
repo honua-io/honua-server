@@ -3,12 +3,13 @@
 
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Import;
 
 public sealed class ImportPayloadSizeTests
 {
-    [Fact]
+    [UnitTest]
     public void Resolve_TilePackageRoute_UsesMaxTilePackageSizeRatherThanEditPayload()
     {
         var options = new LimitsOptions();
@@ -20,7 +21,7 @@ public sealed class ImportPayloadSizeTests
         resolved.Should().NotBe(options.Edits.MaxPayloadSize);
     }
 
-    [Fact]
+    [UnitTest]
     public void Resolve_UploadAndPreview_KeepTheirImportCeilings()
     {
         var options = new LimitsOptions();
