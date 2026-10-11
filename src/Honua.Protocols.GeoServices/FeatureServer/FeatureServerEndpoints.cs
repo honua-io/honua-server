@@ -6,6 +6,7 @@ using Honua.Core.Features.Capabilities;
 using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
@@ -166,55 +167,66 @@ internal static partial class FeatureServerEndpoints
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/applyEdits", HandleServiceApplyEdits)
             .WithDisplayName("Apply Service-Level Feature Edits")
             .WithName("ServiceApplyEdits")
+            // A refused edit must be observable by clients that use only HTTP status.
+            .WithMetadata(GeoServicesForbiddenHttpStatusMetadata.Instance)
             .WithSummary("Apply feature edits across multiple layers")
             .WithDescription("Apply feature edits to multiple layers in a single request including add, update, and delete operations")
             .WithTags("FeatureServer")
             .AllowAnonymous()
             .Produces<ServiceLayerEditResult[]>(200, "application/json")
+            .Produces(StatusCodes.Status403Forbidden)
             .Produces(400)
             .Produces(404);
 
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/applyEdits", HandleApplyEdits)
             .WithDisplayName("Apply Feature Edits")
             .WithName("ApplyEdits")
+            .WithMetadata(GeoServicesForbiddenHttpStatusMetadata.Instance)
             .WithSummary("Apply feature edits (add, update, delete)")
             .WithDescription("Apply feature edits to a layer including add, update, and delete operations")
             .WithTags("FeatureServer")
             .AllowAnonymous()
         .Produces<ApplyEditsResponse>(200, "application/json")
+        .Produces(StatusCodes.Status403Forbidden)
         .Produces(400)
         .Produces(404);
 
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/addFeatures", HandleAddFeatures)
             .WithDisplayName("Add Features")
             .WithName("AddFeatures")
+            .WithMetadata(GeoServicesForbiddenHttpStatusMetadata.Instance)
             .WithSummary("Add new features to a layer")
             .WithDescription("Adds one or more features to a layer")
             .WithTags("FeatureServer")
             .AllowAnonymous()
             .Produces<ApplyEditsResponse>(200, "application/json")
+            .Produces(StatusCodes.Status403Forbidden)
             .Produces(400)
             .Produces(404);
 
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/updateFeatures", HandleUpdateFeatures)
             .WithDisplayName("Update Features")
             .WithName("UpdateFeatures")
+            .WithMetadata(GeoServicesForbiddenHttpStatusMetadata.Instance)
             .WithSummary("Update existing features in a layer")
             .WithDescription("Updates one or more features in a layer")
             .WithTags("FeatureServer")
             .AllowAnonymous()
             .Produces<ApplyEditsResponse>(200, "application/json")
+            .Produces(StatusCodes.Status403Forbidden)
             .Produces(400)
             .Produces(404);
 
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/deleteFeatures", HandleDeleteFeatures)
             .WithDisplayName("Delete Features")
             .WithName("DeleteFeatures")
+            .WithMetadata(GeoServicesForbiddenHttpStatusMetadata.Instance)
             .WithSummary("Delete features from a layer")
             .WithDescription("Deletes one or more features from a layer")
             .WithTags("FeatureServer")
             .AllowAnonymous()
             .Produces<ApplyEditsResponse>(200, "application/json")
+            .Produces(StatusCodes.Status403Forbidden)
             .Produces(400)
             .Produces(404);
 

@@ -9,6 +9,22 @@ resources:
 ---
 # GeoServices REST parity
 
+## Forbidden FeatureServer edits
+
+Honua normally reports GeoServices operation errors in an HTTP 200 ArcGIS JSON
+envelope. The layer-level `addFeatures`, `updateFeatures`, `deleteFeatures` and
+`applyEdits` routes, and the service-level `applyEdits` route, additionally return
+HTTP 403 for an authorization refusal whose envelope code is 403. This lets
+clients that inspect transport status, including the stock QGIS FeatureServer
+editing provider, distinguish a denied save from a completed edit.
+
+The same `error` envelope, permission checks and cache prevention remain in place;
+no per-feature result is fabricated, and denial still precedes edit-body parsing.
+Missing and invalid token challenges retain HTTP 200 with codes 499 and 498.
+Read/query errors and other operation errors retain their existing behavior.
+Endpoint regression coverage does not establish a native client certification
+verdict; the original editing and scoped-key obligations require native replay.
+
 ## Attribute-only tables
 
 Imported Esri tables publish as canonical Table resources. FeatureServer discovery
