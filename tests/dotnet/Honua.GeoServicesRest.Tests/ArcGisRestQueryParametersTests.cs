@@ -127,7 +127,7 @@ public class ArcGisRestQueryParametersTests
 
         Assert.Contains("geometry=" + Uri.EscapeDataString("-10,-20,30,40"), url, StringComparison.Ordinal);
         Assert.Contains("geometryType=" + Uri.EscapeDataString("esriGeometryEnvelope"), url, StringComparison.Ordinal);
-        Assert.Contains("spatialRel=" + Uri.EscapeDataString("esriSpatialRelIntersects"), url, StringComparison.Ordinal);
+        Assert.Contains("spatialRel=" + Uri.EscapeDataString("esriSpatialRelEnvelopeIntersects"), url, StringComparison.Ordinal);
         Assert.Contains("inSR=4326", url, StringComparison.Ordinal);
     }
 

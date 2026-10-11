@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -416,8 +417,59 @@ internal sealed partial class FeatureServerQueryExecutor
             operation,
             cancellationToken).ConfigureAwait(false);
 
-        return reader as IStreamingFeatureStore
-            ?? throw new InvalidOperationException("Streaming feature output is not supported by the configured feature store.");
+        // Federated readers such as ArcGIS REST implement IFeatureReader and page
+        // through QueryAsync / QueryObjectIdsAsync. They are not IStreamingFeatureStore.
+        // Materialize that page instead of failing the request.
+        return reader as IStreamingFeatureStore ?? new MaterializingFeatureStream(reader);
+    }
+
+    /// <summary>
+    /// Adapts a non-streaming <see cref="IFeatureReader"/> to <see cref="IStreamingFeatureStore"/>
+    /// by reading one materialized page. Postgres readers that already stream are not wrapped.
+    /// </summary>
+    private sealed class MaterializingFeatureStream(IFeatureReader reader) : IStreamingFeatureStore
+    {
+        public async IAsyncEnumerable<Feature> StreamFeaturesAsync(
+            int layerId,
+            FeatureQuery query,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            var result = await reader.QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            foreach (var feature in result.Items)
+            {
+                yield return feature;
+            }
+        }
+
+        public async IAsyncEnumerable<IReadOnlyList<Feature>> StreamFeatureBatchesAsync(
+            int layerId,
+            FeatureQuery query,
+            int batchSize = 1000,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            var page = new List<Feature>(batchSize);
+            await foreach (var feature in StreamFeaturesAsync(layerId, query, cancellationToken).ConfigureAwait(false))
+            {
+                page.Add(feature);
+                if (page.Count >= batchSize)
+                {
+                    yield return page;
+                    page = new List<Feature>(batchSize);
+                }
+            }
+
+            if (page.Count > 0)
+            {
+                yield return page;
+            }
+        }
+
+        public IAsyncEnumerable<GmlFeature> StreamGmlFeaturesAsync(
+            int layerId,
+            FeatureQuery query,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException(
+                "GML streaming is not supported by feature stores that do not implement IStreamingFeatureStore.");
     }
 
     private async Task<IFeatureReader> ResolveReaderV2Async(
