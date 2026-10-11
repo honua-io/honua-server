@@ -1665,13 +1665,36 @@ internal sealed partial class FeatureServerQueryHandler(
         // Resolve the datum transformation that drives the layerSR -> outSR reprojection.
         // Honors a client-supplied datumTransformation, otherwise applies the Esri default
         // for the pair; an unknown/unsupported request fails explicitly (never silent).
+        // An explicit WKID names a geographic pair. Projected endpoints resolve to that
+        // geodetic base before catalog lookup so the pipeline is applied, not rejected.
         var layerSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         var effectiveOutputSrid = query.OutputSrid ?? outputSrid;
+        var geodeticLayerSrid = layerSrid;
+        int? geodeticOutputSrid = effectiveOutputSrid;
+        if (UsesGeodeticDatumPair(validatedParams.DatumTransformation))
+        {
+            geodeticLayerSrid = await _queryServices
+                .ResolveGeodeticBaseSridAsync(layerSrid, cancellationToken)
+                .ConfigureAwait(false);
+            if (effectiveOutputSrid is int requestedOutputSrid)
+            {
+                geodeticOutputSrid = await _queryServices
+                    .ResolveGeodeticBaseSridAsync(requestedOutputSrid, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        var (datumFromSrid, datumToSrid) = SelectDatumResolutionSrids(
+            layerSrid,
+            effectiveOutputSrid,
+            geodeticLayerSrid,
+            geodeticOutputSrid,
+            validatedParams.DatumTransformation);
         if (!TryResolveDatumTransformation(
                 context,
                 validatedParams.DatumTransformation,
-                layerSrid,
-                effectiveOutputSrid,
+                datumFromSrid,
+                datumToSrid,
                 out var datumSelection,
                 out var datumError,
                 TryGeographicQueryEnvelope(query, layerSrid)))
@@ -1724,8 +1747,15 @@ internal sealed partial class FeatureServerQueryHandler(
         selection = null;
         error = null;
 
-        // No reprojection requested, or output equals the layer's own SRID: nothing to do.
-        if (!outputSrid.HasValue || outputSrid.Value == layerSrid)
+        // No output SRID: nothing to reproject. Equal SRIDs are also a no-op unless the
+        // client named a transformation, which must be validated against the geodetic pair
+        // rather than dropped (projected CRS can share a base).
+        if (!outputSrid.HasValue)
+        {
+            return true;
+        }
+
+        if (outputSrid.Value == layerSrid && string.IsNullOrWhiteSpace(datumTransformationValue))
         {
             return true;
         }
@@ -1756,6 +1786,29 @@ internal sealed partial class FeatureServerQueryHandler(
 
         return true;
     }
+
+    /// <summary>
+    /// Explicit datum transformations are catalogued on the geographic pair. Projected
+    /// layer or output SRIDs use the resolved geodetic bases; omitted transformations
+    /// keep the raw SRIDs so a projected query stays on PROJ's SRID-only pipeline.
+    /// </summary>
+    internal static (int FromSrid, int? ToSrid) SelectDatumResolutionSrids(
+        int layerSrid,
+        int? outputSrid,
+        int geodeticLayerSrid,
+        int? geodeticOutputSrid,
+        string? datumTransformationValue)
+    {
+        if (!UsesGeodeticDatumPair(datumTransformationValue))
+        {
+            return (layerSrid, outputSrid);
+        }
+
+        return (geodeticLayerSrid, geodeticOutputSrid ?? outputSrid);
+    }
+
+    private static bool UsesGeodeticDatumPair(string? datumTransformationValue)
+        => !string.IsNullOrWhiteSpace(datumTransformationValue);
 
     private static DatumAreaEnvelope? TryGeographicQueryEnvelope(FeatureQuery query, int layerSrid)
     {

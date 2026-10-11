@@ -32,6 +32,9 @@ internal sealed class FeatureServerQueryServices(
     public Task<int?> ParseSridAsync(string? srValue, CancellationToken cancellationToken = default)
         => _spatialReferenceResolver.ParseSridAsync(srValue, cancellationToken);
 
+    public Task<int> ResolveGeodeticBaseSridAsync(int srid, CancellationToken cancellationToken = default)
+        => _spatialReferenceResolver.ResolveGeodeticBaseSridAsync(srid, cancellationToken);
+
     public ValueTask<(object Response, string ContentType)> FormatQueryResultAsync(
         QueryResult<Feature> result,
         MetadataV2Resource resource,
