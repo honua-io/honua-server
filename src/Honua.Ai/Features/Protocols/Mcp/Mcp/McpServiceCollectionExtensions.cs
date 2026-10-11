@@ -385,6 +385,7 @@ internal static class McpServiceCollectionExtensions
         // it has no runtime persistence dependency and cannot advertise an empty
         // or stale surface.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, FeatureCatalogResource>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, TemporaryFileResource>());
 
         if (services.Any(d => d.ServiceType == typeof(IMcpOpsObservabilityReader)))
         {

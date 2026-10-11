@@ -196,6 +196,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
     {
         (string Family, string StandardLabel, string[] Uris)[] resources =
         [
+            ("temporary-files", "Temporary rendered artifact", ["honua://temporary-files/{fileId}"]),
             ("jobs", "Job", ["honua://jobs/{jobId}"]),
             ("job-results", "Job results", ["honua://jobs/{jobId}/results"]),
             ("job-reports", "Job report", ["honua://jobs/{jobId}/report"]),
