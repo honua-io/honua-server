@@ -83,8 +83,9 @@ internal static class McpTestFactory
         return document.RootElement.Clone();
     }
 
-    public static JsonElement ParseJson(string json)
+    public static JsonElement ParseJson(string? json)
     {
+        ArgumentNullException.ThrowIfNull(json);
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
     }

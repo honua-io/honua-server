@@ -13,6 +13,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Fes20;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Services;
 using Honua.Protocols.Ogc.Common;
@@ -136,6 +137,18 @@ internal sealed partial class Wfs20Handler
             var unknownTypes = GetUnknownRequestedFeatureTypes(publishedTypes, requestedTypes);
             if (unknownTypes.Length > 0)
             {
+                if (await RequiresAuthenticationForWithheldTypesAsync(context, unknownTypes, cancellationToken)
+                    .ConfigureAwait(false))
+                {
+                    AccessPolicyHelpers.AppendAuthenticationChallenge(context);
+                    return CreateLegacyWfsException(
+                        version,
+                        "AccessDenied",
+                        AccessPolicyHelpers.AuthRequiredMessage,
+                        "typeName",
+                        StatusCodes.Status401Unauthorized);
+                }
+
                 return CreateLegacyWfsException(
                     version,
                     "InvalidParameterValue",

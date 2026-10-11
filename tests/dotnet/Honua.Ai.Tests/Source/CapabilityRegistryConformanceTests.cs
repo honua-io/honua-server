@@ -1,8 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using FluentAssertions;
 using System.Text.Json;
+using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Resources;
@@ -15,13 +15,15 @@ using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.PackageReview.Abstractions;
 using Honua.Core.Features.Publishing.Abstractions;
-using Honua.Core.Features.Studio.Drafts;
 using Honua.Core.Features.Reporting.Abstractions;
+using Honua.Core.Features.Studio.Drafts;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Ai.Tests.Capabilities;
@@ -452,6 +454,7 @@ public sealed class CapabilityRegistryConformanceTests
         var drafts = new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System);
         return
         [
+            new TemporaryFileResource(Substitute.For<IGeoprocessingJobService>(), Options.Create(new TemporaryFileOptions()), NullLogger<TemporaryFileResource>.Instance),
             new JobStatusResource(jobService, NullLogger<JobStatusResource>.Instance),
             new JobResultsResource(jobService, NullLogger<JobResultsResource>.Instance),
             new ProposalStatusResource(NullLogger<ProposalStatusResource>.Instance),

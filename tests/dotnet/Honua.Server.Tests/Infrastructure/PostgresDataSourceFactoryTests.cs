@@ -6,6 +6,7 @@ using Honua.Core.Configuration;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Configuration;
 using Npgsql;
 
 namespace Honua.Server.Tests.Infrastructure;
@@ -124,6 +125,68 @@ public sealed class PostgresDataSourceFactoryTests
         builder.ConnectionStringBuilder.Multiplexing.Should().BeTrue();
         builder.ConnectionStringBuilder.Options.Should().Be(
             "-c lock_timeout=30s -c statement_timeout=30s -c idle_in_transaction_session_timeout=60s -c search_path=\"tenant\",public");
+    }
+
+    [UnitTheory]
+    [InlineData("false", false)]
+    [InlineData("true", false)]
+    [InlineData("false", true)]
+    [Operation(Operations.TestInfrastructure)]
+    public void Configure_RoleDefaultsMode_EmitsNoSessionSettingsStartupOptions(string multiplexing, bool schemaHeaders)
+    {
+        // role-defaults (honua-server#5870): no SET initializer and no options startup
+        // parameter in any mode; the database role's defaults apply instead.
+        var builder = new NpgsqlDataSourceBuilder(TestConnectionString);
+        var limits = new ConnectionLimits { Multiplexing = multiplexing };
+
+        PostgresDataSourceFactory.Configure(
+            builder, schemaHeaders, limits, defaultSchema: "tenant", DatabaseSessionSettingsMode.RoleDefaults);
+
+        builder.ConnectionStringBuilder.Options.Should().BeNullOrEmpty();
+        builder.ConnectionStringBuilder.NoResetOnClose.Should().Be(!schemaHeaders,
+            "role-defaults keeps the pool-return behaviour; without schema headers no DISCARD ALL is sent, which would also pin a proxied connection");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void Configure_RoleDefaultsMode_KeepsCallerSuppliedOptions()
+    {
+        var builder = new NpgsqlDataSourceBuilder(TestConnectionString + ";Options=-c work_mem=8MB");
+
+        PostgresDataSourceFactory.Configure(
+            builder, schemaHeadersEnabled: false, new ConnectionLimits { Multiplexing = "true" }, sessionSettingsMode: DatabaseSessionSettingsMode.RoleDefaults);
+
+        builder.ConnectionStringBuilder.Options.Should().Be("-c work_mem=8MB");
+    }
+
+    [UnitTheory]
+    [InlineData(null, true)]
+    [InlineData("connection", true)]
+    [InlineData("role-defaults", false)]
+    [InlineData("typo", true)]
+    [Operation(Operations.TestInfrastructure)]
+    public void Create_FromConfiguration_HonoursDatabaseSessionSettingsMode(string? mode, bool expectOptions)
+    {
+        // Multiplexing makes the connection-mode settings visible on the connection string,
+        // so the configuration-driven mode is observable without a database.
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Limits:Connections:Multiplexing"] = "true",
+                ["Database:SessionSettings:Mode"] = mode,
+            })
+            .Build();
+
+        using var dataSource = PostgresDataSourceFactory.Create(TestConnectionString, configuration, schemaHeadersEnabled: false);
+
+        if (expectOptions)
+        {
+            dataSource.ConnectionString.Should().Contain("lock_timeout=30s");
+        }
+        else
+        {
+            dataSource.ConnectionString.Should().NotContainEquivalentOf("options");
+        }
     }
 
     [UnitTest]

@@ -138,6 +138,8 @@ public sealed class ConfigurationDocumentationService
                     "PostgreSQL connection string", null, isRequired: true, isSensitive: true),
                 BuildProperty("Database:SecureConnection:Name", "Database__SecureConnection__Name", "string",
                     "Named secure connection to resolve from the registry (uses DefaultConnection for registry access)", null),
+                BuildProperty("Database:SessionSettings:Mode", "Database__SessionSettings__Mode", "string",
+                    "How session timeouts and the default search_path are applied: 'connection' sets them on every connection; 'role-defaults' issues no session SET (lets RDS Proxy multiplex) and relies on ALTER ROLE defaults, verified with a warning at startup. Allowed: connection|role-defaults", "connection"),
                 BuildProperty("Database:QueryCache:MaxCachedStatements", "Database__QueryCache__MaxCachedStatements", "integer",
                     "Maximum number of cached prepared statements", 100),
                 BuildProperty("Database:QueryCache:StatementLifetimeMinutes", "Database__QueryCache__StatementLifetimeMinutes", "integer",

@@ -1,12 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
-using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Studio;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
@@ -15,7 +17,6 @@ using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
-using System.Text.Json;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
@@ -798,6 +799,69 @@ public sealed class StudioDraftOperationRuntimeTests
     }
 
     [UnitTest]
+    public async Task DeleteAsync_ReadOnlyScope_ReturnsDeniedBeforeAnyPersistenceOrActuation()
+    {
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        var store = Substitute.For<IOperationInstanceStore>();
+        var bridge = new DurableApprovalBridge();
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+            [new StudioDraftDeleteExecutor(lifecycle, TimeProvider.System)],
+            new AllowAllPolicyDecisionPoint(),
+            TimeProvider.System,
+            approvalBridge: bridge,
+            instanceStore: store,
+            auditLog: new VolatileOperationAuditLog());
+        var runtime = new StudioDraftMutationRuntime(dispatcher, store);
+
+        var receipt = await runtime.DeleteAsync(Guid.NewGuid(), new StudioDraftMutationContext
+        {
+            PrincipalId = "read-only-admin",
+            Roles = ["admin"],
+            ScopeGoverned = true,
+            RecognizedScopes = [OperatorScopeCatalog.Read],
+        });
+
+        receipt.Operation.Status.Should().Be(OperationHandleStatus.Denied);
+        receipt.Operation.PolicyDecision.Should().Be(PolicyDecisionKind.Deny);
+        receipt.Operation.AuthorizationOutcome.Should().Be(OperationAuthorizationOutcomes.ScopeDeniedBeforeAcceptance);
+        receipt.Operation.Version.Should().Be(0);
+        receipt.Operation.AuditId.Should().BeNull();
+        receipt.Operation.ProposalId.Should().BeNull();
+        receipt.Value.Should().BeFalse();
+        store.ReceivedCalls().Should().BeEmpty("the request was refused before acceptance");
+        lifecycle.ReceivedCalls().Should().BeEmpty();
+        bridge.ProposalCount.Should().Be(0);
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(OperationHandleStatus.Denied, 1, null, true)]
+    [InlineData(OperationHandleStatus.Denied, 0, "audit-persisted", true)]
+    [InlineData(OperationHandleStatus.Denied, 0, null, false)]
+    [InlineData(OperationHandleStatus.Completed, 0, null, true)]
+    [InlineData(OperationHandleStatus.Accepted, 0, null, true)]
+    public async Task DeleteAsync_OtherOutcomesStillRequireDurableReadback(
+        OperationHandleStatus status, long version, string? auditId, bool marked)
+    {
+        var handle = Handle(DateTimeOffset.UtcNow, "false") with
+        {
+            Status = status,
+            Version = version,
+            AuditId = auditId,
+            PolicyDecision = PolicyDecisionKind.Deny,
+            AuthorizationOutcome = marked ? OperationAuthorizationOutcomes.ScopeDeniedBeforeAcceptance : null,
+            Result = null,
+        };
+        var runtime = new StudioDraftMutationRuntime(new StubInvoker(handle), new StubStore(null));
+
+        var act = () => runtime.DeleteAsync(Guid.NewGuid(), new StudioDraftMutationContext());
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not durably readable*");
+    }
+
+    [UnitTest]
     public async Task SubmitAsync_IdempotentCompletedRetry_ReturnsOriginalWithoutSecondActuation()
     {
         var executor = new CountingExecutor();
@@ -1000,7 +1064,7 @@ public sealed class StudioDraftOperationRuntimeTests
             CancellationToken cancellationToken = default) => Task.FromResult(handle);
     }
 
-    private sealed class StubStore(OperationHandle handle) : IOperationInstanceStore
+    private sealed class StubStore(OperationHandle? handle) : IOperationInstanceStore
     {
         public Task<bool> TryCreateAsync(OperationHandle envelope, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
