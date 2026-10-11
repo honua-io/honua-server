@@ -126,6 +126,36 @@ public sealed class ImageServerKeyPropertiesRasterInfoTests
     }
 
     [UnitTest]
+    public void UnselectedHighBandCount_ResolvesFirstAndLastBandMetadata()
+    {
+        var raster = Raster with { BandCount = 4096 };
+        var value = ImageServerSoapEndpoints.BuildKeyPropertiesRasterInfo(
+            raster,
+            raster.Extent!.Value,
+            [
+                new() { Band = 4096, MinValue = 4, MaxValue = 5, MeanValue = 4.5 },
+                new() { Band = 1, MinValue = 1, MaxValue = 2 },
+                new() { Band = 1, MinValue = 6, MaxValue = 7 }
+            ],
+            [
+                new() { SourceBand = 4096, Size = 1, Min = 4, Max = 5, Counts = [9] },
+                new() { SourceBand = 1, Size = 1, Min = 1, Max = 2, Counts = [8] }
+            ]);
+
+        value.Element("BandCount")!.Value.Should().Be("4096");
+        var first = value.Elements().Where(element => element.Name.LocalName == "RasterStatistics_0").ToArray();
+        first.Should().HaveCount(2);
+        first[0].Element("Min")!.Value.Should().Be("1");
+        first[1].Element("Min")!.Value.Should().Be("6");
+        value.Element("RasterStatistics_4095")!.Element("Min")!.Value.Should().Be("4");
+        value.Element("RasterStatistics_4095")!.Element("Mean")!.Value.Should().Be("4.5");
+        value.Element("RasterHistogram_0")!.Element("Counts")!.Element("Double")!.Value.Should().Be("8");
+        value.Element("RasterHistogram_4095")!.Element("Counts")!.Element("Double")!.Value.Should().Be("9");
+        value.Elements().Count(element => element.Name.LocalName.StartsWith("RasterStatistics_", StringComparison.Ordinal))
+            .Should().Be(3);
+    }
+
+    [UnitTest]
     public void ExtractBand_ReordersPropertiesStatisticsAndHistogramsTogether()
     {
         var operation = ExtractBandOperation("<Int>2</Int><Int>0</Int><Int>2</Int>");

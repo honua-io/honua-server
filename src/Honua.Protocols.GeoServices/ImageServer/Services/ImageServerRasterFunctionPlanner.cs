@@ -340,6 +340,10 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         int[]? bands = null;
         RasterBandArithmetic? bandArithmetic = null;
         RasterTerrainFunction? terrain = null;
+        // Set when a single-band terrain function sits inside an ExtractBand whose
+        // indexes have not yet been bound to a source selection. Those indexes
+        // address the terrain output, not the next inner ExtractBand.
+        string? singleBandConsumer = null;
         var current = document;
         for (var depth = 1; ; depth++)
         {
@@ -397,11 +401,29 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
 
                 // The walk visits the outer function first. Its BandIds are positions in
                 // the inner function's output, not a replacement source selection.
+                // A Hillshade, Slope, or Aspect between the two selections emits one
+                // band, so the outer indexes address that output and the inner
+                // selection stays the terrain function's input.
                 if (mapping.Bands is { } selected)
                 {
                     if (bands is null)
                     {
                         bands = selected;
+                    }
+                    else if (singleBandConsumer is not null)
+                    {
+                        for (var i = 0; i < bands.Length; i++)
+                        {
+                            if (bands[i] != 1)
+                            {
+                                var index = (bands[i] - 1).ToString(CultureInfo.InvariantCulture);
+                                return RenderingRuleMapping.Invalid(
+                                    $"ExtractBand selection index {index} is outside the 1 band produced by the inner {singleBandConsumer}.");
+                            }
+                        }
+
+                        bands = selected;
+                        singleBandConsumer = null;
                     }
                     else if (!TryComposeExtractBandSelection(bands, selected, out var composed, out var reason))
                     {
@@ -436,6 +458,10 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
 
                 // A later (outer) terrain function supersedes an inner one.
                 terrain = mapping.Terrain ?? terrain;
+                if (bands is not null)
+                {
+                    singleBandConsumer = current.RasterFunction;
+                }
             }
             else if (!string.Equals(current.RasterFunction, "Identity", StringComparison.OrdinalIgnoreCase))
             {
