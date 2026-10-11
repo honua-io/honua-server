@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.AnalysisContent;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -17,6 +18,7 @@ using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.NlQuery.Domain;
 using Honua.Core.Features.Query;
 using Honua.Ai.AnalysisContent;
 using Honua.Geoprocessing;
@@ -132,6 +134,47 @@ public sealed class AnalysisContentServiceTests
                 CancellationToken.None));
 
         Assert.Equal("analysis.content.analysisPackage.rasterSource.inlineNotPersistable", exception.Code);
+        await store.DidNotReceive().CreateItemAsync(
+            Arg.Any<AnalysisContentItem>(), Arg.Any<AnalysisContentVersion>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task CreateItemAsync_MalformedSavedQueryFilter_IsRejectedBeforeStorePersistence()
+    {
+        var store = Substitute.For<IAnalysisContentStore>();
+        var sut = new AnalysisContentService(
+            store,
+            Substitute.For<IMetadataV2GraphProvider>(),
+            Substitute.For<IQueryProcessor>(),
+            Substitute.For<IFeatureReader>(),
+            Substitute.For<IGeoprocessingJobService>(),
+            Array.Empty<IExecutionLogStore>(),
+            TimeProvider.System,
+            NullLogger<AnalysisContentService>.Instance);
+
+        var exception = await Assert.ThrowsAsync<AnalysisContentValidationException>(() =>
+            sut.CreateItemAsync(
+                new CreateAnalysisContentItemCommand(
+                    AnalysisContentKind.SavedQuery,
+                    "malformed-filter",
+                    null,
+                    new SavedQueryContent
+                    {
+                        LayerId = 0,
+                        NaturalLanguageQuery = "parcels",
+                        FilterPlan = new FilterPlan
+                        {
+                            Combinator = FilterPlanCombinator.And,
+                            Clauses = [new FilterPlanClause { Type = null! }]
+                        }
+                    },
+                    null),
+                Principal(),
+                CancellationToken.None));
+
+        Assert.Equal("analysis.content.savedQuery.filter.invalid", exception.Code);
+        Assert.Equal("/savedQuery/filter", exception.Path);
         await store.DidNotReceive().CreateItemAsync(
             Arg.Any<AnalysisContentItem>(), Arg.Any<AnalysisContentVersion>(), Arg.Any<CancellationToken>());
     }
@@ -471,6 +514,173 @@ public sealed class AnalysisContentServiceTests
                 CancellationToken.None));
     }
 
+    [UnitTest]
+    [Operation(Operations.ProcessExecution)]
+    public async Task Rerun_WithIdempotencyKey_ReusesMintedVersion()
+    {
+        const string itemId = "rerun-reuse";
+        var store = await SeedPackageAsync(itemId);
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        jobs.SubmitJobAsync(
+                Arg.Any<AnalysisPlan>(),
+                Arg.Any<string?>(),
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => JobFromMetadata(call.Arg<IReadOnlyDictionary<string, string>?>()));
+        var sut = CreateService(store, jobs);
+        var command = new RerunAnalysisContentVersionCommand(
+            "rerun-key",
+            RerunOfJobId: null,
+            RerunOfResultPackageId: null,
+            new Dictionary<string, string> { ["distance"] = "250" });
+
+        var first = await sut.RerunAnalysisPackageAsync(itemId, 1, command, Principal(), CancellationToken.None);
+        var second = await sut.RerunAnalysisPackageAsync(itemId, 1, command, Principal(), CancellationToken.None);
+
+        Assert.Equal(2, (await store.ListVersionsAsync(itemId)).Count);
+        Assert.Equal(2, first.Version.Version);
+        Assert.Equal(first.Version.VersionId, second.Version.VersionId);
+        Assert.Equal(
+            first.Version.VersionId,
+            second.Job.Spec.Parameters[AnalysisContentMetadataKeys.VersionId]);
+        await jobs.Received(2).SubmitJobAsync(
+            Arg.Any<AnalysisPlan>(),
+            "rerun-key",
+            Arg.Any<ClaimsPrincipal>(),
+            Arg.Any<IReadOnlyDictionary<string, string>?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.ProcessExecution)]
+    public async Task Rerun_WhenSubmitIsRefused_AbandonsMintedVersion()
+    {
+        const string itemId = "rerun-abandon";
+        var store = await SeedPackageAsync(itemId);
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        jobs.SubmitJobAsync(
+                Arg.Any<AnalysisPlan>(),
+                Arg.Any<string?>(),
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<CancellationToken>())
+            .Throws(new GeoprocessingAdmissionException(
+                ExecutionAdmissionOutcome.Denied,
+                ExecutionAdmissionDimension.Concurrency,
+                "admission.concurrency",
+                "denied",
+                5));
+        var sut = CreateService(store, jobs);
+        var before = (await store.ListVersionsAsync(itemId)).Count;
+
+        await Assert.ThrowsAsync<GeoprocessingAdmissionException>(() => sut.RerunAnalysisPackageAsync(
+            itemId,
+            1,
+            new RerunAnalysisContentVersionCommand(
+                "rerun-denied",
+                null,
+                null,
+                new Dictionary<string, string> { ["distance"] = "10" }),
+            Principal(),
+            CancellationToken.None));
+
+        Assert.Equal(before, (await store.ListVersionsAsync(itemId)).Count);
+        Assert.Equal(1, (await store.GetItemAsync(itemId))!.CurrentVersion);
+    }
+
+    [UnitTest]
+    [Operation(Operations.ProcessExecution)]
+    public async Task Rerun_WhenSubmitReturnsSourceVersion_AbandonsMintedVersion()
+    {
+        const string itemId = "rerun-mismatch";
+        var store = await SeedPackageAsync(itemId);
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        jobs.SubmitJobAsync(
+                Arg.Any<AnalysisPlan>(),
+                Arg.Any<string?>(),
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(_ => JobFromMetadata(new Dictionary<string, string>
+            {
+                [AnalysisContentMetadataKeys.VersionId] = $"{itemId}:v1",
+                [AnalysisContentMetadataKeys.Version] = "1"
+            }));
+        var sut = CreateService(store, jobs);
+
+        var result = await sut.RerunAnalysisPackageAsync(
+            itemId,
+            1,
+            new RerunAnalysisContentVersionCommand(
+                "rerun-mismatch-key",
+                null,
+                null,
+                new Dictionary<string, string> { ["distance"] = "5" }),
+            Principal(),
+            CancellationToken.None);
+
+        Assert.Equal(1, result.Version.Version);
+        Assert.Equal($"{itemId}:v1", result.Version.VersionId);
+        Assert.Equal(1, (await store.ListVersionsAsync(itemId)).Count);
+        Assert.Equal(1, (await store.GetItemAsync(itemId))!.CurrentVersion);
+    }
+
+    private static async Task<InMemoryAnalysisContentStore> SeedPackageAsync(string itemId)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var store = new InMemoryAnalysisContentStore(TimeProvider.System);
+        var version = CreatePackageVersion(itemId);
+        await store.CreateItemAsync(
+            new AnalysisContentItem
+            {
+                ItemId = itemId,
+                Kind = AnalysisContentKind.AnalysisPackage,
+                Name = itemId,
+                CurrentVersion = version.Version,
+                CurrentVersionId = version.VersionId,
+                CreatedAt = now,
+                UpdatedAt = now
+            },
+            version);
+        return store;
+    }
+
+    private static AnalysisContentService CreateService(
+        InMemoryAnalysisContentStore store,
+        IGeoprocessingJobService jobs)
+        => new(
+            store,
+            Substitute.For<IMetadataV2GraphProvider>(),
+            Substitute.For<IQueryProcessor>(),
+            Substitute.For<IFeatureReader>(),
+            jobs,
+            Array.Empty<IExecutionLogStore>(),
+            TimeProvider.System,
+            NullLogger<AnalysisContentService>.Instance);
+
+    private static ExecutionJobRecord JobFromMetadata(IReadOnlyDictionary<string, string>? metadata)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new ExecutionJobRecord
+        {
+            OperationId = "job-rerun",
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Spec = new ExecutionJobSpec
+            {
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "test",
+                Kind = ExecutionJobKind.Geoprocessing,
+                WorkloadName = "test",
+                Parameters = metadata is null
+                    ? new Dictionary<string, string>(StringComparer.Ordinal)
+                    : new Dictionary<string, string>(metadata, StringComparer.Ordinal)
+            }
+        };
+    }
+
     private static AnalysisContentVersion CreatePackageVersion(string itemId)
         => new()
         {
@@ -692,6 +902,12 @@ public sealed class AnalysisContentServiceTests
             string itemId,
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<AnalysisContentVersion>>(_versions.Values.ToArray());
+
+        public Task<bool> TryAbandonVersionAsync(
+            string itemId,
+            int version,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
 
         public Task<AnalysisContentItemPage> ListItemsAsync(
             AnalysisContentItemQuery query,

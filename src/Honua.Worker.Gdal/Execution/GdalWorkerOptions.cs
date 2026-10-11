@@ -143,7 +143,8 @@ internal sealed class GdalWorkerOptions
     /// guard reads dimensions from. A payload whose magic identifies a KNOWN raster
     /// container OUTSIDE this list (JPEG2000, GIF, BMP, NITF, HFA — each can declare an
     /// enormous canvas the guard cannot bound) is refused BEFORE a GDAL tool opens it.
-    /// Unknown / non-raster magic is left to GDAL and the vector paths as before.
+    /// Unknown magic is also refused for raster-role inputs before a GDAL tool is
+    /// spawned. Vector tools do not consult this raster allowlist.
     /// </para>
     ///
     /// <para>

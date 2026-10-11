@@ -64,6 +64,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
     private readonly RbacOptions _rbacOptions;
     private readonly DurableJobSubstrateOptions _substrateOptions;
+    private readonly IReadOnlyList<IJobTerminalCallback> _terminalCallbacks;
 
     /// <summary>
     /// Production constructor. Composes the durable stores and process catalog with the four
@@ -83,10 +84,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IExecutionJobStore? jobStore = null,
         IOptions<LimitsOptions>? limitsOptions = null,
         IOptions<RbacOptions>? rbacOptions = null,
-        IOptions<DurableJobSubstrateOptions>? substrateOptions = null)
+        IOptions<DurableJobSubstrateOptions>? substrateOptions = null,
+        IEnumerable<IJobTerminalCallback>? terminalCallbacks = null)
     {
         _rbacOptions = rbacOptions?.Value ?? new RbacOptions();
         _substrateOptions = substrateOptions?.Value ?? new DurableJobSubstrateOptions();
+        _terminalCallbacks = terminalCallbacks?.ToArray() ?? [];
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
         _processCatalog = processCatalog;
@@ -132,7 +135,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IServiceScopeFactory? serviceScopeFactory = null,
         IPrincipalMembershipSource? principalMembershipSource = null,
         Honua.Core.Features.Operations.Abstractions.IOperationEnvelopeFactory? operationEnvelopeFactory = null,
-        ExecutionAdmissionCoordinator? admissionCoordinator = null)
+        ExecutionAdmissionCoordinator? admissionCoordinator = null,
+        IEnumerable<IJobTerminalCallback>? terminalCallbacks = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -170,7 +174,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             executorOptions,
             jobStore,
             limitsOptions,
-            rbacOptions: null)
+            rbacOptions: null,
+            terminalCallbacks: terminalCallbacks)
     {
     }
 
@@ -1198,7 +1203,36 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 $"Job '{jobId}' has not reached a terminal state (current: {job.Status}).");
         }
 
-        return await _artifacts.GetOrSynthesizeResultPackageAsync(job, cancellationToken).ConfigureAwait(false);
+        await ReplayTerminalCallbacksAsync(job).ConfigureAwait(false);
+        var refreshed = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+        if (refreshed == null)
+        {
+            GeoprocessingServiceLog.JobNotFound(_logger, jobId);
+            throw new GeoprocessingNotFoundException($"Job '{jobId}' not found.");
+        }
+
+        if (!IsTerminal(refreshed.Status))
+        {
+            throw new GeoprocessingPreconditionFailedException(
+                $"Job '{jobId}' has not reached a terminal state (current: {refreshed.Status}).");
+        }
+
+        return await _artifacts.GetOrSynthesizeResultPackageAsync(refreshed, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ReplayTerminalCallbacksAsync(ExecutionJobRecord job)
+    {
+        foreach (var callback in _terminalCallbacks)
+        {
+            try
+            {
+                await callback.OnTerminalAsync(job, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                GeoprocessingServiceLog.TerminalCallbackReplayFailed(_logger, job.OperationId, ex);
+            }
+        }
     }
 
     public Task CancelJobAsync(

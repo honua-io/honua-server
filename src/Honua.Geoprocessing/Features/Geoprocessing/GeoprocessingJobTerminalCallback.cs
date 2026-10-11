@@ -30,7 +30,8 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
     IServiceScopeFactory serviceScopeFactory,
     ILogger<GeoprocessingJobTerminalCallback> logger,
     IScopedJobTokenIssuer? scopedJobTokenIssuer = null,
-    GeoprocessingRasterOutputRegistrar? outputRegistrar = null) : IJobTerminalCallback
+    GeoprocessingRasterOutputRegistrar? outputRegistrar = null,
+    IExecutionJobStore? executionJobStore = null) : IJobTerminalCallback
 {
     private TimeSpan ProgressRetention => executorOptions.CurrentValue.ResultRetention;
 
@@ -140,6 +141,8 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
             Log.ResultPackageSyncFailed(logger, job.OperationId, ex);
         }
 
+        await TryFailDurableJobAfterArtifactPersistenceAsync(job, artifactPersistenceError).ConfigureAwait(false);
+
         try
         {
             var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>(
@@ -196,6 +199,43 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
             // has already reached a terminal state, so a sync failure here must be
             // logged, not thrown.
             Log.ProgressSyncFailed(logger, job.OperationId, ex);
+        }
+    }
+
+    private async Task TryFailDurableJobAfterArtifactPersistenceAsync(
+        ExecutionJobRecord job,
+        string? artifactPersistenceError)
+    {
+        if (artifactPersistenceError is null
+            || job.Status != ExecutionJobStatus.Succeeded
+            || executionJobStore is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var current = await executionJobStore.GetAsync(job.OperationId, CancellationToken.None).ConfigureAwait(false)
+                ?? job;
+            if (current.Status != ExecutionJobStatus.Succeeded)
+            {
+                return;
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var failed = current with
+            {
+                Status = ExecutionJobStatus.Failed,
+                ErrorMessage = artifactPersistenceError,
+                CompletedAt = now,
+                UpdatedAt = now,
+                CurrentPhase = "Failed"
+            };
+            await executionJobStore.TrySetAsync(failed, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Log.DurableStatusFailFailed(logger, job.OperationId, ex);
         }
     }
 
@@ -353,5 +393,8 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
 
         [LoggerMessage(8032, LogLevel.Warning, "Raster output registration failed for terminal job {OperationId}; the result package persist was skipped and the read path will replay registration idempotently")]
         public static partial void OutputRegistrationFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(8033, LogLevel.Error, "Failed to mark durable job {OperationId} Failed after artifact persistence failure")]
+        public static partial void DurableStatusFailFailed(ILogger logger, string operationId, Exception exception);
     }
 }

@@ -21,13 +21,15 @@ internal sealed partial class ExecutionJobReconciler(
     IEnumerable<IBatchComputeBackend> backends,
     IUniversalProgressStore progressStore,
     ILogger<ExecutionJobReconciler> logger,
-    ILicenseOperationPolicy? licensePolicy = null) : IExecutionJobReconciler
+    ILicenseOperationPolicy? licensePolicy = null,
+    IEnumerable<IJobTerminalCallback>? terminalCallbacks = null) : IExecutionJobReconciler
 {
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan LeaseRenewInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ProgressRetention = TimeSpan.FromDays(7);
 
     private readonly IReadOnlyList<IBatchComputeBackend> _backends = backends.ToArray();
+    private readonly IReadOnlyList<IJobTerminalCallback> _terminalCallbacks = terminalCallbacks?.ToArray() ?? [];
     private readonly string _ownerId = $"{Environment.MachineName}:{Guid.NewGuid():N}";
 
     public async Task ReconcileExecutionJobAsync(
@@ -95,6 +97,7 @@ internal sealed partial class ExecutionJobReconciler(
                 {
                     ControlPlaneTelemetry.RecordExecutionTransition(job, missing);
                     await BridgeProgressAsync(job, missing, reconciliationCancellation.Token).ConfigureAwait(false);
+                    await NotifyTerminalAsync(missing).ConfigureAwait(false);
                 }
 
                 return;
@@ -146,6 +149,11 @@ internal sealed partial class ExecutionJobReconciler(
                 reconcileOutcome = "changed";
                 ControlPlaneTelemetry.RecordExecutionTransition(job, updated);
                 await BridgeProgressAsync(job, updated, reconciliationCancellation.Token).ConfigureAwait(false);
+                if (IsTerminal(updated.Status))
+                {
+                    await NotifyTerminalAsync(updated).ConfigureAwait(false);
+                }
+
                 Log.ExecutionJobReconciled(logger, operationId, updated.Status.ToString(), updated.PercentComplete ?? double.NaN);
             }
             else
@@ -188,6 +196,7 @@ internal sealed partial class ExecutionJobReconciler(
                 {
                     ControlPlaneTelemetry.RecordExecutionTransition(job, failed);
                     await BridgeProgressAsync(job, failed, cancellationToken).ConfigureAwait(false);
+                    await NotifyTerminalAsync(failed).ConfigureAwait(false);
                 }
             }
 
@@ -265,6 +274,7 @@ internal sealed partial class ExecutionJobReconciler(
                 {
                     ControlPlaneTelemetry.RecordExecutionTransition(current, failed);
                     await BridgeProgressAsync(current, failed, CancellationToken.None).ConfigureAwait(false);
+                    await NotifyTerminalAsync(failed).ConfigureAwait(false);
                     break;
                 }
             }
@@ -299,6 +309,13 @@ internal sealed partial class ExecutionJobReconciler(
                 job, backend, jobStore, progressStore, ProgressRetention, logger, cancellationToken)
             .ConfigureAwait(false);
 
+        // The helper owns the CAS and returns the original job to the outer loop, so a
+        // terminal record it already persisted is notified here and only here.
+        if (!ReferenceEquals(updated, job) && IsTerminal(updated.Status))
+        {
+            await NotifyTerminalAsync(updated).ConfigureAwait(false);
+        }
+
         // The submission helper only bridges terminal progress; reconciliation historically
         // also reflected nonterminal phase/percent changes. Mirror that so polled progress
         // picks up "Queued on provider" etc. without waiting a full reconciler interval.
@@ -313,6 +330,21 @@ internal sealed partial class ExecutionJobReconciler(
         // StartOnRemoteBackendAsync owns the CAS. Return the original reference so the
         // outer reconciler skips another CAS attempt against the now-stale record.
         return job;
+    }
+
+    private async Task NotifyTerminalAsync(ExecutionJobRecord job)
+    {
+        foreach (var callback in _terminalCallbacks)
+        {
+            try
+            {
+                await callback.OnTerminalAsync(job, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Log.TerminalCallbackFailed(logger, job.OperationId, ex);
+            }
+        }
     }
 
     private static async Task<ExecutionJobRecord> CancelJobAsync(
@@ -651,6 +683,9 @@ internal sealed partial class ExecutionJobReconciler(
 
         [LoggerMessage(9037, LogLevel.Debug, "Execution-job reconciliation CAS conflict for {OperationId}; deferring to next sweep")]
         public static partial void ExecutionJobCasConflict(ILogger logger, string operationId);
+
+        [LoggerMessage(9038, LogLevel.Warning, "Terminal callback failed for execution job {OperationId}")]
+        public static partial void TerminalCallbackFailed(ILogger logger, string operationId, Exception exception);
     }
 
     internal static partial class BackgroundLog

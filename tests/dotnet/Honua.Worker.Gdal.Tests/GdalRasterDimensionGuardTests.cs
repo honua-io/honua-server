@@ -58,14 +58,40 @@ public sealed class GdalRasterDimensionGuardTests
     }
 
     [UnitTest]
-    public void UnrecognizedBytes_AreUndetermined_AndAdmitted()
+    public void UnrecognizedBytes_AreRejectedBeforeSpawn()
     {
-        // Not a TIFF, PNG, or JPEG magic → cannot bound cheaply → admit.
+        // Not a TIFF, PNG, or JPEG magic → refuse before any GDAL tool is spawned.
         var unknown = new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09 };
 
         GdalRasterDimensionGuard.TryReadRasterDimensions(unknown, out _).Should().BeFalse();
-        GdalRasterDimensionGuard.TryAdmit(unknown, Options(), out var error).Should().BeTrue();
-        error.Should().BeEmpty();
+        GdalRasterDimensionGuard.TryAdmit(unknown, Options(), out var error).Should().BeFalse();
+        error.Should().Contain("AllowedRasterInputFormats");
+        error.Should().Contain("could not be identified");
+    }
+
+    [UnitTest]
+    public void DriverAllowlist_PrefixesSafeRasterTools_AndSkipsVsiAndViewshed()
+    {
+        var options = Options();
+        var translate = GdalRasterDriverAllowlist.Prefix("gdal_translate", ["src.tif", "dst.tif"], options);
+        translate.Should().ContainInOrder("-if", "GTiff", "-if", "PNG", "-if", "JPEG", "src.tif", "dst.tif");
+
+        var warp = GdalRasterDriverAllowlist.Prefix("gdalwarp", ["/vsis3/bucket/a.tif", "out.tif"], options);
+        warp.Should().ContainInOrder("-if", "GTiff");
+        warp.Should().Contain("/vsis3/bucket/a.tif");
+
+        var contour = GdalRasterDriverAllowlist.Prefix("gdal_contour", ["in.tif", "out.geojson"], options);
+        contour.Should().Contain("-if");
+
+        var multidim = GdalRasterDriverAllowlist.Prefix("gdalinfo", ["-json", "/vsis3/bucket/coverage.nc"], options);
+        multidim.Should().NotContain("-if");
+        multidim.Should().Contain("/vsis3/bucket/coverage.nc");
+
+        var viewshed = GdalRasterDriverAllowlist.Prefix("gdal_viewshed", ["dem.tif", "out.tif"], options);
+        viewshed.Should().Equal("dem.tif", "out.tif");
+
+        var polygonize = GdalRasterDriverAllowlist.Prefix("gdal_polygonize.py", ["in.tif", "out.geojson"], options);
+        polygonize.Should().NotContain("-if");
     }
 
     // --- PNG / JPEG header parsing (non-TIFF bomb vectors) ----------------------
