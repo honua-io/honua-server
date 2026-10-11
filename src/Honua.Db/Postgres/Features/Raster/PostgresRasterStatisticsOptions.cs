@@ -6,7 +6,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Honua.Db.Postgres.Features.Raster;
 
 /// <summary>Bounds cold, dense full-catalog statistics without changing persisted statistics.</summary>
-public sealed class PostgresRasterStatisticsOptions
+internal sealed class PostgresRasterStatisticsOptions
 {
     /// <summary>The configuration section for the statistics allocation limit.</summary>
     public const string SectionName = "Database:RasterStatistics";
