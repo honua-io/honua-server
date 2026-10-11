@@ -37,7 +37,8 @@ public sealed class SensorThingsServiceRootPublicUrlTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var entitySets = document.RootElement.GetProperty("value").EnumerateArray().ToArray();
-        entitySets.Should().HaveCount(5);
+        entitySets.Select(entitySet => entitySet.GetProperty("name").GetString()).Should().BeEquivalentTo(
+            "Things", "Locations", "HistoricalLocations", "Datastreams", "Sensors", "ObservedProperties", "Observations", "FeaturesOfInterest");
         foreach (var entitySet in entitySets)
         {
             var name = entitySet.GetProperty("name").GetString();

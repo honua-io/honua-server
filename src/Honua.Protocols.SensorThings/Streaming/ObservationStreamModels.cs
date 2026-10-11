@@ -32,19 +32,24 @@ public sealed record ObservationStreamFrame
 
     /// <summary>The numeric measurement result.</summary>
     [JsonPropertyName("result")]
-    public double Result { get; init; }
+    public System.Text.Json.JsonElement Result { get; init; }
 
     /// <summary>Builds a frame from a persisted observation.</summary>
-    public static ObservationStreamFrame FromObservation(SensorThingsObservation observation) => new()
+    public static ObservationStreamFrame FromObservation(SensorThingsObservation observation)
     {
-        IsHeartbeat = false,
-        IotId = observation.Id,
-        DatastreamId = observation.DatastreamId,
-        PhenomenonTime = observation.PhenomenonTime
-            .ToUniversalTime()
-            .ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture),
-        Result = observation.Result
-    };
+        var start = Iso(observation.PhenomenonTime);
+        return new()
+        {
+            IsHeartbeat = false,
+            IotId = observation.Id,
+            DatastreamId = observation.DatastreamId,
+            PhenomenonTime = observation.PhenomenonTimeEnd is { } end ? $"{start}/{Iso(end)}" : start,
+            Result = Services.StaEntityMapper.ResultValue(observation)
+        };
+    }
+
+    private static string Iso(DateTimeOffset value) =>
+        value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
 
     /// <summary>Builds a keep-alive heartbeat frame.</summary>
     public static ObservationStreamFrame Heartbeat() => new() { IsHeartbeat = true };

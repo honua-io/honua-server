@@ -23,7 +23,16 @@ public sealed class ODataFilterParser
     /// <param name="filter">The OData $filter string.</param>
     /// <returns>Parsed filter expression AST.</returns>
     /// <exception cref="ArgumentException">Thrown when parsing fails.</exception>
-    public FilterExpression Parse(string filter)
+    public FilterExpression Parse(string filter) => ParseCore(filter, requireBooleanPredicate: true);
+
+    /// <summary>
+    /// Parses one <c>$orderby</c> term. A bare property or arithmetic expression is a
+    /// sort key, so this does not apply the <c>$filter</c> boolean-predicate rule.
+    /// </summary>
+    public FilterExpression ParseOrderExpression(string expression) =>
+        ParseCore(expression, requireBooleanPredicate: false);
+
+    private FilterExpression ParseCore(string filter, bool requireBooleanPredicate)
     {
         if (string.IsNullOrWhiteSpace(filter))
         {
@@ -46,7 +55,8 @@ public sealed class ODataFilterParser
         // filter — the translator would otherwise silently coerce it into an unbounded
         // attribute lookup and return 200 with all features instead of rejecting the
         // request as malformed. Reject up-front for a clearer 400.
-        if (expression is PropertyReference || expression is Literal)
+        // $orderby sorts by the value itself, so a bare property stays valid there.
+        if (requireBooleanPredicate && expression is PropertyReference or Literal)
         {
             throw new ODataFilterParseException(
                 "$filter must be a boolean expression (e.g. 'field op value'); a bare property reference or literal is not valid.",
@@ -365,6 +375,7 @@ public sealed class ODataFilterParser
         return name switch
         {
             "contains" => BuildContainsExpression(args, identifier),
+            "substringof" => BuildSubstringOfExpression(args, identifier),
             "startswith" => BuildStartsWithExpression(args, identifier),
             "endswith" => BuildEndsWithExpression(args, identifier),
             "substring" => BuildSubstringExpression(args, identifier),
@@ -386,11 +397,44 @@ public sealed class ODataFilterParser
             "hour" => BuildUnaryFunction("HOUR", args, identifier),
             "minute" => BuildUnaryFunction("MINUTE", args, identifier),
             "second" => BuildUnaryFunction("SECOND", args, identifier),
+            "fractionalseconds" => BuildUnaryFunction("FRACTIONALSECONDS", args, identifier),
+            "date" => BuildUnaryFunction("DATE", args, identifier),
+            "time" => BuildUnaryFunction("TIME", args, identifier),
+            "totaloffsetminutes" => BuildUnaryFunction("TOTALOFFSETMINUTES", args, identifier),
+            "mindatetime" => BuildZeroArgFunction("MINDATETIME", args, identifier),
+            "maxdatetime" => BuildZeroArgFunction("MAXDATETIME", args, identifier),
             "geo.distance" => BuildGeoDistanceExpression(args, identifier),
             "geo.length" => BuildGeoLengthExpression(args, identifier),
             "geo.intersects" => BuildGeoIntersectsExpression(args, identifier),
+            "st_equals" => BuildSpatialRelation(args, identifier, SpatialOperator.Equals),
+            "st_disjoint" => BuildSpatialRelation(args, identifier, SpatialOperator.Disjoint),
+            "st_touches" => BuildSpatialRelation(args, identifier, SpatialOperator.Touches),
+            "st_within" => BuildSpatialRelation(args, identifier, SpatialOperator.Within),
+            "st_overlaps" => BuildSpatialRelation(args, identifier, SpatialOperator.Overlaps),
+            "st_crosses" => BuildSpatialRelation(args, identifier, SpatialOperator.Crosses),
+            "st_intersects" => BuildSpatialRelation(args, identifier, SpatialOperator.Intersects),
+            "st_contains" => BuildSpatialRelation(args, identifier, SpatialOperator.Contains),
+            "st_relate" => BuildStaRelate(args, identifier),
             _ => throw new ODataFilterParseException($"Unsupported function '{identifier}'", Previous().Position)
         };
+    }
+
+    private static SpatialPredicate BuildSpatialRelation(IReadOnlyList<FilterExpression> args, string identifier, SpatialOperator op)
+    {
+        EnsureArgumentCount(identifier, args, 2);
+        return new SpatialPredicate(op, args[0], args[1]);
+    }
+
+    private static FunctionCall BuildStaRelate(IReadOnlyList<FilterExpression> args, string identifier)
+    {
+        EnsureArgumentCount(identifier, args, 3);
+        return new FunctionCall("ST_RELATE", args);
+    }
+
+    private static BinaryExpression BuildSubstringOfExpression(IReadOnlyList<FilterExpression> args, string identifier)
+    {
+        EnsureArgumentCount(identifier, args, 2);
+        return BuildContainsExpression([args[1], args[0]], identifier);
     }
 
     private static BinaryExpression BuildContainsExpression(IReadOnlyList<FilterExpression> args, string identifier)

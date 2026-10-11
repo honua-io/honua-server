@@ -60,8 +60,29 @@ internal static class StaProjection
                 continue;
             }
 
-            entity.Remove(property.Key);
-            projected[property.Key] = property.Value;
+            projected[property.Key] = property.Value?.DeepClone();
+        }
+
+        foreach (var member in members.Where(member => member.Contains('/', StringComparison.Ordinal)))
+        {
+            var parts = member.Split('/');
+            JsonNode? source = entity;
+            var target = projected;
+            for (var index = 0; index < parts.Length; index++)
+            {
+                if (source is not JsonObject complex || !complex.TryGetPropertyValue(parts[index], out source)) break;
+                if (index == parts.Length - 1 || source is null)
+                {
+                    target[parts[index]] = source?.DeepClone();
+                    break;
+                }
+                if (target[parts[index]] is not JsonObject nested)
+                {
+                    nested = new JsonObject();
+                    target[parts[index]] = nested;
+                }
+                target = nested;
+            }
         }
 
         return projected;

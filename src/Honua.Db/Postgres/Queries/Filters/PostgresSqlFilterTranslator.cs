@@ -20,7 +20,7 @@ namespace Honua.Db.Postgres.Queries.Filters;
 /// this subclass owns the Postgres / PostGIS specifics (JSONB attribute access,
 /// PostGIS function names, geography casts, range types).
 /// </summary>
-internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISqlFilterTranslator
+internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISqlFilterTranslator
 {
     // MaxExpressionDepth is inherited from SqlFilterExpressionVisitorBase.
 
@@ -294,7 +294,8 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
     private static bool IsLikelyGeographicSrid(int srid)
         => GeographicSridClassifier.IsGeodesicDistanceSafeSrid(srid);
 
-    private string TranslateGeometryExpression(FilterExpression expression, FilterTranslationContext context)
+    /// <summary>Resolves a spatial operand, allowing entity adapters to supply canonical geometry properties.</summary>
+    protected virtual string TranslateGeometryExpression(FilterExpression expression, FilterTranslationContext context)
     {
         switch (expression)
         {
@@ -490,6 +491,22 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
             return TranslateGeoLength(function, context);
         }
 
+        if (string.Equals(function.FunctionName, "ST_RELATE", StringComparison.OrdinalIgnoreCase))
+        {
+            if (function.Arguments.Count != 3)
+            {
+                throw new ArgumentException("ST_RELATE requires three arguments");
+            }
+
+            // Geometry literals are spatial operands, not scalar AST literals.
+            // Use the virtual geometry path so entity-specific property mappings
+            // and CRS conversion are retained; the DE-9IM pattern stays bound.
+            var left = TranslateGeometryExpression(function.Arguments[0], context);
+            var right = TranslateGeometryExpression(function.Arguments[1], context);
+            var pattern = TranslateExpression(function.Arguments[2], context);
+            return $"ST_Relate({left}, {right}, {pattern})";
+        }
+
         // CAST resolves its target type from the AST literal rather than a bound
         // parameter: the type name is a SQL keyword, not a value, so it must never
         // become a parameter placeholder. The allowlisted switch in TranslateCast
@@ -563,8 +580,16 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
                 ? $"EXTRACT(MINUTE FROM {args[0]})"
                 : throw new ArgumentException("MINUTE requires one argument"),
             "SECOND" => args.Length == 1
-                ? $"EXTRACT(SECOND FROM {args[0]})"
+                ? $"FLOOR(EXTRACT(SECOND FROM {args[0]}))"
                 : throw new ArgumentException("SECOND requires one argument"),
+            "FRACTIONALSECONDS" => args.Length == 1
+                ? $"(EXTRACT(SECOND FROM {args[0]}) - FLOOR(EXTRACT(SECOND FROM {args[0]})))"
+                : throw new ArgumentException("FRACTIONALSECONDS requires one argument"),
+            "DATE" => args.Length == 1 ? $"({args[0]})::date" : throw new ArgumentException("DATE requires one argument"),
+            "TIME" => args.Length == 1 ? $"({args[0]})::time" : throw new ArgumentException("TIME requires one argument"),
+            "TOTALOFFSETMINUTES" => args.Length == 1 ? $"(EXTRACT(TIMEZONE FROM {args[0]}) / 60)" : throw new ArgumentException("TOTALOFFSETMINUTES requires one argument"),
+            "MINDATETIME" => args.Length == 0 ? "'-infinity'::timestamptz" : throw new ArgumentException("MINDATETIME requires no arguments"),
+            "MAXDATETIME" => args.Length == 0 ? "'infinity'::timestamptz" : throw new ArgumentException("MAXDATETIME requires no arguments"),
 
             // Extended EXTRACT fields (#1865). The field token is fixed by the parser's
             // allowlist (never user text), so it is interpolated while the source operand
@@ -853,7 +878,8 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
     private static bool CanTranslateAsGeography(FilterExpression expression)
         => expression is GeometryLiteral or PropertyReference;
 
-    private string TranslateGeographyExpression(FilterExpression expression, FilterTranslationContext context)
+    /// <summary>Resolves an operand for shared WGS84 geodesic operations.</summary>
+    protected virtual string TranslateGeographyExpression(FilterExpression expression, FilterTranslationContext context)
     {
         switch (expression)
         {

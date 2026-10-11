@@ -5,12 +5,65 @@ using System.Linq;
 using FluentAssertions;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.OData;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Queries.Filters.OData;
 
 public class ODataFilterParserTests
 {
     private readonly ODataFilterParser _parser = new();
+
+    [UnitTest]
+    public void Parse_BareProperty_RejectsFilterThatIsNotABooleanPredicate()
+    {
+        var act = () => _parser.Parse("result");
+
+        act.Should().Throw<ODataFilterParseException>()
+            .WithMessage("*must be a boolean expression*");
+    }
+
+    [UnitTest]
+    public void ParseOrderExpression_BarePropertyAndArithmetic_AreSortKeys()
+    {
+        var property = _parser.ParseOrderExpression("result");
+        property.Should().BeOfType<PropertyReference>();
+        ((PropertyReference)property).PropertyName.Should().Be("result");
+
+        var arithmetic = (BinaryExpression)_parser.ParseOrderExpression("result add 0");
+        arithmetic.Operator.Should().Be(BinaryOperator.Add);
+        ((PropertyReference)arithmetic.Left).PropertyName.Should().Be("result");
+        ((Literal)arithmetic.Right).Value.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("properties/site/name")]
+    [InlineData("Datastreams/Observations/FeatureOfInterest/id")]
+    [InlineData("unitOfMeasurement/name")]
+    public void Parse_PropertyPath_PreservesAllSegments(string path)
+    {
+        var expression = (UnaryExpression)_parser.Parse(path + " eq null");
+        ((PropertyReference)expression.Operand).PropertyName.Should().Be(path);
+    }
+
+    [Theory]
+    [InlineData("properties//name eq 1")]
+    [InlineData("properties/ eq 1")]
+    [InlineData("properties/1 eq 1")]
+    public void Parse_InvalidPropertyPath_RejectsEmptyOrInvalidSegments(string filter)
+    {
+        Action parse = () => _parser.Parse(filter);
+        parse.Should().Throw<ODataFilterParseException>();
+    }
+
+    [Fact]
+    public void Parse_SubstringOf_SearchesFirstArgumentInsideSecond()
+    {
+        var expression = (BinaryExpression)_parser.Parse("substringof('Sensor Things',description)");
+        var position = (FunctionCall)expression.Left;
+        position.FunctionName.Should().Be("POSITION");
+        ((Literal)position.Arguments[0]).Value.Should().Be("Sensor Things");
+        ((PropertyReference)position.Arguments[1]).PropertyName.Should().Be("description");
+    }
 
     #region Not Operator Precedence
 
