@@ -17,7 +17,6 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
     private readonly bool _schemaHeadersEnabled;
     private readonly ConnectionLimits _connectionLimits;
     private readonly string? _defaultSchema;
-    private readonly DatabaseSessionSettingsMode _sessionSettingsMode;
     private readonly Func<string, NpgsqlDataSource>? _createDataSource;
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _idleLifetime;
@@ -58,9 +57,6 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
         // ISchemaContext.CurrentSchema is null) fall back to the PostgreSQL default
         // search_path and miss schema-qualified tables (honua-server#2949).
         _defaultSchema = configuration["Database:Schema"];
-        // The primary-schema pool targets the primary database role, so it honours
-        // Database:SessionSettings:Mode like the default data source (honua-server#5870).
-        _sessionSettingsMode = DatabaseSessionSettingsOptions.ResolveMode(configuration);
         _createDataSource = createDataSource;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = logger ?? NullLogger<SecureConnectionDataSourceCache>.Instance;
@@ -150,8 +146,11 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
         // Construction opens no database connection. Build before replacing the
         // entry so a failed rotation preserves the old pool. Source-bound pools use
         // common limits/timeouts without inheriting the primary database's schema.
+        // Named pools always apply the session settings per connection, even with
+        // Database:SessionSettings:Mode=role-defaults: their role can differ from the
+        // DefaultConnection role the startup check verifies (honua-server#5870).
         var dataSource = _createDataSource?.Invoke(connectionString) ?? (preservePrimarySchema
-            ? PostgresDataSourceFactory.Create(connectionString, _schemaHeadersEnabled, _connectionLimits, _defaultSchema, _sessionSettingsMode)
+            ? PostgresDataSourceFactory.Create(connectionString, _schemaHeadersEnabled, _connectionLimits, _defaultSchema)
             : PostgresDataSourceFactory.CreateForBoundSource(connectionString, _connectionLimits));
         var replacement = new CacheEntry(connectionString, dataSource, _timeProvider.GetTimestamp());
         _dataSources[key] = replacement;

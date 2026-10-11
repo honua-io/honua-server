@@ -120,7 +120,7 @@ ALTER ROLE "honua" SET search_path = "honua", public;
 
 Role defaults apply to sessions opened after the change. At startup Honua reads the effective values once on a fresh connection and logs a warning (event 5870) naming the `ALTER ROLE` statement for each setting that is unset or differs; it never fails startup over this and never runs `ALTER ROLE` itself. The deploy preflight (`GET /api/v1/admin/deploy/preflight?includeDiagnostics=true`) reports the mode, the verification status and the statements under `databaseSessionSettings`.
 
-The mode covers the primary database and named secure connections to it. Source-bound data sources, migrations and the PostGIS preflight keep their own settings. Behind RDS Proxy also consider `Database__QueryCache__EnableAutomaticCaching=false`: the prepared-statement cache prepares statements on the server, which is session state a proxy can pin on. Schema-per-tenant routing (`MultiTenancy__SchemaRouting__Enabled=true`) still sets `search_path` per request.
+The mode covers the `DefaultConnection` data source only, whose role the startup check verifies. Named secure connections (`Database__SecureConnection__Name`), source-bound data sources, migrations and the PostGIS preflight keep setting their own values. Behind RDS Proxy also consider `Database__QueryCache__EnableAutomaticCaching=false`: the prepared-statement cache prepares statements on the server, which is session state a proxy can pin on. Schema-per-tenant routing (`MultiTenancy__SchemaRouting__Enabled=true`) still sets `search_path` per request.
 
 ## Pooling and admission variables
 
