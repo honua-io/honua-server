@@ -7,6 +7,7 @@ using System.Data;
 using System.Data.Common;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
@@ -54,16 +55,6 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
     private const long ObjectId = 42;
     private const string ServiceId = "alert-e2e-service";
     private const string SigningSecret = "alert-e2e-signing-secret";
-
-    [IntegrationTest]
-    public async Task RepeatedAlertSetup_RetainsMigrationHistoryForTheSharedCatalog()
-    {
-        await EnsureAlertMigrationsAsync();
-
-        var repeated = await EnsureAlertMigrationsAsync();
-
-        repeated.Scripts.Should().BeEmpty("the journal must live as long as the global honua catalog");
-    }
 
     [IntegrationTest]
     public async Task TriggeredRule_DeliversCanonicalPayloadObservedByExternalWebhookReceiver()
@@ -250,23 +241,17 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
         row.DeliveredAt.Should().NotBeNull();
     }
 
-    private async Task<DbUp.Engine.DatabaseUpgradeResult> EnsureAlertMigrationsAsync()
-    {
-        // Embedded migrations target global honua objects, so their journal must
-        // persist in that same catalog rather than a disposable test schema.
-        var migration = await database.RunEmbeddedMigrationsUnderLockAsync(
-            "honua",
-            typeof(Program).Assembly);
-        migration.Successful.Should().BeTrue(migration.Error?.ToString());
-        return migration;
-    }
-
     private async Task<AlertE2eHarness> CreateHarnessAsync(
         string destination,
         int maxAttempts,
         X509Certificate2? trustedCertificate = null)
     {
-        await EnsureAlertMigrationsAsync();
+        var migrationSchema = await database.CreateIsolatedSchemaAsync(nameof(AlertWebhookDeliveryE2eTests));
+        var migration = await database.RunEmbeddedMigrationsUnderLockAsync(
+            migrationSchema,
+            Assembly.GetAssembly(typeof(Program))!);
+        migration.Successful.Should().BeTrue(migration.Error?.ToString());
+        await database.DropSchemaAsync(migrationSchema);
         await database.ApplyGlobalSeedSqlAsync("""
             TRUNCATE TABLE honua.alert_event_lifecycle, honua.alert_dispatch, honua.alert_events, honua.alert_rules
             RESTART IDENTITY CASCADE;

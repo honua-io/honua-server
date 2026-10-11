@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Data;
 using System.Data.Common;
+using System.Reflection;
 using FluentAssertions;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
@@ -24,11 +25,12 @@ public sealed class AlertEvaluationAtomicityTests(DatabaseFixtureAdapter databas
     [IntegrationTest]
     public async Task CommitEvaluationAsync_FailureAtEveryBoundary_ReplayCommitsOneTransition()
     {
-        // The journal and migrated objects share the same fixture database lifetime.
+        var migrationSchema = await database.CreateIsolatedSchemaAsync(nameof(AlertEvaluationAtomicityTests));
         var migration = await database.RunEmbeddedMigrationsUnderLockAsync(
-            "honua",
-            typeof(Program).Assembly);
+            migrationSchema,
+            Assembly.GetAssembly(typeof(Program))!);
         migration.Successful.Should().BeTrue(migration.Error?.ToString());
+        await database.DropSchemaAsync(migrationSchema);
 
         var state = new AlertStateSnapshot
         {
