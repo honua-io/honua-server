@@ -144,6 +144,20 @@ public sealed class GeoServicesQueryParameterAdapterTests
         result.Query!.Value.SpatialFilter!.Value.Distance.Should().Be(500);
     }
 
+    [UnitTest]
+    public async Task ConvertAsync_CancelledDistanceUnitLookup_PropagatesCancellation()
+    {
+        var adapter = new GeoServicesQueryParameterAdapter(
+            NullLogger<GeoServicesQueryParameterAdapter>.Instance,
+            geographicSridClassifier: new CancelledLinearUnitClassifier());
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        var act = () => adapter.ConvertAsync(DistanceRequest(2263, units: null), PointResource(), cancellation.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     private static GeoServicesQueryRequest DistanceRequest(int inputSrid, string? units)
         => new()
         {
@@ -187,5 +201,17 @@ public sealed class GeoServicesQueryParameterAdapterTests
 
         public ValueTask<double?> TryResolveLinearUnitFactorAsync(int srid, CancellationToken cancellationToken = default)
             => new(srid == projectedSrid ? metersPerUnit : null);
+    }
+
+    private sealed class CancelledLinearUnitClassifier : IGeographicSridClassifier
+    {
+        public ValueTask<bool> IsGeographicAsync(int srid, CancellationToken cancellationToken = default)
+            => new(false);
+
+        public ValueTask<bool> IsGeographicForMeasurementAsync(int srid, CancellationToken cancellationToken = default)
+            => new(false);
+
+        public ValueTask<double?> TryResolveLinearUnitFactorAsync(int srid, CancellationToken cancellationToken = default)
+            => throw new OperationCanceledException(cancellationToken);
     }
 }

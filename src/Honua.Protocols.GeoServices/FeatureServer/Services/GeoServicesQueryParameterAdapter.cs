@@ -154,6 +154,11 @@ internal sealed class GeoServicesQueryParameterAdapter(
 
             return QueryAdapterResult.Success(unifiedQuery, metadata);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A canceled distance-unit lookup is an aborted request, not a malformed query.
+            throw;
+        }
         // Intentionally generic: this is the adapter boundary that converts protocol query
         // parameters into the canonical UnifiedQuery; any unanticipated failure must map to a
         // structured Failure result rather than propagate an unhandled exception.

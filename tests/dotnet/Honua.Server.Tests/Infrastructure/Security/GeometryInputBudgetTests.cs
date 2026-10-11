@@ -287,9 +287,9 @@ public sealed class GeometryInputBudgetTests
         string? contentType = null,
         string? queryGeometry = null,
         string? rawBody = null,
-        CancellationToken cancellationToken = default,
         string? path = null,
-        long? maxPayloadSize = null)
+        long? maxPayloadSize = null,
+        CancellationToken cancellationToken = default)
     {
         using var services = new ServiceCollection().AddLogging().AddOptions().BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = services };

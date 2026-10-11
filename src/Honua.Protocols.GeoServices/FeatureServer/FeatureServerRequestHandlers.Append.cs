@@ -113,7 +113,7 @@ internal static partial class FeatureServerEndpoints
                 continue;
             }
 
-            var key = NormalizeAppendMatchKey(raw);
+            var key = NormalizeAppendMatchKey(raw, field.Type);
             if (key is null || !seen.Add(key))
             {
                 continue;
@@ -178,7 +178,7 @@ internal static partial class FeatureServerEndpoints
                         continue;
                     }
 
-                    var storedKey = NormalizeAppendMatchKey(storedRaw);
+                    var storedKey = NormalizeAppendMatchKey(storedRaw, field.Type);
                     if (storedKey is null)
                     {
                         continue;
@@ -215,7 +215,8 @@ internal static partial class FeatureServerEndpoints
         IReadOnlyList<GeoServicesFeature> features,
         IReadOnlyDictionary<string, long> existingObjectIdByKey,
         string matchingField,
-        string objectIdFieldName)
+        string objectIdFieldName,
+        MetadataV2FieldType matchingFieldType = MetadataV2FieldType.String)
     {
         var adds = new List<GeoServicesFeature>();
         var updates = new List<GeoServicesFeature>();
@@ -227,7 +228,7 @@ internal static partial class FeatureServerEndpoints
                 continue;
             }
 
-            var key = NormalizeAppendMatchKey(raw);
+            var key = NormalizeAppendMatchKey(raw, matchingFieldType);
             if (key is null || !existingObjectIdByKey.TryGetValue(key, out var objectId))
             {
                 adds.Add(feature);
@@ -309,11 +310,19 @@ internal static partial class FeatureServerEndpoints
         return false;
     }
 
-    private static string? NormalizeAppendMatchKey(object? value)
+    private static string? NormalizeAppendMatchKey(object? value, MetadataV2FieldType fieldType)
     {
         if (value is null)
         {
             return null;
+        }
+
+        if (fieldType is MetadataV2FieldType.DateTime or MetadataV2FieldType.Date)
+        {
+            return GeoServicesFieldConventions.TryConvertTemporalValue(value, fieldType, out var converted) &&
+                converted is not null
+                ? Convert.ToString(converted, CultureInfo.InvariantCulture)
+                : null;
         }
 
         if (value is JsonElement element)
@@ -377,6 +386,33 @@ internal static partial class FeatureServerEndpoints
                 }
 
                 literal = new Literal(flag, LiteralType.Boolean);
+                return true;
+            case MetadataV2FieldType.DateTime:
+                if (!long.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out var epoch))
+                {
+                    literal = null!;
+                    return false;
+                }
+
+                try
+                {
+                    literal = new Literal(DateTimeOffset.FromUnixTimeMilliseconds(epoch), LiteralType.DateTime);
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    literal = null!;
+                    return false;
+                }
+
+                return true;
+            case MetadataV2FieldType.Date:
+                if (!DateOnly.TryParseExact(key, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+                {
+                    literal = null!;
+                    return false;
+                }
+
+                literal = new Literal(date, LiteralType.Date);
                 return true;
             default:
                 literal = new Literal(key, LiteralType.Text);

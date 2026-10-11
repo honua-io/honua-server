@@ -296,11 +296,14 @@ internal static partial class FeatureServerEndpoints
                     [matchError]);
             }
 
+            var matchingField = resource.SchemaFields.FirstOrDefault(field =>
+                field.Name.Equals(appendOptions.UpsertMatchingField, StringComparison.OrdinalIgnoreCase));
             var partition = PartitionAppendFeatures(
                 features,
                 matches ?? new Dictionary<string, long>(StringComparer.Ordinal),
                 appendOptions.UpsertMatchingField,
-                GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource));
+                GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
+                matchingField?.Type ?? MetadataV2FieldType.String);
             adds = partition.Adds;
             updates = partition.Updates;
         }

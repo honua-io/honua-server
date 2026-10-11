@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -137,6 +138,89 @@ public sealed class FeatureServerAppendTests
     }
 
     [UnitTest]
+    public async Task LoadAppendUpsertMatches_DateTimeEpoch_MatchesAStoredTimestamp()
+    {
+        const long epoch = 1_700_000_000_000;
+        var resource = TemporalResource(MetadataV2FieldType.DateTime);
+        using var document = JsonDocument.Parse($"{{\"observed\":{epoch.ToString(System.Globalization.CultureInfo.InvariantCulture)}}}");
+        var incoming = document.RootElement.GetProperty("observed").Clone();
+        var storedInstant = DateTime.SpecifyKind(
+            DateTimeOffset.FromUnixTimeMilliseconds(epoch).UtcDateTime,
+            DateTimeKind.Utc);
+        var stored = Feature.Create(
+            99,
+            null,
+            ImmutableDictionary<string, object?>.Empty.Add("gid", 15L).Add("observed", storedInstant));
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(4, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(QueryResult<Feature>.Create(1, ImmutableArray.Create(stored))));
+        var filters = AcceptingFilter(resource);
+
+        var incomingFeature = new GeoServicesFeature
+        {
+            Attributes = new Dictionary<string, object?> { ["observed"] = incoming }
+        };
+        var (matches, error) = await FeatureServerEndpoints.LoadAppendUpsertMatchesAsync(
+            reader,
+            filters,
+            resource,
+            4,
+            [incomingFeature],
+            "observed",
+            CancellationToken.None);
+
+        error.Should().BeNull();
+        var (adds, updates) = FeatureServerEndpoints.PartitionAppendFeatures(
+            [incomingFeature],
+            matches!,
+            "observed",
+            "gid",
+            MetadataV2FieldType.DateTime);
+
+        adds.Should().BeEmpty();
+        updates.Should().ContainSingle();
+        updates[0].Attributes["gid"].Should().Be(15L);
+    }
+
+    [UnitTest]
+    public async Task LoadAppendUpsertMatches_CalendarDate_MatchesAStoredDate()
+    {
+        var resource = TemporalResource(MetadataV2FieldType.Date);
+        var stored = Feature.Create(
+            99,
+            null,
+            ImmutableDictionary<string, object?>.Empty.Add("gid", 15L).Add("observed", new DateOnly(2024, 3, 15)));
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(4, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(QueryResult<Feature>.Create(1, ImmutableArray.Create(stored))));
+        var filters = AcceptingFilter(resource);
+        var incomingFeature = new GeoServicesFeature
+        {
+            Attributes = new Dictionary<string, object?> { ["observed"] = "2024-03-15" }
+        };
+
+        var (matches, error) = await FeatureServerEndpoints.LoadAppendUpsertMatchesAsync(
+            reader,
+            filters,
+            resource,
+            4,
+            [incomingFeature],
+            "observed",
+            CancellationToken.None);
+
+        error.Should().BeNull();
+        var (_, updates) = FeatureServerEndpoints.PartitionAppendFeatures(
+            [incomingFeature],
+            matches!,
+            "observed",
+            "gid",
+            MetadataV2FieldType.Date);
+
+        updates.Should().ContainSingle();
+        updates[0].Attributes["gid"].Should().Be(15L);
+    }
+
+    [UnitTest]
     public void FindUnsupportedAppendControl_RejectsFieldMappingsAndAllowsExplicitFalse()
     {
         FeatureServerEndpoints.FindUnsupportedAppendControl(
@@ -146,6 +230,34 @@ public sealed class FeatureServerAppendTests
                 new Dictionary<string, StringValues> { ["skipUpdates"] = "false" })
             .Should().BeNull();
     }
+
+    private static IFilterExpressionService AcceptingFilter(MetadataV2Resource resource)
+    {
+        var filters = Substitute.For<IFilterExpressionService>();
+        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Resource>())
+            .Returns(call =>
+            {
+                var expression = call.ArgAt<FilterExpression?>(0);
+                FilterExpressionNormalizer.Normalize(expression!, resource);
+                return FilterTranslationResult.Success(null, new SqlFragment("observed IN (@p0)", new object?[] { 1L }));
+            });
+        return filters;
+    }
+
+    private static MetadataV2Resource TemporalResource(MetadataV2FieldType observedType)
+        => new()
+        {
+            SchemaFields =
+            [
+                new MetadataV2Field
+                {
+                    Name = "gid",
+                    Type = MetadataV2FieldType.BigInteger,
+                    SemanticRoles = ["id.primary"]
+                },
+                new MetadataV2Field { Name = "observed", Type = observedType }
+            ]
+        };
 
     private static MetadataV2Resource MatchResource()
         => new()
