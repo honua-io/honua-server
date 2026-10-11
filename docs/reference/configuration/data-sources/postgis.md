@@ -95,9 +95,32 @@ The preflight result is available via `GET /api/v1/admin/deploy/preflight?includ
 
 Honua applies its PostgreSQL session settings (`lock_timeout`, `statement_timeout`, `idle_in_transaction_session_timeout`, and the default `search_path`) with plain `SET` statements that run after each physical connection opens — not via the libpq `options` startup parameter, which AWS RDS Proxy rejects (`0A000: Feature not supported: RDS Proxy currently doesn't support command-line options`) and transaction-mode poolers such as PgBouncer break on.
 
-- **AWS RDS Proxy** is supported and is the recommended way to protect connection slots when running Honua on Lambda or other rapidly scaling serverless platforms. Note that the per-connection `SET` statements cause [session pinning](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.html) on the proxy: each Honua-held connection stays pinned to one database connection. This reduces the proxy's ability to multiplex but preserves the thing the proxy is deployed for — capping total database connections; size `Limits__Connections__MaxConnectionPoolSize` accordingly.
+- **AWS RDS Proxy** is supported and is the recommended way to protect connection slots when running Honua on Lambda or other rapidly scaling serverless platforms. Note that the per-connection `SET` statements cause [session pinning](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.html) on the proxy: each Honua-held connection stays pinned to one database connection. This reduces the proxy's ability to multiplex but preserves the thing the proxy is deployed for — capping total database connections; size `Limits__Connections__MaxConnectionPoolSize` accordingly. To let the proxy multiplex, set `Database__SessionSettings__Mode=role-defaults` and move the settings onto the database role — see [Role defaults instead of per-connection SET](#role-defaults-instead-of-per-connection-set).
 - **PgBouncer (transaction mode)**: connections open without errors, but transaction-mode pooling does not guarantee that session-level `SET` values follow Honua's connection across transactions. Prefer session mode, or use direct connections with Honua's own pool limits.
 - **Npgsql multiplexing** (`Limits__Connections__Multiplexing=true`, default `false`) is mutually exclusive with RDS Proxy and transaction-mode poolers: in multiplexing mode Honua intentionally keeps the session settings on the `options` startup parameter, because startup parameters are the only delivery that survives interleaved logical sessions on shared physical connections. Leave multiplexing off (the default) when connecting through any pooler or proxy.
+
+### Role defaults instead of per-connection SET
+
+`Database__SessionSettings__Mode` (default `connection`) controls how the main data source applies the session settings:
+
+| Value | Behaviour |
+| --- | --- |
+| `connection` | Honua runs `SET lock_timeout`, `SET statement_timeout`, `SET idle_in_transaction_session_timeout` (and `SET search_path` when `Database__Schema` is set) on every new physical connection. Use it for direct connections. |
+| `role-defaults` | Honua issues no session `SET` and relies on the defaults of the database role it connects as, so a proxy can multiplex. Any other value fails startup. |
+
+In `role-defaults` mode set the defaults once, as an administrator, to the values of `Limits__Connections__LockTimeout`, `StatementTimeout` and `IdleInTransactionTimeout` (whole seconds):
+
+```sql
+ALTER ROLE "honua" SET lock_timeout = '30s';
+ALTER ROLE "honua" SET statement_timeout = '30s';
+ALTER ROLE "honua" SET idle_in_transaction_session_timeout = '60s';
+-- only when Database__Schema is set:
+ALTER ROLE "honua" SET search_path = "honua", public;
+```
+
+Role defaults apply to sessions opened after the change. At startup Honua reads the effective values once on a fresh connection and logs a warning (event 5870) naming the `ALTER ROLE` statement for each setting that is unset or differs; it never fails startup over this and never runs `ALTER ROLE` itself. The deploy preflight (`GET /api/v1/admin/deploy/preflight?includeDiagnostics=true`) reports the mode, the verification status and the statements under `databaseSessionSettings`.
+
+The mode covers the primary database and named secure connections to it. Source-bound data sources, migrations and the PostGIS preflight keep their own settings. Behind RDS Proxy also consider `Database__QueryCache__EnableAutomaticCaching=false`: the prepared-statement cache prepares statements on the server, which is session state a proxy can pin on. Schema-per-tenant routing (`MultiTenancy__SchemaRouting__Enabled=true`) still sets `search_path` per request.
 
 ## Pooling and admission variables
 
@@ -113,6 +136,7 @@ Honua applies its PostgreSQL session settings (`lock_timeout`, `statement_timeou
 | `Limits__Connections__IdleInTransactionTimeout` | `00:01:00` | Idle-in-transaction timeout. |
 | `Limits__Connections__AdaptiveConcurrencyEnabled` | `false` | Adaptive query admission below the concurrency ceiling. |
 | `Limits__Connections__Multiplexing` | `false` | Npgsql multiplexing (`false`, `true`, or `auto`). Incompatible with RDS Proxy and transaction-mode poolers — see [Connection poolers and proxies](#connection-poolers-and-proxies-rds-proxy-pgbouncer). |
+| `Database__SessionSettings__Mode` | `connection` | `connection` sets the session timeouts and default `search_path` on every connection; `role-defaults` issues no session `SET` and relies on `ALTER ROLE` defaults — see [Role defaults instead of per-connection SET](#role-defaults-instead-of-per-connection-set). |
 
 Pool maxima and minima apply **per data source, per Honua process**. The primary
 database, named secure connections, and registered source-bound feature/tile

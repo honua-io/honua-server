@@ -78,6 +78,14 @@ public sealed class DeployPreflightResponse
     public DeployPreflightDatabaseCompatibility? DatabaseCompatibility { get; init; }
 
     /// <summary>
+    /// How the database session settings (timeouts, default search_path) are applied
+    /// (<c>Database:SessionSettings:Mode</c>) and, in <c>role-defaults</c> mode, the startup
+    /// verification of the role defaults.
+    /// </summary>
+    [JsonPropertyName("databaseSessionSettings")]
+    public DeployPreflightDatabaseSessionSettings? DatabaseSessionSettings { get; init; }
+
+    /// <summary>
     /// Cross-plane platform-release projection: the release version each plane currently projects and
     /// whether the serving and geoprocessing worker images are co-versioned (ADR-0060 WS2).
     /// </summary>
@@ -324,6 +332,46 @@ public sealed class DeployPreflightDatabaseCompatibility
     /// </summary>
     [JsonPropertyName("errorMessage")]
     public string? ErrorMessage { get; init; }
+}
+
+/// <summary>
+/// Database session-settings mode and role-default verification embedded in deploy preflight
+/// responses (honua-server#5870).
+/// </summary>
+public sealed class DeployPreflightDatabaseSessionSettings
+{
+    /// <summary>
+    /// The configured mode: <c>connection</c> (the server sets the values on every connection)
+    /// or <c>role-defaults</c> (no session SET; the database role's defaults apply).
+    /// </summary>
+    [JsonPropertyName("mode")]
+    public string Mode { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Verification status: <c>not-applicable</c>, <c>pending</c>, <c>verified</c>,
+    /// <c>mismatch</c> or <c>unavailable</c>.
+    /// </summary>
+    [JsonPropertyName("verification")]
+    public string Verification { get; init; } = string.Empty;
+
+    /// <summary>
+    /// The database role whose defaults were verified, when known.
+    /// </summary>
+    [JsonPropertyName("role")]
+    public string? Role { get; init; }
+
+    /// <summary>
+    /// The <c>ALTER ROLE</c> statements an operator runs to align the role defaults with
+    /// <c>Limits:Connections</c>. Empty when verified or not applicable.
+    /// </summary>
+    [JsonPropertyName("remediation")]
+    public IReadOnlyList<string> Remediation { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Why verification is unavailable, when it is.
+    /// </summary>
+    [JsonPropertyName("message")]
+    public string? Message { get; init; }
 }
 
 /// <summary>

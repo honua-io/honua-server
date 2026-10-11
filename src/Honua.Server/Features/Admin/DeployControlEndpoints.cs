@@ -13,6 +13,7 @@ using Honua.Server.Features.Admin.Models;
 using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Infrastructure.Health;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Monitoring;
@@ -162,6 +163,9 @@ internal static class DeployControlEndpoints
                     ErrorMessage = snapshot.DatabaseCompatibility.ErrorMessage
                 }
                 : null,
+            DatabaseSessionSettings = includeDiagnostics && snapshot.DatabaseSessionSettings != null
+                ? BuildSessionSettingsView(snapshot.DatabaseSessionSettings)
+                : null,
             PlatformRelease = includeDiagnostics
                 ? BuildPlatformReleaseView(controlPlaneOptions.CurrentValue)
                 : null
@@ -169,6 +173,23 @@ internal static class DeployControlEndpoints
 
         return Results.Json(response, DeployControlJsonContext.Default.DeployPreflightResponse);
     }
+
+    internal static DeployPreflightDatabaseSessionSettings BuildSessionSettingsView(DatabaseSessionSettingsSnapshot snapshot)
+        => new()
+        {
+            Mode = DatabaseSessionSettingsOptions.ToConfigurationValue(snapshot.Mode),
+            Verification = snapshot.Status switch
+            {
+                DatabaseSessionSettingsVerificationStatus.Pending => "pending",
+                DatabaseSessionSettingsVerificationStatus.Verified => "verified",
+                DatabaseSessionSettingsVerificationStatus.Mismatch => "mismatch",
+                DatabaseSessionSettingsVerificationStatus.Unavailable => "unavailable",
+                _ => "not-applicable",
+            },
+            Role = snapshot.Role,
+            Remediation = snapshot.Drift.Select(drift => drift.Remediation).ToArray(),
+            Message = snapshot.Message,
+        };
 
     private static DeployPreflightPlatformRelease BuildPlatformReleaseView(ControlPlaneOptions options)
     {

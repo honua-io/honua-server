@@ -244,6 +244,32 @@ Every Lambda instance has its own connection pool, and an instance that is froze
 
 If the database is unreachable when an instance cold-starts, the instance starts in degraded mode instead of exiting. This covers no free connection slots (SQLSTATE `53300` or any other class `53` code), `57P03`, class `08` connection errors, timeouts and socket failures. Exiting would make every route return a 5xx without CORS headers and spin up more instances. The startup PostGIS preflight retries such a failure twice within about 1.5 seconds. It then reports the database as unavailable, not incompatible. Degraded start is on by default when `AWS_LAMBDA_FUNCTION_NAME` is set. An explicit `Database:StartupResilience:DegradedStartEnabled` or `HONUA_DB_DEGRADED_START` overrides that default, and `false` restores fail-fast. A degraded instance answers `/healthz/live` with 200 and `/healthz/ready` with 503 and the `X-Honua-Readiness-Reason: database-startup-degraded` header. The body names the startup phase and the failure class, for example `PostGIS preflight: SQLSTATE 53300 (class 53: insufficient resources)`, and never includes the connection string or the provider message. A background loop retries with backoff. Once a check succeeds it runs the deferred migrations, or the journal/schema guard when `HONUA_SKIP_MIGRATIONS=true`, and readiness turns ready. A database that is reachable but incompatible still stops startup, for example when the PostGIS extension is missing, the password is wrong or the schema guard refuses. The API function and the control-plane event functions run the same server startup, so both behave this way. Hosts outside Lambda, GP Batch jobs included, keep the fail-fast default unless you turn degraded start on.
 
+### Session settings behind RDS Proxy
+
+By default Honua sets `lock_timeout`, `statement_timeout` and `idle_in_transaction_session_timeout` (and `search_path` when `Database__Schema` is set) with a `SET` on every new database connection. Behind RDS Proxy a session-level `SET` [pins](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.html) the client connection to one database connection until the client disconnects. The proxy still caps the total number of database connections, but it cannot multiplex: demand above its ceiling waits up to the borrow timeout.
+
+To let the proxy multiplex, move the settings onto the database role and tell Honua to stop setting them:
+
+1. As an administrator, on the direct (non-proxy) endpoint, set the defaults on the role Honua connects as. The values below are the `Limits__Connections__*` defaults; use your configured values.
+
+   ```sql
+   ALTER ROLE "honua" SET lock_timeout = '30s';
+   ALTER ROLE "honua" SET statement_timeout = '30s';
+   ALTER ROLE "honua" SET idle_in_transaction_session_timeout = '60s';
+   -- only when Database__Schema is set, for example to "honua":
+   ALTER ROLE "honua" SET search_path = "honua", public;
+   ```
+
+   Role defaults apply to new sessions only. RDS Proxy keeps its database connections open, so let them recycle (or reboot the proxy's target) before you rely on the new values.
+
+2. Set `Database__SessionSettings__Mode=role-defaults` on every function and job that connects through the proxy. Honua then issues no session `SET` on its main data source. The default, `connection`, keeps today's behaviour; use it for direct connections.
+
+3. Optionally set `Database__QueryCache__EnableAutomaticCaching=false`. Honua's prepared-statement cache prepares frequently run queries on the server, and a server-side prepared statement is session state the proxy can also pin on.
+
+At startup, in `role-defaults` mode, Honua reads the effective values once and logs a warning (event 5870) for each setting that is unset or differs from `Limits__Connections__*`, with the exact `ALTER ROLE` statement to run. It never fails startup over this and never runs `ALTER ROLE` itself. `GET /api/v1/admin/deploy/preflight?includeDiagnostics=true` reports the mode, the verification result (`verified`, `mismatch`, `pending` or `unavailable`) and the same statements under `databaseSessionSettings`. Migrations, the PostGIS preflight and source-bound data sources still set their own values; they run on the direct endpoint or on separate databases. With schema-per-tenant routing (`MultiTenancy__SchemaRouting__Enabled=true`) Honua still sets `search_path` per request, which pins.
+
+See [Connection poolers and proxies](../../reference/configuration/data-sources/postgis.md#connection-poolers-and-proxies-rds-proxy-pgbouncer).
+
 ## Azure Container Apps
 
 - Use the generic web image (`ghcr.io/honua-io/honua-server` at a pinned digest or dated `nightly-YYYYMMDD` tag until the first release; `latest` afterwards); it is native AOT. The `latest-aot` alias is retained for compatibility.
