@@ -91,4 +91,15 @@ public interface IWorkflowPackageStore
         string publicationId,
         WorkflowPublicationStatus status,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Replaces a publication's scheduler definition id when it still equals
+    /// <paramref name="expectedDefinitionId"/>. Returns false when the row is missing
+    /// or the id has already changed, so a legacy shared id can be split once.
+    /// </summary>
+    Task<bool> TryReplaceWorkflowDefinitionIdAsync(
+        string publicationId,
+        string expectedDefinitionId,
+        string replacementDefinitionId,
+        CancellationToken cancellationToken = default);
 }

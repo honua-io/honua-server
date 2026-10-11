@@ -122,6 +122,202 @@ public sealed class WorkflowPackageSchedulePublicationTests
     }
 
     [UnitTest]
+    public async Task Publish_DeletedWhileTheDefinitionIsWritten_DoesNotLeaveACron()
+    {
+        var packages = new InMemoryWorkflowPackageStore();
+        var inner = new FakeWorkflowDefinitionStore();
+        var definitions = new HookedDefinitionStore(inner, async (_, _, cancellationToken) =>
+        {
+            await packages.DeletePublicationAsync("pub-race", cancellationToken);
+        });
+        var service = CreateService(packages, definitions);
+        var version = await PublishableVersionAsync(service, packages);
+        var definitionId = WorkflowPackageService.ScheduleWorkflowDefinitionId(
+            version.PackageId, version.Version, "pub-race");
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.PublishVersionAsync(
+            version.PackageId,
+            version.Version,
+            ScheduleRequest("pub-race", enabled: true, scheduleEnabled: true, cron: "0 * * * *"),
+            Author(),
+            CancellationToken.None));
+
+        Assert.Contains("removed before its schedule could be armed", exception.Message, StringComparison.Ordinal);
+        Assert.Null(await packages.GetPublicationAsync("pub-race"));
+        Assert.Null(await definitions.GetAsync(definitionId));
+        Assert.Empty(await definitions.ListScheduledAsync());
+    }
+
+    [UnitTest]
+    public async Task Publish_DisabledWhileTheDefinitionIsWritten_DoesNotArmTheCron()
+    {
+        var packages = new InMemoryWorkflowPackageStore();
+        var inner = new FakeWorkflowDefinitionStore();
+        var definitions = new HookedDefinitionStore(inner, async (call, _, cancellationToken) =>
+        {
+            if (call == 1)
+            {
+                await packages.SetPublicationStatusAsync(
+                    "pub-disarm",
+                    WorkflowPublicationStatus.Disabled,
+                    cancellationToken);
+            }
+        });
+        var service = CreateService(packages, definitions);
+        var version = await PublishableVersionAsync(service, packages);
+
+        var publication = await service.PublishVersionAsync(
+            version.PackageId,
+            version.Version,
+            ScheduleRequest("pub-disarm", enabled: true, scheduleEnabled: true, cron: "*/5 * * * *"),
+            Author(),
+            CancellationToken.None);
+
+        Assert.Equal(WorkflowPublicationStatus.Disabled, publication.Status);
+        var definition = await definitions.GetAsync(publication.WorkflowDefinitionId!);
+        Assert.NotNull(definition);
+        Assert.False(definition!.Trigger!.Enabled);
+        Assert.Empty(await definitions.ListScheduledAsync());
+    }
+
+    [UnitTest]
+    public async Task Publish_DisabledAfterTheTriggerIsArmed_DisarmsTheCron()
+    {
+        var packages = new InMemoryWorkflowPackageStore();
+        var inner = new FakeWorkflowDefinitionStore();
+        var definitions = new HookedDefinitionStore(inner, async (call, definition, cancellationToken) =>
+        {
+            if (call == 2 && definition.Trigger?.Enabled == true)
+            {
+                await packages.SetPublicationStatusAsync(
+                    "pub-late",
+                    WorkflowPublicationStatus.Disabled,
+                    cancellationToken);
+            }
+        });
+        var service = CreateService(packages, definitions);
+        var version = await PublishableVersionAsync(service, packages);
+
+        var publication = await service.PublishVersionAsync(
+            version.PackageId,
+            version.Version,
+            ScheduleRequest("pub-late", enabled: true, scheduleEnabled: true, cron: "0 0 * * *"),
+            Author(),
+            CancellationToken.None);
+
+        Assert.Equal(WorkflowPublicationStatus.Disabled, publication.Status);
+        Assert.False((await definitions.GetAsync(publication.WorkflowDefinitionId!))!.Trigger!.Enabled);
+        Assert.Empty(await definitions.ListScheduledAsync());
+    }
+
+    [UnitTest]
+    public async Task LegacySharedDefinition_DisableOnePublication_KeepsTheOtherScheduled()
+    {
+        var harness = CreateHarness();
+        var version = await PublishableVersionAsync(harness);
+        var first = await harness.Service.PublishVersionAsync(
+            version.PackageId,
+            version.Version,
+            ScheduleRequest("pub-a", enabled: true, scheduleEnabled: true, cron: "0 * * * *"),
+            Author(),
+            CancellationToken.None);
+        var shared = await harness.Definitions.GetAsync(first.WorkflowDefinitionId!);
+        Assert.NotNull(shared);
+        var legacyId = WorkflowPackageService.LegacyScheduleWorkflowDefinitionId(version.PackageId, version.Version);
+        await harness.Definitions.SetAsync(shared! with { WorkflowId = legacyId });
+        await harness.Definitions.DeleteAsync(first.WorkflowDefinitionId!);
+        Assert.True(await harness.Packages.TryReplaceWorkflowDefinitionIdAsync(
+            first.PublicationId,
+            first.WorkflowDefinitionId!,
+            legacyId));
+        await harness.Packages.SavePublicationAsync(first with
+        {
+            PublicationId = "pub-b",
+            WorkflowDefinitionId = legacyId,
+            Schedule = new WorkflowSchedule { CronExpression = "0 0 * * *", TimeZone = "UTC", Enabled = true },
+            CreatedAt = first.CreatedAt.AddMinutes(1)
+        });
+
+        await harness.Service.SetPublicationStatusAsync("pub-a", WorkflowPublicationStatus.Disabled, CancellationToken.None);
+
+        var idA = WorkflowPackageService.ScheduleWorkflowDefinitionId(version.PackageId, version.Version, "pub-a");
+        var idB = WorkflowPackageService.ScheduleWorkflowDefinitionId(version.PackageId, version.Version, "pub-b");
+        Assert.Null(await harness.Definitions.GetAsync(legacyId));
+        Assert.Equal(idA, (await harness.Packages.GetPublicationAsync("pub-a"))!.WorkflowDefinitionId);
+        Assert.Equal(idB, (await harness.Packages.GetPublicationAsync("pub-b"))!.WorkflowDefinitionId);
+        Assert.False((await harness.Definitions.GetAsync(idA))!.Trigger!.Enabled);
+        Assert.True((await harness.Definitions.GetAsync(idB))!.Trigger!.Enabled);
+        Assert.Equal("0 0 * * *", (await harness.Definitions.GetAsync(idB))!.Trigger!.CronExpression);
+        Assert.DoesNotContain(await harness.Definitions.ListScheduledAsync(), item => item.WorkflowId == idA);
+        Assert.Contains(await harness.Definitions.ListScheduledAsync(), item => item.WorkflowId == idB);
+    }
+
+    [UnitTest]
+    public void GraphHash_DistinguishesParameterAndPortBoundaries()
+    {
+        var parametersA = new WorkflowGraph
+        {
+            Nodes =
+            [
+                new WorkflowNode
+                {
+                    NodeId = "area",
+                    NodeTypeId = "process:geometry.area",
+                    Parameters = new Dictionary<string, string> { ["a"] = "b:c=d" }
+                }
+            ]
+        };
+        var parametersB = new WorkflowGraph
+        {
+            Nodes =
+            [
+                new WorkflowNode
+                {
+                    NodeId = "area",
+                    NodeTypeId = "process:geometry.area",
+                    Parameters = new Dictionary<string, string> { ["a"] = "b", ["c"] = "d" }
+                }
+            ]
+        };
+        Assert.NotEqual(WorkflowPackageGraphHasher.Compute(parametersA), WorkflowPackageGraphHasher.Compute(parametersB));
+
+        WorkflowNode Node(string nodeId) => new()
+        {
+            NodeId = nodeId,
+            NodeTypeId = "process:geometry.area"
+        };
+        var portsA = new WorkflowGraph
+        {
+            Nodes = [Node("n1"), Node("n2")],
+            Edges =
+            [
+                new WorkflowEdge
+                {
+                    SourceNodeId = "n1",
+                    TargetNodeId = "n2",
+                    SourcePort = "c:d",
+                    TargetPort = "e"
+                }
+            ]
+        };
+        var portsB = new WorkflowGraph
+        {
+            Nodes = [Node("n1"), Node("n2")],
+            Edges =
+            [
+                new WorkflowEdge
+                {
+                    SourceNodeId = "n1",
+                    TargetNodeId = "n2",
+                    SourcePort = "c",
+                    TargetPort = "d:e"
+                }
+            ]
+        };
+        Assert.NotEqual(WorkflowPackageGraphHasher.Compute(portsA), WorkflowPackageGraphHasher.Compute(portsB));
+    }
+
+    [UnitTest]
     public async Task PublicationInsertFailure_WritesNoDefinition()
     {
         var packages = new SaveFailingPackageStore(new InMemoryWorkflowPackageStore());
@@ -513,5 +709,104 @@ public sealed class WorkflowPackageSchedulePublicationTests
             WorkflowPublicationStatus status,
             CancellationToken cancellationToken = default)
             => inner.SetPublicationStatusAsync(publicationId, status, cancellationToken);
+
+        public Task<bool> TryReplaceWorkflowDefinitionIdAsync(
+            string publicationId,
+            string expectedDefinitionId,
+            string replacementDefinitionId,
+            CancellationToken cancellationToken = default)
+            => inner.TryReplaceWorkflowDefinitionIdAsync(
+                publicationId,
+                expectedDefinitionId,
+                replacementDefinitionId,
+                cancellationToken);
+    }
+
+    private sealed class HookedDefinitionStore(
+        FakeWorkflowDefinitionStore inner,
+        Func<int, WorkflowDefinition, CancellationToken, Task> beforeSet) : IWorkflowDefinitionStore
+    {
+        private int _sets;
+
+        public Task<WorkflowDefinition?> GetAsync(string workflowId, CancellationToken cancellationToken = default)
+            => inner.GetAsync(workflowId, cancellationToken);
+
+        public Task<bool> TryCreateAsync(WorkflowDefinition definition, CancellationToken cancellationToken = default)
+            => inner.TryCreateAsync(definition, cancellationToken);
+
+        public async Task SetAsync(WorkflowDefinition definition, CancellationToken cancellationToken = default)
+        {
+            var call = Interlocked.Increment(ref _sets);
+            await beforeSet(call, definition, cancellationToken).ConfigureAwait(false);
+            await inner.SetAsync(definition, cancellationToken).ConfigureAwait(false);
+        }
+
+        public Task<IReadOnlyList<WorkflowDefinition>> ListAsync(CancellationToken cancellationToken = default)
+            => inner.ListAsync(cancellationToken);
+
+        public Task<IReadOnlyList<WorkflowDefinition>> ListScheduledAsync(CancellationToken cancellationToken = default)
+            => inner.ListScheduledAsync(cancellationToken);
+
+        public Task<bool> DeleteAsync(string workflowId, CancellationToken cancellationToken = default)
+            => inner.DeleteAsync(workflowId, cancellationToken);
+
+        public Task<bool> TryClaimScheduleFireAsync(
+            string workflowId,
+            DateTimeOffset fireTime,
+            TimeSpan retention,
+            CancellationToken cancellationToken = default)
+            => inner.TryClaimScheduleFireAsync(workflowId, fireTime, retention, cancellationToken);
+
+        public Task ReleaseScheduleClaimAsync(
+            string workflowId,
+            DateTimeOffset fireTime,
+            CancellationToken cancellationToken = default)
+            => inner.ReleaseScheduleClaimAsync(workflowId, fireTime, cancellationToken);
+
+        public Task<DateTimeOffset?> GetScheduleCursorAsync(string workflowId, CancellationToken cancellationToken = default)
+            => inner.GetScheduleCursorAsync(workflowId, cancellationToken);
+
+        public Task AdvanceScheduleCursorAsync(
+            string workflowId,
+            DateTimeOffset fireTime,
+            CancellationToken cancellationToken = default)
+            => inner.AdvanceScheduleCursorAsync(workflowId, fireTime, cancellationToken);
+
+        public Task SetPendingScheduleCursorAsync(
+            string workflowId,
+            DateTimeOffset fireTime,
+            CancellationToken cancellationToken = default)
+            => inner.SetPendingScheduleCursorAsync(workflowId, fireTime, cancellationToken);
+
+        public Task<IReadOnlyList<WorkflowDefinition>> ListEventTriggeredAsync(CancellationToken cancellationToken = default)
+            => inner.ListEventTriggeredAsync(cancellationToken);
+
+        public Task<string?> GetTriggerCursorAsync(
+            string workflowId,
+            string cursorKind,
+            CancellationToken cancellationToken = default)
+            => inner.GetTriggerCursorAsync(workflowId, cursorKind, cancellationToken);
+
+        public Task SetTriggerCursorAsync(
+            string workflowId,
+            string cursorKind,
+            string marker,
+            CancellationToken cancellationToken = default)
+            => inner.SetTriggerCursorAsync(workflowId, cursorKind, marker, cancellationToken);
+
+        public Task<bool> TryClaimTriggerFireAsync(
+            string workflowId,
+            string cursorKind,
+            string marker,
+            TimeSpan retention,
+            CancellationToken cancellationToken = default)
+            => inner.TryClaimTriggerFireAsync(workflowId, cursorKind, marker, retention, cancellationToken);
+
+        public Task ReleaseTriggerClaimAsync(
+            string workflowId,
+            string cursorKind,
+            string marker,
+            CancellationToken cancellationToken = default)
+            => inner.ReleaseTriggerClaimAsync(workflowId, cursorKind, marker, cancellationToken);
     }
 }

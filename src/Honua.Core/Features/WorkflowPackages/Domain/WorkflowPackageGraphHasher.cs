@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -20,20 +21,22 @@ public static class WorkflowPackageGraphHasher
     {
         ArgumentNullException.ThrowIfNull(graph);
 
+        // Length-prefix every field. Raw ':' and '=' inside parameter values must not
+        // compare equal to a different parameter split (for example "a=b:c=d" versus a=b, c=d).
         var builder = new StringBuilder();
-        builder.Append(graph.SchemaVersion).Append('|').Append(graph.WorkerProfile).Append('|');
+        AppendField(builder, graph.SchemaVersion);
+        AppendField(builder, graph.WorkerProfile);
         foreach (var node in graph.Nodes.OrderBy(node => node.NodeId, StringComparer.Ordinal))
         {
-            builder.Append("node:")
-                .Append(node.NodeId)
-                .Append(':')
-                .Append(node.NodeTypeId)
-                .Append(':')
-                .Append(node.WorkerProfile);
-
-            foreach (var parameter in node.Parameters.OrderBy(entry => entry.Key, StringComparer.Ordinal))
+            AppendField(builder, node.NodeId);
+            AppendField(builder, node.NodeTypeId);
+            AppendField(builder, node.WorkerProfile);
+            var parameters = node.Parameters.OrderBy(entry => entry.Key, StringComparer.Ordinal).ToArray();
+            builder.Append(parameters.Length.ToString(CultureInfo.InvariantCulture)).Append(';');
+            foreach (var parameter in parameters)
             {
-                builder.Append(':').Append(parameter.Key).Append('=').Append(parameter.Value);
+                AppendField(builder, parameter.Key);
+                AppendField(builder, parameter.Value);
             }
         }
 
@@ -42,19 +45,23 @@ public static class WorkflowPackageGraphHasher
                      .ThenBy(edge => edge.TargetNodeId, StringComparer.Ordinal)
                      .ThenBy(edge => edge.Kind))
         {
-            builder.Append("|edge:")
-                .Append(edge.SourceNodeId)
-                .Append("->")
-                .Append(edge.TargetNodeId)
-                .Append(':')
-                .Append(edge.Kind)
-                .Append(':')
-                .Append(edge.SourcePort)
-                .Append(':')
-                .Append(edge.TargetPort);
+            AppendField(builder, edge.SourceNodeId);
+            AppendField(builder, edge.TargetNodeId);
+            AppendField(builder, edge.Kind.ToString());
+            AppendField(builder, edge.SourcePort);
+            AppendField(builder, edge.TargetPort);
         }
 
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static void AppendField(StringBuilder builder, string? value)
+    {
+        var text = value ?? string.Empty;
+        builder.Append(text.Length.ToString(CultureInfo.InvariantCulture));
+        builder.Append(':');
+        builder.Append(text);
+        builder.Append(';');
     }
 }

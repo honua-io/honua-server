@@ -372,15 +372,21 @@ internal sealed class WorkflowPackageService(
         };
 
         // Persist the publication row before the scheduler definition. A failed insert then
-        // cannot leave a cron that no publication references. If the definition write fails
-        // after the row is saved, the row is removed so the console does not advertise a
-        // schedule that was never armed (or, worse, one that was armed and then lost its row).
+        // cannot leave a cron that no publication references. The first definition write is
+        // dormant. After it lands, the row is read again and the trigger is armed only when
+        // that row is still active, so a concurrent delete or disable cannot observe an
+        // enabled cron for a publication that is already gone or turned off. A failed write
+        // removes the row and the definition.
         var saved = await store.SavePublicationAsync(publication, cancellationToken).ConfigureAwait(false);
         if (scheduleDefinition is not null)
         {
             try
             {
-                await workflowDefinitionStore!.SetAsync(scheduleDefinition, cancellationToken).ConfigureAwait(false);
+                await workflowDefinitionStore!.SetAsync(
+                    WithTriggerEnabled(scheduleDefinition, enabled: false),
+                    cancellationToken).ConfigureAwait(false);
+                saved = await ReconcileArmedScheduleAsync(saved, scheduleDefinition, cancellationToken)
+                    .ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
@@ -507,6 +513,19 @@ internal sealed class WorkflowPackageService(
         if (publication.Target != WorkflowPublicationTarget.Schedule
             || string.IsNullOrWhiteSpace(publication.WorkflowDefinitionId)
             || workflowDefinitionStore is null)
+        {
+            return;
+        }
+
+        if (IsLegacySharedScheduleDefinitionId(
+                publication.PackageId,
+                publication.PackageVersion,
+                publication.WorkflowDefinitionId))
+        {
+            publication = await MigrateLegacySharedScheduleAsync(publication, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (string.IsNullOrWhiteSpace(publication.WorkflowDefinitionId))
         {
             return;
         }
@@ -1062,6 +1081,157 @@ internal sealed class WorkflowPackageService(
 
         return metadata;
     }
+
+    private async Task<WorkflowPublication> ReconcileArmedScheduleAsync(
+        WorkflowPublication published,
+        WorkflowDefinition armedDefinition,
+        CancellationToken cancellationToken)
+    {
+        var definitionId = armedDefinition.WorkflowId;
+        var current = await store.GetPublicationAsync(published.PublicationId, cancellationToken).ConfigureAwait(false);
+        if (current is null)
+        {
+            await workflowDefinitionStore!.DeleteAsync(definitionId, CancellationToken.None).ConfigureAwait(false);
+            throw new InvalidOperationException(
+                $"Workflow publication '{published.PublicationId}' was removed before its schedule could be armed.");
+        }
+
+        if (current.Status != WorkflowPublicationStatus.Active || armedDefinition.Trigger?.Enabled != true)
+        {
+            return current;
+        }
+
+        await workflowDefinitionStore!.SetAsync(armedDefinition, cancellationToken).ConfigureAwait(false);
+        var after = await store.GetPublicationAsync(published.PublicationId, cancellationToken).ConfigureAwait(false);
+        if (after is null)
+        {
+            await workflowDefinitionStore.DeleteAsync(definitionId, CancellationToken.None).ConfigureAwait(false);
+            throw new InvalidOperationException(
+                $"Workflow publication '{published.PublicationId}' was removed before its schedule could be armed.");
+        }
+
+        if (after.Status != WorkflowPublicationStatus.Active)
+        {
+            await workflowDefinitionStore.SetAsync(
+                WithTriggerEnabled(armedDefinition, enabled: false),
+                CancellationToken.None).ConfigureAwait(false);
+        }
+
+        return after;
+    }
+
+    private static WorkflowDefinition WithTriggerEnabled(WorkflowDefinition definition, bool enabled)
+    {
+        if (definition.Trigger is null || definition.Trigger.Enabled == enabled)
+        {
+            return definition;
+        }
+
+        return definition with { Trigger = definition.Trigger with { Enabled = enabled } };
+    }
+
+    /// <summary>
+    /// Splits a pre-upgrade shared definition into one definition per publication.
+    /// The shared trigger is disarmed first, and it is deleted only after no row
+    /// still references it, so disabling one publication cannot stop or orphan the other.
+    /// </summary>
+    private async Task<WorkflowPublication> MigrateLegacySharedScheduleAsync(
+        WorkflowPublication publication,
+        CancellationToken cancellationToken)
+    {
+        var legacyId = publication.WorkflowDefinitionId!;
+        var shared = await workflowDefinitionStore!.GetAsync(legacyId, cancellationToken).ConfigureAwait(false);
+        if (shared?.Trigger is { Enabled: true })
+        {
+            shared = shared with
+            {
+                Trigger = shared.Trigger with { Enabled = false },
+                UpdatedAt = clock.GetUtcNow()
+            };
+            await workflowDefinitionStore.SetAsync(shared, cancellationToken).ConfigureAwait(false);
+        }
+
+        var siblings = await store.ListPublicationsAsync(publication.PackageId, cancellationToken).ConfigureAwait(false);
+        foreach (var sibling in siblings)
+        {
+            if (sibling.Target != WorkflowPublicationTarget.Schedule
+                || !string.Equals(sibling.WorkflowDefinitionId, legacyId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var isolatedId = ScheduleWorkflowDefinitionId(
+                sibling.PackageId,
+                sibling.PackageVersion,
+                sibling.PublicationId);
+            var armSibling = !string.Equals(sibling.PublicationId, publication.PublicationId, StringComparison.Ordinal)
+                && sibling.Status == WorkflowPublicationStatus.Active
+                && sibling.Schedule?.Enabled != false;
+            if (shared is not null)
+            {
+                var trigger = shared.Trigger;
+                if (trigger is not null && sibling.Schedule is { } schedule)
+                {
+                    trigger = trigger with
+                    {
+                        Enabled = armSibling,
+                        CronExpression = schedule.CronExpression,
+                        TimeZone = string.IsNullOrWhiteSpace(schedule.TimeZone) ? trigger.TimeZone : schedule.TimeZone
+                    };
+                }
+                else if (trigger is not null)
+                {
+                    trigger = trigger with { Enabled = armSibling };
+                }
+
+                await workflowDefinitionStore.SetAsync(
+                    shared with
+                    {
+                        WorkflowId = isolatedId,
+                        Trigger = trigger,
+                        UpdatedAt = clock.GetUtcNow()
+                    },
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            await store.TryReplaceWorkflowDefinitionIdAsync(
+                sibling.PublicationId,
+                legacyId,
+                isolatedId,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var stillShared = await store.ListPublicationsAsync(publication.PackageId, cancellationToken).ConfigureAwait(false);
+        if (!stillShared.Any(item => string.Equals(item.WorkflowDefinitionId, legacyId, StringComparison.Ordinal)))
+        {
+            await workflowDefinitionStore.DeleteAsync(legacyId, cancellationToken).ConfigureAwait(false);
+        }
+
+        return await store.GetPublicationAsync(publication.PublicationId, cancellationToken).ConfigureAwait(false)
+            ?? publication with
+            {
+                WorkflowDefinitionId = ScheduleWorkflowDefinitionId(
+                    publication.PackageId,
+                    publication.PackageVersion,
+                    publication.PublicationId)
+            };
+    }
+
+    /// <summary>
+    /// Definition id used before publications owned their own triggers. Rows that still
+    /// store this value share one cron and must be split before disable or delete.
+    /// </summary>
+    internal static string LegacyScheduleWorkflowDefinitionId(string packageId, int version)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
+        return $"workflow-package:{packageId}:v{version.ToString(CultureInfo.InvariantCulture)}";
+    }
+
+    internal static bool IsLegacySharedScheduleDefinitionId(string packageId, int version, string? definitionId)
+        => string.Equals(
+            definitionId,
+            LegacyScheduleWorkflowDefinitionId(packageId, version),
+            StringComparison.Ordinal);
 
     /// <summary>
     /// Scheduler definition id owned by one publication. Package id and version alone

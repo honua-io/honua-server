@@ -224,4 +224,28 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
             return Task.FromResult<WorkflowPublication?>(updated);
         }
     }
+
+    public Task<bool> TryReplaceWorkflowDefinitionIdAsync(
+        string publicationId,
+        string expectedDefinitionId,
+        string replacementDefinitionId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedDefinitionId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(replacementDefinitionId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_gate)
+        {
+            if (!_publications.TryGetValue(publicationId, out var existing)
+                || !string.Equals(existing.WorkflowDefinitionId, expectedDefinitionId, StringComparison.Ordinal))
+            {
+                return Task.FromResult(false);
+            }
+
+            _publications[publicationId] = existing with { WorkflowDefinitionId = replacementDefinitionId };
+            return Task.FromResult(true);
+        }
+    }
 }

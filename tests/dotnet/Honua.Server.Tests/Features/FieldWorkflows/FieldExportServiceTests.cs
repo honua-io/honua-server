@@ -74,7 +74,13 @@ public sealed class FieldExportServiceTests
 
         Assert.Equal("true", context.Response.Headers["X-Honua-Export-Truncated"]);
         context.Response.Body.Position = 0;
-        var body = await new StreamReader(context.Response.Body).ReadToEndAsync();
+        using var reader = new StreamReader(
+            context.Response.Body,
+            Encoding.UTF8,
+            detectEncodingFromByteOrderMarks: false,
+            bufferSize: 1024,
+            leaveOpen: true);
+        var body = await reader.ReadToEndAsync();
         Assert.Contains("\"truncated\":true", body, StringComparison.Ordinal);
         Assert.Contains("\"truncated\":true", audit.Details, StringComparison.Ordinal);
     }

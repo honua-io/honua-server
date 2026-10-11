@@ -352,6 +352,30 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ReadPublication(reader) : null;
     }
 
+    public async Task<bool> TryReplaceWorkflowDefinitionIdAsync(
+        string publicationId,
+        string expectedDefinitionId,
+        string replacementDefinitionId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedDefinitionId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(replacementDefinitionId);
+        var sql = $"""
+            UPDATE {_publicationsTable}
+            SET workflow_definition_id = @replacement_definition_id
+            WHERE publication_id = @publication_id
+              AND workflow_definition_id = @expected_definition_id
+            """;
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("publication_id", publicationId);
+        command.Parameters.AddWithValue("expected_definition_id", expectedDefinitionId);
+        command.Parameters.AddWithValue("replacement_definition_id", replacementDefinitionId);
+        var updated = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return updated == 1;
+    }
+
     private string VersionSelect()
         => $"""
             SELECT package_id, version, schema_version, package_hash, graph_json::text, validation_json::text, created_at, created_by
