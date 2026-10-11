@@ -92,6 +92,66 @@ public sealed class Wfs20StoredQueryScopeTests
         await Wfs20Handler.HandleDropStoredQueryAsync(contextB, sharedId);
     }
 
+    [UnitTest]
+    public async Task HandleCreateStoredQuery_ViewerRole_ReturnsAccessDenied()
+    {
+        var context = CreateContextWithTenant("tenant-a");
+        context.User = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(
+                [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "viewer")],
+                "test"));
+        SetParsedCreateDocument(context, $"urn:srv-ogc-012:viewer:{Guid.NewGuid():N}");
+
+        var result = await Wfs20Handler.HandleCreateStoredQueryAsync(context);
+
+        var (status, body) = await ExecuteAsync(context, result);
+        status.Should().Be(StatusCodes.Status403Forbidden);
+        body.Should().Contain("AccessDenied");
+    }
+
+    [UnitTest]
+    public async Task HandleDropStoredQuery_ViewerRole_ReturnsAccessDenied()
+    {
+        var context = CreateContextWithTenant("tenant-a");
+        context.User = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(
+                [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "viewer")],
+                "test"));
+
+        var result = await Wfs20Handler.HandleDropStoredQueryAsync(context, "urn:srv-ogc-012:viewer");
+
+        var (status, body) = await ExecuteAsync(context, result);
+        status.Should().Be(StatusCodes.Status403Forbidden);
+        body.Should().Contain("AccessDenied");
+    }
+
+    [UnitTest]
+    public async Task HandleCreateStoredQuery_GlobalDataEditor_Succeeds()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<ITenantContext>(new FixedTenantContext("tenant-editor"));
+        services.AddSingleton<Microsoft.Extensions.Options.IOptions<Honua.Infrastructure.Authentication.RbacOptions>>(
+            Microsoft.Extensions.Options.Options.Create(new Honua.Infrastructure.Authentication.RbacOptions
+            {
+                DataEditorRoles = ["publisher"]
+            }));
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services.BuildServiceProvider(),
+            User = new System.Security.Claims.ClaimsPrincipal(
+                new System.Security.Claims.ClaimsIdentity(
+                    [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "publisher")],
+                    "test"))
+        };
+        context.Request.Path = "/wfs";
+        SetParsedCreateDocument(context, $"urn:srv-ogc-012:editor:{Guid.NewGuid():N}");
+
+        var result = await Wfs20Handler.HandleCreateStoredQueryAsync(context);
+
+        await AssertXmlResultStatusAsync(context, result, expectedContains: "CreateStoredQueryResponse");
+    }
+
     // ─── Helpers ────────────────────────────────────────────────────────────────
 
     private static DefaultHttpContext CreateContextWithTenant(string tenantId)
@@ -101,7 +161,11 @@ public sealed class Wfs20StoredQueryScopeTests
         services.AddSingleton<ITenantContext>(new FixedTenantContext(tenantId));
         var context = new DefaultHttpContext
         {
-            RequestServices = services.BuildServiceProvider()
+            RequestServices = services.BuildServiceProvider(),
+            User = new System.Security.Claims.ClaimsPrincipal(
+                new System.Security.Claims.ClaimsIdentity(
+                    [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "admin")],
+                    "test"))
         };
         // Set the WFS path so the error formatter produces WFS XML responses
         // (the formatter dispatches on path prefix via ProtocolRequestClassifier.IsWfs).
@@ -149,6 +213,20 @@ public sealed class Wfs20StoredQueryScopeTests
         var body = await reader.ReadToEndAsync();
         body.Should().Contain(expectedContains,
             because ?? $"response body must contain '{expectedContains}'");
+    }
+
+    private static async Task<(int Status, string Body)> ExecuteAsync(DefaultHttpContext originalContext, IResult result)
+    {
+        var httpContext = new DefaultHttpContext
+        {
+            RequestServices = originalContext.RequestServices
+        };
+        httpContext.Request.Path = "/wfs";
+        httpContext.Response.Body = new System.IO.MemoryStream();
+        await result.ExecuteAsync(httpContext);
+        httpContext.Response.Body.Position = 0;
+        using var reader = new System.IO.StreamReader(httpContext.Response.Body, Encoding.UTF8);
+        return (httpContext.Response.StatusCode, await reader.ReadToEndAsync());
     }
 
     /// <summary>

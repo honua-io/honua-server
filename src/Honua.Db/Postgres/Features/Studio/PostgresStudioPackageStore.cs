@@ -902,6 +902,8 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 throw new KeyNotFoundException("Studio content version was not found.");
             }
 
+            await EnsurePublicationRouteAvailableAsync(connection, transaction, request, cancellationToken).ConfigureAwait(false);
+
             var insertSql = $"""
                 INSERT INTO {_publicationRequestsTable}
                     (request_id, item_id, version_id, intent, status, validation,
@@ -957,6 +959,55 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         }
     }
 
+    private async Task EnsurePublicationRouteAvailableAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        StudioPublicationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var route = request.Intent?.Route;
+        if (request.Status != StudioPublicationRequestStatus.Accepted || string.IsNullOrWhiteSpace(route))
+        {
+            return;
+        }
+
+        await using (var lockCommand = new NpgsqlCommand(
+            "SELECT pg_advisory_xact_lock(hashtextextended(@route, 0));",
+            connection,
+            transaction))
+        {
+            lockCommand.Parameters.AddWithValue("@route", route);
+            await lockCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        var sql = $"""
+            SELECT item_id
+            FROM (
+                SELECT DISTINCT ON (item_id)
+                       item_id, intent, created_at, request_id
+                FROM {_publicationRequestsTable}
+                WHERE status = @status
+                  AND item_id IN (
+                      SELECT item_id
+                      FROM {_publicationRequestsTable}
+                      WHERE status = @status
+                        AND intent ->> 'route' = @route)
+                ORDER BY item_id, created_at DESC, request_id DESC
+            ) AS governing
+            WHERE governing.intent ->> 'route' = @route
+            ORDER BY governing.created_at DESC, governing.request_id DESC
+            LIMIT 1
+            """;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@status", ToDbPublicationStatus(StudioPublicationRequestStatus.Accepted));
+        command.Parameters.AddWithValue("@route", route);
+        var owner = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        if (owner is Guid owningItemId && owningItemId != request.ItemId)
+        {
+            throw new StudioPublicationRouteConflictException(route, request.ItemId, owningItemId);
+        }
+    }
+
     public async Task<StudioPublicationRequest?> GetPublicationRequestAsync(
         Guid itemId,
         Guid versionId,
@@ -990,8 +1041,8 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
 
         // honua-server#4907: DISTINCT ON picks each candidate item's newest accepted request (the
         // one governing the item); the outer filter keeps those still bound to this route, so an
-        // item republished elsewhere no longer answers here, and the newest of them owns the
-        // route when two items have claimed it.
+        // item republished elsewhere no longer answers here. A route has one governing item;
+        // CreatePublicationRequestAsync rejects a claim by any other item.
         var sql = $"""
             SELECT request_id, item_id, version_id, intent, status, validation,
                    warning_acknowledgement, requested_by, created_at

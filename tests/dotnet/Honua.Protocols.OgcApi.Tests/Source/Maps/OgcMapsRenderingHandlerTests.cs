@@ -3,15 +3,20 @@
 
 using FluentAssertions;
 using System.Security.Claims;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Protocols.Ogc.Api.Maps.Models;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -68,6 +73,136 @@ public class OgcMapsRenderingHandlerTests
 
         await renderer.Received(allowed ? 1 : 0).RenderDatasetMapAsync(
             Arg.Is<int[]>(layers => layers.SequenceEqual(new[] { 1 })), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task CollectionMap_QueryGrant_RendersWhenCoarsePolicyDenies()
+    {
+        var renderer = Substitute.For<IRasterMapRenderer>();
+        renderer.RenderCollectionMapAsync(Arg.Any<int>(), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult { Data = [1], ContentType = "image/png", Width = 1, Height = 1 });
+        var handler = new OgcMapsRenderingHandler(
+            RestrictedMapsProvider(),
+            renderer,
+            Substitute.For<IOgcStyleProjection>(),
+            NullLogger<OgcMapsRenderingHandler>.Instance);
+
+        await handler.RenderCollectionMapAsync(
+            1,
+            new OgcMapRequest { Bbox = "-158,20,-156,22", Width = 1, Height = 1 },
+            CreateGrantContext());
+
+        await renderer.Received(1).RenderCollectionMapAsync(1, Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task DatasetMap_QueryGrant_RendersExplicitCollectionWhenCoarsePolicyDenies()
+    {
+        var renderer = Substitute.For<IRasterMapRenderer>();
+        renderer.RenderDatasetMapAsync(Arg.Any<int[]>(), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult { Data = [1], ContentType = "image/png", Width = 1, Height = 1 });
+        var handler = new OgcMapsRenderingHandler(
+            RestrictedMapsProvider(),
+            renderer,
+            Substitute.For<IOgcStyleProjection>(),
+            NullLogger<OgcMapsRenderingHandler>.Instance);
+
+        await handler.RenderDatasetMapAsync(
+            [1],
+            new OgcMapRequest { Bbox = "-158,20,-156,22", Width = 1, Height = 1 },
+            CreateGrantContext());
+
+        await renderer.Received(1).RenderDatasetMapAsync(
+            Arg.Is<int[]>(layers => layers.SequenceEqual(new[] { 1 })),
+            Arg.Any<MapRenderRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task DatasetMap_QueryGrant_RendersDiscoveredCollectionWhenCoarsePolicyDenies()
+    {
+        var renderer = Substitute.For<IRasterMapRenderer>();
+        renderer.RenderDatasetMapAsync(Arg.Any<int[]>(), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult { Data = [1], ContentType = "image/png", Width = 1, Height = 1 });
+        var handler = new OgcMapsRenderingHandler(
+            RestrictedMapsProvider(),
+            renderer,
+            Substitute.For<IOgcStyleProjection>(),
+            NullLogger<OgcMapsRenderingHandler>.Instance);
+
+        await handler.RenderDatasetMapAsync(
+            [],
+            new OgcMapRequest { Bbox = "-158,20,-156,22", Width = 1, Height = 1 },
+            CreateGrantContext());
+
+        await renderer.Received(1).RenderDatasetMapAsync(
+            Arg.Is<int[]>(layers => layers.SequenceEqual(new[] { 1 })),
+            Arg.Any<MapRenderRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task DatasetMap_ForeignTenantLayer_IsNotRendered()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("own", "own-layer", MetadataV2ResourceType.FeatureDataset)
+            .AddStorageBinding("own-binding", "own", "own", storageLayerId: 1)
+            .AddService("own-service", "own-service", protocols: ["OGC-API-Maps"])
+            .AddPublication("own-publication", "own-service", "own", layerIndex: 1)
+            .AddResource("foreign", "foreign-layer", MetadataV2ResourceType.FeatureDataset, accessPolicy: new AccessPolicy { AllowAnonymous = true })
+            .AddStorageBinding("foreign-binding", "foreign", "foreign", storageLayerId: 2)
+            .AddService("foreign-service", "foreign-service", protocols: ["OGC-API-Maps"])
+            .AddPublication("foreign-publication", "foreign-service", "foreign", layerIndex: 2)
+            .Build();
+        graph = StampResourceTenant(graph, "foreign", "tenant-b");
+        var renderer = Substitute.For<IRasterMapRenderer>();
+        renderer.RenderDatasetMapAsync(Arg.Any<int[]>(), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult { Data = [1], ContentType = "image/png", Width = 1, Height = 1 });
+        var handler = new OgcMapsRenderingHandler(
+            new TestMetadataV2GraphProvider(graph),
+            renderer,
+            Substitute.For<IOgcStyleProjection>(),
+            NullLogger<OgcMapsRenderingHandler>.Instance);
+
+        await handler.RenderDatasetMapAsync(
+            [],
+            new OgcMapRequest { Bbox = "-158,20,-156,22", Width = 1, Height = 1 },
+            CreateTenantContext("tenant-a"));
+
+        await renderer.Received(1).RenderDatasetMapAsync(
+            Arg.Is<int[]>(layers => layers.SequenceEqual(new[] { 1 })),
+            Arg.Any<MapRenderRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task DatasetMap_OnlyForeignTenantLayers_ReturnsNotFound()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("foreign", "foreign-layer", MetadataV2ResourceType.FeatureDataset, accessPolicy: new AccessPolicy { AllowAnonymous = true })
+            .AddStorageBinding("foreign-binding", "foreign", "foreign", storageLayerId: 2)
+            .AddService("foreign-service", "foreign-service", protocols: ["OGC-API-Maps"])
+            .AddPublication("foreign-publication", "foreign-service", "foreign", layerIndex: 2)
+            .Build();
+        graph = StampResourceTenant(graph, "foreign", "tenant-b");
+        var renderer = Substitute.For<IRasterMapRenderer>();
+        var handler = new OgcMapsRenderingHandler(
+            new TestMetadataV2GraphProvider(graph),
+            renderer,
+            Substitute.For<IOgcStyleProjection>(),
+            NullLogger<OgcMapsRenderingHandler>.Instance);
+
+        var result = await handler.RenderDatasetMapAsync(
+            [],
+            new OgcMapRequest { Bbox = "-158,20,-156,22", Width = 1, Height = 1 },
+            CreateTenantContext("tenant-a"));
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        await renderer.DidNotReceive().RenderDatasetMapAsync(
+            Arg.Any<int[]>(),
+            Arg.Any<MapRenderRequest>(),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -270,6 +405,52 @@ public class OgcMapsRenderingHandlerTests
         transform.ExtentCalls.Should().Be(2);
     }
 
+    private static TestMetadataV2GraphProvider RestrictedMapsProvider()
+    {
+        var restricted = new AccessPolicy { AllowedRoles = ["gis-admin"] };
+        return new TestMetadataV2GraphBuilder()
+            .AddResource("resource", "roads", MetadataV2ResourceType.FeatureDataset, accessPolicy: restricted)
+            .AddStorageBinding("binding", "resource", "roads", storageLayerId: 1)
+            .AddService("service", "catalog", protocols: ["OGC-API-Maps"])
+            .AddPublication("publication", "service", "resource", layerIndex: 1)
+            .BuildProvider();
+    }
+
+    private static DefaultHttpContext CreateGrantContext()
+    {
+        var services = new ServiceCollection().AddLogging()
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
+            .AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()))
+            .AddSingleton<IPermissionResolver>(new AllowQueryResolver())
+            .BuildServiceProvider();
+        return new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "analyst")], "Test"))
+        };
+    }
+
+    private static DefaultHttpContext CreateTenantContext(string tenantId)
+    {
+        var services = new ServiceCollection().AddLogging()
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
+            .AddSingleton<ITenantContext>(new FixedTenantContext(tenantId))
+            .BuildServiceProvider();
+        return new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "tenant-user")], "Test"))
+        };
+    }
+
+    private static MetadataV2Graph StampResourceTenant(MetadataV2Graph graph, string resourceId, string tenant)
+        => graph with
+        {
+            Resources = graph.Resources.Select(resource => resource.Metadata.Id == resourceId
+                ? resource with { Metadata = resource.Metadata with { Tenant = tenant } }
+                : resource).ToArray()
+        };
+
     private static MetadataV2Resource ResourceWithBounds(
         string id, int srid, double west, double south, double east, double north)
         => new()
@@ -312,5 +493,46 @@ public class OgcMapsRenderingHandlerTests
             int toSrid,
             CancellationToken cancellationToken = default)
             => ValueTask.FromResult<(double X, double Y)?>(null);
+    }
+
+    private sealed class AllowQueryResolver : IPermissionResolver
+    {
+        public PermissionDecision Authorize(
+            EffectivePermissions effectivePermissions,
+            string service,
+            string? layer,
+            AuthorizationOperation operation)
+            => PermissionDecision.NoMatch();
+
+        public Task<PermissionDecision> AuthorizeAsync(
+            string userId,
+            IReadOnlyList<string> roles,
+            string service,
+            string? layer,
+            AuthorizationOperation operation,
+            bool isAuthenticated,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(operation == AuthorizationOperation.Query
+                ? PermissionDecision.Allow(new PermissionGrant
+                {
+                    Service = service,
+                    Layer = layer ?? "*",
+                    Operation = "query"
+                })
+                : PermissionDecision.NoMatch());
+    }
+
+    private sealed class FixedTenantContext(string tenantId) : ITenantContext
+    {
+        public string? TenantId { get; } = tenantId;
+
+        public TenantContextSource Source => TenantContextSource.Claim;
+
+        public bool RequireTenantId(out string outTenantId, out string? reason)
+        {
+            outTenantId = TenantId!;
+            reason = null;
+            return true;
+        }
     }
 }

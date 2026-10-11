@@ -878,6 +878,71 @@ public sealed class StudioPackageLifecycleServiceTests
         Assert.Equal(superseding.VersionId, pointers.CurrentVersionId);
     }
 
+    [UnitTest]
+    public async Task CreatePublicationRequest_RouteClaimedByAnotherItem_ThrowsRouteConflict()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var service = BuildServiceProvider(store).GetRequiredService<IStudioPackageLifecycleService>();
+        var intent = new StudioPublicationIntent { Route = "/maps/shared", Visibility = "organization" };
+        var owner = await SaveVersionAsync(service, "publication-owner");
+
+        var first = await service.CreatePublicationRequestAsync(
+            owner.ItemId,
+            owner.VersionId,
+            expectedCurrentVersionId: owner.VersionId,
+            intent,
+            warningAcknowledgement: null,
+            actorId: "tester");
+        Assert.NotNull(first);
+
+        var republish = await service.CreatePublicationRequestAsync(
+            owner.ItemId,
+            owner.VersionId,
+            expectedCurrentVersionId: owner.VersionId,
+            intent,
+            warningAcknowledgement: null,
+            actorId: "tester");
+        Assert.NotNull(republish);
+        Assert.Equal(owner.ItemId, republish!.ItemId);
+
+        var other = await SaveVersionAsync(service, "publication-other");
+        var conflict = await Assert.ThrowsAsync<StudioPublicationRouteConflictException>(
+            () => service.CreatePublicationRequestAsync(
+                other.ItemId,
+                other.VersionId,
+                expectedCurrentVersionId: other.VersionId,
+                intent,
+                warningAcknowledgement: null,
+                actorId: "tester"));
+
+        Assert.Equal("/maps/shared", conflict.Route);
+        Assert.Equal(other.ItemId, conflict.ItemId);
+        Assert.Equal(owner.ItemId, conflict.OwningItemId);
+        var governing = await service.GetActivePublicationRequestByRouteAsync("/maps/shared");
+        Assert.NotNull(governing);
+        Assert.Equal(owner.ItemId, governing!.ItemId);
+        var otherPointers = await store.GetPointersAsync(other.ItemId);
+        Assert.NotNull(otherPointers);
+        Assert.Null(otherPointers!.PublishedVersionId);
+    }
+
+    private static async Task<StudioContentVersion> SaveVersionAsync(
+        IStudioPackageLifecycleService service,
+        string packageKey)
+    {
+        var draft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = packageKey,
+            WorkspaceId = "studio",
+            OwnerId = "tester",
+            ActorId = "tester",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+        });
+        var version = await service.SaveDraftAsVersionAsync(draft.DraftId, "first save", "tester");
+        Assert.NotNull(version);
+        return version!;
+    }
+
     private static ServiceProvider BuildServiceProvider(
         IStudioPackageStore? store = null,
         TimeProvider? timeProvider = null)

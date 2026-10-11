@@ -195,9 +195,34 @@ internal sealed partial class Wfs20Handler
     }
 
 
+    internal static IResult? RequireStoredQueryEditor(HttpContext context)
+    {
+        var decision = ServiceDataEditorAuthorization.EvaluateGlobalDataEditor(context);
+        if (decision.IsAllowed)
+        {
+            return null;
+        }
+
+        if (decision.RequiresAuthentication)
+        {
+            return Results.Unauthorized();
+        }
+
+        return Wfs20ErrorResults.CreateForbidden(
+            context,
+            "AccessDenied",
+            decision.FailureReason ?? "User does not have the required data editor role.");
+    }
+
     public static async Task<IResult> HandleCreateStoredQueryAsync(
         HttpContext context, CancellationToken cancellationToken = default)
     {
+        var editorError = RequireStoredQueryEditor(context);
+        if (editorError is not null)
+        {
+            return editorError;
+        }
+
         var document = GetParsedStoredQueryRequestDocument(context);
         if (document?.Root is null ||
             !string.Equals(document.Root.Name.LocalName, Wfs20Utilities.Operations.CreateStoredQuery, StringComparison.OrdinalIgnoreCase))
@@ -360,6 +385,12 @@ internal sealed partial class Wfs20Handler
         string? storedQueryId,
         CancellationToken cancellationToken = default)
     {
+        var editorError = RequireStoredQueryEditor(context);
+        if (editorError is not null)
+        {
+            return editorError;
+        }
+
         if (string.IsNullOrWhiteSpace(storedQueryId))
         {
             storedQueryId = GetParsedStoredQueryRequestDocument(context)

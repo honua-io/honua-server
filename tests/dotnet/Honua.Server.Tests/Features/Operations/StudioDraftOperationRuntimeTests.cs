@@ -218,6 +218,48 @@ public sealed class StudioDraftOperationRuntimeTests
     }
 
     [UnitTest]
+    public async Task PublicationRequestValidation_RouteClaimedByAnotherItem_RejectsAsConflict()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var lifecycle = BuildLifecycle(store);
+        var executor = PublicationExecutor(lifecycle);
+        var owner = await SaveFirstVersionAsync(lifecycle);
+        await lifecycle.CreatePublicationRequestAsync(
+            owner.ItemId,
+            owner.VersionId,
+            expectedCurrentVersionId: owner.VersionId,
+            intent: null,
+            warningAcknowledgement: null,
+            actorId: "studio-author");
+
+        var sameItem = await executor.ValidateAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, PublicationPayload(owner)));
+        sameItem.IsValid.Should().BeTrue();
+
+        var otherDraft = await lifecycle.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "publication-other",
+            WorkspaceId = "studio",
+            OwnerId = "studio-author",
+            ActorId = "studio-author",
+            Envelope = PublicationEnvelope("1=1"),
+        });
+        var other = await lifecycle.SaveDraftAsVersionAsync(otherDraft.DraftId, "first save", "studio-author");
+        other.Should().NotBeNull();
+
+        var validation = await executor.ValidateAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, PublicationPayload(other!)));
+
+        validation.IsValid.Should().BeFalse();
+        validation.Status.Should().Be("invalid");
+        validation.ErrorKind.Should().Be("conflict");
+        validation.ApprovalPlan.Should().BeNull();
+        validation.Messages.Should().ContainSingle()
+            .Which.Should().Be("Route '/studio/parcels' is already claimed by another Studio publication.");
+        (await store.GetPointersAsync(other!.ItemId))!.PublishedVersionId.Should().BeNull();
+    }
+
+    [UnitTest]
     public async Task PublicationRequest_RequireApproval_InvalidIntentFailsAsArgumentWithoutProposal()
     {
         var store = new InMemoryStudioPackageStore();

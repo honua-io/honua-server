@@ -360,15 +360,18 @@ public static class OgcStylesEndpoints
         CancellationToken cancellationToken)
         => await AuthorizeStyleAsync(context, styleId, graphProvider, cancellationToken).ConfigureAwait(false) is null;
 
-    private static async Task<IResult?> AuthorizeStyleAsync(
+    internal static async Task<IResult?> AuthorizeStyleAsync(
         HttpContext context,
         string styleId,
         IMetadataV2GraphProvider graphProvider,
         CancellationToken cancellationToken)
     {
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        // Ordinal, matching OgcStyleProjection.ResolveResourceAsync. A case-variant
+        // name is a different resource; authorizing the first ignore-case hit would
+        // check one layer and serve another's stylesheet.
         var resource = snapshot.Graph.Resources.FirstOrDefault(resource =>
-            string.Equals(resource.Metadata.Name, styleId, StringComparison.OrdinalIgnoreCase));
+            string.Equals(resource.Metadata.Name, styleId, StringComparison.Ordinal));
         if (resource is null)
         {
             // Standalone catalog styles have no layer policy and retain their existing

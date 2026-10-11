@@ -314,7 +314,7 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
 
     // honua-server#4907: the published-route resolver reads this lookup, so the SQL must follow
     // each item's governing (newest accepted) request -- pending requests never govern, a route
-    // the item republished away from retires, and the newest governing claimant owns a route.
+    // the item republished away from retires, and another item cannot take the route.
     [IntegrationTest]
     public async Task PackageStore_ActivePublicationByRoute_FollowsGoverningAcceptedRequest()
     {
@@ -357,11 +357,12 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
             (await store.GetActivePublicationRequestByRouteAsync("/maps/parcels")).Should().BeNull("the item was republished at another route");
             (await store.GetActivePublicationRequestByRouteAsync("/maps/moved"))!.RequestId.Should().Be(moved.RequestId);
 
-            var claimed = await store.CreatePublicationRequestAsync(
+            var claim = async () => await store.CreatePublicationRequestAsync(
                 Request(other, "/maps/moved", StudioPublicationRequestStatus.Accepted, 3), other.VersionId);
+            await claim.Should().ThrowAsync<StudioPublicationRouteConflictException>();
             var owner = await store.GetActivePublicationRequestByRouteAsync("/maps/moved");
-            owner!.RequestId.Should().Be(claimed.RequestId);
-            owner.ItemId.Should().Be(other.ItemId);
+            owner!.RequestId.Should().Be(moved.RequestId);
+            owner.ItemId.Should().Be(version.ItemId);
         }
         finally
         {
