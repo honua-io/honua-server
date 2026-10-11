@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Shared.Models;
+
 namespace Honua.Core.Features.TileCachePackage.Services;
 
 /// <summary>One level-of-detail sample from root.json or conf.xml.</summary>
@@ -59,7 +61,7 @@ internal static class TileCachePackageScheme
         var mercator = mercatorOrigin && LevelsMatch(lods, mercatorResolution, allowScale: true);
         var geographic = geographicOrigin && LevelsMatch(lods, geographicResolution, allowScale: false);
 
-        if (IsWebMercator(wkid))
+        if (SpatialReferenceExtensions.IsWebMercatorSrid(wkid))
         {
             if (!mercator)
             {
@@ -94,8 +96,6 @@ internal static class TileCachePackageScheme
 
         throw SchemeRejected(wkid, "it does not match WebMercatorQuad or WorldCRS84Quad");
     }
-
-    private static bool IsWebMercator(int wkid) => wkid is 3857 or 102100 or 102113 or 900913;
 
     private static NotSupportedException SchemeRejected(int wkid, string reason)
         => new($"Tile-cache package spatial reference {wkid} was rejected because {reason}.");
