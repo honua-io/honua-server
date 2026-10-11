@@ -313,6 +313,14 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task KeyPropertiesRenderingRule_ExtractBandReordersCanonicalServiceMetadata()
     {
+        var store = _fixture.GetService<IRasterStore>();
+        store.GetMosaicStatisticsAsync(Arg.Any<int>(), Arg.Any<long[]>(), Arg.Any<RasterMergeStrategy>(),
+            Arg.Any<int[]?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns([
+                new RasterStatistics { Band = 3, MinValue = 31, MaxValue = 39, MeanValue = 35 },
+                new RasterStatistics { Band = 1, MinValue = 11, MaxValue = 19, MeanValue = 15 },
+                new RasterStatistics { Band = 2, MinValue = 21, MaxValue = 29, MeanValue = 25 }
+            ]);
         var response = await PostSoapAsync($"""
             <GetKeyPropertiesX xmlns="{ArcGisNamespace}" xmlns:xsi="{XsiNamespace}">
               <RenderingRule><FunctionName>ExtractBand</FunctionName><Arguments>
@@ -324,11 +332,13 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         Property(response.Document, "BandCount").Should().Be(2);
         var info = MultidimensionalPropertyValue(Element(response.Document, "Result"), "RasterInfo");
         Child(info, "BandCount").Value.Should().Be("2");
-        Child(info, "RasterStatistics_0").Element("Min")!.Value.Should().Be("60");
-        Child(info, "RasterStatistics_1").Element("Min")!.Value.Should().Be("200");
+        Child(info, "RasterStatistics_0").Element("Min")!.Value.Should().Be("31");
+        Child(info, "RasterStatistics_1").Element("Min")!.Value.Should().Be("11");
         Child(info, "RasterHistogram_0").Element("Counts")!.Elements().Select(item => long.Parse(item.Value, CultureInfo.InvariantCulture))
             .Should().Equal(HistogramCountsBand3);
-        info.Elements().Select(item => item.Name.LocalName).Should().NotContain("RasterHistogram_2");
+        Child(info, "RasterHistogram_1").Element("Counts")!.Elements().Select(item => long.Parse(item.Value, CultureInfo.InvariantCulture))
+            .Should().Equal(HistogramCountsBand1);
+        info.Elements().Select(item => item.Name.LocalName).Should().NotContain(["RasterStatistics_2", "RasterHistogram_2"]);
     }
 
     [IntegrationTest]
