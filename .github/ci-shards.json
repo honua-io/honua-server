@@ -281,7 +281,8 @@
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Tiles|FullyQualifiedName~Honua.Protocols.GeoServices.Tests.Source.ImageServer",
       "children": [
         "GeoServices ImageServer",
-        "GeoServices Catalog and ImageServer Support"
+        "GeoServices Catalog and ImageServer Support",
+        "GeoServices ImageServer Rendering and Support"
       ]
     },
     {
@@ -2603,8 +2604,35 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "September 2026 shard-headroom rebalance (#3204), from the trunk-red run 34072577139 and the TRX artifacts of runs 34054772215 / 34058058911 / 34066674166 / 34072577139. Sizing is `scripts/ci/summarize-trx-class-intervals.py` union-of-intervals (startTime..endTime), which includes the fixture/collection setup that `duration` omits; the same measure predicted the #4455 STAC split's post-split wall to 7.1m against an actual 6.5-7.5m. Budgets are unchanged. Parent p90 was 31.9m of 35m (91%) and was the longest server-test shard on trunk. This shard runs its collections in parallel (summed/whole = 1.36), so moving Catalog alone was measured and REJECTED: it leaves the parent at 30.7m (88%), because ImageServerEndpointsTests by itself is a 24.1m union. The cut that works is to leave that one class on the parent and move everything else: new shard 10.7m of 18m (59%), parent 24.2m of 35m (69%). That also takes ~7m off the whole gate's critical path.",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Tiles|FullyQualifiedName~Honua.Protocols.GeoServices.Tests.Source.ImageServer)&FullyQualifiedName!~ImageServerEndpointsTests",
+      "_comment": "PR5848 coverage-preserving capacity split: retain Catalog/Tiles here; move non-ImageServerEndpointsTests imagery classes to GeoServices ImageServer Rendering and Support. The prior run completed 307 passes and 9 failures before its 30-minute cap; failed and unexecuted outcomes remain unproven. No timeout budget increase.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Tiles",
+      "paths": [
+        "src/Honua.Protocols.GeoServices/ImageServer/",
+        "src/Honua.Protocols.GeoServices/Catalog/",
+        "src/Honua.Hosting/Features/Tiles/",
+        "src/Honua.Server/EndpointRegistry.ImageServer.cs",
+        "src/Honua.Core/Features/Raster/",
+        "src/Honua.Db/Postgres/Features/Raster/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Tiles/",
+        "src/Honua.Core/Features/Validation/"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    {
+      "name": "GeoServices ImageServer Rendering and Support",
+      "shard_name": "GeoServices ImageServer Rendering and Support",
+      "dispatch_rank": 10.8,
+      "artifact_suffix": "geoservices-imageserver-rendering-and-support",
+      "log_name": "server-tests-geoservices-imageserver-rendering-and-support",
+      "timeout_minutes": 40,
+      "test_timeout_minutes": 30,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "PR5848 raw Catalog job 114488722390 reached 1802 seconds / exit 124 while still executing. Separate ImageServer rendering/support from Catalog/Tiles in independent owned databases. All prior classes remain in exactly one partition child; retain the 30-minute test / 40-minute job caps. Actual post-split timings remain required; no pass inferred from report-mode badges.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Protocols.GeoServices.Tests.Source.ImageServer)&FullyQualifiedName!~ImageServerEndpointsTests",
       "paths": [
         "src/Honua.Protocols.GeoServices/ImageServer/",
         "src/Honua.Protocols.GeoServices/Catalog/",
