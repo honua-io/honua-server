@@ -139,6 +139,29 @@ public sealed class EsriTileCachePackageReaderTests
         descriptor.MaxLevel.Should().Be(2);
     }
 
+    [UnitTest]
+    public async Task ReadDescriptor_AdjacentLatestWkid_UsesAuthoritativeSpatialReference()
+    {
+        using var package = BuildExplodedPackage(
+            spatialReference: "<WKID>2263</WKID><LatestWKID>3857</LatestWKID>");
+        var descriptor = await new EsriTileCachePackageReader().ReadDescriptorAsync(package);
+
+        descriptor.Wkid.Should().Be(3857);
+        descriptor.TileMatrixSetIdentifier.Should().Be("WebMercatorQuad");
+        descriptor.MinLevel.Should().Be(0);
+        descriptor.MaxLevel.Should().Be(2);
+    }
+
+    [UnitTest]
+    public async Task ReadDescriptor_EmptyOriginCoordinate_IsRejected()
+    {
+        using var package = BuildExplodedPackage(tileOrigin: "<X/><Y>20037508.342789244</Y>");
+        var act = async () => await new EsriTileCachePackageReader().ReadDescriptorAsync(package);
+
+        await act.Should().ThrowAsync<NotSupportedException>()
+            .WithMessage("*missing an origin*");
+    }
+
     [Fact]
     public async Task ReadTiles_ExplodedTpk_DecodesHexCoordinates()
     {
@@ -398,7 +421,7 @@ public sealed class EsriTileCachePackageReaderTests
         return buffer;
     }
 
-    private static MemoryStream BuildExplodedPackage()
+    private static MemoryStream BuildExplodedPackage(string? spatialReference = null, string? tileOrigin = null)
     {
         var buffer = new MemoryStream();
         using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
@@ -407,13 +430,10 @@ public sealed class EsriTileCachePackageReaderTests
                 <?xml version="1.0"?>
                 <CacheInfo>
                   <TileCacheInfo>
-                    <SpatialReference><WKID>3857</WKID></SpatialReference>
+                    <SpatialReference>{{spatialReference ?? "<WKID>3857</WKID>"}}</SpatialReference>
                     <TileCols>256</TileCols>
                     <TileRows>256</TileRows>
-                    <TileOrigin>
-                      <X>-20037508.342789244</X>
-                      <Y>20037508.342789244</Y>
-                    </TileOrigin>
+                    <TileOrigin>{{tileOrigin ?? "<X>-20037508.342789244</X><Y>20037508.342789244</Y>"}}</TileOrigin>
                     <LODInfos>
                       <LODInfo><LevelID>0</LevelID><Resolution>{{Resolution(3857, 0)}}</Resolution></LODInfo>
                       <LODInfo><LevelID>1</LevelID><Resolution>{{Resolution(3857, 1)}}</Resolution></LODInfo>

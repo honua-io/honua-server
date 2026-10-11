@@ -20,8 +20,6 @@ public sealed class GdalPolygonizeExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-polygonize-test";
 
-    private static string Base64(string text) => GdalCli.Base64(text);
-
     // gdal_polygonize.py positional layout is "raster out_file layer fieldname", so
     // the output path is NOT the last argument; write to whichever arg names it.
     private static FakeGdalCommandRunner SucceedingGeoJson(byte[] bytes)
@@ -51,7 +49,7 @@ public sealed class GdalPolygonizeExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalPolygonizeJobExecutor.HandledProcessId,
-                ("source", Base64("fake-raster")),
+                ("source", GdalCli.AdmittedRaster("fake-raster")),
                 ("band", "2"),
                 ("connectedness", "8"),
                 ("fieldName", "value"));
@@ -89,7 +87,7 @@ public sealed class GdalPolygonizeExecutorTests
             var executor = new GdalPolygonizeJobExecutor(runner, GdalJobFactory.Options(scratch, maxArtifactBytes: 1024),
                 NullLogger<GdalPolygonizeJobExecutor>.Instance);
             var job = GdalJobFactory.Job(GdalPolygonizeJobExecutor.HandledProcessId,
-                ("source", Base64("fake-raster")), ("connectedness", "8"));
+                ("source", GdalCli.AdmittedRaster("fake-raster")), ("connectedness", "8"));
             var inner = new RecordingJobExecutionContext(job.OperationId);
             var store = new GdalArtifactPublisherTests.InMemoryOutputObjectStore();
             var context = new GdalStagedOutputContext(inner, job, store,
@@ -122,7 +120,7 @@ public sealed class GdalPolygonizeExecutorTests
         try
         {
             var job = GdalJobFactory.Job(GdalPolygonizeJobExecutor.HandledProcessId,
-                ("source", Base64("fake-raster")), ("connectedness", "8"));
+                ("source", GdalCli.AdmittedRaster("fake-raster")), ("connectedness", "8"));
             var context = new RecordingJobExecutionContext(job.OperationId);
             var result = await executor.ExecuteAsync(job, context, default);
             result.Status.Should().Be(ExecutionJobStatus.Failed);
@@ -144,7 +142,7 @@ public sealed class GdalPolygonizeExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalPolygonizeJobExecutor.HandledProcessId,
-                ("source", Base64("fake-raster")),
+                ("source", GdalCli.AdmittedRaster("fake-raster")),
                 ("fieldName", "bad name!"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -168,7 +166,7 @@ public sealed class GdalPolygonizeExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalPolygonizeJobExecutor.HandledProcessId,
-                ("source", Base64("fake-raster")),
+                ("source", GdalCli.AdmittedRaster("fake-raster")),
                 ("connectedness", "6"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);

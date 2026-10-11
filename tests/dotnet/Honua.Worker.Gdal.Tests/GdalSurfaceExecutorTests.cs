@@ -60,7 +60,7 @@ public sealed class GdalSurfaceExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalSurfaceJobExecutor.SlopeProcessId,
-                ("source", Base64("fake-dem")));
+                ("source", GdalCli.AdmittedRaster("fake-dem")));
             var context = new RecordingJobExecutionContext(job.OperationId);
 
             var result = await executor.ExecuteAsync(job, context, default);
@@ -90,7 +90,7 @@ public sealed class GdalSurfaceExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalSurfaceJobExecutor.SlopeProcessId,
-                ("source", Base64("fake-dem")),
+                ("source", GdalCli.AdmittedRaster("fake-dem")),
                 ("units", "percent"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -112,7 +112,7 @@ public sealed class GdalSurfaceExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalSurfaceJobExecutor.SlopeProcessId,
-                ("source", Base64("fake-dem")),
+                ("source", GdalCli.AdmittedRaster("fake-dem")),
                 ("units", "radians"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -139,7 +139,7 @@ public sealed class GdalSurfaceExecutorTests
             // reach gdaldem as -s/-scale, NOT -z (vertical exaggeration).
             var job = GdalJobFactory.Job(
                 GdalSurfaceJobExecutor.HillshadeProcessId,
-                ("source", Base64("fake-dem")),
+                ("source", GdalCli.AdmittedRaster("fake-dem")),
                 ("azimuth", "270"),
                 ("altitude", "30"),
                 ("zFactor", "111120"));
@@ -170,7 +170,7 @@ public sealed class GdalSurfaceExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalSurfaceJobExecutor.HillshadeProcessId,
-                ("source", Base64("fake-dem")),
+                ("source", GdalCli.AdmittedRaster("fake-dem")),
                 ("azimuth", "400"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -193,7 +193,7 @@ public sealed class GdalSurfaceExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalSurfaceJobExecutor.AspectProcessId,
-                ("source", Base64("fake-dem")));
+                ("source", GdalCli.AdmittedRaster("fake-dem")));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
             result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
@@ -228,7 +228,7 @@ public sealed class GdalSurfaceExecutorTests
         var executor = NewExecutor(runner, out var scratch);
         try
         {
-            var job = GdalJobFactory.Job(processId, ("source", Base64("fake-dem")));
+            var job = GdalJobFactory.Job(processId, ("source", GdalCli.AdmittedRaster("fake-dem")));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
@@ -250,7 +250,7 @@ public sealed class GdalSurfaceExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalSurfaceJobExecutor.RugosityTriProcessId,
-                ("source", Base64("fake-dem")),
+                ("source", GdalCli.AdmittedRaster("fake-dem")),
                 ("windowRadius", "2"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);

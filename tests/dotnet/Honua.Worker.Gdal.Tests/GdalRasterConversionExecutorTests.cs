@@ -22,8 +22,6 @@ public sealed class GdalRasterConversionExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-conversion-test";
 
-    private static string Base64(string text) => GdalCli.Base64(text);
-
     private static string NewScratch() => GdalCli.NewScratch(ScratchSuite);
 
     private static void CleanupScratch(string scratch) => GdalCli.CleanupScratch(scratch);
@@ -51,7 +49,7 @@ public sealed class GdalRasterConversionExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterFormatConvertJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.AdmittedRaster("fake-input-raster")),
                 ("targetFormat", "GTiff"));
             var context = new RecordingJobExecutionContext(job.OperationId);
 
@@ -78,7 +76,7 @@ public sealed class GdalRasterConversionExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterFormatConvertJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.AdmittedRaster("fake-input-raster")),
                 ("targetFormat", "PNG"));
             var context = new RecordingJobExecutionContext(job.OperationId);
 
@@ -103,7 +101,7 @@ public sealed class GdalRasterConversionExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterFormatConvertJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.AdmittedRaster("fake-input-raster")),
                 ("targetFormat", "GTiff"),
                 ("compression", "DEFLATE"));
 
@@ -142,7 +140,7 @@ public sealed class GdalRasterConversionExecutorTests
             {
                 var job = GdalJobFactory.Job(
                     GdalRasterFormatConvertJobExecutor.HandledProcessId,
-                    ("source", Base64("fake-input-raster")),
+                    ("source", GdalCli.AdmittedRaster("fake-input-raster")),
                     ("targetFormat", publishedFormat));
 
                 var result = await executor.ExecuteAsync(
@@ -194,7 +192,7 @@ public sealed class GdalRasterConversionExecutorTests
             {
                 var job = GdalJobFactory.Job(
                     GdalRasterFormatConvertJobExecutor.HandledProcessId,
-                    ("source", Base64("fake-input-raster")),
+                    ("source", GdalCli.AdmittedRaster("fake-input-raster")),
                     ("targetFormat", alias));
                 var context = new RecordingJobExecutionContext(job.OperationId);
 
@@ -220,7 +218,7 @@ public sealed class GdalRasterConversionExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterFormatConvertJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.AdmittedRaster("fake-input-raster")),
                 ("targetFormat", "BOGUS"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -242,7 +240,7 @@ public sealed class GdalRasterConversionExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterFormatConvertJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.AdmittedRaster("fake-input-raster")),
                 ("targetFormat", "GTiff"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -265,7 +263,7 @@ public sealed class GdalRasterConversionExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterReprojectCatalogJobExecutor.ConversionProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.AdmittedRaster("fake-input-raster")),
                 ("targetSrid", "3857"));
             var context = new RecordingJobExecutionContext(job.OperationId);
 

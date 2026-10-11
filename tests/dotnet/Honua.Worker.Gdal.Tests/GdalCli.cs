@@ -60,6 +60,16 @@ internal static class GdalCli
     public static string Base64(string text) => Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
 
     /// <summary>
+    /// A bounded TIFF header for fake-runner input admission, with a distinct marker.
+    /// This is not a decodable image: real-CLI tests use GenerateSampleDemAsync instead.
+    /// Keep Base64 unchanged for malformed-content and byte-budget rejection controls.
+    /// </summary>
+    public static string AdmittedRaster(string marker)
+        => Convert.ToBase64String([
+            .. TiffHeaderBuilder.ClassicWithPixelScale(16, 16, 1, 1, bands: 4, bits: 32),
+            .. Encoding.UTF8.GetBytes(marker)]);
+
+    /// <summary>
     /// Allocates a unique scratch directory path under the OS temp root for an
     /// isolated executor run. The directory is created lazily by the executor.
     /// </summary>

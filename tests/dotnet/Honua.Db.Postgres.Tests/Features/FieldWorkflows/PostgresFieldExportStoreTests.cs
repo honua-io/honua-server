@@ -3,6 +3,7 @@
 
 using System.Data;
 using System.Data.Common;
+using System.Text.Json;
 using Honua.Core.Features.FieldWorkflows.Export;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Db.Postgres.Features.FieldWorkflows;
@@ -43,8 +44,9 @@ public sealed class PostgresFieldExportStoreTests(PostgresFixture fixture)
             package.Truncated.Should().BeTrue();
             package.Items.Select(item => item.SubmissionId).Should().Equal(newest, middle);
             package.Record.RecordCount.Should().Be(2);
-            package.Record.Filter.Should().Contain("\"truncated\":true");
-            package.Record.Filter.Should().Contain("\"rowLimit\":2");
+            using var filter = JsonDocument.Parse(package.Record.Filter);
+            filter.RootElement.GetProperty("truncated").GetBoolean().Should().BeTrue();
+            filter.RootElement.GetProperty("rowLimit").GetInt32().Should().Be(2);
         }
         finally
         {
@@ -73,9 +75,10 @@ public sealed class PostgresFieldExportStoreTests(PostgresFixture fixture)
             package.Truncated.Should().BeFalse();
             package.Items.Should().HaveCount(2);
             package.Record.RecordCount.Should().Be(2);
-            package.Record.Filter.Should().Contain("\"truncated\":false");
-            package.Record.Filter.Should().Contain("\"rowLimit\":2");
-            package.Record.Filter.Should().Contain("\"formId\":\"form-1\"");
+            using var filter = JsonDocument.Parse(package.Record.Filter);
+            filter.RootElement.GetProperty("truncated").GetBoolean().Should().BeFalse();
+            filter.RootElement.GetProperty("rowLimit").GetInt32().Should().Be(2);
+            filter.RootElement.GetProperty("formId").GetString().Should().Be("form-1");
         }
         finally
         {

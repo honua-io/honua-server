@@ -21,8 +21,6 @@ public sealed class GdalRasterResampleExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-resample-test";
 
-    private static string Base64(string text) => GdalCli.Base64(text);
-
     [UnitTest]
     public void GdalRasterResampleExecutor_DeclaresNativeRuntimeProfile()
     {
@@ -42,7 +40,7 @@ public sealed class GdalRasterResampleExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterResampleJobExecutor.HandledProcessId,
-                ("source", Base64("fake-raster")),
+                ("source", GdalCli.AdmittedRaster("fake-raster")),
                 ("cellSize", "30"));
             var context = new RecordingJobExecutionContext(job.OperationId);
 
@@ -72,7 +70,7 @@ public sealed class GdalRasterResampleExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterResampleJobExecutor.HandledProcessId,
-                ("source", Base64("fake-raster")),
+                ("source", GdalCli.AdmittedRaster("fake-raster")),
                 ("cellSize", "30"),
                 ("cellSizeY", "20"),
                 ("resampling", "nearestneighbor"));
@@ -99,7 +97,7 @@ public sealed class GdalRasterResampleExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterResampleJobExecutor.HandledProcessId,
-                ("source", Base64("fake-raster")));
+                ("source", GdalCli.AdmittedRaster("fake-raster")));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
@@ -122,7 +120,7 @@ public sealed class GdalRasterResampleExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterResampleJobExecutor.HandledProcessId,
-                ("source", Base64("fake-raster")),
+                ("source", GdalCli.AdmittedRaster("fake-raster")),
                 ("cellSize", "30"),
                 ("resampling", "spline"));
 
@@ -147,7 +145,7 @@ public sealed class GdalRasterResampleExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterResampleJobExecutor.HandledProcessId,
-                ("source", Base64("fake-raster")),
+                ("source", GdalCli.AdmittedRaster("fake-raster")),
                 ("cellSize", "30"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);

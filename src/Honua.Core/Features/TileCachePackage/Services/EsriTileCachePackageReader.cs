@@ -208,6 +208,16 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
             && double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out y);
     }
 
+    // ReadElementContentAsString advances to the following sibling. Isolating it in a
+    // subtree leaves the parent on this element's end tag so its loop does not skip
+    // adjacent X/Y, LevelID/Resolution, or WKID/LatestWKID elements.
+    private static string ReadCurrentElementText(XmlReader reader)
+    {
+        using var element = reader.ReadSubtree();
+        element.Read();
+        return element.ReadElementContentAsString();
+    }
+
     private static TileCachePackageDescriptor ReadExplodedDescriptor(
         ZipArchiveEntry confEntry,
         DecompressionBudget budget,
@@ -244,24 +254,24 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
                 switch (reader.LocalName)
                 {
                     case "CacheTileFormat":
-                        format = reader.ReadElementContentAsString();
+                        format = ReadCurrentElementText(reader);
                         break;
                     case "WKID":
-                        if (int.TryParse(reader.ReadElementContentAsString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedWkid))
+                        if (int.TryParse(ReadCurrentElementText(reader), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedWkid))
                         {
                             wkid = parsedWkid;
                         }
 
                         break;
                     case "LatestWKID":
-                        if (int.TryParse(reader.ReadElementContentAsString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedLatest))
+                        if (int.TryParse(ReadCurrentElementText(reader), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedLatest))
                         {
                             latestWkid = parsedLatest;
                         }
 
                         break;
                     case "TileCols":
-                        if (int.TryParse(reader.ReadElementContentAsString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedCols))
+                        if (int.TryParse(ReadCurrentElementText(reader), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedCols))
                         {
                             tileCols = parsedCols;
                         }
@@ -285,12 +295,12 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
                                 }
 
                                 if (origin.LocalName == "X" &&
-                                    double.TryParse(origin.ReadElementContentAsString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var x))
+                                    double.TryParse(ReadCurrentElementText(origin), NumberStyles.Float, CultureInfo.InvariantCulture, out var x))
                                 {
                                     originX = x;
                                 }
                                 else if (origin.LocalName == "Y" &&
-                                         double.TryParse(origin.ReadElementContentAsString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var y))
+                                         double.TryParse(ReadCurrentElementText(origin), NumberStyles.Float, CultureInfo.InvariantCulture, out var y))
                                 {
                                     originY = y;
                                 }
@@ -323,21 +333,21 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
                                 switch (lod.LocalName)
                                 {
                                     case "LevelID":
-                                        if (int.TryParse(lod.ReadElementContentAsString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var levelId))
+                                        if (int.TryParse(ReadCurrentElementText(lod), NumberStyles.Integer, CultureInfo.InvariantCulture, out var levelId))
                                         {
                                             level = levelId;
                                         }
 
                                         break;
                                     case "Resolution":
-                                        if (double.TryParse(lod.ReadElementContentAsString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedResolution))
+                                        if (double.TryParse(ReadCurrentElementText(lod), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedResolution))
                                         {
                                             resolution = parsedResolution;
                                         }
 
                                         break;
                                     case "Scale":
-                                        if (double.TryParse(lod.ReadElementContentAsString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedScale))
+                                        if (double.TryParse(ReadCurrentElementText(lod), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedScale))
                                         {
                                             scale = parsedScale;
                                         }

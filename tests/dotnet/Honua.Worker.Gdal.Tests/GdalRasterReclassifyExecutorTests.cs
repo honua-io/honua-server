@@ -19,8 +19,6 @@ public sealed class GdalRasterReclassifyExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-reclassify-test";
 
-    private static string Base64(string text) => GdalCli.Base64(text);
-
     [UnitTest]
     public void GdalRasterReclassifyExecutor_DeclaresNativeRuntimeProfile()
     {
@@ -40,7 +38,7 @@ public sealed class GdalRasterReclassifyExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterReclassifyJobExecutor.HandledProcessId,
-                ("source", Base64("fake-raster")),
+                ("source", GdalCli.AdmittedRaster("fake-raster")),
                 ("remap", "0..10:1;10..20:2"));
             var context = new RecordingJobExecutionContext(job.OperationId);
 
@@ -72,7 +70,7 @@ public sealed class GdalRasterReclassifyExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterReclassifyJobExecutor.HandledProcessId,
-                ("source", Base64("fake-raster")),
+                ("source", GdalCli.AdmittedRaster("fake-raster")),
                 ("remap", "1:100;2:200"),
                 ("defaultValue", "0"));
 
@@ -100,7 +98,7 @@ public sealed class GdalRasterReclassifyExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterReclassifyJobExecutor.HandledProcessId,
-                ("source", Base64("fake-raster")),
+                ("source", GdalCli.AdmittedRaster("fake-raster")),
                 ("remap", "low..high:1"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -124,7 +122,7 @@ public sealed class GdalRasterReclassifyExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterReclassifyJobExecutor.HandledProcessId,
-                ("source", Base64("fake-raster")));
+                ("source", GdalCli.AdmittedRaster("fake-raster")));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
