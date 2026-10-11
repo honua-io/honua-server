@@ -33,6 +33,7 @@ internal static class ImageServerHistogramProjection
 
         return new BandHistogram
         {
+            SourceBand = histogram.Band,
             Size = histogram.BinCount,
             Min = min,
             Max = max,

@@ -131,6 +131,7 @@ internal sealed class ImageServerRasterMetadataHandler
                     _logger, layerId, ImageServerStatisticsBudget.Timeout.TotalSeconds),
                 cancellationToken);
 
+            histograms = histograms.OrderBy(static histogram => histogram.Band).ToArray();
             var entries = new BandHistogram[histograms.Length];
             for (var i = 0; i < histograms.Length; i++)
             {
