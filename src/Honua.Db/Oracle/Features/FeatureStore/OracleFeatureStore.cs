@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Oracle.Features.FeatureStore.Services;
 
 namespace Honua.Db.Oracle.Features.FeatureStore;
@@ -54,9 +55,10 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     private readonly DataConnection? _boundConnection;
     private readonly IMetadataV2GraphProvider? _v2Provider;
     private readonly LayerReadSecurityResolver? _readSecurity;
+    private readonly IFilterExpressionService? _filterExpressions;
 
     public OracleFeatureStore(OracleFeatureDataAccess dataAccess, OracleSpatialGuard spatialGuard)
-        : this(dataAccess, spatialGuard, v2Provider: null, readSecurity: null, binding: null)
+        : this(dataAccess, spatialGuard, v2Provider: null, readSecurity: null, binding: null, filterExpressions: null)
     {
     }
 
@@ -64,8 +66,9 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
         OracleFeatureDataAccess dataAccess,
         OracleSpatialGuard spatialGuard,
         IMetadataV2GraphProvider? v2Provider,
-        LayerReadSecurityResolver? readSecurity = null)
-        : this(dataAccess, spatialGuard, v2Provider, readSecurity, binding: null)
+        LayerReadSecurityResolver? readSecurity = null,
+        IFilterExpressionService? filterExpressions = null)
+        : this(dataAccess, spatialGuard, v2Provider, readSecurity, binding: null, filterExpressions)
     {
     }
 
@@ -74,12 +77,14 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
         OracleSpatialGuard spatialGuard,
         IMetadataV2GraphProvider? v2Provider,
         LayerReadSecurityResolver? readSecurity,
-        FeatureProviderBinding? binding)
+        FeatureProviderBinding? binding,
+        IFilterExpressionService? filterExpressions)
     {
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _spatialGuard = spatialGuard ?? throw new ArgumentNullException(nameof(spatialGuard));
         _v2Provider = v2Provider;
         _readSecurity = readSecurity;
+        _filterExpressions = filterExpressions;
         _binding = binding;
         _boundConnection = binding?.Connection;
     }
@@ -101,7 +106,7 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     {
         ArgumentNullException.ThrowIfNull(binding);
 
-        return new OracleFeatureStore(_dataAccess, _spatialGuard, _v2Provider, _readSecurity, binding);
+        return new OracleFeatureStore(_dataAccess, _spatialGuard, _v2Provider, _readSecurity, binding, _filterExpressions);
     }
 
     /// <inheritdoc />
@@ -125,6 +130,7 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     {
         await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        query = PrepareQuery(query);
 
         // Probe one extra row when a Limit is requested so HasMoreResults is reported correctly
         // without paying for a separate COUNT query. The probe row is trimmed before returning.
@@ -165,6 +171,7 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     {
         await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        query = PrepareQuery(query);
         var sql = OracleFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteObjectIdsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
@@ -174,6 +181,7 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     {
         await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        query = PrepareQuery(query);
         var sql = OracleFeatureQueryBuilder.BuildCountQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteCountAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
@@ -183,6 +191,7 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     {
         await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        query = query is { } extentQuery ? PrepareQuery(extentQuery) : null;
         var sql = OracleFeatureQueryBuilder.BuildExtentQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteExtentAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
@@ -302,6 +311,39 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
             .ToArray();
 
         return (mapping, attributeColumns);
+    }
+
+    /// <summary>
+    /// Drops a SqlFilter that is exactly the shared translator's rendering of <see cref="FeatureQuery.Where"/>,
+    /// and lets the builder lift an integral object-id IN list. A missing filter service or a failed
+    /// translation stays unproved so the builder still fails closed instead of executing Postgres SQL.
+    /// </summary>
+    private FeatureQuery PrepareQuery(FeatureQuery query)
+    {
+        if (query.SqlFilter is null)
+        {
+            return query;
+        }
+
+        SqlFragment? translation = null;
+        var proved = false;
+        if (!string.IsNullOrWhiteSpace(query.Where)
+            && _filterExpressions is not null
+            && _binding?.Resource is { } resource)
+        {
+            var parsed = _filterExpressions.Parse(FilterLanguage.ArcGisSql, query.Where);
+            if (parsed.IsSuccess)
+            {
+                var translated = _filterExpressions.Translate(parsed.Expression, resource);
+                if (translated.IsSuccess)
+                {
+                    translation = translated.SqlFilter;
+                    proved = true;
+                }
+            }
+        }
+
+        return OracleFeatureQueryBuilder.NormalizeConstraints(query, translation, proved);
     }
 
     private static NotSupportedException NotSupported(string operation, int layerId)

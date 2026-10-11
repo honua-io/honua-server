@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -17,6 +18,8 @@ namespace Honua.Db.SqlServer.Features.FeatureStore.Services;
 /// </summary>
 internal static partial class SqlServerFeatureQueryBuilder
 {
+    private const string ProviderLabel = "SQL Server";
+
     /// <summary>
     /// Builds a SELECT that returns the primary key, the geometry as WKB (or NULL when no
     /// geometry column is configured), and any requested attribute columns.
@@ -25,6 +28,7 @@ internal static partial class SqlServerFeatureQueryBuilder
     {
         ArgumentNullException.ThrowIfNull(mapping);
         ArgumentNullException.ThrowIfNull(attributeColumns);
+        query = NormalizeConstraints(query, translationOfWhere: null, translationProved: false);
         GuardUnsupportedTemporalFilter(query);
 
         var sb = new StringBuilder();
@@ -55,6 +59,7 @@ internal static partial class SqlServerFeatureQueryBuilder
     public static ParameterizedQuery BuildCountQuery(SqlServerLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
+        query = NormalizeConstraints(query, translationOfWhere: null, translationProved: false);
         GuardUnsupportedTemporalFilter(query);
 
         var sb = new StringBuilder();
@@ -77,6 +82,7 @@ internal static partial class SqlServerFeatureQueryBuilder
     public static ParameterizedQuery BuildObjectIdsQuery(SqlServerLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
+        query = NormalizeConstraints(query, translationOfWhere: null, translationProved: false);
         GuardUnsupportedTemporalFilter(query);
 
         var sb = new StringBuilder();
@@ -128,7 +134,7 @@ internal static partial class SqlServerFeatureQueryBuilder
         sb.Append(mapping.QuotedTableReference);
         sb.Append(" WHERE ").Append(geometryColumn).Append(" IS NOT NULL");
 
-        var effective = query ?? new FeatureQuery();
+        var effective = NormalizeConstraints(query ?? new FeatureQuery(), translationOfWhere: null, translationProved: false);
         GuardUnsupportedTemporalFilter(effective);
         AppendWhereClause(sb, effective, parameters);
         AppendObjectIdsFilter(sb, mapping, effective, parameters);
@@ -155,6 +161,184 @@ internal static partial class SqlServerFeatureQueryBuilder
             throw new NotSupportedException(
                 "Temporal filters are not supported by the SQL Server provider in this slice. " +
                 "Apply temporal filtering in the calling layer or use a PostGIS-backed layer.");
+        }
+    }
+
+    /// <summary>
+    /// Recovers provider-neutral constraints from a Postgres-translated <see cref="FeatureQuery.SqlFilter"/>.
+    /// A filter that is exactly <paramref name="translationOfWhere"/> is dropped so the SQL Server
+    /// WHERE parser emits the attribute predicate. A pure integral <c>IN</c> list (or that list
+    /// ANDed onto the proved WHERE translation) is lifted onto <see cref="FeatureQuery.ObjectIds"/>
+    /// and applied to the layer primary key. Every other Where-plus-SqlFilter pair fails closed.
+    /// </summary>
+    internal static FeatureQuery NormalizeConstraints(
+        FeatureQuery query,
+        SqlFragment? translationOfWhere,
+        bool translationProved)
+    {
+        if (query.SqlFilter is not { } sqlFilter)
+        {
+            return query;
+        }
+
+        if (translationProved && SqlEquals(sqlFilter, translationOfWhere))
+        {
+            return query with { SqlFilter = null };
+        }
+
+        var whereIsBlank = string.IsNullOrWhiteSpace(query.Where);
+        var whereIsNoOp = !whereIsBlank && NoOpWhereRegex().IsMatch(query.Where!);
+        if ((whereIsBlank || whereIsNoOp)
+            && TryReadIntegralInList(sqlFilter.Sql, sqlFilter.Parameters, startIndex: 0, out var objectIds))
+        {
+            var lifted = ApplyObjectIds(query, objectIds);
+            return whereIsNoOp ? lifted with { Where = null } : lifted;
+        }
+
+        if (translationProved
+            && translationOfWhere is not null
+            && !whereIsBlank
+            && TrySplitTranslatedWhereAndObjectIds(sqlFilter.Sql, translationOfWhere, sqlFilter.Parameters, out var andIds))
+        {
+            return ApplyObjectIds(query, andIds);
+        }
+
+        if (!whereIsBlank)
+        {
+            throw CannotCombine();
+        }
+
+        return query;
+    }
+
+    private static FeatureQuery ApplyObjectIds(FeatureQuery query, ImmutableArray<long> objectIds)
+    {
+        if (query.ObjectIds is { IsDefaultOrEmpty: false } existing && !existing.SequenceEqual(objectIds))
+        {
+            throw CannotCombine();
+        }
+
+        return query with { SqlFilter = null, ObjectIds = objectIds };
+    }
+
+    private static NotSupportedException CannotCombine()
+        => new(
+            $"{ProviderLabel} cannot safely combine canonical Where text with a translated SqlFilter. " +
+            "Submit the additional constraints through provider-neutral FeatureQuery properties.");
+
+    private static bool SqlEquals(SqlFragment left, SqlFragment? right)
+    {
+        if (right is null || !string.Equals(left.Sql, right.Sql, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return left.Parameters.SequenceEqual(right.Parameters);
+    }
+
+    private static bool TrySplitTranslatedWhereAndObjectIds(
+        string sql,
+        SqlFragment translation,
+        IReadOnlyList<object?> parameters,
+        out ImmutableArray<long> ids)
+    {
+        ids = default;
+        var trimmed = sql.Trim();
+        if (trimmed.Length < 2 || trimmed[0] != '(' || trimmed[^1] != ')')
+        {
+            return false;
+        }
+
+        var inner = trimmed[1..^1];
+        const string marker = " AND ";
+        var splitAt = inner.LastIndexOf(marker, StringComparison.Ordinal);
+        if (splitAt <= 0)
+        {
+            return false;
+        }
+
+        var wherePart = inner[..splitAt];
+        if (!string.Equals(wherePart, translation.Sql, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var whereCount = translation.Parameters.Count;
+        if (whereCount > parameters.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < whereCount; i++)
+        {
+            if (!Equals(parameters[i], translation.Parameters[i]))
+            {
+                return false;
+            }
+        }
+
+        return TryReadIntegralInList(inner[(splitAt + marker.Length)..], parameters, whereCount, out ids);
+    }
+
+    private static bool TryReadIntegralInList(
+        string sql,
+        IReadOnlyList<object?> parameters,
+        int startIndex,
+        out ImmutableArray<long> ids)
+    {
+        ids = default;
+        var match = IntegralInRegex().Match(sql.Trim());
+        if (!match.Success)
+        {
+            return false;
+        }
+
+        var left = match.Groups["left"].Value;
+        if (left.Length == 0 || AndTokenRegex().IsMatch(left))
+        {
+            return false;
+        }
+
+        var placeholders = match.Groups["ph"].Value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (placeholders.Length == 0 || startIndex + placeholders.Length != parameters.Count)
+        {
+            return false;
+        }
+
+        var parsed = new long[placeholders.Length];
+        for (var i = 0; i < placeholders.Length; i++)
+        {
+            var expected = "@p" + (startIndex + i).ToString(CultureInfo.InvariantCulture);
+            if (!placeholders[i].Equals(expected, StringComparison.OrdinalIgnoreCase)
+                || !TryReadLong(parameters[startIndex + i], out parsed[i]))
+            {
+                return false;
+            }
+        }
+
+        ids = ImmutableArray.Create(parsed);
+        return true;
+    }
+
+    private static bool TryReadLong(object? value, out long id)
+    {
+        switch (value)
+        {
+            case long integral:
+                id = integral;
+                return true;
+            case int integral:
+                id = integral;
+                return true;
+            case short integral:
+                id = integral;
+                return true;
+            case byte integral:
+                id = integral;
+                return true;
+            default:
+                id = 0;
+                return false;
         }
     }
 
@@ -597,5 +781,18 @@ internal static partial class SqlServerFeatureQueryBuilder
 
     [GeneratedRegex(@"'(?:''|[^'])*'|-?\d+(?:\.\d+)?", RegexOptions.CultureInvariant)]
     private static partial Regex InValueRegex();
+
+    [GeneratedRegex(
+        @"^\s*(?:\(*\s*)*(?:1\s*=\s*1|TRUE)(?:\s*\))*\s*(?:AND\s*(?:\(*\s*)*(?:1\s*=\s*1|TRUE)(?:\s*\))*\s*)*\z",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex NoOpWhereRegex();
+
+    [GeneratedRegex(
+        @"^(?<left>.*?)\s+IN\s*\(\s*(?<ph>@p\d+(?:\s*,\s*@p\d+)*)\s*\)\s*\z",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Singleline)]
+    private static partial Regex IntegralInRegex();
+
+    [GeneratedRegex(@"\bAND\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex AndTokenRegex();
 
 }

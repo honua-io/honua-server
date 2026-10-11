@@ -11,6 +11,7 @@ using Honua.Core.Features.Tiles;
 using Honua.Core.Queries.Filters;
 using Honua.Db.MySql.Features.FeatureStore.Services;
 using Honua.Db.MySql.Features.Infrastructure;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Db.MySql.Tests;
 
@@ -789,6 +790,80 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("MAX(ST_Y(`loc`))", result.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("ST_Longitude", result.Sql, StringComparison.Ordinal);
     }
+
+    [UnitTest]
+    public void BuildExtentQuery_SRV_DB_018_MySql4269PointUsesLongitudeLatitude()
+    {
+        var builder = new MySqlFeatureQueryBuilder(new MySqlLayerMappingRegistry([
+            PointMapping(101, 4269)
+        ]));
+
+        var result = builder.BuildExtentQuery(101, new FeatureQuery());
+
+        Assert.Contains("MIN(ST_Longitude(`loc`))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MAX(ST_Latitude(`loc`))", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ST_X(`loc`)", result.Sql, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void BuildExtentQuery_SRV_DB_018_MySql3857PointKeepsStoredAxisAccessors()
+    {
+        var builder = new MySqlFeatureQueryBuilder(new MySqlLayerMappingRegistry([
+            PointMapping(102, 3857)
+        ]));
+
+        var result = builder.BuildExtentQuery(102, new FeatureQuery());
+
+        Assert.Contains("MIN(ST_X(`loc`))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MAX(ST_Y(`loc`))", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ST_Longitude", result.Sql, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void BuildExtentQuery_SRV_DB_018_MySql4326PolygonEnvelopeUsesLongitudeLatitude()
+    {
+        var result = _builder.BuildExtentQuery(LayerId, new FeatureQuery());
+
+        Assert.Contains("MIN(ST_Longitude(ST_PointN(ST_ExteriorRing(ST_Envelope(`geom`)), 1)))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MAX(ST_Latitude(ST_PointN(ST_ExteriorRing(ST_Envelope(`geom`)), 3)))", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ST_X(", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ST_Y(", result.Sql, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void BuildExtentQuery_SRV_DB_018_MariaDb4326PolygonKeepsStoredAxisAccessors()
+    {
+        var mapping = new MySqlLayerMapping
+        {
+            LayerId = 103,
+            TableName = "parcels",
+            SchemaName = "honua",
+            GeometryColumn = "geom",
+            PrimaryKeyColumn = "id",
+            Srid = 4326,
+            AttributeColumns = ["name"],
+            GeometryType = GeometryType.Polygon
+        };
+        var builder = new MySqlFeatureQueryBuilder(
+            new MySqlLayerMappingRegistry([mapping]), MySqlEngineFlavor.MariaDb);
+
+        var result = builder.BuildExtentQuery(103, new FeatureQuery());
+
+        Assert.Contains("MIN(ST_X(ST_PointN(ST_ExteriorRing(ST_Envelope(`geom`)), 1)))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MAX(ST_Y(ST_PointN(ST_ExteriorRing(ST_Envelope(`geom`)), 3)))", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ST_Longitude", result.Sql, StringComparison.Ordinal);
+    }
+
+    private static MySqlLayerMapping PointMapping(int layerId, int srid) => new()
+    {
+        LayerId = layerId,
+        TableName = "stations",
+        GeometryColumn = "loc",
+        PrimaryKeyColumn = "id",
+        Srid = srid,
+        AttributeColumns = ["name"],
+        GeometryType = GeometryType.Point
+    };
 
     [Theory]
     [InlineData(GeometryType.MultiPoint)]

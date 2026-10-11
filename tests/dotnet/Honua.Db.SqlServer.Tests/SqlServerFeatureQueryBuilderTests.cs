@@ -7,6 +7,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Db.SqlServer.Features.FeatureStore.Services;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Db.SqlServer.Tests;
 
@@ -23,7 +24,8 @@ public class SqlServerFeatureQueryBuilderTests
     private static SqlServerLayerMapping BuildMapping(
         SqlServerGeometryColumnType columnType = SqlServerGeometryColumnType.Geometry,
         string? schema = "dbo",
-        int? srid = 4326)
+        int? srid = 4326,
+        string primaryKeyColumn = "objectid")
     {
         var providerOptions = new Dictionary<string, string>
         {
@@ -35,7 +37,7 @@ public class SqlServerFeatureQueryBuilderTests
             SchemaName: schema,
             CatalogName: null,
             DatabaseName: null,
-            PrimaryKeyColumn: "objectid",
+            PrimaryKeyColumn: primaryKeyColumn,
             GeometryColumn: "shape",
             StorageSrid: srid,
             ProviderOptions: providerOptions);
@@ -241,6 +243,111 @@ public class SqlServerFeatureQueryBuilderTests
             () => SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
 
         Assert.Contains("cannot safely combine", exception.Message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void BuildSelectQuery_SRV_DB_008_NoOpWhereWithObjectIdInListUsesPrimaryKey()
+    {
+        // FeatureServer folds objectIds into SqlFilter when the OID field is not literally
+        // objectid, and it strips where=1=1 before translation. The Postgres column name is
+        // not the SQL Server primary key; the parameter values are the requested ids.
+        var mapping = BuildMapping(primaryKeyColumn: "id");
+        var query = new FeatureQuery
+        {
+            Where = "1=1",
+            SqlFilter = new SqlFragment("attributes->>'id' IN (@p0, @p1)", new object?[] { 7L, 9L })
+        };
+
+        var select = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
+        var count = SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query);
+        var objectIds = SqlServerFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query);
+        var extent = SqlServerFeatureQueryBuilder.BuildExtentQuery(mapping, query);
+
+        AssertObjectIdParameters(select, "[id] IN (@p0, @p1)");
+        AssertObjectIdParameters(count, "[id] IN (@p0, @p1)");
+        AssertObjectIdParameters(objectIds, "[id] IN (@p0, @p1)");
+        AssertObjectIdParameters(extent, "[id] IN (@p0, @p1)");
+    }
+
+    [UnitTest]
+    public void BuildSelectQuery_SRV_DB_008_ParenthesizedNoOpWhereStillLiftsObjectIds()
+    {
+        var mapping = BuildMapping(primaryKeyColumn: "id");
+        var query = new FeatureQuery
+        {
+            Where = "(1 = 1)",
+            SqlFilter = new SqlFragment("\"objectid\" IN (@p0, @p1)", new object?[] { 7L, 9L })
+        };
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
+
+        AssertObjectIdParameters(result, "[id] IN (@p0, @p1)");
+        Assert.DoesNotContain("->>", result.Sql, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void BuildSelectQuery_SRV_DB_008_NoOpWhereWithTimeSqlFilterFailsClosed()
+    {
+        var query = new FeatureQuery
+        {
+            Where = "1=1",
+            SqlFilter = new SqlFragment(
+                "(\"attributes\"->>'observed_at')::timestamptz >= @p0",
+                new object?[] { "2024-01-01T00:00:00Z" })
+        };
+
+        var select = Assert.Throws<NotSupportedException>(
+            () => SqlServerFeatureQueryBuilder.BuildSelectQuery(BuildMapping(primaryKeyColumn: "id"), query, _attributeColumns));
+        var count = Assert.Throws<NotSupportedException>(
+            () => SqlServerFeatureQueryBuilder.BuildCountQuery(BuildMapping(primaryKeyColumn: "id"), query));
+
+        Assert.Contains("cannot safely combine", select.Message, StringComparison.Ordinal);
+        Assert.Contains("cannot safely combine", count.Message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void BuildSelectQuery_SRV_DB_008_ProvedWhereTranslationIsReparsed()
+    {
+        var translation = new SqlFragment("(attributes->>'name') = @p0", new object?[] { "Alpha" });
+        var query = SqlServerFeatureQueryBuilder.NormalizeConstraints(
+            new FeatureQuery
+            {
+                Where = "name = 'Alpha'",
+                SqlFilter = translation
+            },
+            translation,
+            translationProved: true);
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns);
+
+        Assert.Contains("[name] = @p0", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("attributes", result.Sql, StringComparison.Ordinal);
+        Assert.Equal(new object?[] { "Alpha" }, result.WhereParameters);
+    }
+
+    [UnitTest]
+    public void BuildSelectQuery_SRV_DB_008_ProvedWhereAndObjectIdsKeepsBoth()
+    {
+        var whereTranslation = new SqlFragment("(attributes->>'name') = @p0", new object?[] { "Alpha" });
+        var combined = new SqlFragment(
+            "((attributes->>'name') = @p0 AND \"objectid\" IN (@p1, @p2))",
+            new object?[] { "Alpha", 7L, 9L });
+        var query = SqlServerFeatureQueryBuilder.NormalizeConstraints(
+            new FeatureQuery
+            {
+                Where = "name = 'Alpha'",
+                SqlFilter = combined
+            },
+            whereTranslation,
+            translationProved: true);
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(
+            BuildMapping(primaryKeyColumn: "id"), query, _attributeColumns);
+
+        Assert.Contains("[name] = @p0", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("[id] IN (@p1, @p2)", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("attributes", result.Sql, StringComparison.Ordinal);
+        Assert.Equal(new object?[] { "Alpha", 7L, 9L }, result.WhereParameters);
     }
 
     [Fact]
@@ -589,5 +696,12 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Throws<NotSupportedException>(() => SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query));
         Assert.Throws<NotSupportedException>(() => SqlServerFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query));
         Assert.Throws<NotSupportedException>(() => SqlServerFeatureQueryBuilder.BuildExtentQuery(mapping, query));
+    }
+
+    private static void AssertObjectIdParameters(ParameterizedQuery result, string inClause)
+    {
+        Assert.Contains(inClause, result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("->>", result.Sql, StringComparison.Ordinal);
+        Assert.Equal(new object?[] { 7L, 9L }, result.WhereParameters);
     }
 }

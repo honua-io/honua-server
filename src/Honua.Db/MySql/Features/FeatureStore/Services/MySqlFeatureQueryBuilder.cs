@@ -116,31 +116,36 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         // are rejected explicitly — callers should compute extents in the application
         // layer or use a PostGIS-backed layer.
         //
-        // MySQL's EPSG:4326 SRS is latitude-first, so ST_X/ST_Y would invert the protocol's
-        // canonical longitude/latitude extent. ST_Longitude/ST_Latitude keep the extent aligned
-        // with the axis-normalized WKB read path. Those accessors were added in 8.0.12, which
-        // is this provider's floor: the same release redefined ST_X/ST_Y to follow SRS axis
-        // order (bugs 27125600 / 88503), so swapping them is not a correct 8.0.11 substitute.
-        // MariaDB does not provide these accessors.
-        var pointX = _engineFlavor == MySqlEngineFlavor.Mysql && mapping.Srid == 4326
-            ? $"ST_Longitude({mapping.QuotedGeometryColumn})"
-            : $"ST_X({mapping.QuotedGeometryColumn})";
-        var pointY = _engineFlavor == MySqlEngineFlavor.Mysql && mapping.Srid == 4326
-            ? $"ST_Latitude({mapping.QuotedGeometryColumn})"
-            : $"ST_Y({mapping.QuotedGeometryColumn})";
+        // MySQL geographic SRS definitions are latitude-first, so ST_X/ST_Y return latitude
+        // as X. ST_Longitude/ST_Latitude keep both point columns and polygon envelope corners
+        // aligned with the axis-normalized WKB read path. Those accessors were added in 8.0.12,
+        // which is this provider's floor: the same release redefined ST_X/ST_Y to follow SRS
+        // axis order (bugs 27125600 / 88503), so swapping them is not a correct 8.0.11 substitute.
+        // MariaDB does not provide these accessors and keeps ST_X/ST_Y.
+        var useGeographicAxes = _engineFlavor == MySqlEngineFlavor.Mysql
+            && GeographicSridClassifier.IsGeographicSrid(mapping.Srid);
+        string AxisX(string pointExpression) => useGeographicAxes
+            ? $"ST_Longitude({pointExpression})"
+            : $"ST_X({pointExpression})";
+        string AxisY(string pointExpression) => useGeographicAxes
+            ? $"ST_Latitude({pointExpression})"
+            : $"ST_Y({pointExpression})";
+        var geometryColumn = mapping.QuotedGeometryColumn;
+        var envelopeCorner1 = $"ST_PointN(ST_ExteriorRing(ST_Envelope({geometryColumn})), 1)";
+        var envelopeCorner3 = $"ST_PointN(ST_ExteriorRing(ST_Envelope({geometryColumn})), 3)";
         var extentSelect = mapping.GeometryType switch
         {
             GeometryType.Point => $"""
-                MIN({pointX}),
-                MIN({pointY}),
-                MAX({pointX}),
-                MAX({pointY})
+                MIN({AxisX(geometryColumn)}),
+                MIN({AxisY(geometryColumn)}),
+                MAX({AxisX(geometryColumn)}),
+                MAX({AxisY(geometryColumn)})
                 """,
             GeometryType.Polygon or GeometryType.MultiPolygon => $"""
-                MIN(ST_X(ST_PointN(ST_ExteriorRing(ST_Envelope({mapping.QuotedGeometryColumn})), 1))),
-                MIN(ST_Y(ST_PointN(ST_ExteriorRing(ST_Envelope({mapping.QuotedGeometryColumn})), 1))),
-                MAX(ST_X(ST_PointN(ST_ExteriorRing(ST_Envelope({mapping.QuotedGeometryColumn})), 3))),
-                MAX(ST_Y(ST_PointN(ST_ExteriorRing(ST_Envelope({mapping.QuotedGeometryColumn})), 3)))
+                MIN({AxisX(envelopeCorner1)}),
+                MIN({AxisY(envelopeCorner1)}),
+                MAX({AxisX(envelopeCorner3)}),
+                MAX({AxisY(envelopeCorner3)})
                 """,
             _ => throw MySqlUnsupportedFeature.Create(
                 $"Extent queries on {mapping.GeometryType} layers are not supported by the MySQL/MariaDB " +
