@@ -362,8 +362,9 @@ public sealed class RasterCorrectedNearestSqlIntegrationTests(PostgresFixture fi
         setupWatch.Stop();
         output.WriteLine($"HighResolution fixture setup: {setupWatch.Elapsed.TotalMilliseconds:F3} ms");
         command.CommandTimeout = 20;
+        command.CommandText = "SET LOCAL statement_timeout = '15s'; SAVEPOINT mandatory_sample;";
+        await command.ExecuteNonQueryAsync();
         command.CommandText = $"""
-            SET LOCAL statement_timeout = '15s';
             WITH source AS MATERIALIZED (SELECT rast FROM corrected_highres_source),
             grid AS MATERIALIZED (
                 SELECT ST_MakeEmptyRaster(256, 256, 0, 2048, 8, -8, 0, 0, 3857) AS rast
@@ -381,8 +382,9 @@ public sealed class RasterCorrectedNearestSqlIntegrationTests(PostgresFixture fi
                    source_width, source_height, source_bands
             FROM result;
             """;
+        var sampleQuery = command.CommandText;
         var watch = System.Diagnostics.Stopwatch.StartNew();
-        await using var reader = await command.ExecuteReaderAsync();
+        await using var reader = await ExecuteMandatoryHighResolutionSampleAsync(command, sampleQuery, watch);
         (await reader.ReadAsync()).Should().BeTrue();
         reader.GetBoolean(0).Should().BeTrue("the full native window exceeds its band-weighted cap");
         var first = reader.GetFieldValue<double[,]>(1);
@@ -413,6 +415,47 @@ public sealed class RasterCorrectedNearestSqlIntegrationTests(PostgresFixture fi
         output.WriteLine($"HighResolution production Sample plus full array assertions: {watch.Elapsed.TotalMilliseconds:F3} ms");
         watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(15),
             "the larger-source fallback must meet the same bounded query deadline");
+    }
+
+    private async Task<Npgsql.NpgsqlDataReader> ExecuteMandatoryHighResolutionSampleAsync(
+        Npgsql.NpgsqlCommand command, string sampleQuery, System.Diagnostics.Stopwatch watch)
+    {
+        try
+        {
+            return await command.ExecuteReaderAsync();
+        }
+        catch (Npgsql.PostgresException exception) when (exception.SqlState == "57014")
+        {
+            watch.Stop();
+            output.WriteLine($"HighResolution mandatory production Sample FAILED: {watch.Elapsed.TotalMilliseconds:F3} ms; SQLSTATE 57014; acceptance deadline remains 15s.");
+            // Keep the original timeout as this test's verdict. A separate diagnostic executes
+            // the identical complete query, against the retained full fixture, after clearing
+            // only the failed savepoint. Its longer bound is never an acceptance allowance.
+            var diagnosticWatch = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                command.CommandText = "ROLLBACK TO SAVEPOINT mandatory_sample; SET LOCAL statement_timeout = '60s';";
+                await command.ExecuteNonQueryAsync();
+                command.CommandTimeout = 65;
+                command.CommandText = "EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON) " + sampleQuery;
+                var plan = (string?)await command.ExecuteScalarAsync();
+                output.WriteLine($"HighResolution diagnostic-only EXPLAIN ANALYZE: {diagnosticWatch.Elapsed.TotalMilliseconds:F3} ms; acceptance FAILED regardless of diagnostic result.");
+                if (plan is null || plan.Length > 1_048_576)
+                {
+                    output.WriteLine("HighResolution diagnostic plan absent or exceeded the 1 MiB output bound.");
+                }
+                else
+                {
+                    output.WriteLine("HighResolution diagnostic plan JSON: " + plan);
+                }
+            }
+            catch (Exception diagnosticException)
+            {
+                output.WriteLine($"HighResolution diagnostic-only EXPLAIN FAILED after {diagnosticWatch.Elapsed.TotalMilliseconds:F3} ms: {diagnosticException.GetType().Name}; SQLSTATE {(diagnosticException as Npgsql.PostgresException)?.SqlState ?? "none"}.");
+            }
+
+            throw;
+        }
     }
 
     [IntegrationTest]
