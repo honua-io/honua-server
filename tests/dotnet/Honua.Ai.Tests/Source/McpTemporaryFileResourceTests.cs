@@ -146,16 +146,15 @@ public sealed class McpTemporaryFileResourceTests
             Id = McpTestFactory.ParseJson("1"),
             Method = "resources/read",
             Params = McpTestFactory.ParseJson($$"""{"uri":"{{uri}}","maxChars":1000000}""")
-        }, CancellationToken.None);
-        response.Should().NotBeNull();
+        }, CancellationToken.None) ?? throw new InvalidOperationException("Resource requests must produce a response.");
         if (accepted)
         {
-            response!.Error.Should().BeNull();
+            response.Error.Should().BeNull();
             response.Result!.Value.GetProperty("contents")[0].GetProperty("blob").GetString()!.Length.Should().Be(1_000_000);
         }
         else
         {
-            response!.Result.Should().BeNull();
+            response.Result.Should().BeNull();
             response.Error!.Message.Should().Contain("smaller image");
         }
     }

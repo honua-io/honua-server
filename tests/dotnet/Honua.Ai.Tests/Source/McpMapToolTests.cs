@@ -874,9 +874,8 @@ public sealed class McpMapToolTests
                 Id = JsonString("read-render"),
                 Method = "resources/read",
                 Params = Json($$"""{"uri":"{{href}}"}""")
-            }, CancellationToken.None);
-        read.Should().NotBeNull();
-        read!.Error.Should().BeNull();
+            }, CancellationToken.None) ?? throw new InvalidOperationException("Resource requests must produce a response.");
+        read.Error.Should().BeNull();
         var image = read.Result!.Value.GetProperty("contents")[0];
         image.GetProperty("uri").GetString().Should().Be(href);
         image.GetProperty("mimeType").GetString().Should().Be("image/png");
