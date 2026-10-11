@@ -283,7 +283,7 @@ public sealed class OperationEnvelopeFactory(
         }, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(retryAuditId))
         {
-            return Failure(existing, "The idempotent retry could not be durably audited.");
+            return Failure(existing, "The idempotent retry could not be durably audited.") with { Result = null };
         }
 
         // A queued job can progress while the retry is audited. Reading the latest
@@ -291,7 +291,7 @@ public sealed class OperationEnvelopeFactory(
         var current = await instanceStore.GetAsync(existing.OperationInstanceId, cancellationToken).ConfigureAwait(false);
         if (current is null)
         {
-            return Failure(existing, "The idempotent invocation is no longer durably readable.");
+            return Failure(existing, "The idempotent invocation is no longer durably readable.") with { Result = null };
         }
         // Approved replay can claim a waiting envelope while the retry is audited.
         // A retry must never receive Accepted, which grants dispatcher actuation.

@@ -214,6 +214,35 @@ public sealed class UrlImportOperationMiddlewareTests
         Assert.Equal(1, fixture.Actuations);
     }
 
+    [Theory]
+    [InlineData(OperationHandleStatus.Failed)]
+    [InlineData(OperationHandleStatus.Cancelled)]
+    public async Task InvokeAsync_TerminalJob_ReplaysAcceptanceOnlyAfterDurableRetryAudit(OperationHandleStatus terminal)
+    {
+        using var fixture = new Fixture();
+        var first = fixture.Context();
+        await fixture.InvokeAsync(first);
+        var instanceId = first.Response.Headers["X-Honua-Operation-Instance-Id"].ToString();
+        var queued = await fixture.Store.GetAsync(instanceId);
+        Assert.NotNull(queued);
+        await fixture.Store.SetAsync(queued with { Status = terminal, Reason = "Background job terminated." });
+
+        var retry = fixture.Context();
+        await fixture.InvokeAsync(retry);
+        Assert.Equal(202, retry.Response.StatusCode);
+        Assert.Equal(ReadBody(first), ReadBody(retry));
+        Assert.Equal(1, fixture.Actuations);
+        Assert.Equal(terminal, (await fixture.Store.GetAsync(instanceId))!.Status);
+
+        fixture.AuditAvailable = false;
+        var unaudited = fixture.Context();
+        await fixture.InvokeAsync(unaudited);
+        Assert.Equal(503, unaudited.Response.StatusCode);
+        Assert.DoesNotContain("job-1", ReadBody(unaudited), StringComparison.Ordinal);
+        Assert.False(unaudited.Response.Headers.ContainsKey("X-Honua-Audit-Id"));
+        Assert.Equal(1, fixture.Actuations);
+    }
+
     [Fact]
     public async Task InvokeAsync_ConcurrentRetry_RefusesWhileFirstActuationIsRunning()
     {

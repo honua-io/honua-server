@@ -95,11 +95,15 @@ internal sealed class UrlImportOperationMiddleware(RequestDelegate next)
 
         context.Response.Headers.CacheControl = "no-store";
         var details = handle.Result?.Details;
+        // Background failure does not undo HTTP acceptance. Only a freshly audited
+        // retry may replay that terminal job; acceptance/audit failures stay refused.
+        var auditedTerminalRetry = handle.Status is OperationHandleStatus.Failed or OperationHandleStatus.Cancelled &&
+            handle.EvidenceRefs.Any(reference => reference.StartsWith("retry-audit:", StringComparison.Ordinal));
         if (details is not null && details.TryGetValue("statusCode", out var statusText) &&
             int.TryParse(statusText, NumberStyles.None, CultureInfo.InvariantCulture, out var status) && status is >= 200 and <= 599 &&
             details.TryGetValue("response", out var response) &&
             (status >= 400 || (!string.IsNullOrWhiteSpace(handle.AuditId) &&
-                handle.Status is OperationHandleStatus.Queued or OperationHandleStatus.Running or OperationHandleStatus.Completed)))
+                (handle.Status is OperationHandleStatus.Queued or OperationHandleStatus.Running or OperationHandleStatus.Completed || auditedTerminalRetry))))
         {
             context.Response.Headers["X-Honua-Operation-Instance-Id"] = handle.OperationInstanceId;
             context.Response.Headers["X-Honua-Audit-Id"] = handle.AuditId;
