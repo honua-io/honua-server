@@ -1,8 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Net.Http.Headers;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.FileImport.Abstractions;
@@ -10,6 +10,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.RateLimiting;
 
 namespace Honua.Server.Features.Operations;
 
@@ -69,12 +70,16 @@ internal sealed class AdminConnectImportOperationExecutor(
         }.Uri;
         using var message = new HttpRequestMessage(definition.Method, uri);
         message.Headers.Host = current.Request.Host.Value;
-        OperationLineageHeaders.Apply(message, context, lineageAttestationStore);
+        var authorizedUrlImport = OperationId == "admin.import.upload-url" &&
+            current.User.Identity?.IsAuthenticated == true &&
+            !string.IsNullOrWhiteSpace(context.OperationInstanceId) &&
+            !string.IsNullOrWhiteSpace(context.AuditId) &&
+            await ImportAdminAuthorization.IsAuthorizedAsync(current, current.User, cancellationToken).ConfigureAwait(false);
         AdminApiKeyRecord? executionCredential = null;
-        if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
+        if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId) || authorizedUrlImport)
         {
             var issued = await adminApiKeyStore.CreateAsync(
-                $"approved-operation:{context.ApprovedProposalId}",
+                authorizedUrlImport ? $"import-operation:{context.OperationInstanceId}" : $"approved-operation:{context.ApprovedProposalId}",
                 AdminApiKeyPermission.CreateApprovedOperationGrants(definition.Method.Method, uri.AbsolutePath, context.TenantId),
                 clock.GetUtcNow().AddMinutes(5),
                 context.PrincipalId,
@@ -109,12 +114,16 @@ internal sealed class AdminConnectImportOperationExecutor(
             CopyHeader(current, message, "X-API-Key");
             CopyHeader(current, message, "X-Honua-Tenant");
         }
-        if (definition.Method != HttpMethod.Get && definition.Method != HttpMethod.Delete)
-            message.Content = definition.ContentType == "multipart/form-data" ? BuildMultipart(request, routeNames) : BuildJson(request, routeNames, OperationId);
-
         HttpResponseMessage response;
         try
         {
+            var admission = authorizedUrlImport && executionCredential is not null &&
+                current.Features.Get<RateLimitAdmission>() is not null
+                ? new OperationLoopbackAdmission(executionCredential.Id, definition.Method.Method, uri.AbsolutePath, context.TenantId)
+                : null;
+            OperationLineageHeaders.Apply(message, context, lineageAttestationStore, admission);
+            if (definition.Method != HttpMethod.Get && definition.Method != HttpMethod.Delete)
+                message.Content = definition.ContentType == "multipart/form-data" ? BuildMultipart(request, routeNames) : BuildJson(request, routeNames, OperationId);
             response = await httpClientFactory.CreateClient(HttpClientName).SendAsync(message, cancellationToken).ConfigureAwait(false);
         }
         finally

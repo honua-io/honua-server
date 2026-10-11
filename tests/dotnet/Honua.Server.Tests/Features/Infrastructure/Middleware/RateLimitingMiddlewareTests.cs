@@ -9,6 +9,8 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.RateLimiting.Abstractions;
 using Honua.Core.Features.RateLimiting.Domain;
 using Honua.Infrastructure.RateLimiting;
+using Honua.Core.Features.Operations.Domain;
+using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +23,44 @@ namespace Honua.Server.Tests.Features.Infrastructure.Middleware;
 [Collection("RateLimitingCapacity")]
 public sealed class RateLimitingMiddlewareTests
 {
+    [UnitTheory]
+    [InlineData("valid", 1)]
+    [InlineData("spoofed", 2)]
+    [InlineData("wrong-key", 2)]
+    [InlineData("wrong-tenant", 2)]
+    [InlineData("wrong-path", 2)]
+    [InlineData("wrong-method", 2)]
+    [InlineData("remote", 2)]
+    public async Task InvokeAsync_AdmittedImportLoopback_AccountsOnlyValidatedExecution(string scenario, int checks)
+    {
+        var policies = Substitute.For<IRateLimitPolicyStore>();
+        var limiter = CreateMiddleware(policyStore: policies);
+        var actor = Guid.NewGuid().ToString("N");
+        var original = CreateContext("198.51.100.241", subject: actor, tenantId: "tenant-a");
+        await limiter.InvokeAsync(original);
+        original.Features.Get<RateLimitAdmission>().Should().NotBeNull();
+        var credential = Guid.NewGuid();
+        var store = new OperationLineageAttestationStore(TimeProvider.System);
+        var token = store.Issue(new OperationPolicyContext { OperationInstanceId = "opinst-a" },
+            new OperationLoopbackAdmission(credential, "POST", "/api/v1/admin/import/upload-url", "tenant-a"));
+        var inner = CreateContext(scenario == "remote" ? "198.51.100.242" : "127.0.0.1",
+            subject: credential.ToString(), tenantId: scenario == "wrong-tenant" ? "tenant-b" : "tenant-a",
+            httpMethod: scenario == "wrong-method" ? "GET" : "POST");
+        ((ClaimsIdentity)inner.User.Identity!).AddClaim(new Claim("api_key_id",
+            scenario == "wrong-key" ? Guid.NewGuid().ToString() : credential.ToString()));
+        inner.Request.Path = scenario == "wrong-path" ? "/api/v1/admin/import/upload" : "/api/v1/admin/import/upload-url";
+        inner.Request.Headers[OperationLineageHeaders.Attestation] = scenario == "spoofed" ? "caller-invented" : token;
+        var attest = new OperationLineageAttestationMiddleware(limiter.InvokeAsync);
+        await attest.InvokeAsync(inner, store);
+        inner.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        await policies.Received(checks).ListPoliciesAsync(Arg.Any<CancellationToken>());
+
+        // The original caller still spent its sole permit, regardless of internal execution.
+        var retry = CreateContext("198.51.100.241", subject: actor, tenantId: "tenant-a");
+        await limiter.InvokeAsync(retry);
+        retry.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+    }
+
     [UnitTest]
     public async Task InvokeAsync_WithSpoofedForwardedHeaders_UsesRemoteIpAddressForRateLimitKey()
     {
