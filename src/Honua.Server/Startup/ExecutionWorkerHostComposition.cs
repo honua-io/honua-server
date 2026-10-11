@@ -133,6 +133,46 @@ internal static class ExecutionWorkerHostComposition
     }
 
     /// <summary>
+    /// Runs an execution worker host to completion and returns the process exit code decided by
+    /// <see cref="ExecutionWorkerExitState"/>.
+    /// </summary>
+    /// <remarks>
+    /// The exit code is read from the durable job store after the host has stopped (the execution
+    /// loop has finalized or handed back the attempt) but before the host is disposed. Resolving it
+    /// from the root provider after <c>RunAsync</c> returned touched a disposed
+    /// <see cref="IServiceProvider"/> and turned every clean worker exit into an unhandled
+    /// <see cref="ObjectDisposedException"/> (e2e-cloud-aws run 38107383082): a nonzero exit AWS Batch
+    /// records as a failed attempt and may retry natively.
+    /// </remarks>
+    public static async Task<int> RunExecutionWorkerAsync(this IHost host, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+
+        try
+        {
+            // Captured while the provider is live; it holds the job store and launch it needs.
+            var exitState = host.Services.GetRequiredService<ExecutionWorkerExitState>();
+            await host.StartAsync(cancellationToken).ConfigureAwait(false);
+
+            // Waits for the lifetime service to stop the application, then stops the host
+            // (hosted services, then ApplicationStopped) without disposing it.
+            await host.WaitForShutdownAsync(cancellationToken).ConfigureAwait(false);
+            return await exitState.ResolveAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            if (host is IAsyncDisposable asyncDisposable)
+            {
+                await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                host.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
     /// The only composed hosted service a worker keeps is OpenTelemetry's provider host, so the
     /// worker's traces and metrics still export. The execution loop and license revalidation are
     /// re-added explicitly with worker semantics.
