@@ -221,7 +221,7 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
 
     private static async Task<(HttpStatusCode Status, string Payload)> PostToolCallAsync(HttpClient client, string argumentsJson)
     {
-        var body = $$"""{"jsonrpc":"2.0","id":"publish","method":"tools/call","params":{"name":"honua_publish_service","arguments":{{argumentsJson}}}}""";
+        var body = $$$"""{"jsonrpc":"2.0","id":"publish","method":"tools/call","params":{"name":"honua_publish_service","arguments":{{{argumentsJson}}}}}""";
         using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
         {
             Content = new StringContent(body, Encoding.UTF8) { Headers = { ContentType = new MediaTypeHeaderValue(JsonMediaType) } },

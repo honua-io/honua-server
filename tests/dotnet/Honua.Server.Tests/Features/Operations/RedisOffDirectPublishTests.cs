@@ -13,6 +13,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Infrastructure.Health;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
@@ -220,7 +221,10 @@ public sealed class RedisOffDirectPublishTests
         resolver.ResolveConnectionStringAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns("Host=localhost;Database=test");
         services.AddSingleton(resolver);
-        services.AddSingleton(Substitute.For<IMetadataV2GraphProvider>());
+        var graphProvider = Substitute.For<IMetadataV2GraphProvider>();
+        graphProvider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(
+            new MetadataV2GraphSnapshot(new MetadataV2Graph { Revision = 7 }, "\"etag\"", DateTimeOffset.UtcNow));
+        services.AddSingleton(graphProvider);
 
         // Mirrors the Program.cs no-Redis branch: no IConnectionMultiplexer, fail-closed proposal store.
         services.AddSingleton<IOperationProposalStore, UnavailableOperationProposalStore>();
