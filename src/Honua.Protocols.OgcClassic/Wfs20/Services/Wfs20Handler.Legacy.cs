@@ -239,7 +239,10 @@ internal sealed partial class Wfs20Handler
         sb.AppendLine("    <Name>Honua WFS</Name>");
         sb.AppendLine("    <Title>Honua WFS 1.0.0</Title>");
         sb.AppendLine("    <Abstract>Honua WFS 1.0.0 compatibility endpoint.</Abstract>");
-        sb.AppendLine("    <OnlineResource>http://honua.io</OnlineResource>");
+        // WFS 1.0.0 Service/OnlineResource is the top-level URL of this service, so it is
+        // the deployment's own endpoint (Public:BaseUrl), never a vendor site: customers
+        // serve Honua on their own domains.
+        sb.AppendLine($"""    <OnlineResource>{XmlEscape(wfsUrl)}</OnlineResource>""");
         sb.AppendLine("    <Fees>NONE</Fees>");
         sb.AppendLine("    <AccessConstraints>NONE</AccessConstraints>");
         sb.AppendLine("  </Service>");
