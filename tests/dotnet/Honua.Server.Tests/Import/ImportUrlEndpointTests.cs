@@ -60,7 +60,8 @@ public sealed class ImportUrlEndpointTests : IAsyncLifetime
                     Summary = "Import queued",
                     Details = new Dictionary<string, string>
                     {
-                        ["statusCode"] = "202", ["response"] = "{\"jobId\":\"endpoint-owned-job\"}",
+                        ["statusCode"] = "202",
+                        ["response"] = "{\"jobId\":\"endpoint-owned-job\"}",
                     },
                 },
             });

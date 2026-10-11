@@ -154,7 +154,10 @@ public sealed class UrlImportOperationMiddlewareTests
         var factory = new OperationEnvelopeFactory(fixture.Store, new VolatileOperationAuditLog(), TimeProvider.System);
         var originalContext = new OperationPolicyContext
         {
-            PrincipalId = "operator-a", TenantId = "tenant-a", IdempotencyKey = "trusted-actor-scoped-key", IdempotencyRequestHash = new string('a', 64),
+            PrincipalId = "operator-a",
+            TenantId = "tenant-a",
+            IdempotencyKey = "trusted-actor-scoped-key",
+            IdempotencyRequestHash = new string('a', 64),
         };
         var accepted = await factory.CreateAcceptedAsync("admin.import.upload-url", originalContext);
         await fixture.Store.SetAsync(accepted with { Status = OperationHandleStatus.RequiresApproval });
@@ -247,15 +250,20 @@ public sealed class UrlImportOperationMiddlewareTests
                     var context = call.ArgAt<OperationPolicyContext>(1);
                     return new OperationHandle
                     {
-                        OperationInstanceId = context.OperationInstanceId!, OperationId = "admin.import.upload-url",
-                        CorrelationId = context.CorrelationId!, Status = OperationHandleStatus.Queued,
-                        CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow, JobId = $"job-{Actuations}",
+                        OperationInstanceId = context.OperationInstanceId!,
+                        OperationId = "admin.import.upload-url",
+                        CorrelationId = context.CorrelationId!,
+                        Status = OperationHandleStatus.Queued,
+                        CreatedAt = DateTimeOffset.UtcNow,
+                        UpdatedAt = DateTimeOffset.UtcNow,
+                        JobId = $"job-{Actuations}",
                         Result = new OperationResultSummary
                         {
                             Summary = "Import queued",
                             Details = new Dictionary<string, string>
                             {
-                                ["statusCode"] = "202", ["response"] = JsonSerializer.Serialize(new { jobId = $"job-{Actuations}" }),
+                                ["statusCode"] = "202",
+                                ["response"] = JsonSerializer.Serialize(new { jobId = $"job-{Actuations}" }),
                             },
                         },
                     };
@@ -289,8 +297,11 @@ public sealed class UrlImportOperationMiddlewareTests
             new OperationRequest { OperationId = accepted.OperationId },
             new OperationPolicyContext
             {
-                OperationInstanceId = accepted.OperationInstanceId, ApprovedProposalId = "approved-proposal", ApprovedPlanHash = "sealed-plan-hash",
-                TenantId = accepted.TenantId, PrincipalId = "operator-a",
+                OperationInstanceId = accepted.OperationInstanceId,
+                ApprovedProposalId = "approved-proposal",
+                ApprovedPlanHash = "sealed-plan-hash",
+                TenantId = accepted.TenantId,
+                PrincipalId = "operator-a",
             });
 
         public void Dispose() => _services.Dispose();
