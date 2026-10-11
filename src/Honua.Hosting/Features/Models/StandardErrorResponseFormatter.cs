@@ -385,14 +385,21 @@ internal static class StandardErrorResponseFormatter
         // the body; policies that deliberately cache a deterministic refusal read the code back.
         BypassOutputCacheOnErrorEnvelopePolicy.MarkErrorEnvelope(context, bodyCode);
 
-        // PA-070/PA-117: Esri GeoServices REST spec: ALL responses (including errors) use HTTP 200 OK.
-        // The error is signalled exclusively through the JSON body {"error":{"code":N,...}}.
-        // The one exception is a caller that opts a specific rejection into its real status
-        // (GeoServicesUseHttpStatus); the body is the same envelope either way.
+        // Honua normally carries GeoServices errors in an HTTP 200 ArcGIS envelope.
+        // QGIS's FeatureServer edit provider treats a 200 response without edit results as
+        // success, even when it contains error.code=403. Explicitly registered mutation
+        // endpoints therefore retain the envelope and also expose authorization denial in
+        // the transport. Missing/invalid token challenges (498/499) are unchanged.
+        var forbiddenUsesHttpStatus = errorResponse.StatusCode == StatusCodes.Status403Forbidden &&
+            bodyCode == StatusCodes.Status403Forbidden &&
+            context.GetEndpoint()?.Metadata.GetMetadata<GeoServicesForbiddenHttpStatusMetadata>() is not null;
+
         return Results.Json(
             apiErrorResponse,
             LimitsEnforcementJsonContext.Default.ApiErrorResponse,
-            statusCode: options.GeoServicesUseHttpStatus ? errorResponse.StatusCode : StatusCodes.Status200OK);
+            statusCode: options.GeoServicesUseHttpStatus || forbiddenUsesHttpStatus
+                ? errorResponse.StatusCode
+                : StatusCodes.Status200OK);
     }
 
     /// <summary>

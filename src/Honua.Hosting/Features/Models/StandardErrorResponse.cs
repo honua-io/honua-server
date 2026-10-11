@@ -299,7 +299,9 @@ internal sealed class ErrorResponseFormatterOptions
     /// GeoServices errors are HTTP 200 by default and that is deliberate: Esri clients read the
     /// body's <c>error.code</c>, and the 498/499 token flows depend on the 200. Set this only for a
     /// rejection a client is known to read from the transport status alone (createReplica's
-    /// unsupported <c>dataFormat</c>, honua-server#5013), never for authentication failures.
+    /// unsupported <c>dataFormat</c>, honua-server#5013), never for token challenges.
+    /// Mutating FeatureServer endpoints separately opt authorization denial into HTTP 403
+    /// with <see cref="GeoServicesForbiddenHttpStatusMetadata"/>; their 498/499 flows stay unchanged.
     /// </summary>
     public bool GeoServicesUseHttpStatus { get; init; }
 
