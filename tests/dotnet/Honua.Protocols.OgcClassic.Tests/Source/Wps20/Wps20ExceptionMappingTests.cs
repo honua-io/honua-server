@@ -9,6 +9,7 @@ using Honua.Geoprocessing;
 using Honua.Protocols.Ogc.Classic.Wps20;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -59,7 +60,9 @@ public sealed class Wps20ExceptionMappingTests
 
     private static async Task<DefaultHttpContext> DispatchAsync(IGeoprocessingJobService jobs, string jobId)
     {
-        var context = new DefaultHttpContext();
+        await using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
+        await using var scope = services.CreateAsyncScope();
+        var context = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
         context.Request.Method = HttpMethods.Get;
         context.Request.QueryString = new QueryString(
             $"?service=WPS&version=2.0.0&request=GetResult&jobId={jobId}");
