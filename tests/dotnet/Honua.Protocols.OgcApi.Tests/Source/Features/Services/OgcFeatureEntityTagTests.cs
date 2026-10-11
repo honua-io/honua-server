@@ -174,4 +174,47 @@ public sealed class OgcFeatureEntityTagTests
             .Should().BeTrue(
                 "a representation ETag built from the same V2 entity must match V2's If-Match check");
     }
+
+    [UnitTest]
+    public async Task ReadUntilStorageStable_SkipsADivergentProjection()
+    {
+        var storage = new Queue<Feature?>(
+        [
+            MakeFeature(1, "v1"),
+            MakeFeature(1, "v2"),
+            MakeFeature(1, "v2"),
+            MakeFeature(1, "v2"),
+        ]);
+        var projected = new Queue<Feature?>(
+        [
+            MakeFeature(1, "projected-v1"),
+            MakeFeature(1, "projected-v2"),
+        ]);
+
+        var result = await OgcFeaturesResponseHelpers.ReadUntilStorageStableAsync(
+            _ => Task.FromResult(storage.Dequeue()),
+            _ => Task.FromResult(projected.Dequeue()),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ConsistentFeatureReadStatus.Found);
+        result.Storage.HasValue.Should().BeTrue();
+        result.Response.HasValue.Should().BeTrue();
+        result.Storage.GetValueOrDefault().Attributes["name"].Should().Be("v2");
+        result.Response.GetValueOrDefault().Attributes["name"].Should().Be("projected-v2");
+    }
+
+    [UnitTest]
+    public async Task ReadUntilStorageStable_UnstableWhenEveryReadDiverges()
+    {
+        var version = 0;
+        var result = await OgcFeaturesResponseHelpers.ReadUntilStorageStableAsync(
+            _ => Task.FromResult<Feature?>(MakeFeature(1, "v" + version++)),
+            _ => Task.FromResult<Feature?>(MakeFeature(1, "projected")),
+            CancellationToken.None,
+            attempts: 2);
+
+        result.Status.Should().Be(ConsistentFeatureReadStatus.Unstable);
+        result.Storage.HasValue.Should().BeFalse();
+        result.Response.HasValue.Should().BeFalse();
+    }
 }

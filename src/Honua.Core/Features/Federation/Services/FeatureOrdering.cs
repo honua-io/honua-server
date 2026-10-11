@@ -62,6 +62,38 @@ public static class FeatureOrdering
         return left.Id.CompareTo(right.Id);
     }
 
+    /// <summary>
+    /// Compares features whose sort fields were resolved against different schemas.
+    /// Each side is read through its own clause, so <c>sortby=id</c> uses that
+    /// collection's item-id column rather than the first collection's column.
+    /// </summary>
+    public static int CompareResolved(
+        in Feature left,
+        MetadataV2Resource? leftResource,
+        ImmutableArray<OrderByClause> leftOrder,
+        in Feature right,
+        MetadataV2Resource? rightResource,
+        ImmutableArray<OrderByClause> rightOrder)
+    {
+        var count = Math.Min(leftOrder.Length, rightOrder.Length);
+        for (var index = 0; index < count; index++)
+        {
+            var leftClause = leftOrder[index];
+            var rightClause = rightOrder[index];
+            var comparison = FederationLocalRefinement.CompareValues(
+                ResolveValue(left, leftResource, leftClause.Field),
+                ResolveValue(right, rightResource, rightClause.Field),
+                leftClause.NullOrdering,
+                leftClause.Ascending);
+            if (comparison != 0)
+            {
+                return leftClause.Ascending ? comparison : -comparison;
+            }
+        }
+
+        return left.Id.CompareTo(right.Id);
+    }
+
     private static object? ResolveValue(
         in Feature feature,
         MetadataV2Resource? resource,

@@ -16,10 +16,51 @@ internal static class StacItemIdWhereBuilder
     public static ImmutableArray<MetadataV2Field> GetCandidateFields(MetadataV2Resource resource)
     {
         var source = StacItemIdentity.Resolve(resource);
-        return source.Field is null
-            ? ImmutableArray<MetadataV2Field>.Empty
-            : ImmutableArray.Create(source.Field);
+        if (source.Field is null)
+        {
+            return ImmutableArray<MetadataV2Field>.Empty;
+        }
+
+        if (!source.IsDeclaredIdentity)
+        {
+            return ImmutableArray.Create(source.Field);
+        }
+
+        // A blank declared identity is published as the object id. Include the primary
+        // key so a client can fetch that published id, while rows with a real identity
+        // still fail the published-id check in the query executor.
+        var primary = resource.FindPrimaryIdField();
+        if (primary is null ||
+            string.Equals(primary.Name, source.Field.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            return ImmutableArray.Create(source.Field);
+        }
+
+        return ImmutableArray.Create(source.Field, primary);
     }
+
+    /// <summary>
+    /// Attribute names an unbound item lookup may match. A configured identity field
+    /// replaces the canonical <c>stac_id</c>/<c>item_id</c>/<c>id</c> list.
+    /// </summary>
+    public static IReadOnlyList<string> UnboundAttributeNames(MetadataV2Resource resource)
+    {
+        var source = StacItemIdentity.Resolve(resource);
+        if (source.IsDeclaredIdentity &&
+            source.Field is { } field &&
+            !string.IsNullOrWhiteSpace(field.Name))
+        {
+            return [field.Name];
+        }
+
+        return StacItemIdentity.CanonicalNames;
+    }
+
+    public static string BuildUnboundAttributePredicate(MetadataV2Resource resource)
+        => string.Join(
+            " OR ",
+            UnboundAttributeNames(resource).Select(static name =>
+                $"attributes->>'{name.Replace("'", "''", StringComparison.Ordinal)}' = @p0"));
 
     public static bool TryBuildFieldMatch(
         MetadataV2Field field,

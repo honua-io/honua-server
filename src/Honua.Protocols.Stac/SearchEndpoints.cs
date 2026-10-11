@@ -427,7 +427,6 @@ internal static class SearchEndpoints
                 request.Sortby is { IsDefault: false, Length: > 0 }
                     ? new List<GlobalSearchCandidate>()
                     : null;
-            ImmutableArray<OrderByClause>? globalOrderBy = null;
             long totalMatched = 0;
             var omitCount = context.RequestServices.GetRequiredService<IOptions<StacOptions>>().Value.NumberMatchedPolicy
                 == StacNumberMatchedPolicy.OmitWhenExpensive;
@@ -490,11 +489,9 @@ internal static class SearchEndpoints
                 var query = layerQueryResult.Query;
                 var projection = layerQueryResult.Projection;
                 var layerId = target.LayerIndex;
-                if ((globallyOrderedCandidates is not null || crossCollectionOrdered is not null) &&
-                    query.OrderBy.HasValue)
-                {
-                    globalOrderBy ??= query.OrderBy.Value;
-                }
+                var resolvedOrder = query.OrderBy is { IsDefaultOrEmpty: false } orderBy
+                    ? orderBy
+                    : ImmutableArray<OrderByClause>.Empty;
                 if (await StacFeatureReaderResolver.ResolveAsync(
                         context,
                         featureReader,
@@ -532,7 +529,7 @@ internal static class SearchEndpoints
                         }
 
                         globallyOrderedCandidates.AddRange(matchedFeatures.Select(feature =>
-                            new GlobalSearchCandidate(feature, target, projection)));
+                            new GlobalSearchCandidate(feature, target, projection, resolvedOrder)));
                         totalMatched += matchedFeatures.Length;
                         continue;
                     }
@@ -601,7 +598,7 @@ internal static class SearchEndpoints
 
                     totalMatched += incomingCount;
                     globallyOrderedCandidates.AddRange(result.Items.Select(feature =>
-                        new GlobalSearchCandidate(feature, target, projection)));
+                        new GlobalSearchCandidate(feature, target, projection, resolvedOrder)));
                     continue;
                 }
 
@@ -625,7 +622,7 @@ internal static class SearchEndpoints
                     }
 
                     crossCollectionOrdered.AddRange(sortedPage.Items.Select(feature =>
-                        new GlobalSearchCandidate(feature, target, projection)));
+                        new GlobalSearchCandidate(feature, target, projection, resolvedOrder)));
                     continue;
                 }
 
@@ -739,12 +736,7 @@ internal static class SearchEndpoints
 
             if (crossCollectionOrdered is { Count: > 0 })
             {
-                if (globalOrderBy is not { IsDefaultOrEmpty: false } orderBy)
-                {
-                    throw new InvalidOperationException("A cross-collection STAC sort requires a valid sort order.");
-                }
-
-                SortGlobalCandidates(crossCollectionOrdered, orderBy);
+                SortGlobalCandidates(crossCollectionOrdered);
                 var pageCandidates = crossCollectionOrdered
                     .Skip(offset)
                     .Take(effectiveLimit)
@@ -759,30 +751,7 @@ internal static class SearchEndpoints
 
             if (globallyOrderedCandidates is not null)
             {
-                if (globallyOrderedCandidates.Count == 0)
-                {
-                    globalOrderBy = null;
-                }
-                else if (globalOrderBy is not { IsDefaultOrEmpty: false })
-                {
-                    throw new InvalidOperationException("A globally ordered STAC id search requires a valid sort order.");
-                }
-
-                if (globalOrderBy is { IsDefaultOrEmpty: false } orderBy)
-                {
-                    globallyOrderedCandidates.Sort((left, right) =>
-                    {
-                        var comparison = FeatureOrdering.Compare(
-                            left.Feature,
-                            left.Target.Resource,
-                            right.Feature,
-                            right.Target.Resource,
-                            orderBy);
-                        return comparison != 0
-                            ? comparison
-                            : left.Target.LayerIndex.CompareTo(right.Target.LayerIndex);
-                    });
-                }
+                SortGlobalCandidates(globallyOrderedCandidates);
 
                 var pageCandidates = globallyOrderedCandidates
 
@@ -878,7 +847,8 @@ internal static class SearchEndpoints
     private readonly record struct GlobalSearchCandidate(
         Feature Feature,
         StacV2Lookups.ResolvedStacPublication Target,
-        StacFieldProjection? Projection);
+        StacFieldProjection? Projection,
+        ImmutableArray<OrderByClause> OrderBy);
 
     private static bool ExceedsGlobalCandidateBudget(int currentCount, int incomingCount)
         => incomingCount > MaxItemIdCount - currentCount;
@@ -892,18 +862,17 @@ internal static class SearchEndpoints
             : safeOffset + safeLimit;
     }
 
-    private static void SortGlobalCandidates(
-        List<GlobalSearchCandidate> candidates,
-        ImmutableArray<OrderByClause> orderBy)
+    private static void SortGlobalCandidates(List<GlobalSearchCandidate> candidates)
     {
         candidates.Sort((left, right) =>
         {
-            var comparison = FeatureOrdering.Compare(
+            var comparison = FeatureOrdering.CompareResolved(
                 left.Feature,
                 left.Target.Resource,
+                left.OrderBy,
                 right.Feature,
                 right.Target.Resource,
-                orderBy);
+                right.OrderBy);
             return comparison != 0
                 ? comparison
                 : left.Target.LayerIndex.CompareTo(right.Target.LayerIndex);

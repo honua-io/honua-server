@@ -749,42 +749,66 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 return Results.Text(gml, MediaTypes.Gml);
             }
 
-            var responseFeature = await OgcFeaturesResponseHelpers.LoadFeatureForResponseAsync(
-                featureReader,
-                layerId,
-                resource,
-                objectId,
-                crsDefinition,
-                cancellationToken).ConfigureAwait(false);
+            Feature responseFeature;
+            Feature entityFeature;
+            if (crsDefinition.Srid == resourceSrid)
+            {
+                var loaded = await OgcFeaturesResponseHelpers.LoadFeatureForResponseAsync(
+                    featureReader,
+                    layerId,
+                    resource,
+                    objectId,
+                    crsDefinition,
+                    cancellationToken).ConfigureAwait(false);
+                if (!loaded.HasValue)
+                {
+                    stopwatch.Stop();
+                    return StandardErrorHelpers.CreateInternalServerError(context, "Feature response could not be projected.");
+                }
+
+                responseFeature = loaded.Value;
+                entityFeature = responseFeature;
+            }
+            else
+            {
+                // Hash the storage row that this projection was read from. A later
+                // GetAsync can observe a newer write and would let If-Match accept a
+                // payload the client never saw.
+                var consistent = await OgcFeaturesResponseHelpers.LoadProjectedConsistentWithStorageAsync(
+                    featureReader,
+                    layerId,
+                    resourceSrid,
+                    objectId,
+                    crsDefinition,
+                    cancellationToken).ConfigureAwait(false);
+                if (consistent.Status == ConsistentFeatureReadStatus.NotFound || consistent.Response is null)
+                {
+                    stopwatch.Stop();
+                    return StandardErrorHelpers.CreateInternalServerError(context, "Feature response could not be projected.");
+                }
+
+                if (consistent.Status != ConsistentFeatureReadStatus.Found || consistent.Storage is null)
+                {
+                    stopwatch.Stop();
+                    return StandardErrorHelpers.CreateServiceUnavailable(
+                        context,
+                        "The feature changed while it was being read. Retry the request.",
+                        retryAfterSeconds: 1);
+                }
+
+                responseFeature = consistent.Response.Value;
+                entityFeature = consistent.Storage.Value;
+            }
+
             stopwatch.Stop();
             OgcFeaturesLog.ItemQueryCompleted(_logger, collectionId, featureId, stopwatch.Elapsed.TotalMilliseconds);
-            if (!responseFeature.HasValue)
-            {
-                return StandardErrorHelpers.CreateInternalServerError(context, "Feature response could not be projected.");
-            }
-
-            // Same CRS: hash the feature that built the payload (BH6-006). A different
-            // response CRS stores projected WKB, which would never match the storage
-            // snapshot hashed by PUT, PATCH, and DELETE If-Match.
-            Feature? storageSnapshot = null;
-            if (crsDefinition.Srid != resourceSrid)
-            {
-                storageSnapshot = await featureReader.GetAsync(layerId, objectId, cancellationToken).ConfigureAwait(false);
-            }
-
-            var entityFeature = OgcFeatureEntityTag.SelectEntitySnapshot(
-                crsDefinition.Srid,
-                resourceSrid,
-                responseFeature.Value,
-                storageSnapshot,
-                resolvedFeature.Value.Feature);
             var entityETag = OgcFeatureEntityTag.Compute(entityFeature, _etagService);
 
-            var responseFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(responseFeature.Value, resource);
+            var responseFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(responseFeature, resource);
             ImmutableArray<Link>? featureLinks = _ogcFeaturesOptions.IncludeFeatureLinks
                 ? OgcFeaturesUtilities.BuildFeatureLinks(request, collectionId, responseFeatureId, outputFormat)
                 : null;
-            var ogcFeature = ToOgcFeature(responseFeature.Value, resource, crsDefinition.AxisOrder, _geometryServices, null, featureLinks);
+            var ogcFeature = ToOgcFeature(responseFeature, resource, crsDefinition.AxisOrder, _geometryServices, null, featureLinks);
 
             if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
             {

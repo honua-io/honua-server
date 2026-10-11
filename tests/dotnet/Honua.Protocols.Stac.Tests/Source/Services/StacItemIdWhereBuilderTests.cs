@@ -102,7 +102,13 @@ public sealed class StacItemIdWhereBuilderTests
 
         var fields = StacItemIdWhereBuilder.GetCandidateFields(resource);
 
-        Assert.Collection(fields, field => Assert.Equal("item_code", field.Name));
+        Assert.Collection(
+            fields,
+            field => Assert.Equal("item_code", field.Name),
+            field => Assert.Equal("objectid", field.Name));
+        Assert.Equal(
+            "attributes->>'item_code' = @p0",
+            StacItemIdWhereBuilder.BuildUnboundAttributePredicate(resource));
     }
 
     [UnitTest]
