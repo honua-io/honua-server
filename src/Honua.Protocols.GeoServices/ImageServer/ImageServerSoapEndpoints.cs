@@ -795,6 +795,29 @@ internal static partial class ImageServerSoapEndpoints
         return true;
     }
 
+    /// <summary>
+    /// Reads band ids from a direct <c>BandIDs</c>, <c>BandIds</c>, or <c>BandSelection</c>
+    /// child of <paramref name="description"/>. Nested integers under
+    /// <c>MosaicRule</c> (lock raster ids) are not band ids.
+    /// </summary>
+    internal static string? ReadImageDescriptionBandIds(XElement description)
+    {
+        ArgumentNullException.ThrowIfNull(description);
+        var bandElement = description.Elements()
+            .FirstOrDefault(static element => element.Name.LocalName is "BandIDs" or "BandIds" or "BandSelection");
+        if (bandElement is null)
+        {
+            return null;
+        }
+
+        var ids = bandElement.Descendants()
+            .Where(static element => element.Name.LocalName == "Int")
+            .Select(static element => element.Value.Trim())
+            .Where(static value => value.Length > 0)
+            .ToArray();
+        return ids.Length == 0 ? null : string.Join(",", ids);
+    }
+
     private static int ResolveGetImageBandCount(string? bandIds, int serviceBandCount)
     {
         if (!string.IsNullOrWhiteSpace(bandIds))
@@ -883,9 +906,7 @@ internal static partial class ImageServerSoapEndpoints
             Interpolation = NormalizeOptionalValue(FindDescendantValue(description, "Interpolation")),
             Compression = NormalizeOptionalValue(FindDescendantValue(description, "Compression")),
             CompressionQuality = TryReadInt(description, "CompressionQuality", out var quality) ? quality : 75,
-            BandIds = string.Join(",", description.Descendants()
-                .Where(static element => element.Name.LocalName == "Int")
-                .Select(static element => element.Value)),
+            BandIds = ReadImageDescriptionBandIds(description),
             MosaicRule = mosaicRule,
             F = "json"
         };
@@ -975,6 +996,10 @@ internal static partial class ImageServerSoapEndpoints
             return false;
         }
 
+        var mosaicOperation = NormalizeOptionalValue(FindDescendantValue(element, "MosaicOperation"));
+        var where = NormalizeOptionalValue(FindDescendantValue(element, "Where"));
+        var fids = ReadSoapMosaicFids(element);
+
         if (canonical == "esriMosaicAttribute")
         {
             var ascendingValue = NormalizeOptionalValue(FindDescendantValue(element, "Ascending"));
@@ -1001,13 +1026,21 @@ internal static partial class ImageServerSoapEndpoints
                 null,
                 NormalizeOptionalValue(FindDescendantValue(element, "SortField")),
                 NormalizeOptionalValue(FindDescendantValue(element, "SortValue")),
-                ascending);
+                ascending,
+                mosaicOperation,
+                where,
+                fids);
             return true;
         }
 
         if (canonical != "esriMosaicLockRaster")
         {
-            serialized = SerializeSoapMosaicRule(canonical, null);
+            serialized = SerializeSoapMosaicRule(
+                canonical,
+                null,
+                mosaicOperation: mosaicOperation,
+                where: where,
+                fids: fids);
             return true;
         }
 
@@ -1027,8 +1060,34 @@ internal static partial class ImageServerSoapEndpoints
 
         serialized = SerializeSoapMosaicRule(
             canonical,
-            lockIds.Select(static id => id!.Value).ToArray());
+            lockIds.Select(static id => id!.Value).ToArray(),
+            mosaicOperation: mosaicOperation,
+            where: where,
+            fids: fids);
         return true;
+    }
+
+    private static long[]? ReadSoapMosaicFids(XElement mosaicRule)
+    {
+        var fids = mosaicRule.Descendants()
+            .FirstOrDefault(static candidate => candidate.Name.LocalName is "FIDs" or "Fids" or "fids");
+        if (fids is null)
+        {
+            return null;
+        }
+
+        var parsed = new List<long>();
+        foreach (var candidate in fids.Descendants().Where(static element => element.Name.LocalName == "Int"))
+        {
+            if (!long.TryParse(candidate.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
+            {
+                return null;
+            }
+
+            parsed.Add(id);
+        }
+
+        return parsed.Count == 0 ? null : parsed.ToArray();
     }
 
     private static string SerializeSoapMosaicRule(
@@ -1036,13 +1095,38 @@ internal static partial class ImageServerSoapEndpoints
         long[]? lockRasterIds,
         string? sortField = null,
         string? sortValue = null,
-        bool? ascending = null)
+        bool? ascending = null,
+        string? mosaicOperation = null,
+        string? where = null,
+        long[]? fids = null)
     {
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream))
         {
             writer.WriteStartObject();
             writer.WriteString("mosaicMethod", mosaicMethod);
+            if (mosaicOperation is not null)
+            {
+                writer.WriteString("mosaicOperation", mosaicOperation);
+            }
+
+            if (where is not null)
+            {
+                writer.WriteString("where", where);
+            }
+
+            if (fids is { Length: > 0 })
+            {
+                writer.WritePropertyName("fids");
+                writer.WriteStartArray();
+                foreach (var fid in fids)
+                {
+                    writer.WriteNumberValue(fid);
+                }
+
+                writer.WriteEndArray();
+            }
+
             if (sortField is not null)
             {
                 writer.WriteString("sortField", sortField);

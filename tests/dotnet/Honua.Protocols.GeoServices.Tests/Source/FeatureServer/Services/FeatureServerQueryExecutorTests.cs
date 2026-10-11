@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.TestKit.Attributes;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -737,6 +738,88 @@ public sealed class FeatureServerQueryExecutorTests
             CancellationToken.None);
 
         result.Items.Should().ContainSingle().Which.Should().Be(feature);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task StreamIdsAsync_NonStreamingReaderOverOneThousandRows_ReturnsObjectIds()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        var providerReader = Substitute.For<IFeatureReader>();
+        var features = Enumerable.Range(1, 1001)
+            .Select(id => Feature.Create(id, geometry: null))
+            .ToImmutableArray();
+        providerReader.QueryAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(features.Length, features));
+        var router = CreateProviderRouter(providerReader);
+        var service = CreateService();
+        var resource = CreatePointResource(storageBindingIds: ["binding-roads"]);
+        var publication = CreatePublication(service, resource, storageBindingId: "binding-roads");
+        var graphProvider = CreateGraphProvider(
+            service,
+            resource,
+            publication,
+            CreateStorageBinding(resource, "binding-roads"));
+        var sut = CreateSut(featureReader, providerQueryRouter: router, metadataGraphProvider: graphProvider);
+        var context = CreateHttpContext();
+
+        await sut.StreamIdsAsync(
+            service,
+            resource,
+            publication,
+            7,
+            new FeatureQuery(),
+            "objectid",
+            context,
+            CancellationToken.None);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        var json = await ReadResponseAsync(context);
+        using var document = JsonDocument.Parse(json);
+        var objectIds = document.RootElement.GetProperty("objectIds");
+        objectIds.GetArrayLength().Should().Be(1001);
+        objectIds[0].GetInt64().Should().Be(1);
+        objectIds[1000].GetInt64().Should().Be(1001);
+        await featureReader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task StreamQueryAsync_NonStreamingReader_MaterializesPage()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        var providerReader = Substitute.For<IFeatureReader>();
+        providerReader.QueryAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(
+                2,
+                ImmutableArray.Create(CreateFeature(1, "alpha"), CreateFeature(2, "beta"))));
+        var router = CreateProviderRouter(providerReader);
+        var service = CreateService();
+        var resource = CreatePointResource(storageBindingIds: ["binding-roads"]);
+        var publication = CreatePublication(service, resource, storageBindingId: "binding-roads");
+        var graphProvider = CreateGraphProvider(
+            service,
+            resource,
+            publication,
+            CreateStorageBinding(resource, "binding-roads"));
+        var sut = CreateSut(featureReader, providerQueryRouter: router, metadataGraphProvider: graphProvider);
+        var context = CreateHttpContext();
+
+        await sut.StreamQueryAsync(
+            service,
+            resource,
+            publication,
+            7,
+            new FeatureQuery { Limit = 2 },
+            new QueryParameters { F = "json", ReturnGeometry = false },
+            outputSrid: null,
+            context,
+            CancellationToken.None);
+
+        var json = await ReadResponseAsync(context);
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("features").GetArrayLength().Should().Be(2);
+        document.RootElement.GetProperty("exceededTransferLimit").GetBoolean().Should().BeFalse();
     }
 
     private sealed class StubComputedFieldPipeline(string fieldName, object? value) : IComputedFieldPipeline

@@ -638,6 +638,27 @@ internal static partial class MapServerEndpoints
         int serviceSrid,
         out int srid,
         out string? error)
+        => TryResolveMapServerRequestSrid(
+            srValue,
+            geometry.LatestWkid,
+            geometry.Wkid,
+            serviceSrid,
+            out srid,
+            out error);
+
+    /// <summary>
+    /// Resolves the output spatial reference for MapServer identify and find.
+    /// An explicit <c>sr</c> wins, then the geometry's latestWkid or wkid. When both
+    /// are omitted the service advertises Web Mercator (3857), so the output uses
+    /// that CRS rather than the native layer CRS.
+    /// </summary>
+    internal static bool TryResolveMapServerRequestSrid(
+        string? srValue,
+        int? geometryLatestWkid,
+        int? geometryWkid,
+        int serviceSrid,
+        out int srid,
+        out string? error)
     {
         error = null;
 
@@ -655,19 +676,19 @@ internal static partial class MapServerEndpoints
             return true;
         }
 
-        if (geometry.LatestWkid is { } latestWkid && latestWkid > 0)
+        if (geometryLatestWkid is > 0)
         {
-            srid = latestWkid;
+            srid = geometryLatestWkid.Value;
             return true;
         }
 
-        if (geometry.Wkid is { } wkid && wkid > 0)
+        if (geometryWkid is > 0)
         {
-            srid = wkid;
+            srid = geometryWkid.Value;
             return true;
         }
 
-        srid = serviceSrid;
+        srid = CachedMapSpatialReferenceId;
         return true;
     }
 

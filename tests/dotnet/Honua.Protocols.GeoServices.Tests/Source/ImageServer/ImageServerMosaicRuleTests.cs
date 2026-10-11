@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Infrastructure.Raster;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -192,5 +193,79 @@ public class ImageServerMosaicRuleTests
         advertisedDefault.Method.Should().Be(MosaicMethod.ByDate);
         advertisedDefault.ToOrdering().Should().Be(RasterMosaicOrdering.AcquisitionNewest);
         advertisedDefault.ToOrdering().Should().Be(ruleLess.ToOrdering());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void TryParse_MosaicOperationFirst_MatchesAdvertisedFirstOperator()
+    {
+        var ok = ImageServerMosaicRule.TryParse(
+            "{\"mosaicOperation\":\"MT_FIRST\"}",
+            out var rule, out var error, out var notImplemented);
+
+        ok.Should().BeTrue(error);
+        notImplemented.Should().BeFalse();
+        rule.Operation.Should().Be(RasterMergeStrategy.Newest);
+        RasterMosaicUtilities.ResolveMergeStrategy(null, "{\"mosaicOperation\":\"MT_FIRST\"}")
+            .Should().Be(RasterMergeStrategy.Newest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void TryParse_MosaicOperationLast_SelectsOldest()
+    {
+        var ok = ImageServerMosaicRule.TryParse(
+            "{\"mosaicOperation\":\"MT_LAST\"}",
+            out var rule, out _, out var notImplemented);
+
+        ok.Should().BeTrue();
+        notImplemented.Should().BeFalse();
+        rule.Operation.Should().Be(RasterMergeStrategy.Oldest);
+        RasterMosaicUtilities.ResolveMergeStrategy(null, "{\"mosaicOperation\":\"last\"}")
+            .Should().Be(RasterMergeStrategy.Oldest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void TryParse_MosaicOperationBlend_IsNotImplemented()
+    {
+        var ok = ImageServerMosaicRule.TryParse(
+            "{\"mosaicOperation\":\"MT_BLEND\"}",
+            out _, out var error, out var notImplemented);
+
+        ok.Should().BeFalse();
+        notImplemented.Should().BeTrue();
+        error.Should().Contain("not implemented");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void TryParse_MosaicWhereAndFids_AreNotImplemented()
+    {
+        ImageServerMosaicRule.TryParse(
+            "{\"mosaicMethod\":\"esriMosaicNone\",\"where\":\"Category = 2\"}",
+            out _, out var whereError, out var whereNotImplemented)
+            .Should().BeFalse();
+        whereNotImplemented.Should().BeTrue();
+        whereError.Should().Contain("where");
+
+        ImageServerMosaicRule.TryParse(
+            "{\"mosaicMethod\":\"esriMosaicNone\",\"fids\":[4,9]}",
+            out _, out var fidsError, out var fidsNotImplemented)
+            .Should().BeFalse();
+        fidsNotImplemented.Should().BeTrue();
+        fidsError.Should().Contain("fids");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void TryParse_TrivialWhereAndEmptyFids_Succeed()
+    {
+        ImageServerMosaicRule.TryParse(
+            "{\"mosaicMethod\":\"esriMosaicNone\",\"where\":\"1 = 1\",\"fids\":[]}",
+            out var rule, out var error, out var notImplemented)
+            .Should().BeTrue(error);
+        notImplemented.Should().BeFalse();
+        rule.Method.Should().Be(MosaicMethod.None);
     }
 }

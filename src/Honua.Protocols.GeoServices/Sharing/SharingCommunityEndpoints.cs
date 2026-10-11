@@ -306,10 +306,10 @@ internal static class SharingCommunityEndpoints
             return StandardErrorHelpers.CreateUnauthorized(context, "Authentication is required to change item sharing.");
         }
 
-        // Authorization: only the item's sharing owner (the first principal to share
-        // it) or an administrator may change an item's sharing. This prevents any
-        // authenticated user from exposing an arbitrary item to the public/org. The
-        // first share of a never-shared item establishes ownership.
+        // The in-memory sharing overlay is not read by item access. Do not record a
+        // share or unshare, and do not report the requested audiences as applied.
+        // An existing overlay owner is still the only non-admin who may attempt the
+        // operation; that check does not itself change access.
         var owner = await sharingStore.GetOwnerAsync(itemId, context.RequestAborted).ConfigureAwait(false);
         var isAdmin = IsAdmin(context.User);
         if (owner is not null &&
@@ -333,22 +333,29 @@ internal static class SharingCommunityEndpoints
                 "At least one of everyone, org, or groups must be specified.");
         }
 
-        var request = new PortalItemShareRequest(everyone, org, groups);
-        var state = share
-            ? await sharingStore.ShareAsync(itemId, caller, request, context.RequestAborted).ConfigureAwait(false)
-            : await sharingStore.UnshareAsync(itemId, request, context.RequestAborted).ConfigureAwait(false);
+        var notSharedWith = new List<string>(2 + groups.Count);
+        if (everyone)
+        {
+            notSharedWith.Add("everyone");
+        }
+
+        if (org)
+        {
+            notSharedWith.Add("org");
+        }
+
+        notSharedWith.AddRange(groups);
+        SharingRestLog.ItemSharingNotApplied(logger, itemId, share ? "share" : "unshare");
 
         var response = new ItemSharingResponse
         {
             ItemId = itemId,
-            // ArcGIS share responses report notSharedWith; an empty array means the
-            // requested change applied to every requested audience.
-            NotSharedWith = [],
+            NotSharedWith = notSharedWith,
             Sharing = new ItemSharingState
             {
-                Everyone = state.Everyone,
-                Org = state.Org,
-                Groups = state.GroupIds,
+                Everyone = false,
+                Org = false,
+                Groups = [],
             },
         };
         return Results.Json(response, SharingRestJsonContext.Default.ItemSharingResponse, contentType: JsonContentType);

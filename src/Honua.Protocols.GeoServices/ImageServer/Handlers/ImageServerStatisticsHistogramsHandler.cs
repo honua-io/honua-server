@@ -17,8 +17,9 @@ namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
 /// <summary>
 /// Computes ImageServer <c>computeStatisticsHistograms</c>/<c>computeHistograms</c>.
-/// Analyses the whole selected raster(s) by default, or only the pixels inside a
-/// supplied AOI <c>geometry</c> envelope when one is provided.
+/// Analyses the whole selected raster(s) by default. A polygon AOI is clipped to
+/// that polygon; an envelope or point AOI is clipped to its envelope. Raster
+/// selection still uses the AOI bounding envelope.
 /// </summary>
 internal sealed class ImageServerStatisticsHistogramsHandler
 {
@@ -143,10 +144,11 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                     : StandardErrorHelpers.CreateBadRequest(context, renderingError ?? "renderingRule is not supported.");
             }
 
-            // When the caller supplies an AOI geometry we scope raster selection to the rasters
-            // intersecting its bounding envelope (the shared raster selection path), rather than
-            // building a parallel geometry-clipped raster reader.
+            // Raster selection uses the AOI bounding envelope. Pixel statistics use the
+            // polygon itself when the AOI has rings, so a triangle is not analysed as its
+            // bounding rectangle.
             byte[]? selectionGeometry = null;
+            byte[]? clipGeometry = null;
             int? selectionSrid = null;
             var rawGeometry = GetString(values, "geometry");
             if (!string.IsNullOrWhiteSpace(rawGeometry))
@@ -157,7 +159,18 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                     return StandardErrorHelpers.CreateBadRequest(context, geometryError ?? "Invalid geometry.");
                 }
 
+                if (!ImageServerGeometryHelpers.TryCreatePolygonClipGeometry(
+                        rawGeometry,
+                        GetString(values, "geometryType"),
+                        out clipGeometry,
+                        out var clipError))
+                {
+                    ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, clipError ?? "Invalid geometry");
+                    return StandardErrorHelpers.CreateBadRequest(context, clipError ?? "Invalid geometry.");
+                }
+
                 selectionGeometry = ImageServerMosaicHelpers.CreateEnvelopeGeometry(aoi.XMin, aoi.YMin, aoi.XMax, aoi.YMax);
+                clipGeometry ??= selectionGeometry;
                 selectionSrid = aoi.Srid;
             }
 
@@ -204,22 +217,31 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 targetRasters.AddRange(selected);
             }
 
-            var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, GetString(values, "mosaicRule"));
+            var rawMosaicRule = GetString(values, "mosaicRule");
+            if (!ImageServerMosaicRule.TryParse(rawMosaicRule, out var mosaicRule, out var mosaicError, out var mosaicNotImplemented))
+            {
+                ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, mosaicError);
+                return mosaicNotImplemented
+                    ? StandardErrorHelpers.CreateNotImplemented(context, mosaicError)
+                    : StandardErrorHelpers.CreateBadRequest(context, mosaicError);
+            }
+
+            var mergeStrategy = mosaicRule.Operation
+                ?? ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
             var statisticsList = new List<BandStatistic>();
             var histogramsList = new List<BandHistogram>();
 
-            // When an AOI geometry is supplied, analyse only the pixels inside it by
-            // clipping the raster/mosaic to the geometry envelope; otherwise analyse the
-            // whole selected raster(s).
-            var hasAoi = selectionGeometry is not null;
+            // When an AOI geometry is supplied, analyse only the pixels inside the clip
+            // geometry (the polygon when one was supplied, otherwise its envelope).
+            var hasAoi = clipGeometry is not null;
             if ((rasterIds is null or { Length: 0 }) && targetRasters.Count > 1)
             {
                 var mosaicIds = targetRasters.Select(r => r.Id).ToArray();
                 var statistics = hasAoi
-                    ? await _rasterStore.GetClippedMosaicStatisticsAsync(layerId, mosaicIds, mergeStrategy, selectionGeometry!, selectionSrid, bands, rendering, cancellationToken)
+                    ? await _rasterStore.GetClippedMosaicStatisticsAsync(layerId, mosaicIds, mergeStrategy, clipGeometry!, selectionSrid, bands, rendering, cancellationToken)
                     : await _rasterStore.GetMosaicStatisticsAsync(layerId, mosaicIds, mergeStrategy, bands, rendering, cancellationToken);
                 var histograms = hasAoi
-                    ? await _rasterStore.GetClippedMosaicHistogramsAsync(layerId, mosaicIds, mergeStrategy, selectionGeometry!, selectionSrid, bands, binCount, rendering, cancellationToken)
+                    ? await _rasterStore.GetClippedMosaicHistogramsAsync(layerId, mosaicIds, mergeStrategy, clipGeometry!, selectionSrid, bands, binCount, rendering, cancellationToken)
                     : await _rasterStore.GetMosaicHistogramsAsync(layerId, mosaicIds, mergeStrategy, bands, binCount, rendering, cancellationToken);
                 AppendAlignedBandResults(statisticsList, histogramsList, bands, statistics, histograms);
             }
@@ -228,10 +250,10 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 foreach (var raster in targetRasters)
                 {
                     var statistics = hasAoi
-                        ? await _rasterStore.GetClippedStatisticsAsync(layerId, raster.Id, selectionGeometry!, selectionSrid, bands, rendering, cancellationToken)
+                        ? await _rasterStore.GetClippedStatisticsAsync(layerId, raster.Id, clipGeometry!, selectionSrid, bands, rendering, cancellationToken)
                         : await _rasterStore.GetStatisticsAsync(layerId, raster.Id, bands, rendering, cancellationToken);
                     var histograms = hasAoi
-                        ? await _rasterStore.GetClippedHistogramsAsync(layerId, raster.Id, selectionGeometry!, selectionSrid, bands, binCount, rendering, cancellationToken)
+                        ? await _rasterStore.GetClippedHistogramsAsync(layerId, raster.Id, clipGeometry!, selectionSrid, bands, binCount, rendering, cancellationToken)
                         : await _rasterStore.GetHistogramsAsync(layerId, raster.Id, bands, binCount, rendering, cancellationToken);
 
                     // The store implementations do not guarantee a shared band order:

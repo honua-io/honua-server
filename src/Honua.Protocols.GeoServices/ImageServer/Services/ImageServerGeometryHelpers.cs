@@ -3,6 +3,8 @@
 
 using System.Globalization;
 using System.Text.Json;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
+using GeoServicesGeometryConverter = Honua.Protocols.GeoServices.GeoServicesGeometryConverter;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
@@ -11,9 +13,9 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 /// (<c>computeHistograms</c>, <c>computeStatisticsHistograms</c>, <c>getSamples</c>).
 /// These helpers extract only the pieces the raster pipeline consumes: the bounding
 /// envelope used to scope raster selection, the sample points for pixel sampling, and
-/// the spatial reference wkid. They intentionally do not build a full geometry model —
-/// AOI clipping reuses the shared raster selection / identify path keyed on the envelope
-/// and vertices rather than a parallel raster reader.
+/// the spatial reference wkid. Polygon AOIs are converted to WKB through the shared
+/// GeoServices geometry converter so statistics clip to the polygon rather than only
+/// its bounding envelope. Raster selection still uses <see cref="TryGetEnvelope"/>.
 /// </summary>
 internal static class ImageServerGeometryHelpers
 {
@@ -24,6 +26,91 @@ internal static class ImageServerGeometryHelpers
 
     /// <summary>A single sample point with its spatial reference.</summary>
     internal readonly record struct SamplePoint(double X, double Y, int? Srid);
+
+    /// <summary>
+    /// Builds polygon WKB for an Esri polygon AOI. Envelope and point geometries return
+    /// <c>true</c> with <paramref name="clipWkb"/> left null so the caller keeps the
+    /// envelope clip. A polygon that cannot be converted fails instead of falling back
+    /// to the bounding envelope.
+    /// </summary>
+    internal static bool TryCreatePolygonClipGeometry(
+        string geometryJson,
+        string? geometryType,
+        out byte[]? clipWkb,
+        out string? error)
+    {
+        clipWkb = null;
+        error = null;
+
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(geometryJson);
+        }
+        catch (JsonException)
+        {
+            error = "geometry must be valid JSON.";
+            return false;
+        }
+
+        bool hasRings;
+        using (document)
+        {
+            var root = document.RootElement;
+            hasRings = root.ValueKind == JsonValueKind.Object &&
+                root.TryGetProperty("rings", out var rings) &&
+                rings.ValueKind == JsonValueKind.Array &&
+                rings.GetArrayLength() > 0;
+        }
+
+        var polygonRequested = string.Equals(geometryType, "esriGeometryPolygon", StringComparison.OrdinalIgnoreCase);
+        if (!hasRings && !polygonRequested)
+        {
+            return true;
+        }
+
+        if (!hasRings)
+        {
+            error = "geometryType esriGeometryPolygon requires rings.";
+            return false;
+        }
+
+        GeoServicesGeometry? geometry;
+        try
+        {
+            geometry = JsonSerializer.Deserialize(geometryJson, FeatureServerJsonContext.Default.GeoServicesGeometry);
+        }
+        catch (JsonException)
+        {
+            error = "geometry must be valid JSON.";
+            return false;
+        }
+
+        if (geometry?.Rings is not { Length: > 0 })
+        {
+            error = "geometryType esriGeometryPolygon requires rings.";
+            return false;
+        }
+
+        try
+        {
+            // Drop envelope fields so a polygon that also carries xmin/ymin is not
+            // reduced to its bounding rectangle by the shared converter.
+            clipWkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(new GeoServicesGeometry
+            {
+                Rings = geometry.Rings,
+                SpatialReference = geometry.SpatialReference,
+                HasZ = geometry.HasZ,
+                HasM = geometry.HasM
+            });
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            error = "Invalid geometry.";
+            return false;
+        }
+    }
 
     /// <summary>
     /// Computes the bounding envelope of an Esri-JSON geometry. Supports envelope,

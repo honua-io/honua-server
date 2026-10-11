@@ -670,21 +670,22 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
 
     private static RenderingRuleMapping MapClipArguments(Dictionary<string, object?> arguments)
     {
-        // Clip masks the raster to an area of interest. esriClippingType controls which side
-        // is kept: 0 (default) keeps pixels inside the geometry; 1 ("clip inside / keep
-        // outside") removes pixels inside the geometry and keeps everything outside, executed
-        // by the raster store as an inverted clip (RasterClipRegion.Inverted).
+        // Esri esriRasterClippingType: 1 (esriRasterClippingOutside, the default) keeps
+        // pixels inside the geometry. 2 (esriRasterClippingInside) keeps pixels outside
+        // the geometry. ClipType is the same value under the alternate argument name.
+        // Any other value, including 0, is rejected.
         var inverted = false;
-        if (TryGetInt(arguments, "ClippingType", out var clippingType))
+        if (TryGetInt(arguments, "ClippingType", out var clippingType) ||
+            TryGetInt(arguments, "ClipType", out clippingType))
         {
-            if (clippingType == 1)
+            if (clippingType == 2)
             {
                 inverted = true;
             }
-            else if (clippingType != 0)
+            else if (clippingType != 1)
             {
-                return RenderingRuleMapping.NotImplemented(
-                    $"Clip ClippingType {clippingType.ToString(CultureInfo.InvariantCulture)} is not implemented. Supported: 0 (keep inside), 1 (keep outside).");
+                return RenderingRuleMapping.Invalid(
+                    $"Clip ClippingType {clippingType.ToString(CultureInfo.InvariantCulture)} is not a valid esriRasterClippingType. Supported: 1 (keep inside), 2 (keep outside).");
             }
         }
 

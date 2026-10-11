@@ -153,11 +153,17 @@ internal static class ArcGisRestQueryParameters
                 "Layers with server-enforced definition or security filters cannot be federated via this provider.");
         }
 
-        if (query.SqlFilter is not null)
+        // FeatureServer always attaches a SqlFilter that is the translation of the
+        // caller's where clause. When that fragment is only the where clause, forward
+        // Where and do not reject the request. A fragment that also carries time or
+        // object ids (SqlFilterSupplementsWhere), or a fragment with no Where to
+        // forward, cannot be expressed on this wire and must fail closed.
+        if (query.SqlFilter is not null &&
+            (string.IsNullOrWhiteSpace(query.Where) || query.SqlFilterSupplementsWhere))
         {
             throw new NotSupportedException(
-                "ArcGIS REST federated provider does not support parameterized SqlFilter. " +
-                "Use the Where property for GeoServices REST SQL expressions.");
+                "ArcGIS REST federated provider does not support a SqlFilter that is not fully represented by Where. " +
+                "Time filters and object-id predicates folded only into SqlFilter cannot be forwarded.");
         }
 
         if (query.TemporalFilter is not null)
@@ -204,6 +210,9 @@ internal static class ArcGisRestQueryParameters
 
     private static void AppendSpatialEnvelope(StringBuilder builder, SpatialFilter spatial)
     {
+        // Reject distance, nearest-neighbor, and relation filters before reading the
+        // envelope so a simple envelope cannot silently become esriSpatialRelIntersects.
+        var spatialRel = ResolveEnvelopeSpatialRel(spatial.SpatialRelationship);
         if (spatial.EnvelopeMinX is not double minX
             || spatial.EnvelopeMinY is not double minY
             || spatial.EnvelopeMaxX is not double maxX
@@ -215,13 +224,28 @@ internal static class ArcGisRestQueryParameters
         var geometry = string.Create(CultureInfo.InvariantCulture, $"{minX},{minY},{maxX},{maxY}");
         AppendEncoded(builder, "geometry", geometry);
         AppendEncoded(builder, "geometryType", "esriGeometryEnvelope");
-        AppendEncoded(builder, "spatialRel", "esriSpatialRelIntersects");
+        AppendEncoded(builder, "spatialRel", spatialRel);
 
         if (spatial.Srid is int srid && srid > 0)
         {
             AppendEncoded(builder, "inSR", srid.ToString(CultureInfo.InvariantCulture));
         }
     }
+
+    private static string ResolveEnvelopeSpatialRel(SpatialRelationship relationship) => relationship switch
+    {
+        SpatialRelationship.Intersects => "esriSpatialRelIntersects",
+        SpatialRelationship.EnvelopeIntersects => "esriSpatialRelEnvelopeIntersects",
+        SpatialRelationship.Contains => "esriSpatialRelContains",
+        SpatialRelationship.Within => "esriSpatialRelWithin",
+        SpatialRelationship.Crosses => "esriSpatialRelCrosses",
+        SpatialRelationship.Touches => "esriSpatialRelTouches",
+        SpatialRelationship.Overlaps => "esriSpatialRelOverlaps",
+        SpatialRelationship.Disjoint => "esriSpatialRelDisjoint",
+        _ => throw new NotSupportedException(
+            $"ArcGIS REST federated provider does not support spatial relationship '{relationship}' " +
+            "for an envelope filter. Distance, nearest-neighbor, and relation filters are not forwarded.")
+    };
 
     private static void AppendOutFields(StringBuilder builder, FeatureQuery query)
     {
