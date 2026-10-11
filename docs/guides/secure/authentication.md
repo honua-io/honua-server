@@ -179,8 +179,9 @@ Browser redirects retain their original referer binding across refreshes. Existi
 refresh tokens created before this behavior retain their legacy binding; native
 clients should sign in again after upgrading. A `generateToken` token issued with
 `client=referer` is refused when a later request carries a different `Referer`, and
-accepted when that request omits the header. `client=ip` still requires the issuing
-address.
+accepted when that request omits the header. A browser OAuth token bound to a
+redirect origin still requires the matching `Referer`. `client=ip` still requires
+the issuing address.
 
 For non-interactive service-to-service clients, an opt-in OAuth2 `client_credentials` grant (off by default) exchanges an existing API key for an OAuth2 access token. Enable it with `Authentication__PortalToken__OAuth2__EnableClientCredentials=true`, then `POST /sharing/rest/oauth2/token` with `grant_type=client_credentials`, `client_id=<key-name>`, and `client_secret=<api-key>` (or HTTP Basic). The returned `access_token` is the same opaque, IP-bound portal token and has no refresh token (the client re-requests with its secret). With the flag off the grant is rejected with `unsupported_grant_type` — no behaviour change for existing deployments.
 

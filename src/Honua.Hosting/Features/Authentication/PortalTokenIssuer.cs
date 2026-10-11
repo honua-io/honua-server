@@ -74,6 +74,7 @@ internal sealed partial class PortalTokenIssuer(
             TenantRequiresClaimsMappingEntitlement = request.TenantRequiresClaimsMappingEntitlement,
             ClientType = request.ClientType,
             BindingValue = NormalizeBindingValue(request.ClientType, request.BindingValue),
+            AcceptMissingReferer = request.ClientType == PortalTokenClientType.Referer && request.AcceptMissingReferer,
             ExpiresAt = expiresAt,
             Source = new PortalTokenSourceRecord
             {
@@ -145,6 +146,7 @@ internal sealed partial class PortalTokenIssuer(
             TenantRequiresClaimsMappingEntitlement = presented.TenantRequiresClaimsMappingEntitlement,
             ClientType = request.ClientType,
             BindingValue = NormalizeBindingValue(request.ClientType, request.BindingValue),
+            AcceptMissingReferer = request.ClientType == PortalTokenClientType.Referer && presented.AcceptMissingReferer,
             ExpiresAt = expiresAt,
             Source = presented.Source,
         };
@@ -335,13 +337,13 @@ internal sealed partial class PortalTokenIssuer(
         return record.ClientType switch
         {
             PortalTokenClientType.Bearer => true,
-            // A desktop client mints client=referer and then omits Referer on later
-            // calls (honua-server#5558). Reference portals accept that. A different
-            // Referer is still a mismatch.
-            PortalTokenClientType.Referer => string.IsNullOrWhiteSpace(binding.Referer)
+            // generateToken desktop clients omit Referer after minting client=referer
+            // (honua-server#5558). That exception is stored on the record. Browser
+            // OAuth tokens use the same client type and still require the header.
+            PortalTokenClientType.Referer => (record.AcceptMissingReferer && string.IsNullOrWhiteSpace(binding.Referer))
                 || string.Equals(
                     record.BindingValue,
-                    NormalizeRefererValue(binding.Referer),
+                    NormalizeRefererValue(binding.Referer ?? string.Empty),
                     StringComparison.OrdinalIgnoreCase),
             PortalTokenClientType.Ip => string.Equals(
                 record.BindingValue,
@@ -635,6 +637,13 @@ internal sealed class PortalTokenRecord
     public required PortalTokenClientType ClientType { get; init; }
 
     public required string BindingValue { get; init; }
+
+    /// <summary>
+    /// When true, a referer-bound token is accepted if the request omits
+    /// <c>Referer</c>. Set only for <c>generateToken</c>. Absent on older records,
+    /// which fails closed and still requires the header.
+    /// </summary>
+    public bool AcceptMissingReferer { get; init; }
 
     public required DateTimeOffset ExpiresAt { get; init; }
 

@@ -174,7 +174,8 @@ public sealed record PortalTokenIssueRequest(
     bool? TenantRequiresClaimsMappingEntitlement = false,
     IReadOnlyList<string>? RolesWithoutClaimsMapping = null,
     bool IsClientCredentials = false,
-    PortalCredentialSource? Source = null);
+    PortalCredentialSource? Source = null,
+    bool AcceptMissingReferer = false);
 
 /// <summary>
 /// Inputs for exchanging a presented portal token for a token bound to a new client binding.
@@ -233,7 +234,8 @@ public enum PortalTokenClientType
 {
     /// <summary>
     /// Bind to a referer URL. A request that supplies a different <c>Referer</c> is
-    /// refused. A request that omits the header is accepted.
+    /// refused. A <c>generateToken</c> token may omit the header. A browser OAuth
+    /// token with this binding still requires the matching header.
     /// </summary>
     Referer = 0,
 

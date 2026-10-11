@@ -90,7 +90,8 @@ public sealed class PortalTokenIssuerTests
                 Roles: ["editor"],
                 ClientType: PortalTokenClientType.Referer,
                 BindingValue: "https://app.example.com/private?password=sensitive",
-                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5)),
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5),
+                AcceptMissingReferer: true),
             CancellationToken.None);
 
         var validation = await issuer.ValidateAsync(
@@ -102,6 +103,33 @@ public sealed class PortalTokenIssuerTests
             .Where(call => call.GetMethodInfo().Name == nameof(ILogger.Log))
             .Select(call => call.GetArguments())
             .Should().NotContain(arguments => arguments[1] is EventId { Id: 7003 });
+    }
+
+    [Trait("Tier", "Fast")]
+    public async Task ValidateAsync_BrowserRefererToken_StillRequiresRefererHeader()
+    {
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var issuer = new PortalTokenIssuer(cache, NullLogger<PortalTokenIssuer>.Instance);
+        var issuance = await issuer.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: "alice",
+                DisplayName: "Alice",
+                TenantId: null,
+                Roles: ["editor"],
+                ClientType: PortalTokenClientType.Referer,
+                BindingValue: "https://app.example.com/private",
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5)),
+            CancellationToken.None);
+
+        var omitted = await issuer.ValidateAsync(
+            issuance.Token, new PortalTokenBinding(null, null), CancellationToken.None);
+        omitted.Should().BeNull();
+
+        var matched = await issuer.ValidateAsync(
+            issuance.Token,
+            new PortalTokenBinding("https://app.example.com/private", null),
+            CancellationToken.None);
+        matched.Should().NotBeNull();
     }
 
     [UnitTest]
