@@ -136,14 +136,8 @@ internal sealed partial class Wfs20Handler
             var unknownTypes = GetUnknownRequestedFeatureTypes(publishedTypes, requestedTypes);
             if (unknownTypes.Length > 0)
             {
-                var allPublishedTypes = await GetPublishedFeatureTypesAsync(
-                    context,
-                    cancellationToken,
-                    enforceAccess: false).ConfigureAwait(false);
-                var protectedTypes = unknownTypes
-                    .Where(name => GetUnknownRequestedFeatureTypes(allPublishedTypes, [name]).Length == 0)
-                    .ToArray();
-                if (protectedTypes.Length > 0 && context.User.Identity?.IsAuthenticated != true)
+                if (await RequiresAuthenticationForWithheldTypesAsync(context, unknownTypes, cancellationToken)
+                    .ConfigureAwait(false))
                 {
                     AccessPolicyHelpers.AppendAuthenticationChallenge(context);
                     return CreateLegacyWfsException(
