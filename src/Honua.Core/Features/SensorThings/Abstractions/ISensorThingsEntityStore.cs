@@ -43,12 +43,13 @@ public interface ISensorThingsEntityStore
 /// <param name="ParentSet">Parent entity set for a navigation query.</param>
 /// <param name="ParentId">Parent identifier.</param>
 /// <param name="Navigation">Navigation property.</param>
+/// <param name="Count">When true, the store runs an exact <c>count(*)</c>. Ordinary pages leave this false.</param>
 public sealed record SensorThingsEntityQuery(string? WhereSql, IReadOnlyList<object?> Parameters,
-    string OrderBySql, int Skip, int Top, string? ParentSet = null, long? ParentId = null, string? Navigation = null);
+    string OrderBySql, int Skip, int Top, string? ParentSet = null, long? ParentId = null, string? Navigation = null, bool Count = false);
 
 /// <summary>Entities and the total matching count before paging.</summary>
 /// <param name="Entities">The returned page.</param>
-/// <param name="Count">Total matching entities.</param>
+/// <param name="Count">Exact match count when requested; otherwise zero.</param>
 public sealed record SensorThingsEntityPage(IReadOnlyList<JsonElement> Entities, long Count);
 
 /// <summary>A rejected sensing mutation; its transaction is rolled back.</summary>
@@ -56,4 +57,11 @@ public sealed class SensorThingsValidationException : Exception
 {
     /// <summary>Creates a validation failure with a client-readable message.</summary>
     public SensorThingsValidationException(string message) : base(message) { }
+}
+
+/// <summary>A sensing mutation that conflicts with existing rows and is rolled back.</summary>
+public sealed class SensorThingsConflictException : Exception
+{
+    /// <summary>Creates a conflict failure with a client-readable message.</summary>
+    public SensorThingsConflictException(string message) : base(message) { }
 }

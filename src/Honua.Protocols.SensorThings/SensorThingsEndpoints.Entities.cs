@@ -108,6 +108,7 @@ internal static partial class SensorThingsEndpoints
     private static async Task<Resource> ResolveResourceAsync(HttpContext context, ISensorThingsEntityStore store)
     {
         var path = context.Request.Path.Value ?? string.Empty;
+        EnsureNavigationDepth(path);
         var segments = path[BasePath.Length..].Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Length == 0) throw new SensorThingsValidationException("An entity resource path is required.");
         var (set, id) = ParseEntitySegment(segments[0]);
@@ -162,6 +163,31 @@ internal static partial class SensorThingsEndpoints
         return (segment[..open], id);
     }
 
+    /// <summary>
+    /// Rejects cyclic catch-all navigation before any store read. The cap is the same
+    /// one <c>$expand</c> already enforces.
+    /// </summary>
+    private static void EnsureNavigationDepth(string path)
+    {
+        if (path.Length < BasePath.Length) return;
+        var segments = path[BasePath.Length..].Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0) return;
+        var (set, _) = ParseEntitySegment(segments[0]);
+        if (!SensorThingsRelationships.EntitySets.Contains(set)) return;
+        var depth = 0;
+        for (var index = 1; index < segments.Length; index++)
+        {
+            var segment = segments[index];
+            if (segment is "$value" or "$ref") continue;
+            var (navigation, _) = ParseEntitySegment(segment);
+            if (!SensorThingsRelationships.For(set).TryGetValue(navigation, out var relationship)) return;
+            depth++;
+            if (depth > SensorThingsRelationships.MaxRelationshipDepth)
+                throw new SensorThingsValidationException($"Navigation depth exceeds the maximum of {SensorThingsRelationships.MaxRelationshipDepth.ToString(CultureInfo.InvariantCulture)} levels.");
+            set = relationship.Target;
+        }
+    }
+
     internal static async Task<IResult> HandleCoreRead(
         HttpContext context,
         [FromServices] ISensorThingsEntityStore store,
@@ -206,7 +232,7 @@ internal static partial class SensorThingsEndpoints
                 return JsonResponse(shaped);
             }
             var page = await store.QueryEntitiesAsync(resource.Set, new(plan.WhereSql, plan.WhereParameters, plan.OrderBySql, plan.Options.Skip, plan.Options.FetchTop,
-                resource.ParentSet, resource.ParentId, resource.Navigation), context.RequestAborted).ConfigureAwait(false);
+                resource.ParentSet, resource.ParentId, resource.Navigation, plan.Options.Count), context.RequestAborted).ConfigureAwait(false);
             var valueArray = new JsonArray();
             foreach (var entity in page.Entities.Take(plan.Options.Top))
             {
@@ -237,7 +263,7 @@ internal static partial class SensorThingsEndpoints
 
     private static async Task<JsonObject> ShapeEntityAsync(HttpContext context, ISensorThingsEntityStore store, StaFilterTranslator translator, string set, JsonElement entity, StaQueryPlan plan, int depth)
     {
-        if (depth > 10) throw new SensorThingsValidationException("$expand exceeds the maximum depth.");
+        if (depth > SensorThingsRelationships.MaxRelationshipDepth) throw new SensorThingsValidationException("$expand exceeds the maximum depth.");
         var result = JsonNode.Parse(entity.GetRawText())!.AsObject();
         var id = entity.GetProperty("@iot.id").GetInt64();
         var self = $"{StaBase(context)}/{set}({id.ToString(CultureInfo.InvariantCulture)})";
@@ -257,7 +283,7 @@ internal static partial class SensorThingsEndpoints
             }
             var nestedPlan = nestedResult.Plan!;
             var page = await store.QueryEntitiesAsync(relationship.Target, new(expansion.WhereSql, expansion.WhereParameters, expansion.OrderBySql,
-                expansion.Skip, expansion.Top == 0 ? 0 : expansion.Top + 1, set, id, expansion.Navigation), context.RequestAborted).ConfigureAwait(false);
+                expansion.Skip, expansion.Top == 0 ? 0 : expansion.Top + 1, set, id, expansion.Navigation, expansion.Count), context.RequestAborted).ConfigureAwait(false);
             if (!relationship.Many)
                 result[expansion.Navigation] = page.Entities.Count == 0 ? null : await ShapeEntityAsync(context, store, translator, relationship.Target, page.Entities[0], nestedPlan, depth + 1).ConfigureAwait(false);
             else
@@ -295,7 +321,13 @@ internal static partial class SensorThingsEndpoints
 
     private static string Continuation(HttpContext context, int skip)
     {
-        var query = context.Request.Query.ToDictionary(p => p.Key, p => (string?)p.Value.ToString());
+        // System query options only. A credential such as access_token must not be copied.
+        var query = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var option in context.Request.Query)
+        {
+            if (!option.Key.StartsWith('$')) continue;
+            query[option.Key] = option.Value.ToString();
+        }
         query["$skip"] = skip.ToString(CultureInfo.InvariantCulture);
         return QueryHelpers.AddQueryString($"{BaseUrlResolver.GetBaseUrl(context)}{context.Request.Path}", query);
     }
@@ -358,6 +390,7 @@ internal static partial class SensorThingsEndpoints
         }
         catch (ResourceNotFoundException) { return StandardErrorHelpers.CreateNotFound(context, "Sensing resource was not found."); }
         catch (JsonException) { return StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON."); }
+        catch (SensorThingsConflictException ex) { return StandardErrorHelpers.CreateConflict(context, ex.Message); }
         catch (SensorThingsValidationException ex) { return StandardErrorHelpers.CreateBadRequest(context, ex.Message); }
     }
 

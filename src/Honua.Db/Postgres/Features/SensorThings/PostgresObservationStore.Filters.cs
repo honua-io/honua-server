@@ -62,7 +62,7 @@ internal sealed partial class PostgresObservationStore
 
         private string Resolve(string set, string name, string alias, int depth, bool rawResult = false)
         {
-            if (depth > 10) throw new SensorThingsValidationException("Navigation filter exceeds maximum depth.");
+            if (depth > SensorThingsRelationships.MaxRelationshipDepth) throw new SensorThingsValidationException("Navigation filter exceeds maximum depth.");
             if (name is "id" or "@iot.id") return alias + ".id";
             if (set == "Datastreams" && name is "phenomenonTime" or "resultTime")
             {

@@ -66,6 +66,16 @@ public sealed class ObservationStreamTenantIsolationTests
         Assert.False(tenant.Reader.TryRead(out _));
     }
 
+    [UnitTest]
+    public void FromObservation_IncludesPhenomenonTimeIntervalEnd()
+    {
+        var end = DateTimeOffset.Parse("2026-09-05T02:03:04Z", System.Globalization.CultureInfo.InvariantCulture);
+        var frame = ObservationStreamFrame.FromObservation(Observation(1.25) with { PhenomenonTimeEnd = end });
+        Assert.Equal("2026-09-05T01:02:03.000Z/2026-09-05T02:03:04.000Z", frame.PhenomenonTime);
+        var json = JsonSerializer.Serialize(frame, ObservationStreamJsonContext.Default.ObservationStreamFrame);
+        Assert.Contains("2026-09-05T02:03:04.000Z", json, StringComparison.Ordinal);
+    }
+
     internal static SensorThingsObservation Observation(double value) => new()
     {
         Id = 49,

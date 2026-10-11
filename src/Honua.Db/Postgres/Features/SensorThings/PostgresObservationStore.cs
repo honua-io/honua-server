@@ -7,6 +7,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.SensorThings.Abstractions;
 using Honua.Core.Features.SensorThings.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
+using Microsoft.Extensions.Configuration;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -23,6 +24,7 @@ internal sealed partial class PostgresObservationStore : IObservationStore, ISen
     private readonly IDatabaseSchemaGuard _schemaGuard;
     private readonly ISchemaContext? _schemaContext;
     private readonly string? _configuredSchema;
+    private readonly IConfiguration? _configuration;
     private string _thingTable => SchemaSearchPath.QualifyTable("sta_thing", _schemaContext?.CurrentSchema ?? _configuredSchema);
     private string _sensorTable => SchemaSearchPath.QualifyTable("sta_sensor", _schemaContext?.CurrentSchema ?? _configuredSchema);
     private string _observedPropertyTable => SchemaSearchPath.QualifyTable("sta_observed_property", _schemaContext?.CurrentSchema ?? _configuredSchema);
@@ -33,12 +35,14 @@ internal sealed partial class PostgresObservationStore : IObservationStore, ISen
         IAdoNetDatabaseConnectionProvider connectionProvider,
         IDatabaseSchemaGuard schemaGuard,
         string? schemaName = null,
-        ISchemaContext? schemaContext = null)
+        ISchemaContext? schemaContext = null,
+        IConfiguration? configuration = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _schemaGuard = schemaGuard ?? throw new ArgumentNullException(nameof(schemaGuard));
         _configuredSchema = schemaName;
         _schemaContext = schemaContext;
+        _configuration = configuration;
     }
 
     private async Task VerifySchemaFloorAsync(CancellationToken cancellationToken)

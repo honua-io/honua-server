@@ -254,7 +254,7 @@ internal sealed class StaQueryPlan
         if (slash >= 0)
         {
             var tail = name[(slash + 1)..];
-            if (name.Split('/').Length > 10 || tail.Length == 0)
+            if (name.Split('/').Length > SensorThingsRelationships.MaxRelationshipDepth || tail.Length == 0)
             {
                 failure = StaQueryPlanResult.BadRequest("$expand paths require valid navigations and at most ten levels.");
                 return null;

@@ -11,6 +11,12 @@ public sealed record SensorThingsRelationship(string Target, bool Many);
 /// <summary>Canonical relationship metadata shared by storage and protocol adapters.</summary>
 public static class SensorThingsRelationships
 {
+    /// <summary>
+    /// Maximum navigation, <c>$expand</c>, and filter depth. Deeper paths are rejected
+    /// before they are queried.
+    /// </summary>
+    public const int MaxRelationshipDepth = 10;
+
     /// <summary>All eight core sensing entity sets.</summary>
     public static IReadOnlyList<string> EntitySets { get; } =
         ["Things", "Locations", "HistoricalLocations", "Datastreams", "Sensors", "ObservedProperties", "Observations", "FeaturesOfInterest"];
