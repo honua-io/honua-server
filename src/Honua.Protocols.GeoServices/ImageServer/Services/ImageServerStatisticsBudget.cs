@@ -141,12 +141,14 @@ internal static class ImageServerStatisticsBudget
         string? schemaName,
         int layerId,
         IEnumerable<long> rasterIds,
-        RasterMergeStrategy mergeStrategy)
+        RasterMergeStrategy mergeStrategy,
+        int[]? bands = null)
     {
         var schemaKey = schemaName is null
             ? "<default>"
             : schemaName.Replace("|", "||", StringComparison.Ordinal);
-        return $"image-statistics:{schemaKey}|{layerId}|{(int)mergeStrategy}|{string.Join(",", rasterIds)}";
+        var selectionKey = bands is null ? string.Empty : $"|bands:{string.Join(",", bands)}";
+        return $"image-statistics:{schemaKey}|{layerId}|{(int)mergeStrategy}|{string.Join(",", rasterIds)}{selectionKey}";
     }
 
     /// <summary>Test seam for the cancellable, non-persisted operation policy.</summary>

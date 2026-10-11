@@ -21,6 +21,7 @@ namespace Honua.Protocols.GeoServices.ImageServer;
 
 internal static partial class ImageServerSoapEndpoints
 {
+    internal const int MaxKeyPropertiesSelectedBands = 256;
     private readonly record struct ServiceInfoExtras(
         bool SupportsTime,
         XElement? StartTimeFieldName,
@@ -31,8 +32,6 @@ internal static partial class ImageServerSoapEndpoints
     {
         public static ServiceInfoExtras Failed(IResult error) => new(false, null, null, null, null, error);
     }
-
-    private const int KeyPropertyHistogramBinCount = 256;
 
     private static async Task<IResult> HandleGetKeyPropertiesAsync(
         XElement operation,
@@ -66,25 +65,23 @@ internal static partial class ImageServerSoapEndpoints
             return CreateSoapFault("Image service extent is unavailable.", StatusCodes.Status500InternalServerError, request.SoapNamespace);
         }
 
-        // A non-nil rendering rule would describe a rendered raster. RasterInfo below is the
-        // source mosaic, so applying that rule's band count or histograms would be false.
-        if (KeyPropertyRenderingRuleCannotBeReflected(operation, out var renderingError, out var renderingStatus))
+        // Use the same reference raster and canonical mosaic policy as GetServiceInfo.
+        // RasterInfo is the native key-property carrier for statistics and histograms.
+        var referenceRaster = SelectReferenceRaster(rasters);
+        if (!TryReadKeyPropertiesBands(operation, referenceRaster.BandCount, out var selectedBands,
+                out var renderingError, out var renderingStatus))
         {
             return CreateSoapFault(renderingError!, renderingStatus, request.SoapNamespace);
         }
 
-        // Use the same reference raster and canonical mosaic policy as GetServiceInfo.
-        // RasterInfo is the native key-property carrier for statistics and histograms.
-        var referenceRaster = SelectReferenceRaster(rasters);
         var statistics = await ReadServiceStatisticsAsync(
             request.HttpContext, revalidation.Resolution.LayerId, rasters,
-            revalidation.Resolution.MergeStrategy, cancellationToken).ConfigureAwait(false);
-        var histograms = await ReadRevalidatedHistogramsAsync(
-            request.HttpContext,
-            revalidation.Resolution.LayerId,
-            rasters,
-            revalidation.Resolution.MergeStrategy,
-            cancellationToken).ConfigureAwait(false);
+            revalidation.Resolution.MergeStrategy, cancellationToken,
+            selectedBands?.Distinct().Order().ToArray()).ConfigureAwait(false);
+        var histograms = await ReadServiceHistogramsAsync(
+            request.HttpContext, revalidation.Resolution.LayerId, rasters,
+            revalidation.Resolution.MergeStrategy, request.SoapNamespace, cancellationToken,
+            selectedBands?.Distinct().Order().ToArray()).ConfigureAwait(false);
         if (histograms.Error is not null)
         {
             return histograms.Error;
@@ -95,8 +92,8 @@ internal static partial class ImageServerSoapEndpoints
             request.OperationNamespace,
             responseName,
             BuildKeyPropertiesResult(
-                ImageServerKeyPropertiesHandler.BuildResponse(referenceRaster),
-                BuildKeyPropertiesRasterInfo(referenceRaster, extent.Value, statistics, histograms.Histograms!)));
+                BuildSelectedKeyProperties(referenceRaster, selectedBands),
+                BuildKeyPropertiesRasterInfo(referenceRaster, extent.Value, statistics, histograms.Histograms!, selectedBands)));
     }
 
     private static async Task<IResult> HandleGetRasterKeyPropertiesAsync(
@@ -305,7 +302,29 @@ internal static partial class ImageServerSoapEndpoints
     private static bool TrySerializeSoapRenderingRule(XElement renderingRule, out string json, out string? error)
     {
         json = string.Empty;
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            if (!TryWriteRenderingFunction(writer, renderingRule, 0, out error))
+            {
+                return false;
+            }
+        }
+
+        json = Encoding.UTF8.GetString(stream.ToArray());
+        return true;
+    }
+
+    private static bool TryWriteRenderingFunction(Utf8JsonWriter writer, XElement renderingRule,
+        int depth, out string? error)
+    {
         error = null;
+        if (depth > 16)
+        {
+            error = "RenderingRule structured arguments exceed the supported depth.";
+            return false;
+        }
+
         var function = DirectChild(renderingRule, "Function") ?? renderingRule;
         var name = DirectChildText(function, "FunctionName")
             ?? DirectChildText(function, "Name")
@@ -317,35 +336,32 @@ internal static partial class ImageServerSoapEndpoints
         }
 
         var arguments = DirectChild(function, "Arguments") ?? DirectChild(renderingRule, "Arguments");
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream))
+        writer.WriteStartObject();
+        writer.WriteString("rasterFunction", name.Trim());
+        if (arguments is not null && !IsNilElement(arguments))
         {
+            writer.WritePropertyName("rasterFunctionArguments");
             writer.WriteStartObject();
-            writer.WriteString("rasterFunction", name.Trim());
-            if (arguments is not null && !IsNilElement(arguments))
+            if (!TryWriteRenderingArguments(writer, arguments, depth + 1, out error))
             {
-                writer.WritePropertyName("rasterFunctionArguments");
-                writer.WriteStartObject();
-                if (!TryWriteRenderingArguments(writer, arguments, out error))
-                {
-                    return false;
-                }
-
-                writer.WriteEndObject();
+                return false;
             }
 
             writer.WriteEndObject();
         }
 
-        json = Encoding.UTF8.GetString(stream.ToArray());
+        writer.WriteEndObject();
         return true;
     }
 
-    private static bool TryWriteRenderingArguments(Utf8JsonWriter writer, XElement arguments, out string? error)
+    private static bool TryWriteRenderingArguments(Utf8JsonWriter writer, XElement arguments,
+        int depth, out string? error)
     {
         error = null;
         var properties = arguments.Descendants()
-            .Where(element => element.Name.LocalName == "PropertySetProperty")
+            .Where(element => element.Name.LocalName == "PropertySetProperty"
+                && element.Ancestors().TakeWhile(parent => parent != arguments)
+                    .All(parent => parent.Name.LocalName is "PropertyArray" or "Properties" or "ArrayOfPropertySetProperty"))
             .ToArray();
         if (properties.Length > 0)
         {
@@ -353,14 +369,26 @@ internal static partial class ImageServerSoapEndpoints
             {
                 var key = DirectChildText(property, "Key");
                 var value = DirectChild(property, "Value");
-                if (string.IsNullOrWhiteSpace(key) || value is null || value.HasElements)
+                if (string.IsNullOrWhiteSpace(key) || value is null)
                 {
-                    error = "RenderingRule argument properties require a scalar Key and Value.";
+                    error = "RenderingRule argument properties require a Key and Value.";
+                    return false;
+                }
+
+                // Bound amplification before serializing/mapping BandIds, including
+                // duplicates that intentionally remain distinct output bands.
+                if (string.Equals(key.Trim(), "BandIds", StringComparison.OrdinalIgnoreCase)
+                    && value.Elements().Take(MaxKeyPropertiesSelectedBands + 1).Count() > MaxKeyPropertiesSelectedBands)
+                {
+                    error = $"RenderingRule BandIds cannot select more than {MaxKeyPropertiesSelectedBands} output bands.";
                     return false;
                 }
 
                 writer.WritePropertyName(key.Trim());
-                WriteSoapScalar(writer, value);
+                if (!TryWriteRenderingArgument(writer, value, depth, out error))
+                {
+                    return false;
+                }
             }
 
             return true;
@@ -368,17 +396,188 @@ internal static partial class ImageServerSoapEndpoints
 
         foreach (var child in arguments.Elements())
         {
-            if (child.HasElements)
+            writer.WritePropertyName(child.Name.LocalName);
+            if (string.Equals(child.Name.LocalName, "BandIds", StringComparison.OrdinalIgnoreCase)
+                && child.Elements().Take(MaxKeyPropertiesSelectedBands + 1).Count() > MaxKeyPropertiesSelectedBands)
             {
-                error = $"RenderingRule argument '{child.Name.LocalName}' is not a scalar value.";
+                error = $"RenderingRule BandIds cannot select more than {MaxKeyPropertiesSelectedBands} output bands.";
                 return false;
             }
 
-            writer.WritePropertyName(child.Name.LocalName);
-            WriteSoapScalar(writer, child);
+            if (!TryWriteRenderingArgument(writer, child, depth, out error))
+            {
+                return false;
+            }
         }
 
         return true;
+    }
+
+    private static bool TryWriteRenderingArgument(Utf8JsonWriter writer, XElement value,
+        int depth, out string? error)
+    {
+        error = null;
+        if (depth > 16)
+        {
+            error = "RenderingRule structured arguments exceed the supported depth.";
+            return false;
+        }
+
+        if (!value.HasElements)
+        {
+            WriteSoapScalar(writer, value);
+            return true;
+        }
+
+        var type = SoapTypeName(value);
+        if (type is "Envelope" or "EnvelopeN" or "Polygon" or "PolygonN")
+        {
+            if (!TrySerializeSoapGeometry(value, out var geometry, out _, out _, out error))
+            {
+                return false;
+            }
+
+            using var geometryDocument = JsonDocument.Parse(geometry);
+            geometryDocument.RootElement.WriteTo(writer);
+            return true;
+        }
+
+        if (DirectChild(value, "Function") is not null || DirectChild(value, "FunctionName") is not null
+            || ((type is "RasterFunction" or "RasterFunctionTemplate") && DirectChild(value, "Name") is not null))
+        {
+            return TryWriteRenderingFunction(writer, value, depth + 1, out error);
+        }
+
+        if (type == "PropertySet")
+        {
+            writer.WriteStartObject();
+            if (!TryWriteRenderingArguments(writer, value, depth + 1, out error))
+            {
+                return false;
+            }
+
+            writer.WriteEndObject();
+            return true;
+        }
+
+        var itemType = type switch
+        {
+            "ArrayOfInt" => "Int",
+            "ArrayOfDouble" => "Double",
+            "ArrayOfString" => "String",
+            "ArrayOfArrayOfInt" => "ArrayOfInt",
+            "ArrayOfArrayOfDouble" => "ArrayOfDouble",
+            _ => null
+        };
+        if (itemType is null || value.Elements().Any(item => item.Name.LocalName != itemType
+            || (itemType == "Int" && (item.HasElements
+                || !int.TryParse(item.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)))
+            || (itemType == "Double" && (item.HasElements
+                || !double.TryParse(item.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
+                || !double.IsFinite(number)))
+            || (itemType == "String" && item.HasElements)))
+        {
+            error = "RenderingRule structured argument type or contents are invalid.";
+            return false;
+        }
+
+        writer.WriteStartArray();
+        foreach (var item in value.Elements())
+        {
+            if (itemType == "Int")
+            {
+                writer.WriteNumberValue(int.Parse(item.Value, NumberStyles.Integer, CultureInfo.InvariantCulture));
+            }
+            else if (itemType == "Double")
+            {
+                writer.WriteNumberValue(double.Parse(item.Value, NumberStyles.Float, CultureInfo.InvariantCulture));
+            }
+            else if (itemType == "String")
+            {
+                writer.WriteStringValue(item.Value);
+            }
+            else if (!TryWriteRenderingArgument(writer,
+                new XElement(item.Name, new XAttribute(XNamespace.Get(XmlSchemaInstanceNamespace) + "type", "tns:" + itemType), item.Nodes()),
+                depth + 1, out error))
+            {
+                return false;
+            }
+        }
+        writer.WriteEndArray();
+        return true;
+    }
+
+    internal static bool TryReadKeyPropertiesBands(
+        XElement operation, int bandCount, out int[]? bands, out string? error, out int status)
+    {
+        bands = null;
+        error = null;
+        status = StatusCodes.Status400BadRequest;
+        if (!IsPresent(operation, "RenderingRule"))
+        {
+            return true;
+        }
+
+        if (!TrySerializeSoapRenderingRule(DirectChild(operation, "RenderingRule")!, out var json, out error))
+        {
+            return false;
+        }
+
+        var document = JsonSerializer.Deserialize(json, ImageServerJsonContext.Default.RasterFunctionDocument)!;
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+        if (!mapping.Supported)
+        {
+            error = mapping.Reason;
+            status = mapping.IsNotImplemented ? StatusCodes.Status501NotImplemented : StatusCodes.Status400BadRequest;
+            return false;
+        }
+
+        // Band selection changes metadata without processing pixel values. Other
+        // functions require rendered statistics; never report the stored values as those.
+        if (mapping.Stretch is not null || mapping.Colormap is not null || mapping.ClipRegion is not null
+            || mapping.BandArithmetic is not null || mapping.Terrain is not null)
+        {
+            error = "Key properties for pixel-transforming rendering rules are not implemented.";
+            status = StatusCodes.Status501NotImplemented;
+            return false;
+        }
+
+        if (mapping.Bands is { Length: > MaxKeyPropertiesSelectedBands })
+        {
+            error = $"RenderingRule BandIds cannot select more than {MaxKeyPropertiesSelectedBands} output bands.";
+            return false;
+        }
+
+        if (mapping.Bands is { } selected && selected.Any(band => band < 1 || band > bandCount))
+        {
+            error = "RenderingRule BandIds exceeds the source band count.";
+            return false;
+        }
+
+        bands = mapping.Bands;
+        return true;
+    }
+
+    internal static KeyPropertiesResponse BuildSelectedKeyProperties(RasterInfo raster, int[]? bands)
+    {
+        var properties = ImageServerKeyPropertiesHandler.BuildResponse(raster);
+        if (bands is null)
+        {
+            return properties;
+        }
+
+        return new KeyPropertiesResponse
+        {
+            BandProperties = bands.Select(band => properties.BandProperties[band - 1]).ToArray(),
+            BandCount = bands.Length,
+            LowCellSize = properties.LowCellSize,
+            HighCellSize = properties.HighCellSize,
+            MaxCellSize = properties.MaxCellSize,
+            ConfigKeyword = properties.ConfigKeyword,
+            BandDefinitionKeyword = properties.BandDefinitionKeyword,
+            DataType = properties.DataType,
+            NoDataValue = properties.NoDataValue,
+        };
     }
 
     private static void WriteSoapScalar(Utf8JsonWriter writer, XElement value)
@@ -446,6 +645,7 @@ internal static partial class ImageServerSoapEndpoints
         HttpContext context,
         int layerId,
         IReadOnlyList<RasterInfo> rasters,
+        RasterMergeStrategy mergeStrategy,
         XNamespace soapNamespace,
         CancellationToken cancellationToken)
     {
@@ -453,6 +653,8 @@ internal static partial class ImageServerSoapEndpoints
         var histograms = await ReadServiceHistogramsAsync(
             context,
             layerId,
+            rasters,
+            mergeStrategy,
             soapNamespace,
             cancellationToken).ConfigureAwait(false);
         if (histograms.Error is not null)
@@ -535,7 +737,8 @@ internal static partial class ImageServerSoapEndpoints
         int layerId,
         RasterInfo[] rasters,
         RasterMergeStrategy mergeStrategy,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int[]? bands = null)
     {
         var rasterIds = rasters.Select(static raster => raster.Id).ToArray();
         var schemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
@@ -545,7 +748,8 @@ internal static partial class ImageServerSoapEndpoints
                 schemaName,
                 layerId,
                 rasterIds,
-                mergeStrategy),
+                mergeStrategy,
+                bands),
             schemaName,
             (services, ct) =>
             {
@@ -554,11 +758,13 @@ internal static partial class ImageServerSoapEndpoints
                     ? scopedRasterStore.GetStatisticsAsync(
                         layerId,
                         rasters[0].Id,
+                        bands: bands,
                         cancellationToken: ct)
                     : scopedRasterStore.GetMosaicStatisticsAsync(
                         layerId,
                         rasterIds,
                         mergeStrategy,
+                        bands: bands,
                         cancellationToken: ct);
             },
             onBudgetExceeded: () => context.Response.Headers.CacheControl = "no-store",
@@ -570,135 +776,55 @@ internal static partial class ImageServerSoapEndpoints
         RasterInfo referenceRaster,
         RasterExtent extent,
         RasterStatistics[] statistics,
-        BandHistogram[] histograms)
+        BandHistogram[] histograms,
+        int[]? selectedBands = null)
     {
         XNamespace xsi = XmlSchemaInstanceNamespace;
+        var (pixelSizeX, pixelSizeY) = ImageServerKeyPropertiesHandler.ComputePixelSizes(referenceRaster);
         var nativeExtent = BuildEnvelope(extent);
         nativeExtent.Name = "NativeExtent";
-        var pixelSize = ResolveRasterInfoPixelSize(referenceRaster);
         var value = new XElement(
             "Value",
             new XAttribute(xsi + "type", "tns:RasterInfo"),
-            new XElement("PixelSizeX", FormatDouble(pixelSize.X)),
-            new XElement("PixelSizeY", FormatDouble(pixelSize.Y)),
+            new XElement("PixelSizeX", FormatDouble(pixelSizeX)),
+            new XElement("PixelSizeY", FormatDouble(pixelSizeY)),
             nativeExtent,
-            new XElement("BandCount", referenceRaster.BandCount),
+            new XElement("BandCount", selectedBands?.Length ?? referenceRaster.BandCount),
             new XElement("PixelType", MapPixelType(referenceRaster.PixelType)),
             BuildNoData(referenceRaster.NoDataValue));
 
         // These zero-based extensible members match the native RasterInfo SOAP shape.
         // Do not fabricate median/mode, sample counts, sums, or absent-band statistics.
-        foreach (var statistic in statistics.OrderBy(static statistic => statistic.Band))
+        var bands = selectedBands ?? Enumerable.Range(1, referenceRaster.BandCount).ToArray();
+        for (var outputBand = 0; outputBand < bands.Length; outputBand++)
         {
-            if (statistic.Band < 1 || statistic.Band > referenceRaster.BandCount || statistic.MinValue is null || statistic.MaxValue is null)
+            var sourceBand = bands[outputBand];
+            foreach (var statistic in statistics.Where(statistic => statistic.Band == sourceBand))
             {
-                continue;
+                if (statistic.MinValue is null || statistic.MaxValue is null)
+                {
+                    continue;
+                }
+
+                value.Add(new XElement(
+                    $"RasterStatistics_{outputBand}",
+                    new XAttribute(xsi + "type", "tns:RasterStatistics"),
+                    new XElement("Min", FormatDouble(statistic.MinValue.Value)),
+                    new XElement("Max", FormatDouble(statistic.MaxValue.Value)),
+                    statistic.MeanValue is double mean ? new XElement("Mean", FormatDouble(mean)) : null,
+                    statistic.StandardDeviation is double standardDeviation
+                        ? new XElement("StandardDeviation", FormatDouble(standardDeviation)) : null));
             }
 
-            value.Add(new XElement(
-                $"RasterStatistics_{statistic.Band - 1}",
-                new XAttribute(xsi + "type", "tns:RasterStatistics"),
-                new XElement("Min", FormatDouble(statistic.MinValue.Value)),
-                new XElement("Max", FormatDouble(statistic.MaxValue.Value)),
-                statistic.MeanValue is double mean ? new XElement("Mean", FormatDouble(mean)) : null,
-                statistic.StandardDeviation is double standardDeviation
-                    ? new XElement("StandardDeviation", FormatDouble(standardDeviation)) : null));
-        }
-
-        foreach (var bandHistogram in histograms.OrderBy(static histogram => histogram.SourceBand))
-        {
-            if (bandHistogram.SourceBand < 1 || bandHistogram.SourceBand > referenceRaster.BandCount)
+            foreach (var bandHistogram in histograms.Where(histogram => histogram.SourceBand == sourceBand))
             {
-                continue;
+                var histogram = BuildRasterHistogram(bandHistogram);
+                histogram.Name = $"RasterHistogram_{outputBand}";
+                value.Add(histogram);
             }
-
-            var histogram = BuildRasterHistogram(bandHistogram);
-            histogram.Name = $"RasterHistogram_{bandHistogram.SourceBand - 1}";
-            value.Add(histogram);
         }
 
         return value;
-    }
-
-    /// <summary>
-    /// Column and row spacing from the affine vectors when a six-coefficient geotransform
-    /// is present. The axis-aligned envelope divided by width and height is only the fallback,
-    /// because a rotated raster's envelope includes the cross-axis contribution.
-    /// </summary>
-    internal static (double X, double Y) ResolveRasterInfoPixelSize(RasterInfo raster)
-    {
-        var transform = raster.GeoTransform;
-        if (transform is { Length: 6 }
-            && double.IsFinite(transform[1]) && double.IsFinite(transform[4])
-            && double.IsFinite(transform[2]) && double.IsFinite(transform[5]))
-        {
-            var pixelSizeX = double.Hypot(transform[1], transform[4]);
-            var pixelSizeY = double.Hypot(transform[2], transform[5]);
-            if (pixelSizeX > 0 && pixelSizeY > 0 && double.IsFinite(pixelSizeX) && double.IsFinite(pixelSizeY))
-            {
-                return (pixelSizeX, pixelSizeY);
-            }
-        }
-
-        var extent = raster.Extent;
-        var fallbackX = raster.Width > 0 && extent.HasValue
-            ? (extent.Value.XMax - extent.Value.XMin) / raster.Width
-            : 0;
-        var fallbackY = raster.Height > 0 && extent.HasValue
-            ? (extent.Value.YMax - extent.Value.YMin) / raster.Height
-            : 0;
-        return (fallbackX, fallbackY);
-    }
-
-    /// <summary>
-    /// True when GetKeyProperties carries a rendering rule. RasterInfo is the source mosaic,
-    /// so a rule that would change bands or pixel values must not be reported as if it had been applied.
-    /// A nil rule is absent and does not reject the request.
-    /// </summary>
-    internal static bool KeyPropertyRenderingRuleCannotBeReflected(
-        XElement operation,
-        out string? error,
-        out int statusCode)
-    {
-        if (!IsPresent(operation, "RenderingRule"))
-        {
-            error = null;
-            statusCode = StatusCodes.Status200OK;
-            return false;
-        }
-
-        error = "GetKeyProperties RasterInfo reflects the source mosaic and cannot apply a rendering rule.";
-        statusCode = StatusCodes.Status501NotImplemented;
-        return true;
-    }
-
-    private static async Task<(BandHistogram[]? Histograms, IResult? Error)> ReadRevalidatedHistogramsAsync(
-        HttpContext context,
-        int layerId,
-        RasterInfo[] rasters,
-        RasterMergeStrategy mergeStrategy,
-        CancellationToken cancellationToken)
-    {
-        var store = context.RequestServices.GetRequiredService<IRasterStore>();
-        var rasterIds = rasters.Select(static raster => raster.Id).ToArray();
-        var stored = await ImageServerStatisticsBudget.ResolveCancellableAsync(
-            ct => rasters.Length == 1
-                ? store.GetHistogramsAsync(
-                    layerId,
-                    rasters[0].Id,
-                    bands: null,
-                    KeyPropertyHistogramBinCount,
-                    cancellationToken: ct)
-                : store.GetMosaicHistogramsAsync(
-                    layerId,
-                    rasterIds,
-                    mergeStrategy,
-                    bands: null,
-                    KeyPropertyHistogramBinCount,
-                    cancellationToken: ct),
-            onBudgetExceeded: static () => { },
-            cancellationToken).ConfigureAwait(false);
-        return (stored.Select(ImageServerHistogramProjection.Project).ToArray(), null);
     }
 
     private static XElement BuildBandPropertySet(BandProperty band)
@@ -746,6 +872,25 @@ internal static partial class ImageServerSoapEndpoints
     {
         var builder = context.RequestServices.GetRequiredService<IImageServerMultidimensionalInfoBuilder>();
         return await builder.BuildAsync(layerId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<(BandHistogram[]? Histograms, IResult? Error)> ReadServiceHistogramsAsync(
+        HttpContext context,
+        int layerId,
+        IReadOnlyList<RasterInfo> rasters,
+        RasterMergeStrategy mergeStrategy,
+        XNamespace soapNamespace,
+        CancellationToken cancellationToken,
+        int[]? bands = null)
+    {
+        if (rasters.Count == 0)
+        {
+            return (null, CreateSoapFault("Image service has no rasters.", StatusCodes.Status404NotFound, soapNamespace));
+        }
+
+        var handler = context.RequestServices.GetRequiredService<ImageServerRasterMetadataHandler>();
+        return (await handler.ReadHistogramsAsync(layerId, rasters, mergeStrategy,
+            cancellationToken, bands).ConfigureAwait(false), null);
     }
 
     private static async Task<(BandHistogram[]? Histograms, IResult? Error)> ReadServiceHistogramsAsync(
