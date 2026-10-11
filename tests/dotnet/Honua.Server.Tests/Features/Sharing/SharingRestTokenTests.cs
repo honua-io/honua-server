@@ -409,6 +409,40 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/portals/self")]
+    public async Task IssuedRefererToken_PortalsSelfWithoutReferer_IsAccepted_Issue5558()
+    {
+        using var client = _fixture.CreateClient();
+        var token = await IssueTokenAsync(client, ("client", "referer"), ("referer", SecureRefererA));
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get, $"/sharing/rest/portals/self?f=json&token={token}");
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        doc.RootElement.GetProperty("user").GetProperty("username").GetString().Should().Be("admin");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/portals/self")]
+    public async Task IssuedRefererToken_PortalsSelfFromAnotherReferer_Returns498_Issue5558()
+    {
+        using var client = _fixture.CreateClient();
+        var token = await IssueTokenAsync(client, ("client", "referer"), ("referer", SecureRefererA));
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get, $"/sharing/rest/portals/self?f=json&token={token}");
+        request.Headers.Referrer = new Uri(OtherReferer);
+        using var response = await client.SendAsync(request);
+
+        await response.AssertGeoServicesErrorAsync(498);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
     public async Task IssuedToken_AcceptedViaAuthorizationBearerHeader_Authenticates()
     {

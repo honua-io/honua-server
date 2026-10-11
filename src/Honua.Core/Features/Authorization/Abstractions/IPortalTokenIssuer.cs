@@ -162,6 +162,12 @@ public sealed record PortalTokenIntrospection(
 /// is recorded as <see cref="PortalCredentialSource.None"/>: an issuance flow with no
 /// separately revocable backing credential, bounded by the token's own lifetime.
 /// </param>
+/// <param name="AcceptMissingReferer">
+/// When <see langword="true"/> and <paramref name="ClientType"/> is
+/// <see cref="PortalTokenClientType.Referer"/>, a later request may omit the Referer header.
+/// A different Referer still mismatches. Browser OAuth tokens leave this
+/// <see langword="false"/> (honua-server#5558).
+/// </param>
 public sealed record PortalTokenIssueRequest(
     string PrincipalId,
     string? DisplayName,
@@ -174,7 +180,8 @@ public sealed record PortalTokenIssueRequest(
     bool? TenantRequiresClaimsMappingEntitlement = false,
     IReadOnlyList<string>? RolesWithoutClaimsMapping = null,
     bool IsClientCredentials = false,
-    PortalCredentialSource? Source = null);
+    PortalCredentialSource? Source = null,
+    bool AcceptMissingReferer = false);
 
 /// <summary>
 /// Inputs for exchanging a presented portal token for a token bound to a new client binding.
@@ -232,8 +239,9 @@ public sealed record PortalTokenBinding(string? Referer, string? ClientIp);
 public enum PortalTokenClientType
 {
     /// <summary>
-    /// Bind to a referer URL. The token is honored only when the request supplies a
-    /// matching <c>Referer</c> header.
+    /// Bind to a referer URL. A request that supplies a different <c>Referer</c> is
+    /// refused. A <c>generateToken</c> token may omit the header. A browser OAuth
+    /// token with this binding still requires the matching header.
     /// </summary>
     Referer = 0,
 
