@@ -138,11 +138,18 @@ internal static class NAServerParameterTranslation
     public static ServiceAreaSolveRequest BuildServiceAreaSolveRequest(
         IReadOnlyDictionary<string, string> parameters,
         NAServerInputCaps caps)
+        => BuildServiceAreaSolveRequest(parameters, caps, defaultInputSrid: null);
+
+    /// <summary>Builds a service-area request with a task-specific default for undeclared input coordinates.</summary>
+    internal static ServiceAreaSolveRequest BuildServiceAreaSolveRequest(
+        IReadOnlyDictionary<string, string> parameters,
+        NAServerInputCaps caps,
+        int? defaultInputSrid)
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
         var outSrid = ParseOutSr(parameters);
-        var inSrid = ParseInSr(parameters, outSrid, "facilities");
+        var inSrid = ParseInSr(parameters, defaultInputSrid ?? outSrid, "facilities");
         var facilities = ParsePoints(GetValue(parameters, "facilities"), "facilities");
         if (facilities.Count == 0)
         {

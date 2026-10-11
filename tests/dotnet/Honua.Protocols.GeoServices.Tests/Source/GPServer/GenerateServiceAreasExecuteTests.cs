@@ -361,6 +361,124 @@ public sealed class GenerateServiceAreasExecuteTests(GenerateServiceAreasExecute
     }
 
     [IntegrationTheory]
+    [InlineData("GPServer", "env:outSR", "102100")]
+    [InlineData("NAServer", "env:outSR", "102100")]
+    [InlineData("GPServer", "context", "{\"outSR\":102113}")]
+    [InlineData("NAServer", "context", "{\"outSR\":102113}")]
+    [InlineData("GPServer", "outSR", "{\"wkid\":102100}")]
+    [InlineData("NAServer", "outSR", "{\"wkid\":102100}")]
+    [InlineData("GPServer", "env:outSR", "{\"wkid\":102113}")]
+    [InlineData("NAServer", "env:outSR", "{\"wkid\":102113}")]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/GenerateServiceAreas/execute")]
+    public async Task Execute_WebMercatorAliases_AreNormalizedBeforeProvider(string service, string key, string value)
+    {
+        var parameters = Inputs();
+        parameters[key] = value;
+        fixture.Requests.Clear();
+        using var result = await ExecuteAsync(service, true, parameters);
+        result.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        fixture.Requests.Single().OutSrid.Should().Be(3857);
+        fixture.Requests.Single().InSrid.Should().Be(4326);
+        result.RootElement.GetProperty("results")[0].GetProperty("value")
+            .GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
+    }
+
+    [IntegrationTheory]
+    [InlineData("GPServer", "env:outSR", "3857")]
+    [InlineData("NAServer", "env:outSR", "3857")]
+    [InlineData("GPServer", "context", "{\"outSR\":3857}")]
+    [InlineData("NAServer", "context", "{\"outSR\":3857}")]
+    [InlineData("GPServer", "outSR", "3857")]
+    [InlineData("NAServer", "outSR", "3857")]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/GenerateServiceAreas/execute")]
+    public async Task Execute_UndeclaredFacilities_KeepAdvertisedInputDefault(string service, string key, string value)
+    {
+        var parameters = Inputs();
+        parameters["Facilities"] = Facilities.Replace("\"spatialReference\":{\"wkid\":4326},", "", StringComparison.Ordinal);
+        parameters[key] = value;
+        fixture.Requests.Clear();
+        using var result = await ExecuteAsync(service, true, parameters);
+        result.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        var request = fixture.Requests.Single();
+        request.InSrid.Should().Be(4326);
+        request.OutSrid.Should().Be(3857);
+        request.Facilities.Should().Equal(new RoutePoint(-157.858333, 21.306944), new RoutePoint(-157.862, 21.31));
+        var first = result.RootElement.GetProperty("results")[0].GetProperty("value")
+            .GetProperty("features")[0].GetProperty("geometry").GetProperty("rings")[0][0];
+        first[0].GetDouble().Should().BeApproximately(-17568236.902113102, 0.001);
+        first[1].GetDouble().Should().BeApproximately(2428516.23997281, 0.001);
+    }
+
+    [IntegrationTheory]
+    [InlineData("GPServer", false)]
+    [InlineData("NAServer", false)]
+    [InlineData("GPServer", true)]
+    [InlineData("NAServer", true)]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/GenerateServiceAreas/execute")]
+    public async Task Execute_ExplicitFacilityReference_RemainsAuthoritative(string service, bool explicitInSr)
+    {
+        var parameters = Inputs();
+        parameters["Facilities"] = explicitInSr
+            ? Facilities.Replace("\"spatialReference\":{\"wkid\":4326},", "", StringComparison.Ordinal)
+            : Facilities.Replace("4326", "3857", StringComparison.Ordinal);
+        if (explicitInSr)
+        {
+            parameters["inSR"] = "3857";
+        }
+        parameters["env:outSR"] = "4326";
+        fixture.Requests.Clear();
+        using var result = await ExecuteAsync(service, true, parameters);
+        result.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        fixture.Requests.Single().InSrid.Should().Be(3857);
+        fixture.Requests.Single().OutSrid.Should().Be(4326);
+    }
+
+    [IntegrationTheory]
+    [InlineData("GPServer", null, ServiceAreaTravelDirection.FromFacility)]
+    [InlineData("NAServer", null, ServiceAreaTravelDirection.FromFacility)]
+    [InlineData("GPServer", "Away From Facility", ServiceAreaTravelDirection.FromFacility)]
+    [InlineData("NAServer", "Away From Facility", ServiceAreaTravelDirection.FromFacility)]
+    [InlineData("GPServer", "Towards Facility", ServiceAreaTravelDirection.ToFacility)]
+    [InlineData("NAServer", "Towards Facility", ServiceAreaTravelDirection.ToFacility)]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/GenerateServiceAreas/execute")]
+    public async Task Execute_ProviderWithoutDirectionDistinction_AllowsCanonicalDirection(
+        string service, string? direction, ServiceAreaTravelDirection expected)
+    {
+        var original = fixture.Provider.Capabilities;
+        try
+        {
+            fixture.Provider.Capabilities = original with { SupportedTravelDirections = [] };
+            var parameters = Inputs();
+            if (direction is null)
+            {
+                parameters.Remove("Travel_Direction");
+            }
+            else
+            {
+                parameters["Travel_Direction"] = direction;
+            }
+            fixture.Requests.Clear();
+            using var result = await ExecuteAsync(service, true, parameters);
+            result.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+            fixture.Requests.Single().TravelDirection.Should().Be(expected);
+            result.RootElement.GetProperty("results")[0].GetProperty("value").GetProperty("features")
+                .GetArrayLength().Should().Be(6);
+        }
+        finally
+        {
+            fixture.Provider.Capabilities = original;
+        }
+    }
+
+    [IntegrationTheory]
     [InlineData("GPServer")]
     [InlineData("NAServer")]
     [Operation(Operations.ProcessExecution)]

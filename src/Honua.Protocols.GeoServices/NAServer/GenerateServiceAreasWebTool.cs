@@ -79,10 +79,13 @@ internal static class GenerateServiceAreasWebTool
                 translated["outSR"] = outputSrid.ToString(CultureInfo.InvariantCulture);
             }
 
+            translated["outSR"] = SpatialReferenceExtensions.NormalizeWebMercatorSrid(
+                NAServerParameterTranslation.ParseOutSr(translated)).ToString(CultureInfo.InvariantCulture);
             var request = NAServerParameterTranslation.BuildServiceAreaSolveRequest(
-                translated, NAServerInputCaps.FromConfiguration(configuration));
+                translated, NAServerInputCaps.FromConfiguration(configuration), defaultInputSrid: 4326);
             var facilities = ReadFacilityIdentities(parameters, request.Facilities.Count);
-            if (!capabilities.SupportedTravelDirections.Contains(request.TravelDirection))
+            if (capabilities.SupportedTravelDirections.Count > 0 &&
+                !capabilities.SupportedTravelDirections.Contains(request.TravelDirection))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, "Requested travel direction is not supported by the configured routing provider.");
             }
