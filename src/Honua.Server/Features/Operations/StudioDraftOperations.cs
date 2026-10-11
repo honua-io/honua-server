@@ -473,7 +473,9 @@ internal sealed class StudioCreatePublicationRequestExecutor(
         // payload intent falls back to the version envelope, matching actuation.
         var effectiveIntent = payload.Intent ?? version.Envelope.PublicationIntent;
         var effectiveRoute = effectiveIntent?.Route;
-        if (!string.IsNullOrWhiteSpace(effectiveRoute))
+        // honua-server#5825: same skip as StudioPackageLifecycleService. A null capability
+        // payload (a test substitute) keeps the check.
+        if (!string.IsNullOrWhiteSpace(effectiveRoute) && FamilyGovernsStudioRoutes(version.Envelope.Family))
         {
             var governing = await Lifecycle.GetActivePublicationRequestByRouteAsync(
                 effectiveRoute,
@@ -512,6 +514,13 @@ internal sealed class StudioCreatePublicationRequestExecutor(
 
     // Mirrors StudioPackageLifecycleService.FormatValidationFailure so a pre-policy rejection
     // and the actuation-path ArgumentException carry byte-identical diagnostics.
+    private bool FamilyGovernsStudioRoutes(StudioPackageFamily family)
+    {
+        var capabilities = Lifecycle.GetCapabilities();
+        var descriptor = capabilities?.Families.FirstOrDefault(candidate => candidate.Family == family);
+        return descriptor?.GovernsStudioRoutes ?? true;
+    }
+
     private static string FormatIntentValidationFailure(IReadOnlyList<StudioValidationDiagnostic> diagnostics)
         => diagnostics.Count == 0
             ? "Publication intent is invalid."

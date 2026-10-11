@@ -515,8 +515,11 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             : StudioPublicationRequestStatus.Accepted;
         var effectiveIntent = intent ?? version.Envelope.PublicationIntent;
         var effectiveRoute = effectiveIntent?.Route;
+        // honua-server#5825: bridged families publish through their native store. The inner
+        // store's route lookup would reject them because it only sees native Studio owners.
         if (status == StudioPublicationRequestStatus.Accepted &&
-            !string.IsNullOrWhiteSpace(effectiveRoute))
+            !string.IsNullOrWhiteSpace(effectiveRoute) &&
+            FamilyGovernsStudioRoutes(version.Envelope.Family))
         {
             var governing = await _store.GetActivePublicationRequestByRouteAsync(
                 effectiveRoute,
@@ -696,6 +699,13 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             Provenance = envelope.Provenance ?? Array.Empty<StudioProvenanceRef>(),
         };
     }
+
+    /// <summary>
+    /// Families without a descriptor keep the route check. Bridged families set
+    /// <see cref="StudioPackageFamilyDescriptor.GovernsStudioRoutes"/> to false.
+    /// </summary>
+    private bool FamilyGovernsStudioRoutes(StudioPackageFamily family)
+        => _registry.GetDescriptor(family)?.GovernsStudioRoutes ?? true;
 
     private static string FormatValidationFailure(
         string prefix,
