@@ -12,6 +12,7 @@ using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
+using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -91,6 +92,9 @@ internal sealed class ApiKeyAuthenticationHandler(
             case ApiKeyRejection.AdminPasswordUnavailable:
                 Context.Items[AuthFailureMessageKey] = AdminAuthenticationNotConfigured;
                 return AuthenticateResult.Fail(AdminAuthenticationNotConfigured);
+            case ApiKeyRejection.CredentialStoreUnavailable:
+                Context.Items[AuthFailureMessageKey] = "credential store unavailable";
+                return AuthenticateResult.Fail("credential store unavailable");
             default:
                 AuthenticationLog.InvalidApiKeyProvided(Logger);
                 return AuthenticateResult.Fail("Invalid API key");
@@ -116,20 +120,32 @@ internal sealed class ApiKeyAuthenticationHandler(
     {
         ArgumentNullException.ThrowIfNull(dependencies);
 
+        var storeUnavailable = false;
         if (dependencies.AdminApiKeyStore is not null)
         {
-            var storedKey = await dependencies.AdminApiKeyStore.ValidateAsync(providedApiKey, cancellationToken);
-            if (storedKey is not null)
+            try
             {
-                AuthenticationLog.ApiKeyAuthenticationSuccessful(logger);
-                return new ApiKeyValidation(
-                    CreateSuccessfulAuthenticationResult(
-                        schemeName,
-                        "admin-api-key",
-                        storedKey.Record.Id,
-                        storedKey.Record.Name,
-                        storedKey.Record.Permissions),
-                    ApiKeyRejection.None);
+                var storedKey = await dependencies.AdminApiKeyStore.ValidateAsync(providedApiKey, cancellationToken);
+                if (storedKey is not null)
+                {
+                    AuthenticationLog.ApiKeyAuthenticationSuccessful(logger);
+                    return new ApiKeyValidation(
+                        CreateSuccessfulAuthenticationResult(
+                            schemeName,
+                            "admin-api-key",
+                            storedKey.Record.Id,
+                            storedKey.Record.Name,
+                            storedKey.Record.Permissions),
+                        ApiKeyRejection.None);
+                }
+            }
+            catch (Exception ex) when (ex is RedisException or TimeoutException && ex is not OperationCanceledException)
+            {
+                // RedisTimeoutException derives from TimeoutException, not RedisException.
+                // A store outage must not become an unhandled 500, and must not skip the
+                // HONUA_ADMIN_PASSWORD break-glass comparison.
+                storeUnavailable = true;
+                AuthenticationLog.AdminApiKeyStoreUnavailable(logger, ex);
             }
         }
 
@@ -149,13 +165,17 @@ internal sealed class ApiKeyAuthenticationHandler(
         }
         if (string.IsNullOrEmpty(configuredPassword))
         {
-            return new ApiKeyValidation(null, ApiKeyRejection.AdminPasswordNotConfigured);
+            return new ApiKeyValidation(
+                null,
+                storeUnavailable ? ApiKeyRejection.CredentialStoreUnavailable : ApiKeyRejection.AdminPasswordNotConfigured);
         }
 
         // Perform constant-time comparison to prevent timing attacks
         if (!IsApiKeyValid(providedApiKey, configuredPassword))
         {
-            return new ApiKeyValidation(null, ApiKeyRejection.InvalidKey);
+            return new ApiKeyValidation(
+                null,
+                storeUnavailable ? ApiKeyRejection.CredentialStoreUnavailable : ApiKeyRejection.InvalidKey);
         }
 
         AuthenticationLog.ApiKeyAuthenticationSuccessful(logger);
@@ -570,6 +590,12 @@ internal enum ApiKeyRejection
 
     /// <summary>The key matched no managed key and the bootstrap admin credential could not be resolved.</summary>
     AdminPasswordUnavailable,
+
+    /// <summary>
+    /// The managed key store could not be reached and the bootstrap admin credential did not match.
+    /// Callers fail the request; they must not treat this as an invalid key or an unhandled error.
+    /// </summary>
+    CredentialStoreUnavailable,
 }
 
 /// <summary>

@@ -6,6 +6,7 @@ using System.Security.Claims;
 using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
@@ -241,6 +242,47 @@ public sealed class OidcPortalCredentialVerifierTests
         introspection.TenantId.Should().Be("tenant-A");
     }
 
+    [UnitTest]
+    public async Task VerifyAsync_InactiveMembership_ReturnsNull()
+    {
+        var verifier = CreateVerifier(
+            enabled: true,
+            membershipSource: new StaticMembershipSource(new PrincipalMembership(IsActive: false, Roles: [])));
+        var token = CreateToken(subject: "user-123", name: "Ada", roles: ["editor"], tenantId: "tenant-A");
+
+        var result = await verifier.VerifyAsync("ada", token, CancellationToken.None);
+
+        result.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task VerifyAsync_MembershipSourceThrows_ReturnsNull()
+    {
+        var verifier = CreateVerifier(
+            enabled: true,
+            membershipSource: new ThrowingMembershipSource());
+        var token = CreateToken(subject: "user-123", name: "Ada", roles: ["editor"], tenantId: "tenant-A");
+
+        var result = await verifier.VerifyAsync("ada", token, CancellationToken.None);
+
+        result.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task VerifyAsync_ActiveMembership_ProjectsRevalidatedRoles()
+    {
+        var verifier = CreateVerifier(
+            enabled: true,
+            membershipSource: new StaticMembershipSource(new PrincipalMembership(IsActive: true, Roles: ["viewer"])));
+        var token = CreateToken(subject: "user-123", name: "Ada", roles: ["editor"], tenantId: "tenant-A");
+
+        var result = await verifier.VerifyAsync("ada", token, CancellationToken.None);
+
+        result.Should().NotBeNull();
+        result!.Roles.Should().Equal("viewer");
+        result.PrincipalId.Should().Be("user-123");
+    }
+
 
     /// <summary>
     /// Service provider carrying an Enterprise-entitled license so claims transformation tests
@@ -256,7 +298,8 @@ public sealed class OidcPortalCredentialVerifierTests
     private static OidcPortalCredentialVerifier CreateVerifier(
         bool enabled,
         IServiceProvider? services = null,
-        ClaimsMappingOptions? claimsMapping = null)
+        ClaimsMappingOptions? claimsMapping = null,
+        IPrincipalMembershipSource? membershipSource = null)
     {
         var options = new OidcAuthenticationOptions
         {
@@ -283,7 +326,8 @@ public sealed class OidcPortalCredentialVerifierTests
         var transformation = new OidcClaimsTransformation(
             wrapped,
             NullLogger<OidcClaimsTransformation>.Instance,
-            services ?? EnterpriseEntitledServices());
+            services ?? EnterpriseEntitledServices(),
+            membershipSource);
         return new OidcPortalCredentialVerifier(
             wrapped,
             transformation,
@@ -333,6 +377,22 @@ public sealed class OidcPortalCredentialVerifierTests
             signingCredentials: credentials);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private sealed class StaticMembershipSource(PrincipalMembership membership) : IPrincipalMembershipSource
+    {
+        public Task<PrincipalMembership?> ResolveMembershipAsync(
+            string principalId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<PrincipalMembership?>(membership);
+    }
+
+    private sealed class ThrowingMembershipSource : IPrincipalMembershipSource
+    {
+        public Task<PrincipalMembership?> ResolveMembershipAsync(
+            string principalId,
+            CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("membership store unavailable");
     }
 
     private sealed class MutableLicenseEntitlementService : ILicenseEntitlementService
