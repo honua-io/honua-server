@@ -62,7 +62,13 @@ internal sealed class GeoServicesEditParameterAdapter(
                         feature.Id,
                         feature.Geometry,
                         feature.Attributes,
-                        EditUpdateMode.Replace))
+                        EditUpdateMode.Replace) with
+                    {
+                        // Replacement mode would otherwise drop masked fields that were omitted
+                        // from the caller-visible document, including the owner (#5426).
+                        PreserveOmittedMaskedAttributes = feature.PreserveOmittedMaskedAttributes,
+                        ExplicitAttributeRemovals = feature.ExplicitAttributeRemovals
+                    })
                     .ToImmutableArray();
 
             var editRequest = new UnifiedEditRequest

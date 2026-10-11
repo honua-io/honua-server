@@ -931,10 +931,16 @@ internal static partial class AttachmentEndpoints
                 IsAuthenticated: true,
                 IsAdmin: ServiceDataEditorAuthorization.IsAdminPrincipal(context))
             : EditPrincipal.Anonymous;
-        var existingOwner = existing.Attributes.TryGetValue(ownerPolicy.OwnerField, out var ownerValue)
-            ? ownerValue
-            : null;
-        var decision = OwnerEditPolicyEvaluator.Evaluate(ownerPolicy, editEvent, existingOwner, principal);
+        // The feature above is the masked read used for existence. The owner check uses a
+        // separate policy query and does not copy that value onto the feature (#5426).
+        var decision = await OwnerEditPolicyFieldAccess.AuthorizeAsync(
+            featureReader,
+            layerId,
+            existing.Id,
+            ownerPolicy,
+            editEvent,
+            principal,
+            context.RequestAborted).ConfigureAwait(false);
         if (decision.IsAllowed)
         {
             return true;
