@@ -53,6 +53,46 @@ public sealed class OgcFeatureEntityTagTests
     }
 
     [UnitTest]
+    public void SelectEntitySnapshot_SameCrs_UsesResponseFeature()
+    {
+        var response = MakeFeature(1, "response") with { Geometry = [1, 2] };
+        var storage = MakeFeature(1, "storage") with { Geometry = [9, 9] };
+        var resolved = MakeFeature(1, "resolved");
+
+        var selected = OgcFeatureEntityTag.SelectEntitySnapshot(4326, 4326, response, storage, resolved);
+
+        selected.Attributes["name"].Should().Be("response");
+        OgcFeatureEntityTag.Compute(selected, ETagService)
+            .Should().Be(OgcFeatureEntityTag.Compute(response, ETagService));
+    }
+
+    [UnitTest]
+    public void SelectEntitySnapshot_DifferentCrs_UsesStorageSnapshot()
+    {
+        var response = MakeFeature(1, "projected") with { Geometry = [1, 2, 3] };
+        var storage = MakeFeature(1, "stored") with { Geometry = [9, 9] };
+        var resolved = MakeFeature(1, "resolved");
+
+        var selected = OgcFeatureEntityTag.SelectEntitySnapshot(3857, 4326, response, storage, resolved);
+
+        OgcFeatureEntityTag.Compute(selected, ETagService)
+            .Should().Be(OgcFeatureEntityTag.Compute(storage, ETagService));
+        OgcFeatureEntityTag.Compute(response, ETagService)
+            .Should().NotBe(OgcFeatureEntityTag.Compute(storage, ETagService));
+    }
+
+    [UnitTest]
+    public void SelectEntitySnapshot_DifferentCrsWithoutStorageRead_UsesResolvedFeature()
+    {
+        var response = MakeFeature(1, "projected") with { Geometry = [1] };
+        var resolved = MakeFeature(1, "resolved") with { Geometry = [4, 5] };
+
+        var selected = OgcFeatureEntityTag.SelectEntitySnapshot(3857, 4326, response, null, resolved);
+
+        selected.Attributes["name"].Should().Be("resolved");
+    }
+
+    [UnitTest]
     public void Compute_NestedJsonNullAndAbsentProperty_ProduceDifferentEntityETags()
     {
         var original = MakeFeature(1, "original");
@@ -133,5 +173,48 @@ public sealed class OgcFeatureEntityTagTests
         OgcFeatureEntityTag.MatchesEntityOrRepresentation(consistentTag, entityETagV2, ETagService)
             .Should().BeTrue(
                 "a representation ETag built from the same V2 entity must match V2's If-Match check");
+    }
+
+    [UnitTest]
+    public async Task ReadUntilStorageStable_SkipsADivergentProjection()
+    {
+        var storage = new Queue<Feature?>(
+        [
+            MakeFeature(1, "v1"),
+            MakeFeature(1, "v2"),
+            MakeFeature(1, "v2"),
+            MakeFeature(1, "v2"),
+        ]);
+        var projected = new Queue<Feature?>(
+        [
+            MakeFeature(1, "projected-v1"),
+            MakeFeature(1, "projected-v2"),
+        ]);
+
+        var result = await OgcFeaturesResponseHelpers.ReadUntilStorageStableAsync(
+            _ => Task.FromResult(storage.Dequeue()),
+            _ => Task.FromResult(projected.Dequeue()),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ConsistentFeatureReadStatus.Found);
+        result.Storage.HasValue.Should().BeTrue();
+        result.Response.HasValue.Should().BeTrue();
+        result.Storage.GetValueOrDefault().Attributes["name"].Should().Be("v2");
+        result.Response.GetValueOrDefault().Attributes["name"].Should().Be("projected-v2");
+    }
+
+    [UnitTest]
+    public async Task ReadUntilStorageStable_UnstableWhenEveryReadDiverges()
+    {
+        var version = 0;
+        var result = await OgcFeaturesResponseHelpers.ReadUntilStorageStableAsync(
+            _ => Task.FromResult<Feature?>(MakeFeature(1, "v" + version++)),
+            _ => Task.FromResult<Feature?>(MakeFeature(1, "projected")),
+            CancellationToken.None,
+            attempts: 2);
+
+        result.Status.Should().Be(ConsistentFeatureReadStatus.Unstable);
+        result.Storage.HasValue.Should().BeFalse();
+        result.Response.HasValue.Should().BeFalse();
     }
 }

@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Infrastructure.Stac;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -94,7 +95,9 @@ internal sealed class PortalTokenAuthenticationHandler(
 
     private async ValueTask<(string? Token, bool HasConflictingValues)> ExtractTokenAsync()
     {
-        if (Request.Query.TryGetValue(TokenQueryParameter, out var queryToken) && !StringValues.IsNullOrEmpty(queryToken))
+        if (Request.Query.TryGetValue(TokenQueryParameter, out var queryToken) &&
+            !StringValues.IsNullOrEmpty(queryToken) &&
+            !IsStacPaginationCursor(queryToken))
         {
             var extracted = ReadRepeatedToken(queryToken);
             if (extracted.HasConflictingValues || extracted.Token is not null)
@@ -122,6 +125,19 @@ internal sealed class PortalTokenAuthenticationHandler(
         }
 
         return await TryReadFormTokenAsync().ConfigureAwait(false);
+    }
+
+    private bool IsStacPaginationCursor(StringValues queryToken)
+    {
+        // Only /stac treats offset:N as a continuation cursor. A real portal token
+        // in the query string still wins, including on /stac.
+        if (queryToken.Count != 1 ||
+            !Request.Path.StartsWithSegments("/stac", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return StacContinuationTokens.IsCursor(queryToken[0]);
     }
 
     private async ValueTask<(string? Token, bool HasConflictingValues)> TryReadFormTokenAsync()

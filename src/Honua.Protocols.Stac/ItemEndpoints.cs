@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Stac;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
@@ -315,6 +316,7 @@ internal static class ItemEndpoints
                     readerResolution.Reader,
                     readerResolution.StorageLayerId,
                     resourceSrid,
+                    resource,
                     itemId,
                     cancellationToken);
                 if (feature is null && hasNumericItemId)
@@ -340,7 +342,7 @@ internal static class ItemEndpoints
 
             if (feature is { } resolvedFeature &&
                 !string.Equals(
-                    StacMappingService.ResolveItemId(resolvedFeature),
+                    StacMappingService.ResolveItemId(resolvedFeature, resource),
                     itemId,
                     StringComparison.Ordinal))
             {
@@ -363,6 +365,13 @@ internal static class ItemEndpoints
 
             StacTelemetry.SetResultCount(activity, 1);
             return Results.Json(item, StacJsonContext.Default.StacItem, MediaTypes.GeoJson);
+        }
+        catch (StacItemIdConflictException ex)
+        {
+            StacTelemetry.RecordException(activity, ex);
+            StacLog.OperationFailed(logger, ex);
+            return StandardErrorHelpers.CreateConflict(
+                context, "The requested STAC item id is not unique.");
         }
         catch (OperationCanceledException ex)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -394,6 +403,7 @@ internal static class ItemEndpoints
         IFeatureReader featureReader,
         int layerId,
         int layerSrid,
+        MetadataV2Resource resource,
         string itemId,
         CancellationToken cancellationToken)
     {
@@ -403,7 +413,7 @@ internal static class ItemEndpoints
         var query = new FeatureQuery
         {
             SqlFilter = new SqlFragment(
-                "attributes->>'stac_id' = @p0 OR attributes->>'item_id' = @p0 OR attributes->>'id' = @p0",
+                StacItemIdWhereBuilder.BuildUnboundAttributePredicate(resource),
                 [itemId]),
             Limit = 50
         };
@@ -420,7 +430,7 @@ internal static class ItemEndpoints
                 layerSrid,
                 objectId,
                 cancellationToken);
-            var matchRank = GetCanonicalItemMatchRank(feature, itemId);
+            var matchRank = GetCanonicalItemMatchRank(feature, itemId, resource);
             if (!matchRank.HasValue)
             {
                 continue;
@@ -493,11 +503,11 @@ internal static class ItemEndpoints
         return null;
     }
 
-    private static int? GetCanonicalItemMatchRank(Feature? feature, string itemId)
+    private static int? GetCanonicalItemMatchRank(Feature? feature, string itemId, MetadataV2Resource resource)
     {
         if (feature is not { } resolvedFeature ||
             !string.Equals(
-                StacMappingService.ResolveItemId(resolvedFeature),
+                StacMappingService.ResolveItemId(resolvedFeature, resource),
                 itemId,
                 StringComparison.Ordinal))
         {
@@ -505,6 +515,13 @@ internal static class ItemEndpoints
         }
 
         var attributes = resolvedFeature.Attributes;
+        var source = StacItemIdentity.Resolve(resource);
+        if (source.IsDeclaredIdentity &&
+            source.Field is { } declared &&
+            AttributeTextEquals(attributes, declared.Name, itemId))
+        {
+            return 0;
+        }
 
         var keys = ImmutableArray.Create("stac_id", "item_id", "id");
         for (var index = 0; index < keys.Length; index++)
@@ -515,15 +532,30 @@ internal static class ItemEndpoints
                 continue;
             }
 
-            if (string.Equals(
-                    Convert.ToString(value, CultureInfo.InvariantCulture),
-                    itemId,
-                    StringComparison.Ordinal))
+            if (AttributeTextEquals(attributes, key, itemId))
             {
-                return index;
+                return index + 1;
             }
         }
 
-        return null;
+        // ResolveItemId already matched, including an object-id fallback for a blank
+        // declared identity. Keep the row.
+        return keys.Length;
+    }
+
+    private static bool AttributeTextEquals(
+        ImmutableDictionary<string, object?> attributes,
+        string name,
+        string itemId)
+    {
+        if (!attributes.TryGetValue(name, out var value) || value is null)
+        {
+            return false;
+        }
+
+        return string.Equals(
+            Convert.ToString(value, CultureInfo.InvariantCulture),
+            itemId,
+            StringComparison.Ordinal);
     }
 }

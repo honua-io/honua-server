@@ -20,6 +20,21 @@ internal static class OgcFeatureEntityTag
 {
     private const string RepresentationTagPrefix = "of-";
 
+    /// <summary>
+    /// Picks the feature whose bytes are hashed into the entity tag.
+    /// The same CRS uses the response feature so the tag and the payload are one read.
+    /// A different response CRS uses the storage snapshot, which is what writes hash.
+    /// </summary>
+    public static Feature SelectEntitySnapshot(
+        int responseSrid,
+        int storageSrid,
+        Feature responseFeature,
+        Feature? storageSnapshot,
+        Feature resolvedFeature)
+        => responseSrid == storageSrid
+            ? responseFeature
+            : storageSnapshot ?? resolvedFeature;
+
     public static string Compute(Feature feature, IETagService etagService)
     {
         ArgumentNullException.ThrowIfNull(etagService);
