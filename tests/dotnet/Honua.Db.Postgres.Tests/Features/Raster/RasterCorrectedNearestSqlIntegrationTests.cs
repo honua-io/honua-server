@@ -362,7 +362,7 @@ public sealed class RasterCorrectedNearestSqlIntegrationTests(PostgresFixture fi
         setupWatch.Stop();
         output.WriteLine($"HighResolution fixture setup: {setupWatch.Elapsed.TotalMilliseconds:F3} ms");
         command.CommandTimeout = 20;
-        command.CommandText = "SET LOCAL statement_timeout = '15s'; SAVEPOINT mandatory_sample;";
+        command.CommandText = "SET LOCAL statement_timeout = '15s';";
         await command.ExecuteNonQueryAsync();
         command.CommandText = $"""
             WITH source AS MATERIALIZED (SELECT rast FROM corrected_highres_source),
@@ -383,6 +383,8 @@ public sealed class RasterCorrectedNearestSqlIntegrationTests(PostgresFixture fi
             FROM result;
             """;
         var sampleQuery = command.CommandText;
+        await RecordHighResolutionStagesAsync(command, sampleQuery);
+        command.CommandText = sampleQuery;
         var watch = System.Diagnostics.Stopwatch.StartNew();
         await using var reader = await ExecuteMandatoryHighResolutionSampleAsync(command, sampleQuery, watch);
         (await reader.ReadAsync()).Should().BeTrue();
@@ -428,34 +430,79 @@ public sealed class RasterCorrectedNearestSqlIntegrationTests(PostgresFixture fi
         {
             watch.Stop();
             output.WriteLine($"HighResolution mandatory production Sample FAILED: {watch.Elapsed.TotalMilliseconds:F3} ms; SQLSTATE 57014; acceptance deadline remains 15s.");
-            // Keep the original timeout as this test's verdict. A separate diagnostic executes
-            // the identical complete query, against the retained full fixture, after clearing
-            // only the failed savepoint. Its longer bound is never an acceptance allowance.
-            var diagnosticWatch = System.Diagnostics.Stopwatch.StartNew();
-            try
-            {
-                command.CommandText = "ROLLBACK TO SAVEPOINT mandatory_sample; SET LOCAL statement_timeout = '60s';";
-                await command.ExecuteNonQueryAsync();
-                command.CommandTimeout = 65;
-                command.CommandText = "EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON) " + sampleQuery;
-                var plan = (string?)await command.ExecuteScalarAsync();
-                output.WriteLine($"HighResolution diagnostic-only EXPLAIN ANALYZE: {diagnosticWatch.Elapsed.TotalMilliseconds:F3} ms; acceptance FAILED regardless of diagnostic result.");
-                if (plan is null || plan.Length > 1_048_576)
-                {
-                    output.WriteLine("HighResolution diagnostic plan absent or exceeded the 1 MiB output bound.");
-                }
-                else
-                {
-                    output.WriteLine("HighResolution diagnostic plan JSON: " + plan);
-                }
-            }
-            catch (Exception diagnosticException)
-            {
-                output.WriteLine($"HighResolution diagnostic-only EXPLAIN FAILED after {diagnosticWatch.Elapsed.TotalMilliseconds:F3} ms: {diagnosticException.GetType().Name}; SQLSTATE {(diagnosticException as Npgsql.PostgresException)?.SqlState ?? "none"}.");
-            }
-
             throw;
         }
+    }
+
+    private async Task RecordHighResolutionStagesAsync(Npgsql.NpgsqlCommand command, string sampleQuery)
+    {
+        // Keep each stage at the same 15s SQL / 20s command bounds. These diagnostics
+        // precede the unchanged acceptance query and may warm the fixture's read cache.
+        await RecordHighResolutionStageAsync(command, "estimated-full-plan",
+            "EXPLAIN (FORMAT JSON) " + sampleQuery);
+        var separable = RasterSeparableNearestSql.TrySample("s.rast", "g.rast");
+        const string input = """
+            WITH source AS MATERIALIZED (SELECT rast FROM corrected_highres_source),
+            grid AS MATERIALIZED (SELECT ST_MakeEmptyRaster(256,256,0,2048,8,-8,0,0,3857) AS rast)
+            SELECT
+            """;
+        await RecordHighResolutionStageAsync(command, "eligibility-requested",
+            Stage(", sample_value_grid AS MATERIALIZED (", """
+                SELECT json_build_object('eligible', (SELECT count(*) FROM sample_guard),
+                    'requested', requested, 'c0', c0, 'c1', c1, 'r0', r0, 'r1', r1,
+                    'source_width', sw, 'source_height', sh, 'bands', ST_NumBands(i.rast))
+                FROM sample_value_bounds b, sample_guard i
+                """));
+        await RecordHighResolutionStageAsync(command, "clip-admission",
+            Stage(", sample_value_arrays AS MATERIALIZED (", """
+                SELECT json_build_object('width', ST_Width(v.rast), 'height', ST_Height(v.rast),
+                    'expected_width', c1-c0+1, 'expected_height', r1-r0+1,
+                    'alignment', ST_SameAlignment(v.rast,v.grid),
+                    'hull_equal', ST_Equals(ST_ConvexHull(v.rast),ST_ConvexHull(v.grid)))
+                FROM sample_value_clip v
+                """));
+        await RecordHighResolutionStageAsync(command, "array-dump-lengths",
+            Stage(", sample_values AS MATERIALIZED (", """
+                SELECT json_build_object('array_bands', count(*),
+                    'dumped_values', sum(array_length(vals,1)::bigint * array_length(vals,2)),
+                    'min_width', min(array_length(vals,2)), 'max_width', max(array_length(vals,2)),
+                    'min_height', min(array_length(vals,1)), 'max_height', max(array_length(vals,1)))
+                FROM sample_value_arrays
+                """));
+        string Stage(string marker, string aggregate)
+        {
+            // Retain the actual production CTE prefix through the stage under test.
+            // The marker starts immediately after its closing parenthesis.
+            var end = separable.IndexOf(marker, StringComparison.Ordinal);
+            if (end < 0)
+            {
+                throw new InvalidOperationException("Production separable stage marker missing.");
+            }
+
+            return input + separable[..end] + "\n" + aggregate + ") FROM source s, grid g;";
+        }
+    }
+
+    private async Task RecordHighResolutionStageAsync(Npgsql.NpgsqlCommand command, string name, string sql)
+    {
+        command.CommandText = "SAVEPOINT highres_stage;";
+        await command.ExecuteNonQueryAsync();
+        command.CommandText = sql;
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var result = (string?)await command.ExecuteScalarAsync();
+            output.WriteLine($"HighResolution diagnostic {name}: {watch.Elapsed.TotalMilliseconds:F3} ms; JSON: {(result is not null && result.Length <= 1_048_576 ? result : "missing-or-over-1MiB-bound")}");
+        }
+        catch (Exception exception)
+        {
+            output.WriteLine($"HighResolution diagnostic {name} FAILED: {watch.Elapsed.TotalMilliseconds:F3} ms; {exception.GetType().Name}; SQLSTATE {(exception as Npgsql.PostgresException)?.SqlState ?? "none"}.");
+            command.CommandText = "ROLLBACK TO SAVEPOINT highres_stage;";
+            await command.ExecuteNonQueryAsync();
+        }
+
+        command.CommandText = "RELEASE SAVEPOINT highres_stage;";
+        await command.ExecuteNonQueryAsync();
     }
 
     [IntegrationTest]
