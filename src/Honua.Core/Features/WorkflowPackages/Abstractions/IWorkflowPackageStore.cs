@@ -26,11 +26,15 @@ public interface IWorkflowPackageStore
     Task<WorkflowPackage> SavePackageAsync(WorkflowPackage package, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Creates an immutable package version.
+    /// Creates an immutable package version from <paramref name="validatedGraph"/>.
+    /// Implementations must lock the package draft and reject the call when that
+    /// draft's hash no longer equals <paramref name="packageHash"/>, and must store
+    /// <paramref name="validatedGraph"/> rather than whatever draft is current.
     /// </summary>
     Task<WorkflowPackageVersion> CreateVersionAsync(
         string packageId,
         string packageHash,
+        WorkflowGraph validatedGraph,
         WorkflowPackageValidationResult validation,
         string? createdBy,
         CancellationToken cancellationToken = default);
@@ -86,5 +90,16 @@ public interface IWorkflowPackageStore
     Task<WorkflowPublication?> SetPublicationStatusAsync(
         string publicationId,
         WorkflowPublicationStatus status,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Replaces a publication's scheduler definition id when it still equals
+    /// <paramref name="expectedDefinitionId"/>. Returns false when the row is missing
+    /// or the id has already changed, so a legacy shared id can be split once.
+    /// </summary>
+    Task<bool> TryReplaceWorkflowDefinitionIdAsync(
+        string publicationId,
+        string expectedDefinitionId,
+        string replacementDefinitionId,
         CancellationToken cancellationToken = default);
 }
