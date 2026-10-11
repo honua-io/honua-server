@@ -595,6 +595,33 @@ public sealed class ImageServerRenderingRuleMappingTests
     }
 
     [UnitTest]
+    public void MapRenderingRule_NestedExtractBand_ComposesOuterIndexIntoInnerSelection()
+    {
+        // Inner 0-based [2,0] emits source bands 3 then 1. Outer 0-based [1]
+        // takes the second of those, source band 1, rather than both.
+        var document = Parse(
+            """{"rasterFunction":"ExtractBand","rasterFunctionArguments":{"BandIds":[1],"Raster":{"rasterFunction":"ExtractBand","rasterFunctionArguments":{"BandIds":[2,0]}}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.Bands.Should().Equal(1);
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_NestedExtractBand_RejectsIndexPastInnerSelection()
+    {
+        var document = Parse(
+            """{"rasterFunction":"ExtractBand","rasterFunctionArguments":{"BandIds":[1],"Raster":{"rasterFunction":"ExtractBand","rasterFunctionArguments":{"BandIds":[0]}}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeFalse();
+        mapping.Reason.Should().Contain("outside");
+    }
+
+    [UnitTest]
     public void MapRenderingRule_ExtractBandByName_IsNotImplemented()
     {
         var document = Parse(
