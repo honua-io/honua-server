@@ -39,6 +39,7 @@ public sealed class OperationEnvelopeFactory(
                 ? $"opinst-{Guid.NewGuid():N}"
                 : DeriveIdempotentInstanceId(operationId, context.IdempotencyKey, context.TenantId)
             : context.OperationInstanceId;
+        var acceptanceAttempt = $"acceptance-attempt:{Guid.NewGuid():N}";
         var envelope = new OperationHandle
         {
             OperationInstanceId = operationInstanceId,
@@ -52,14 +53,28 @@ public sealed class OperationEnvelopeFactory(
             UpdatedAt = now,
             AuthorizationOutcome = context.AuthorizationOutcome,
             EvidenceRefs = context.IdempotencyRequestHash is { } requestHash
-                ? [RequestHashEvidencePrefix + requestHash]
-                : [],
+                ? [RequestHashEvidencePrefix + requestHash, acceptanceAttempt]
+                : [acceptanceAttempt],
         };
 
         var ownsAcceptance = false;
         try
         {
-            ownsAcceptance = await instanceStore.TryCreateAsync(envelope, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                ownsAcceptance = await instanceStore.TryCreateAsync(envelope, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // A lost Redis reply does not prove that creation failed. Only the
+                // nonce from this attempt can authorize cleanup of an unaudited v0.
+                await FailUncertainAcceptanceAsync(envelope, acceptanceAttempt).ConfigureAwait(false);
+                throw;
+            }
+            envelope = envelope with
+            {
+                EvidenceRefs = envelope.EvidenceRefs.Where(reference => reference != acceptanceAttempt).ToArray(),
+            };
             if (!ownsAcceptance)
             {
                 if (!string.IsNullOrWhiteSpace(context.IdempotencyKey))
@@ -182,6 +197,32 @@ public sealed class OperationEnvelopeFactory(
         };
         await instanceStore.SetAsync(completed, cancellationToken).ConfigureAwait(false);
         return completed;
+    }
+
+    private async Task FailUncertainAcceptanceAsync(OperationHandle attempted, string acceptanceAttempt)
+    {
+        try
+        {
+            var current = await instanceStore.GetAsync(attempted.OperationInstanceId, CancellationToken.None).ConfigureAwait(false);
+            if (current is not { Version: 0, Status: OperationHandleStatus.Accepted } ||
+                !string.IsNullOrWhiteSpace(current.AuditId) ||
+                !current.EvidenceRefs.Contains(acceptanceAttempt, StringComparer.Ordinal))
+            {
+                return;
+            }
+
+            // A concurrent transition after the read must win over this cleanup.
+            await instanceStore.TrySetAsync(
+                    Failure(current, "Operation acceptance could not be confirmed after durable creation."),
+                    current.Version,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Preserve the original dependency/cancellation failure. Never grant
+            // actuation when the durable result cannot be established.
+        }
     }
 
     private async Task<OperationHandle> PersistFailureAsync(OperationHandle envelope, string reason)

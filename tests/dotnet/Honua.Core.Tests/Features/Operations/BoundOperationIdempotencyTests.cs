@@ -20,6 +20,7 @@ public sealed class BoundOperationIdempotencyTests
         var retry = await factory.CreateAcceptedAsync("admin.import.upload-url", context);
 
         Assert.Equal(OperationHandleStatus.Accepted, first.Status);
+        Assert.DoesNotContain(first.EvidenceRefs, reference => reference.StartsWith("acceptance-attempt:", StringComparison.Ordinal));
         Assert.Equal(OperationHandleStatus.Failed, retry.Status);
         Assert.Equal("409", retry.Result!.Details["statusCode"]);
         Assert.Equal(OperationHandleStatus.Accepted, (await store.GetAsync(first.OperationInstanceId))!.Status);
@@ -156,11 +157,95 @@ public sealed class BoundOperationIdempotencyTests
         Assert.Equal("original-job", persisted.JobId);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Acceptance_CreatePersistsThenThrows_FailsOnlyItsUnauditedEnvelope(bool cancel)
+    {
+        var store = new HookInstanceStore
+        {
+            AfterCreate = () => cancel
+                ? Task.FromException(new OperationCanceledException())
+                : Task.FromException(new InvalidOperationException("Create reply lost")),
+        };
+        var factory = new OperationEnvelopeFactory(store, new VolatileOperationAuditLog(), TimeProvider.System);
+        var context = Context() with { OperationInstanceId = "uncertain-create" };
+        if (cancel)
+        {
+            await Assert.ThrowsAsync<OperationCanceledException>(() => factory.CreateAcceptedAsync("admin.import.upload-url", context));
+        }
+        else
+        {
+            Assert.Equal(OperationHandleStatus.Failed, (await factory.CreateAcceptedAsync("admin.import.upload-url", context)).Status);
+        }
+
+        var persisted = await store.GetAsync(context.OperationInstanceId);
+        Assert.Equal(OperationHandleStatus.Failed, persisted!.Status);
+        Assert.Equal(1, persisted.Version);
+        Assert.Null(persisted.AuditId);
+    }
+
+    [Fact]
+    public async Task Acceptance_CreateReplyLostOnCompetingAttempt_DoesNotFailTheWinner()
+    {
+        var store = new HookInstanceStore();
+        var factory = new OperationEnvelopeFactory(store, new VolatileOperationAuditLog(), TimeProvider.System);
+        var context = Context() with { OperationInstanceId = "other-attempt", CorrelationId = "same-correlation" };
+        store.AfterCreate = async () =>
+        {
+            // Simulate a rival winning NX before this attempt receives a failure.
+            var persisted = await store.GetAsync(context.OperationInstanceId);
+            await store.ReplaceInitialAsync(persisted! with { EvidenceRefs = ["acceptance-attempt:other-owner"] });
+            throw new InvalidOperationException("Create reply lost");
+        };
+        Assert.Equal(OperationHandleStatus.Failed, (await factory.CreateAcceptedAsync("admin.import.upload-url", context)).Status);
+        var winner = await store.GetAsync(context.OperationInstanceId);
+        Assert.Equal(OperationHandleStatus.Accepted, winner!.Status);
+        Assert.Equal(0, winner.Version);
+    }
+
+    [Fact]
+    public async Task Acceptance_CreateReplyLost_ConcurrentProgressWinsRecoveryCompareAndSet()
+    {
+        var store = new HookInstanceStore
+        {
+            AfterCreate = () => Task.FromException(new InvalidOperationException("Create reply lost")),
+        };
+        var factory = new OperationEnvelopeFactory(store, new VolatileOperationAuditLog(), TimeProvider.System);
+        var context = Context() with { OperationInstanceId = "progressed-create" };
+        store.BeforeCompareAndSet = async () =>
+        {
+            var persisted = await store.GetAsync(context.OperationInstanceId);
+            await store.SetAsync(persisted! with { Status = OperationHandleStatus.Completed, JobId = "winner-job" });
+        };
+        Assert.Equal(OperationHandleStatus.Failed, (await factory.CreateAcceptedAsync("admin.import.upload-url", context)).Status);
+        var winner = await store.GetAsync(context.OperationInstanceId);
+        Assert.Equal(OperationHandleStatus.Completed, winner!.Status);
+        Assert.Equal("winner-job", winner.JobId);
+    }
+
     private sealed class HookInstanceStore : IOperationInstanceStore
     {
-        private readonly VolatileOperationInstanceStore _inner = new();
+        private VolatileOperationInstanceStore _inner = new();
         public Func<Task>? BeforeGet { get; set; }
-        public Task<bool> TryCreateAsync(OperationHandle envelope, CancellationToken cancellationToken = default) => _inner.TryCreateAsync(envelope, cancellationToken);
+        public Func<Task>? AfterCreate { get; set; }
+        public Func<Task>? BeforeCompareAndSet { get; set; }
+        public async Task<bool> TryCreateAsync(OperationHandle envelope, CancellationToken cancellationToken = default)
+        {
+            var created = await _inner.TryCreateAsync(envelope, cancellationToken);
+            if (AfterCreate is not null) await AfterCreate();
+            return created;
+        }
+        public async Task ReplaceInitialAsync(OperationHandle envelope)
+        {
+            _inner = new VolatileOperationInstanceStore();
+            await _inner.TryCreateAsync(envelope);
+        }
+        public async Task<bool> TrySetAsync(OperationHandle envelope, long expectedVersion, CancellationToken cancellationToken = default)
+        {
+            if (BeforeCompareAndSet is not null) await BeforeCompareAndSet();
+            return await _inner.TrySetAsync(envelope, expectedVersion, cancellationToken);
+        }
         public Task SetAsync(OperationHandle envelope, CancellationToken cancellationToken = default) => _inner.SetAsync(envelope, cancellationToken);
         public async Task<OperationHandle?> GetAsync(string operationInstanceId, CancellationToken cancellationToken = default)
         {
