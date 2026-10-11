@@ -195,6 +195,7 @@ internal static partial class SensorThingsEndpoints
     {
         try
         {
+            EnsureNavigationDepth(context.Request.Path.Value ?? string.Empty);
             if (context.RequestServices.GetRequiredService<IConfiguration>().GetValue<bool>("SensorThings:ConformantProfile")
                 && await store.CountUnresolvedFeaturesAsync(context.RequestAborted).ConfigureAwait(false) > 0)
                 return StandardErrorHelpers.CreateServiceUnavailable(context, "The conformant sensing profile requires explicit reconciliation of legacy FeatureOfInterest associations.");
@@ -325,7 +326,7 @@ internal static partial class SensorThingsEndpoints
         var query = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (var option in context.Request.Query)
         {
-            if (!option.Key.StartsWith('$')) continue;
+            if (option.Key is not ("$select" or "$expand" or "$filter" or "$orderby" or "$top" or "$skip" or "$count")) continue;
             query[option.Key] = option.Value.ToString();
         }
         query["$skip"] = skip.ToString(CultureInfo.InvariantCulture);

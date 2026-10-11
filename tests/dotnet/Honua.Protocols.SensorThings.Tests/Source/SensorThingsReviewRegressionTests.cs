@@ -290,6 +290,79 @@ public sealed class SensorThingsReviewRegressionTests : IAsyncLifetime
         JsonNode.Parse(await oneLevel.Content.ReadAsStringAsync())!["value"]!.AsArray().Should().NotBeEmpty();
     }
 
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /sta/v1.1/Datastreams")]
+    [Endpoint("POST /sta/v1.1/Observations")]
+    [Endpoint("PATCH /sta/v1.1/Observations({id})")]
+    [Endpoint("GET /sta/v1.1/Observations({id})")]
+    public async Task Observation_TimeAndInvalidResultPatch_RollsBack_AndValidTimePatchSucceeds(bool changeDatastream)
+    {
+        using var admin = _fixture.CreateAdminClient();
+        var featureId = await SensorThingsTestData.CreateFeatureAsync(_fixture);
+        var streamId = 1L;
+        if (changeDatastream)
+        {
+            using var createdStream = await admin.PostAsync("/sta/v1.1/Datastreams", Json(new JsonObject
+            {
+                ["name"] = "Truth patch target",
+                ["description"] = "Validates the result after a partition-key change",
+                ["observationType"] = "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_TruthObservation",
+                ["unitOfMeasurement"] = new JsonObject { ["name"] = "Boolean", ["symbol"] = "bool", ["definition"] = "https://example.test/boolean" },
+                ["Thing"] = new JsonObject { ["@iot.id"] = 1 },
+                ["Sensor"] = new JsonObject { ["@iot.id"] = 1 },
+                ["ObservedProperty"] = new JsonObject { ["@iot.id"] = 1 }
+            }));
+            streamId = Id(await CreatedAsync(createdStream));
+        }
+        const string originalTime = "2026-01-01T00:00:00Z";
+        const string newTime = "2026-02-01T00:00:00Z/2026-02-02T00:00:00Z";
+        using var created = await admin.PostAsync("/sta/v1.1/Observations", Json(new JsonObject
+        {
+            ["result"] = 4.5,
+            ["phenomenonTime"] = originalTime,
+            ["Datastream"] = new JsonObject { ["@iot.id"] = 1 },
+            ["FeatureOfInterest"] = new JsonObject { ["@iot.id"] = featureId }
+        }));
+        var observationId = Id(await CreatedAsync(created));
+        using var before = await _fixture.Client.GetAsync($"/sta/v1.1/Observations({observationId})");
+        before.StatusCode.Should().Be(HttpStatusCode.OK);
+        var original = await before.Content.ReadAsStringAsync();
+        var invalid = new JsonObject { ["phenomenonTime"] = newTime };
+        if (changeDatastream) invalid["Datastream"] = new JsonObject { ["@iot.id"] = streamId };
+        else invalid["result"] = "not a measurement";
+        using var rejected = await admin.PatchAsync($"/sta/v1.1/Observations({observationId})", Json(invalid));
+        rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest, await rejected.Content.ReadAsStringAsync());
+        using var after = await _fixture.Client.GetAsync($"/sta/v1.1/Observations({observationId})");
+        after.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await after.Content.ReadAsStringAsync()).Should().Be(original, "the whole timestamp/result/binding mutation must roll back");
+        (await ScalarAsync("SELECT count(*)::bigint FROM sta_observation WHERE id=@id AND phenomenon_time=@time AND result=4.5 AND datastream_id=1",
+            ("id", observationId), ("time", DateTimeOffset.Parse(originalTime, CultureInfo.InvariantCulture)))).Should().Be(1);
+        var valid = new JsonObject { ["phenomenonTime"] = newTime };
+        if (changeDatastream)
+        {
+            valid["Datastream"] = new JsonObject { ["@iot.id"] = streamId };
+            valid["result"] = true;
+        }
+        else valid["result"] = 9.5;
+        using var accepted = await admin.PatchAsync($"/sta/v1.1/Observations({observationId})", Json(valid));
+        accepted.StatusCode.Should().Be(HttpStatusCode.NoContent, await accepted.Content.ReadAsStringAsync());
+        using var updated = await _fixture.Client.GetAsync($"/sta/v1.1/Observations({observationId})");
+        updated.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = JsonNode.Parse(await updated.Content.ReadAsStringAsync())!.AsObject();
+        var interval = body["phenomenonTime"]!.GetValue<string>().Split('/');
+        interval.Should().HaveCount(2);
+        DateTimeOffset.Parse(interval[0], CultureInfo.InvariantCulture).Should().Be(new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero));
+        DateTimeOffset.Parse(interval[1], CultureInfo.InvariantCulture).Should().Be(new DateTimeOffset(2026, 2, 2, 0, 0, 0, TimeSpan.Zero));
+        if (changeDatastream) body["result"]!.GetValue<bool>().Should().BeTrue();
+        else body["result"]!.GetValue<double>().Should().Be(9.5);
+        (await ScalarAsync("SELECT count(*)::bigint FROM sta_observation WHERE id=@id AND phenomenon_time=@start AND phenomenon_time_end=@end AND datastream_id=@stream",
+            ("id", observationId), ("start", new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero)),
+            ("end", new DateTimeOffset(2026, 2, 2, 0, 0, 0, TimeSpan.Zero)), ("stream", streamId))).Should().Be(1);
+    }
+
     [IntegrationTest]
     [Operation(Operations.Update)]
     [Endpoint("PATCH /sta/v1.1/Observations({id})")]

@@ -676,15 +676,21 @@ internal sealed partial class PostgresObservationStore
         }
         if (entitySet == "Observations")
         {
-            await using var check = new NpgsqlCommand($"SELECT result_json::text,datastream_id FROM {_observationTable} WHERE id=@id{ObservationTimeClause(observationPhenomenonTime)}", lease.Connection, transaction);
+            // A timestamp PATCH moves the partition key. Validate the updated row,
+            // while the UPDATE itself remains guarded by the original locked key.
+            var updatedPhenomenonTime = patch["phenomenonTime"] is { } updatedTime
+                ? (DateTimeOffset)ConvertValue(new("phenomenonTime", "phenomenon_time", NpgsqlDbType.TimestampTz), updatedTime)
+                : observationPhenomenonTime;
+            await using var check = new NpgsqlCommand($"SELECT result_json::text,datastream_id FROM {_observationTable} WHERE id=@id{ObservationTimeClause(updatedPhenomenonTime)}", lease.Connection, transaction);
             check.Parameters.AddWithValue("id", id);
-            BindObservationTime(check, observationPhenomenonTime);
+            BindObservationTime(check, updatedPhenomenonTime);
             JsonObject? observation = null; long datastream = 0;
             await using (var reader = await ExecuteCatalogReaderAsync(check, cancellationToken).ConfigureAwait(false))
             {
                 if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) { observation = new JsonObject { ["result"] = JsonNode.Parse(reader.GetString(0)) }; datastream = reader.GetInt64(1); }
             }
-            if (observation is not null) await ValidateObservationTypeAsync(lease.Connection, transaction, observation, datastream, cancellationToken).ConfigureAwait(false);
+            if (observation is null) throw new SensorThingsConflictException("Updated Observation could not be resolved.");
+            await ValidateObservationTypeAsync(lease.Connection, transaction, observation, datastream, cancellationToken).ConfigureAwait(false);
         }
         if (entitySet == "Datastreams" && patch.TryGetPropertyValue("observationType", out var observationType))
         {
