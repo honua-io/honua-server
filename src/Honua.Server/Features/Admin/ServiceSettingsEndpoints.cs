@@ -125,7 +125,7 @@ internal static class ServiceSettingsEndpoints
         HandleGetSettings(
             string serviceName,
             [FromServices] IMetadataV2GraphProvider graphProvider,
-            [FromServices] IMetadataV2GraphStore graphStore,
+            [FromServices] IMetadataV2GraphStore? graphStore,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
@@ -530,12 +530,14 @@ internal static class ServiceSettingsEndpoints
     /// </summary>
     private static async ValueTask<MetadataV2GraphSnapshot> GetSnapshotForServiceAsync(
         IMetadataV2GraphProvider graphProvider,
-        IMetadataV2GraphStore graphStore,
+        IMetadataV2GraphStore? graphStore,
         string serviceName,
         CancellationToken cancellationToken)
     {
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (TryResolveServicesByName(snapshot, serviceName, out _))
+        // File-backed dev and test hosts register the provider only. A missing store must not
+        // fail endpoint binding, and a provider hit does not need the persisted fallback.
+        if (graphStore is null || TryResolveServicesByName(snapshot, serviceName, out _))
         {
             return snapshot;
         }
