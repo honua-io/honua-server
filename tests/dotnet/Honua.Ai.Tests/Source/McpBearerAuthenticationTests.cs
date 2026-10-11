@@ -1053,8 +1053,9 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
     public async Task Get_UnknownWellFormedSessionId_IsRefusedWithoutOpeningAStream()
     {
         // The existing GET coverage sent no session header at all. A well-formed but
-        // unknown id is the interesting case: POST may serve it statelessly, but GET
-        // has no stateless fallback and must refuse rather than open a stream.
+        // unknown id is the interesting case: POST may serve it statelessly when the
+        // opt-in Mcp:StatelessSessionFallback is on, but GET has no stateless fallback
+        // and must refuse rather than open a stream.
         var token = CreateToken("stream-owner", additionalClaims:
         [
             new Claim("tid", "tenant-a"),

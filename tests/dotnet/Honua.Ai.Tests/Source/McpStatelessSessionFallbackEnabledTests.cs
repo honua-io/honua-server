@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp.Views;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -15,16 +16,17 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 /// <summary>
-/// Integration tests for the strict Streamable-HTTP session posture with
-/// <c>Mcp:StatelessSessionFallback=false</c>. The product default serves a
-/// well-formed unknown <c>Mcp-Session-Id</c> statelessly so multi-instance
-/// deployments without sticky routing keep working (honua-server#3027); this
-/// fixture opts out and proves the pre-#3027 spec behavior — HTTP 404 on any
-/// unknown id so the client re-initializes — remains available.
+/// Integration tests for the opt-in development convenience
+/// <c>Mcp:StatelessSessionFallback=true</c> (honua-server#3027). Outside
+/// Development the default is the strict Streamable-HTTP posture (HTTP 404 on
+/// an id no instance holds, so the client re-initializes; covered by
+/// <c>McpEndpointIntegrationTests</c>). This fixture opts in and proves the
+/// fallback still serves a well-formed unknown id session-less, i.e. with the
+/// default view and no session echo.
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
-public sealed class McpStatelessSessionFallbackDisabledTests : IAsyncLifetime
+public sealed class McpStatelessSessionFallbackEnabledTests : IAsyncLifetime
 {
     private const string JsonMediaType = "application/json";
 
@@ -33,10 +35,8 @@ public sealed class McpStatelessSessionFallbackDisabledTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // Opt out of the stateless fallback for this fixture only; the product
-        // default (and every other test) leaves it on per honua-server#3027.
         _fixture.ConfigureServices(services =>
-            services.PostConfigure<McpOptions>(o => o.StatelessSessionFallback = false));
+            services.PostConfigure<McpOptions>(o => o.StatelessSessionFallback = true));
         await _fixture.InitializeAsync();
         _client = _fixture.Client;
     }
@@ -49,22 +49,31 @@ public sealed class McpStatelessSessionFallbackDisabledTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
-    public async Task Request_WithUnknownSessionId_WhenFallbackDisabled_Returns404()
+    [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
+    public async Task Request_WithUnknownSessionId_WhenFallbackEnabled_IsServedSessionless()
     {
-        // Strict MCP 2025-03-26 transport behavior: an id the server never
-        // issued (or that has expired/been terminated) answers HTTP 404 so the
-        // client knows to re-run initialize.
         var response = await PostRpcAsync(
             """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
             sessionId: "deadbeefdeadbeefdeadbeefdeadbeef");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // Only initialize mints: a fallback-served request must not echo or
+        // issue a session id.
+        response.Headers.TryGetValues("Mcp-Session-Id", out _).Should().BeFalse();
+
+        using var document = await ReadJsonAsync(response);
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        var result = document.RootElement.GetProperty("result");
+        result.GetProperty("tools").ValueKind.Should().Be(JsonValueKind.Array);
+        // Session-less means the server default view: no negotiated view is applied.
+        result.GetProperty("_meta").GetProperty("view").GetString()
+            .Should().Be(McpWorkflowViewCatalog.DefaultViewName);
     }
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("DELETE /mcp")]
-    public async Task Delete_TerminatesSession_WhenFallbackDisabled_SubsequentUseReturns404()
+    public async Task Delete_TerminatesSession_WhenFallbackEnabled_SubsequentPostIsServedSessionless()
     {
         var sessionId = await InitializeAndGetSessionIdAsync();
 
@@ -73,22 +82,31 @@ public sealed class McpStatelessSessionFallbackDisabledTests : IAsyncLifetime
         var deleteResponse = await _client.SendAsync(deleteRequest);
         deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        // With the fallback off, a terminated session keeps the strict spec
-        // 404 on reuse.
         var afterDelete = await PostRpcAsync(
             """{"jsonrpc":"2.0","id":3,"method":"tools/list"}""",
             sessionId);
-        afterDelete.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        afterDelete.StatusCode.Should().Be(HttpStatusCode.OK);
+        afterDelete.Headers.TryGetValues("Mcp-Session-Id", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task Request_WithMalformedSessionId_WhenFallbackEnabled_Returns404()
+    {
+        var response = await PostRpcAsync(
+            """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
+            sessionId: "dead beef");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
-    public async Task Request_WithIssuedSessionId_WhenFallbackDisabled_IsAccepted()
+    public async Task Request_WithIssuedSessionId_WhenFallbackEnabled_IsAccepted()
     {
-        // Disabling the fallback must not affect the normal session lifecycle:
-        // an id this instance issued is still accepted.
         var sessionId = await InitializeAndGetSessionIdAsync();
 
         var response = await PostRpcAsync(

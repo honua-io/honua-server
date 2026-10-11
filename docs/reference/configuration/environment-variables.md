@@ -140,6 +140,17 @@ After a successful upload, `<LicensePath>.uploaded` takes precedence at startup.
 | `Cache__RetryIntervalSeconds` | `30` | Redis reconnect interval after a failure. |
 | `Cache__KeyPrefix` | `honua:` | Key prefix for shared Redis instances. |
 
+## MCP sessions
+
+These settings bind from the `Mcp` section. See [Harden the MCP endpoint](../../guides/connect/ai-agents-mcp.md#harden-the-mcp-endpoint-production) for the full list.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `Mcp__SessionIdleTimeout` | `00:30:00` | Sliding idle TTL for an MCP session. With Redis connected, this is also the TTL of the shared session record. |
+| `Mcp__StatelessSessionFallback` | `true` in Development, `false` elsewhere | Development convenience. Serves a well-formed but unknown `Mcp-Session-Id` without a session instead of returning `404`. |
+
+When `ConnectionStrings__Redis` is set, MCP session records are shared through Redis (`mcp:session:<id>`). A session negotiated on any instance is then honoured by every instance. Without Redis, sessions are per instance. Connect Redis for any multi-instance deployment, including AWS Lambda.
+
 ## File storage
 
 | Variable | Default | Purpose |
