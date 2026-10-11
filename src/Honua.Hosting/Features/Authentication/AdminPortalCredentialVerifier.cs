@@ -8,6 +8,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -42,30 +43,19 @@ internal sealed class AdminPortalCredentialVerifier(
             return null;
         }
 
+        var storedKey = await TryValidateStoredKeyAsync(password, cancellationToken).ConfigureAwait(false);
+        if (storedKey is not null)
+        {
+            return CreateManagedKeyPrincipal(storedKey.Record);
+        }
+
         if (!string.Equals(username, AdminUsername, StringComparison.OrdinalIgnoreCase))
         {
             // Allow operators to authenticate with an admin API key while supplying
             // the API key as the password under any username so existing clients can
-            // pass through without code changes.
-            if (_adminApiKeyStore is not null)
-            {
-                var apiKeyResult = await _adminApiKeyStore.ValidateAsync(password, cancellationToken).ConfigureAwait(false);
-                if (apiKeyResult is not null)
-                {
-                    return CreateManagedKeyPrincipal(apiKeyResult.Record);
-                }
-            }
-
+            // pass through without code changes. A store outage returns no principal
+            // rather than throwing; only the admin username has a break-glass password.
             return null;
-        }
-
-        if (_adminApiKeyStore is not null)
-        {
-            var apiKeyResult = await _adminApiKeyStore.ValidateAsync(password, cancellationToken).ConfigureAwait(false);
-            if (apiKeyResult is not null)
-            {
-                return CreateManagedKeyPrincipal(apiKeyResult.Record);
-            }
         }
 
         string? configuredPassword;
@@ -133,6 +123,30 @@ internal sealed class AdminPortalCredentialVerifier(
                 Reference: record.Id.ToString("D"),
                 Version: PortalCredentialSourceVersion.ForManagedKey(record),
                 ExpiresAt: record.ExpiresAt));
+    }
+
+    private async Task<AdminApiKeyValidationResult?> TryValidateStoredKeyAsync(
+        string password,
+        CancellationToken cancellationToken)
+    {
+        if (_adminApiKeyStore is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await _adminApiKeyStore.ValidateAsync(password, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is RedisException or TimeoutException && ex is not OperationCanceledException)
+        {
+            if (_logger is not null)
+            {
+                AuthenticationLog.AdminApiKeyStoreUnavailable(_logger, ex);
+            }
+
+            return null;
+        }
     }
 
     private Task<string?> ResolveAdminPasswordAsync(CancellationToken cancellationToken)

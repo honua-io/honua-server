@@ -90,8 +90,9 @@ public static partial class OidcAuthenticationExtensions
                     [RegisteredTokenReplayValue, marker]).ConfigureAwait(false);
                 return (int)bound == 1;
             }
-            catch (RedisException ex)
+            catch (Exception ex) when (ex is RedisException or TimeoutException && ex is not OperationCanceledException)
             {
+                // RedisTimeoutException derives from TimeoutException, not RedisException.
                 OidcAuthenticationLog.TokenReplayContinuationBindFailed(logger, ex);
                 return false;
             }

@@ -72,6 +72,9 @@ public abstract class EntitlementSweepEditionTestsBase : IAsyncLifetime
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
                 builder.UseSetting("Saml:Enabled", "true");
+                builder.UseSetting("Saml:EntityId", "https://honua.example.com/sp");
+                builder.UseSetting("Saml:IdpEntityId", "https://idp.example.com/metadata");
+                builder.UseSetting("Saml:AssertionConsumerServiceUrl", "https://honua.example.com/sp/saml/acs");
                 builder.UseSetting("Scim:BearerToken", EntitlementProbeRegistry.IdentityScimBearerToken);
                 builder.UseSetting("Scim:OidcIssuer", "https://issuer.example.com");
                 // #2958 demoted mTLS back to experimental; #2346/ADR-0058 ships branch

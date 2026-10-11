@@ -4,6 +4,7 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 
 namespace Honua.Infrastructure.Authentication;
@@ -97,6 +98,10 @@ public static class AuthenticationExtensions
         IConfiguration configuration)
     {
         services.AddScoped<ApiKeyAuthenticationDependencies>();
+
+        // Live managed-user membership when OIDC is off. AddOidcAuthentication registers
+        // its own transformation later and calls the same revalidation itself.
+        services.TryAddScoped<IClaimsTransformation, ManagedMembershipClaimsTransformation>();
 
         // Required by AdminPermissionAuthorizationHandler to read the request method
         // when authorization is evaluated outside the endpoint resource (#1985).

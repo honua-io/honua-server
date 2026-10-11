@@ -39,6 +39,7 @@ internal sealed partial class PortalOAuthStore(
     private const string BrokerKeyPrefix = "portal-oauth:broker:";
     private const string CodeKeyPrefix = "portal-oauth:code:";
     private const string RefreshKeyPrefix = "portal-oauth:refresh:";
+    private const string RevokeKeyPrefix = "portal-oauth:revoke:";
     // Prefix for the short-lived Redis claim keys used by AtomicConsumeAsync to ensure
     // single-use semantics under concurrent requests (BH2-022, BH2-023).
     private const string ConsumeClaimPrefix = "portal-oauth:claim:";
@@ -104,6 +105,54 @@ internal sealed partial class PortalOAuthStore(
             code,
             PortalOAuthStoreJsonContext.Default.PortalOAuthAuthorizationCode,
             cancellationToken);
+
+    /// <summary>
+    /// Marks refresh tokens for <paramref name="principalKey"/> issued at or before now as
+    /// revoked. A later sign-in mints a token whose <c>IssuedAt</c> is after this marker.
+    /// </summary>
+    public Task RevokePrincipalAsync(string principalKey, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(principalKey))
+        {
+            return Task.CompletedTask;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var marker = new PortalOAuthRefreshRevocation
+        {
+            RevokedAt = now,
+            ExpiresAt = now.AddDays(91),
+        };
+        return SetAsync(
+            RevokeKeyPrefix + principalKey.Trim(),
+            marker,
+            marker.ExpiresAt,
+            PortalOAuthStoreJsonContext.Default.PortalOAuthRefreshRevocation,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Whether a refresh token issued at <paramref name="issuedAt"/> for
+    /// <paramref name="principalKey"/> has been revoked. A default <paramref name="issuedAt"/>
+    /// fails closed once a marker exists.
+    /// </summary>
+    public async Task<bool> IsPrincipalRefreshRevokedAsync(
+        string? principalKey,
+        DateTimeOffset issuedAt,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(principalKey))
+        {
+            return false;
+        }
+
+        var marker = await GetAsync(
+            RevokeKeyPrefix,
+            principalKey.Trim(),
+            PortalOAuthStoreJsonContext.Default.PortalOAuthRefreshRevocation,
+            cancellationToken).ConfigureAwait(false);
+        return marker is not null && issuedAt <= marker.RevokedAt;
+    }
 
     /// <summary>Persists a refresh token and returns its value.</summary>
     public async Task<string> CreateRefreshTokenAsync(
@@ -522,6 +571,20 @@ internal sealed class PortalOAuthRefreshToken : PortalOAuthRecord
 
     /// <summary>The verified principal projected from the IdP token.</summary>
     public required PortalOAuthPrincipal Principal { get; init; }
+
+    /// <summary>
+    /// When this refresh token was minted. Rotation does not move
+    /// <see cref="PortalOAuthRecord.ExpiresAt"/>. A token issued at or before a revocation
+    /// marker is rejected; an unset value fails closed once a marker exists.
+    /// </summary>
+    public DateTimeOffset IssuedAt { get; init; }
+}
+
+/// <summary>Per-principal refresh-token revocation marker.</summary>
+internal sealed class PortalOAuthRefreshRevocation : PortalOAuthRecord
+{
+    /// <summary>Refresh tokens issued at or before this instant are rejected.</summary>
+    public DateTimeOffset RevokedAt { get; init; }
 }
 
 /// <summary>
@@ -597,6 +660,7 @@ internal sealed class PortalOAuthPrincipal
 [JsonSerializable(typeof(PortalOAuthBrokerSession))]
 [JsonSerializable(typeof(PortalOAuthAuthorizationCode))]
 [JsonSerializable(typeof(PortalOAuthRefreshToken))]
+[JsonSerializable(typeof(PortalOAuthRefreshRevocation))]
 [JsonSerializable(typeof(PortalOAuthPrincipal))]
 [JsonSerializable(typeof(PortalCredentialSource))]
 internal sealed partial class PortalOAuthStoreJsonContext : JsonSerializerContext

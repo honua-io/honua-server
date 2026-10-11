@@ -17,9 +17,23 @@ internal sealed record OidcProviderRegistration(
 
 internal static class OidcProviderCatalog
 {
+    private static IOidcRuntimeProviderSource? _runtime;
+
+    /// <summary>
+    /// Attaches the process-lifetime provider source. Catalog readers that do not receive
+    /// a source argument still see admin-registered providers.
+    /// </summary>
+    public static void Attach(IOidcRuntimeProviderSource? runtime) => _runtime = runtime;
+
     public static IReadOnlyList<OidcProviderRegistration> GetProviders(OidcAuthenticationOptions options)
+        => GetProviders(options, runtime: null);
+
+    public static IReadOnlyList<OidcProviderRegistration> GetProviders(
+        OidcAuthenticationOptions options,
+        IOidcRuntimeProviderSource? runtime)
     {
         ArgumentNullException.ThrowIfNull(options);
+        runtime ??= _runtime;
 
         var providers = new List<OidcProviderRegistration>();
 
@@ -98,6 +112,32 @@ internal static class OidcProviderCatalog
                 IsValid: generic.IsValid));
         }
 
+        if (runtime is not null)
+        {
+            foreach (var provider in runtime.Current)
+            {
+                if (!provider.Enabled
+                    || string.IsNullOrWhiteSpace(provider.Authority)
+                    || string.IsNullOrWhiteSpace(provider.ClientId)
+                    || string.IsNullOrWhiteSpace(provider.Key))
+                {
+                    continue;
+                }
+
+                providers.Add(new OidcProviderRegistration(
+                    Key: provider.Key,
+                    Type: string.IsNullOrWhiteSpace(provider.ProviderType) ? "Generic" : provider.ProviderType,
+                    DisplayName: string.IsNullOrWhiteSpace(provider.DisplayName) ? provider.Key : provider.DisplayName,
+                    Authority: provider.Authority.Trim(),
+                    ClientId: provider.ClientId.Trim(),
+                    ClientSecret: null,
+                    Scopes: ["openid", "profile", "email"],
+                    CallbackPath: null,
+                    Enabled: true,
+                    IsValid: true));
+            }
+        }
+
         return providers;
     }
 
@@ -105,6 +145,13 @@ internal static class OidcProviderCatalog
         OidcAuthenticationOptions options,
         string providerKey,
         out OidcProviderRegistration provider)
+        => TryResolveProvider(options, providerKey, out provider, runtime: null);
+
+    public static bool TryResolveProvider(
+        OidcAuthenticationOptions options,
+        string providerKey,
+        out OidcProviderRegistration provider,
+        IOidcRuntimeProviderSource? runtime)
     {
         provider = default!;
 
@@ -113,7 +160,7 @@ internal static class OidcProviderCatalog
             return false;
         }
 
-        provider = GetProviders(options)
+        provider = GetProviders(options, runtime)
             .FirstOrDefault(candidate =>
                 candidate.IsValid &&
                 (candidate.Key.Equals(providerKey.Trim(), StringComparison.OrdinalIgnoreCase)
