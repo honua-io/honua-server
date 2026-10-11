@@ -16,8 +16,14 @@ public sealed class ImageServerKeyPropertiesRasterInfoTests
     private const string Xsi = "http://www.w3.org/2001/XMLSchema-instance";
     private static readonly RasterInfo Raster = new()
     {
-        Id = 7, LayerId = 1, Name = "RGB", Width = 64, Height = 32, BandCount = 3,
-        PixelType = "8BUI", NoDataValue = 0,
+        Id = 7,
+        LayerId = 1,
+        Name = "RGB",
+        Width = 64,
+        Height = 32,
+        BandCount = 3,
+        PixelType = "8BUI",
+        NoDataValue = 0,
         Extent = new RasterExtent { XMin = 1, YMin = 2, XMax = 5, YMax = 4, Srid = 4326 }
     };
 
