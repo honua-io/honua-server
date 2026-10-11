@@ -31,6 +31,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
     private readonly AlertOptions _alertOptions;
     private readonly GeoprocessingOutputStoreHealthCheck? _outputStoreHealth;
     private readonly MigrationState _migrationState;
+    private readonly DegradedStartupContext? _degradedStartup;
     private readonly ILogger<ReadinessCheckService> _logger;
     private readonly DurableJobSubstrateOptions _durableJobSubstrate;
 
@@ -44,8 +45,10 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         IAlertEvaluationHealth? alertEvaluationHealth = null,
         IOptions<AlertOptions>? alertOptions = null,
         GeoprocessingOutputStoreHealthCheck? outputStoreHealth = null,
-        IOptions<DurableJobSubstrateOptions>? durableJobSubstrateOptions = null)
+        IOptions<DurableJobSubstrateOptions>? durableJobSubstrateOptions = null,
+        DegradedStartupContext? degradedStartup = null)
     {
+        _degradedStartup = degradedStartup;
         _databaseHealthChecker = databaseHealthChecker;
         _cacheHealthChecker = cacheHealthChecker;
         _featureChangeEventStoreHealth = featureChangeEventStoreHealth;
@@ -80,6 +83,17 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
                 && _durableJobSubstrate.RedisDurabilityFailure is { } durabilityCause)
             {
                 Log.DurableJobSubstrateDegraded(_logger, durabilityCause);
+            }
+
+            // Degraded start (#1632): the host is serving without database access because the
+            // database was transiently unavailable at boot. Report the sanitized phase and failure
+            // class until the background recovery loop restores access.
+            if (_degradedStartup is { IsAwaitingDatabase: true } degraded)
+            {
+                var reason = degraded.RecoveryFailure is { } stopped
+                    ? $"Database unavailable at startup ({degraded.Reason ?? "unknown"}); background recovery stopped: {stopped}"
+                    : $"Database unavailable at startup ({degraded.Reason ?? "unknown"}); retrying in the background";
+                return ReadinessResult.NotReady(reason, ReadinessReasonCodes.DatabaseStartupDegraded);
             }
 
             if (_migrationState.IsFailed)

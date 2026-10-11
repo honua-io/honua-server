@@ -65,6 +65,7 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
             try
             {
                 await TryRecoverAsync(stoppingToken);
+                _context.MarkRecovered();
                 MonitoringLog.DatabaseRecoverySucceeded(_logger, attempt);
                 return;
             }
@@ -79,17 +80,19 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
             // so retries/backoff and the terminal "give up" path both stay reachable.
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                if (!StartupDatabaseResilience.IsTransientConnectivityError(ex))
+                if (!IsTransient(ex))
                 {
                     // A non-transient failure surfaced during recovery (e.g. the database is now
                     // reachable but a migration script is invalid). Stop retrying; this needs an
                     // operator, not another connection attempt.
+                    _context.MarkRecoveryAbandoned(DescribeFailure(ex));
                     MonitoringLog.DatabaseRecoveryGaveUp(_logger, attempt, ex.Message, ex);
                     return;
                 }
 
                 if (_options.MaxRetryAttempts > 0 && attempt >= _options.MaxRetryAttempts)
                 {
+                    _context.MarkRecoveryAbandoned(DescribeFailure(ex));
                     MonitoringLog.DatabaseRecoveryGaveUp(_logger, attempt, ex.Message, ex);
                     return;
                 }
@@ -128,12 +131,30 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
         {
             var compatibility = await checker.CheckCompatibilityAsync(connectionString, cancellationToken);
             _compatibilityState.SetResult(compatibility);
+            if (compatibility.IsTransientFailure)
+            {
+                // Still unreachable (slot exhaustion, timeout): keep retrying.
+                throw new TransientRecoveryFailureException(
+                    compatibility.FailureClass ?? "database unavailable",
+                    compatibility.Error);
+            }
+
             if (!compatibility.IsCompatible)
             {
                 // Reaching the server but failing compatibility is a non-transient condition.
-                throw new InvalidOperationException(
+                throw new IncompatibleDatabaseException(
                     compatibility.ErrorMessage ?? "Database compatibility check failed.");
             }
+        }
+
+        // Migrations skipped by configuration: degraded start deferred the journal/schema guard,
+        // it did not waive it.
+        if (_context.SchemaGuardPending
+            && _services.GetService(typeof(IDatabaseSchemaGuard)) is IDatabaseSchemaGuard schemaGuard)
+        {
+            await schemaGuard.VerifyAsync(connectionString, cancellationToken);
+            _migrationState.MarkSkipped("Migrations skipped by configuration; journal/schema consistency verified after recovery.");
+            return;
         }
 
         // Rerun migrations if they were pending at degraded start.
@@ -158,4 +179,26 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
 
         _migrationState.MarkSucceeded("Database recovered; migrations are up to date.");
     }
+
+    private static bool IsTransient(Exception exception)
+        => exception is TransientRecoveryFailureException
+            || StartupDatabaseResilience.IsTransientConnectivityError(exception);
+
+    private static string DescribeFailure(Exception exception)
+        => exception switch
+        {
+            TransientRecoveryFailureException transient => transient.FailureClass,
+            IncompatibleDatabaseException incompatible => incompatible.Message,
+            _ => StartupDatabaseResilience.DescribeFailureClass(exception),
+        };
+
+    /// <summary>The compatibility probe still could not reach the database.</summary>
+    private sealed class TransientRecoveryFailureException(string failureClass, Exception? innerException)
+        : Exception("Database still unavailable: " + failureClass + ".", innerException)
+    {
+        public string FailureClass { get; } = failureClass;
+    }
+
+    /// <summary>The database is reachable but failed the compatibility check.</summary>
+    private sealed class IncompatibleDatabaseException(string message) : InvalidOperationException(message);
 }

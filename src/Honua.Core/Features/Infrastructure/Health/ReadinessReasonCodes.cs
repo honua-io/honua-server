@@ -22,6 +22,12 @@ public static class ReadinessReasonCodes
     /// <summary>Database migrations have not completed.</summary>
     public const string MigrationsNotCompleted = "migrations-not-completed";
 
+    /// <summary>
+    /// The host started in degraded mode because the database was transiently unavailable at boot
+    /// (for example SQLSTATE 53300, no free connection slots) and is retrying in the background.
+    /// </summary>
+    public const string DatabaseStartupDegraded = "database-startup-degraded";
+
     /// <summary>The database is unavailable.</summary>
     public const string DatabaseUnavailable = "database-unavailable";
 

@@ -93,11 +93,20 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
         {
             throw;
         }
-        // Intentionally generic: this is a startup compatibility probe; any failure (connectivity,
-        // permissions, unexpected catalog shape) must be reported to the caller as an incompatible
-        // result rather than crashing startup.
+        // Intentionally generic: this is a startup compatibility probe; any failure must be reported
+        // to the caller as a result rather than crashing startup. A transient availability failure
+        // (connection-slot exhaustion, timeout, socket failure) says nothing about the PostGIS install
+        // and is reported as Unavailable so startup can degrade instead of exiting; everything else
+        // (permissions, unexpected catalog shape) stays Incompatible.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
+            if (PostgresPreflightFailureClassifier.IsTransient(ex))
+            {
+                var failureClass = PostgresPreflightFailureClassifier.Describe(ex);
+                LogCompatibilityCheckUnavailable(_logger, failureClass, ex);
+                return DatabaseCompatibilityResult.Unavailable(failureClass, ex);
+            }
+
             const string errorMessage = "Database compatibility check failed.";
             LogCompatibilityCheckFailed(_logger, ex.Message, ex);
             return DatabaseCompatibilityResult.Incompatible(errorMessage, error: ex);
@@ -165,4 +174,10 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
         Level = LogLevel.Error,
         Message = "Database compatibility check failed: {ErrorMessage}")]
     private static partial void LogCompatibilityCheckFailed(ILogger logger, string errorMessage, Exception ex);
+
+    [LoggerMessage(
+        EventId = 7916,
+        Level = LogLevel.Warning,
+        Message = "Database compatibility check could not reach the database (transient: {FailureClass}).")]
+    private static partial void LogCompatibilityCheckUnavailable(ILogger logger, string failureClass, Exception ex);
 }
