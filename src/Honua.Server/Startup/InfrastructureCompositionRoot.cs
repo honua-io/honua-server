@@ -320,5 +320,43 @@ internal static class InfrastructureCompositionRoot
             sp.GetRequiredService<DistributedCacheRefreshCoordinator>());
         services.AddHostedService(sp =>
             sp.GetRequiredService<DistributedCacheRefreshCoordinator>());
+
+        ConfigureMetadataGraphCacheInvalidation(services);
+    }
+
+    /// <summary>
+    /// Makes Metadata v2 graph snapshot invalidation cluster-wide when Redis is composed. Each node
+    /// caches the catalog snapshot in-process for <c>Cache:MetadataGraphTtlSeconds</c>; without a
+    /// broadcast, a catalog write on one node is invisible to the others until their TTL expires, so a
+    /// publish followed by an admin call routed to another node 404s. When an
+    /// <see cref="IConnectionMultiplexer"/> is registered, the invalidator publishes every write on a
+    /// Redis channel that every node subscribes to. Without Redis (single-node) the in-process
+    /// invalidator registered by the store composition is left untouched.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    public static void ConfigureMetadataGraphCacheInvalidation(IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        // Correctness, not a licensed capability: keyed on the multiplexer being composed at all,
+        // not on the Redis cache entitlement. Multi-node mode already requires Redis
+        // (ConfigurationValidationService), so a Redis-off deployment is single-node by contract.
+        if (!services.Any(static d => d.ServiceType == typeof(IConnectionMultiplexer)))
+        {
+            return;
+        }
+
+        Honua.Core.Features.Metadata.MetadataServiceCollectionExtensions.AddMetadataV2GraphSnapshotCache(services);
+        services.TryAddSingleton(sp => new RedisMetadataV2GraphCacheInvalidator(
+            sp.GetRequiredService<Honua.Core.Features.Metadata.Caching.MetadataV2GraphSnapshotCache>(),
+            sp.GetRequiredService<IConnectionMultiplexer>(),
+            sp.GetRequiredService<ILogger<RedisMetadataV2GraphCacheInvalidator>>()));
+
+        // Replace (not TryAdd) so this wins regardless of whether the store composition registered
+        // the in-process invalidator before or after this call.
+        services.RemoveAll<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphCacheInvalidator>();
+        services.AddSingleton<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphCacheInvalidator>(
+            static sp => sp.GetRequiredService<RedisMetadataV2GraphCacheInvalidator>());
+        services.AddHostedService(static sp => sp.GetRequiredService<RedisMetadataV2GraphCacheInvalidator>());
     }
 }

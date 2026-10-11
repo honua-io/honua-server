@@ -67,6 +67,7 @@ The default no-Redis `MemoryDistributedCache` index expires with its latest trac
 
 - **Required**: durable job orchestration (geoprocessing, ETL, tile-cache jobs), queued imports, and workflow runs — the queue, execution logs, and run state are Redis-backed; those endpoints return `503` without it. Enable Redis AOF persistence so queued jobs survive restarts.
 - **Strongly recommended**: shared caches (avoids N cold caches and inconsistent invalidation) and shared temporary-file quotas when `FileStorage` is S3/Azure Blob.
+- **Catalog consistency**: each replica caches the metadata catalog in-process for `Cache__MetadataGraphTtlSeconds` (default 10). With Redis configured, a catalog write (publishing a service or layer, changing an access policy) is broadcast on the `honua:metadata:v2:graph:invalidations` pub/sub channel so every replica drops its copy immediately; without Redis, other replicas can serve the previous catalog until the TTL expires.
 - **Not needed**: plain read/query traffic on a single node — in-memory fallback is fine.
 
 A read-replica database connection is not currently supported; all queries use `ConnectionStrings__DefaultConnection`.

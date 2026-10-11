@@ -125,12 +125,13 @@ internal static class ServiceSettingsEndpoints
         HandleGetSettings(
             string serviceName,
             [FromServices] IMetadataV2GraphProvider graphProvider,
+            [FromServices] IMetadataV2GraphStore graphStore,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
         try
         {
-            var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            var snapshot = await GetSnapshotForServiceAsync(graphProvider, graphStore, serviceName, context.RequestAborted).ConfigureAwait(false);
             if (!TryResolveServicesByName(snapshot, serviceName, out var services))
             {
                 return TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found."));
@@ -183,7 +184,7 @@ internal static class ServiceSettingsEndpoints
                     $"Invalid protocol(s): {string.Join(", ", invalid)}. Valid values: {string.Join(", ", MetadataV2ServiceProtocols.All)}"));
             }
 
-            var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            var snapshot = await GetSnapshotForServiceAsync(graphProvider, graphStore, serviceName, context.RequestAborted).ConfigureAwait(false);
             if (!TryResolveServicesByName(snapshot, serviceName, out _))
             {
                 return TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found."));
@@ -250,7 +251,7 @@ internal static class ServiceSettingsEndpoints
     {
         try
         {
-            var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            var snapshot = await GetSnapshotForServiceAsync(graphProvider, graphStore, serviceName, context.RequestAborted).ConfigureAwait(false);
             if (!TryResolveServicesByName(snapshot, serviceName, out _))
             {
                 return TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found."));
@@ -332,7 +333,7 @@ internal static class ServiceSettingsEndpoints
     {
         try
         {
-            var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            var snapshot = await GetSnapshotForServiceAsync(graphProvider, graphStore, serviceName, context.RequestAborted).ConfigureAwait(false);
             if (!TryResolveServicesByName(snapshot, serviceName, out var services))
             {
                 return TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found."));
@@ -521,6 +522,27 @@ internal static class ServiceSettingsEndpoints
     /// (FeatureServer / MapServer / Stac all named "test"); the v1 admin contract was
     /// service-name-keyed, so we collapse those entries the same way at response time.
     /// </summary>
+    /// <summary>
+    /// Resolves the graph snapshot used to look up <paramref name="serviceName"/>. The cached read
+    /// path is tried first; on a miss the persisted store is consulted before answering 404, because
+    /// the cached snapshot can predate a write that just committed (on another node, or within the
+    /// snapshot TTL if the cross-node invalidation message was lost). A hit costs nothing extra.
+    /// </summary>
+    private static async ValueTask<MetadataV2GraphSnapshot> GetSnapshotForServiceAsync(
+        IMetadataV2GraphProvider graphProvider,
+        IMetadataV2GraphStore graphStore,
+        string serviceName,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (TryResolveServicesByName(snapshot, serviceName, out _))
+        {
+            return snapshot;
+        }
+
+        return await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private static bool TryResolveServicesByName(
         MetadataV2GraphSnapshot snapshot,
         string serviceName,
