@@ -1,0 +1,11 @@
+# Dense mosaic statistics admission
+
+`Database:RasterStatistics:MaxDenseSampleSlots` limits cold, non-rendered full-catalog mosaic statistics. The default and supported maximum are 16,777,216 pixel-band slots; the minimum is 1. Startup validates the setting. Operators may lower it for smaller database hosts.
+
+Admission uses the same reference grid as raster alignment. Source-header corners are projected through its affine matrix, including signed scales and skew. The conservative dense width and height include two extra pixels for snapping padding. Width × height × maximum source bands is compared with the limit using overflow-safe numeric arithmetic, before any per-row alignment or `ST_Union`. Invalid/nonfinite grids are rejected. Each affine component must be zero or have magnitude between 1e-70 and 1e70 before any floating multiplication; determinant magnitudes must be between 1e-140 and 1e140, and the numeric lower bound for squared resolution must be at least 1e-280 before the existing double-precision reference calculation. These conservative margins prevent intermediate overflow or underflow, including squaring a tiny skew with an otherwise ordinary determinant. This is a computation-size limit, not a total PostgreSQL resident-memory guarantee; union strategies can use additional intermediate storage.
+
+An over-budget cold metadata computation returns the existing empty-statistics response and disables caching. It does not persist fabricated statistics or launch a detached dense union. Large catalogs that previously attempted a long dense calculation may now reach this fallback. Already persisted statistics remain available, and admitted calculations retain their existing overlap, NoData, ordering and persistence behavior. No raster data or publication settings change.
+
+This guard covers the demonstrated full-catalog statistics path. Rendered/clipped statistics, histograms, exports and other mosaic consumers retain their own behavior and limits. Supporting exact statistics for a larger sparse catalog would require a separate bounded tiled implementation.
+
+The existing reference-grid rejection for more than 256-fold per-source resampling amplification remains an explicit database error. It is not converted to the allocation-budget fallback; this repair preserves that existing diagnostic and behavior.

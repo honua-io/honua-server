@@ -119,6 +119,11 @@ internal static class ImageServerStatisticsBudget
         {
             return await operationTask.WaitAsync(budget, requestAborted).ConfigureAwait(false);
         }
+        catch (RasterStatisticsBudgetExceededException)
+        {
+            onBudgetExceeded();
+            return [];
+        }
         catch (TimeoutException)
         {
             ObserveBackgroundFault(operationTask);
