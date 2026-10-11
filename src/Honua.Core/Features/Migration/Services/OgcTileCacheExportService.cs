@@ -402,6 +402,17 @@ public sealed partial class OgcTileCacheExportService : IOgcTileCacheExportServi
                     cancellationToken.ThrowIfCancellationRequested();
 
                     var tileUri = BuildTileUri(template, serviceUri, layerResource.Name, descriptor.TileMatrixSetIdentifier, styleIdentifier, tileFormat, z, x, y);
+                    if (!linkedUrlPolicy.Allows(tileUri))
+                    {
+                        if (warnings.Count == 0)
+                        {
+                            warnings.Add(
+                                $"WMTS tile URL host '{tileUri.Host}' is not allowed by the migration host policy. Tile fetches were skipped.");
+                        }
+
+                        failed++;
+                        continue;
+                    }
 
                     if (request.DryRun)
                     {

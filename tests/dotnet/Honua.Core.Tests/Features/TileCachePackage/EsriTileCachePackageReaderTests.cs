@@ -125,6 +125,20 @@ public sealed class EsriTileCachePackageReaderTests
         descriptor.MaxLevel.Should().Be(2);
     }
 
+    [UnitTest]
+    public async Task ReadDescriptor_ScalarTileOrigin_ParsesHonuaExportPoint()
+    {
+        using var package = BuildScalarOriginPackage();
+        var reader = new EsriTileCachePackageReader();
+
+        var descriptor = await reader.ReadDescriptorAsync(package);
+
+        descriptor.StorageFormat.Should().Be(TileCacheStorageFormat.Exploded);
+        descriptor.Wkid.Should().Be(3857);
+        descriptor.MinLevel.Should().Be(0);
+        descriptor.MaxLevel.Should().Be(2);
+    }
+
     [Fact]
     public async Task ReadTiles_ExplodedTpk_DecodesHexCoordinates()
     {
@@ -353,6 +367,35 @@ public sealed class EsriTileCachePackageReaderTests
         ms.Write(index);
         ms.Write(tileBlob.ToArray());
         return ms.ToArray();
+    }
+
+    private static MemoryStream BuildScalarOriginPackage()
+    {
+        var buffer = new MemoryStream();
+        using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            WriteEntry(archive, "conf.xml", Encoding.UTF8.GetBytes($$"""
+                <?xml version="1.0"?>
+                <CacheInfo>
+                  <TileCacheInfo>
+                    <SpatialReference><WKID>3857</WKID></SpatialReference>
+                    <TileCols>256</TileCols>
+                    <TileRows>256</TileRows>
+                    <TileOrigin>-20037508.342789244 20037508.342789244</TileOrigin>
+                    <LODInfos>
+                      <LODInfo><LevelID>0</LevelID><Resolution>{{Resolution(3857, 0)}}</Resolution></LODInfo>
+                      <LODInfo><LevelID>1</LevelID><Resolution>{{Resolution(3857, 1)}}</Resolution></LODInfo>
+                      <LODInfo><LevelID>2</LevelID><Resolution>{{Resolution(3857, 2)}}</Resolution></LODInfo>
+                    </LODInfos>
+                  </TileCacheInfo>
+                  <TileImageInfo><CacheTileFormat>JPEG</CacheTileFormat></TileImageInfo>
+                  <CacheStorageInfo><StorageFormat>esriMapCacheStorageModeExploded</StorageFormat></CacheStorageInfo>
+                </CacheInfo>
+                """));
+        }
+
+        buffer.Position = 0;
+        return buffer;
     }
 
     private static MemoryStream BuildExplodedPackage()

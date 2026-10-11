@@ -12,6 +12,7 @@ using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Services;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Import;
@@ -294,6 +295,56 @@ public sealed class OgcTileCacheExportServiceTests
 
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Contain("WMTS endpoint");
+    }
+
+    [UnitTest]
+    public async Task ExportAsync_MatrixHostOutsideAllowlist_DoesNotFetchThatLevel()
+    {
+        var inventory = BuildWmtsInventory(trivial: true);
+        inventory = inventory with
+        {
+            ExternalDependencies =
+            [
+                .. inventory.ExternalDependencies,
+                new MigrationExternalDependency
+                {
+                    Id = "resource-url:matrix-host",
+                    ContainerId = "service:wmts",
+                    ResourceId = $"wmts-layer:{LayerId}",
+                    Kind = "ogc-endpoint",
+                    Name = "ResourceURL",
+                    Address = "https://{TileMatrix}.example/tiles/{TileCol}/{TileRow}.png",
+                    Metadata = new Dictionary<string, string>
+                    {
+                        ["operation"] = "ResourceURL",
+                        ["format"] = "image/png"
+                    }
+                }
+            ]
+        };
+        var handler = new CountingTileHandler();
+        using var httpClient = new HttpClient(handler);
+        var sink = new InMemoryTileCacheSink();
+        var service = new OgcTileCacheExportService(
+            new InMemoryScanner(inventory),
+            sink,
+            httpClient,
+            NullLogger<OgcTileCacheExportService>.Instance);
+
+        var result = await service.ExportAsync(new OgcTileCacheExportRequest
+        {
+            ServiceUrl = ServiceUrl,
+            ApplyMode = true,
+            AllowedServiceHostSuffixes = ["0.example"],
+            MinZoom = 0,
+            MaxZoom = 1
+        });
+
+        handler.RequestUris.Should().ContainSingle();
+        handler.RequestUris[0].Host.Should().Be("0.example");
+        result.TilesPersisted.Should().Be(1);
+        result.TilesFailed.Should().Be(4);
+        result.TileSets.Should().ContainSingle().Which.Code.Should().Be(ImportCompatibilityCodes.OgcWmtsTileCacheFetchFailed);
     }
 
     private static MigrationSourceInventoryArtifact BuildWmtsInventory(bool trivial)

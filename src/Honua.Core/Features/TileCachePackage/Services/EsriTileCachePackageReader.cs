@@ -198,6 +198,16 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
         };
     }
 
+    private static bool TryParseScalarTileOrigin(string text, out double x, out double y)
+    {
+        x = 0;
+        y = 0;
+        var parts = text.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return parts.Length == 2
+            && double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out x)
+            && double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out y);
+    }
+
     private static TileCachePackageDescriptor ReadExplodedDescriptor(
         ZipArchiveEntry confEntry,
         DecompressionBudget budget,
@@ -260,8 +270,15 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
                     case "TileOrigin":
                         using (var origin = reader.ReadSubtree())
                         {
+                            var scalar = string.Empty;
                             while (origin.Read())
                             {
+                                if (origin.NodeType is XmlNodeType.Text or XmlNodeType.CDATA)
+                                {
+                                    scalar += origin.Value;
+                                    continue;
+                                }
+
                                 if (origin.NodeType != XmlNodeType.Element)
                                 {
                                     continue;
@@ -277,6 +294,15 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
                                 {
                                     originY = y;
                                 }
+                            }
+
+                            // Honua's own tile-package writer emits "x y" text. Esri conf.xml
+                            // emits nested X and Y elements. Either form is a real origin.
+                            if (originX is null && originY is null &&
+                                TryParseScalarTileOrigin(scalar, out var scalarX, out var scalarY))
+                            {
+                                originX = scalarX;
+                                originY = scalarY;
                             }
                         }
 
