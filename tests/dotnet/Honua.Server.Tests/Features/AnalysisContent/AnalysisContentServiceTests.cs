@@ -622,7 +622,7 @@ public sealed class AnalysisContentServiceTests
 
         Assert.Equal(1, result.Version.Version);
         Assert.Equal($"{itemId}:v1", result.Version.VersionId);
-        Assert.Equal(1, (await store.ListVersionsAsync(itemId)).Count);
+        Assert.Single(await store.ListVersionsAsync(itemId));
         Assert.Equal(1, (await store.GetItemAsync(itemId))!.CurrentVersion);
     }
 
