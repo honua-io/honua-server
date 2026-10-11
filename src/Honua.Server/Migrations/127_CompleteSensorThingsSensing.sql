@@ -87,18 +87,28 @@ ALTER TABLE $HonuaSchema$.sta_observation ADD COLUMN IF NOT EXISTS datastream_re
 ALTER TABLE $HonuaSchema$.sta_observation ADD COLUMN IF NOT EXISTS feature_of_interest_reference_id bigint;
 CREATE INDEX IF NOT EXISTS ix_sta_observation_datastream_reference_time ON $HonuaSchema$.sta_observation(datastream_reference_id,phenomenon_time,id);
 CREATE INDEX IF NOT EXISTS ix_sta_observation_feature_reference ON $HonuaSchema$.sta_observation(feature_of_interest_reference_id);
-UPDATE $HonuaSchema$.sta_observation o SET datastream_reference_id=o.datastream_id
-    FROM $HonuaSchema$.sta_datastream d WHERE d.id=o.datastream_id;
--- The new FoI table starts empty: legacy references never become associations merely
--- because a later entity happens to receive the same identifier.
-SELECT setval('$HonuaSchema$.sta_feature_of_interest_id_seq',
-    GREATEST(COALESCE((SELECT MAX(feature_of_interest_id) FROM $HonuaSchema$.sta_observation),0),
-             COALESCE((SELECT MAX(id) FROM $HonuaSchema$.sta_feature_of_interest),0),1),
-    GREATEST(COALESCE((SELECT MAX(feature_of_interest_id) FROM $HonuaSchema$.sta_observation),0),
-             COALESCE((SELECT MAX(id) FROM $HonuaSchema$.sta_feature_of_interest),0))>0);
-SELECT setval('$HonuaSchema$.sta_datastream_id_seq',
-    GREATEST(COALESCE((SELECT MAX(datastream_id) FROM $HonuaSchema$.sta_observation),0),
-             COALESCE((SELECT MAX(id) FROM $HonuaSchema$.sta_datastream),0),1),true);
+-- One-shot reconciliation. A replay must not re-link an unresolved legacy reference to a
+-- datastream created after the original upgrade, so it runs only before the reference
+-- trigger below exists.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                   WHERE tgname = 'sta_observation_reference_sync'
+                     AND tgrelid = '$HonuaSchema$.sta_observation'::regclass) THEN
+        UPDATE $HonuaSchema$.sta_observation o SET datastream_reference_id=o.datastream_id
+            FROM $HonuaSchema$.sta_datastream d WHERE d.id=o.datastream_id;
+        -- The new FoI table starts empty: legacy references never become associations merely
+        -- because a later entity happens to receive the same identifier.
+        PERFORM setval('$HonuaSchema$.sta_feature_of_interest_id_seq',
+            GREATEST(COALESCE((SELECT MAX(feature_of_interest_id) FROM $HonuaSchema$.sta_observation),0),
+                     COALESCE((SELECT MAX(id) FROM $HonuaSchema$.sta_feature_of_interest),0),1),
+            GREATEST(COALESCE((SELECT MAX(feature_of_interest_id) FROM $HonuaSchema$.sta_observation),0),
+                     COALESCE((SELECT MAX(id) FROM $HonuaSchema$.sta_feature_of_interest),0))>0);
+        PERFORM setval('$HonuaSchema$.sta_datastream_id_seq',
+            GREATEST(COALESCE((SELECT MAX(datastream_id) FROM $HonuaSchema$.sta_observation),0),
+                     COALESCE((SELECT MAX(id) FROM $HonuaSchema$.sta_datastream),0),1),true);
+    END IF;
+END $$;
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint
