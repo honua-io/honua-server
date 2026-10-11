@@ -153,8 +153,8 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
                     using var stageLinked = CancellationTokenSource.CreateLinkedTokenSource(
                         cancellationToken,
                         stageTimeoutCts.Token);
-                    var stageResult = await runner
-                        .RunAsync("gdal_translate", stageArgs, workspace, stageLinked.Token)
+                    var stageResult = await GdalRasterDriverAllowlist
+                        .RunAsync(runner, "gdal_translate", stageArgs, opts, workspace, stageLinked.Token)
                         .ConfigureAwait(false);
                     if (!stageResult.Succeeded || !File.Exists(inputPath))
                     {
@@ -179,7 +179,7 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
             // gdal_calc's per-input masking).
             var effectiveNoData = explicitNoData
                 ?? await GdalNoData.TryReadSourceNoDataAsync(
-                    runner, firstInputPath, workspace, opts.ToolTimeout, cancellationToken).ConfigureAwait(false)
+                    runner, firstInputPath, workspace, opts.ToolTimeout, cancellationToken, options: opts).ConfigureAwait(false)
                 ?? double.NaN;
             // Undefined indices must be invalid to raster consumers, not merely
             // NaN pixels tagged as valid under a different nodata sentinel.

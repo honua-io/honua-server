@@ -51,6 +51,7 @@ public sealed class GdalContourExecutorTests
 
             var invocation = runner.Invocations.Single();
             invocation.Tool.Should().Be("gdal_contour");
+            invocation.Arguments.Should().NotContain("-if");
             invocation.Arguments.Should().ContainInOrder("-a", "ELEV");
             invocation.Arguments.Should().ContainInOrder("-i", "10");
             invocation.Arguments.Should().ContainInOrder("-off", "5");

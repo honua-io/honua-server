@@ -123,7 +123,7 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
             GdalCommandResult result;
             try
             {
-                result = await runner.RunAsync("gdalinfo", args, workspace, linked.Token).ConfigureAwait(false);
+                result = await GdalRasterDriverAllowlist.RunAsync(runner, "gdalinfo", args, opts, workspace, linked.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {

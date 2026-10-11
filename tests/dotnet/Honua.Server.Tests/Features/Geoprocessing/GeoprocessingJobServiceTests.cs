@@ -3280,6 +3280,56 @@ public sealed class GeoprocessingJobServiceTests
     }
 
     [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task GetJobResultsForTerminal_ReplaysCallbacksBeforeSynthesizing()
+    {
+        var record = CreateOwnedJobRecord("job-replay", ExecutionJobStatus.Succeeded, owner: "test-user") with
+        {
+            CompletedAt = DateTimeOffset.UtcNow
+        };
+        ExecutionJobRecord current = record;
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync(record.OperationId, Arg.Any<CancellationToken>()).Returns(_ => current);
+        var packages = Substitute.For<IGeoprocessingResultPackageStore>();
+        packages.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((AnalysisResultPackage?)null);
+        packages.SetAsync(
+                Arg.Any<string>(),
+                Arg.Any<AnalysisResultPackage>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var callback = new ReplayFailingCallback(() =>
+        {
+            current = current with
+            {
+                Status = ExecutionJobStatus.Failed,
+                ErrorMessage = "artifact persistence failed",
+                CompletedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CurrentPhase = "Failed"
+            };
+        });
+        var sut = new GeoprocessingJobService(
+            _progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            store,
+            resultPackageStore: packages,
+            terminalCallbacks: [callback]);
+
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        var result = await sut.GetJobResultsForTerminalAsync(record.OperationId, CreatePrincipal(), cancelled.Token);
+
+        result.Status.Should().Be(GeoprocessingWorkflowStatus.Failed);
+        callback.Token.Should().Be(CancellationToken.None);
+        current.Status.Should().Be(ExecutionJobStatus.Failed);
+    }
+
+    [UnitTest]
     [Operation(Operations.Delete)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
     public async Task CancelJob_SubmittedByAnotherPrincipal_ThrowsNotFound()
@@ -5991,4 +6041,16 @@ public sealed class GeoprocessingJobServiceTests
                 new Claim(ClaimTypes.Name, "Display Name"),
                 new Claim(ClaimTypes.NameIdentifier, "subject-123")
             ], "Test"));
+
+    private sealed class ReplayFailingCallback(Action flip) : IJobTerminalCallback
+    {
+        public CancellationToken Token { get; private set; } = new(canceled: true);
+
+        public ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+        {
+            Token = cancellationToken;
+            flip();
+            return ValueTask.CompletedTask;
+        }
+    }
 }

@@ -179,7 +179,7 @@ internal sealed partial class GdalRasterResampleJobExecutor(
             GdalCommandResult result;
             try
             {
-                result = await runner.RunAsync("gdalwarp", args, workspace, linked.Token).ConfigureAwait(false);
+                result = await GdalRasterDriverAllowlist.RunAsync(runner, "gdalwarp", args, opts, workspace, linked.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
