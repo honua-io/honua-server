@@ -937,6 +937,10 @@ builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleDepe
 builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleOpenDataStore>(sp =>
     new Honua.Server.Features.Console.Services.InMemoryConsoleOpenDataStore(
         sp.GetService<TimeProvider>() ?? TimeProvider.System));
+// Process-local stores are not durable and are not shared across replicas (SRV-AUTH-002).
+// The session bootstrap reports that, and startup fails when a replica count above 1 is configured.
+builder.Services.AddSingleton(Honua.Core.Features.Console.Domain.ConsolePersistenceNotice.InMemory);
+builder.Services.AddHostedService<Honua.Server.Features.Console.ConsoleInMemoryStoreStartupGuard>();
 // Discovery is a scoped projection: an explicit workspace mapping never replaces caller authorization.
 builder.Services.AddOptions<Honua.Server.Features.Console.Services.CatalogDiscoveryOptions>()
     .BindConfiguration(Honua.Server.Features.Console.Services.CatalogDiscoveryOptions.SectionName)

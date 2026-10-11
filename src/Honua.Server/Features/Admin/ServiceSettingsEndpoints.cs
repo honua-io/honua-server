@@ -379,11 +379,19 @@ internal static class ServiceSettingsEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure($"Layer {layerId} not found in service '{serviceName}'."));
             }
 
-            if (request.RasterMosaic?.MergeStrategy is { Length: > 0 } mergeStrategyValue
-                && !TryNormalizeMergeStrategy(mergeStrategyValue, out _))
+            // Raster mosaic settings have no Metadata v2 home. Refuse the whole
+            // request so a 200 cannot echo a merge strategy that was not stored.
+            if (request.RasterMosaic is not null)
             {
-                return TypedResults.BadRequest(ApiResponse<object>.Failure(
-                    $"Invalid mergeStrategy '{mergeStrategyValue}'. Allowed values: newest, oldest, average, max, min."));
+                ServiceSettingsLog.UpdateLayerMetadataFailed(
+                    logger,
+                    serviceName,
+                    layerId,
+                    new NotSupportedException("Raster mosaic settings have no Metadata v2 representation yet."));
+                return TypedResults.Problem(
+                    title: "Raster mosaic settings update not supported",
+                    detail: "Raster mosaic settings have no Metadata v2 representation yet.",
+                    statusCode: StatusCodes.Status501NotImplemented);
             }
 
             var governanceRequested = request.License is not null ||
@@ -401,30 +409,6 @@ internal static class ServiceSettingsEndpoints
                     out var governanceError))
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure($"Invalid source governance: {governanceError}"));
-            }
-
-            // RasterMosaic has no typed V2 home yet — we keep echoing the requested merge
-            // strategy in the response (so PUT semantics are preserved for callers), but
-            // it does not round-trip through the graph store. Documented in the mutator
-            // below.
-            RasterMosaicResponse? updatedRasterMosaic = null;
-            if (request.RasterMosaic is not null)
-            {
-                string? mergeStrategy;
-                if (request.RasterMosaic.MergeStrategy is null)
-                {
-                    mergeStrategy = null;
-                }
-                else if (request.RasterMosaic.MergeStrategy.Length == 0)
-                {
-                    mergeStrategy = null;
-                }
-                else
-                {
-                    TryNormalizeMergeStrategy(request.RasterMosaic.MergeStrategy, out var canonical);
-                    mergeStrategy = canonical;
-                }
-                updatedRasterMosaic = new RasterMosaicResponse { MergeStrategy = mergeStrategy };
             }
 
             var mutation = await MutateResourceByIdAsync(
@@ -512,7 +496,7 @@ internal static class ServiceSettingsEndpoints
                 persistedResource.Metadata,
                 persistedResource.AccessPolicy,
                 persistedResource.Temporal,
-                updatedRasterMosaic,
+                null,
                 persistedResource.Editing);
             return TypedResults.Ok(ApiResponse<LayerMetadataResponse>.CreateSuccess(response));
         }
@@ -777,35 +761,6 @@ internal static class ServiceSettingsEndpoints
         }
 
         return relationIndex;
-    }
-
-    /// <summary>
-    /// Validates a raster mosaic merge strategy against the canonical set and normalizes to
-    /// the lowercase canonical token. Allowed: newest, oldest, average, max, min.
-    /// </summary>
-    private static bool TryNormalizeMergeStrategy(string value, out string canonical)
-    {
-        switch (value.Trim().ToLowerInvariant())
-        {
-            case "newest":
-                canonical = "newest";
-                return true;
-            case "oldest":
-                canonical = "oldest";
-                return true;
-            case "average":
-                canonical = "average";
-                return true;
-            case "max":
-                canonical = "max";
-                return true;
-            case "min":
-                canonical = "min";
-                return true;
-            default:
-                canonical = string.Empty;
-                return false;
-        }
     }
 
     private static async Task InvalidateServiceCatalogCacheAsync(

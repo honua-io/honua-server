@@ -149,6 +149,47 @@ internal sealed class DefaultAuditActionResolver : IAuditActionResolver
         Add("POST", "/sharing/rest/generateToken", authToken);
         Add("GET", "/sharing/rest/generateToken", authToken);
 
+        // Console and enrichment mutations are outside the /admin prefix. Named
+        // rows keep the action specific (the prefix fallback would only record
+        // admin.{method}) and still emit AuditEventType.AdminAction.
+        Add("PUT", "/api/v{version:apiVersion}/console/content/{id}/share/access",
+            ControlPlane("console.share.access.update", "console-share"));
+        Add("POST", "/api/v{version:apiVersion}/console/content/{id}/share/link",
+            ControlPlane("console.share.link.mint", "console-share"));
+        Add("DELETE", "/api/v{version:apiVersion}/console/content/{id}/share/link/{tokenId}",
+            ControlPlane("console.share.link.revoke", "console-share"));
+        Add("PUT", "/api/v{version:apiVersion}/console/content/{id}/share/embed",
+            ControlPlane("console.share.embed.update", "console-share"));
+        Add("POST", "/api/v{version:apiVersion}/console/content/{id}/share/embed",
+            ControlPlane("console.share.embed.mint", "console-share"));
+        Add("POST", "/api/v{version:apiVersion}/console/content",
+            ControlPlane("console.content.create", "console-content"));
+        Add("PUT", "/api/v{version:apiVersion}/console/content/{id}",
+            ControlPlane("console.content.update", "console-content"));
+        Add("PATCH", "/api/v{version:apiVersion}/console/content/{id}",
+            ControlPlane("console.content.update", "console-content"));
+        Add("DELETE", "/api/v{version:apiVersion}/console/content/{id}",
+            ControlPlane("console.content.delete", "console-content"));
+        Add("PUT", "/api/v{version:apiVersion}/console/content/{id}/open-data",
+            ControlPlane("console.open-data.update", "console-open-data"));
+        Add("POST", "/api/v{version:apiVersion}/console/content/{id}/open-data/stac/publish",
+            ControlPlane("console.open-data.stac.publish", "console-open-data"));
+        Add("DELETE", "/api/v{version:apiVersion}/console/content/{id}/open-data/stac",
+            ControlPlane("console.open-data.stac.delete", "console-open-data"));
+        Add("POST", "/api/enrich/datasets",
+            ControlPlane("enrich.dataset.create", "enrichment-dataset"));
+        Add("PUT", "/api/enrich/datasets/{id}",
+            ControlPlane("enrich.dataset.update", "enrichment-dataset"));
+        Add("DELETE", "/api/enrich/datasets/{id}",
+            ControlPlane("enrich.dataset.delete", "enrichment-dataset"));
+
         return pairs.ToFrozenDictionary(StringComparer.Ordinal);
     }
+
+    private static AuditActionDescriptor ControlPlane(string action, string resourceType) => new()
+    {
+        EventType = AuditEventType.AdminAction,
+        Action = action,
+        ResourceType = resourceType,
+    };
 }

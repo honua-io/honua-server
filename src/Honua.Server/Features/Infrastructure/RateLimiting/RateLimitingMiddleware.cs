@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Sockets;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Routing;
@@ -49,9 +51,13 @@ internal sealed partial class RateLimitingMiddleware
     private const string UnknownKeyFamily = "unknown";
 
     /// <summary>
-    /// Hard cap on process-local counter entries. New keys fail closed at capacity.
+    /// Hard cap on process-local counter entries. At capacity the least-recently-used
+    /// entry is evicted so a flood of new keys cannot deny unrelated subjects.
     /// </summary>
     private const int MaxMemoryCounterEntries = 10_000;
+
+    /// <summary>Minimum gap between capacity-eviction warnings.</summary>
+    private static readonly long MemoryCapacityLogIntervalTicks = TimeSpan.TicksPerMinute;
 
     /// <summary>
     /// Process-local fixed-window counters used when Redis is unavailable. Counters
@@ -61,6 +67,8 @@ internal sealed partial class RateLimitingMiddleware
     private static readonly ConcurrentDictionary<string, FixedWindowCounter> _memoryCounters = new();
     private static readonly object _memoryCountersLock = new();
     private static DateTimeOffset _nextMemoryCounterPrune = DateTimeOffset.MinValue;
+    private static long _memoryCounterSequence;
+    private static long _lastMemoryCapacityLogTicks;
 
     private readonly RequestDelegate _next;
     private readonly IRateLimitPolicyStore _policyStore;
@@ -218,7 +226,8 @@ internal sealed partial class RateLimitingMiddleware
             }
         }
 
-        // Fall back to IP-based rate limiting for unauthenticated requests
+        // Fall back to IP-based rate limiting for unauthenticated requests.
+        // IPv6 addresses are already aggregated to /64 by GetClientIpAddress.
         return $"{tenantPrefix}{IpKeyFamily}:{clientIp}";
     }
 
@@ -387,7 +396,7 @@ internal sealed partial class RateLimitingMiddleware
     /// <param name="counterKey">The counter key (subject identity plus any per-endpoint policy scope).</param>
     /// <param name="resolved">The resolved limit and window for this request.</param>
     /// <returns>Rate limit check result.</returns>
-    private static RateLimitResult CheckRateLimitMemory(string counterKey, ResolvedRateLimit resolved)
+    private RateLimitResult CheckRateLimitMemory(string counterKey, ResolvedRateLimit resolved)
     {
         var now = DateTimeOffset.UtcNow;
         var window = resolved.Window;
@@ -407,20 +416,33 @@ internal sealed partial class RateLimitingMiddleware
                 {
                     PruneExpiredMemoryCounters(now);
                 }
+
                 if (_memoryCounters.Count >= MaxMemoryCounterEntries)
                 {
-                    return new RateLimitResult
+                    if (!TryEvictLeastRecentlyUsedMemoryCounter())
                     {
-                        IsAllowed = false,
-                        RequestsRemaining = 0,
-                        WindowReset = _nextMemoryCounterPrune,
-                        Limit = resolved.Limit
-                    };
+                        // Fail open without inserting so the budgets that are already
+                        // tracked stay intact when eviction cannot free a slot.
+                        return new RateLimitResult
+                        {
+                            IsAllowed = true,
+                            RequestsRemaining = resolved.Limit,
+                            WindowReset = windowStart + window,
+                            RequestCount = 0,
+                            Limit = resolved.Limit
+                        };
+                    }
+
+                    LogMemoryCounterEviction(now);
                 }
+
                 counter = new FixedWindowCounter();
                 _memoryCounters[counterKey] = counter;
             }
 
+            // Touch on every hit, including denies, so a subject that is still
+            // being metered is not the one eviction drops.
+            counter.LastSeenTicks = ++_memoryCounterSequence;
             if (counter.WindowStart != windowStart)
             {
                 counter.WindowStart = windowStart;
@@ -443,6 +465,37 @@ internal sealed partial class RateLimitingMiddleware
                 Limit = limit
             };
         }
+    }
+
+    /// <summary>
+    /// Drops the least-recently-used counter. Live counters that remain keep their
+    /// counts; eviction does not reset a budget that is still in the table.
+    /// </summary>
+    private static bool TryEvictLeastRecentlyUsedMemoryCounter()
+    {
+        string? oldestKey = null;
+        var oldestSeen = long.MaxValue;
+        foreach (var entry in _memoryCounters)
+        {
+            if (entry.Value.LastSeenTicks < oldestSeen)
+            {
+                oldestSeen = entry.Value.LastSeenTicks;
+                oldestKey = entry.Key;
+            }
+        }
+
+        return oldestKey is not null && _memoryCounters.TryRemove(oldestKey, out _);
+    }
+
+    private void LogMemoryCounterEviction(DateTimeOffset now)
+    {
+        if (now.UtcTicks - _lastMemoryCapacityLogTicks < MemoryCapacityLogIntervalTicks)
+        {
+            return;
+        }
+
+        _lastMemoryCapacityLogTicks = now.UtcTicks;
+        RateLimitingLog.MemoryCounterCapacityEvicted(_logger, MaxMemoryCounterEntries);
     }
 
     /// <summary>
@@ -478,6 +531,12 @@ internal sealed partial class RateLimitingMiddleware
         public DateTimeOffset WindowStart;
         public DateTimeOffset WindowEnd;
         public int Count;
+
+        /// <summary>
+        /// Monotonic touch stamp assigned under the admission lock. Not wall-clock
+        /// ticks: equal <see cref="DateTimeOffset.UtcNow"/> values must still order.
+        /// </summary>
+        public long LastSeenTicks;
     }
 
     /// <summary>
@@ -653,6 +712,17 @@ internal sealed partial class RateLimitingMiddleware
         if (remoteIp.IsIPv4MappedToIPv6)
         {
             remoteIp = remoteIp.MapToIPv4();
+        }
+
+        // Anonymous keys use this string. Aggregate IPv6 to /64 so one host's
+        // interface identifiers cannot fill the process-local table. IPv4,
+        // including an address that arrived IPv4-mapped, stays a single address.
+        // Authenticated keys use the subject and never this value.
+        if (remoteIp.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            var bytes = remoteIp.GetAddressBytes();
+            bytes.AsSpan(8).Clear();
+            remoteIp = new IPAddress(bytes);
         }
 
         return remoteIp.ToString();

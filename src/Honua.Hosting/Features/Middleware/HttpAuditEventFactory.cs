@@ -25,6 +25,16 @@ namespace Honua.Infrastructure.Middleware;
 /// </remarks>
 internal static class HttpAuditEventFactory
 {
+    /// <summary>
+    /// <see cref="HttpContext.Items"/> key for short string fields an endpoint
+    /// adds to the audit details document. Values are copied, capped, and never
+    /// replace the factory's own status/method/tenant fields.
+    /// </summary>
+    internal const string ExtraDetailsItemKey = "honua.audit.extra-details";
+
+    private const int MaxExtraDetailKeyLength = 64;
+    private const int MaxExtraDetailValueLength = 128;
+
     /// <summary>Resource family recorded for a transport-level authentication/authorization outcome.</summary>
     public const string HttpResourceType = "http";
 
@@ -142,7 +152,52 @@ internal static class HttpAuditEventFactory
             AddHeader(details, context, "acceptedAuditId", "X-Honua-Audit-Id");
             AddHeader(details, context, "proposalId", "X-Honua-Proposal-Id");
         }
+
+        AddExtraDetails(details, context);
         return details.ToJsonString();
+    }
+
+    private static void AddExtraDetails(JsonObject details, HttpContext context)
+    {
+        if (!context.Items.TryGetValue(ExtraDetailsItemKey, out var raw)
+            || raw is not IReadOnlyDictionary<string, string> extras)
+        {
+            return;
+        }
+
+        foreach (var pair in extras)
+        {
+            if (!IsExtraDetailKey(pair.Key) || details.ContainsKey(pair.Key))
+            {
+                continue;
+            }
+
+            var value = pair.Value ?? string.Empty;
+            if (value.Length > MaxExtraDetailValueLength)
+            {
+                value = value[..MaxExtraDetailValueLength];
+            }
+
+            details[pair.Key] = value;
+        }
+    }
+
+    private static bool IsExtraDetailKey(string? key)
+    {
+        if (string.IsNullOrEmpty(key) || key.Length > MaxExtraDetailKeyLength || !char.IsAsciiLetter(key[0]))
+        {
+            return false;
+        }
+
+        for (var i = 1; i < key.Length; i++)
+        {
+            if (!char.IsAsciiLetterOrDigit(key[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static void AddHeader(JsonObject details, HttpContext context, string propertyName, string headerName)

@@ -63,13 +63,14 @@ internal static class TileJsonEndpoints
         }
         var resource = layerValidation.Resource!;
         var publication = layerValidation.Publication!;
-        var resolvedLayerId = publication.LayerIndex ?? layerId;
+        var publicLayerId = ResolvePublicTileLayerId(publication, layerId);
+        var extentLayerId = ResolveExtentStorageLayerId(layerValidation.Snapshot, publication, resource, layerId);
 
         var tileLimits = limitsOptions.Value.Tiles;
         var minZoom = Math.Max(0, tileLimits.MinTileZoom);
         var maxZoom = Math.Max(minZoom, tileLimits.MaxTileZoom);
 
-        var extent = await ResolveExtentAsync(resource, resolvedLayerId, featureReader, cancellationToken);
+        var extent = await ResolveExtentAsync(resource, extentLayerId, featureReader, cancellationToken);
         var bounds = extent.HasValue
             ? new[] { extent.Value.MinX, extent.Value.MinY, extent.Value.MaxX, extent.Value.MaxY }
             : null;
@@ -80,9 +81,9 @@ internal static class TileJsonEndpoints
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var tilesUrl = BaseUrlResolver.PreserveToken(context.Request,
-            $"{baseUrl}/tiles/{resolvedLayerId}/{{z}}/{{x}}/{{y}}.mvt");
+            $"{baseUrl}/tiles/{publicLayerId}/{{z}}/{{x}}/{{y}}.mvt");
         var styleUrl = BaseUrlResolver.PreserveToken(context.Request,
-            $"{baseUrl}/api/styles/{resolvedLayerId}.json");
+            $"{baseUrl}/api/styles/{publicLayerId}.json");
 
         var title = resource.Metadata.Title ?? resource.Metadata.Name;
         var description = resource.Metadata.Description;
@@ -104,6 +105,26 @@ internal static class TileJsonEndpoints
 
         return Results.Json(response, TileJsonContext.Default.TileJsonResponse, contentType: JsonContentType);
     }
+
+    /// <summary>
+    /// Storage-layer id passed to <see cref="IFeatureReader.GetExtentAsync"/>.
+    /// Prefers the snapshot binding over the service-local publication index.
+    /// </summary>
+    internal static int ResolveExtentStorageLayerId(
+        MetadataV2GraphSnapshot? snapshot,
+        MetadataV2Publication publication,
+        MetadataV2Resource? resource,
+        int routeLayerId)
+    {
+        var storageLayerId = snapshot?.ResolveStorageLayerId(publication, resource);
+        return storageLayerId ?? publication.LayerIndex ?? routeLayerId;
+    }
+
+    /// <summary>
+    /// Layer id embedded in public TileJSON URLs. Stays the service-local index.
+    /// </summary>
+    internal static int ResolvePublicTileLayerId(MetadataV2Publication publication, int routeLayerId)
+        => publication.LayerIndex ?? routeLayerId;
 
     private static async Task<FeatureExtent?> ResolveExtentAsync(
         MetadataV2Resource resource,
