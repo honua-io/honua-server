@@ -613,7 +613,7 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
     /// A declared length of zero is still copied under the cap, so a length-less
     /// deflate stream cannot expand without bound.
     /// </summary>
-    internal static byte[] ReadBounded(ZipArchiveEntry entry, int maxEntryBytes, DecompressionBudget budget)
+    private static byte[] ReadBounded(ZipArchiveEntry entry, int maxEntryBytes, DecompressionBudget budget)
     {
         ArgumentNullException.ThrowIfNull(entry);
         ArgumentNullException.ThrowIfNull(budget);
