@@ -107,6 +107,7 @@ internal static class ServiceCollectionExtensions
         var connectionLimits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
 
         var defaultSchema = configuration["Database:Schema"];
+        var sessionSettingsMode = Honua.Core.Configuration.DatabaseSessionSettingsOptions.ResolveMode(configuration);
         var schemaConfiguration = PostgresSchemaConfiguration.FromConfiguration(configuration);
         services.TryAddSingleton(schemaConfiguration);
 
@@ -145,8 +146,31 @@ internal static class ServiceCollectionExtensions
                 .ResolvedConnectionStringTask
                 .GetAwaiter()
                 .GetResult();
-            return PostgresDataSourceFactory.Create(connectionString, schemaHeadersEnabled, connectionLimits, defaultSchema);
+            return PostgresDataSourceFactory.Create(
+                connectionString, schemaHeadersEnabled, connectionLimits, defaultSchema, sessionSettingsMode);
         });
+
+        // Database:SessionSettings:Mode (honua-server#5870): `connection` (default) sets the
+        // session timeouts/search_path on every physical connection; `role-defaults` issues no
+        // session SET so RDS Proxy can multiplex, and a one-shot startup check warns with the
+        // ALTER ROLE statements when the role defaults are missing. An unrecognized value fails
+        // the host at startup (the factory itself falls back to `connection`).
+        services.AddOptions<Honua.Core.Configuration.DatabaseSessionSettingsOptions>()
+            .Bind(configuration.GetSection(Honua.Core.Configuration.DatabaseSessionSettingsOptions.SectionName))
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<
+            Microsoft.Extensions.Options.IValidateOptions<Honua.Core.Configuration.DatabaseSessionSettingsOptions>,
+            Honua.Core.Configuration.DatabaseSessionSettingsOptionsValidator>());
+        services.TryAddSingleton(new Honua.Core.Features.Infrastructure.Health.DatabaseSessionSettingsState(sessionSettingsMode));
+        if (sessionSettingsMode == Honua.Core.Configuration.DatabaseSessionSettingsMode.RoleDefaults)
+        {
+            services.AddHostedService(serviceProvider => new PostgresSessionSettingsVerificationService(
+                () => serviceProvider.GetRequiredService<NpgsqlDataSource>(),
+                connectionLimits,
+                defaultSchema,
+                serviceProvider.GetRequiredService<Honua.Core.Features.Infrastructure.Health.DatabaseSessionSettingsState>(),
+                serviceProvider.GetRequiredService<ILogger<PostgresSessionSettingsVerificationService>>()));
+        }
 
         // Lets a per-invocation host (the control-plane event-handler Lambdas) close its pooled
         // connections before the instance is frozen; long-lived hosts never call it.

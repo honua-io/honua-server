@@ -68,6 +68,29 @@ public sealed partial class SecureConnectionDataSourceCacheTests
 
     [SecurityTest]
     [Fact]
+    public void GetOrCreate_RoleDefaultsMode_NamedPoolKeepsPerConnectionSessionSettings()
+    {
+        // role-defaults is verified only for the DefaultConnection role; a named secure
+        // connection may use another role, so its pool keeps setting the timeouts itself
+        // (honua-server#5870). Multiplexing makes the settings visible on the string.
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Database:SessionSettings:Mode"] = "role-defaults",
+                ["Limits:Connections:Multiplexing"] = "true",
+            })
+            .Build();
+
+        using var cache = new SecureConnectionDataSourceCache(configuration);
+
+        var dataSource = cache.GetOrCreate(SampleConnectionString);
+
+        var builder = new NpgsqlConnectionStringBuilder(dataSource.ConnectionString);
+        Assert.Contains("lock_timeout=30s", builder.Options ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [SecurityTest]
+    [Fact]
     public void GetOrCreate_WithoutConfiguredDefaultSchema_DoesNotEmbedSearchPath()
     {
         // Arrange — when no default schema is configured, the factory omits

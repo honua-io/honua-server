@@ -1628,7 +1628,7 @@
             "name": "includeDiagnostics",
             "in": "query",
             "required": false,
-            "description": "When true, includes serverVersion, environment, deploymentMode, instanceName, readiness, migration, and databaseCompatibility fields in the response.",
+            "description": "When true, includes serverVersion, environment, deploymentMode, instanceName, readiness, migration, databaseCompatibility, and databaseSessionSettings fields in the response.",
             "schema": {
               "type": "boolean",
               "default": false
@@ -23582,6 +23582,52 @@
           },
           "databaseCompatibility": {
             "$ref": "#/components/schemas/DeployPreflightDatabaseCompatibility"
+          },
+          "databaseSessionSettings": {
+            "$ref": "#/components/schemas/DeployPreflightDatabaseSessionSettings"
+          }
+        }
+      },
+      "DeployPreflightDatabaseSessionSettings": {
+        "type": "object",
+        "required": [
+          "mode",
+          "verification"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "connection",
+              "role-defaults"
+            ],
+            "description": "Database:SessionSettings:Mode. connection: the server sets lock_timeout, statement_timeout, idle_in_transaction_session_timeout (and search_path when Database:Schema is set) on every connection. role-defaults: no session SET; the database role's defaults apply, so RDS Proxy can multiplex"
+          },
+          "verification": {
+            "type": "string",
+            "enum": [
+              "not-applicable",
+              "pending",
+              "verified",
+              "mismatch",
+              "unavailable"
+            ],
+            "description": "Startup verification of the role defaults against Limits:Connections (role-defaults mode only)"
+          },
+          "role": {
+            "type": "string",
+            "description": "Database role whose defaults were verified"
+          },
+          "remediation": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "ALTER ROLE statements an operator runs to align the role defaults; the server never runs them"
+          },
+          "message": {
+            "type": "string",
+            "description": "Why verification is unavailable, when it is"
           }
         }
       },

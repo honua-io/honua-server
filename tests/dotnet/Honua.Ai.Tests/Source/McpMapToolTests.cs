@@ -6,6 +6,11 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp.MapTools;
+using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -17,24 +22,21 @@ using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
-using Honua.Infrastructure.Authentication;
 using Honua.Core.Queries.Filters;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Rendering;
 using Honua.Infrastructure.Services;
-using Honua.Ai.Protocols.Mcp;
-using Honua.Ai.Protocols.Mcp.MapTools;
-using Honua.Ai.Protocols.Mcp.Models;
-using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using NSubstitute;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Schema;
-using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -820,8 +822,12 @@ public sealed class McpMapToolTests
                 Height = 256
             });
 
-        const string href = "/temp/abc123.png";
+        const string href = "/temp/0123456789abcdef0123456789abcdef.png";
         var temporaryFileService = BuildTemporaryFileService(href);
+        temporaryFileService.GetTemporaryFileAsync(
+                "0123456789abcdef0123456789abcdef.png",
+                Arg.Any<ClaimsPrincipal?>(), Arg.Any<CancellationToken>())
+            .Returns((pngBytes, "image/png"));
 
         var surface = BuildSurface();
         var response = await surface.DispatchAsync(
@@ -858,6 +864,23 @@ public sealed class McpMapToolTests
         var linkBlock = content.Single(block => block.GetProperty("type").GetString() == "resource_link");
         linkBlock.GetProperty("uri").GetString().Should().Be(href);
         linkBlock.GetProperty("mimeType").GetString().Should().Be("image/png");
+
+        // The exact emitted link must be readable through the same MCP dispatcher.
+        var read = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices(temporaryFileService: temporaryFileService)),
+            new McpJsonRpcRequest
+            {
+                JsonRpc = "2.0",
+                Id = JsonString("read-render"),
+                Method = "resources/read",
+                Params = Json($$"""{"uri":"{{href}}"}""")
+            }, CancellationToken.None) ?? throw new InvalidOperationException("Resource requests must produce a response.");
+        read.Error.Should().BeNull();
+        var image = read.Result!.Value.GetProperty("contents")[0];
+        image.GetProperty("uri").GetString().Should().Be(href);
+        image.GetProperty("mimeType").GetString().Should().Be("image/png");
+        Convert.FromBase64String(image.GetProperty("blob").GetString()!).Should().Equal(pngBytes);
+        image.TryGetProperty("text", out _).Should().BeFalse();
 
         await temporaryFileService.Received(1).StoreTemporaryFileAsync(
             Arg.Is<byte[]>(b => b.SequenceEqual(pngBytes)),
@@ -1297,7 +1320,7 @@ public sealed class McpMapToolTests
             new QueryFeaturesTool(_jobService, NullLogger<QueryFeaturesTool>.Instance),
             new RenderMapTool(_jobService, NullLogger<RenderMapTool>.Instance)
         ],
-        [],
+        [new TemporaryFileResource(_jobService, Options.Create(new TemporaryFileOptions()), NullLogger<TemporaryFileResource>.Instance)],
         NullLogger<McpDataAccessSurface>.Instance);
 
     private static TestMetadataV2GraphProvider BuildGraphProvider(AccessPolicy? accessPolicy = null, AccessPolicy? servicePolicy = null)

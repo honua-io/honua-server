@@ -118,6 +118,14 @@ public sealed record OperationPolicyContext
     public string? IdempotencyKey { get; init; }
 
     /// <summary>
+    /// Optional digest of the canonical effective request. Adapters that opt in bind a
+    /// durable idempotency key to this payload and refuse concurrent actuation retries.
+    /// The adapter must scope IdempotencyKey to the authenticated principal and tenant.
+    /// The digest must not contain credentials or unredacted request data.
+    /// </summary>
+    public string? IdempotencyRequestHash { get; init; }
+
+    /// <summary>
     /// Trusted authorization outcome established before the operation policy decision.
     /// </summary>
     public string? AuthorizationOutcome { get; init; }

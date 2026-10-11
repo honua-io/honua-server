@@ -26,7 +26,8 @@ internal sealed class DeployPreflightProbe(
     ILogger<DeployPreflightProbe> logger,
     IConnectionSecretResolver? secretResolver = null,
     IOptions<MigrationSafetyOptions>? migrationSafetyOptions = null,
-    MigrationBackupHookState? backupHookState = null) : IDeployPreflightProbe
+    MigrationBackupHookState? backupHookState = null,
+    DatabaseSessionSettingsState? sessionSettingsState = null) : IDeployPreflightProbe
 {
     private const string MigrationPlanUnavailableMessage = "Migration planning is temporarily unavailable.";
 
@@ -57,7 +58,9 @@ internal sealed class DeployPreflightProbe(
                 Message = readiness.Message
             },
             Migration = migration,
-            DatabaseCompatibility = compatibilitySnapshot
+            DatabaseCompatibility = compatibilitySnapshot,
+            // Advisory only: a role-defaults mismatch is logged and surfaced, never blocking.
+            DatabaseSessionSettings = sessionSettingsState?.Snapshot
         };
     }
 
@@ -233,6 +236,8 @@ internal sealed class DeployPreflightSnapshot
     public required DeployPreflightMigrationSnapshot Migration { get; init; }
 
     public DeployPreflightDatabaseCompatibilitySnapshot? DatabaseCompatibility { get; init; }
+
+    public DatabaseSessionSettingsSnapshot? DatabaseSessionSettings { get; init; }
 }
 
 internal sealed class DeployPreflightReadinessSnapshot

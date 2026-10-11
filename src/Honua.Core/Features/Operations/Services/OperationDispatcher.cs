@@ -112,7 +112,9 @@ public sealed class OperationDispatcher : IOperationInvoker
                 OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
                 OperationId = request.OperationId,
                 CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
-                Status = OperationHandleStatus.Failed,
+                Status = OperationHandleStatus.Denied,
+                PolicyDecision = PolicyDecisionKind.Deny,
+                AuthorizationOutcome = OperationAuthorizationOutcomes.ScopeDeniedBeforeAcceptance,
                 CreatedAt = createdAt,
                 UpdatedAt = _clock.GetUtcNow(),
                 Reason = string.IsNullOrWhiteSpace(context.ApprovedProposalId)
@@ -324,7 +326,11 @@ public sealed class OperationDispatcher : IOperationInvoker
                         createdAt,
                         cancellationToken)
                     .ConfigureAwait(false);
-                var projected = decided with { AuditId = decided.AuditId ?? acceptanceAuditId };
+                var projected = decided with
+                {
+                    AuditId = decided.AuditId ?? acceptanceAuditId,
+                    EvidenceRefs = OperationEnvelopeFactory.PreserveRequestBinding(envelope, decided.EvidenceRefs),
+                };
                 return projected.Status == OperationHandleStatus.RequiresApproval
                     ? await PersistApprovalDecisionAsync(projected, cancellationToken).ConfigureAwait(false)
                     : await PersistAsync(projected, cancellationToken).ConfigureAwait(false);
@@ -425,6 +431,7 @@ public sealed class OperationDispatcher : IOperationInvoker
             UpdatedAt = _clock.GetUtcNow(),
             AuthorizationOutcome = invocationContext.AuthorizationOutcome,
             PolicyDecision = PolicyDecisionKind.Allow,
+            EvidenceRefs = OperationEnvelopeFactory.PreserveRequestBinding(envelope, executed.EvidenceRefs),
         };
         string? terminalAuditId;
         using var terminalAuditTimeout = new CancellationTokenSource(PostActuationPersistenceTimeout);

@@ -143,10 +143,16 @@ public static class PortalTokenAuthenticationExtensions
 
     private static void TryAddPortalCredentialVerifier(this IServiceCollection services)
     {
+        // The OAuth bridge constructs OidcPortalCredentialVerifier directly. Register
+        // that concrete type and its cache even when an operator already supplied
+        // IPortalCredentialVerifier; skipping them makes /sharing/rest/oauth2/authorize
+        // fail during activation. The custom verifier still wins the interface.
+        services.TryAddSingleton<OidcConfigurationManagerCache>();
+        services.TryAddScoped<AdminPortalCredentialVerifier>();
+        services.TryAddScoped<OidcPortalCredentialVerifier>();
+
         if (services.Any(d => d.ServiceType == typeof(IPortalCredentialVerifier)))
         {
-            // An operator-supplied custom verifier takes precedence over the
-            // built-in admin/OIDC selection.
             return;
         }
 
@@ -154,9 +160,6 @@ public static class PortalTokenAuthenticationExtensions
         // and community option. The OIDC-backed verifier is opt-in and, when
         // enabled, may fall back to the admin verifier so admin/API-key access
         // keeps working alongside named-user login.
-        services.TryAddSingleton<OidcConfigurationManagerCache>();
-        services.AddScoped<AdminPortalCredentialVerifier>();
-        services.AddScoped<OidcPortalCredentialVerifier>();
         services.AddScoped<IPortalCredentialVerifier>(static provider =>
         {
             var options = provider.GetRequiredService<IOptions<PortalCredentialVerifierOptions>>().Value;

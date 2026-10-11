@@ -23,6 +23,7 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(DeployPreflightMigrationClassification))]
 [JsonSerializable(typeof(Honua.Infrastructure.Monitoring.MigrationBackupHookStatus))]
 [JsonSerializable(typeof(DeployPreflightDatabaseCompatibility))]
+[JsonSerializable(typeof(DeployPreflightDatabaseSessionSettings))]
 [JsonSerializable(typeof(DeployPreflightPlatformRelease))]
 [JsonSerializable(typeof(DeployPreflightPlaneProjection))]
 [JsonSerializable(typeof(DeployPlanRequest))]

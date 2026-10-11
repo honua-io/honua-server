@@ -608,7 +608,12 @@ internal sealed class McpResourceContent
     public string MimeType { get; set; } = "application/json";
 
     [JsonPropertyName("text")]
-    public string Text { get; set; } = string.Empty;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Text { get; set; }
+
+    [JsonPropertyName("blob")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Blob { get; set; }
 }
 
 // -----------------------------------------------------------------------

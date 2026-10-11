@@ -7,13 +7,12 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Tools;
-using Honua.Core.Features.AuditLog;
-using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
-using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.AuditLog;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
-using IOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Health;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -22,12 +21,13 @@ using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Hosting;
+using Honua.Server.Features.Operations;
 using Honua.ServiceDefaults;
-using Honua.TestKit.Attributes;
 using Honua.TestKit;
+using Honua.TestKit.Attributes;
+using IOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -551,7 +551,9 @@ public sealed class OperationsToolsetTests
             },
             CancellationToken.None);
 
-        withoutRead.Status.Should().Be(OperationHandleStatus.Failed);
+        withoutRead.Status.Should().Be(OperationHandleStatus.Denied);
+        withoutRead.PolicyDecision.Should().Be(PolicyDecisionKind.Deny);
+        withoutRead.AuthorizationOutcome.Should().Be(OperationAuthorizationOutcomes.ScopeDeniedBeforeAcceptance);
         withoutRead.Reason.Should().Contain("OAuth scope authority");
         handler.Requests.Should().BeEmpty("the guardrail seam must refuse before the Admin API is called");
 
@@ -1734,7 +1736,9 @@ public sealed class OperationsToolsetTests
             },
             CancellationToken.None);
 
-        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.Status.Should().Be(OperationHandleStatus.Denied);
+        handle.PolicyDecision.Should().Be(PolicyDecisionKind.Deny);
+        handle.AuthorizationOutcome.Should().Be(OperationAuthorizationOutcomes.ScopeDeniedBeforeAcceptance);
         handle.Reason.Should().Be("Approved replay operation exceeds the sealed OAuth scope authority.");
         await publishing.DidNotReceiveWithAnyArgs().PublishLayerAsync(default!, default!, default);
     }

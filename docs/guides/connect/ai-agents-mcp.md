@@ -101,6 +101,7 @@ A worked example that runs one buffer through OGC API Processes, MCP, and the Ja
 - `honua://jobs/{jobId}/results` — the result package for a terminal job.
 - `honua://jobs/{jobId}/report` — a structured analysis report for the same job.
 - `honua://workspaces/{workspaceId}` — workspace lifecycle for job outputs.
+- The exact rendered-artifact URI returned by `honua_render_map` — normally `/temp/{fileId}`, or the configured temporary-file base URL. The stable discovery alias `honua://temporary-files/{fileId}` addresses the same artifact. Reads preserve the temporary store's owner and expiry checks and return the original bytes as a base64 `blob` with their MIME type.
 
 Postgres-backed deployments also advertise the durable promotion catalog: `honua://published-services`, `honua://deployments`, `honua://map-packages`, and `honua://app-packages` (plus their item resources). Storeless or non-Postgres hosts omit these resources unless they register canonical durable stores.
 
@@ -237,6 +238,8 @@ The roster is for build-time parity gates, not for runtime discovery. A running 
 ## Pagination
 
 The list methods (`tools/list`, `resources/list`, `resources/templates/list`, `prompts/list`) are paginated per MCP 2025-03-26: when more entries remain the result carries an opaque `nextCursor`; pass it back as `params.cursor` to fetch the next page. A single-page result omits `nextCursor`. Treat cursors as opaque and echo them verbatim; an invalid or expired cursor returns JSON-RPC `-32602` invalid-params. Large `resources/read` documents (job results, catalogs) are chunked the same way — each page's `text` concatenates per `uri` to rebuild the full document, with `nextCursor` pointing at the next chunk.
+
+Binary artifact reads are atomic: the response contains `blob`, not `text`, and has no `nextCursor`. `maxChars` counts base64 characters and uses the same default and hard ceiling as text reads. If the image exceeds the requested budget, retry with the suggested `maxChars` up to 1,000,000, or render a smaller image. Binary reads reject pagination cursors. Only the canonical temporary-file alias and artifact URIs under the configured temporary-file base are supported; arbitrary URLs and filesystem paths are not fetched.
 
 ## OAuth 2.1 bearer tokens and scope mapping
 

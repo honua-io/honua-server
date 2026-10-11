@@ -3,29 +3,31 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.Ai.Protocols.Mcp.Studio;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Publishing.Abstractions;
+using Honua.Core.Features.Reporting.Abstractions;
 using Honua.Core.Features.Studio.Drafts;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Geoprocessing;
-using Honua.Ai.Protocols.Mcp;
-using Honua.Ai.Protocols.Mcp.Models;
-using Honua.Ai.Protocols.Mcp.Resources;
-using Honua.Ai.Protocols.Mcp.Studio;
-using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using NSubstitute;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Schema;
-using NSubstitute;
-using Honua.Core.Features.Reporting.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -114,6 +116,7 @@ public sealed partial class McpTaxonomyAlignmentTests
 
     private static readonly string[] TaxonomyResourceUris =
     {
+        "honua://temporary-files/{fileId}",
         "honua://jobs/{jobId}",
         "honua://jobs/{jobId}/results",
         "honua://jobs/{jobId}/report",
@@ -304,6 +307,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         var families = new HashSet<string>(resources.Select(r => r.Family), StringComparer.Ordinal);
         families.Should().BeEquivalentTo(new[]
         {
+            McpTelemetry.ResourceFamily.TemporaryFiles,
             McpTelemetry.ResourceFamily.Jobs,
             McpTelemetry.ResourceFamily.JobResults,
             McpTelemetry.ResourceFamily.JobReports,
@@ -333,12 +337,15 @@ public sealed partial class McpTaxonomyAlignmentTests
     }
 
     [UnitTest]
-    public void ResourceDescriptors_AllAdvertiseJsonMimeType()
+    public void ResourceDescriptors_AdvertiseJsonExceptBinaryArtifacts()
     {
         var resources = BuildResources();
 
-        var concreteMimeTypes = resources.SelectMany(r => r.Describe()).Select(d => d.MimeType);
-        var templateMimeTypes = resources.SelectMany(r => r.DescribeTemplates()).Select(d => d.MimeType);
+        var binary = resources.Single(r => r is TemporaryFileResource);
+        binary.DescribeTemplates().Single().MimeType.Should().Be("application/octet-stream");
+        var jsonResources = resources.Where(r => r is not TemporaryFileResource).ToArray();
+        var concreteMimeTypes = jsonResources.SelectMany(r => r.Describe()).Select(d => d.MimeType);
+        var templateMimeTypes = jsonResources.SelectMany(r => r.DescribeTemplates()).Select(d => d.MimeType);
 
         concreteMimeTypes.Concat(templateMimeTypes)
             .Should().OnlyContain(m => string.Equals(m, "application/json", StringComparison.Ordinal));
@@ -994,6 +1001,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         var drafts = new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System);
         return
         [
+            new TemporaryFileResource(Substitute.For<IGeoprocessingJobService>(), Options.Create(new TemporaryFileOptions()), NullLogger<TemporaryFileResource>.Instance),
             new JobStatusResource(jobService, NullLogger<JobStatusResource>.Instance),
             new JobResultsResource(jobService, NullLogger<JobResultsResource>.Instance),
             new ProposalStatusResource(NullLogger<ProposalStatusResource>.Instance),

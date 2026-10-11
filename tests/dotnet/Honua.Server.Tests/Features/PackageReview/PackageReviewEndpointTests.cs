@@ -2,15 +2,18 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.PackageReview.Domain;
 using Honua.Core.Features.Publishing.Content.Abstractions;
 using Honua.Core.Features.Publishing.Content.Services;
 using Honua.Core.Features.Studio.Abstractions;
+using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Models;
@@ -19,6 +22,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -144,6 +148,23 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
         pointers!.CurrentVersionId.Should().Be(versionId);
         pointers.PublishedVersionId.Should().BeNull(
             "the admin route proposes publication; only a separate principal's approval may move the published pointer");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/packages")]
+    public async Task PublishMapPackage_WithReadOnlyAdminScope_ReturnsForbiddenWithoutDraft()
+    {
+        await using var host = await PublishingHost.StartAsync(readOnlyScope: true);
+        using var response = await PostPublishAsync(host.Client, $$"""{"package": {{CliMapPackageJson(string.Empty)}}}""");
+
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden, payload);
+        payload.Should().Contain("OAuth scope authority");
+        using var scope = host.Fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IStudioPackageStore>();
+        (await store.ListDraftsAsync(new StudioPackageDraftQuery())).Total.Should().Be(0);
+        (await store.ListContentItemsAsync(new StudioContentItemQuery())).Total.Should().Be(0);
     }
 
     [IntegrationTest]
@@ -374,6 +395,17 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
             => Task.FromResult<string?>("audit-test");
     }
 
+    private sealed class ReadOnlyScopeClaimsTransformation : IClaimsTransformation
+    {
+        public Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
+        {
+            var identity = new ClaimsIdentity(principal.Identity as ClaimsIdentity);
+            identity.AddClaim(new Claim(OperatorScopeCatalog.ScopeGovernedClaimType, OperatorScopeCatalog.ScopeGovernedClaimValue));
+            identity.AddClaim(new Claim(OperatorScopeCatalog.ScopeClaimType, OperatorScopeCatalog.Read));
+            return Task.FromResult(new ClaimsPrincipal(identity));
+        }
+    }
+
     /// <summary>
     /// A host that can hold a governed publication proposal: the durable proposal store and
     /// operation gateway are registered only on a Redis-connected, cache-entitled host, as on the
@@ -394,7 +426,7 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
 
         public HttpClient Client { get; }
 
-        public static async Task<PublishingHost> StartAsync()
+        public static async Task<PublishingHost> StartAsync(bool readOnlyScope = false)
         {
             var redis = new RedisFixture();
             await redis.InitializeAsync();
@@ -412,6 +444,13 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
                     services.AddSingleton<IContentPublicationStore, InMemoryContentPublicationStore>();
                     services.RemoveAll<IAuditLog>();
                     services.AddSingleton<IAuditLog, CapturingAuditLog>();
+                    if (readOnlyScope)
+                    {
+                        // Keep real bootstrap authentication and narrow the resulting admin
+                        // principal with the same scope contract as a validated bearer.
+                        services.RemoveAll<IClaimsTransformation>();
+                        services.AddSingleton<IClaimsTransformation, ReadOnlyScopeClaimsTransformation>();
+                    }
                 });
             await fixture.InitializeAsync();
             return new PublishingHost(redis, fixture);

@@ -673,7 +673,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             "honua://workspaces/ws-42",
             CancellationToken.None);
 
-        var payload = JToken.Parse(result.Contents[0].Text);
+        var payload = JToken.Parse(result.Contents[0].Text ?? throw new InvalidOperationException("Expected a text resource."));
         payload["lifecycleState"]!.Value<string>().Should().Be("active");
         payload["resultsUri"]!.Value<string>().Should().Be("honua://results/result_3f21");
         payload["status"].Should().BeNull();
@@ -742,7 +742,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             "honua://jobs/job-xyz/results",
             CancellationToken.None);
 
-        var payload = JToken.Parse(result.Contents[0].Text);
+        var payload = JToken.Parse(result.Contents[0].Text ?? throw new InvalidOperationException("Expected a text resource."));
         payload["resultPackageId"]!.Value<string>().Should().Be("result_3f21");
         AssertPayloadConformsToResourceSchema(payload, "result-package.schema.json", "live result payload");
     }
