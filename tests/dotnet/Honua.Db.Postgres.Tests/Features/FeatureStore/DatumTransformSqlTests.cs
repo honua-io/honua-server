@@ -140,7 +140,7 @@ public sealed class DatumTransformSqlTests
     {
         var sql = DatumTransformSql.BuildTransformExpression("geom", toSrid, selection: null, fromSrid: 4326);
 
-        sql.Should().Be(ClampedTransform("geom", 4326, toSrid));
+        AssertPointClamp(sql, "geom", 4326, toSrid);
     }
 
     [UnitTest]
@@ -148,7 +148,7 @@ public sealed class DatumTransformSqlTests
     {
         var sql = DatumTransformSql.BuildTransformExpression("geom", 102100, selection: null, fromSrid: 4269);
 
-        sql.Should().Be(ClampedTransform("geom", 4269, 102100));
+        AssertPointClamp(sql, "geom", 4269, 102100);
     }
 
     [UnitTest]
@@ -192,9 +192,9 @@ public sealed class DatumTransformSqlTests
 
         var sql = DatumTransformSql.BuildTransformExpression("geom", 3857, selection, fromSrid: 4326);
 
-        sql.Should().Be(
-            "ST_TransformPipeline(ST_ClipByBox2D(geom, ST_MakeEnvelope(-180, -85.0511287798066, 180, 85.0511287798066, 4326)), " +
-            "'+proj=pipeline +step +proj=merc', 3857)");
+        sql.Should().StartWith("ST_TransformPipeline(CASE ST_GeometryType(geom)");
+        sql.Should().Contain("LEAST(GREATEST(ST_Y(geom), -85.0511287798066), 85.0511287798066)");
+        sql.Should().Contain("'+proj=pipeline +step +proj=merc', 3857)");
     }
 
     [UnitTest]
@@ -214,6 +214,14 @@ public sealed class DatumTransformSqlTests
         sql.Should().NotContain("ST_ClipByBox2D");
     }
 
-    private static string ClampedTransform(string operand, int fromSrid, int toSrid)
-        => $"ST_Transform(ST_ClipByBox2D({operand}, ST_MakeEnvelope(-180, -85.0511287798066, 180, 85.0511287798066, {fromSrid})), {toSrid})";
+    private static void AssertPointClamp(string sql, string operand, int fromSrid, int toSrid)
+    {
+        sql.Should().StartWith("ST_Transform(CASE ST_GeometryType(" + operand + ")");
+        sql.Should().Contain("WHEN 'ST_Point' THEN CASE ST_Zmflag(" + operand + ")");
+        sql.Should().Contain("LEAST(GREATEST(ST_Y(" + operand + "), -85.0511287798066), 85.0511287798066)");
+        sql.Should().Contain("WHEN 'ST_MultiPoint' THEN (SELECT ST_Multi(ST_Collect(");
+        sql.Should().Contain("FROM ST_Dump(" + operand + ") AS pt)");
+        sql.Should().Contain(
+            "ELSE ST_ClipByBox2D(" + operand + ", ST_MakeEnvelope(-180, -85.0511287798066, 180, 85.0511287798066, " + fromSrid + ")) END, " + toSrid + ")");
+    }
 }

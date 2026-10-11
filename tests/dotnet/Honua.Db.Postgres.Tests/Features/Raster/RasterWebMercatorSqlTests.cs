@@ -13,9 +13,10 @@ public sealed class RasterWebMercatorSqlTests
     {
         var sql = RasterWebMercatorSql.BuildEnvelopeExpression("ST_Envelope(r.raster)", 4326);
 
-        sql.Should().Be(
-            "ST_Transform(ST_ClipByBox2D(ST_Envelope(r.raster), " +
-            "ST_MakeEnvelope(-180, -85.0511287798066, 180, 85.0511287798066, 4326)), 3857)");
+        sql.Should().StartWith("ST_Transform(CASE ST_GeometryType(ST_Envelope(r.raster))");
+        sql.Should().Contain("LEAST(GREATEST(ST_Y(ST_Envelope(r.raster)), -85.0511287798066), 85.0511287798066)");
+        sql.Should().Contain(
+            "ELSE ST_ClipByBox2D(ST_Envelope(r.raster), ST_MakeEnvelope(-180, -85.0511287798066, 180, 85.0511287798066, 4326)) END, 3857)");
     }
 
     [UnitTest]

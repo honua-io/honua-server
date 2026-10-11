@@ -642,8 +642,10 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     {
         var sql = BuildFeatureSelect(new FeatureQuery { OutputSrid = 102100 }, storageSrid: 4326);
 
-        sql.Should().Contain(
-            "ST_Transform(ST_ClipByBox2D(\"geom\"::geometry, ST_MakeEnvelope(-180, -85.0511287798066, 180, 85.0511287798066, 4326)), 102100)");
+        sql.Should().Contain("WHEN 'ST_Point' THEN");
+        sql.Should().Contain("LEAST(GREATEST(ST_Y(\"geom\"::geometry), -85.0511287798066), 85.0511287798066)");
+        sql.Should().Contain("ELSE ST_ClipByBox2D(\"geom\"::geometry, ST_MakeEnvelope(-180, -85.0511287798066, 180, 85.0511287798066, 4326))");
+        sql.Should().Contain(", 102100)");
     }
 
     [UnitTest]
@@ -665,7 +667,8 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             },
             storageSrid: 3857);
 
-        sql.Should().Contain("ST_Transform(ST_ClipByBox2D(");
+        sql.Should().Contain("WHEN 'ST_Point' THEN");
+        sql.Should().Contain("LEAST(GREATEST(ST_Y(");
         sql.Should().Contain("ST_MakeEnvelope(-180, -85.0511287798066, 180, 85.0511287798066, 4326)");
         sql.Should().Contain(", 3857)");
     }

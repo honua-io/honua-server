@@ -32,9 +32,10 @@ internal static class DatumTransformSql
     /// </param>
     /// <param name="fromSrid">
     /// Source SRID of <paramref name="operand"/>, when known. A geographic source
-    /// reprojected to Web Mercator is clipped to ±<see cref="SpatialConstants.WebMercatorMaxLatitude"/>
-    /// before <c>ST_Transform</c>. PROJ rejects latitude ±90 and PostGIS aborts the
-    /// whole statement. Unknown or projected sources are left unchanged.
+    /// reprojected to Web Mercator has each point latitude clamped to
+    /// ±<see cref="SpatialConstants.WebMercatorMaxLatitude"/>, and every other shape
+    /// clipped to that band, before <c>ST_Transform</c>. PROJ rejects latitude ±90 and
+    /// PostGIS aborts the whole statement. Unknown or projected sources are left unchanged.
     /// </param>
     /// <returns>The reprojection SQL expression.</returns>
     public static string BuildTransformExpression(
@@ -93,9 +94,28 @@ internal static class DatumTransformSql
             return operand;
         }
 
-        // ST_ClipByBox2D keeps the transform inside PROJ's Mercator domain. A
-        // per-vertex clamp would also work; the box clip is the shared SQL form.
-        return $"ST_ClipByBox2D({operand}, {BuildWebMercatorClipEnvelope(sourceSrid)})";
+        // A point at ±90 is outside the clip box, so ST_ClipByBox2D deletes it and a
+        // point filter matches nothing. Move point ordinates onto the Mercator boundary
+        // instead, the same way the in-process projector does. Lines and polygons keep
+        // the band intersection so a polar ring does not abort the statement.
+        var latitude = WebMercatorMaxLatitudeLiteral;
+        var point = ClampPointLatitude(operand, sourceSrid, latitude);
+        var dumpedPoint = ClampPointLatitude("pt.geom", sourceSrid, latitude);
+        return "CASE ST_GeometryType(" + operand + ") "
+            + "WHEN 'ST_Point' THEN " + point + " "
+            + "WHEN 'ST_MultiPoint' THEN (SELECT ST_Multi(ST_Collect(" + dumpedPoint + ")) FROM ST_Dump(" + operand + ") AS pt) "
+            + "ELSE ST_ClipByBox2D(" + operand + ", " + BuildWebMercatorClipEnvelope(sourceSrid) + ") END";
+    }
+
+    private static string ClampPointLatitude(string point, int sourceSrid, string latitude)
+    {
+        var y = "LEAST(GREATEST(ST_Y(" + point + "), -" + latitude + "), " + latitude + ")";
+        var x = "ST_X(" + point + ")";
+        return "CASE ST_Zmflag(" + point + ") "
+            + "WHEN 0 THEN ST_SetSRID(ST_MakePoint(" + x + ", " + y + "), " + sourceSrid + ") "
+            + "WHEN 1 THEN ST_SetSRID(ST_MakePointM(" + x + ", " + y + ", ST_M(" + point + ")), " + sourceSrid + ") "
+            + "WHEN 2 THEN ST_SetSRID(ST_MakePoint(" + x + ", " + y + ", ST_Z(" + point + ")), " + sourceSrid + ") "
+            + "ELSE ST_SetSRID(ST_MakePoint(" + x + ", " + y + ", ST_Z(" + point + "), ST_M(" + point + ")), " + sourceSrid + ") END";
     }
 
     /// <summary>

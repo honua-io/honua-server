@@ -106,7 +106,9 @@ public sealed class WebMercatorLatitudeClampTests
     private static void AssertClipPrecedesTransform(string sql, int sourceSrid, int targetSrid)
     {
         var envelope = $"ST_MakeEnvelope(-180, -85.0511287798066, 180, 85.0511287798066, {sourceSrid})";
-        sql.Should().Contain($"ST_Transform(ST_ClipByBox2D(");
+        sql.Should().Contain("WHEN 'ST_Point' THEN");
+        sql.Should().Contain("LEAST(GREATEST(ST_Y(");
+        sql.Should().Contain("ST_ClipByBox2D(");
         sql.Should().Contain(envelope);
         sql.Should().Contain($", {targetSrid.ToString(System.Globalization.CultureInfo.InvariantCulture)})");
     }
