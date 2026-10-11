@@ -1692,6 +1692,9 @@ app.UseHonuaTenantStatusEnforcement();
 // request, so repeated bad credentials cannot bypass the configured source-IP bucket.
 app.UsePortalTokenAuthenticationRejection();
 
+// Bind URL-import retries to the canonical durable operation before any download or queue write.
+app.UseMiddleware<Honua.Server.Features.Operations.UrlImportOperationMiddleware>();
+
 // Map public demo service/layer contract IDs to internal seeded layer IDs and guard demo writes.
 app.UseCloudDemoServiceLayerAliases();
 app.UseCloudDemoWritableFeatureGuard();

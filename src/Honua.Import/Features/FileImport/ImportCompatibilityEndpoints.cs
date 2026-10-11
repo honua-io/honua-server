@@ -20,6 +20,7 @@ internal static partial class ImportEndpoints
             .RequireAdminAuthorization();
 
         importsGroup.MapPost(string.Empty, HandleImportFileFromUrl)
+            .WithMetadata(new UrlImportOperationMetadata())
             .WithSummary("Create and queue an import job from a source URL.");
 
         importsGroup.MapGet("/jobs", HandleGetActiveJobs);

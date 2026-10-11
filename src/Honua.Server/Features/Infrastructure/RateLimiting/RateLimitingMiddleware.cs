@@ -13,9 +13,15 @@ using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.RateLimiting.Abstractions;
 using Honua.Core.Features.RateLimiting.Domain;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Infrastructure.RateLimiting;
+
+// A server-only request feature; never reconstructed from caller headers.
+internal sealed class RateLimitAdmission
+{
+}
 
 /// <summary>
 /// Middleware for enforcing rate limits on incoming requests.
@@ -117,6 +123,19 @@ internal sealed partial class RateLimitingMiddleware
             return;
         }
 
+        // Only the one-use process-local attestation can install this feature.
+        // The original admitted request already paid for its exact URL-import execution.
+        var admittedLoopback = context.Features.Get<OperationLoopbackAdmission>();
+        context.Features.Set<OperationLoopbackAdmission>(null);
+        if (admittedLoopback is not null &&
+            string.Equals(admittedLoopback.TenantId ?? string.Empty,
+                context.RequestServices.GetService<ITenantContext>()?.TenantId ?? string.Empty,
+                StringComparison.Ordinal))
+        {
+            await _next(context);
+            return;
+        }
+
         // Determine rate limit key from request
         var rateLimitKey = DetermineRateLimitKey(context);
         if (string.IsNullOrEmpty(rateLimitKey))
@@ -130,6 +149,7 @@ internal sealed partial class RateLimitingMiddleware
 
         if (rateLimitResult.IsAllowed)
         {
+            context.Features.Set(new RateLimitAdmission());
             // Add rate limit headers
             AddRateLimitHeaders(context, rateLimitResult);
             await _next(context);

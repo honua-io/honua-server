@@ -123,6 +123,7 @@ internal static partial class ImportEndpoints
 
         _ = group.MapMethods("/upload-url", [HttpMethods.Post], HandleImportFileFromUrl)
             .WithName($"ImportFileFromUrl{nameSuffix}")
+            .WithMetadata(new UrlImportOperationMetadata())
             .WithSummary("Import geospatial data from a public object URL")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
         _ = group.MapMethods("/upload-url", NonPostMethods, HandlePostMethodNotAllowed)
@@ -1751,7 +1752,8 @@ internal sealed record ImportUrlImportRequest
     public required string TableName { get; init; }
     public string? TargetSchema { get; init; }
     public int? SourceSrid { get; init; }
-    public int TargetSrid { get; init; } = 4326;
+    // A setter preserves the initializer when .NET 10 source-generated JSON omits this field.
+    public int TargetSrid { get; set; } = 4326;
     public bool OverwriteExisting { get; init; }
     public bool ForceBackground { get; init; }
     public bool TrackProgress { get; init; }

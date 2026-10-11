@@ -6,6 +6,9 @@ using System.Net.Http;
 using System.Text;
 using FluentAssertions;
 using Honua.TestKit;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
+using NSubstitute;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,6 +22,7 @@ public sealed class ImportUrlEndpointTests : IAsyncLifetime
 {
     private WebAppFixture _fixture = null!;
     private HttpClient _client = null!;
+    private readonly IOperationInvoker _invoker = Substitute.For<IOperationInvoker>();
 
     public async Task InitializeAsync()
     {
@@ -40,9 +44,31 @@ public sealed class ImportUrlEndpointTests : IAsyncLifetime
         }
         """;
 
+        _invoker.SubmitAsync(Arg.Any<OperationRequest>(), Arg.Any<OperationPolicyContext>(), Arg.Any<CancellationToken>())
+            .Returns(call => new OperationHandle
+            {
+                OperationInstanceId = "endpoint-owned-operation",
+                OperationId = call.ArgAt<OperationRequest>(0).OperationId,
+                CorrelationId = "endpoint-correlation",
+                AuditId = "endpoint-durable-audit",
+                Status = OperationHandleStatus.Queued,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                JobId = "endpoint-owned-job",
+                Result = new OperationResultSummary
+                {
+                    Summary = "Import queued",
+                    Details = new Dictionary<string, string>
+                    {
+                        ["statusCode"] = "202",
+                        ["response"] = "{\"jobId\":\"endpoint-owned-job\"}",
+                    },
+                },
+            });
         _fixture = new WebAppFixture()
             .ConfigureServices(services =>
             {
+                services.AddSingleton(_invoker);
                 services.AddSingleton<IHttpClientFactory>(
                     new StubHttpClientFactory(
                         "https://s3.amazonaws.com/sample-bucket/test.geojson",
@@ -54,6 +80,28 @@ public sealed class ImportUrlEndpointTests : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTheory]
+    [InlineData("/api/v1/admin/import/upload-url")]
+    [InlineData("/api/v1/admin/imports")]
+    [Endpoint("POST /api/v1/admin/import/upload-url")]
+    [Endpoint("POST /api/v1/admin/imports")]
+    public async Task UploadUrl_WithIdempotencyKey_RoutesThroughCanonicalOperation(string path)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = JsonContent("""{"sourceUrl":"https://s3.amazonaws.com/sample-bucket/test.geojson","tableName":"canonical_route"}"""),
+        };
+        request.Headers.Add("Idempotency-Key", "route-regression");
+        using var response = await _client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("endpoint-owned-job");
+        response.Headers.GetValues("X-Honua-Operation-Instance-Id").Should().ContainSingle().Which.Should().Be("endpoint-owned-operation");
+        await _invoker.Received(1).SubmitAsync(
+            Arg.Is<OperationRequest>(operation => operation.OperationId == "admin.import.upload-url" && operation.Parameters["tableName"] == "canonical_route"),
+            Arg.Is<OperationPolicyContext>(policy => policy.PrincipalId != null && policy.IdempotencyKey != "route-regression" && policy.IdempotencyRequestHash != null),
+            Arg.Any<CancellationToken>());
+    }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/preview-url")]
