@@ -43,6 +43,50 @@ public sealed class GeoServicesAttachmentObjectIdTests
     }
 
     [UnitTest]
+    public async Task ResolveAsync_MissingCustomObjectId_ReturnsNull()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(QueryResult<Feature>.Create(0, ImmutableArray<Feature>.Empty)));
+
+        var feature = await GeoServicesFeatureObjectIdResolver.ResolveAsync(
+            reader, SuccessFilters(), CustomObjectIdLayer(), 3, 7, CancellationToken.None);
+
+        feature.Should().BeNull("an absent parent must not become a default value-type feature");
+        await reader.DidNotReceive().GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_NonmatchingCustomObjectId_ReturnsNull()
+    {
+        var stored = Feature.Create(99, null, ImmutableDictionary<string, object?>.Empty.Add("gid", 8L));
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(QueryResult<Feature>.Create(1, ImmutableArray.Create(stored))));
+
+        var feature = await GeoServicesFeatureObjectIdResolver.ResolveAsync(
+            reader, SuccessFilters(), CustomObjectIdLayer(), 3, 7, CancellationToken.None);
+
+        feature.Should().BeNull("a returned row with a different public id is not the requested parent");
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_CustomObjectIdWithZeroStorageId_ReturnsTheRealRow()
+    {
+        var stored = Feature.Create(0, null, ImmutableDictionary<string, object?>.Empty.Add("gid", 7L));
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(QueryResult<Feature>.Create(1, ImmutableArray.Create(stored))));
+
+        var feature = await GeoServicesFeatureObjectIdResolver.ResolveAsync(
+            reader, SuccessFilters(), CustomObjectIdLayer(), 3, 7, CancellationToken.None);
+
+        feature.Should().NotBeNull("absence cannot be inferred from a zero storage id");
+        feature!.Value.Attributes["gid"].Should().Be(7L);
+        feature.Value.Id.Should().Be(0);
+    }
+
+    [UnitTest]
     public async Task ResolveAsync_StorageObjectId_UsesGetAsync()
     {
         var stored = Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty);
