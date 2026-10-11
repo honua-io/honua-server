@@ -123,6 +123,7 @@ internal static partial class ImportEndpoints
 
         _ = group.MapMethods("/upload-url", [HttpMethods.Post], HandleImportFileFromUrl)
             .WithName($"ImportFileFromUrl{nameSuffix}")
+            .WithMetadata(new UrlImportOperationMetadata())
             .WithSummary("Import geospatial data from a public object URL")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
         _ = group.MapMethods("/upload-url", NonPostMethods, HandlePostMethodNotAllowed)

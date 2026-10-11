@@ -25,6 +25,10 @@ In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/
 
 Esri File Geodatabases must be uploaded as a `.gdb.zip` archive that preserves the `.gdb` directory structure. FlatGeobuf and GeoParquet files upload directly; provide `sourceSrid` when the file does not embed a CRS. See [Import files](../../guides/publish/import-files.md) for format-specific behavior.
 
+For URL imports, send one `Idempotency-Key` header (1–200 characters). The key is scoped to the authenticated principal and tenant. Repeating the same effective request returns its accepted response and original job without another download or import; the `/api/v1/admin/imports` compatibility route uses the same identity. Reusing the key with a changed request returns HTTP 409. A retry while the first request is still being accepted or executed also returns HTTP 409 with a retry-later message; retry the same key and request after the first response completes. Omitted fields and their explicit defaults are equivalent. Changing a signed source URL changes the request.
+
+Authorization, including OAuth scope restrictions, is checked again before replay. A failed durable audit check refuses the retry instead of returning stored success. Successful responses carry `X-Honua-Operation-Instance-Id`, `X-Honua-Audit-Id`, and `X-Correlation-ID` for the original operation. Requests without an idempotency key retain the ordinary import behavior.
+
 ## Uploads and import jobs
 
 | Method | Path | Purpose |

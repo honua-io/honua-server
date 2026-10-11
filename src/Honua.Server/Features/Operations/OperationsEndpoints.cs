@@ -388,7 +388,7 @@ internal static class OperationsEndpoints
             DryRun = request.DryRun
         };
 
-    private static bool TryResolveIdempotencyKey(HttpContext context, out string? key, out string? error)
+    internal static bool TryResolveIdempotencyKey(HttpContext context, out string? key, out string? error)
     {
         key = null;
         error = null;

@@ -14,6 +14,16 @@ public sealed class OperationEnvelopeFactory(
     IAuditLog auditLog,
     TimeProvider clock) : IOperationEnvelopeFactory
 {
+    private const string RequestHashEvidencePrefix = "idempotency-request-sha256:";
+
+    internal static IReadOnlyList<string> PreserveRequestBinding(OperationHandle envelope, IReadOnlyList<string> evidenceRefs)
+    {
+        var binding = envelope.EvidenceRefs.FirstOrDefault(reference => reference.StartsWith(RequestHashEvidencePrefix, StringComparison.Ordinal));
+        return binding is null || evidenceRefs.Contains(binding, StringComparer.Ordinal)
+            ? evidenceRefs
+            : [binding, .. evidenceRefs];
+    }
+
     /// <inheritdoc />
     public async Task<OperationHandle> CreateAcceptedAsync(
         string operationId,
@@ -41,11 +51,16 @@ public sealed class OperationEnvelopeFactory(
             CreatedAt = now,
             UpdatedAt = now,
             AuthorizationOutcome = context.AuthorizationOutcome,
+            EvidenceRefs = context.IdempotencyRequestHash is { } requestHash
+                ? [RequestHashEvidencePrefix + requestHash]
+                : [],
         };
 
+        var ownsAcceptance = false;
         try
         {
-            if (!await instanceStore.TryCreateAsync(envelope, cancellationToken).ConfigureAwait(false))
+            ownsAcceptance = await instanceStore.TryCreateAsync(envelope, cancellationToken).ConfigureAwait(false);
+            if (!ownsAcceptance)
             {
                 if (!string.IsNullOrWhiteSpace(context.IdempotencyKey))
                 {
@@ -82,19 +97,29 @@ public sealed class OperationEnvelopeFactory(
         }
         catch (OperationCanceledException)
         {
-            await PersistFailureAsync(envelope, "Operation acceptance was canceled.").ConfigureAwait(false);
+            if (ownsAcceptance)
+            {
+                await PersistFailureAsync(envelope, "Operation acceptance was canceled.").ConfigureAwait(false);
+            }
             throw;
         }
         catch (CapabilityUnavailableException)
         {
             // Preserve the structured dependency receipt for REST/MCP while
             // retaining a failed envelope if acceptance reached durable storage.
-            await PersistFailureAsync(envelope, "Operation acceptance requires an unavailable capability.")
-                .ConfigureAwait(false);
+            if (ownsAcceptance)
+            {
+                await PersistFailureAsync(envelope, "Operation acceptance requires an unavailable capability.")
+                    .ConfigureAwait(false);
+            }
             throw;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
+            if (!ownsAcceptance)
+            {
+                return Failure(envelope, $"The idempotent invocation could not be read or audited ({ex.GetType().Name}).");
+            }
             return await PersistFailureAsync(
                     envelope,
                     $"The canonical operation instance could not be durably accepted ({ex.GetType().Name}).")
@@ -183,6 +208,10 @@ public sealed class OperationEnvelopeFactory(
         CancellationToken cancellationToken)
     {
         var existing = await instanceStore.GetAsync(attempted.OperationInstanceId, cancellationToken).ConfigureAwait(false);
+        if (context.IdempotencyRequestHash is not null && existing is not null)
+        {
+            return await TouchBoundRetryAsync(existing, context, cancellationToken).ConfigureAwait(false);
+        }
         if (existing is null || string.IsNullOrWhiteSpace(existing.AuditId) ||
             !string.Equals(existing.TenantId, context.TenantId, StringComparison.Ordinal))
         {
@@ -220,6 +249,69 @@ public sealed class OperationEnvelopeFactory(
         await instanceStore.SetAsync(touched, cancellationToken).ConfigureAwait(false);
         return touched;
     }
+
+    private async Task<OperationHandle> TouchBoundRetryAsync(
+        OperationHandle existing,
+        OperationPolicyContext context,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(existing.TenantId, context.TenantId, StringComparison.Ordinal) ||
+            !existing.EvidenceRefs.Contains(RequestHashEvidencePrefix + context.IdempotencyRequestHash, StringComparer.Ordinal))
+        {
+            return Conflict(existing, "The idempotency key is already bound to a different request.");
+        }
+
+        if (existing.Status == OperationHandleStatus.Accepted || string.IsNullOrWhiteSpace(existing.AuditId))
+        {
+            // The atomic TryCreate winner owns actuation. Never return Accepted to a
+            // concurrent retry, and never write its projection over the owner's progress.
+            return Conflict(existing, "The idempotent invocation is still being accepted or executed; retry later.");
+        }
+
+        var retryAuditId = await auditLog.RecordAsync(new AuditEvent
+        {
+            Timestamp = clock.GetUtcNow(),
+            EventType = AuditEventType.AdminAction,
+            Actor = context.PrincipalId ?? AuditEvent.AnonymousActor,
+            ActorType = context.PrincipalId is null ? AuditActorType.Anonymous : AuditActorType.UserId,
+            ResourceType = "operation_instance",
+            ResourceId = existing.OperationInstanceId,
+            Action = "operation.retry",
+            Outcome = AuditOutcome.Success,
+            CorrelationId = existing.CorrelationId,
+            Details = $"operationId={existing.OperationId}",
+        }, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(retryAuditId))
+        {
+            return Failure(existing, "The idempotent retry could not be durably audited.");
+        }
+
+        // A queued job can progress while the retry is audited. Reading the latest
+        // projection avoids a stale retry overwriting a worker's terminal transition.
+        var current = await instanceStore.GetAsync(existing.OperationInstanceId, cancellationToken).ConfigureAwait(false);
+        if (current is null)
+        {
+            return Failure(existing, "The idempotent invocation is no longer durably readable.");
+        }
+        // Approved replay can claim a waiting envelope while the retry is audited.
+        // A retry must never receive Accepted, which grants dispatcher actuation.
+        return current.Status == OperationHandleStatus.Accepted
+            ? Conflict(current, "The idempotent invocation is still being accepted or executed; retry later.")
+            : current with { EvidenceRefs = [.. current.EvidenceRefs, $"retry-audit:{retryAuditId}"] };
+    }
+
+    private OperationHandle Conflict(OperationHandle existing, string reason) => Failure(existing, reason) with
+    {
+        Result = new OperationResultSummary
+        {
+            Summary = reason,
+            Details = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["statusCode"] = "409",
+                ["errorKind"] = "conflict",
+            },
+        },
+    };
 
     private static string DeriveIdempotentInstanceId(string operationId, string idempotencyKey, string? tenantId)
     {
