@@ -14,7 +14,7 @@
 #      EventBridge event, extracts detail.jobId, and forwards a single reconcile/backstop request to
 #      the co-located host over loopback HTTP, then exits.
 #
-# Handler selection is via HONUA_CONTROL_PLANE_LAMBDA_HANDLER (batch-event | backstop); the iac sets
+# Handler selection is via HONUA_CONTROL_PLANE_LAMBDA_HANDLER (batch-event | backstop | scheduled-tick); the iac sets
 # it per EventBridge target. ControlPlane__TriggerMode=Event disables the in-process poll/backstop
 # timers so there is no always-on control-plane host.
 #

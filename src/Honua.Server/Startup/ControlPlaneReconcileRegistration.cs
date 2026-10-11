@@ -97,6 +97,12 @@ internal static class ControlPlaneReconcileRegistration
         // the scheduler drives SweepOnceAsync instead, so the timer is not hosted.
         services.AddSingleton<ExecutionJobBackstopSweepService>();
 
+        // The workflow-operation backstop is resolvable for the same reason: a control-plane
+        // event-handler Lambda hosts neither backstop timer, so its backstop invocation drives both
+        // sweeps through IControlPlaneLambdaEventTargets.
+        services.AddSingleton<WorkflowOperationBackstopSweepService>();
+        services.AddSingleton<IControlPlaneLambdaEventTargets, ControlPlaneLambdaEventTargets>();
+
         return services;
     }
 }

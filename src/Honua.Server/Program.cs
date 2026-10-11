@@ -1775,6 +1775,11 @@ app.MapDeployControlEndpoints();
 // reconcile Lambda + EventBridge Scheduler backstop post here. No-op under poll (on-prem).
 app.MapControlPlaneEventEndpoints();
 
+// Control-plane event-handler Lambdas running this image behind the Lambda Web Adapter receive every
+// EventBridge / Scheduler invocation as POST /events (AWS_LWA_PASS_THROUGH_PATH) from loopback. Mapped
+// only when HONUA_CONTROL_PLANE_LAMBDA_HANDLER is set; the selector picks the handler.
+app.MapControlPlaneLambdaEventEndpoint(builder.Configuration);
+
 // Console approval surface for agent-proposed operations (#1694).
 app.MapProposalEndpoints();
 
