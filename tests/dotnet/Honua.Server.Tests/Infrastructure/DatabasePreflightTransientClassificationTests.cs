@@ -70,7 +70,34 @@ public sealed class DatabasePreflightTransientClassificationTests
             "Exception while reading from stream",
             new IOException("Unable to read data from the transport connection"));
 
+        streamFailure.IsTransient.Should().BeTrue();
         PostgresPreflightFailureClassifier.IsTransient(streamFailure).Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
+    public void IsTransient_WithPermanentNpgsqlFailure_ReturnsFalse()
+    {
+        // TLS, certificate, and protocol failures are a base NpgsqlException with no SQLSTATE
+        // and IsTransient == false. They must fail startup instead of degrading forever.
+        var permanent = new NpgsqlException(
+            "The remote certificate was rejected by the provided RemoteCertificateValidationCallback.");
+        var wrapped = new InvalidOperationException("compatibility probe failed", permanent);
+
+        permanent.IsTransient.Should().BeFalse();
+        PostgresPreflightFailureClassifier.IsTransient(permanent).Should().BeFalse();
+        PostgresPreflightFailureClassifier.IsTransient(wrapped).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
+    public void IsTransient_WithSqlStateInsideNpgsqlException_UsesTheServerCode()
+    {
+        var exhausted = new NpgsqlException("Failed to connect", BuildPostgresException("53300"));
+        var rejected = new NpgsqlException("Failed to connect", BuildPostgresException("28P01"));
+
+        PostgresPreflightFailureClassifier.IsTransient(exhausted).Should().BeTrue();
+        PostgresPreflightFailureClassifier.IsTransient(rejected).Should().BeFalse();
     }
 
     [UnitTest]
