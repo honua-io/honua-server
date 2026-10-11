@@ -162,6 +162,12 @@ public sealed record PortalTokenIntrospection(
 /// is recorded as <see cref="PortalCredentialSource.None"/>: an issuance flow with no
 /// separately revocable backing credential, bounded by the token's own lifetime.
 /// </param>
+/// <param name="AcceptMissingReferer">
+/// When <see langword="true"/> and <paramref name="ClientType"/> is
+/// <see cref="PortalTokenClientType.Referer"/>, a later request may omit the Referer header.
+/// A different Referer still mismatches. Browser OAuth tokens leave this
+/// <see langword="false"/> (honua-server#5558).
+/// </param>
 public sealed record PortalTokenIssueRequest(
     string PrincipalId,
     string? DisplayName,

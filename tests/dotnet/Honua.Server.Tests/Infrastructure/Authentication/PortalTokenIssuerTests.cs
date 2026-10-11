@@ -105,7 +105,7 @@ public sealed class PortalTokenIssuerTests
             .Should().NotContain(arguments => arguments[1] is EventId { Id: 7003 });
     }
 
-    [Trait("Tier", "Fast")]
+    [UnitTest]
     public async Task ValidateAsync_BrowserRefererToken_StillRequiresRefererHeader()
     {
         using var cache = new MemoryCache(new MemoryCacheOptions());
