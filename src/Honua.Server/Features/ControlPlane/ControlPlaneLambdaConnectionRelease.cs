@@ -52,6 +52,21 @@ internal static class ControlPlaneLambdaConnectionRelease
                 configured));
         }
 
+        return IsEventHandlerProfile(configuration);
+    }
+
+    /// <summary>
+    /// Whether this process is a control-plane event-handler Lambda (<see cref="HandlerSelectorKey"/>
+    /// is set). Such a host serves one EventBridge invocation at a time and is frozen in between,
+    /// so it does not host the in-process control-plane database loops (backstop sweeps,
+    /// queue-depth collector, autonomy evaluator): EventBridge drives that work, and a loop still
+    /// holding a connection when the instance freezes would keep it open past the release.
+    /// </summary>
+    /// <param name="configuration">Application configuration (environment variables included).</param>
+    /// <returns><see langword="true"/> for the reconcile, backstop and scheduled-tick functions.</returns>
+    public static bool IsEventHandlerProfile(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
         return !string.IsNullOrWhiteSpace(configuration[HandlerSelectorKey]);
     }
 

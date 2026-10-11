@@ -53,6 +53,14 @@ public sealed class ControlPlaneLambdaConnectionReleaseTests
     }
 
     [UnitTest]
+    public void IsEventHandlerProfile_FollowsTheHandlerSelector_NotTheReleaseOption()
+    {
+        ControlPlaneLambdaConnectionRelease.IsEventHandlerProfile(Configuration()).Should().BeFalse();
+        ControlPlaneLambdaConnectionRelease.IsEventHandlerProfile(Configuration(option: "true")).Should().BeFalse();
+        ControlPlaneLambdaConnectionRelease.IsEventHandlerProfile(Configuration("scheduled-tick", "false")).Should().BeTrue();
+    }
+
+    [UnitTest]
     public void IsEnabled_ExplicitFalse_OverridesEventHandlerProfile()
         => ControlPlaneLambdaConnectionRelease.IsEnabled(Configuration("scheduled-tick", "false")).Should().BeFalse();
 
