@@ -318,7 +318,10 @@ public sealed class OgcTileCacheExportServiceTests
                     {
                         ["operation"] = "ResourceURL",
                         ["format"] = "image/png"
-                    }
+                    },
+                    Compatibility = Partial(
+                        "ResourceURL template captured.",
+                        ImportCompatibilityCodes.OgcWmtsTileOnlySource)
                 }
             ]
         };
