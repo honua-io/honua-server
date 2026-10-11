@@ -293,10 +293,28 @@ public sealed class McpSessionSharedStoreTests
         var anon = await a.TryCreateSessionAsync(McpSessionManager.AnonymousPrincipalKey, false, null, CancellationToken.None);
 
         (await b.ValidateAccessAsync(anon!, McpSessionManager.AnonymousPrincipalKey, CancellationToken.None))
-            .Should().Be(McpSessionValidation.Valid, "the shared anonymous session is live even when this cache cannot hold it");
+            .Should().Be(McpSessionValidation.Unknown, "a replica that cannot cache the session must not report it as usable");
         b.ActiveSessionIds.Should().Contain(bob!);
         b.ActiveSessionIds.Should().Contain(carol!);
         b.ActiveSessionIds.Should().NotContain(anon!);
+        b.GetWorkflowView(anon!).Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task ColdReplica_TouchFailure_IsUnknown_AndDoesNotAdopt()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var store = new FakeSharedSessionStore(time);
+        var a = NewManager(store, time);
+        var b = NewManager(store, time);
+
+        var id = await a.TryCreateSessionAsync("sub:alice", false, "setup", CancellationToken.None);
+        store.FailTouch = true;
+
+        (await b.ValidateAccessAsync(id!, "sub:alice", CancellationToken.None))
+            .Should().Be(McpSessionValidation.Unknown);
+        b.ActiveSessionIds.Should().NotContain(id!);
+        b.GetWorkflowView(id!).Should().BeNull();
     }
 
     [UnitTest]
@@ -418,6 +436,8 @@ public sealed class McpSessionSharedStoreTests
 
         public bool Fail { get; set; }
 
+        public bool FailTouch { get; set; }
+
         public int Reads => _reads;
 
         public Action<string>? OnRead { get; set; }
@@ -458,6 +478,11 @@ public sealed class McpSessionSharedStoreTests
         public Task<bool> TouchAsync(string sessionId, TimeSpan idleTimeout, CancellationToken cancellationToken)
         {
             ThrowIfFailing();
+            if (FailTouch)
+            {
+                throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, "simulated touch outage");
+            }
+
             if (!TryGetLive(sessionId, out var record))
             {
                 return Task.FromResult(false);

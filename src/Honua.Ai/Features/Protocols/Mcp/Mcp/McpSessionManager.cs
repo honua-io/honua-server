@@ -455,8 +455,9 @@ internal sealed class McpSessionManager
         }
         catch (Exception ex) when (IsStoreFailure(ex))
         {
+            // The read can be stale by the time the touch fails. Do not adopt it.
             LogStoreFailure(ex, "touch");
-            sharedAlive = true;
+            return McpSessionValidation.Unknown;
         }
 
         if (!sharedAlive)
@@ -464,11 +465,10 @@ internal sealed class McpSessionManager
             return McpSessionValidation.Unknown;
         }
 
-        // The shared record is live for this principal even when this replica cannot
-        // cache it without displacing a protected session. A removal published
-        // after the snapshot was copied is not live: Adopt refuses it, and this
-        // request must not succeed from that snapshot.
-        if (!Adopt(record) && IsRememberedRemoval(record.SessionId))
+        // Admission has to install the local entry. A removal tombstone or a full
+        // anonymous pool both refuse, and a Valid result with no cache entry would
+        // drop the negotiated view on the next call.
+        if (!Adopt(record))
         {
             return McpSessionValidation.Unknown;
         }
@@ -711,14 +711,6 @@ internal sealed class McpSessionManager
                     _removedSessions.Remove(id);
                 }
             }
-        }
-    }
-
-    private bool IsRememberedRemoval(string sessionId)
-    {
-        lock (_capacityGate)
-        {
-            return WasRemoved(sessionId, _timeProvider.GetUtcNow());
         }
     }
 
