@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Reflection;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Db.Postgres.Features.FeatureStore;
@@ -50,20 +49,7 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
         // does not race a concurrent collection's locked DROP SCHEMA ... CASCADE and deadlock (40P01).
         await _fixture.CreateSchemaUnderLockAsync(_schema);
 
-        // Apply the full embedded migration set into the isolated schema so features + the honua.*
-        // versioning tables (gdb_versions, version_edits, feature_changes, sync_generation) and their
-        // triggers all exist exactly as production runs them.
-        //
-        // honua-server#1568 follow-up: 001_CreateHonuaSchema.sql mutates the literal, process-global
-        // honua schema (CREATE SCHEMA IF NOT EXISTS honua; CREATE TABLE honua.services/layers ...),
-        // which per-test search_path isolation does NOT scope. Running this upgrade unlocked made it a
-        // non-participant that raced every locked seeder's ACCESS EXCLUSIVE catalog locks on the same
-        // global honua.* objects and deadlocked the parallel [Collection("Database")] run (40P01).
-        // Route it through the shared seed advisory lock like the seeders.
-        var result = await _fixture.RunEmbeddedMigrationsUnderLockAsync(
-            _schema,
-            Assembly.GetAssembly(typeof(Program))!);
-        result.Successful.Should().BeTrue(result.Error?.ToString());
+        await BranchVersioningFixtureSchema.InitializeAsync(_fixture, _schema);
 
         // Register the test layer so the feature store resolves its SRID (4326) and stamps written
         // geometries; without it the geography GIST index expression (ST_Transform(...,4326)) rejects
@@ -85,6 +71,38 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
         // schema-mutation advisory lock so teardown orders behind in-flight seeders rather than
         // deadlocking them.
         await _fixture.DropSchemaAsync(_schema);
+    }
+
+    [Fact]
+    public async Task RepeatedFixtureSetup_PreservesMigrationsAndIsolatesFeatureRowsAndSequences()
+    {
+        var first = await CreateFeatureStore().CreateAsync(
+            PointsLayerId, BuildFeature("First schema", 1.0, 1.0), CancellationToken.None);
+        var second = new BranchVersioningIntegrationTests(_fixture);
+        try
+        {
+            await second.InitializeAsync();
+            await using var connection = await _fixture.DataSource.OpenConnectionAsync();
+            await using var empty = new NpgsqlCommand($"SELECT count(*) FROM {second._schema}.features", connection);
+            Convert.ToInt64(await empty.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture).Should().Be(0);
+            var next = await second.CreateFeatureStore().CreateAsync(
+                PointsLayerId, BuildFeature("Second schema", 2.0, 2.0), CancellationToken.None);
+            first.Id.Should().Be(1);
+            next.Id.Should().Be(1, "each fixture owns its object ID sequence");
+            await using var triggers = new NpgsqlCommand($"""
+                SELECT count(*) FROM pg_trigger
+                WHERE tgrelid = '{second._schema}.features'::regclass
+                  AND tgname = 'trigger_track_feature_changes' AND NOT tgisinternal
+                """, connection);
+            Convert.ToInt64(await triggers.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture).Should().Be(1);
+            var repeated = await _fixture.RunEmbeddedMigrationsUnderLockAsync("honua", typeof(Program).Assembly);
+            repeated.Successful.Should().BeTrue(repeated.Error?.ToString());
+            repeated.Scripts.Should().BeEmpty("the shared catalog retains its migration history");
+        }
+        finally
+        {
+            await second.DisposeAsync();
+        }
     }
 
     [Fact]

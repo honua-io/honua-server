@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Reflection;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -53,14 +52,7 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
         // does not race a concurrent collection's locked DROP SCHEMA ... CASCADE and deadlock (40P01).
         await _fixture.CreateSchemaUnderLockAsync(_schema);
 
-        // honua-server#1568 follow-up: serialize the embedded migration set (it mutates the literal,
-        // process-global honua schema, which per-test search_path isolation does NOT scope) under the
-        // shared seed advisory lock so this upgrade does not race locked seeders on the shared catalog
-        // and deadlock (40P01) the parallel [Collection("Database")] run.
-        var result = await _fixture.RunEmbeddedMigrationsUnderLockAsync(
-            _schema,
-            Assembly.GetAssembly(typeof(Program))!);
-        result.Successful.Should().BeTrue(result.Error?.ToString());
+        await BranchVersioningFixtureSchema.InitializeAsync(_fixture, _schema);
 
         // #2020: route the literal honua.layers INSERT through the shared schema-mutation advisory
         // lock so it serializes with parallel-collection seeders instead of racing the catalog (40P01).
