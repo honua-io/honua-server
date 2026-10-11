@@ -12,6 +12,7 @@ using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Security.Domain;
 using Honua.Db.Postgres.Features.Admin;
 using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
@@ -253,8 +254,25 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             PublicationIds = [$"pub-{index}", $"stac-{index}"],
             Status = active
         }).ToArray();
+        var connections = owners
+            .Where(owner => owner.HasValue)
+            .Select(owner => new MetadataV2Connection
+            {
+                Metadata = new() { Id = owner!.Value.ToString("D") },
+                Type = MetadataV2ConnectionType.Database,
+                Provider = "postgres",
+                Status = active,
+            })
+            .ToArray();
         var scope = new PostgreSqlLayerPublishingService.LayerStorageScope(firstConnection, managed ? new HashSet<int> { 1 } : null);
-        return (new MetadataV2Graph { Services = services, Resources = resources, StorageBindings = bindings, Publications = publications },
+        return (new MetadataV2Graph
+        {
+            Services = services,
+            Resources = resources,
+            StorageBindings = bindings,
+            Publications = publications,
+            Connections = connections,
+        },
             scope, bindings[managed ? 2 : 0].ResourceId);
     }
 
@@ -277,6 +295,231 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         firstBindingId.Should().NotBe(secondBindingId);
         firstResourceId.Should().Contain(firstConnection.ToString("D"));
         secondResourceId.Should().Contain(secondConnection.ToString("D"));
+    }
+
+    [UnitTest]
+    public async Task UpsertPublishedLayerMetadataV2Async_RetriesConflictByRebuildingFromReloadedGraph()
+    {
+        var rebased = new MetadataV2Graph
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "svc-other", Name = "other-service" },
+                    Protocols = [ServiceProtocols.FeatureServer],
+                },
+            ],
+        };
+        var (service, store, saved) = CreateConflictPublishingService(new MetadataV2Graph(), rebased);
+
+        await InvokePublishedUpsertAsync(service);
+
+        saved.Value.Should().NotBeNull();
+        saved.Value!.Services.Select(item => item.Metadata.Id).Should().Contain("svc-other");
+        saved.Value.Services.Should().Contain(item => item.Metadata.Id == "svc-publish-default");
+        saved.Value.Resources.Should().Contain(item => item.Metadata.Id == "res-layer-11111111-1111-1111-1111-111111111111-1");
+        store.Verify(item => item.GetCurrentAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
+        store.Verify(item => item.SaveAsync(It.IsAny<MetadataV2Graph>(), "\"v1\"", It.IsAny<CancellationToken>()), Times.Once);
+        store.Verify(item => item.SaveAsync(It.IsAny<MetadataV2Graph>(), "\"v2\"", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [UnitTest]
+    public async Task UpdateLayerLifecycleMetadataV2Async_RetriesConflictWithoutDroppingReloadedResource()
+    {
+        var (graph, scope, _) = CreateCollidingStorageGraph(managed: false);
+        var rebased = graph with
+        {
+            Resources = graph.Resources.Append(new MetadataV2Resource
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "other-resource", Name = "other-resource" },
+            }).ToArray(),
+        };
+        var (service, store, saved) = CreateConflictPublishingService(graph, rebased);
+        var method = typeof(PostgreSqlLayerPublishingService).GetMethod(
+            "UpdateLayerLifecycleMetadataV2Async",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        await (Task)method.Invoke(service, [new HashSet<int> { 1 }, false, scope, CancellationToken.None])!;
+
+        saved.Value.Should().NotBeNull();
+        saved.Value!.Resources.Should().Contain(resource => resource.Metadata.Id == "other-resource");
+        saved.Value.Resources.Single(resource => resource.Metadata.Id == graph.Resources[0].Metadata.Id).Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Retired);
+        store.Verify(item => item.SaveAsync(It.IsAny<MetadataV2Graph>(), "\"v2\"", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [UnitTest]
+    public async Task UpsertLinkedLayerMetadataV2Async_RetriesConflictWithoutDroppingReloadedService()
+    {
+        var (graph, scope, _) = CreateCollidingStorageGraph(managed: false);
+        var rebased = graph with
+        {
+            Services = graph.Services.Append(new MetadataV2Service
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "svc-other", Name = "other-service" },
+                Protocols = [ServiceProtocols.FeatureServer],
+            }).ToArray(),
+        };
+        var (service, _, saved) = CreateConflictPublishingService(graph, rebased);
+        var method = typeof(PostgreSqlLayerPublishingService).GetMethod(
+            "UpsertLinkedLayerMetadataV2Async",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var layer = new PublishedLayerSummary
+        {
+            LayerId = 1,
+            LayerName = "Layer",
+            Schema = "public",
+            Table = "source",
+            GeometryType = "Point",
+            Srid = 4326,
+            ServiceName = "linked",
+            Enabled = true,
+        };
+
+        await (Task)method.Invoke(service, ["linked", layer, scope, CancellationToken.None])!;
+
+        saved.Value.Should().NotBeNull();
+        saved.Value!.Services.Select(item => item.Metadata.Id).Should().Contain("svc-other");
+        saved.Value.Services.Should().Contain(item => item.Metadata.Id == "svc-publish-linked");
+    }
+
+    [UnitTest]
+    public async Task SyncRefreshedExtentsIntoV2GraphAsync_RetriesConflictWithoutDroppingReloadedResource()
+    {
+        var (graph, scope, targetResourceId) = CreateCollidingStorageGraph(managed: false);
+        var rebased = graph with
+        {
+            Resources = graph.Resources.Append(new MetadataV2Resource
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "other-resource", Name = "other-resource" },
+            }).ToArray(),
+        };
+        var (service, _, saved) = CreateConflictPublishingService(graph, rebased);
+
+        await InvokeExtentSyncAsync(service, scope);
+
+        saved.Value.Should().NotBeNull();
+        saved.Value!.Resources.Should().Contain(resource => resource.Metadata.Id == "other-resource");
+        saved.Value.Resources.Single(resource => resource.Metadata.Id == targetResourceId).Spatial!.Bbox
+            .Should().BeEquivalentTo(new MetadataV2Bbox { West = 10, South = 20, East = 30, North = 40 });
+    }
+
+    [UnitTest]
+    public async Task UpsertPublishedLayerMetadataV2Async_PropagatesConflictAfterRetryBudget()
+    {
+        var store = new Mock<IMetadataV2GraphStore>();
+        store.Setup(item => item.GetCurrentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MetadataV2GraphSnapshot(new MetadataV2Graph(), "\"v1\"", DateTimeOffset.UtcNow));
+        store.Setup(item => item.SaveAsync(It.IsAny<MetadataV2Graph>(), "\"v1\"", It.IsAny<CancellationToken>()))
+            .Returns((MetadataV2Graph _, string? _, CancellationToken _) =>
+                Task.FromException<MetadataV2GraphSnapshot>(
+                    new MetadataV2GraphConcurrencyException("Metadata v2 etag mismatch", "\"v1\"", "\"v2\"")));
+        var service = new PostgreSqlLayerPublishingService(
+            Mock.Of<ITableDiscoveryService>(),
+            store.Object,
+            NullLogger<PostgreSqlLayerPublishingService>.Instance);
+
+        var act = () => InvokePublishedUpsertAsync(service);
+
+        await act.Should().ThrowAsync<MetadataV2GraphConcurrencyException>();
+        store.Verify(
+            item => item.SaveAsync(It.IsAny<MetadataV2Graph>(), "\"v1\"", It.IsAny<CancellationToken>()),
+            Times.Exactly(PostgreSqlLayerPublishingService.MetadataGraphConflictAttempts));
+        store.Verify(
+            item => item.GetCurrentAsync(It.IsAny<CancellationToken>()),
+            Times.Exactly(PostgreSqlLayerPublishingService.MetadataGraphConflictAttempts));
+    }
+
+    [UnitTest]
+    public async Task UpsertPublishedLayerMetadataV2Async_DoesNotRetryUnrelatedInvalidOperation()
+    {
+        var store = new Mock<IMetadataV2GraphStore>();
+        store.Setup(item => item.GetCurrentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MetadataV2GraphSnapshot(new MetadataV2Graph(), "\"v1\"", DateTimeOffset.UtcNow));
+        store.Setup(item => item.SaveAsync(It.IsAny<MetadataV2Graph>(), "\"v1\"", It.IsAny<CancellationToken>()))
+            .Returns((MetadataV2Graph _, string? _, CancellationToken _) =>
+                Task.FromException<MetadataV2GraphSnapshot>(new InvalidOperationException("published graph rejected")));
+        var service = new PostgreSqlLayerPublishingService(
+            Mock.Of<ITableDiscoveryService>(),
+            store.Object,
+            NullLogger<PostgreSqlLayerPublishingService>.Instance);
+
+        var act = () => InvokePublishedUpsertAsync(service);
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Be("published graph rejected");
+        store.Verify(
+            item => item.SaveAsync(It.IsAny<MetadataV2Graph>(), "\"v1\"", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    private static (PostgreSqlLayerPublishingService Service, Mock<IMetadataV2GraphStore> Store, CapturedGraph Saved)
+        CreateConflictPublishingService(MetadataV2Graph first, MetadataV2Graph second)
+    {
+        var store = new Mock<IMetadataV2GraphStore>();
+        store.SetupSequence(item => item.GetCurrentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MetadataV2GraphSnapshot(first, "\"v1\"", DateTimeOffset.UtcNow))
+            .ReturnsAsync(new MetadataV2GraphSnapshot(second, "\"v2\"", DateTimeOffset.UtcNow));
+        var saved = new CapturedGraph();
+        store.Setup(item => item.SaveAsync(It.IsAny<MetadataV2Graph>(), "\"v1\"", It.IsAny<CancellationToken>()))
+            .Returns((MetadataV2Graph _, string? _, CancellationToken _) =>
+                Task.FromException<MetadataV2GraphSnapshot>(
+                    new MetadataV2GraphConcurrencyException("Metadata v2 etag mismatch", "\"v1\"", "\"v2\"")));
+        store.Setup(item => item.SaveAsync(It.IsAny<MetadataV2Graph>(), "\"v2\"", It.IsAny<CancellationToken>()))
+            .Returns((MetadataV2Graph graph, string? _, CancellationToken _) =>
+            {
+                saved.Value = graph;
+                return Task.FromResult(new MetadataV2GraphSnapshot(graph, "\"saved\"", DateTimeOffset.UtcNow));
+            });
+        var service = new PostgreSqlLayerPublishingService(
+            Mock.Of<ITableDiscoveryService>(),
+            store.Object,
+            NullLogger<PostgreSqlLayerPublishingService>.Instance);
+        return (service, store, saved);
+    }
+
+    private sealed class CapturedGraph
+    {
+        public MetadataV2Graph? Value { get; set; }
+    }
+
+    private static async Task InvokePublishedUpsertAsync(PostgreSqlLayerPublishingService service)
+    {
+        var connectionId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var request = new LayerPublishRequest
+        {
+            Schema = "public",
+            Table = "source",
+            LayerName = "Layer",
+            ConnectionId = connectionId,
+            StorageMode = LayerStorageMode.Source,
+        };
+        var serviceType = typeof(PostgreSqlLayerPublishingService);
+        var storageType = serviceType.GetNestedType("PublishedLayerStorage", BindingFlags.NonPublic)!;
+        var storage = storageType.GetMethod("ForSourceTable")!.Invoke(null, ["public", "source", "objectid", "geometry", 4326, null]);
+        var fieldType = serviceType.GetNestedType("LayerFieldInsert", BindingFlags.NonPublic)!;
+        var fields = Array.CreateInstance(fieldType, 2);
+        fields.SetValue(Activator.CreateInstance(fieldType,
+            ["objectid", MetadataV2FieldType.Integer, null, false, null, null, null]), 0);
+        fields.SetValue(Activator.CreateInstance(fieldType,
+            ["geometry", MetadataV2FieldType.Geometry, null, true, null, null, null]), 1);
+        var method = serviceType.GetMethod("UpsertPublishedLayerMetadataV2Async", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        await (Task)method.Invoke(service,
+            ["default", request, 1, storage, "objectid", "geometry", "Point", 4326, fields, null,
+                new[] { "Query" }, new PostgreSqlLayerPublishingService.PublicationScope(null, null), false, CancellationToken.None])!;
+    }
+
+    private static async Task InvokeExtentSyncAsync(
+        PostgreSqlLayerPublishingService service,
+        PostgreSqlLayerPublishingService.LayerStorageScope scope)
+    {
+        var type = typeof(PostgreSqlLayerPublishingService);
+        var extentType = type.GetNestedType("LayerExtentInsert", BindingFlags.NonPublic)!;
+        var extent = Activator.CreateInstance(extentType, [10d, 20d, 30d, 40d, 4326]);
+        var extents = (System.Collections.IDictionary)Activator.CreateInstance(typeof(Dictionary<,>).MakeGenericType(typeof(int), extentType))!;
+        extents.Add(1, extent);
+        var method = type.GetMethod("SyncRefreshedExtentsIntoV2GraphAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        await (Task)method.Invoke(service, [extents, scope, CancellationToken.None])!;
     }
 
     [Theory]
