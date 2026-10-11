@@ -287,16 +287,15 @@ internal static class KubernetesJobEnvironmentBuilder
             }
         }
 
-        foreach (var entry in workloadEnvFrom
-                     .OrderBy(entry => entry.Ordinal, EnvFromOrdinalComparer.Instance)
-                     .ThenBy(entry => entry.Kind))
-        {
-            // A re-declared default keeps its first (lower-precedence) position; duplicates add nothing.
-            if (!envFrom.Contains(entry.Source))
-            {
-                envFrom.Add(entry.Source);
-            }
-        }
+        // A re-declared default keeps its first (lower-precedence) position; duplicates add nothing.
+        var ordered = workloadEnvFrom
+            .OrderBy(entry => entry.Ordinal, EnvFromOrdinalComparer.Instance)
+            .ThenBy(entry => entry.Kind)
+            .Select(entry => entry.Source)
+            .Distinct()
+            .Where(source => !envFrom.Contains(source))
+            .ToList();
+        envFrom.AddRange(ordered);
     }
 
     private static void ResolveEnvFromParameter(
