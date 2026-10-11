@@ -54,6 +54,13 @@ internal interface IMcpSessionStore
     Task<McpSessionRecord?> GetAndTouchAsync(string sessionId, TimeSpan idleTimeout, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Reads a session without sliding its expiry. Returns <c>null</c> when the
+    /// session is unknown, terminated, or expired. Callers slide the expiry only
+    /// after the presented principal matches the record.
+    /// </summary>
+    Task<McpSessionRecord?> GetAsync(string sessionId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Slides an existing session's expiry. Returns <c>false</c> when the session no
     /// longer exists (terminated or expired on another instance).
     /// </summary>
@@ -119,6 +126,23 @@ internal sealed class RedisMcpSessionStore(IConnectionMultiplexer redis) : IMcpS
         await Task.WhenAll(touch, read).ConfigureAwait(false);
 
         var payload = read.Result;
+        if (!payload.HasValue)
+        {
+            return null;
+        }
+
+        return ReadRecord(sessionId, payload);
+    }
+
+    public async Task<McpSessionRecord?> GetAsync(string sessionId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var payload = await redis.GetDatabase().StringGetAsync(Key(sessionId)).ConfigureAwait(false);
+        return ReadRecord(sessionId, payload);
+    }
+
+    private static McpSessionRecord? ReadRecord(string sessionId, RedisValue payload)
+    {
         if (!payload.HasValue)
         {
             return null;
