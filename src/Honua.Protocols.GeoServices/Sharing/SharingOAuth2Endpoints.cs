@@ -318,11 +318,24 @@ internal static class SharingOAuth2Endpoints
 
         var query = context.Request.Query;
 
-        // Surface an IdP-side error verbatim shape but do not leak details.
+        // An IdP denial still carries the combined state. Recover the broker session
+        // and send the error to the allow-listed client redirect. A missing or
+        // unknown session stays a JSON 400 so the error cannot choose its own target.
         var idpError = ReadFirst(query["error"]);
         if (idpError is not null)
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "Authentication failed with the identity provider.");
+            var errorResult = await broker.RedirectIdpErrorAsync(
+                ReadFirst(query["state"]),
+                idpError,
+                context.RequestAborted).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(errorResult.RedirectUri))
+            {
+                return Results.Redirect(errorResult.RedirectUri);
+            }
+
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Authentication failed with the identity provider.");
         }
 
         var result = await broker
@@ -333,14 +346,16 @@ internal static class SharingOAuth2Endpoints
                 context.RequestAborted)
             .ConfigureAwait(false);
 
-        if (!result.Succeeded || string.IsNullOrWhiteSpace(result.RedirectUri))
+        // A validated client redirect (success or a post-session failure) is
+        // delivered to that URI. Failures before the redirect is known stay here.
+        if (!string.IsNullOrWhiteSpace(result.RedirectUri))
         {
-            return StandardErrorHelpers.CreateBadRequest(
-                context,
-                result.ErrorDescription ?? "Authorization could not be completed.");
+            return Results.Redirect(result.RedirectUri);
         }
 
-        return Results.Redirect(result.RedirectUri);
+        return StandardErrorHelpers.CreateBadRequest(
+            context,
+            result.ErrorDescription ?? "Authorization could not be completed.");
     }
 
     private static async Task<IResult> HandleTokenAsync(
