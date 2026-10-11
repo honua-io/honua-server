@@ -244,6 +244,44 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
         query.ContainsKey("code").Should().BeFalse();
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/oauth2/callback")]
+    public async Task Callback_IdpError_RedirectsThatErrorToClient()
+    {
+        using var client = _fixture.CreateClient(allowAutoRedirect: false);
+        var authorizeUrl = QueryHelpers.AddQueryString("/sharing/rest/oauth2/authorize", new Dictionary<string, string?>
+        {
+            ["response_type"] = "code",
+            ["client_id"] = ClientId,
+            ["redirect_uri"] = RedirectUri,
+            ["state"] = "client-state-xyz",
+            ["code_challenge"] = "abc",
+            ["code_challenge_method"] = "S256",
+        });
+
+        using var authorizeResponse = await client.GetAsync(authorizeUrl);
+        authorizeResponse.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        var combinedState = QueryHelpers.ParseQuery(authorizeResponse.Headers.Location!.Query)["state"].ToString();
+
+        var callbackUrl = QueryHelpers.AddQueryString("/sharing/rest/oauth2/callback", new Dictionary<string, string?>
+        {
+            ["state"] = combinedState,
+            ["error"] = "access_denied",
+            ["error_description"] = "user cancelled",
+        });
+
+        using var callbackResponse = await client.GetAsync(callbackUrl);
+        callbackResponse.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        var location = callbackResponse.Headers.Location;
+        location.Should().NotBeNull();
+        location!.GetLeftPart(UriPartial.Path).Should().Be(RedirectUri);
+        var query = QueryHelpers.ParseQuery(location.Query);
+        query["error"].ToString().Should().Be("access_denied");
+        query["state"].ToString().Should().Be("client-state-xyz");
+        query.ContainsKey("code").Should().BeFalse();
+    }
+
     private static string CreateIdToken()
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(IdpSigningKey));

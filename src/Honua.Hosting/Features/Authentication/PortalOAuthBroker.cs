@@ -258,6 +258,56 @@ internal sealed class PortalOAuthBroker(
     }
 
     /// <summary>
+    /// Delivers an IdP <c>error</c> callback to the client redirect stored in the
+    /// broker session. The session is consumed only when its state matches, so a
+    /// forged error cannot choose the redirect target.
+    /// </summary>
+    public async Task<PortalOAuthCallbackResult> RedirectIdpErrorAsync(
+        string? combinedState,
+        string? idpError,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(combinedState))
+        {
+            PortalOAuthLog.CallbackRejected(_logger, "missing state or code");
+            return PortalOAuthCallbackResult.Failure("invalid_request", "Missing authorization response parameters.");
+        }
+
+        var separator = combinedState.LastIndexOf('.');
+        if (separator <= 0 || separator >= combinedState.Length - 1)
+        {
+            PortalOAuthLog.CallbackRejected(_logger, "malformed state");
+            return PortalOAuthCallbackResult.Failure("invalid_request", "Authorization state is malformed.");
+        }
+
+        var idpState = combinedState[..separator];
+        var brokerSessionId = combinedState[(separator + 1)..];
+        var session = await _store.ConsumeBrokerSessionAsync(brokerSessionId, cancellationToken).ConfigureAwait(false);
+        if (session is null || !CryptographicEquals(session.IdpState, idpState))
+        {
+            PortalOAuthLog.CallbackRejected(_logger, "unknown or expired broker session");
+            return PortalOAuthCallbackResult.Failure("access_denied", "Authorization session is invalid or expired.");
+        }
+
+        return ClientRedirectFailure(
+            session,
+            NormalizeIdpError(idpError),
+            "Authentication failed with the identity provider.");
+    }
+
+    /// <summary>
+    /// Restricts a reflected IdP error to the OAuth2 error set. Anything else
+    /// becomes <c>access_denied</c>.
+    /// </summary>
+    private static string NormalizeIdpError(string? idpError)
+        => idpError switch
+        {
+            "access_denied" or "invalid_request" or "unauthorized_client"
+                or "server_error" or "temporarily_unavailable" => idpError,
+            _ => "access_denied",
+        };
+
+    /// <summary>
     /// Sends an OAuth error to the allow-listed client redirect. The session
     /// redirect was validated at authorize time, so this is not an open redirect.
     /// </summary>

@@ -571,6 +571,12 @@ internal sealed class PortalOAuthPrincipal
     /// </summary>
     public bool? TenantRequiresClaimsMappingEntitlement { get; init; }
 
+    /// <summary>
+    /// Credential this principal was verified from, so minted portal tokens are clamped to
+    /// that credential's expiry (SEC-9). Null on a principal cached before this field existed.
+    /// </summary>
+    public PortalCredentialSource? Source { get; init; }
+
     /// <summary>Projects a verified credential principal into the serializable form.</summary>
     public static PortalOAuthPrincipal From(PortalCredentialPrincipal principal)
         => new()
@@ -583,6 +589,7 @@ internal sealed class PortalOAuthPrincipal
             RolesWithoutClaimsMapping = principal.RolesWithoutClaimsMapping?.ToArray(),
             TenantRequiresClaimsMappingEntitlement =
                 principal.TenantId is not null && principal.TenantRequiresClaimsMappingEntitlement,
+            Source = principal.Source,
         };
 }
 
@@ -591,6 +598,7 @@ internal sealed class PortalOAuthPrincipal
 [JsonSerializable(typeof(PortalOAuthAuthorizationCode))]
 [JsonSerializable(typeof(PortalOAuthRefreshToken))]
 [JsonSerializable(typeof(PortalOAuthPrincipal))]
+[JsonSerializable(typeof(PortalCredentialSource))]
 internal sealed partial class PortalOAuthStoreJsonContext : JsonSerializerContext
 {
 }

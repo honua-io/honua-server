@@ -305,6 +305,119 @@ public sealed class PortalOAuthClientCredentialsTests
         result.Error.Should().Be("invalid_client");
     }
 
+    [UnitTest]
+    public async Task AuthorizationCode_FederatedSourceExpiry_ClampsAccessAndRefreshTokens()
+    {
+        var (service, store) = CreateCodeExchangeService();
+        var sourceExpires = DateTimeOffset.UtcNow.AddMinutes(2);
+        var code = await store.CreateAuthorizationCodeAsync(
+            AuthorizationCode(sourceExpires),
+            CancellationToken.None);
+
+        var result = await service.ExchangeAsync(
+            new PortalOAuthTokenRequest(
+                GrantType: "authorization_code",
+                Code: code,
+                CodeVerifier: null,
+                RedirectUri: "https://app.example/cb",
+                ClientId: "desktop",
+                RefreshToken: null,
+                IncludeRefreshToken: true),
+            requestBinding: "https://app.example/cb",
+            CancellationToken.None);
+
+        result.Succeeded.Should().BeTrue();
+        result.ExpiresInSeconds.Should().BeInRange(30, 150);
+        result.RefreshToken.Should().NotBeNullOrWhiteSpace();
+
+        var stored = await store.GetRefreshTokenAsync(result.RefreshToken, CancellationToken.None);
+        stored.Should().NotBeNull();
+        stored!.ExpiresAt.Should().BeCloseTo(sourceExpires, TimeSpan.FromSeconds(2));
+        stored.Principal.Source!.ExpiresAt.Should().Be(sourceExpires);
+
+        var refreshed = await service.ExchangeAsync(
+            new PortalOAuthTokenRequest(
+                GrantType: "refresh_token",
+                Code: null,
+                CodeVerifier: null,
+                RedirectUri: null,
+                ClientId: "desktop",
+                RefreshToken: result.RefreshToken,
+                IncludeRefreshToken: true),
+            requestBinding: "https://app.example/cb",
+            CancellationToken.None);
+
+        refreshed.Succeeded.Should().BeTrue();
+        refreshed.ExpiresInSeconds.Should().BeInRange(30, 150);
+    }
+
+    [UnitTest]
+    public async Task AuthorizationCode_ExpiredFederatedSource_IsRejected()
+    {
+        var (service, store) = CreateCodeExchangeService();
+        var code = await store.CreateAuthorizationCodeAsync(
+            AuthorizationCode(DateTimeOffset.UtcNow.AddMinutes(-1)),
+            CancellationToken.None);
+
+        var result = await service.ExchangeAsync(
+            new PortalOAuthTokenRequest(
+                GrantType: "authorization_code",
+                Code: code,
+                CodeVerifier: null,
+                RedirectUri: "https://app.example/cb",
+                ClientId: "desktop",
+                RefreshToken: null,
+                IncludeRefreshToken: true),
+            requestBinding: "https://app.example/cb",
+            CancellationToken.None);
+
+        result.Succeeded.Should().BeFalse();
+        result.Error.Should().Be("invalid_grant");
+        result.AccessToken.Should().BeNull();
+        result.RefreshToken.Should().BeNull();
+    }
+
+    private static PortalOAuthAuthorizationCode AuthorizationCode(DateTimeOffset sourceExpires)
+        => new()
+        {
+            ClientId = "desktop",
+            RedirectUri = "https://app.example/cb",
+            ExpirationMinutes = 60,
+            Principal = PortalOAuthPrincipal.From(new PortalCredentialPrincipal(
+                "named.user@example.com",
+                "Named User",
+                null,
+                ["org_user"],
+                Source: new PortalCredentialSource(
+                    PortalCredentialSourceKind.FederatedToken,
+                    Reference: "https://idp.example|named.user@example.com",
+                    ExpiresAt: sourceExpires))),
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5),
+        };
+
+    private static (PortalOAuthTokenService Service, PortalOAuthStore Store) CreateCodeExchangeService()
+    {
+        var memoryCache = new MemoryCache(new MemoryCacheOptions());
+        var issuer = new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance);
+        var store = new PortalOAuthStore(memoryCache, NullLogger<PortalOAuthStore>.Instance);
+        var options = Options.Create(new PortalTokenAuthenticationOptions
+        {
+            OAuth2 = new PortalOAuth2Options { RequirePkce = false },
+        });
+        var jwtService = new PortalJwtAccessTokenService(issuer, options);
+        var federation = new ClientCredentialsFederationService(new NullHttpClientFactory(), options);
+        var service = new PortalOAuthTokenService(
+            issuer,
+            store,
+            new InMemoryAdminApiKeyStore(),
+            new InMemoryOAuthClientStore(),
+            new InMemoryOAuthScopeCatalogue(),
+            jwtService,
+            federation,
+            options);
+        return (service, store);
+    }
+
     private static PortalOAuthTokenRequest FirstClassRequest(string clientId, string? clientSecret)
         => new(
             GrantType: "client_credentials",

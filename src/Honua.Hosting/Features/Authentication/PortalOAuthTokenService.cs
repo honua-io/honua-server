@@ -474,6 +474,15 @@ internal sealed class PortalOAuthTokenService(
         bool includeRefreshToken,
         CancellationToken cancellationToken)
     {
+        // The IdP token is the backing credential (SEC-9). An already-expired source
+        // must not mint a portal token or a 90-day refresh token.
+        if (principal.Source?.ExpiresAt is { } sourceExpiresAt && sourceExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            return PortalOAuthTokenResult.Failure(
+                "invalid_grant",
+                "The identity provider credential has expired.");
+        }
+
         var ttlMinutes = ResolveExpirationMinutes(requestedMinutes);
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(ttlMinutes);
 
@@ -490,12 +499,19 @@ internal sealed class PortalOAuthTokenService(
                 ExpiresAt: expiresAt,
                 RolesRequireClaimsMappingEntitlement: principal.RolesRequireClaimsMappingEntitlement,
                 TenantRequiresClaimsMappingEntitlement: principal.TenantRequiresClaimsMappingEntitlement,
-                RolesWithoutClaimsMapping: principal.RolesWithoutClaimsMapping),
+                RolesWithoutClaimsMapping: principal.RolesWithoutClaimsMapping,
+                Source: principal.Source),
             cancellationToken).ConfigureAwait(false);
 
         string? refreshToken = null;
         if (includeRefreshToken)
         {
+            var refreshExpiresAt = DateTimeOffset.UtcNow.Add(RefreshTokenLifetime);
+            if (principal.Source?.ExpiresAt is { } sourceExpiry && sourceExpiry < refreshExpiresAt)
+            {
+                refreshExpiresAt = sourceExpiry;
+            }
+
             refreshToken = await _store.CreateRefreshTokenAsync(
                 new PortalOAuthRefreshToken
                 {
@@ -503,7 +519,7 @@ internal sealed class PortalOAuthTokenService(
                     Principal = principal,
                     ClientType = clientType,
                     BindingValue = requestBinding,
-                    ExpiresAt = DateTimeOffset.UtcNow.Add(RefreshTokenLifetime),
+                    ExpiresAt = refreshExpiresAt,
                 },
                 cancellationToken).ConfigureAwait(false);
         }
