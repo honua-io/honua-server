@@ -36,6 +36,7 @@ import sys
 import time
 from collections.abc import Iterable, Sequence
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import pystac
 import pytest
@@ -1628,7 +1629,15 @@ def test_nb_page_03_next_link_shape(
     ).json()
     get_next = next(link for link in get_body["links"] if link["rel"] == "next")
     assert get_next["href"].startswith(search_url), f"GET next href is {get_next['href']!r}"
-    assert "token=" in get_next["href"], "GET next link carries no pagination token"
+    query = parse_qs(urlsplit(get_next["href"]).query)
+    assert query.get("next"), "GET next link carries no next cursor"
+    assert "token" not in query, "GET continuation collides with portal authentication"
+    get_followed = cert_lane.get_json(get_next["href"]).json()
+    get_first_ids = {feature["id"] for feature in get_body["features"]}
+    get_next_ids = {feature["id"] for feature in get_followed["features"]}
+    assert get_next_ids and not (get_first_ids & get_next_ids), (
+        f"following the GET next link re-served {sorted(get_first_ids & get_next_ids)}"
+    )
 
     post_body = cert_lane.post_json(
         search_url, {"collections": [COLLECTION_ID], "limit": canonical_fixture.PAGE_SIZE}
@@ -1662,7 +1671,7 @@ def test_nb_page_03_next_link_shape(
         duration_ms=_elapsed_ms(started),
         measured_count=len(next_ids),
         notes=(
-            "GET next uses a token query parameter; POST next is a body-bearing "
+            "GET next uses the next query parameter and advances to a disjoint page; POST next is a body-bearing "
             "method=POST merge=true link whose token advanced the cursor to a disjoint page."
         ),
     )
@@ -1712,7 +1721,7 @@ def test_nb_page_05_token_past_end(
 
     past_end = cert_lane.get_json(
         search_url,
-        params={"collections": COLLECTION_ID, "limit": 3, "token": "offset:1000"},
+        params={"collections": COLLECTION_ID, "limit": 3, "next": "offset:1000"},
     )
     assert past_end.status_code == 200, (
         f"a token past the end must not error: {cert_lane.problem_summary(past_end)}"
@@ -1724,7 +1733,7 @@ def test_nb_page_05_token_past_end(
     )
 
     bogus = cert_lane.get_json(
-        search_url, params={"collections": COLLECTION_ID, "limit": 3, "token": "not-a-token"}
+        search_url, params={"collections": COLLECTION_ID, "limit": 3, "next": "not-a-token"}
     )
     assert bogus.status_code == 400, f"bogus token returned {bogus.status_code}"
     assert bogus.json().get("status") == 400
