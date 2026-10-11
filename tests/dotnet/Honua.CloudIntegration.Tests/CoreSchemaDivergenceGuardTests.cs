@@ -804,6 +804,53 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         reader.GetBoolean(2).Should().BeTrue();
     }
 
+    [SkippableTheory]
+    [InlineData("journal")]
+    [InlineData("renderer_version")]
+    [InlineData("renderer_payload_sha256")]
+    [InlineData("version_type")]
+    [InlineData("version_nullable")]
+    [InlineData("version_default_missing")]
+    [InlineData("version_default_nonzero")]
+    [InlineData("hash_type")]
+    [InlineData("hash_notnull")]
+    [InlineData("hash_default")]
+    public async Task Guard_WhenRasterProvenanceFloorDiverges_FailsAtStartupWithoutMutation(string scenario)
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the schema-divergence lane.");
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
+        var migrated = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        migrated.Successful.Should().BeTrue(migrated.ErrorMessage);
+        await guard.Awaiting(g => g.VerifyAsync(connectionString)).Should().NotThrowAsync();
+        var alteration = scenario switch
+        {
+            "journal" => $"DELETE FROM public.schema_versions WHERE scriptname = '{PostgresCoreSchemaGuard.RasterTileProvenanceMigration}'; " +
+                         "ALTER TABLE honua.raster_tiles DROP COLUMN renderer_version, DROP COLUMN renderer_payload_sha256;",
+            "renderer_version" => "ALTER TABLE honua.raster_tiles DROP COLUMN renderer_version;",
+            "renderer_payload_sha256" => "ALTER TABLE honua.raster_tiles DROP COLUMN renderer_payload_sha256;",
+            "version_type" => "ALTER TABLE honua.raster_tiles ALTER COLUMN renderer_version TYPE bigint;",
+            "version_nullable" => "ALTER TABLE honua.raster_tiles ALTER COLUMN renderer_version DROP NOT NULL;",
+            "version_default_missing" => "ALTER TABLE honua.raster_tiles ALTER COLUMN renderer_version DROP DEFAULT;",
+            "version_default_nonzero" => "ALTER TABLE honua.raster_tiles ALTER COLUMN renderer_version SET DEFAULT 1;",
+            "hash_type" => "ALTER TABLE honua.raster_tiles ALTER COLUMN renderer_payload_sha256 TYPE text USING renderer_payload_sha256::text;",
+            "hash_notnull" => "ALTER TABLE honua.raster_tiles ALTER COLUMN renderer_payload_sha256 SET NOT NULL;",
+            "hash_default" => "ALTER TABLE honua.raster_tiles ALTER COLUMN renderer_payload_sha256 SET DEFAULT '\\x'::bytea;",
+            _ => throw new ArgumentOutOfRangeException(nameof(scenario))
+        };
+        await ExecuteAsync(connectionString, alteration);
+        var before = await CaptureStateAsync(connectionString);
+        var act = () => guard.VerifyAsync(connectionString);
+        var exception = await act.Should().ThrowAsync<DatabaseSchemaFloorException>();
+        exception.Which.MigrationScript.Should().Be(PostgresCoreSchemaGuard.RasterTileProvenanceMigration);
+        exception.Which.FailureKind.Should().Be(scenario == "journal"
+            ? DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal
+            : DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema);
+        (await CaptureStateAsync(connectionString)).Should().Be(before,
+            "skip-migrations startup verification must never repair the schema or advance the journal");
+    }
+
     [SkippableFact]
     public async Task Guard_WhenRasterBaselineJournalEntryIsMissing_FullVerificationFailsWithoutMutation()
     {
@@ -1247,6 +1294,18 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                     FROM pg_catalog.pg_class c
                     JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
                     WHERE n.nspname = @schema AND c.relkind IN ('r', 'p')
+                ), '[]'::jsonb),
+                'provenance_column_contracts', COALESCE((
+                    SELECT jsonb_agg(jsonb_build_object('name', a.attname,
+                        'type', format_type(a.atttypid, a.atttypmod), 'notnull', a.attnotnull,
+                        'default', pg_get_expr(d.adbin, d.adrelid)) ORDER BY a.attname)
+                    FROM pg_catalog.pg_class c
+                    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                    JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
+                    LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = c.oid AND d.adnum = a.attnum
+                    WHERE n.nspname = @schema AND c.relname = 'raster_tiles'
+                      AND a.attnum > 0 AND NOT a.attisdropped
+                      AND a.attname IN ('renderer_version', 'renderer_payload_sha256')
                 ), '[]'::jsonb),
                 'journal', COALESCE((
                     SELECT jsonb_agg(scriptname ORDER BY scriptname)

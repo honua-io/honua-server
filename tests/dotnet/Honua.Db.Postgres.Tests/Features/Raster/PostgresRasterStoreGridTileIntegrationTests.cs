@@ -303,6 +303,241 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
         }
     }
 
+    [IntegrationTheory]
+    [InlineData("current", 17.0)]
+    [InlineData("legacy", 100.0)]
+    [InlineData("missing-hash", 100.0)]
+    [InlineData("stale-hash", 100.0)]
+    [InlineData("old-overwrite", 100.0)]
+    [InlineData("unproven-overview", 100.0)]
+    public async Task GetImageTileAsync_AdmitsOnlyCurrentUnchangedCachePayload(string state, double expected)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreGridTileIntegrationTests));
+        try
+        {
+            await CreateSchemaAsync(schemaName);
+            var rasterId = await SeedConstant3857RasterAsync(schemaName, "cache-source",
+                -500000, 6500000, 50000, -55000, 100);
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var seed = connection.CreateCommand();
+            seed.CommandText = """
+                CREATE TABLE raster_tiles (
+                    raster_data_id bigint, zoom_level integer, tile_x integer, tile_y integer,
+                    tile_data bytea, content_type text, renderer_version integer DEFAULT 0,
+                    renderer_payload_sha256 bytea);
+                WITH body AS (
+                    SELECT ST_AsPNG(ST_AddBand(ST_MakeEmptyRaster(256, 256, 0, 0, 1, -1, 0, 0, 3857),
+                        '8BUI'::text, 17, NULL)) AS bytes
+                )
+                INSERT INTO raster_tiles
+                SELECT @id, 15, 16384, 16383, bytes, 'image/png', @version,
+                       CASE WHEN @state = 'missing-hash' THEN NULL
+                            WHEN @state = 'stale-hash' THEN sha256(decode('00', 'hex'))
+                            ELSE sha256(bytes) END
+                FROM body;
+                """;
+            seed.Parameters.AddWithValue("id", rasterId);
+            seed.Parameters.AddWithValue("version", state is "legacy" or "unproven-overview"
+                ? 0 : RasterCorrectedNearestSql.RendererVersion);
+            seed.Parameters.AddWithValue("state", state);
+            await seed.ExecuteNonQueryAsync();
+            if (state == "old-overwrite")
+            {
+                seed.CommandText = """
+                    UPDATE raster_tiles SET tile_data = ST_AsPNG(ST_AddBand(
+                        ST_MakeEmptyRaster(256, 256, 0, 0, 1, -1, 0, 0, 3857), '8BUI'::text, 99, NULL));
+                    """;
+                await seed.ExecuteNonQueryAsync();
+            }
+
+            if (state == "unproven-overview")
+            {
+                // A plausible overview whose pixels are wrong must not bypass the native source.
+                seed.CommandText = """
+                    CREATE TABLE raster_overviews (id bigint, raster_data_id bigint, ground_resolution double precision, raster raster);
+                    INSERT INTO raster_overviews VALUES (1, @id, 1, ST_AddBand(
+                        ST_MakeEmptyRaster(4, 4, 0, 1300, 400, -400, 0, 0, 3857), '8BUI'::text, 99, NULL));
+                    """;
+                await seed.ExecuteNonQueryAsync();
+            }
+
+            seed.CommandText = "SELECT encode(sha256(tile_data), 'hex') FROM raster_tiles";
+            var before = (string)(await seed.ExecuteScalarAsync())!;
+            var tile = await CreateStore(schemaName).GetImageTileAsync(LayerId, rasterId, 15, 16383, 16384)
+                ?? throw new InvalidOperationException("Expected a source or admitted cached tile.");
+            seed.CommandText = "SELECT ST_Value(ST_FromGDALRaster(@data), 1, 128, 128, FALSE)";
+            seed.Parameters.AddWithValue("data", tile.Data);
+            ((double)(await seed.ExecuteScalarAsync())!).Should().Be(expected);
+            seed.CommandText = "SELECT encode(sha256(tile_data), 'hex') FROM raster_tiles";
+            ((string)(await seed.ExecuteScalarAsync())!).Should().Be(before,
+                "cache rejection preserves the historical payload instead of deleting or regenerating it");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetMosaicImageTileAsync_CoverageMaskPreservesOtherSourceAndRestoresBandMetadata(bool declaredNoData)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreGridTileIntegrationTests));
+        try
+        {
+            await CreateSchemaAsync(schemaName);
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var seed = connection.CreateCommand();
+            seed.CommandText = """
+                INSERT INTO raster_data (layer_id, name, raster, created_at)
+                VALUES (@layer, 'west', ST_SetValue(ST_AddBand(
+                    ST_MakeEmptyRaster(2, 1, 0, 1, 1, -1, 0, 0, 4326),
+                    '8BUI'::text, 0, @nodata), 1, 2, 1, 100), '2024-01-01'),
+                    (@layer, 'east', ST_AddBand(ST_MakeEmptyRaster(1, 1, 2, 1, 1, -1, 0, 0, 4326),
+                    '8BUI'::text, 200, @nodata), '2024-01-02')
+                RETURNING id;
+                """;
+            seed.Parameters.AddWithValue("layer", LayerId);
+            seed.Parameters.AddWithValue("nodata", NpgsqlTypes.NpgsqlDbType.Double,
+                declaredNoData ? 255.0 : DBNull.Value);
+            var ids = new List<long>();
+            await using (var rows = await seed.ExecuteReaderAsync())
+            {
+                while (await rows.ReadAsync())
+                {
+                    ids.Add(rows.GetInt64(0));
+                }
+            }
+
+            var tile = await CreateStore(schemaName).GetMosaicImageTileAsync(LayerId, ids.ToArray(),
+                RasterMergeStrategy.Newest, new RasterTileWindow
+                {
+                    MinX = -1,
+                    MaxX = 3,
+                    MinY = 0,
+                    MaxY = 1,
+                    Srid = 4326,
+                    TileWidth = 4,
+                    TileHeight = 1
+                }, RasterFormat.TIFF) ?? throw new InvalidOperationException("Expected a composed mosaic tile.");
+            seed.CommandText = """
+                WITH decoded AS (SELECT ST_FromGDALRaster(@data) AS rast)
+                SELECT ST_BandPixelType(rast, 1), ST_BandNoDataValue(rast, 1),
+                       ST_Value(rast, 1, 1, 1), ST_Value(rast, 1, 2, 1),
+                       ST_Value(rast, 1, 3, 1), ST_Value(rast, 1, 4, 1) FROM decoded;
+                """;
+            seed.Parameters.AddWithValue("data", tile.Data);
+            await using var reader = await seed.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetString(0).Should().Be("8BUI");
+            reader.IsDBNull(1).Should().Be(!declaredNoData);
+            reader.IsDBNull(2).Should().Be(declaredNoData);
+            if (declaredNoData)
+            {
+                reader.GetDouble(1).Should().Be(255);
+            }
+            else
+            {
+                reader.GetDouble(2).Should().Be(0);
+            }
+
+            reader.GetDouble(3).Should().Be(0, "valid zero remains visible");
+            reader.GetDouble(4).Should().Be(100, "the newer source's outside mask cannot erase the west source");
+            reader.GetDouble(5).Should().Be(200, "the west source's outside mask cannot erase the east source");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(RasterMergeStrategy.Newest, false)]
+    [InlineData(RasterMergeStrategy.Oldest, false)]
+    [InlineData(RasterMergeStrategy.Average, true)]
+    [InlineData(RasterMergeStrategy.Max, true)]
+    [InlineData(RasterMergeStrategy.Min, true)]
+    public async Task GetMosaicImageTileAsync_MixedBandMetadata_MatchesCanonicalUnion(
+        RasterMergeStrategy strategy, bool floatFirst)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreGridTileIntegrationTests));
+        try
+        {
+            await CreateSchemaAsync(schemaName);
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                WITH inputs AS (
+                    SELECT ST_AddBand(ST_AddBand(ST_MakeEmptyRaster(1, 1, 0, 1, 1, -1, 0, 0, 4326),
+                        '32BF'::text, 2.75, -9999), '32BF'::text, 6.5, -9998) AS floating,
+                        ST_AddBand(ST_AddBand(ST_MakeEmptyRaster(1, 1, 0, 1, 1, -1, 0, 0, 4326),
+                        '8BUI'::text, 20, 255), '16BUI'::text, 40, 65535) AS integer
+                )
+                INSERT INTO raster_data (id, layer_id, name, raster, acquisition_date, created_at)
+                SELECT 1, @layer, 'first-id', CASE WHEN @floatFirst THEN floating ELSE integer END,
+                    CASE WHEN @floatFirst THEN '2024-01-01'::timestamptz ELSE '2024-01-02'::timestamptz END,
+                    '2024-01-01'::timestamptz FROM inputs
+                UNION ALL
+                SELECT 2, @layer, 'second-id', CASE WHEN @floatFirst THEN integer ELSE floating END,
+                    CASE WHEN @floatFirst THEN '2024-01-02'::timestamptz ELSE '2024-01-01'::timestamptz END,
+                    '2024-01-02'::timestamptz FROM inputs;
+                """;
+            command.Parameters.AddWithValue("layer", LayerId);
+            command.Parameters.AddWithValue("floatFirst", floatFirst);
+            await command.ExecuteNonQueryAsync();
+
+            var tile = await CreateStore(schemaName).GetMosaicImageTileAsync(LayerId, [1L, 2L], strategy,
+                new RasterTileWindow
+                {
+                    MinX = 0,
+                    MaxX = 1,
+                    MinY = 0,
+                    MaxY = 1,
+                    Srid = 4326,
+                    TileWidth = 1,
+                    TileHeight = 1
+                }, RasterFormat.TIFF) ?? throw new InvalidOperationException("Expected a typed mosaic.");
+            command.CommandText = $"""
+                WITH source AS MATERIALIZED (
+                    SELECT raster AS rast, id, created_at,
+                        COALESCE(acquisition_date, created_at) AS effective_acquisition
+                    FROM raster_data ORDER BY id
+                ), canonical_raw AS (
+                    SELECT {RasterMosaicSql.CreateMosaicAggregateExpression(strategy)} AS rast FROM source
+                ), canonical AS (
+                    -- GTiff has one shared NoData tag. Compare the same encoded contract;
+                    -- distinct raw per-band markers are checked before encoding separately.
+                    SELECT ST_FromGDALRaster(ST_AsGDALRaster(rast, 'GTiff')) AS rast FROM canonical_raw
+                ), actual AS (SELECT ST_FromGDALRaster(@data) AS rast)
+                SELECT ST_BandPixelType(a.rast, n), ST_BandPixelType(c.rast, n),
+                       ST_BandNoDataValue(a.rast, n), ST_BandNoDataValue(c.rast, n),
+                       ST_Value(a.rast, n, 1, 1), ST_Value(c.rast, n, 1, 1)
+                FROM actual a, canonical c, generate_series(1, 2) n ORDER BY n;
+                """;
+            command.Parameters.AddWithValue("data", tile.Data);
+            await using var reader = await command.ExecuteReaderAsync();
+            for (var band = 0; band < 2; band++)
+            {
+                (await reader.ReadAsync()).Should().BeTrue();
+                reader.GetString(0).Should().Be(reader.GetString(1));
+                reader.GetDouble(2).Should().Be(reader.GetDouble(3));
+                reader.GetDouble(4).Should().Be(reader.GetDouble(5));
+                if (strategy == RasterMergeStrategy.Average)
+                {
+                    reader.GetDouble(4).Should().Be(band == 0 ? 11.375 : 23.25,
+                        "the canonical float aggregate must retain fractional values");
+                }
+            }
+
+            (await reader.ReadAsync()).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
     private PostgresRasterStore CreateStore(string schemaName)
         => new(
             new FixtureConnectionProvider(fixture.DataSource),

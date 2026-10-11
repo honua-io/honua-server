@@ -15,7 +15,9 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 /// Real WMTS tiles must retain asymmetric source cells when their requested grid is finer than
 /// the source. Projecting first onto an automatically sized intermediate grid loses columns.
 /// </summary>
-[Collection("Database.GeoServicesRaster")]
+// This fixture mutates fixed honua raster rows and holds the seed lock through real HTTP renders.
+// Do not run parallel fixture initialization while those multi-request assertions own that lock.
+[Collection("Database")]
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerWmtsReprojectionTests
 {

@@ -335,7 +335,7 @@ assert_exact_shards \
 assert_exact_shards \
   "headroom-split-geoservices-imageserver" \
   "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs" \
-  '["GeoServices Catalog and ImageServer Support","GeoServices ImageServer"]'
+  '["GeoServices Catalog and ImageServer Support","GeoServices ImageServer Rendering and Support","GeoServices ImageServer"]'
 assert_exact_shards \
   "headroom-split-odata-errors" \
   "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataErrorHandlingTests.cs" \
@@ -798,7 +798,7 @@ assert_exact_shards \
       'src/Honua.Routing/Features/Routing/Domain/RoutingModels.cs' \
       'src/Honua.Server/EndpointRegistry.ImageServer.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/NAServerPgRoutingEndToEndTests.cs')" \
-  '["Core and Cloud Contracts","Raster Serving Scene Geometry and Terrain","GeoServices ImageServer","GeoServices GPServer and NAServer","STAC and API Governance","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support"]'
+  '["Core and Cloud Contracts","Raster Serving Scene Geometry and Terrain","GeoServices ImageServer","GeoServices GPServer and NAServer","STAC and API Governance","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices ImageServer Rendering and Support"]'
 
 # Follow-up proof from draft PR #2700: pure routing tests share the Core and Cloud Contracts owner
 # with the real pgRouting fixture and must not widen the canonical NAServer diff.
@@ -920,7 +920,7 @@ assert_exact_shards \
       'src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs' \
       'src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs' \
       'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerZarrTestFixture.cs')" \
-  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes","Raster Serving Scene Geometry and Terrain","WFS","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","OGC API Tiles Endpoints and CRS"]'
+  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes","Raster Serving Scene Geometry and Terrain","WFS","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices ImageServer Rendering and Support","OGC API Tiles Endpoints and CRS"]'
 
 # Narrowing Zarr must not remove the carved shards' actual feature-area paths.
 assert_descriptor \
@@ -1492,8 +1492,13 @@ echo "Checking shard headroom audit and its drain guard..."
 "${PYTHON_BIN}" scripts/ci/audit-shard-headroom.test.py
 
 echo "Checking shard filter/test-class coverage in both directions..."
+"${PYTHON_BIN}" scripts/ci/test-geoservices-support-partition.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Ogc.Api.Styles.OgcStylesCaseAuthorizationTests" \
+    "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
+    "OGC API Tiles Coverages and Processes" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests" \
     "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
@@ -1849,7 +1854,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Protocols.GeoServices.Tests.Source.ImageServer.ImageServerRenderingRuleMappingTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
-    "GeoServices Catalog and ImageServer Support" \
+    "GeoServices ImageServer Rendering and Support" \
   `# Honua.Server.Tests assembly. AlertNotificationRateLimiterTests was swallowed` \
   `# by the Admin-family '!~RateLimit' exclusion, now narrowed to` \
   `# '!~Honua.Server.Tests.Features.Admin.RateLimit'.` \
