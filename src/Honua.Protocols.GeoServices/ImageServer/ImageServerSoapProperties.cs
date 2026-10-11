@@ -795,36 +795,65 @@ internal static partial class ImageServerSoapEndpoints
 
         // These zero-based extensible members match the native RasterInfo SOAP shape.
         // Do not fabricate median/mode, sample counts, sums, or absent-band statistics.
+        // Index once. Scanning the full metadata arrays for every output band is
+        // quadratic on an unselected hyperspectral raster.
+        var statisticsByBand = IndexByBand(statistics, static statistic => statistic.Band);
+        var histogramsByBand = IndexByBand(histograms, static histogram => histogram.SourceBand);
         var bands = selectedBands ?? Enumerable.Range(1, referenceRaster.BandCount).ToArray();
         for (var outputBand = 0; outputBand < bands.Length; outputBand++)
         {
             var sourceBand = bands[outputBand];
-            foreach (var statistic in statistics.Where(statistic => statistic.Band == sourceBand))
+            if (statisticsByBand.TryGetValue(sourceBand, out var bandStatistics))
             {
-                if (statistic.MinValue is null || statistic.MaxValue is null)
+                foreach (var statistic in bandStatistics)
                 {
-                    continue;
-                }
+                    if (statistic.MinValue is null || statistic.MaxValue is null)
+                    {
+                        continue;
+                    }
 
-                value.Add(new XElement(
-                    $"RasterStatistics_{outputBand}",
-                    new XAttribute(xsi + "type", "tns:RasterStatistics"),
-                    new XElement("Min", FormatDouble(statistic.MinValue.Value)),
-                    new XElement("Max", FormatDouble(statistic.MaxValue.Value)),
-                    statistic.MeanValue is double mean ? new XElement("Mean", FormatDouble(mean)) : null,
-                    statistic.StandardDeviation is double standardDeviation
-                        ? new XElement("StandardDeviation", FormatDouble(standardDeviation)) : null));
+                    value.Add(new XElement(
+                        $"RasterStatistics_{outputBand}",
+                        new XAttribute(xsi + "type", "tns:RasterStatistics"),
+                        new XElement("Min", FormatDouble(statistic.MinValue.Value)),
+                        new XElement("Max", FormatDouble(statistic.MaxValue.Value)),
+                        statistic.MeanValue is double mean ? new XElement("Mean", FormatDouble(mean)) : null,
+                        statistic.StandardDeviation is double standardDeviation
+                            ? new XElement("StandardDeviation", FormatDouble(standardDeviation)) : null));
+                }
             }
 
-            foreach (var bandHistogram in histograms.Where(histogram => histogram.SourceBand == sourceBand))
+            if (histogramsByBand.TryGetValue(sourceBand, out var bandHistograms))
             {
-                var histogram = BuildRasterHistogram(bandHistogram);
-                histogram.Name = $"RasterHistogram_{outputBand}";
-                value.Add(histogram);
+                foreach (var bandHistogram in bandHistograms)
+                {
+                    var histogram = BuildRasterHistogram(bandHistogram);
+                    histogram.Name = $"RasterHistogram_{outputBand}";
+                    value.Add(histogram);
+                }
             }
         }
 
         return value;
+    }
+
+    private static Dictionary<int, List<TItem>> IndexByBand<TItem>(IReadOnlyList<TItem> items, Func<TItem, int> bandOf)
+    {
+        var index = new Dictionary<int, List<TItem>>(items.Count);
+        for (var i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            var band = bandOf(item);
+            if (!index.TryGetValue(band, out var matches))
+            {
+                matches = [];
+                index.Add(band, matches);
+            }
+
+            matches.Add(item);
+        }
+
+        return index;
     }
 
     private static XElement BuildBandPropertySet(BandProperty band)

@@ -608,6 +608,43 @@ public sealed class ImageServerRenderingRuleMappingTests
         mapping.Bands.Should().Equal(1);
     }
 
+    [UnitTheory]
+    [InlineData("Hillshade", RasterTerrainMethod.Hillshade)]
+    [InlineData("Slope", RasterTerrainMethod.Slope)]
+    [InlineData("Aspect", RasterTerrainMethod.Aspect)]
+    public void MapRenderingRule_TerrainBetweenExtractBands_PreservesTheInnerSelection(
+        string function,
+        RasterTerrainMethod method)
+    {
+        // Outer 0-based [0] selects the single terrain output. BandId 1 reads the
+        // second band of inner 0-based [2,0] (source bands 3 then 1). Composing the
+        // outer index into that selection would keep only source band 3 and leave
+        // the terrain pointed at a band ST_Band no longer emits.
+        var document = Parse(
+            """{"rasterFunction":"ExtractBand","rasterFunctionArguments":{"BandIds":[0],"Raster":{"rasterFunction":"TERRAIN","rasterFunctionArguments":{"BandId":1,"Raster":{"rasterFunction":"ExtractBand","rasterFunctionArguments":{"BandIds":[2,0]}}}}}}"""
+            .Replace("TERRAIN", function, StringComparison.Ordinal));
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.Bands.Should().Equal(3, 1);
+        mapping.Terrain!.Value.Method.Should().Be(method);
+        mapping.Terrain!.Value.Band.Should().Be(2);
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_ExtractBandPastTerrainOutput_IsInvalid()
+    {
+        var document = Parse(
+            """{"rasterFunction":"ExtractBand","rasterFunctionArguments":{"BandIds":[1],"Raster":{"rasterFunction":"Hillshade","rasterFunctionArguments":{"BandId":1,"Raster":{"rasterFunction":"ExtractBand","rasterFunctionArguments":{"BandIds":[2,0]}}}}}}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeFalse();
+        mapping.IsNotImplemented.Should().BeFalse();
+        mapping.Reason.Should().Contain("outside");
+    }
+
     [UnitTest]
     public void MapRenderingRule_NestedExtractBand_RejectsIndexPastInnerSelection()
     {
