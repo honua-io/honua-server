@@ -58,13 +58,18 @@ public class PostgresDatabaseCompatibilityCheckerTests
     }
 
     [Fact]
-    public async Task CheckCompatibilityAsync_WithInvalidConnectionString_ReturnsIncompatible()
+    public async Task CheckCompatibilityAsync_WithUnreachableServer_ReturnsTransientUnavailable()
     {
+        // Nothing listens on this port: an outage, not an incompatible database. Startup must be
+        // able to degrade on it instead of exiting.
         var result = await _checker.CheckCompatibilityAsync(
             "Host=localhost;Port=59999;Database=nonexistent;Username=nope;Password=nope;Timeout=2");
 
         result.IsCompatible.Should().BeFalse();
+        result.IsTransientFailure.Should().BeTrue();
+        result.FailureClass.Should().NotBeNullOrWhiteSpace();
         result.ErrorMessage.Should().NotBeNullOrWhiteSpace();
+        result.ErrorMessage.Should().NotContain("59999").And.NotContain("nope");
         result.EngineVersion.Should().Be("unknown");
     }
 }

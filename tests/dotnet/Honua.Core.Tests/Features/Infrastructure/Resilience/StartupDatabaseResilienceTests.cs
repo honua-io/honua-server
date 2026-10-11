@@ -85,6 +85,7 @@ public sealed class StartupDatabaseResilienceTests
     [Trait("Category", "Unit")]
     [InlineData("53300", true)]  // too_many_connections (pool/slot exhaustion)
     [InlineData("53400", true)]  // configuration_limit_exceeded
+    [InlineData("53000", true)]  // insufficient_resources (class 53)
     [InlineData("57P03", true)]  // cannot_connect_now (server starting up)
     [InlineData("08006", true)]  // connection_failure (class 08)
     [InlineData("08001", true)]  // sqlclient_unable_to_establish_sqlconnection
@@ -96,6 +97,30 @@ public sealed class StartupDatabaseResilienceTests
     public void IsTransientSqlState_ClassifiesCorrectly(string? sqlState, bool expected)
     {
         StartupDatabaseResilience.IsTransientSqlState(sqlState).Should().Be(expected);
+    }
+
+    [UnitTest]
+    public void DescribeFailureClass_WithTimeout_ReturnsTimeout()
+    {
+        StartupDatabaseResilience.DescribeFailureClass(
+            new InvalidOperationException("Host=db.internal;Password=secret", new TimeoutException()))
+            .Should().Be("timeout");
+    }
+
+    [UnitTest]
+    public void DescribeFailureClass_WithSocketFailure_NamesSocketErrorOnly()
+    {
+        StartupDatabaseResilience.DescribeFailureClass(new SocketException((int)SocketError.TimedOut))
+            .Should().Be("socket error (TimedOut)");
+    }
+
+    [UnitTest]
+    public void DescribeFailureClass_WithUnclassifiedFailure_NeverEchoesTheMessage()
+    {
+        var description = StartupDatabaseResilience.DescribeFailureClass(
+            new InvalidOperationException("Host=db.internal;Password=secret"));
+
+        description.Should().Be("failure (InvalidOperationException)");
     }
 
     [UnitTest]

@@ -838,6 +838,11 @@ if (builder.Configuration.GetValue<bool?>("HONUA_DB_DEGRADED_START") is { } envD
     startupResilienceOptions = startupResilienceOptions with { DegradedStartEnabled = envDegradedStart };
 }
 
+// On AWS Lambda an init-time exit is a Runtime.ExitError crash loop, so degraded start defaults
+// on there unless the operator set it explicitly (honua-server preflight 53300 crash loop).
+startupResilienceOptions = Honua.Infrastructure.Monitoring.StartupDatabasePreflight.ApplyServerlessDefault(
+    startupResilienceOptions, builder.Configuration);
+
 builder.Services.AddSingleton(startupResilienceOptions);
 builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DegradedStartupContext>();
 builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.DatabaseRecoveryBackgroundService>();
@@ -2028,6 +2033,14 @@ async Task RunDatabaseMigrationsAsync()
 {
     var migrationState = app.Services.GetRequiredService<Honua.Infrastructure.Monitoring.MigrationState>();
 
+    // The preflight already found the database transiently unavailable and armed degraded start.
+    // Another connection attempt now would only add load to an exhausted database; the recovery
+    // loop runs the deferred migrations (or the schema guard when migrations are skipped).
+    if (app.Services.GetRequiredService<Honua.Infrastructure.Monitoring.DegradedStartupContext>().IsDegraded)
+    {
+        return;
+    }
+
     if (builder.Configuration.GetValue<bool>("HONUA_SKIP_MIGRATIONS"))
     {
         Honua.Infrastructure.Logging.Log.DatabaseMigrationsSkipped(app.Logger);
@@ -2074,6 +2087,15 @@ async Task RunDatabaseMigrationsAsync()
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
+            // The guard could not reach the database (no free slots, timeout): that is an outage,
+            // not schema divergence. Degraded start defers the guard to the recovery loop.
+            if (ex is not Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException
+                && !app.Environment.IsDevelopment()
+                && TryEnterDegradedStart("schema guard", ex, migrationsPending: false, schemaGuardPending: true))
+            {
+                return;
+            }
+
             migrationState.MarkFailed("Database schema diverges from the migration journal.");
             Honua.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, ex.Message, ex);
             if (ex is Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException || !app.Environment.IsDevelopment())
@@ -2189,7 +2211,24 @@ async Task RunDatabaseMigrationsAsync()
 // transient connectivity failures are suppressed, and only when degraded start is enabled;
 // genuine misconfiguration still fails loudly. When suppressed, the degraded context is armed
 // so the background recovery loop retries connectivity and flips readiness once recovered.
-bool TryEnterDegradedStart(string phase, Exception error, bool migrationsPending)
+bool TryEnterDegradedStart(string phase, Exception error, bool migrationsPending, bool schemaGuardPending = false)
+{
+    if (!Honua.Core.Features.Infrastructure.Resilience.StartupDatabaseResilience.IsTransientConnectivityError(error))
+    {
+        // Real misconfiguration (bad migration SQL, incompatible PostGIS): never mask it.
+        return false;
+    }
+
+    return TryArmDegradedStart(
+        phase,
+        Honua.Core.Features.Infrastructure.Resilience.StartupDatabaseResilience.DescribeFailureClass(error),
+        migrationsPending,
+        schemaGuardPending);
+}
+
+// Arms degraded start for a failure already classified as transient. The reason carries the phase
+// and the sanitized failure class only (never the provider message, which can name hosts).
+bool TryArmDegradedStart(string phase, string failureClass, bool migrationsPending, bool schemaGuardPending)
 {
     var resilienceOptions = app.Services.GetRequiredService<Honua.Core.Configuration.StartupResilienceOptions>();
     if (!resilienceOptions.DegradedStartEnabled)
@@ -2197,18 +2236,16 @@ bool TryEnterDegradedStart(string phase, Exception error, bool migrationsPending
         return false;
     }
 
-    if (!Honua.Core.Features.Infrastructure.Resilience.StartupDatabaseResilience.IsTransientConnectivityError(error))
-    {
-        // Real misconfiguration (bad migration SQL, incompatible PostGIS): never mask it.
-        return false;
-    }
-
     var warning = Honua.Core.Features.Infrastructure.Resilience.StartupDatabaseResilience
-        .BuildDegradedStartWarning(phase, error.Message);
+        .BuildDegradedStartWarning(phase, failureClass);
     Honua.Infrastructure.Logging.Log.DatabaseStartupDegraded(app.Logger, warning);
 
     var degradedContext = app.Services.GetRequiredService<Honua.Infrastructure.Monitoring.DegradedStartupContext>();
-    degradedContext.MarkDegraded(migrationsPending, Assembly.GetExecutingAssembly());
+    degradedContext.MarkDegraded(
+        migrationsPending,
+        Assembly.GetExecutingAssembly(),
+        Honua.Infrastructure.Monitoring.StartupDatabasePreflight.BuildReason(phase, failureClass),
+        schemaGuardPending: schemaGuardPending && !migrationsPending);
     return true;
 }
 
@@ -2235,18 +2272,27 @@ async Task RunPostGisPreflightCheckAsync()
     }
 
     Honua.Infrastructure.Logging.Log.PostGisPreflightCheckStarting(app.Logger);
+    // With HONUA_SKIP_MIGRATIONS a degraded start defers the journal/schema guard rather than migrations.
+    var skipMigrationsConfigured = !hostManagesOwnMigrations;
 
     Honua.Core.Features.Infrastructure.Domain.DatabaseCompatibilityResult result;
     try
     {
-        result = await checker.CheckCompatibilityAsync(connectionString, app.Lifetime.ApplicationStopping);
+        // A transient result (no free connection slots, timeout) is retried twice, quickly; it is
+        // never retried without bound at startup.
+        result = await Honua.Infrastructure.Monitoring.StartupDatabasePreflight.CheckWithBoundedRetryAsync(
+            checker,
+            connectionString,
+            Honua.Infrastructure.Monitoring.StartupDatabasePreflight.TransientRetryDelays,
+            static (delay, cancellationToken) => Task.Delay(delay, cancellationToken),
+            app.Lifetime.ApplicationStopping);
     }
     catch (Exception ex) when (!app.Environment.IsDevelopment())
     {
         // The preflight could not reach the database to check compatibility. If degraded start is
         // enabled and the failure is transient connectivity, arm degraded mode (migrations are run
         // after this method, so they are still pending) rather than crashing the process (#1632).
-        if (TryEnterDegradedStart("PostGIS preflight", ex, migrationsPending: true))
+        if (TryEnterDegradedStart("PostGIS preflight", ex, migrationsPending: !skipMigrationsConfigured, schemaGuardPending: skipMigrationsConfigured))
         {
             return;
         }
@@ -2255,6 +2301,20 @@ async Task RunPostGisPreflightCheckAsync()
     }
 
     compatibilityState.SetResult(result);
+
+    // The database could not be reached (an outage, not an incompatible install): start degraded
+    // when enabled — readiness reports 503 with the failure class until the recovery loop succeeds.
+    // A genuinely incompatible database (missing PostGIS) is not transient and still fails below.
+    if (result.IsTransientFailure
+        && !app.Environment.IsDevelopment()
+        && TryArmDegradedStart(
+            "PostGIS preflight",
+            result.FailureClass ?? "database unavailable",
+            migrationsPending: !skipMigrationsConfigured,
+            schemaGuardPending: skipMigrationsConfigured))
+    {
+        return;
+    }
 
     if (result.IsCompatible)
     {
