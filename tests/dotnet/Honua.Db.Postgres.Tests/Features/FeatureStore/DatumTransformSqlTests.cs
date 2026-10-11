@@ -130,4 +130,98 @@ public sealed class DatumTransformSqlTests
 
         sql.Should().Be("ST_TransformPipeline(geom, 'a''b', 4326)");
     }
+
+    [UnitTheory]
+    [InlineData(3857)]
+    [InlineData(102100)]
+    [InlineData(900913)]
+    [InlineData(3785)]
+    public void BuildTransformExpression_GeographicSourceToWebMercator_ClampsBeforeTransform(int toSrid)
+    {
+        var sql = DatumTransformSql.BuildTransformExpression("geom", toSrid, selection: null, fromSrid: 4326);
+
+        AssertPointClamp(sql, "geom", 4326, toSrid);
+    }
+
+    [UnitTest]
+    public void BuildTransformExpression_OtherGeographicSourceToWebMercator_UsesSourceSridOnClip()
+    {
+        var sql = DatumTransformSql.BuildTransformExpression("geom", 102100, selection: null, fromSrid: 4269);
+
+        AssertPointClamp(sql, "geom", 4269, 102100);
+    }
+
+    [UnitTest]
+    public void BuildTransformExpression_GeographicSourceToNonMercator_DoesNotClamp()
+    {
+        var sql = DatumTransformSql.BuildTransformExpression("geom", 4269, selection: null, fromSrid: 4326);
+
+        sql.Should().Be("ST_Transform(geom, 4269)");
+        sql.Should().NotContain("ST_ClipByBox2D");
+        sql.Should().NotContain("85.0511287798066");
+    }
+
+    [UnitTest]
+    public void BuildTransformExpression_ProjectedSourceToWebMercator_DoesNotClamp()
+    {
+        var sql = DatumTransformSql.BuildTransformExpression("geom", 3857, selection: null, fromSrid: 26911);
+
+        sql.Should().Be("ST_Transform(geom, 3857)");
+        sql.Should().NotContain("ST_ClipByBox2D");
+    }
+
+    [UnitTest]
+    public void BuildTransformExpression_UnknownSourceToWebMercator_DoesNotClamp()
+    {
+        var sql = DatumTransformSql.BuildTransformExpression("geom", 3857, selection: null);
+
+        sql.Should().Be("ST_Transform(geom, 3857)");
+        sql.Should().NotContain("ST_ClipByBox2D");
+    }
+
+    [UnitTest]
+    public void BuildTransformExpression_GeographicToWebMercator_PipelineClampsBeforeTransform()
+    {
+        var selection = new DatumTransformationSelection
+        {
+            Name = "WGS_1984_To_WebMercator",
+            FromSrid = 4326,
+            ToSrid = 3857,
+            ProjPipeline = "+proj=pipeline +step +proj=merc"
+        };
+
+        var sql = DatumTransformSql.BuildTransformExpression("geom", 3857, selection, fromSrid: 4326);
+
+        sql.Should().StartWith("ST_TransformPipeline(CASE ST_GeometryType(geom)");
+        sql.Should().Contain("LEAST(GREATEST(ST_Y(geom), -85.0511287798066), 85.0511287798066)");
+        sql.Should().Contain("'+proj=pipeline +step +proj=merc', 3857)");
+    }
+
+    [UnitTest]
+    public void BuildTransformExpression_NoopToWebMercator_DoesNotClamp()
+    {
+        var selection = new DatumTransformationSelection
+        {
+            Name = "identity",
+            FromSrid = 4326,
+            ToSrid = 3857,
+            ProjPipeline = "+proj=noop"
+        };
+
+        var sql = DatumTransformSql.BuildTransformExpression("geom", 3857, selection, fromSrid: 4326);
+
+        sql.Should().Be("ST_SetSRID(geom, 3857)");
+        sql.Should().NotContain("ST_ClipByBox2D");
+    }
+
+    private static void AssertPointClamp(string sql, string operand, int fromSrid, int toSrid)
+    {
+        sql.Should().StartWith("ST_Transform(CASE ST_GeometryType(" + operand + ")");
+        sql.Should().Contain("WHEN 'ST_Point' THEN CASE ST_Zmflag(" + operand + ")");
+        sql.Should().Contain("LEAST(GREATEST(ST_Y(" + operand + "), -85.0511287798066), 85.0511287798066)");
+        sql.Should().Contain("WHEN 'ST_MultiPoint' THEN (SELECT ST_Multi(ST_Collect(");
+        sql.Should().Contain("FROM ST_Dump(" + operand + ") AS pt)");
+        sql.Should().Contain(
+            "ELSE ST_ClipByBox2D(" + operand + ", ST_MakeEnvelope(-180, -85.0511287798066, 180, 85.0511287798066, " + fromSrid + ")) END, " + toSrid + ")");
+    }
 }

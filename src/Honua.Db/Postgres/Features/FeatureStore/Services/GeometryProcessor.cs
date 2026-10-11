@@ -28,7 +28,8 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         if (query.OutputSrid.HasValue &&
             (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
         {
-            baseGeometry = DatumTransformSql.BuildTransformExpression(baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation);
+            baseGeometry = DatumTransformSql.BuildTransformExpression(
+                baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation, query.SpatialReferenceSrid);
         }
 
         // Default to 2D OGC WKB (ST_AsBinary) — byte-identical to the historical read path. When the
@@ -47,7 +48,8 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         if (query.OutputSrid.HasValue &&
             (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
         {
-            baseGeometry = DatumTransformSql.BuildTransformExpression(baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation);
+            baseGeometry = DatumTransformSql.BuildTransformExpression(
+                baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation, query.SpatialReferenceSrid);
         }
 
         // GML 3.2 (ISO 19136) requires gml:id on every GML object, geometries included;
@@ -73,7 +75,8 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         if (query.OutputSrid.HasValue &&
             (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
         {
-            baseGeometry = DatumTransformSql.BuildTransformExpression(baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation);
+            baseGeometry = DatumTransformSql.BuildTransformExpression(
+                baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation, query.SpatialReferenceSrid);
         }
 
         // RFC 7946 §3.1.6 requires right-hand-rule winding (exterior CCW, holes CW).
@@ -91,7 +94,8 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         if (query.OutputSrid.HasValue &&
             (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
         {
-            baseGeometry = DatumTransformSql.BuildTransformExpression(baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation);
+            baseGeometry = DatumTransformSql.BuildTransformExpression(
+                baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation, query.SpatialReferenceSrid);
         }
 
         // KML polygons use right-hand-rule winding (exterior CCW, holes CW); normalize CW-exterior
@@ -148,7 +152,8 @@ internal sealed class GeometryProcessor : IGeometryProcessor
             geometryExpression = DatumTransformSql.BuildTransformExpression(
                 geometryExpression,
                 query.SpatialReferenceSrid.Value,
-                query.SpatialFilterDatumTransformation);
+                query.SpatialFilterDatumTransformation,
+                filter.Srid);
         }
 
         return geometryExpression;

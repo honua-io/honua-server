@@ -162,7 +162,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                         "Pre-generating tiles", rasterId: rasterId);
 
                     tilesGenerated = await GenerateAndStoreTilesAsync(
-                        connection, transaction, rasterId, request.TileZoomLevels,
+                        connection, transaction, rasterId, srid, request.TileZoomLevels,
                         progress, operationId, startedAt, cancellationToken).ConfigureAwait(false);
 
                     PostgresRasterImportLog.TilesPreGenerated(_logger, rasterId, tilesGenerated, request.TileZoomLevels.Length);
@@ -179,7 +179,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                 if (request.OverviewFactors.Length > 0 && srid > 0)
                 {
                     await GenerateAndStoreOverviewsAsync(
-                        connection, transaction, rasterId, request.OverviewFactors, warnings, cancellationToken).ConfigureAwait(false);
+                        connection, transaction, rasterId, srid, request.OverviewFactors, warnings, cancellationToken).ConfigureAwait(false);
                 }
                 else if (request.OverviewFactors.Length > 0 && srid <= 0)
                 {
@@ -782,6 +782,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         DbConnection connection,
         DbTransaction transaction,
         long rasterId,
+        int sourceSrid,
         int[] zoomLevels,
         IProgress<RasterImportProgress>? progress,
         string operationId,
@@ -789,6 +790,10 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         CancellationToken cancellationToken)
     {
         var totalTiles = 0;
+        // Geographic ±90 corners fail bare ST_Transform to EPSG:3857. Clip through the
+        // shared geometry chokepoint before the tile-index math and the raster warp.
+        var mercatorEnvelope = RasterWebMercatorSql.BuildEnvelopeExpression("ST_Envelope(r.raster)", sourceSrid);
+        var mercatorRaster = RasterWebMercatorSql.BuildRasterExpression("r.raster", sourceSrid);
 
         foreach (var zoom in zoomLevels)
         {
@@ -808,7 +813,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                     0.0, 0.0, 3857)
                 """;
             var framedRaster = RasterGridFrameSql.FrameAlignedRaster(
-                $"ST_Resample(ST_Transform(r.raster, 3857), {grid})", grid);
+                $"ST_Resample({mercatorRaster}, {grid})", grid);
 
             if (zoom == 0)
             {
@@ -854,12 +859,12 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                     CROSS JOIN LATERAL (
                         SELECT x, y
                         FROM generate_series(
-                            GREATEST(0, floor(ST_XMin(ST_Transform(ST_Envelope(r.raster), 3857)) / (40075016.686 / (1 << @zoom)))::int + (1 << (@zoom - 1))),
-                            LEAST((1 << @zoom) - 1, floor(ST_XMax(ST_Transform(ST_Envelope(r.raster), 3857)) / (40075016.686 / (1 << @zoom)))::int + (1 << (@zoom - 1)))
+                            GREATEST(0, floor(ST_XMin({mercatorEnvelope}) / (40075016.686 / (1 << @zoom)))::int + (1 << (@zoom - 1))),
+                            LEAST((1 << @zoom) - 1, floor(ST_XMax({mercatorEnvelope}) / (40075016.686 / (1 << @zoom)))::int + (1 << (@zoom - 1)))
                         ) AS x,
                         generate_series(
-                            GREATEST(0, ((1 << (@zoom - 1)) - floor(ST_YMax(ST_Transform(ST_Envelope(r.raster), 3857)) / (40075016.686 / (1 << @zoom)))::int - 1)),
-                            LEAST((1 << @zoom) - 1, ((1 << (@zoom - 1)) - floor(ST_YMin(ST_Transform(ST_Envelope(r.raster), 3857)) / (40075016.686 / (1 << @zoom)))::int))
+                            GREATEST(0, ((1 << (@zoom - 1)) - floor(ST_YMax({mercatorEnvelope}) / (40075016.686 / (1 << @zoom)))::int - 1)),
+                            LEAST((1 << @zoom) - 1, ((1 << (@zoom - 1)) - floor(ST_YMin({mercatorEnvelope}) / (40075016.686 / (1 << @zoom)))::int))
                         ) AS y
                     ) t
                     WHERE r.id = @rasterId
@@ -898,6 +903,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         DbConnection connection,
         DbTransaction transaction,
         long rasterId,
+        int sourceSrid,
         int[] overviewFactors,
         List<string> warnings,
         CancellationToken cancellationToken)
@@ -931,9 +937,10 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                     // ground resolution. ground_resolution caches the resulting metres/pixel so the
                     // read path can pick a level without detoasting the raster payload. The factor is
                     // skipped when it would not coarsen the source (target res <= source res).
+                    var mercatorRaster = RasterWebMercatorSql.BuildRasterExpression("raster", sourceSrid);
                     command.CommandText = $"""
                         WITH src AS (
-                            SELECT ST_Transform(raster, 3857) AS rast
+                            SELECT {mercatorRaster} AS rast
                             FROM {_rasterDataTable}
                             WHERE id = @rasterId
                         ),

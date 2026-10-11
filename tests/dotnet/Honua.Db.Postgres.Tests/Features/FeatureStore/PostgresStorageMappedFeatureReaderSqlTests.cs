@@ -637,11 +637,57 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             ],
         };
 
+    [UnitTest]
+    public void BuildFeatureSelect_GeographicStorageToWebMercator_ClampsBeforeTransform()
+    {
+        var sql = BuildFeatureSelect(new FeatureQuery { OutputSrid = 102100 }, storageSrid: 4326);
+
+        sql.Should().Contain("WHEN 'ST_Point' THEN");
+        sql.Should().Contain("LEAST(GREATEST(ST_Y(\"geom\"::geometry), -85.0511287798066), 85.0511287798066)");
+        sql.Should().Contain("ELSE ST_ClipByBox2D(\"geom\"::geometry, ST_MakeEnvelope(-180, -85.0511287798066, 180, 85.0511287798066, 4326))");
+        sql.Should().Contain(", 102100)");
+    }
+
+    [UnitTest]
+    public void BuildFeatureSelect_GeographicStorageToNonMercator_DoesNotClamp()
+    {
+        var sql = BuildFeatureSelect(new FeatureQuery { OutputSrid = 4269 }, storageSrid: 4326);
+
+        sql.Should().Contain("ST_Transform(\"geom\"::geometry, 4269)");
+        sql.Should().NotContain("ST_ClipByBox2D");
+    }
+
+    [UnitTest]
+    public void BuildFeatureSelect_GeographicFilterIntoWebMercatorStorage_ClampsBeforeTransform()
+    {
+        var sql = BuildFeatureSelect(
+            new FeatureQuery
+            {
+                SpatialFilter = SpatialFilter.Create([1, 2, 3], SpatialRelationship.Intersects, srid: 4326)
+            },
+            storageSrid: 3857);
+
+        sql.Should().Contain("WHEN 'ST_Point' THEN");
+        sql.Should().Contain("LEAST(GREATEST(ST_Y(");
+        sql.Should().Contain("ST_MakeEnvelope(-180, -85.0511287798066, 180, 85.0511287798066, 4326)");
+        sql.Should().Contain(", 3857)");
+    }
+
+    private static string BuildFeatureSelect(FeatureQuery query, int? storageSrid = null)
+    {
+        var reader = CreateReader(CreateResource(), storageSrid: storageSrid);
+        return typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [query, false])!
+            .ToString()!;
+    }
+
     private static PostgresStorageMappedFeatureReader CreateReader(
         MetadataV2Resource resource,
         IRowLevelSecurityFilterSource? rlsSource = null,
         IFieldMaskSource? fieldMaskSource = null,
-        string? attributesColumn = null)
+        string? attributesColumn = null,
+        int? storageSrid = null)
         => new(
             Substitute.For<IAdoNetDatabaseConnectionProvider>(),
             new DefaultObjectPoolProvider().Create(
@@ -651,7 +697,8 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
                 TableName: "secure_features",
                 PrimaryKeyColumn: "objectid",
                 GeometryColumn: "geom",
-                AttributesColumn: attributesColumn),
+                AttributesColumn: attributesColumn,
+                StorageSrid: storageSrid),
             connection: null,
             connectionEncryptionService: null,
             rlsFilterSource: rlsSource,
