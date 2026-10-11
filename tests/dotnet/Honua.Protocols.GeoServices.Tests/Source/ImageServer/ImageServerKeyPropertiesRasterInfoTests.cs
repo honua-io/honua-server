@@ -3,6 +3,7 @@
 
 using System.Xml.Linq;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -124,6 +125,7 @@ public sealed class ImageServerKeyPropertiesRasterInfoTests
             Raster, Raster.Extent!.Value, [new RasterStatistics { Band = 1 }], []);
         value.Element("RasterStatistics_0").Should().BeNull();
     }
+
     [UnitTest]
     public void ExtractBand_ReordersPropertiesStatisticsAndHistogramsTogether()
     {

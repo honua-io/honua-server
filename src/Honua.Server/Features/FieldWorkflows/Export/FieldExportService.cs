@@ -43,8 +43,14 @@ internal sealed class FieldExportService
         activity?.SetTag("honua.protocol", "field-workflows");
         activity?.SetTag("honua.operation", "create-export");
 
-        var request = await ReadAsync(context, FieldExportJsonContext.Default.FieldExportRequest).ConfigureAwait(false)
-            ?? new FieldExportRequest();
+        var request = await ReadRequestAsync(context).ConfigureAwait(false);
+        if (request is null)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                "Request body must be a JSON object.");
+        }
 
         var format = string.IsNullOrWhiteSpace(request.Format) ? FieldExportFormat.GeoJson : request.Format.Trim().ToLowerInvariant();
         if (!FieldExportFormat.IsValid(format))
@@ -80,18 +86,21 @@ internal sealed class FieldExportService
 
         var actor = ResolveActor(context);
         var package = await _store.CreateExportAsync(normalized, actor, context.RequestAborted).ConfigureAwait(false);
-        var payload = FieldExportSerializer.Serialize(format, package.Items);
+        var payload = FieldExportSerializer.Serialize(format, package.Items, package.Truncated);
 
         activity?.SetTag("honua.result_count", package.Items.Length);
         activity?.SetTag("honua.export_format", format);
+        activity?.SetTag("honua.export_truncated", package.Truncated);
 
+        var truncatedJson = package.Truncated ? "true" : "false";
         await RecordAuditAsync(context, "field.export.create", package.Record.ExportId, AuditOutcome.Success,
-            $"{{\"format\":{JsonString(format)},\"recordCount\":{package.Record.RecordCount.ToString(CultureInfo.InvariantCulture)}}}").ConfigureAwait(false);
+            $"{{\"format\":{JsonString(format)},\"recordCount\":{package.Record.RecordCount.ToString(CultureInfo.InvariantCulture)},\"truncated\":{truncatedJson}}}").ConfigureAwait(false);
         FieldExportLog.Created(_logger, package.Record.ExportId, format, package.Record.RecordCount);
 
         ApplyNoStore(context.Response);
         context.Response.Headers["X-Honua-Export-Id"] = package.Record.ExportId.ToString();
         context.Response.Headers["X-Honua-Export-Count"] = package.Record.RecordCount.ToString(CultureInfo.InvariantCulture);
+        context.Response.Headers["X-Honua-Export-Truncated"] = truncatedJson;
         var filename = $"field-export-{package.Record.ExportId}.{FieldExportFormat.Extension(format)}";
         context.Response.Headers.ContentDisposition = $"attachment; filename=\"{filename}\"";
         return Results.Bytes(payload, FieldExportFormat.ContentType(format));
@@ -107,17 +116,24 @@ internal sealed class FieldExportService
         return Results.Json(result, FieldExportJsonContext.Default.FieldExportRecordListResult);
     }
 
-    private static async Task<T?> ReadAsync<T>(HttpContext context, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo)
-        where T : class
+    /// <summary>
+    /// Reads the export request. A zero-length body is an empty filter. A missing
+    /// Content-Length (chunked) is still read. Invalid JSON and JSON null return
+    /// null so the caller can answer 400 instead of exporting every submission.
+    /// </summary>
+    private static async Task<FieldExportRequest?> ReadRequestAsync(HttpContext context)
     {
-        if (context.Request.ContentLength is 0 || context.Request.ContentLength is null)
+        if (context.Request.ContentLength == 0)
         {
-            return null;
+            return new FieldExportRequest();
         }
 
         try
         {
-            return await JsonSerializer.DeserializeAsync(context.Request.Body, typeInfo, context.RequestAborted).ConfigureAwait(false);
+            return await JsonSerializer.DeserializeAsync(
+                context.Request.Body,
+                FieldExportJsonContext.Default.FieldExportRequest,
+                context.RequestAborted).ConfigureAwait(false);
         }
         catch (JsonException)
         {

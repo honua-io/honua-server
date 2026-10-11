@@ -649,6 +649,15 @@ internal static partial class AnalysisContentEndpoints
             case GeoprocessingStoreUnavailableException storeEx:
                 problem = GeoprocessingProblemDetailsHelpers.StoreUnavailable(context, storeEx);
                 return true;
+            case GeoprocessingIdempotencyConflictException idempotencyEx:
+                problem = GeoprocessingProblemDetailsHelpers.IdempotencyConflict(context, idempotencyEx);
+                return true;
+            case GeoprocessingAdmissionException admissionEx:
+                problem = GeoprocessingProblemDetailsHelpers.Admission(context, admissionEx);
+                return true;
+            case GeoprocessingApprovalRequiredException approvalEx:
+                problem = GeoprocessingProblemDetailsHelpers.ApprovalRequired(context, approvalEx);
+                return true;
             default:
                 problem = Results.Empty;
                 return false;

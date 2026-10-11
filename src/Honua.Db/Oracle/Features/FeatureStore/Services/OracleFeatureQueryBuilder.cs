@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -26,6 +27,8 @@ namespace Honua.Db.Oracle.Features.FeatureStore.Services;
 /// </remarks>
 internal static partial class OracleFeatureQueryBuilder
 {
+    internal const string ProviderLabel = "Oracle";
+
     /// <summary>
     /// Builds a SELECT that returns the primary key, the geometry as WKB (or NULL when no
     /// geometry column is configured), and any requested attribute columns.
@@ -34,6 +37,7 @@ internal static partial class OracleFeatureQueryBuilder
     {
         ArgumentNullException.ThrowIfNull(mapping);
         ArgumentNullException.ThrowIfNull(attributeColumns);
+        query = NormalizeConstraints(query, translationOfWhere: null, translationProved: false, mapping.PrimaryKeyColumn);
         GuardUnsupportedTemporalFilter(query);
 
         var sb = new StringBuilder();
@@ -67,6 +71,7 @@ internal static partial class OracleFeatureQueryBuilder
         IReadOnlyList<string>? attributeColumns = null)
     {
         ArgumentNullException.ThrowIfNull(mapping);
+        query = NormalizeConstraints(query, translationOfWhere: null, translationProved: false, mapping.PrimaryKeyColumn);
         GuardUnsupportedTemporalFilter(query);
 
         var sb = new StringBuilder();
@@ -93,6 +98,7 @@ internal static partial class OracleFeatureQueryBuilder
         IReadOnlyList<string>? attributeColumns = null)
     {
         ArgumentNullException.ThrowIfNull(mapping);
+        query = NormalizeConstraints(query, translationOfWhere: null, translationProved: false, mapping.PrimaryKeyColumn);
         GuardUnsupportedTemporalFilter(query);
 
         var sb = new StringBuilder();
@@ -144,7 +150,7 @@ internal static partial class OracleFeatureQueryBuilder
         sb.Append(mapping.QuotedTableReference);
         sb.Append(" WHERE ").Append(geometryColumn).Append(" IS NOT NULL");
 
-        var effective = query ?? new FeatureQuery();
+        var effective = NormalizeConstraints(query ?? new FeatureQuery(), translationOfWhere: null, translationProved: false, mapping.PrimaryKeyColumn);
         GuardUnsupportedTemporalFilter(effective);
         AppendWhereClause(sb, effective, parameters, resolveColumnName);
         AppendObjectIdsFilter(sb, mapping, effective, parameters);
@@ -173,6 +179,23 @@ internal static partial class OracleFeatureQueryBuilder
                 "Apply temporal filtering in the calling layer or use a PostGIS-backed layer.");
         }
     }
+
+    /// <summary>
+    /// Recovers provider-neutral constraints from a Postgres-translated <see cref="FeatureQuery.SqlFilter"/>.
+    /// A pure integral <c>IN</c> list is lifted only when its target is the object id or the
+    /// layer primary key. Attribute <c>IN</c> lists and <c>NOT IN</c> stay unlifted.
+    /// </summary>
+    internal static FeatureQuery NormalizeConstraints(
+        FeatureQuery query,
+        SqlFragment? translationOfWhere,
+        bool translationProved,
+        string? primaryKeyColumn = null)
+        => NonPostgresObjectIdConstraintNormalizer.Normalize(
+            query,
+            translationOfWhere,
+            translationProved,
+            ProviderLabel,
+            primaryKeyColumn);
 
     private static string BuildGeometryWkbExpression(OracleLayerMapping mapping)
     {
@@ -661,4 +684,5 @@ internal static partial class OracleFeatureQueryBuilder
 
     [GeneratedRegex(@"'(?:''|[^'])*'|-?\d+(?:\.\d+)?", RegexOptions.CultureInvariant)]
     private static partial Regex InValueRegex();
+
 }

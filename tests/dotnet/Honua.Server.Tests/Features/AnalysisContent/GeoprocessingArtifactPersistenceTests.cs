@@ -197,6 +197,12 @@ public sealed class GeoprocessingArtifactPersistenceTests
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
+        public Task<bool> TryAbandonVersionAsync(
+            string itemId,
+            int version,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
         public Task<AnalysisContentItemPage> ListItemsAsync(
             AnalysisContentItemQuery query,
             CancellationToken cancellationToken = default)

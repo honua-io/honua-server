@@ -11,6 +11,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.ControlPlane;
 using Honua.ServiceDefaults;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -54,6 +55,39 @@ public sealed class ExecutionJobReconcilerTests
         await replacement.ReconcileExecutionJobAsync(job.OperationId);
         (await store.GetAsync(job.OperationId))!.Status.Should().Be(ExecutionJobStatus.Succeeded);
         await backend.DidNotReceive().StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task ReconcileExecutionJob_PersistedTerminalTransition_NotifiesCallbackOnce()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation { Status = ExecutionJobStatus.Succeeded });
+        var job = CreateJobRecord(
+            "terminal-callback",
+            ExecutionJobStatus.Running,
+            "aws-batch",
+            BatchComputeTargetKind.AwsBatch);
+        var store = new InMemoryExecutionJobStore(job);
+        var callback = new RecordingTerminalCallback();
+        var sut = new ExecutionJobReconciler(
+            store,
+            [backend],
+            new InMemoryProgressStore(),
+            NullLogger<ExecutionJobReconciler>.Instance,
+            terminalCallbacks: [callback]);
+
+        await sut.ReconcileExecutionJobAsync(job.OperationId);
+
+        Assert.Single(callback.Calls);
+        Assert.Equal(ExecutionJobStatus.Succeeded, callback.Calls[0].Job.Status);
+        Assert.Equal(CancellationToken.None, callback.Calls[0].Token);
+
+        await sut.ReconcileExecutionJobAsync(job.OperationId);
+
+        Assert.Single(callback.Calls);
     }
 
     [Theory]
@@ -2072,6 +2106,17 @@ public sealed class ExecutionJobReconcilerTests
 
     private static string? GetTagString(KeyValuePair<string, object?>[] tags, string name)
         => tags.FirstOrDefault(tag => tag.Key == name).Value?.ToString();
+
+    private sealed class RecordingTerminalCallback : IJobTerminalCallback
+    {
+        public List<(ExecutionJobRecord Job, CancellationToken Token)> Calls { get; } = [];
+
+        public ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+        {
+            Calls.Add((job, cancellationToken));
+            return ValueTask.CompletedTask;
+        }
+    }
 
     private sealed class InMemoryExecutionJobStore(params ExecutionJobRecord[] jobs) : IExecutionJobStore
     {

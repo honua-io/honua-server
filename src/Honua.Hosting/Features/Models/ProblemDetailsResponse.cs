@@ -102,4 +102,22 @@ internal sealed record ProblemDetailsResponse
     /// Null/omitted when no reference is known.
     /// </summary>
     public string? RemediationRef { get; init; }
+
+    /// <summary>
+    /// Job that already owns a colliding idempotency key (RFC 7807 extension member).
+    /// Null/omitted when the problem is not an idempotency conflict.
+    /// </summary>
+    public string? ConflictingJobId { get; init; }
+
+    /// <summary>
+    /// Machine-readable policy reference that blocked the request (RFC 7807 extension member).
+    /// Null/omitted when no policy reference applies.
+    /// </summary>
+    public string? PolicyRef { get; init; }
+
+    /// <summary>
+    /// Identifier of an approval proposal created for the blocked request (RFC 7807 extension
+    /// member). Null/omitted when no proposal was persisted.
+    /// </summary>
+    public string? ProposalId { get; init; }
 }

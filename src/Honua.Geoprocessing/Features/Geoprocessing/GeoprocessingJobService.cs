@@ -132,7 +132,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IServiceScopeFactory? serviceScopeFactory = null,
         IPrincipalMembershipSource? principalMembershipSource = null,
         Honua.Core.Features.Operations.Abstractions.IOperationEnvelopeFactory? operationEnvelopeFactory = null,
-        ExecutionAdmissionCoordinator? admissionCoordinator = null)
+        ExecutionAdmissionCoordinator? admissionCoordinator = null,
+        IEnumerable<IJobTerminalCallback>? terminalCallbacks = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -165,7 +166,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             new CustomCodeJobSubmissionGate(
                 logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier),
             new GeoprocessingJobArtifactService(
-                logger, executorOptions, processCatalog, resultPackageStore, rasterSourceResolver),
+                logger,
+                executorOptions,
+                processCatalog,
+                resultPackageStore,
+                rasterSourceResolver,
+                terminalCallbacks: terminalCallbacks),
             logger,
             executorOptions,
             jobStore,
@@ -1198,7 +1204,21 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 $"Job '{jobId}' has not reached a terminal state (current: {job.Status}).");
         }
 
-        return await _artifacts.GetOrSynthesizeResultPackageAsync(job, cancellationToken).ConfigureAwait(false);
+        await _artifacts.ReplayTerminalCallbacksAsync(job).ConfigureAwait(false);
+        var refreshed = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+        if (refreshed == null)
+        {
+            GeoprocessingServiceLog.JobNotFound(_logger, jobId);
+            throw new GeoprocessingNotFoundException($"Job '{jobId}' not found.");
+        }
+
+        if (!IsTerminal(refreshed.Status))
+        {
+            throw new GeoprocessingPreconditionFailedException(
+                $"Job '{jobId}' has not reached a terminal state (current: {refreshed.Status}).");
+        }
+
+        return await _artifacts.GetOrSynthesizeResultPackageAsync(refreshed, cancellationToken).ConfigureAwait(false);
     }
 
     public Task CancelJobAsync(

@@ -20,22 +20,32 @@ namespace Honua.Db.Postgres.Features.FieldWorkflows;
 /// </summary>
 internal sealed class PostgresFieldExportStore : IFieldExportStore
 {
-    private const int MaxExportRows = 50_000;
     private const int MaxListLimit = 500;
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
+    private readonly int _maxExportRows;
     private readonly string _submissionsTable;
     private readonly string _attachmentsTable;
     private readonly string _reviewsTable;
     private readonly string _exportsTable;
 
     public PostgresFieldExportStore(IAdoNetDatabaseConnectionProvider connectionProvider)
+        : this(connectionProvider, "honua", FieldExportLimits.MaxRows)
+    {
+    }
+
+    internal PostgresFieldExportStore(
+        IAdoNetDatabaseConnectionProvider connectionProvider,
+        string schemaName,
+        int maxExportRows)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
-        _submissionsTable = SchemaSearchPath.QualifyTable("form_submissions", "honua");
-        _attachmentsTable = SchemaSearchPath.QualifyTable("form_submission_attachments", "honua");
-        _reviewsTable = SchemaSearchPath.QualifyTable("field_submission_reviews", "honua");
-        _exportsTable = SchemaSearchPath.QualifyTable("field_export_records", "honua");
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxExportRows);
+        _maxExportRows = maxExportRows;
+        _submissionsTable = SchemaSearchPath.QualifyTable("form_submissions", schemaName);
+        _attachmentsTable = SchemaSearchPath.QualifyTable("form_submission_attachments", schemaName);
+        _reviewsTable = SchemaSearchPath.QualifyTable("field_submission_reviews", schemaName);
+        _exportsTable = SchemaSearchPath.QualifyTable("field_export_records", schemaName);
     }
 
     public async Task<FieldExportPackage> CreateExportAsync(
@@ -67,11 +77,12 @@ internal sealed class PostgresFieldExportStore : IFieldExportStore
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
 
+        // One extra row is the truncation probe. It is not part of the package.
         var items = new List<FieldSubmissionRecord>();
         await using (var command = new NpgsqlCommand(selectSql, connection))
         {
             AddFilterParameters(command, request);
-            command.Parameters.AddWithValue("max_rows", NpgsqlDbType.Integer, MaxExportRows);
+            command.Parameters.AddWithValue("max_rows", NpgsqlDbType.Integer, _maxExportRows + 1);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
@@ -79,8 +90,14 @@ internal sealed class PostgresFieldExportStore : IFieldExportStore
             }
         }
 
+        var truncated = items.Count > _maxExportRows;
+        if (truncated)
+        {
+            items.RemoveAt(items.Count - 1);
+        }
+
         var exportId = Guid.NewGuid();
-        var filterJson = BuildFilterJson(request);
+        var filterJson = BuildFilterJson(request, truncated);
         var insertSql = $"""
             INSERT INTO {_exportsTable}
                 (export_id, format, record_count, filter, requested_by, created_at)
@@ -105,7 +122,8 @@ internal sealed class PostgresFieldExportStore : IFieldExportStore
         return new FieldExportPackage
         {
             Record = record,
-            Items = items.ToArray()
+            Items = items.ToArray(),
+            Truncated = truncated
         };
     }
 
@@ -253,13 +271,15 @@ internal sealed class PostgresFieldExportStore : IFieldExportStore
         }
     }
 
-    private static string BuildFilterJson(FieldExportRequest request)
+    private string BuildFilterJson(FieldExportRequest request, bool truncated)
     {
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream))
         {
             writer.WriteStartObject();
             writer.WriteString("format", request.Format);
+            writer.WriteBoolean("truncated", truncated);
+            writer.WriteNumber("rowLimit", _maxExportRows);
             WriteOptionalString(writer, "formId", request.FormId);
             WriteOptionalString(writer, "serviceId", request.ServiceId);
             if (request.LayerId is int layerId)
