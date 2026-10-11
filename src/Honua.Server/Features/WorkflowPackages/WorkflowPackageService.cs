@@ -3,7 +3,6 @@
 
 using System.Globalization;
 using System.Security.Claims;
-using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
@@ -109,8 +108,9 @@ internal sealed class WorkflowPackageService(
         CancellationToken cancellationToken)
     {
         var package = await RequirePackageAsync(packageId, cancellationToken).ConfigureAwait(false);
-        var validation = await ValidateGraphAsync(package.Graph, principal, target: null, cancellationToken).ConfigureAwait(false);
-        var hash = ComputePackageHash(package.Graph);
+        var validatedGraph = package.Graph;
+        var validation = await ValidateGraphAsync(validatedGraph, principal, target: null, cancellationToken).ConfigureAwait(false);
+        var hash = ComputePackageHash(validatedGraph);
         validation = validation with { PackageHash = hash };
 
         if (!validation.IsValid)
@@ -119,7 +119,7 @@ internal sealed class WorkflowPackageService(
         }
 
         var version = await store
-            .CreateVersionAsync(packageId, hash, validation, ResolveActor(principal), cancellationToken)
+            .CreateVersionAsync(packageId, hash, validatedGraph, validation, ResolveActor(principal), cancellationToken)
             .ConfigureAwait(false);
 
         WorkflowPackageLog.PackageVersionCreated(logger, packageId, version.Version, hash);
@@ -283,9 +283,12 @@ internal sealed class WorkflowPackageService(
             throw new WorkflowPackageValidationException(result);
         }
 
+        // Each schedule publication owns its scheduler definition. Sharing one id per
+        // package version let a later publish, disable, or delete replace the others.
         var workflowDefinitionId = request.Target == WorkflowPublicationTarget.Schedule
-            ? $"workflow-package:{packageId}:v{version}"
+            ? ScheduleWorkflowDefinitionId(packageId, version, publicationId)
             : null;
+        WorkflowDefinition? scheduleDefinition = null;
         if (request.Target == WorkflowPublicationTarget.Schedule)
         {
             // A Schedule publication's scheduler receipt is the compiled WorkflowDefinition
@@ -309,11 +312,17 @@ internal sealed class WorkflowPackageService(
                 throw new WorkflowPublicationDependencyUnavailableException();
             }
 
+            if (schedule is null)
+            {
+                throw new InvalidOperationException("Schedule publication requires a schedule declaration.");
+            }
+
             var definition = await CompileWorkflowDefinitionAsync(
                 packageVersion,
                 workflowDefinitionId!,
                 packageId,
-                schedule!,
+                schedule,
+                request.Enabled && schedule.Enabled,
                 cancellationToken).ConfigureAwait(false);
 
             // Persist the publishing human's per-layer authorization with the definition. This
@@ -331,13 +340,12 @@ internal sealed class WorkflowPackageService(
             // (honua-server#3081) — is delegated to the author-security-context capturer, which
             // owns the RBAC/tenant/membership collaborators the capture needs.
             var capturer = authorSecurityContextCapturer ?? new WorkflowAuthorSecurityContextCapturer();
-            definition = definition with
+            scheduleDefinition = definition with
             {
                 AuthorSecurityContext = await capturer
                     .CaptureAsync(principal, cancellationToken)
                     .ConfigureAwait(false)
             };
-            await workflowDefinitionStore.SetAsync(definition, cancellationToken).ConfigureAwait(false);
         }
 
         var processId = request.Target == WorkflowPublicationTarget.ProcessEndpoint
@@ -363,7 +371,24 @@ internal sealed class WorkflowPackageService(
             Provenance = provenance
         };
 
+        // Persist the publication row before the scheduler definition. A failed insert then
+        // cannot leave a cron that no publication references. If the definition write fails
+        // after the row is saved, the row is removed so the console does not advertise a
+        // schedule that was never armed (or, worse, one that was armed and then lost its row).
         var saved = await store.SavePublicationAsync(publication, cancellationToken).ConfigureAwait(false);
+        if (scheduleDefinition is not null)
+        {
+            try
+            {
+                await workflowDefinitionStore!.SetAsync(scheduleDefinition, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                await CompensateFailedSchedulePublishAsync(publicationId, workflowDefinitionId, ex).ConfigureAwait(false);
+                throw;
+            }
+        }
+
         WorkflowPackageLog.PackagePublished(logger, packageId, version, publicationId, request.Target.ToString());
 
         await EmitMetadataReleaseArtifactAsync(saved, principal, cancellationToken).ConfigureAwait(false);
@@ -541,11 +566,16 @@ internal sealed class WorkflowPackageService(
 
         if (publication.Target == WorkflowPublicationTarget.Schedule && orchestrationEngine != null)
         {
+            var runSchedule = publication.Schedule ?? version.Graph.Schedule ?? new WorkflowSchedule { CronExpression = "0 0 * * *" };
             var definition = await CompileWorkflowDefinitionAsync(
                 version,
-                publication.WorkflowDefinitionId ?? $"workflow-package:{publication.PackageId}:v{publication.PackageVersion}",
+                publication.WorkflowDefinitionId ?? ScheduleWorkflowDefinitionId(
+                    publication.PackageId,
+                    publication.PackageVersion,
+                    publication.PublicationId),
                 publication.PackageId,
-                publication.Schedule ?? version.Graph.Schedule ?? new WorkflowSchedule { CronExpression = "0 0 * * *" },
+                runSchedule,
+                runSchedule.Enabled,
                 cancellationToken).ConfigureAwait(false);
             var run = await orchestrationEngine
                 .CreateRunAsync(definition, WorkflowTriggerKind.Manual, principal, provenance, cancellationToken)
@@ -842,6 +872,7 @@ internal sealed class WorkflowPackageService(
         string workflowDefinitionId,
         string packageName,
         WorkflowSchedule schedule,
+        bool triggerEnabled,
         CancellationToken cancellationToken)
     {
         var definitions = await GetNodeDefinitionLookupAsync(cancellationToken).ConfigureAwait(false);
@@ -914,7 +945,7 @@ internal sealed class WorkflowPackageService(
                 Kind = WorkflowTriggerKind.Cron,
                 CronExpression = schedule.CronExpression,
                 TimeZone = schedule.TimeZone,
-                Enabled = schedule.Enabled
+                Enabled = triggerEnabled
             },
             CreatedAt = now,
             UpdatedAt = now,
@@ -1032,45 +1063,52 @@ internal sealed class WorkflowPackageService(
         return metadata;
     }
 
-    private static string ComputePackageHash(WorkflowGraph graph)
+    /// <summary>
+    /// Scheduler definition id owned by one publication. Package id and version alone
+    /// are not unique: two schedule publications of the same version must not share a trigger.
+    /// </summary>
+    internal static string ScheduleWorkflowDefinitionId(string packageId, int version, string publicationId)
     {
-        var builder = new StringBuilder();
-        builder.Append(graph.SchemaVersion).Append('|').Append(graph.WorkerProfile).Append('|');
-        foreach (var node in graph.Nodes.OrderBy(node => node.NodeId, StringComparer.Ordinal))
-        {
-            builder.Append("node:")
-                .Append(node.NodeId)
-                .Append(':')
-                .Append(node.NodeTypeId)
-                .Append(':')
-                .Append(node.WorkerProfile);
+        ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
+        return $"workflow-package:{packageId}:v{version.ToString(CultureInfo.InvariantCulture)}:{publicationId}";
+    }
 
-            foreach (var parameter in node.Parameters.OrderBy(entry => entry.Key, StringComparer.Ordinal))
+    private async Task CompensateFailedSchedulePublishAsync(
+        string publicationId,
+        string? workflowDefinitionId,
+        Exception failure)
+    {
+        WorkflowPackageLog.ScheduleDefinitionPersistFailed(
+            logger,
+            publicationId,
+            workflowDefinitionId ?? string.Empty,
+            failure);
+
+        if (workflowDefinitionStore is not null && !string.IsNullOrWhiteSpace(workflowDefinitionId))
+        {
+            try
             {
-                builder.Append(':').Append(parameter.Key).Append('=').Append(parameter.Value);
+                await workflowDefinitionStore.DeleteAsync(workflowDefinitionId, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                WorkflowPackageLog.ScheduleDefinitionPersistFailed(logger, publicationId, workflowDefinitionId, ex);
             }
         }
 
-        foreach (var edge in graph.Edges
-                     .OrderBy(edge => edge.SourceNodeId, StringComparer.Ordinal)
-                     .ThenBy(edge => edge.TargetNodeId, StringComparer.Ordinal)
-                     .ThenBy(edge => edge.Kind))
+        try
         {
-            builder.Append("|edge:")
-                .Append(edge.SourceNodeId)
-                .Append("->")
-                .Append(edge.TargetNodeId)
-                .Append(':')
-                .Append(edge.Kind)
-                .Append(':')
-                .Append(edge.SourcePort)
-                .Append(':')
-                .Append(edge.TargetPort);
+            await store.DeletePublicationAsync(publicationId, CancellationToken.None).ConfigureAwait(false);
         }
-
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
-        return Convert.ToHexString(hash).ToLowerInvariant();
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            WorkflowPackageLog.ScheduleDefinitionPersistFailed(logger, publicationId, workflowDefinitionId ?? string.Empty, ex);
+        }
     }
+
+    private static string ComputePackageHash(WorkflowGraph graph)
+        => WorkflowPackageGraphHasher.Compute(graph);
 
     private static string CreatePackageId(string name)
     {

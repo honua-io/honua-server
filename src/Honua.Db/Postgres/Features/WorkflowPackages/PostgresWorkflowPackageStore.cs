@@ -107,17 +107,19 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
     public async Task<WorkflowPackageVersion> CreateVersionAsync(
         string packageId,
         string packageHash,
+        WorkflowGraph validatedGraph,
         WorkflowPackageValidationResult validation,
         string? createdBy,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
         ArgumentException.ThrowIfNullOrWhiteSpace(packageHash);
+        ArgumentNullException.ThrowIfNull(validatedGraph);
         ArgumentNullException.ThrowIfNull(validation);
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        string schemaVersion;
+        WorkflowGraph lockedGraph;
         await using (var lockCommand = new NpgsqlCommand(
             $"""
             SELECT graph_json::text
@@ -135,11 +137,21 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
                 throw new KeyNotFoundException($"Workflow package '{packageId}' was not found.");
             }
 
-            var graph = JsonSerializer.Deserialize(packageReader.GetString(0), WorkflowPackageStoreJsonContext.Default.WorkflowGraph);
-            schemaVersion = string.IsNullOrWhiteSpace(graph?.SchemaVersion)
-                ? "workflow-package.v1"
-                : graph.SchemaVersion;
+            lockedGraph = JsonSerializer.Deserialize(packageReader.GetString(0), WorkflowPackageStoreJsonContext.Default.WorkflowGraph)
+                ?? throw new InvalidOperationException("Stored workflow package graph was empty.");
         }
+
+        var lockedHash = WorkflowPackageGraphHasher.Compute(lockedGraph);
+        var validatedHash = WorkflowPackageGraphHasher.Compute(validatedGraph);
+        if (!string.Equals(lockedHash, packageHash, StringComparison.Ordinal) ||
+            !string.Equals(validatedHash, packageHash, StringComparison.Ordinal))
+        {
+            throw new WorkflowPackageGraphConflictException(packageId);
+        }
+
+        var schemaVersion = string.IsNullOrWhiteSpace(validatedGraph.SchemaVersion)
+            ? "workflow-package.v1"
+            : validatedGraph.SchemaVersion;
 
         int nextVersion;
         await using (var versionCommand = new NpgsqlCommand(
@@ -157,9 +169,8 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
             $"""
             INSERT INTO {_versionsTable} (
                 package_id, version, schema_version, package_hash, graph_json, validation_json, created_at, created_by)
-            SELECT @package_id, @version, @schema_version, @package_hash, graph_json, @validation_json::jsonb, @created_at, @created_by
-            FROM {_packagesTable}
-            WHERE package_id = @package_id
+            VALUES (
+                @package_id, @version, @schema_version, @package_hash, @graph_json::jsonb, @validation_json::jsonb, @created_at, @created_by)
             RETURNING package_id, version, schema_version, package_hash, graph_json::text, validation_json::text, created_at, created_by
             """,
             connection,
@@ -169,6 +180,7 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
             insert.Parameters.AddWithValue("version", nextVersion);
             insert.Parameters.AddWithValue("schema_version", schemaVersion);
             insert.Parameters.AddWithValue("package_hash", packageHash);
+            insert.Parameters.Add(JsonParameter("graph_json", JsonSerializer.Serialize(validatedGraph, WorkflowPackageStoreJsonContext.Default.WorkflowGraph)));
             insert.Parameters.Add(JsonParameter("validation_json", JsonSerializer.Serialize(validation, WorkflowPackageStoreJsonContext.Default.WorkflowPackageValidationResult)));
             insert.Parameters.AddWithValue("created_at", createdAt);
             insert.Parameters.AddWithValue("created_by", (object?)createdBy ?? DBNull.Value);

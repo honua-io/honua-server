@@ -42,6 +42,19 @@ public static class FieldExportFormat
 }
 
 /// <summary>
+/// Bounds for a single field-export package. Exports larger than
+/// <see cref="MaxRows"/> are truncated and must say so; they are not complete.
+/// </summary>
+public static class FieldExportLimits
+{
+    /// <summary>
+    /// Maximum submission rows included in one export package. Matches are ordered
+    /// newest first, so rows past this cap are the oldest ones.
+    /// </summary>
+    public const int MaxRows = 50_000;
+}
+
+/// <summary>
 /// Request describing a back-office field export package: the record-set filter
 /// (project/form/service/layer/date-range/review-state) and the desired output
 /// format. The filter mirrors <see cref="FieldReviewQuery"/> so an export selects
@@ -158,4 +171,10 @@ public sealed class FieldExportPackage
 
     /// <summary>The selected submission records included in the package.</summary>
     public FieldSubmissionRecord[] Items { get; init; } = [];
+
+    /// <summary>
+    /// True when matching submissions exceeded <see cref="FieldExportLimits.MaxRows"/>
+    /// and <see cref="Items"/> is only the newest rows inside that cap.
+    /// </summary>
+    public bool Truncated { get; init; }
 }

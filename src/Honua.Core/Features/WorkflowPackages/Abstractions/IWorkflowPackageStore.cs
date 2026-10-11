@@ -26,11 +26,15 @@ public interface IWorkflowPackageStore
     Task<WorkflowPackage> SavePackageAsync(WorkflowPackage package, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Creates an immutable package version.
+    /// Creates an immutable package version from <paramref name="validatedGraph"/>.
+    /// Implementations must lock the package draft and reject the call when that
+    /// draft's hash no longer equals <paramref name="packageHash"/>, and must store
+    /// <paramref name="validatedGraph"/> rather than whatever draft is current.
     /// </summary>
     Task<WorkflowPackageVersion> CreateVersionAsync(
         string packageId,
         string packageHash,
+        WorkflowGraph validatedGraph,
         WorkflowPackageValidationResult validation,
         string? createdBy,
         CancellationToken cancellationToken = default);

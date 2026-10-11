@@ -226,7 +226,8 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
         // definition actually reached the durable store — that record is what the cron scheduler
         // enumerates, and it is what a Redis-less install used to skip while still returning 200
         // (#3585). Assert the durable receipt, not just the response.
-        var persistedDefinition = await _definitionStore.GetAsync($"workflow-package:{packageId}:v{version.Version}");
+        var persistedDefinition = await _definitionStore.GetAsync(
+            $"workflow-package:{packageId}:v{version.Version}:pub-schedule-1185");
         persistedDefinition.Should().NotBeNull(
             "a Schedule publication must persist its compiled workflow definition before reporting success");
         persistedDefinition!.Trigger!.Kind.Should().Be(WorkflowTriggerKind.Cron);
@@ -477,7 +478,7 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
             schedule = new { cronExpression = "0 0 * * *", timeZone = "UTC", enabled = true },
             enabled = true
         });
-        var disableDefinitionId = $"workflow-package:{disablePackageId}:v{disableVersion.Version}";
+        var disableDefinitionId = $"workflow-package:{disablePackageId}:v{disableVersion.Version}:{disablePublicationId}";
         (await _definitionStore.GetAsync(disableDefinitionId)).Should().NotBeNull();
 
         await using (var peer = _fixture.Services.CreateAsyncScope())
@@ -505,7 +506,7 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
             schedule = new { cronExpression = "15 1 * * *", timeZone = "UTC", enabled = true },
             enabled = true
         });
-        var deleteDefinitionId = $"workflow-package:{deletePackageId}:v{deleteVersion.Version}";
+        var deleteDefinitionId = $"workflow-package:{deletePackageId}:v{deleteVersion.Version}:{deletePublicationId}";
         (await _definitionStore.GetAsync(deleteDefinitionId)).Should().NotBeNull();
 
         var deleteResponse = await _client.DeleteAsync($"/api/v1/console/workflow-publications/{deletePublicationId}");

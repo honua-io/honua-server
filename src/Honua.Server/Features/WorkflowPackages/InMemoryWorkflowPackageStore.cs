@@ -63,12 +63,14 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
     public Task<WorkflowPackageVersion> CreateVersionAsync(
         string packageId,
         string packageHash,
+        WorkflowGraph validatedGraph,
         WorkflowPackageValidationResult validation,
         string? createdBy,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
         ArgumentException.ThrowIfNullOrWhiteSpace(packageHash);
+        ArgumentNullException.ThrowIfNull(validatedGraph);
         ArgumentNullException.ThrowIfNull(validation);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -79,15 +81,25 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
                 throw new KeyNotFoundException($"Workflow package '{packageId}' was not found.");
             }
 
+            var lockedHash = WorkflowPackageGraphHasher.Compute(package.Graph);
+            var validatedHash = WorkflowPackageGraphHasher.Compute(validatedGraph);
+            if (!string.Equals(lockedHash, packageHash, StringComparison.Ordinal) ||
+                !string.Equals(validatedHash, packageHash, StringComparison.Ordinal))
+            {
+                throw new WorkflowPackageGraphConflictException(packageId);
+            }
+
             var versions = _versions.GetOrAdd(packageId, _ => []);
             var nextVersion = versions.Count == 0 ? 1 : versions.Max(version => version.Version) + 1;
             var version = new WorkflowPackageVersion
             {
                 PackageId = packageId,
                 Version = nextVersion,
-                SchemaVersion = package.Graph.SchemaVersion,
+                SchemaVersion = string.IsNullOrWhiteSpace(validatedGraph.SchemaVersion)
+                    ? "workflow-package.v1"
+                    : validatedGraph.SchemaVersion,
                 PackageHash = packageHash,
-                Graph = package.Graph,
+                Graph = validatedGraph,
                 Validation = validation,
                 CreatedAt = DateTimeOffset.UtcNow,
                 CreatedBy = createdBy
