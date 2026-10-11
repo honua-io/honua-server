@@ -21,6 +21,9 @@ public sealed class GdalRasterMosaicExecutorTests
 
     private static string Base64(string text) => GdalCli.Base64(text);
 
+    private static string RasterSources(params string[] entries)
+        => string.Join(GdalRasterMosaicJobExecutor.SourceSeparator, entries.Select(GdalCli.RasterBase64));
+
     private static string Sources(params string[] entries)
         => string.Join(GdalRasterMosaicJobExecutor.SourceSeparator, entries.Select(Base64));
 
@@ -43,7 +46,7 @@ public sealed class GdalRasterMosaicExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterMosaicJobExecutor.HandledProcessId,
-                ("sources", Sources("raster-a", "raster-b")));
+                ("sources", RasterSources("raster-a", "raster-b")));
             var context = new RecordingJobExecutionContext(job.OperationId);
 
             var result = await executor.ExecuteAsync(job, context, default);
@@ -74,7 +77,7 @@ public sealed class GdalRasterMosaicExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterMosaicJobExecutor.HandledProcessId,
-                ("sources", Sources("raster-a", "raster-b")),
+                ("sources", RasterSources("raster-a", "raster-b")),
                 ("operator", "first"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -105,7 +108,7 @@ public sealed class GdalRasterMosaicExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterMosaicJobExecutor.HandledProcessId,
-                ("sources", Sources("raster-a", "raster-b")),
+                ("sources", RasterSources("raster-a", "raster-b")),
                 ("operator", "mean"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);

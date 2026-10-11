@@ -61,7 +61,7 @@ public sealed class MapServerQueryLimitsTests : IClassFixture<MapServerQueryLimi
     {
         var geometry = Uri.EscapeDataString("{\"xmin\":-180,\"ymin\":-90,\"xmax\":180,\"ymax\":90}");
         var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry={geometry}&geometryType=esriGeometryEnvelope&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&layers=all&f=json");
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry={geometry}&geometryType=esriGeometryEnvelope&sr=4326&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&layers=all&f=json");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);

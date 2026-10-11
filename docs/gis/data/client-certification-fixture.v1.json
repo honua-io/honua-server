@@ -2297,7 +2297,7 @@
     {
       "id": "NB-STAC-PAGE-03",
       "scenarioFacetId": "SF-PAGE-LIMIT",
-      "description": "GET next uses a token query parameter; POST next is a body-bearing method=POST merge=true link whose token advanced the cursor to a disjoint page."
+      "description": "GET next uses a next cursor query parameter; POST next is a body-bearing method=POST merge=true link whose token advanced the cursor to a disjoint page."
     },
     {
       "id": "NB-STAC-PAGE-04",
