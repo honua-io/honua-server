@@ -15,6 +15,8 @@ namespace Honua.Infrastructure.Caching;
 /// without waiting out <c>Cache:MetadataGraphTtlSeconds</c>.
 /// </summary>
 /// <remarks>
+/// The channel is scoped by <c>Cache:KeyPrefix</c> (<c>{prefix}metadata:v2:graph:invalidations</c>),
+/// so installations that share one Redis under distinct prefixes never invalidate each other.
 /// Composed only when an <see cref="IConnectionMultiplexer"/> is registered; Redis-off (single-node)
 /// deployments keep the plain in-process invalidator. The TTL remains the correctness backstop for a
 /// lost message (Redis pub/sub is at-most-once) or a publish that fails while Redis is unreachable.
@@ -24,27 +26,30 @@ namespace Honua.Infrastructure.Caching;
 /// </remarks>
 internal sealed partial class RedisMetadataV2GraphCacheInvalidator : IMetadataV2GraphCacheInvalidator, IHostedService
 {
-    /// <summary>The Redis pub/sub channel carrying metadata graph snapshot invalidations.</summary>
-    internal const string ChannelName = "honua:metadata:v2:graph:invalidations";
+    /// <summary>The channel suffix appended to the cache key prefix.</summary>
+    internal const string ChannelSuffix = "metadata:v2:graph:invalidations";
+
+    /// <summary>The cache key prefix used when none is configured.</summary>
+    internal const string DefaultKeyPrefix = "honua:";
 
     /// <summary>The environment token that invalidates every environment.</summary>
     internal const string AllEnvironments = "*";
 
     private const char Separator = '\n';
 
-    private static readonly RedisChannel Channel = RedisChannel.Literal(ChannelName);
-
     private readonly MetadataV2GraphSnapshotCache _cache;
     private readonly IConnectionMultiplexer _redis;
     private readonly ILogger<RedisMetadataV2GraphCacheInvalidator> _logger;
     private readonly string _instanceId;
+    private readonly RedisChannel _channel;
     private ISubscriber? _subscriber;
 
     public RedisMetadataV2GraphCacheInvalidator(
         MetadataV2GraphSnapshotCache cache,
         IConnectionMultiplexer redis,
         ILogger<RedisMetadataV2GraphCacheInvalidator> logger,
-        string? instanceId = null)
+        string? instanceId = null,
+        string? keyPrefix = null)
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _redis = redis ?? throw new ArgumentNullException(nameof(redis));
@@ -52,6 +57,26 @@ internal sealed partial class RedisMetadataV2GraphCacheInvalidator : IMetadataV2
         _instanceId = string.IsNullOrWhiteSpace(instanceId)
             ? Environment.MachineName + "_" + Guid.NewGuid().ToString("N")
             : instanceId;
+        ChannelName = BuildChannelName(keyPrefix);
+        _channel = RedisChannel.Literal(ChannelName);
+    }
+
+    /// <summary>Gets the Redis pub/sub channel this node publishes and subscribes on.</summary>
+    internal string ChannelName { get; }
+
+    /// <summary>
+    /// Builds the deployment-scoped channel name from the configured cache key prefix.
+    /// </summary>
+    /// <param name="keyPrefix">The configured <c>Cache:KeyPrefix</c>; blank uses the default.</param>
+    internal static string BuildChannelName(string? keyPrefix)
+    {
+        var prefix = string.IsNullOrWhiteSpace(keyPrefix) ? DefaultKeyPrefix : keyPrefix.Trim();
+        if (!prefix.EndsWith(':'))
+        {
+            prefix += ":";
+        }
+
+        return prefix + ChannelSuffix;
     }
 
     /// <inheritdoc />
@@ -75,7 +100,7 @@ internal sealed partial class RedisMetadataV2GraphCacheInvalidator : IMetadataV2
         try
         {
             var subscriber = _redis.GetSubscriber();
-            await subscriber.SubscribeAsync(Channel, OnMessage).ConfigureAwait(false);
+            await subscriber.SubscribeAsync(_channel, OnMessage).ConfigureAwait(false);
             _subscriber = subscriber;
             Log.SubscriptionStarted(_logger, ChannelName);
         }
@@ -97,7 +122,7 @@ internal sealed partial class RedisMetadataV2GraphCacheInvalidator : IMetadataV2
 
         try
         {
-            await subscriber.UnsubscribeAsync(Channel, OnMessage).ConfigureAwait(false);
+            await subscriber.UnsubscribeAsync(_channel, OnMessage).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -155,7 +180,7 @@ internal sealed partial class RedisMetadataV2GraphCacheInvalidator : IMetadataV2
             // Fire-and-forget: the write already committed and the local cache is cleared; peers fall
             // back to the TTL if this message is lost, so the write path never blocks on Redis.
             _redis.GetSubscriber().Publish(
-                Channel,
+                _channel,
                 _instanceId + Separator + environment,
                 CommandFlags.FireAndForget);
         }

@@ -350,7 +350,8 @@ internal static class InfrastructureCompositionRoot
         services.TryAddSingleton(sp => new RedisMetadataV2GraphCacheInvalidator(
             sp.GetRequiredService<Honua.Core.Features.Metadata.Caching.MetadataV2GraphSnapshotCache>(),
             sp.GetRequiredService<IConnectionMultiplexer>(),
-            sp.GetRequiredService<ILogger<RedisMetadataV2GraphCacheInvalidator>>()));
+            sp.GetRequiredService<ILogger<RedisMetadataV2GraphCacheInvalidator>>(),
+            keyPrefix: sp.GetService<IOptions<CacheOptions>>()?.Value.KeyPrefix));
 
         // Replace (not TryAdd) so this wins regardless of whether the store composition registered
         // the in-process invalidator before or after this call.

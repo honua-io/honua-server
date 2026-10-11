@@ -86,12 +86,34 @@ public sealed class RedisMetadataV2GraphCacheInvalidatorTests
         await cache.GetOrLoadAsync(Env, store.GetCurrentAsync);
         await cache.GetOrLoadAsync("other", store.GetCurrentAsync);
 
-        node.OnMessage(RedisChannel.Literal(RedisMetadataV2GraphCacheInvalidator.ChannelName), "node-a\n" + Env);
-        node.OnMessage(RedisChannel.Literal(RedisMetadataV2GraphCacheInvalidator.ChannelName), "node-b\n" + Env);
+        node.OnMessage(RedisChannel.Literal(node.ChannelName), "node-a\n" + Env);
+        node.OnMessage(RedisChannel.Literal(node.ChannelName), "node-b\n" + Env);
 
         await cache.GetOrLoadAsync(Env, store.GetCurrentAsync);
         await cache.GetOrLoadAsync("other", store.GetCurrentAsync);
         store.Calls.Should().Be(3, "only the peer's message for this environment invalidates");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task InstallationsWithDistinctKeyPrefixes_SharingOneRedis_DoNotInvalidateEachOther()
+    {
+        var bus = new FakeRedisBus();
+        var (tenantA, _) = NewNode(bus, "a-1", keyPrefix: "tenant-a:");
+        var (tenantB, cacheB) = NewNode(bus, "b-1", keyPrefix: "tenant-b");
+        await tenantB.StartAsync(CancellationToken.None);
+
+        var store = new CountingStore(Snapshot(1));
+        await cacheB.GetOrLoadAsync(Env, store.GetCurrentAsync);
+
+        tenantA.Invalidate(Env);
+
+        await cacheB.GetOrLoadAsync(Env, store.GetCurrentAsync);
+        store.Calls.Should().Be(1, "a write in another installation must not evict this installation's snapshot");
+        tenantA.ChannelName.Should().Be("tenant-a:metadata:v2:graph:invalidations");
+        tenantB.ChannelName.Should().Be("tenant-b:metadata:v2:graph:invalidations");
+        RedisMetadataV2GraphCacheInvalidator.BuildChannelName(null)
+            .Should().Be("honua:metadata:v2:graph:invalidations");
     }
 
     [UnitTest]
@@ -102,8 +124,8 @@ public sealed class RedisMetadataV2GraphCacheInvalidatorTests
 
         var act = () =>
         {
-            node.OnMessage(RedisChannel.Literal(RedisMetadataV2GraphCacheInvalidator.ChannelName), "no-separator");
-            node.OnMessage(RedisChannel.Literal(RedisMetadataV2GraphCacheInvalidator.ChannelName), RedisValue.Null);
+            node.OnMessage(RedisChannel.Literal(node.ChannelName), "no-separator");
+            node.OnMessage(RedisChannel.Literal(node.ChannelName), RedisValue.Null);
         };
 
         act.Should().NotThrow();
@@ -178,14 +200,16 @@ public sealed class RedisMetadataV2GraphCacheInvalidatorTests
 
     private static (RedisMetadataV2GraphCacheInvalidator Node, MetadataV2GraphSnapshotCache Cache) NewNode(
         FakeRedisBus bus,
-        string instanceId)
+        string instanceId,
+        string? keyPrefix = null)
     {
         var cache = NewCache();
         var node = new RedisMetadataV2GraphCacheInvalidator(
             cache,
             bus.Connect(),
             NullLogger<RedisMetadataV2GraphCacheInvalidator>.Instance,
-            instanceId);
+            instanceId,
+            keyPrefix);
         return (node, cache);
     }
 
