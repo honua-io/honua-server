@@ -22,6 +22,9 @@ public sealed class GdalRasterMapAlgebraExecutorTests
 
     private static string Base64(string text) => GdalCli.Base64(text);
 
+    private static string RasterSources(params string[] entries)
+        => string.Join(GdalRasterMapAlgebraJobExecutor.SourceSeparator, entries.Select(GdalCli.RasterBase64));
+
     private static string Sources(params string[] entries)
         => string.Join(GdalRasterMapAlgebraJobExecutor.SourceSeparator, entries.Select(Base64));
 
@@ -44,7 +47,7 @@ public sealed class GdalRasterMapAlgebraExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterMapAlgebraJobExecutor.HandledProcessId,
-                ("sources", Sources("raster-a", "raster-b")),
+                ("sources", RasterSources("raster-a", "raster-b")),
                 ("expression", "(A-B)/(A+B)"));
             var context = new RecordingJobExecutionContext(job.OperationId);
 
@@ -79,7 +82,7 @@ public sealed class GdalRasterMapAlgebraExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterMapAlgebraJobExecutor.HandledProcessId,
-                ("sources", Sources("raster-a")),
+                ("sources", RasterSources("raster-a")),
                 ("expression", "-A"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -109,7 +112,7 @@ public sealed class GdalRasterMapAlgebraExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterMapAlgebraJobExecutor.HandledProcessId,
-                ("sources", Sources("raster-a")),
+                ("sources", RasterSources("raster-a")),
                 ("expression", "A*2"),
                 ("dataType", "float32"));
 
@@ -134,7 +137,7 @@ public sealed class GdalRasterMapAlgebraExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterMapAlgebraJobExecutor.HandledProcessId,
-                ("sources", Sources("raster-a")),
+                ("sources", RasterSources("raster-a")),
                 ("expression", "__import__('os').system('id')"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -158,7 +161,7 @@ public sealed class GdalRasterMapAlgebraExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterMapAlgebraJobExecutor.HandledProcessId,
-                ("sources", Sources("raster-a")),
+                ("sources", RasterSources("raster-a")),
                 ("expression", "A+B"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -182,7 +185,7 @@ public sealed class GdalRasterMapAlgebraExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterMapAlgebraJobExecutor.HandledProcessId,
-                ("sources", Sources("raster-a")));
+                ("sources", RasterSources("raster-a")));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
@@ -242,7 +245,7 @@ public sealed class GdalRasterMapAlgebraExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterMapAlgebraJobExecutor.HandledProcessId,
-                ("sources", Sources("raster-a")),
+                ("sources", RasterSources("raster-a")),
                 ("expression", expression));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -273,7 +276,7 @@ public sealed class GdalRasterMapAlgebraExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterMapAlgebraJobExecutor.HandledProcessId,
-                ("sources", Sources("raster-a")),
+                ("sources", RasterSources("raster-a")),
                 ("expression", expression));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
@@ -295,7 +298,7 @@ public sealed class GdalRasterMapAlgebraExecutorTests
         var executor = NewExecutor(runner, out var scratch);
         try
         {
-            var job = GdalJobFactory.Job("raster.map-algebra", ("sources", Sources("raster-a")), ("expression", "A/2"));
+            var job = GdalJobFactory.Job("raster.map-algebra", ("sources", RasterSources("raster-a")), ("expression", "A/2"));
             var context = new RecordingJobExecutionContext(job.OperationId);
             var result = await executor.ExecuteAsync(job, context, default);
             result.Status.Should().Be(ExecutionJobStatus.Failed);
@@ -328,7 +331,7 @@ public sealed class GdalRasterMapAlgebraExecutorTests
         var executor = NewExecutor(runner, out var scratch);
         try
         {
-            var job = GdalJobFactory.Job("raster.map-algebra", ("sources", Sources("raster-a")), ("expression", "A+1"));
+            var job = GdalJobFactory.Job("raster.map-algebra", ("sources", RasterSources("raster-a")), ("expression", "A+1"));
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
             result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
             var arguments = runner.Invocations.Single(i => i.Tool == "gdal_calc.py").Arguments;
@@ -356,7 +359,7 @@ public sealed class GdalRasterMapAlgebraExecutorTests
         var executor = NewExecutor(runner, out var scratch);
         try
         {
-            var job = GdalJobFactory.Job("raster.map-algebra", ("sources", Sources("raster-a")), ("expression", "A+1"));
+            var job = GdalJobFactory.Job("raster.map-algebra", ("sources", RasterSources("raster-a")), ("expression", "A+1"));
             var context = new RecordingJobExecutionContext(job.OperationId);
             var result = await executor.ExecuteAsync(job, context, default);
             result.Status.Should().Be(ExecutionJobStatus.Failed);

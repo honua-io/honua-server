@@ -564,7 +564,7 @@ The five canonical analyst lanes ([#3392](https://github.com/honua-io/honua-serv
 | `NB-STAC-ITEM-06` | `SF-EXT-CLIENT-IDIOM` | Catalog: validated against the published STAC JSON Schemas; Collection: validated against the published STAC JSON Schemas; Item: validated against the published STAC JSON Schemas. |
 | `NB-STAC-PAGE-01` | `SF-PAGE-LIMIT` | pages() walked to exhaustion in page sizes [3, 3, 3, 1], collecting all 10 seeded items with no duplicates and terminating without a next link. |
 | `NB-STAC-PAGE-02` | `SF-PAGE-LIMIT` | ItemSearch.matched()=10 agrees with numberMatched=10 and numberReturned=3 equals the actual feature count on the page. |
-| `NB-STAC-PAGE-03` | `SF-PAGE-LIMIT` | GET next uses a token query parameter; POST next is a body-bearing method=POST merge=true link whose token advanced the cursor to a disjoint page. |
+| `NB-STAC-PAGE-03` | `SF-PAGE-LIMIT` | GET next uses a next cursor query parameter; POST next is a body-bearing method=POST merge=true link whose token advanced the cursor to a disjoint page. |
 | `NB-STAC-PAGE-04` | `SF-PAGE-LIMIT` | limit=1000000 clamped to the server maximum and still answered 200; limit=0 was rejected with status=400 title='Bad Request' detail='limit must be greater than or equal to 1.'. Raw httpx.... |
 | `NB-STAC-PAGE-05` | `SF-PAGE-LIMIT` | A token past the end returned an empty FeatureCollection with no next link; a malformed token was rejected with status=400 title='Bad Request' detail='Invalid pagination token.'. |
 | `NB-STAC-SEARCH-01` | `SF-QFLT-SPATIAL` | intersects(Polygon) and the equivalent bbox both returned ['1', '2', '3']. |

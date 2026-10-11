@@ -37,8 +37,17 @@ BEGIN
     RETURN NEW;
 END;
 $$;
-CREATE TRIGGER sta_observation_result_sync BEFORE INSERT OR UPDATE OF result, result_json
-    ON $HonuaSchema$.sta_observation FOR EACH ROW EXECUTE FUNCTION $HonuaSchema$.sta_synchronize_result();
+-- Every statement is rerunnable: a journal kept outside the target schema (or a
+-- restored journal) can replay this script against objects that already exist.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                   WHERE tgname = 'sta_observation_result_sync'
+                     AND tgrelid = '$HonuaSchema$.sta_observation'::regclass) THEN
+        CREATE TRIGGER sta_observation_result_sync BEFORE INSERT OR UPDATE OF result, result_json
+            ON $HonuaSchema$.sta_observation FOR EACH ROW EXECUTE FUNCTION $HonuaSchema$.sta_synchronize_result();
+    END IF;
+END $$;
 
 CREATE SEQUENCE IF NOT EXISTS $HonuaSchema$.sta_location_id_seq;
 CREATE SEQUENCE IF NOT EXISTS $HonuaSchema$.sta_historical_location_id_seq;
@@ -78,25 +87,50 @@ ALTER TABLE $HonuaSchema$.sta_observation ADD COLUMN IF NOT EXISTS datastream_re
 ALTER TABLE $HonuaSchema$.sta_observation ADD COLUMN IF NOT EXISTS feature_of_interest_reference_id bigint;
 CREATE INDEX IF NOT EXISTS ix_sta_observation_datastream_reference_time ON $HonuaSchema$.sta_observation(datastream_reference_id,phenomenon_time,id);
 CREATE INDEX IF NOT EXISTS ix_sta_observation_feature_reference ON $HonuaSchema$.sta_observation(feature_of_interest_reference_id);
-UPDATE $HonuaSchema$.sta_observation o SET datastream_reference_id=o.datastream_id
-    FROM $HonuaSchema$.sta_datastream d WHERE d.id=o.datastream_id;
--- The new FoI table starts empty: legacy references never become associations merely
--- because a later entity happens to receive the same identifier.
-SELECT setval('$HonuaSchema$.sta_feature_of_interest_id_seq',
-    GREATEST(COALESCE((SELECT MAX(feature_of_interest_id) FROM $HonuaSchema$.sta_observation),0),
-             COALESCE((SELECT MAX(id) FROM $HonuaSchema$.sta_feature_of_interest),0),1),
-    GREATEST(COALESCE((SELECT MAX(feature_of_interest_id) FROM $HonuaSchema$.sta_observation),0),
-             COALESCE((SELECT MAX(id) FROM $HonuaSchema$.sta_feature_of_interest),0))>0);
-SELECT setval('$HonuaSchema$.sta_datastream_id_seq',
-    GREATEST(COALESCE((SELECT MAX(datastream_id) FROM $HonuaSchema$.sta_observation),0),
-             COALESCE((SELECT MAX(id) FROM $HonuaSchema$.sta_datastream),0),1),true);
-ALTER TABLE $HonuaSchema$.sta_observation ADD CONSTRAINT sta_observation_datastream_fk
-    FOREIGN KEY (datastream_reference_id) REFERENCES $HonuaSchema$.sta_datastream(id) ON DELETE CASCADE;
-ALTER TABLE $HonuaSchema$.sta_observation ADD CONSTRAINT sta_observation_foi_fk
-    FOREIGN KEY (feature_of_interest_reference_id) REFERENCES $HonuaSchema$.sta_feature_of_interest(id) ON DELETE CASCADE;
-ALTER TABLE $HonuaSchema$.sta_observation ADD CONSTRAINT sta_observation_reference_consistency
-    CHECK ((datastream_reference_id IS NULL OR (datastream_id IS NOT NULL AND datastream_reference_id=datastream_id))
-       AND (feature_of_interest_reference_id IS NULL OR (feature_of_interest_id IS NOT NULL AND feature_of_interest_reference_id=feature_of_interest_id)));
+-- One-shot reconciliation. A replay must not re-link an unresolved legacy reference to a
+-- datastream created after the original upgrade, so it runs only before the reference
+-- trigger below exists.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                   WHERE tgname = 'sta_observation_reference_sync'
+                     AND tgrelid = '$HonuaSchema$.sta_observation'::regclass) THEN
+        UPDATE $HonuaSchema$.sta_observation o SET datastream_reference_id=o.datastream_id
+            FROM $HonuaSchema$.sta_datastream d WHERE d.id=o.datastream_id;
+        -- The new FoI table starts empty: legacy references never become associations merely
+        -- because a later entity happens to receive the same identifier.
+        PERFORM setval('$HonuaSchema$.sta_feature_of_interest_id_seq',
+            GREATEST(COALESCE((SELECT MAX(feature_of_interest_id) FROM $HonuaSchema$.sta_observation),0),
+                     COALESCE((SELECT MAX(id) FROM $HonuaSchema$.sta_feature_of_interest),0),1),
+            GREATEST(COALESCE((SELECT MAX(feature_of_interest_id) FROM $HonuaSchema$.sta_observation),0),
+                     COALESCE((SELECT MAX(id) FROM $HonuaSchema$.sta_feature_of_interest),0))>0);
+        PERFORM setval('$HonuaSchema$.sta_datastream_id_seq',
+            GREATEST(COALESCE((SELECT MAX(datastream_id) FROM $HonuaSchema$.sta_observation),0),
+                     COALESCE((SELECT MAX(id) FROM $HonuaSchema$.sta_datastream),0),1),true);
+    END IF;
+END $$;
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conname = 'sta_observation_datastream_fk'
+                     AND conrelid = '$HonuaSchema$.sta_observation'::regclass) THEN
+        ALTER TABLE $HonuaSchema$.sta_observation ADD CONSTRAINT sta_observation_datastream_fk
+            FOREIGN KEY (datastream_reference_id) REFERENCES $HonuaSchema$.sta_datastream(id) ON DELETE CASCADE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conname = 'sta_observation_foi_fk'
+                     AND conrelid = '$HonuaSchema$.sta_observation'::regclass) THEN
+        ALTER TABLE $HonuaSchema$.sta_observation ADD CONSTRAINT sta_observation_foi_fk
+            FOREIGN KEY (feature_of_interest_reference_id) REFERENCES $HonuaSchema$.sta_feature_of_interest(id) ON DELETE CASCADE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conname = 'sta_observation_reference_consistency'
+                     AND conrelid = '$HonuaSchema$.sta_observation'::regclass) THEN
+        ALTER TABLE $HonuaSchema$.sta_observation ADD CONSTRAINT sta_observation_reference_consistency
+            CHECK ((datastream_reference_id IS NULL OR (datastream_id IS NOT NULL AND datastream_reference_id=datastream_id))
+               AND (feature_of_interest_reference_id IS NULL OR (feature_of_interest_id IS NOT NULL AND feature_of_interest_reference_id=feature_of_interest_id)));
+    END IF;
+END $$;
 CREATE OR REPLACE FUNCTION $HonuaSchema$.sta_synchronize_references() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -114,5 +148,12 @@ BEGIN
     RETURN NEW;
 END;
 $$;
-CREATE TRIGGER sta_observation_reference_sync BEFORE INSERT OR UPDATE OF datastream_id,feature_of_interest_id
-    ON $HonuaSchema$.sta_observation FOR EACH ROW EXECUTE FUNCTION $HonuaSchema$.sta_synchronize_references();
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                   WHERE tgname = 'sta_observation_reference_sync'
+                     AND tgrelid = '$HonuaSchema$.sta_observation'::regclass) THEN
+        CREATE TRIGGER sta_observation_reference_sync BEFORE INSERT OR UPDATE OF datastream_id,feature_of_interest_id
+            ON $HonuaSchema$.sta_observation FOR EACH ROW EXECUTE FUNCTION $HonuaSchema$.sta_synchronize_references();
+    END IF;
+END $$;
