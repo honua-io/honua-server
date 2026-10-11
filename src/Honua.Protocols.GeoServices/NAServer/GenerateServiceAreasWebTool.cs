@@ -117,7 +117,7 @@ internal static class GenerateServiceAreasWebTool
 
     private sealed record FacilityIdentity(int? ObjectId, string? Name);
 
-    private static IReadOnlyList<FacilityIdentity> ReadFacilityIdentities(
+    private static FacilityIdentity[] ReadFacilityIdentities(
         IReadOnlyDictionary<string, string> parameters, int count)
     {
         var identities = Enumerable.Repeat(new FacilityIdentity(null, null), count).ToArray();
