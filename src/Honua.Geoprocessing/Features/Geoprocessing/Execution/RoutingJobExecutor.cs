@@ -12,6 +12,7 @@ using Honua.ControlPlane;
 using Honua.Infrastructure.Rendering;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
@@ -21,10 +22,9 @@ namespace Honua.Geoprocessing.Execution;
 
 /// <summary>Runs bounded routing solves through the canonical provider and shared job publication fence.</summary>
 internal sealed class RoutingJobExecutor(
+    IServiceScopeFactory scopeFactory,
     IOptionsMonitor<GeoprocessingExecutorOptions> options,
-    IOptions<RoutingConfiguration> configuration,
-    IRoutingProvider? routing = null,
-    ICoordinateTransformService? transforms = null) : IProcessExecutor
+    IOptions<RoutingConfiguration> configuration) : IProcessExecutor
 {
     public IReadOnlySet<string> ProcessIds { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -40,6 +40,9 @@ internal sealed class RoutingJobExecutor(
         {
             return JobExecutionResult.Failed("The routing executor does not handle this process.") with { IsRetryable = false };
         }
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var routing = scope.ServiceProvider.GetService<IRoutingProvider>();
+        var transforms = scope.ServiceProvider.GetService<ICoordinateTransformService>();
         if (routing is null)
         {
             return JobExecutionResult.Failed("No routing provider is configured.") with { IsRetryable = false };
@@ -173,8 +176,8 @@ internal sealed class RoutingJobExecutor(
                     {
                         continue;
                     }
-                    var demand = await ProjectPointAsync(second[allocation.DemandPointId], inSrid, outSrid, cancellationToken).ConfigureAwait(false);
-                    var facility = await ProjectPointAsync(first[allocation.AllocatedFacilityId], inSrid, outSrid, cancellationToken).ConfigureAwait(false);
+                    var demand = await ProjectPointAsync(second[allocation.DemandPointId], inSrid, outSrid, transforms, cancellationToken).ConfigureAwait(false);
+                    var facility = await ProjectPointAsync(first[allocation.AllocatedFacilityId], inSrid, outSrid, transforms, cancellationToken).ConfigureAwait(false);
                     var geometry = new LineString([facility.Coordinate.Copy(), demand.Coordinate.Copy()]);
                     var feature = new Feature(geometry, Attributes(("DemandID", Identity(second, allocation.DemandPointId)),
                         ("FacilityID", Identity(first, allocation.AllocatedFacilityId)), ("Weight", allocation.Weight),
@@ -214,8 +217,8 @@ internal sealed class RoutingJobExecutor(
                 }
             }
 
-            var firstOutput = await ProjectInputsAsync(first, inSrid, outSrid, cancellationToken).ConfigureAwait(false);
-            var secondOutput = await ProjectInputsAsync(second, inSrid, outSrid, cancellationToken).ConfigureAwait(false);
+            var firstOutput = await ProjectInputsAsync(first, inSrid, outSrid, transforms, cancellationToken).ConfigureAwait(false);
+            var secondOutput = await ProjectInputsAsync(second, inSrid, outSrid, transforms, cancellationToken).ConfigureAwait(false);
             var payloads = new[]
             {
                 FeatureCollectionArtifact.WriteFeatureCollection(solution, processId),
@@ -329,7 +332,7 @@ internal sealed class RoutingJobExecutor(
         return barriers;
     }
 
-    private async Task<List<IFeature>> ProjectInputsAsync(FeatureCollection features, int fromSrid, int toSrid, CancellationToken ct)
+    private static async Task<List<IFeature>> ProjectInputsAsync(FeatureCollection features, int fromSrid, int toSrid, ICoordinateTransformService? transforms, CancellationToken ct)
     {
         List<IFeature> result = [];
         for (var index = 0; index < features.Count; index++)
@@ -342,12 +345,12 @@ internal sealed class RoutingJobExecutor(
                     attributes.Add(name, features[index].Attributes[name]);
                 }
             }
-            result.Add(new Feature(await ProjectPointAsync(features[index], fromSrid, toSrid, ct).ConfigureAwait(false), attributes));
+            result.Add(new Feature(await ProjectPointAsync(features[index], fromSrid, toSrid, transforms, ct).ConfigureAwait(false), attributes));
         }
         return result;
     }
 
-    private async ValueTask<Point> ProjectPointAsync(IFeature feature, int fromSrid, int toSrid, CancellationToken ct)
+    private static async ValueTask<Point> ProjectPointAsync(IFeature feature, int fromSrid, int toSrid, ICoordinateTransformService? transforms, CancellationToken ct)
     {
         var point = (Point)feature.Geometry;
         if (fromSrid == toSrid)

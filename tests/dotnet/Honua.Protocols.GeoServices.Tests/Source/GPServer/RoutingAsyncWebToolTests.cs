@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
@@ -571,6 +572,54 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
         result.RootElement.GetProperty("paramName").GetString().Should().Be("Output_Routes");
         result.RootElement.GetProperty("value").GetProperty("features").GetArrayLength().Should().Be(1);
         (await fixture.GetService<IExecutionJobStore>().GetAsync(jobId))!.ArtifactReferences.Should().HaveCount(4);
+    }
+
+    [IntegrationTheory]
+    [InlineData("GPServer")]
+    [InlineData("NAServer")]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/{taskName}/submitJob")]
+    public async Task SubmitJob_DevelopmentScopedProvider_ExecutesAndDisposesJobScope(string family)
+    {
+        var instances = new ConcurrentBag<(IRoutingProvider Provider, RoutingScopeProbe Scope)>();
+        await using var fixture = Fixture(Provider()).UseEnvironment("Development")
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IRoutingProvider>();
+                services.AddScoped(_ => new RoutingScopeProbe());
+                services.AddScoped<IRoutingProvider>(sp =>
+                {
+                    var provider = Provider();
+                    instances.Add((provider, sp.GetRequiredService<RoutingScopeProbe>()));
+                    return provider;
+                });
+            });
+        await fixture.InitializeAsync();
+        var client = fixture.CreateClient();
+        var jobId = await SubmitAsync(client, "FindClosestFacilities", new Dictionary<string, string>
+        {
+            ["Incidents"] = FirstPoint,
+            ["Facilities"] = SecondPoint,
+        }, family);
+        using var terminal = await GPServerJobWait.UntilRestSucceededAsync(client,
+            JobPath("FindClosestFacilities", jobId, family), jobId, fixture.GetService<IExecutionJobStore>());
+        using var result = await ResultAsync(client, "FindClosestFacilities", jobId, "Output_Routes", family);
+        result.RootElement.GetProperty("value").GetProperty("features").GetArrayLength().Should().Be(1);
+        (await fixture.GetService<IExecutionJobStore>().GetAsync(jobId))!.ArtifactReferences.Should().HaveCount(4);
+        var executed = instances.Where(instance => instance.Provider.ReceivedCalls().Any(call =>
+            call.GetMethodInfo().Name == nameof(IRoutingProvider.SolveClosestFacilityAsync))).ToArray();
+        executed.Should().ContainSingle();
+        await executed[0].Provider.Received(1).SolveClosestFacilityAsync(
+            Arg.Any<ClosestFacilitySolveRequest>(), Arg.Any<CancellationToken>());
+        executed[0].Scope.IsDisposed.Should().BeTrue("the executor must release its provider scope before completing the job");
+    }
+
+    private sealed class RoutingScopeProbe : IDisposable
+    {
+        private int _disposed;
+        public bool IsDisposed => Volatile.Read(ref _disposed) != 0;
+        public void Dispose() => Interlocked.Exchange(ref _disposed, 1);
     }
 
     private static IRoutingProvider Provider()

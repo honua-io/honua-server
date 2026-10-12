@@ -265,7 +265,7 @@ public sealed class CatalogExecutableConformanceTests
                 Substitute.For<IServiceScopeFactory>(),
                 NullLogger<ImportDatasetJobExecutor>.Instance,
                 Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>()),
-            new RoutingJobExecutor(monitor, Options.Create(new RoutingConfiguration())),
+            new RoutingJobExecutor(Substitute.For<IServiceScopeFactory>(), monitor, Options.Create(new RoutingConfiguration())),
             new ImageryInferenceJobExecutor(
                 Substitute.For<IOptionsMonitor<Honua.Geoprocessing.Inference.ImageryInferenceOptions>>(),
                 monitor,
