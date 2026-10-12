@@ -423,9 +423,9 @@ internal sealed class InputValidationMiddleware
         "client_secret",
         "client_assertion",
         "assertion",
-        // The broker's callback state ("{idpState}.{sessionId}") and the PKCE values are
-        // random base64url strings that can contain "--". They are compared or hashed, never
-        // placed in SQL, and a false positive rejects a valid authorization callback.
+        // Client-owned state and PKCE values are opaque and can contain "--". The broker's
+        // generated callback IDs are hexadecimal, but the authorize request preserves the
+        // client's original state. These values are compared or hashed, never placed in SQL.
         "state",
         "code_challenge",
         "code_verifier",
