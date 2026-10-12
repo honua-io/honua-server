@@ -12,10 +12,15 @@ journal containing `002_CreateAttachmentsTable`, leaving the reviewed
 skip, and safety override settings remain unset. A passing result requires the
 specific existing-database migration safety refusal and pending contract name,
 exit code 1, no OOM, no unhandled exception or listening message, an unchanged
-journal, and no core/minidump in the container's filesystem changes. Core limits
-are unlimited and .NET dump requests are enabled. The receipt records the host
+journal, and no core/minidump in the container's filesystem changes. Core and individual file limits are
+64 MiB and .NET dump requests are enabled. A dump exceeding that bound still
+fails through signal exit or a detected partial file. The receipt records the host
 kernel core pattern because host-level core collectors can receive dumps outside
 the container filesystem; exit-by-signal still fails regardless of dump location.
+
+Each container has a 1 GiB memory limit (no extra swap), one CPU, 256 PIDs,
+and a 10 MiB rotating Docker log. Cleanup attempts each container and network
+independently even if another cleanup command times out.
 
 The invocation bounds server exit to 240 seconds by default (maximum 600),
 PostGIS readiness to 120 seconds, and each Docker operation separately. Resource

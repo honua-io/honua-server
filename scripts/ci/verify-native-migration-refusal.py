@@ -12,6 +12,11 @@ from pathlib import Path
 
 REFUSAL = "Migration safety gate blocked pending contract-phase migration(s) on an existing database:"
 CONTRACT = "038_DropV1MetadataGraphTables"
+CONTAINER_LIMITS = ("--memory", "1g", "--memory-swap", "1g", "--cpus", "1", "--pids-limit", "256",
+                    "--log-opt", "max-size=10m", "--log-opt", "max-file=1")
+DUMP_LIMIT_BYTES = 64 * 1024 * 1024
+
+
 SEED = """CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE TABLE public.schema_versions (
  schemaversionsid serial PRIMARY KEY, scriptname varchar(255) NOT NULL,
@@ -56,6 +61,9 @@ def main() -> None:
     network, pg, server = (f"honua-refusal-{kind}-{suffix}" for kind in ("net", "pg", "server"))
     receipt: dict = {"schema": "honua.native-migration-refusal/v1", "source_sha": args.source_sha,
                      "requested_image": args.image, "passed": False,
+                     "dump_file_limit_bytes": DUMP_LIMIT_BYTES,
+                     "dump_scope": "container filesystem; host core collector not inspected; signal exit always fails",
+                     "container_limits": list(CONTAINER_LIMITS),
                      "core_pattern": Path("/proc/sys/kernel/core_pattern").read_text().strip()}
     try:
         image = json.loads(docker("image", "inspect", args.image))[0]
@@ -74,7 +82,7 @@ def main() -> None:
         if any(value.split("=", 1)[0].lower().startswith(forbidden) for value in env):
             raise ValueError("image bakes in migration skip, approval, or safety overrides")
         docker("network", "create", network)
-        docker("run", "-d", "--name", pg, "--network", network,
+        docker("run", "-d", "--name", pg, "--network", network, *CONTAINER_LIMITS,
                "-e", "POSTGRES_PASSWORD=refusal-test", "-e", "POSTGRES_DB=honua_refusal",
                "postgis/postgis:16-3.4")
         deadline = time.monotonic() + 120
@@ -88,7 +96,8 @@ def main() -> None:
                 time.sleep(2)
         docker("exec", "-i", pg, "psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres",
                "-d", "honua_refusal", input=SEED)
-        docker("create", "--name", server, "--network", network, "--ulimit", "core=-1",
+        docker("create", "--name", server, "--network", network, *CONTAINER_LIMITS,
+               "--ulimit", f"core={DUMP_LIMIT_BYTES}", "--ulimit", f"fsize={DUMP_LIMIT_BYTES}",
                "-e", "ASPNETCORE_ENVIRONMENT=Production", "-e", "DOTNET_ENVIRONMENT=Production",
                "-e", f"ConnectionStrings__DefaultConnection=Host={pg};Database=honua_refusal;Username=postgres;Password=refusal-test",
                "-e", "DataSource__Provider=postgis", "-e", "HONUA_ADMIN_PASSWORD=GatedBoot-Refusal-1a",
@@ -128,8 +137,15 @@ def main() -> None:
                 (args.output / "server.log").write_text(result.stdout + result.stderr)
         finally:
             (args.output / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
-            for command in (("rm", "-f", server, pg), ("network", "rm", network)):
-                subprocess.run(["docker", *command], capture_output=True, timeout=60, check=False)
+            cleanup_errors = []
+            for command in (("rm", "-f", server), ("rm", "-f", pg), ("network", "rm", network)):
+                try:
+                    subprocess.run(["docker", *command], capture_output=True, timeout=60, check=False)
+                except (subprocess.TimeoutExpired, OSError) as error:
+                    cleanup_errors.append(f"{command}: {error}")
+            if cleanup_errors:
+                receipt["cleanup_errors"] = cleanup_errors
+                (args.output / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
 
 
 if __name__ == "__main__":
