@@ -31,6 +31,10 @@ public sealed class SharedGeometryValidatorParityTests
         var shared = new WkbGeometryValidator(options, topology, NullLogger.Instance);
         var bytes = new WKBWriter().Write(new WKTReader().Read(wkt));
 
+        shared.ValidateWkb(bytes).IsValid.Should().BeTrue();
+        shared.ValidateWkb([1, 2, 3]).IsValid.Should().BeFalse();
+        shared.ValidateWkb([1, 2, 3]).Errors.Should().ContainSingle()
+            .Which.Code.Should().Be(ValidationErrorCode.InvalidWkbStructure);
         adapter.ValidateWkb(bytes).Should().BeEquivalentTo(shared.ValidateWkb(bytes));
         (await adapter.ValidateCompleteAsync(bytes)).Should().BeEquivalentTo(await shared.ValidateCompleteAsync(bytes));
         adapter.ValidateWkb([1, 2, 3]).Should().BeEquivalentTo(shared.ValidateWkb([1, 2, 3]));
