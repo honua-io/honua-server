@@ -23,6 +23,8 @@
   <ItemGroup>
     <ProjectReference Include="../../../src/Honua.Protocols.OData/Honua.Protocols.OData.csproj" />
     <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
+    <!-- Pure test data only; no dependency on the full TestKit assembly. -->
+    <Compile Include="../Honua.TestKit/OData/ODataProviderTestData.cs" Link="Shared/ODataProviderTestData.cs" />
     <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
