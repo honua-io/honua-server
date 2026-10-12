@@ -33,6 +33,15 @@ class ComparisonTests(unittest.TestCase):
                         "tests": [{"identity": "Namespace.Class.Method|Method(arg:1)", "outcome": "Passed"}]})
         return receipts
 
+    def test_nonfinite_metrics_and_clocks_cannot_qualify(self):
+        for value in (float("nan"), float("inf"), float("-inf")):
+            receipts = self.receipts()
+            receipts[0]["stages"][0]["clockSkewSeconds"] = value
+            self.assertFalse(pilot.compare(receipts, "unit")["passed"])
+            receipts = self.receipts()
+            receipts[0]["firstTestSeconds"] = value
+            self.assertFalse(pilot.compare(receipts, "unit")["passed"])
+
     def test_all_three_pairs_and_all_thresholds_are_required(self):
         result = pilot.compare(self.receipts(), "unit")
         self.assertTrue(result["passed"])
