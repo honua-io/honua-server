@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Routing.Features.Routing.Abstractions;
@@ -216,7 +217,9 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
             fixture.GetService<IExecutionJobStore>());
         terminal.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobFailed");
         provider.ReceivedCalls().Should().NotContain(call => call.GetMethodInfo().Name.StartsWith("Solve", StringComparison.Ordinal));
-        (await fixture.GetService<IExecutionJobStore>().GetAsync(jobId))!.ArtifactReferences.Should().BeEmpty();
+        var job = (await fixture.GetService<IExecutionJobStore>().GetAsync(jobId))!;
+        job.AttemptCount.Should().Be(1);
+        job.ArtifactReferences.Should().BeEmpty();
     }
 
     [IntegrationTest]
@@ -306,7 +309,8 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
         terminal.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobFailed");
         provider.ReceivedCalls().Should().NotContain(call => call.GetMethodInfo().Name.StartsWith("Solve", StringComparison.Ordinal));
         var job = await fixture.GetService<IExecutionJobStore>().GetAsync(jobId);
-        job!.ArtifactReferences.Should().BeEmpty();
+        job!.AttemptCount.Should().Be(1);
+        job.ArtifactReferences.Should().BeEmpty();
         using var result = await client.GetAsync($"/rest/services/{ServiceId}/GPServer/{task}/jobs/{jobId}/results/{output}?f=json");
         using var error = JsonDocument.Parse(await result.Content.ReadAsStringAsync());
         error.RootElement.TryGetProperty("error", out _).Should().BeTrue();
@@ -383,11 +387,19 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
         await fixture.InitializeAsync();
         using var client = fixture.CreateAdminClient();
         var jobId = await SubmitAsync(client, task, new() { [first] = FirstPoint, [second] = SecondPoint });
+        // The default policy retries after 30 s and 60 s. Retain the original
+        // terminal oracle and add precisely those documented delays to its budget.
+        var retryPolicy = JobRetryPolicy.Default;
+        var budget = GPServerJobWait.JobBudget + retryPolicy.ComputeDelay(2) + retryPolicy.ComputeDelay(3);
         using var terminal = await GPServerJobWait.UntilRestTerminalAsync(client, JobPath(task, jobId), jobId,
-            fixture.GetService<IExecutionJobStore>());
+            fixture.GetService<IExecutionJobStore>(), jobBudget: budget);
         terminal.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobFailed");
-        provider.ReceivedCalls().Count(call => call.GetMethodInfo().Name.StartsWith("Solve", StringComparison.Ordinal)).Should().Be(1);
-        (await fixture.GetService<IExecutionJobStore>().GetAsync(jobId))!.ArtifactReferences.Should().BeEmpty();
+        provider.ReceivedCalls().Count(call => call.GetMethodInfo().Name.StartsWith("Solve", StringComparison.Ordinal)).Should().Be(retryPolicy.MaxAttempts);
+        var durable = (await fixture.GetService<IExecutionJobStore>().GetAsync(jobId))!;
+        durable.Status.Should().Be(ExecutionJobStatus.Failed);
+        durable.AttemptCount.Should().Be(retryPolicy.MaxAttempts);
+        durable.ErrorMessage.Should().NotBeNullOrWhiteSpace();
+        durable.ArtifactReferences.Should().BeEmpty();
     }
 
     [IntegrationTheory]

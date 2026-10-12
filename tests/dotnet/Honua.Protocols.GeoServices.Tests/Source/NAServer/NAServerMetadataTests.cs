@@ -110,13 +110,26 @@ public sealed class NAServerMetadataTests
         parameters["Solve_Succeeded"]!["dataType"]!.GetValue<string>().Should().Be("GPBoolean");
     }
 
-    [UnitTest]
-    public void RemainingRoutingWebTools_AreNotAdvertisedAsExecutableUtilities()
+    [UnitTheory]
+    [InlineData("FindClosestFacilities", "Incidents", "Facilities", "Output_Routes")]
+    [InlineData("GenerateOriginDestinationCostMatrix", "Origins", "Destinations", "Output_Origin_Destination_Lines")]
+    [InlineData("SolveLocationAllocation", "Facilities", "Demand_Points", "Output_Allocation_Lines")]
+    public void RoutingWebTools_AdvertiseTheirAsynchronousNamedContracts(string name, string first, string second, string output)
     {
-        foreach (var name in new[] { "FindClosestFacilities", "GenerateOriginDestinationCostMatrix", "SolveLocationAllocation" })
+        NAServerMetadata.IsUtilityTask(name).Should().BeTrue();
+        NAServerMetadata.IsRoutingWebTool(name).Should().BeTrue();
+        var info = NAServerMetadata.BuildUtilityTaskInfo(name);
+        info["name"]!.GetValue<string>().Should().Be(name);
+        info["executionType"]!.GetValue<string>().Should().Be("esriExecutionTypeAsynchronous");
+        var parameters = info["parameters"]!.AsArray().ToDictionary(parameter => parameter!["name"]!.GetValue<string>());
+        foreach (var input in new[] { first, second })
         {
-            NAServerMetadata.IsUtilityTask(name).Should().BeFalse();
-            NAServerMetadata.IsRoutingWebTool(name).Should().BeFalse();
+            parameters[input]!["dataType"]!.GetValue<string>().Should().Be("GPFeatureRecordSetLayer");
+            parameters[input]!["defaultValue"]!["geometryType"]!.GetValue<string>().Should().Be("esriGeometryPoint");
         }
+        parameters[output]!["dataType"]!.GetValue<string>().Should().Be("GPFeatureRecordSetLayer");
+        parameters["Solve_Succeeded"]!["dataType"]!.GetValue<string>().Should().Be("GPBoolean");
+        NAServerMetadata.IsUtilityTask("UnimplementedRoutingTask").Should().BeFalse();
+        NAServerMetadata.IsRoutingWebTool("UnimplementedRoutingTask").Should().BeFalse();
     }
 }

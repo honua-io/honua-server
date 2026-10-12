@@ -38,11 +38,11 @@ internal sealed class RoutingJobExecutor(
         var processId = GeoprocessingDispatchHelper.ResolveProcessId(job.Spec.Parameters);
         if (processId is null || !ProcessIds.Contains(processId))
         {
-            return JobExecutionResult.Failed("The routing executor does not handle this process.");
+            return JobExecutionResult.Failed("The routing executor does not handle this process.") with { IsRetryable = false };
         }
         if (routing is null)
         {
-            return JobExecutionResult.Failed("No routing provider is configured.");
+            return JobExecutionResult.Failed("No routing provider is configured.") with { IsRetryable = false };
         }
 
         var prefix = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.";
@@ -80,7 +80,7 @@ internal sealed class RoutingJobExecutor(
             var capabilityError = RoutingRequestValidation.ValidateCapabilities(capabilities, barriers, mode);
             if (capabilityError is not null)
             {
-                return JobExecutionResult.Failed(capabilityError);
+                return JobExecutionResult.Failed(capabilityError) with { IsRetryable = false };
             }
             await context.ReportProgressAsync(10, "Solving network analysis", cancellationToken).ConfigureAwait(false);
             List<IFeature> solution;
@@ -237,7 +237,7 @@ internal sealed class RoutingJobExecutor(
         }
         catch (Exception exception) when (exception is ArgumentException or FormatException or JsonException or NotSupportedException)
         {
-            return JobExecutionResult.Failed(exception.Message);
+            return JobExecutionResult.Failed(exception.Message) with { IsRetryable = false };
         }
     }
 
