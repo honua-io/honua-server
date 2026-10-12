@@ -147,6 +147,14 @@ public sealed class ImageServerHttpAuthorizationTests
             await fixture.InitializeAsync();
             fixture.UpdateV2ResourceMetadata(
                 LayerId, accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = [EntitledRole] });
+            // SOAP resolves the ImageServer publication, which has a distinct resource
+            // from the first feature publication sharing layer index zero.
+            fixture.UpdateV2ServiceMetadata(
+                WebAppFixture.TestServiceId,
+                accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = [EntitledRole] });
+            fixture.GetCurrentV2GraphSnapshot().Graph.Services
+                .Where(service => service.Metadata.Id == "svc-image-test")
+                .Should().ContainSingle().Which.AccessPolicy!.AllowedRoles.Should().Equal(EntitledRole);
             var entitled = await IssueAsync(fixture, "imagery-analyst", EntitledRole);
             var unentitled = await IssueAsync(fixture, "map-viewer", UnrelatedRole);
             await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
