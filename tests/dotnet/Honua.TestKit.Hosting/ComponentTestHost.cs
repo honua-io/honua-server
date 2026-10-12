@@ -10,6 +10,9 @@ namespace Honua.TestKit.Hosting;
 /// <summary>Owns a protocol fixture's in-process HTTP host and client.</summary>
 public sealed class ComponentTestHost : IAsyncDisposable
 {
+    private readonly Lock _disposeGate = new();
+    private Task? _disposeTask;
+
     private readonly WebApplication _application;
 
     private ComponentTestHost(WebApplication application)
@@ -51,7 +54,15 @@ public sealed class ComponentTestHost : IAsyncDisposable
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
+    {
+        lock (_disposeGate)
+        {
+            return new ValueTask(_disposeTask ??= DisposeCoreAsync());
+        }
+    }
+
+    private async Task DisposeCoreAsync()
     {
         Client.Dispose();
         using var shutdown = new CancellationTokenSource(TimeSpan.FromSeconds(10));

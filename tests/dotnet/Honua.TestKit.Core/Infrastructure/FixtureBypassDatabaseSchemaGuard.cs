@@ -9,17 +9,17 @@ namespace Honua.TestKit;
 
 /// <summary>
 /// Explicit test-fixture seam for schemas provisioned directly by test seed infrastructure rather
-/// than the production DbUp journal. This type lives only in Honua.TestKit; no production project
-/// references that assembly.
+/// than the production DbUp journal. This type lives only in test support; no production project
+/// references its assembly.
 /// </summary>
-internal sealed class FixtureBypassDatabaseSchemaGuard : IDatabaseSchemaGuard
+public sealed class FixtureBypassDatabaseSchemaGuard : IDatabaseSchemaGuard
 {
     private FixtureBypassDatabaseSchemaGuard()
     {
     }
 
     /// <summary>Gets the single fixture-only bypass instance.</summary>
-    internal static FixtureBypassDatabaseSchemaGuard Instance { get; } = new();
+    public static FixtureBypassDatabaseSchemaGuard Instance { get; } = new();
 
     /// <inheritdoc />
     public Task VerifyAsync(string connectionString, CancellationToken cancellationToken = default)

@@ -9,4 +9,7 @@
     <ProjectReference Include="../Honua.TestKit.Postgres.Hosting/Honua.TestKit.Postgres.Hosting.csproj" />
     <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="../Shared/RunnerConfig/component.xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

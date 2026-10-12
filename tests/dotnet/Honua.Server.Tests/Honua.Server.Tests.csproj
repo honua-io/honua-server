@@ -92,6 +92,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="../Shared/SceneUnitSupport/*.cs" Link="Shared/%(Filename)%(Extension)" />
+    <Compile Include="../Shared/SceneUnitSupport/CityGmlSceneFixtures.cs" Link="Shared/CityGmlSceneFixtures.cs" />
+    <Compile Include="../Shared/SceneUnitSupport/InMemoryCloudFileStorage.cs" Link="Shared/InMemoryCloudFileStorage.cs" />
+    <Compile Include="../Shared/SceneUnitSupport/PointCloudSceneFixtures.cs" Link="Shared/PointCloudSceneFixtures.cs" />
+    <Compile Include="../Shared/SceneUnitSupport/SceneExecutorTestStubs.cs" Link="Shared/SceneExecutorTestStubs.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/AlertUnitSupport/AlertEventTestFactories.cs" Link="Shared/AlertEventTestFactories.cs" />
+    <Compile Include="../Shared/AlertUnitSupport/AwsPublisherFakes.cs" Link="Shared/AwsPublisherFakes.cs" />
+    <Compile Include="../Shared/AlertUnitSupport/AzurePublisherFake.cs" Link="Shared/AzurePublisherFake.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/Ai/SpecGroundingTestSupport.cs" Link="Shared/SpecGroundingTestSupport.cs" />
   </ItemGroup>
 </Project>

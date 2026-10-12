@@ -11,15 +11,28 @@ using Honua.TestKit.Constants;
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
 [Protocol(TestProtocols.OgcApiFeatures)]
-public sealed class OgcFeaturesClientDiscoveryTests : IAsyncLifetime
+public sealed class OgcFeaturesClientDiscoveryTests : IAsyncLifetime, IAsyncDisposable
 {
+    private readonly Lock _disposeGate = new();
+    private Task? _disposeTask;
+
     private const string Crs84 = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
     private const string Epsg4326 = "http://www.opengis.net/def/crs/EPSG/0/4326";
     private readonly OgcFeaturesComponentFixture _fixture = new();
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync()
+    {
+        lock (_disposeGate)
+        {
+            return _disposeTask ??= DisposeCoreAsync();
+        }
+    }
+
+    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsync());
+
+    private Task DisposeCoreAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]

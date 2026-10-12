@@ -69,4 +69,7 @@
   <ItemGroup>
     <Compile Include="../Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs" Link="Shared/ImageServerMultidimensionalSoapAssertions.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs" Link="Shared/GPServerSoapRequestFixtures.cs" />
+  </ItemGroup>
 </Project>

@@ -14,8 +14,11 @@ using Npgsql;
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 
 /// <summary>Real PostGIS geometry operations through the production GeometryServer HTTP routes.</summary>
-public sealed class GeometryServiceComponentFixture : IAsyncLifetime
+public sealed class GeometryServiceComponentFixture : IAsyncLifetime, IAsyncDisposable
 {
+    private readonly Lock _disposeGate = new();
+    private Task? _disposeTask;
+
     private PostgresFixture? _postgres;
     private ComponentTestHost? _host;
     private string? _connection;
@@ -60,7 +63,17 @@ public sealed class GeometryServiceComponentFixture : IAsyncLifetime
         }
     }
 
-    public async Task DisposeAsync()
+    public Task DisposeAsync()
+    {
+        lock (_disposeGate)
+        {
+            return _disposeTask ??= DisposeCoreAsync();
+        }
+    }
+
+    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsync());
+
+    private async Task DisposeCoreAsync()
     {
         var host = _host;
         var postgres = _postgres;
@@ -91,4 +104,4 @@ public sealed class GeometryServiceComponentFixture : IAsyncLifetime
 }
 
 [CollectionDefinition("Database.GeoServicesRaster")]
-public sealed class GeometryServiceComponentCollection;
+public sealed class GeometryServiceComponentCollectionDefinition;

@@ -14,8 +14,11 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 /// Verifies OGC Features metadata links are not derived from untrusted Host headers.
 /// </summary>
 [Protocol(TestProtocols.OgcApiFeatures)]
-public sealed class OgcFeaturesHostHeaderTests : IAsyncLifetime
+public sealed class OgcFeaturesHostHeaderTests : IAsyncLifetime, IAsyncDisposable
 {
+    private readonly Lock _disposeGate = new();
+    private Task? _disposeTask;
+
     private readonly OgcFeaturesComponentFixture _fixture = new();
 
     public async Task InitializeAsync()
@@ -23,7 +26,17 @@ public sealed class OgcFeaturesHostHeaderTests : IAsyncLifetime
         await _fixture.InitializeAsync();
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync()
+    {
+        lock (_disposeGate)
+        {
+            return _disposeTask ??= DisposeCoreAsync();
+        }
+    }
+
+    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsync());
+
+    private Task DisposeCoreAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
     [Operation(Operations.Query)]

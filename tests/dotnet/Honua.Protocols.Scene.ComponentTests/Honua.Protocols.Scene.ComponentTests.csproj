@@ -11,4 +11,7 @@
     <Compile Include="../Honua.Protocols.Scene.Tests/Source/SceneFixturePaths.cs" Link="Shared/SceneFixturePaths.cs" />
     <Compile Include="../Honua.Protocols.Scene.Tests/Source/SceneFixtureRoots.cs" Link="Shared/SceneFixtureRoots.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="../Shared/RunnerConfig/component.xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

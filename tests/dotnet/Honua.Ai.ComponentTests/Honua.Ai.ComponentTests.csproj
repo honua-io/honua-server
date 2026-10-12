@@ -23,4 +23,7 @@
     <ProjectReference Include="../Honua.TestKit.Core/Honua.TestKit.Core.csproj" />
     <ProjectReference Include="../Honua.TestKit.Hosting/Honua.TestKit.Hosting.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="../Shared/RunnerConfig/component.xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

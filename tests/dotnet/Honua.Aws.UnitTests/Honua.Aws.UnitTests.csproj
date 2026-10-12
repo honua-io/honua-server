@@ -17,4 +17,8 @@
     <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
     <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/AlertUnitSupport/AlertEventTestFactories.cs" Link="Shared/AlertEventTestFactories.cs" />
+    <Compile Include="../Shared/AlertUnitSupport/AwsPublisherFakes.cs" Link="Shared/AwsPublisherFakes.cs" />
+  </ItemGroup>
 </Project>

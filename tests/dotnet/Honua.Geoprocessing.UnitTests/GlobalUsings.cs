@@ -6,3 +6,4 @@ global using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision
 global using Honua.Core.Features.Security.Domain;
 global using Operations = Honua.TestKit.Constants.Operations;
 global using TestProtocols = Honua.TestKit.Constants.ProtocolNames;
+global using Honua.Infrastructure.Authentication;

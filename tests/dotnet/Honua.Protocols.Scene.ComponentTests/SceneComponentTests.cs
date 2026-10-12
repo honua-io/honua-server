@@ -4,6 +4,7 @@
 using System.Net;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Licensing;
@@ -74,6 +75,7 @@ public sealed class SceneComponentTests
                 ["Scenes:Datasets:1:AccessPolicy:AllowAnonymous"] = "false"
             });
             builder.Services.AddScene(builder.Configuration);
+            builder.Services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
             builder.Services.Configure<OutputCacheTtlOptions>(_ => { });
             OutputCachingRegistration.ConfigureOutputCaching(builder.Services, builder.Configuration);
             // The supported production disabled licensing mode, without test entitlements.

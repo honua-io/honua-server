@@ -37,4 +37,7 @@
     <Compile Include="../Honua.Db.Postgres.Tests/Features/Import/GeoPackageTestFiles.cs" Link="Shared/GeoPackageTestFiles.cs" />
     <Compile Include="../Honua.TestKit/Infrastructure/ImportPreviewTestFakes.cs" Link="Shared/ImportPreviewTestFakes.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="../Shared/RunnerConfig/unit.xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

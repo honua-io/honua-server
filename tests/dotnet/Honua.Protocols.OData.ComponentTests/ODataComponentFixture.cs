@@ -12,8 +12,11 @@ using Xunit;
 
 namespace Honua.Protocols.OData.ComponentTests;
 
-public sealed class ODataComponentFixture : IAsyncLifetime
+public sealed class ODataComponentFixture : IAsyncLifetime, IAsyncDisposable
 {
+    private readonly Lock _disposeGate = new();
+    private Task? _disposeTask;
+
     private PostgresFixture? _postgres;
     private WebApplication? _app;
     private string? _connection;
@@ -85,7 +88,17 @@ public sealed class ODataComponentFixture : IAsyncLifetime
         Client.DefaultRequestHeaders.Add("X-API-Key", adminKey);
     }
 
-    public async Task DisposeAsync()
+    public Task DisposeAsync()
+    {
+        lock (_disposeGate)
+        {
+            return _disposeTask ??= DisposeCoreAsync();
+        }
+    }
+
+    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsync());
+
+    private async Task DisposeCoreAsync()
     {
         Client?.Dispose();
         Anonymous?.Dispose();

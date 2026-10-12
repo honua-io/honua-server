@@ -5,5 +5,7 @@ global using Xunit;
 global using Operations = Honua.TestKit.Constants.Operations;
 global using TestProtocols = Honua.TestKit.Constants.ProtocolNames;
 
+namespace Honua.Ai.ComponentTests;
+
 [CollectionDefinition("Database")]
-public sealed class StudioAiComponentCollection;
+public sealed class StudioAiComponentCollectionDefinition;

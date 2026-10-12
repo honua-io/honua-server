@@ -8,6 +8,9 @@ namespace Honua.TestKit.Postgres.Hosting;
 /// <summary>Owns a bounded fixture lease and one canonically provisioned database.</summary>
 public sealed class PostgresComponentDatabase : IAsyncDisposable
 {
+    private readonly Lock _disposeGate = new();
+    private Task? _disposeTask;
+
     private readonly PostgresFixture _fixture = new(boundedResources: true);
     private string? _connectionString;
 
@@ -28,7 +31,15 @@ public sealed class PostgresComponentDatabase : IAsyncDisposable
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
+    {
+        lock (_disposeGate)
+        {
+            return new ValueTask(_disposeTask ??= DisposeCoreAsync());
+        }
+    }
+
+    private async Task DisposeCoreAsync()
     {
         var connection = _connectionString;
         _connectionString = null;

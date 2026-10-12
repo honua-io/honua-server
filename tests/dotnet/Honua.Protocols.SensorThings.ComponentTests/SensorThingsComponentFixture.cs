@@ -10,8 +10,11 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.SensorThings.ComponentTests;
 
-public sealed class SensorThingsComponentFixture : IAsyncLifetime
+public sealed class SensorThingsComponentFixture : IAsyncLifetime, IAsyncDisposable
 {
+    private readonly Lock _disposeGate = new();
+    private Task? _disposeTask;
+
     private readonly PostgresComponentDatabase _database = new();
     private ComponentTestHost? _host;
     public HttpClient Client => _host?.Client ?? throw new InvalidOperationException("Host not started.");
@@ -49,7 +52,17 @@ public sealed class SensorThingsComponentFixture : IAsyncLifetime
         }
     }
 
-    public async Task DisposeAsync()
+    public Task DisposeAsync()
+    {
+        lock (_disposeGate)
+        {
+            return _disposeTask ??= DisposeCoreAsync();
+        }
+    }
+
+    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsync());
+
+    private async Task DisposeCoreAsync()
     {
         try
         {

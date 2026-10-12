@@ -33,4 +33,7 @@
     <Compile Include="../Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs" Link="Shared/ImageServerMultidimensionalSoapAssertions.cs" />
     <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs" Link="Shared/GPServerSoapRequestFixtures.cs" />
+  </ItemGroup>
 </Project>

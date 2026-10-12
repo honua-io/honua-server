@@ -20,14 +20,27 @@ namespace Honua.Server.Tests.Features.Protocols.Scene;
 /// against a public fixture tileset.
 /// </summary>
 [Protocol(Honua.TestKit.Constants.ProtocolNames.Scene)]
-public sealed class SceneTilesetEndpointTests : IAsyncLifetime
+public sealed class SceneTilesetEndpointTests : IAsyncLifetime, IAsyncDisposable
 {
+    private readonly Lock _disposeGate = new();
+    private Task? _disposeTask;
+
     private ComponentTestHost _fixture = null!;
     private readonly string _fixtureRoot = SceneFixturePaths.ResolveFixtureRoot();
 
     public async Task InitializeAsync() => _fixture = await SceneComponentTests.StartAsync(_fixtureRoot, SceneFixturePaths.FixtureSceneId);
 
-    public Task DisposeAsync() => _fixture.DisposeAsync().AsTask();
+    public Task DisposeAsync()
+    {
+        lock (_disposeGate)
+        {
+            return _disposeTask ??= DisposeCoreAsync();
+        }
+    }
+
+    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsync());
+
+    private Task DisposeCoreAsync() => _fixture is null ? Task.CompletedTask : _fixture.DisposeAsync().AsTask();
 
     [IntegrationTest]
     [Operation(Operations.GetTileMetadata)]

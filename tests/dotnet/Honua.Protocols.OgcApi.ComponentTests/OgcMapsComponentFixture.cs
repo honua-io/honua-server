@@ -13,8 +13,11 @@ using Npgsql;
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
 
 /// <summary>Production OGC Maps routes over the canonical Postgres component services.</summary>
-public sealed class OgcMapsComponentFixture : IAsyncLifetime
+public sealed class OgcMapsComponentFixture : IAsyncLifetime, IAsyncDisposable
 {
+    private readonly Lock _disposeGate = new();
+    private Task? _disposeTask;
+
     private PostgresFixture? _postgres;
     private ComponentTestHost? _host;
     private string? _connection;
@@ -58,7 +61,17 @@ public sealed class OgcMapsComponentFixture : IAsyncLifetime
         }
     }
 
-    public async Task DisposeAsync()
+    public Task DisposeAsync()
+    {
+        lock (_disposeGate)
+        {
+            return _disposeTask ??= DisposeCoreAsync();
+        }
+    }
+
+    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsync());
+
+    private async Task DisposeCoreAsync()
     {
         var host = _host;
         var postgres = _postgres;
@@ -89,4 +102,4 @@ public sealed class OgcMapsComponentFixture : IAsyncLifetime
 }
 
 [CollectionDefinition("Database.OgcApiTiles")]
-public sealed class OgcMapsComponentCollection;
+public sealed class OgcMapsComponentCollectionDefinition;

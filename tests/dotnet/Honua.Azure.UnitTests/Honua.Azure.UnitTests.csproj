@@ -20,4 +20,8 @@
     <ProjectReference Include="../Honua.TestKit.Core/Honua.TestKit.Core.csproj" />
     <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/AlertUnitSupport/AlertEventTestFactories.cs" Link="Shared/AlertEventTestFactories.cs" />
+    <Compile Include="../Shared/AlertUnitSupport/AzurePublisherFake.cs" Link="Shared/AzurePublisherFake.cs" />
+  </ItemGroup>
 </Project>
