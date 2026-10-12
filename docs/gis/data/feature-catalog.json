@@ -13001,6 +13001,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.VersionInfos_OwnerFilter_ListsOnlyThatOwnersVersions",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.VersionNames_BareAndQualifiedCreateInputs_ReturnSameQualifiedIdentityAcrossResponses",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.WorkspaceOpen_DefaultVersionExchange_AnswersEveryStep"
       ],
       "proof_ledger_surface": "version-management-server",
@@ -13016,7 +13017,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerAuthorizationTests.VersionVisibility_PrivateVersionOfAnotherOwner_IsNotDisclosed",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.ListVersions_AfterCreate_ContainsVersion"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.ListVersions_AfterCreate_ContainsVersion",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.VersionNames_BareAndQualifiedCreateInputs_ReturnSameQualifiedIdentityAcrossResponses"
       ],
       "proof_ledger_surface": "version-management-server",
       "maturity": "experimental",
@@ -13031,7 +13033,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerAuthorizationTests.VersionVisibility_PrivateVersionOfAnotherOwner_IsNotDisclosed",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.VersionInfo_ReturnsSingleVersion"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.VersionInfo_ReturnsSingleVersion",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.VersionNames_BareAndQualifiedCreateInputs_ReturnSameQualifiedIdentityAcrossResponses"
       ],
       "proof_ledger_surface": "version-management-server",
       "maturity": "experimental",
@@ -23190,6 +23193,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Create_IgnoresCallerSuppliedOwner",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.Create_NewVersion_ReturnsVersionInfo",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.VersionInfos_OwnerFilter_ListsOnlyThatOwnersVersions",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.VersionNames_BareAndQualifiedCreateInputs_ReturnSameQualifiedIdentityAcrossResponses",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.WorkspaceOpen_DefaultVersionExchange_AnswersEveryStep"
       ],
       "proof_ledger_surface": "version-management-server",
@@ -23205,6 +23209,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.VersionInfos_OwnerFilter_ListsOnlyThatOwnersVersions",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.VersionNames_BareAndQualifiedCreateInputs_ReturnSameQualifiedIdentityAcrossResponses",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.WorkspaceOpen_DefaultVersionExchange_AnswersEveryStep"
       ],
       "proof_ledger_surface": "version-management-server",
@@ -23220,6 +23225,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerAuthorizationTests.ReadSessions_FollowVersionVisibility_AndEditSessionsStayOwnerOnly",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.VersionNames_BareAndQualifiedCreateInputs_ReturnSameQualifiedIdentityAcrossResponses",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests.WorkspaceOpen_DefaultVersionExchange_AnswersEveryStep"
       ],
       "proof_ledger_surface": "version-management-server",
