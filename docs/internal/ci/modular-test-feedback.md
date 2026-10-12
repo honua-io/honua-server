@@ -166,9 +166,13 @@ untiered test does not inherit a baseline waiver from a different assembly:
 reviewed pure cases need an explicit Fast tier, component cases an explicit
 Integration tier, and existing Slow/integration choices must remain intact.
 
-At this rollout checkpoint, catalog/selection fixtures and static shard coverage
-have passed. The expanded .NET graph, live architecture/tier guards, full
-integration gates and hosted PR verification remain pending; this runbook is not
-a completion receipt. OData image/performance qualification remains a separate
+At the rollout checkpoint before the latest trunk merge, 21 of 23 directly run
+unit projects and eight of nine component projects passed. The two unit failures
+identified missing Skia native assets; the component failures identified OGC API
+fixture setup. Corrections have been applied but need fresh execution at the
+merged head. Catalog/selection fixtures and static shard coverage have passed;
+the complete expanded .NET graph, live architecture/tier guards, full integration
+gates and hosted PR verification remain pending. These partial runs are not a
+completion receipt. OData image/performance qualification remains a separate
 opt-in pilot with its documented missing managed lifecycle evidence; ordinary
 component execution above does not certify those measurements.
