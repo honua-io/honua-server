@@ -19,7 +19,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
 [Protocol(TestProtocols.OgcApiMaps)]
 public class OgcMapsConformanceTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly OgcMapsComponentFixture _fixture = new();
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
     public Task DisposeAsync() => _fixture.DisposeAsync();

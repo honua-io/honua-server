@@ -38,4 +38,7 @@
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Protocols.OgcApi.ComponentTests" />
+  </ItemGroup>
 </Project>

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../../../src/Honua.Protocols.OgcApi/Honua.Protocols.OgcApi.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Core/Honua.TestKit.Core.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Hosting/Honua.TestKit.Hosting.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Postgres.Hosting/Honua.TestKit.Postgres.Hosting.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Postgres/Honua.TestKit.Postgres.csproj" />
+  </ItemGroup>
+</Project>

@@ -28,4 +28,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Protocols.GeoServices.ComponentTests" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Protocols.OgcApi.ComponentTests" />
+  </ItemGroup>
 </Project>
