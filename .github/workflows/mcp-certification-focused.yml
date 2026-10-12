@@ -8,7 +8,7 @@ on:
       sdk_ref:
         description: 'Exact published MCP SDK source SHA to exercise'
         required: true
-        default: '46ecd25a32ee2bfb7741ccc14ee5842c8824dd19'
+        default: 'ae6a835b5334a14c380b085d1af57161243ae0d5'
 
 permissions:
   contents: read
