@@ -23,16 +23,18 @@ public sealed class ODataUnitIsolationTests
     {
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var project = Path.Combine(root, "tests", "dotnet", "Honua.Protocols.OData.UnitTests", "Honua.Protocols.OData.UnitTests.csproj");
+        var allowed = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "Honua.Core.Abstractions", "Honua.Core", "Honua.Geometry", "Honua.ServiceDefaults",
+            "Honua.Hosting", "Honua.Protocols.OData", "Honua.TestKit.Abstractions", "Honua.Protocols.OData.UnitTests"
+        };
         var pending = new Stack<string>(); pending.Push(project);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         while (pending.TryPop(out var current))
         {
             if (!seen.Add(current)) continue;
             var name = Path.GetFileNameWithoutExtension(current);
-            Assert.NotEqual("Honua.Server", name);
-            Assert.NotEqual("Honua.TestKit", name);
-            Assert.DoesNotContain("Honua.Db.", name, StringComparison.Ordinal);
-            Assert.NotEqual("Honua.Postgres", name);
+            Assert.Contains(name, allowed);
             foreach (var reference in XDocument.Load(current).Descendants("ProjectReference"))
             {
                 var include = reference.Attribute("Include")!.Value.Replace('\\', Path.DirectorySeparatorChar);
