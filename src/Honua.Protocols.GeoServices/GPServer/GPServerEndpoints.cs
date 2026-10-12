@@ -324,11 +324,18 @@ internal static partial class GPServerEndpoints
 
             // Auth must precede parameter reading to guarantee 401/403 before 400
             // on invalid input from unauthenticated callers (see IGeoprocessingJobService contract).
-            await jobService.EnsureCallerAuthorizedAsync(
-                context.User,
-                OperatorResourceType.Process,
-                OperatorOperation.Execute,
-                ct).ConfigureAwait(false);
+            var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
+            var definition = ResolveTaskDefinition(processCatalog, taskName);
+            if (definition is null)
+            {
+                // Preserve auth-before-validation for an unknown task without inventing
+                // a canonical process identity from an untrusted route alias.
+                await jobService.EnsureCallerAuthorizedAsync(context.User,
+                    OperatorResourceType.Process, OperatorOperation.Execute, ct).ConfigureAwait(false);
+                throw new GeoprocessingNotFoundException($"Task '{taskName}' was not found.");
+            }
+            var execution = new GPServerExecutionContext(serviceId, taskName, definition.ProcessId);
+            await jobService.EnsureGPServerExecutionAuthorizedAsync(context.User, execution, ct).ConfigureAwait(false);
 
             var contentTypeError = readSoapParameters is null ? ValidateFormPostContentType(context) : null;
             if (contentTypeError is not null)
@@ -354,18 +361,6 @@ internal static partial class GPServerEndpoints
             if (envError != null)
             {
                 return envError;
-            }
-
-            var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
-            var definition = ResolveTaskDefinition(processCatalog, taskName);
-            if (definition == null)
-            {
-                GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
-                return SetSpanErrorAndReturn(
-                    StandardErrorHelpers.CreateNotFound(
-                        context,
-                        $"Task '{taskName}' on service '{serviceId}' was not found."),
-                    "Task not found");
             }
 
             if (definition.RuntimeProfile == RuntimeProfiles.Native
@@ -404,10 +399,11 @@ internal static partial class GPServerEndpoints
                 : ResolveWorkingSrid(parameters, planResult.InputSpatialReference);
             var protocolMetadata = BuildProtocolMetadata(
                 serviceId, taskName, definition, parameters, envControls, workingSrid, planResult.FeatureSchema);
-            var job = await jobService.SubmitJobAsync(
+            var job = await jobService.SubmitGPServerJobAsync(
                 plan,
                 ResolveIdempotencyKey(parameters),
                 context.User,
+                execution,
                 protocolMetadata,
                 ct);
 
@@ -470,11 +466,18 @@ internal static partial class GPServerEndpoints
             }
 
             // Auth must precede parameter reading to guarantee 401/403 before 400.
-            await jobService.EnsureCallerAuthorizedAsync(
-                context.User,
-                OperatorResourceType.Process,
-                OperatorOperation.Execute,
-                ct).ConfigureAwait(false);
+            var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
+            var definition = ResolveTaskDefinition(processCatalog, taskName);
+            if (definition is null)
+            {
+                // Preserve auth-before-validation for an unknown task without inventing
+                // a canonical process identity from an untrusted route alias.
+                await jobService.EnsureCallerAuthorizedAsync(context.User,
+                    OperatorResourceType.Process, OperatorOperation.Execute, ct).ConfigureAwait(false);
+                throw new GeoprocessingNotFoundException($"Task '{taskName}' was not found.");
+            }
+            var execution = new GPServerExecutionContext(serviceId, taskName, definition.ProcessId);
+            await jobService.EnsureGPServerExecutionAuthorizedAsync(context.User, execution, ct).ConfigureAwait(false);
 
             var contentTypeError = readSoapParameters is null ? ValidateFormPostContentType(context) : null;
             if (contentTypeError is not null)
@@ -495,18 +498,6 @@ internal static partial class GPServerEndpoints
             if (envError != null)
             {
                 return envError;
-            }
-
-            var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
-            var definition = ResolveTaskDefinition(processCatalog, taskName);
-            if (definition == null)
-            {
-                GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
-                return SetSpanErrorAndReturn(
-                    StandardErrorHelpers.CreateNotFound(
-                        context,
-                        $"Task '{taskName}' on service '{serviceId}' was not found."),
-                    "Task not found");
             }
 
             if (!GPServerExecutionPolicy.IsJobCallable(definition))
@@ -559,10 +550,11 @@ internal static partial class GPServerEndpoints
             var workingSrid = ResolveWorkingSrid(parameters, planResult.InputSpatialReference);
             var protocolMetadata = BuildProtocolMetadata(
                 serviceId, taskName, definition, parameters, envControls, workingSrid, planResult.FeatureSchema);
-            var job = await jobService.SubmitJobAsync(
+            var job = await jobService.SubmitGPServerJobAsync(
                 planResult.Plan!,
                 ResolveIdempotencyKey(parameters),
                 context.User,
+                execution,
                 protocolMetadata,
                 ct);
             submittedJobId = job.OperationId;
@@ -590,7 +582,7 @@ internal static partial class GPServerEndpoints
             if (terminal.Outcome == GeoprocessingTerminalResultOutcome.Timeout)
             {
                 DispatchOrphanedExecuteJobCancellation(
-                    terminalService, job.OperationId, context.User, logger);
+                    terminalService, job.OperationId, serviceId, taskName, context.User, logger);
                 return SetSpanErrorAndReturn(
                     StandardErrorHelpers.CreateRequestTimeout(context,
                         "Synchronous GP execution did not complete within the request timeout. " +
@@ -601,7 +593,7 @@ internal static partial class GPServerEndpoints
             if (terminal.Outcome == GeoprocessingTerminalResultOutcome.ClientDisconnected)
             {
                 DispatchOrphanedExecuteJobCancellation(
-                    terminalService, job.OperationId, context.User, logger);
+                    terminalService, job.OperationId, serviceId, taskName, context.User, logger);
                 return context.RequestAborted.IsCancellationRequested
                     ? Results.StatusCode(499)
                     : SetSpanErrorAndReturn(
@@ -623,7 +615,7 @@ internal static partial class GPServerEndpoints
         }
         catch (TimeoutException)
         {
-            DispatchOrphanedExecuteJobCancellation(terminalService, submittedJobId, context.User, logger);
+            DispatchOrphanedExecuteJobCancellation(terminalService, submittedJobId, serviceId, taskName, context.User, logger);
             return SetSpanErrorAndReturn(
                 StandardErrorHelpers.CreateRequestTimeout(context,
                     "Synchronous GP execution did not complete within the request timeout. " +
@@ -634,7 +626,7 @@ internal static partial class GPServerEndpoints
         {
             // Caller disconnected or the limits timeout token tripped while the
             // submitted job was still running; cancel the orphan before mapping.
-            DispatchOrphanedExecuteJobCancellation(terminalService, submittedJobId, context.User, logger);
+            DispatchOrphanedExecuteJobCancellation(terminalService, submittedJobId, serviceId, taskName, context.User, logger);
             return MapExceptionToResult(context, logger, "Execute", ex);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -655,6 +647,8 @@ internal static partial class GPServerEndpoints
     private static void DispatchOrphanedExecuteJobCancellation(
         IGeoprocessingJobTerminalService terminalService,
         string? jobId,
+        string serviceId,
+        string taskName,
         System.Security.Claims.ClaimsPrincipal user,
         ILogger logger)
     {
@@ -664,8 +658,10 @@ internal static partial class GPServerEndpoints
         }
 
         GPServerLog.OrphanedExecuteJobCancelRequested(logger, jobId);
-        terminalService.DispatchOrphanedCancellation(
+        terminalService.DispatchGPServerOrphanedCancellation(
             jobId,
+            serviceId,
+            taskName,
             user,
             TimeSpan.FromSeconds(10));
     }
@@ -1028,7 +1024,7 @@ internal static partial class GPServerEndpoints
                 return serviceValidation.ErrorResult!;
             }
 
-            var job = await jobService.GetJobAsync(jobId, context.User, ct);
+            var job = await jobService.GetGPServerJobAsync(jobId, serviceId, taskName, context.User, ct);
 
             var bindingError = ValidateJobBinding(context, logger, job, serviceId, taskName);
             if (bindingError != null)
@@ -1048,7 +1044,7 @@ internal static partial class GPServerEndpoints
                 results = new Dictionary<string, GPJobResultRef>(StringComparer.OrdinalIgnoreCase);
                 try
                 {
-                    var resultPackage = await jobService.GetJobResultsAsync(jobId, context.User, ct);
+                    var resultPackage = await jobService.GetGPServerJobResultsAsync(jobId, serviceId, taskName, context.User, ct);
                     foreach (var outputName in ResolvePublishedOutputParameterNames(job, resultPackage))
                     {
                         results[outputName] = new GPJobResultRef
@@ -1127,14 +1123,14 @@ internal static partial class GPServerEndpoints
             }
 
             // Validate route binding before accessing results.
-            var job = await jobService.GetJobAsync(jobId, context.User, ct);
+            var job = await jobService.GetGPServerJobAsync(jobId, serviceId, taskName, context.User, ct);
             var bindingError = ValidateJobBinding(context, logger, job, serviceId, taskName);
             if (bindingError != null)
             {
                 return bindingError;
             }
 
-            var results = await jobService.GetJobResultsAsync(jobId, context.User, ct);
+            var results = await jobService.GetGPServerJobResultsAsync(jobId, serviceId, taskName, context.User, ct);
             var artifact = ResolveArtifactByPublishedOutputName(job, results, paramName, out var publishedName);
 
             if (artifact == null)
@@ -1234,15 +1230,17 @@ internal static partial class GPServerEndpoints
             }
 
             // Validate route binding before attempting cancellation.
-            var existing = await jobService.GetJobAsync(jobId, context.User, ct);
+            var existing = await jobService.GetGPServerJobAsync(jobId, serviceId, taskName, context.User, ct);
             var bindingError = ValidateJobBinding(context, logger, existing, serviceId, taskName);
             if (bindingError != null)
             {
                 return bindingError;
             }
 
-            var cancellation = await terminalService.CancelAsync(
+            var cancellation = await terminalService.CancelGPServerAsync(
                 jobId,
+                serviceId,
+                taskName,
                 context.User,
                 TimeSpan.FromSeconds(30),
                 ct);

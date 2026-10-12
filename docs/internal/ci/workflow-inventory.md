@@ -1,7 +1,7 @@
 # CI Workflow Inventory
 
 > Canonical inventory of **every** workflow in `.github/workflows/` in this
-> repository (101 files). Other Honua repositories keep their own inventories;
+> repository (102 files). Other Honua repositories keep their own inventories;
 > this page no longer mirrors the SDK repos, because a copy here could not be
 > verified against their trees and had already drifted.
 >
@@ -118,6 +118,7 @@ The scoped `GP Alias Contract` check runs the real GeoServices alias tests and O
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
 | `gp-alias-contract.yml` | GP Alias Contract | `pull_request` (base `trunk`, relevant contract/test/judgment paths) | Runs the GeoServices alias contract and the OGC API process-list HTTP regression in their actual protocol assemblies. Uses the existing .NET setup and pinned PostGIS service conventions; requires all selected cases to execute and pass. |
+| `gp-scoped-key-contract.yml` | GP Scoped Key Contract | `pull_request` (base `trunk`, GP execution/authentication/test paths) | Runs shared job authorization and terminal regressions plus GP REST/SOAP endpoint and durable-runtime tests in their actual assemblies with PostGIS and Redis fixtures. Requires every new source-derived scoped key case to execute and pass; retains TRX proof. |
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|

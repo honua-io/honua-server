@@ -1,0 +1,116 @@
+name: GP Scoped Key Contract
+
+on:
+  pull_request:
+    branches: [trunk]
+    paths:
+      - 'src/Honua.Geoprocessing/Features/Geoprocessing/**'
+      - 'src/Honua.Core/Features/ControlPlane/Domain/OperationModels.cs'
+      - 'src/Honua.Hosting/Features/Authentication/LayerScopedWriteKey.cs'
+      - 'src/Honua.Hosting/Features/Authentication/ApiKeyAuthenticationHandler.cs'
+      - 'src/Honua.Protocols.GeoServices/GPServer/**'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/**'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Eval/EvalHarnessTests.cs'
+      - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/**'
+      - '.github/workflows/gp-scoped-key-contract.yml'
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: gp-scoped-key-contract-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: GP Scoped Key / ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: shared-authorization
+            project: tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
+            filter: FullyQualifiedName~GeoprocessingJobServiceTests|FullyQualifiedName~GeoprocessingJobTerminalServiceTests|FullyQualifiedName~AdminApiKeyEndpointsTests|FullyQualifiedName~Probes_WhenHttpClientTimeoutFires_ReportFailedWithoutAbortingScenario
+            source: tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GeoprocessingJobServiceTests.GPServerKeys.cs
+            prefix: GPScopedKey_
+            additional_method: Probes_WhenHttpClientTimeoutFires_ReportFailedWithoutAbortingScenario
+          - name: soap-durable-runtime
+            project: tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj
+            filter: FullyQualifiedName~SoapScopedAPIKey_|FullyQualifiedName~SoapArea_WithProductionExecutor|FullyQualifiedName~SoapJobOperation_OtherCaller|FullyQualifiedName~GetJobStatus_ProgressHint|FullyQualifiedName~GetJobStatus_InvalidProgressHint|FullyQualifiedName~OtherJobOperations_ProgressHint
+            source: tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerDurableRuntimeTests.ScopedKeys.cs
+            prefix: SoapScopedAPIKey_
+    env:
+      HONUA_TEST_CONFIGURATION: Release
+      HONUA_TEST_DB_URL: 'Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=ci-${{ github.run_id }}-${{ github.run_attempt }}'
+    services:
+      postgres:
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-dotnet-ci
+        with:
+          optimize-disk: 'true'
+          nuget-cache-read-only: 'true'
+      - name: Run the actual shared gates and GP HTTP runtime
+        env:
+          PROJECT: ${{ matrix.project }}
+          FILTER: ${{ matrix.filter }}
+        run: |
+          dotnet test "$PROJECT" --configuration Release -m:1 --filter "$FILTER" \
+            --logger 'trx;LogFileName=gp-key-contract.trx' --results-directory key-results
+      - name: Require every new authorization regression to execute
+        env:
+          CASE_SOURCE: ${{ matrix.source }}
+          CASE_PREFIX: ${{ matrix.prefix }}
+          ADDITIONAL_METHOD: ${{ matrix.additional_method }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+          import xml.etree.ElementTree as ET
+          source = Path(os.environ['CASE_SOURCE']).read_text()
+          cases = re.findall(r'\[((?:Unit|Integration)(?:Test|Theory))\](.*?)public async Task (\w+)\(', source, re.S)
+          assert cases, 'No source cases found'
+          root = ET.parse('key-results/gp-key-contract.trx').getroot()
+          ns = {'t': 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010'}
+          counters = root.find('t:ResultSummary/t:Counters', ns).attrib
+          assert int(counters['executed']) > 0 and counters['failed'] == '0', counters
+          methods = {test.attrib['id']: test.find('t:TestMethod', ns).attrib['name']
+                     for test in root.findall('t:TestDefinitions/t:UnitTest', ns)}
+          results = root.findall('t:Results/t:UnitTestResult', ns)
+          for kind, attributes, method in cases:
+              assert method.startswith(os.environ['CASE_PREFIX']), method
+              expected = len(re.findall(r'\[InlineData\(', attributes)) if kind.endswith('Theory') else 1
+              actual = [result for result in results if methods[result.attrib['testId']] == method]
+              assert len(actual) == expected and all(result.attrib['outcome'] == 'Passed' for result in actual), (method, expected, actual)
+          if os.environ['ADDITIONAL_METHOD']:
+              additional = [result for result in results if methods[result.attrib['testId']] == os.environ['ADDITIONAL_METHOD']]
+              assert len(additional) == 1 and additional[0].attrib['outcome'] == 'Passed', additional
+          print('Actual GP key contract counters:', counters)
+          print('Every new canonical method and all source-derived theory cases executed and passed.')
+          PY
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: gp-key-${{ matrix.name }}-results
+          path: key-results/
+          if-no-files-found: error
