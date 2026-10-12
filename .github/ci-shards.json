@@ -21,7 +21,8 @@
     "src/Honua.Server/Features/Infrastructure/Middleware/",
     "src/Honua.Server/Features/Infrastructure/Services/",
     "src/Honua.Server/Features/Infrastructure/Monitoring/",
-    "src/Honua.Server/Startup/"
+    "src/Honua.Server/Startup/",
+    "tests/dotnet/Honua.TestKit.Abstractions/"
   ],
   "_unmapped_source_run_all_prefixes_comment": "Safety net (#1897): a changed file under one of these prefixes that is NOT claimed by any shard's `paths` escalates to run_all. Per-prefix rationale — src/Honua.Core/, src/Honua.Db/Postgres/, src/Honua.Server/, src/Honua.Db/DuckDB/, tests/dotnet/Honua.Server.Tests/: shared canonical pipeline + provider + integration-test host whose unmapped slices cut across every shard. src/Honua.Geometry/, src/Honua.Jobs/, src/Honua.Routing/, src/Honua.Hosting/: cross-cutting geometry/job/routing/host primitives remain fail-safe by default; bounded ownership exceptions are declared in shard paths (for example Routing/Features/Routing -> GPServer/NAServer and Hosting/Features/Tiles -> tile/ImageServer owners). src/Honua.Cloud/Aws/, src/Honua.Cloud/Azure/: cloud-provider runtime whose tests are spread across the Cloud/FileImport/Infra shards; over-include via run_all (moved here from infrastructure_paths so a project-add no longer trips it). src/Honua.Protocols., src/Honua.Scene/, src/Honua.Ai/, src/Honua.Geoprocessing/, src/Honua.Geocoding/, src/Honua.Io/, src/Honua.Import/: their mapped subdirs are claimed by owning shards below (so normal feature PRs stay targeted); the net only fires for a NOT-YET-MAPPED new top-level area under them, e.g. a brand-new src/Honua.Protocols.SensorThings/ project whose tests have no shard yet.",
   "unmapped_source_run_all_prefixes": [
@@ -839,6 +840,27 @@
       "_comment": "September 2026 capacity rebalance (run 34025905230): owns the whole ApiSurfaceComplianceTests and TestQualityValidationTests classes from Core and Cloud Contracts, alongside API governance; unchanged 20-minute budget."
     },
     {
+      "name": "OData Units",
+      "shard_name": "OData Units",
+      "dispatch_rank": 1.0,
+      "artifact_suffix": "odata-units",
+      "log_name": "server-tests-odata-units",
+      "timeout_minutes": 15,
+      "test_timeout_minutes": 10,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.OData.UnitTests/Honua.Protocols.OData.UnitTests.csproj",
+      "_comment": "Fixture-independent OData classes run only in their dedicated unit assembly. Original namespaces and traits are preserved; fixture-dependent partial classes remain together in the integration project.",
+      "filter": "FullyQualifiedName~OData",
+      "paths": [
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/",
+        "src/Honua.Protocols.OData/",
+        "tests/dotnet/Honua.Protocols.OData.UnitTests/"
+      ]
+    },
+    {
       "name": "OData Core",
       "shard_name": "OData Core",
       "dispatch_rank": 26.6,
@@ -856,14 +878,11 @@
         "src/Honua.Protocols.OData/",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataAdvancedOperationsTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataAuthorizationTests.cs",
-        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataCrsUtilitiesTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataEndpointTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataErrorHandlingTests.cs",
-        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataGeometryConverterTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataLimitsEnforcementTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataParquetFormatTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataQueryHandlerTests.cs",
-        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataSearchServiceSqlTests.cs",
         "tests/dotnet/Honua.TestKit/Helpers/ODataTestHelpers.cs",
         "src/Honua.Core/Features/Validation/",
         "src/Honua.Hosting/Features/Services/"
@@ -956,8 +975,8 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj",
-      "_comment": "Owns the OData write-path classes plus the OData Services namespace. NOTE (#1899): some OData Services tests use the root namespace Honua.Protocols.OData.Tests.Services (e.g. ODataApplyPipelineTests, ODataComputeServiceTests, ODataEtagSerializationTests) rather than Honua.Server.Tests.Features.Protocols.OData.Services, so the second namespace clause was added to claim them — they matched no OData filter before and never ran.",
-      "filter": "FullyQualifiedName~ODataCrudEndpointTests|FullyQualifiedName~ODataCrudExceptionMappingTests|FullyQualifiedName~ODataDeltaTests|FullyQualifiedName~ODataETagConcurrencyTests|FullyQualifiedName~ODataGeometryCrudTests|FullyQualifiedName~ODataMultipartBatchTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.OData.Services|FullyQualifiedName~Honua.Protocols.OData.Tests.Services",
+      "_comment": "Owns fixture-backed OData write-path classes and remaining Server.Tests OData Services classes. Fixture-independent service classes moved to the OData Units assembly and shard; they retain their original namespaces.",
+      "filter": "FullyQualifiedName~ODataCrudEndpointTests|FullyQualifiedName~ODataCrudExceptionMappingTests|FullyQualifiedName~ODataDeltaTests|FullyQualifiedName~ODataETagConcurrencyTests|FullyQualifiedName~ODataGeometryCrudTests|FullyQualifiedName~ODataMultipartBatchTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.OData.Services",
       "paths": [
         "src/Honua.Protocols.OData/",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/Services/",
@@ -2809,13 +2828,10 @@
         "src/Honua.Protocols.OData/",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataAdvancedOperationsTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataAuthorizationTests.cs",
-        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataCrsUtilitiesTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataEndpointTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataErrorHandlingTests.cs",
-        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataGeometryConverterTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataLimitsEnforcementTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataQueryHandlerTests.cs",
-        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataSearchServiceSqlTests.cs",
         "tests/dotnet/Honua.TestKit/Helpers/ODataTestHelpers.cs",
         "src/Honua.Core/Features/Validation/",
         "src/Honua.Hosting/Features/Services/"

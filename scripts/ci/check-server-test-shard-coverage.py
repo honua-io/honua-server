@@ -87,6 +87,8 @@ TEST_PROJECT_DIRS = {
         "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj",
     "tests/dotnet/Honua.Protocols.GeoServices.Tests":
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj",
+    "tests/dotnet/Honua.Protocols.OData.UnitTests":
+        "tests/dotnet/Honua.Protocols.OData.UnitTests/Honua.Protocols.OData.UnitTests.csproj",
     "tests/dotnet/Honua.Protocols.OData.Tests":
         "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj",
     "tests/dotnet/Honua.Protocols.OgcApi.Tests":

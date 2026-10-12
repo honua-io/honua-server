@@ -237,12 +237,12 @@ public sealed class TierTraitEnforcementTests
             "xUnit v2 ignores discoverers on attributes that do not implement ITraitAttribute");
     }
 
-    [TraitDiscoverer("Honua.TestKit.Attributes.UnitTestDiscoverer", "Honua.TestKit")]
+    [TraitDiscoverer("Honua.TestKit.Attributes.UnitTestDiscoverer", "Honua.TestKit.Abstractions")]
     private sealed class DiscovererWithoutTraitInterfaceAttribute : FactAttribute
     {
     }
 
-    [TraitDiscoverer("Honua.TestKit.Attributes.UnitTestDiscoverer", "Honua.TestKit")]
+    [TraitDiscoverer("Honua.TestKit.Attributes.UnitTestDiscoverer", "Honua.TestKit.Abstractions")]
     private sealed class SideEffectFactAttribute : FactAttribute, ITraitAttribute
     {
         public static int ConstructionCount { get; private set; }
@@ -480,7 +480,14 @@ internal static class TierTraitScanner
     {
         var genericArity = method.GetGenericArguments().Length;
         var parameters = string.Join(",", method.GetParameters().Select(parameter => parameter.ParameterType.ToString()));
-        return $"{type.Assembly.GetName().Name}:{type.FullName}.{method.Name}`{genericArity}({parameters})";
+        // This fixture-independent extraction preserves existing untiered debt identities.
+        // FQN/signature still identify every method, so new methods cannot inherit a waiver.
+        var assemblyName = type.Assembly.GetName().Name;
+        if (assemblyName == "Honua.Protocols.OData.UnitTests")
+        {
+            assemblyName = "Honua.Protocols.OData.Tests";
+        }
+        return $"{assemblyName}:{type.FullName}.{method.Name}`{genericArity}({parameters})";
     }
 
     internal static bool IsXunitTestMethod(MethodInfo method)

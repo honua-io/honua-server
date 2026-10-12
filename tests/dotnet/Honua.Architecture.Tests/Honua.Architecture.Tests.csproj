@@ -26,6 +26,7 @@
          OperationCoverageTests load them (via
          ArchitectureTestHelpers.IntegrationTestAssemblies) to verify endpoint
          and operation coverage for protocols extracted out of Honua.Server. -->
+    <ProjectReference Include="../Honua.Protocols.OData.UnitTests/Honua.Protocols.OData.UnitTests.csproj" />
     <ProjectReference Include="..\Honua.Protocols.OData.Tests\Honua.Protocols.OData.Tests.csproj" />
     <ProjectReference Include="..\Honua.Protocols.OgcApi.Tests\Honua.Protocols.OgcApi.Tests.csproj" />
     <ProjectReference Include="..\Honua.Protocols.OgcClassic.Tests\Honua.Protocols.OgcClassic.Tests.csproj" />
