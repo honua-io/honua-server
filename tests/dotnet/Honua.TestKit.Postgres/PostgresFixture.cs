@@ -619,7 +619,15 @@ public sealed class PostgresFixture : IAsyncLifetime
     /// the OData seed. The caller must drop the returned database before disposing this fixture.
     /// This is test provisioning, never a substitute for production startup migration gates.
     /// </summary>
-    public async Task<string> ProvisionODataDatabaseAsync(string seedPath)
+    public Task<string> ProvisionODataDatabaseAsync(string seedPath)
+        => ProvisionDatabaseAsync(seedPath);
+
+    /// <summary>
+    /// Provisions a dedicated database from canonical provider/application migrations and
+    /// the supplied seed. The caller must drop the returned database before disposing this fixture.
+    /// This is test provisioning, never a substitute for production startup migration gates.
+    /// </summary>
+    public async Task<string> ProvisionDatabaseAsync(string seedPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(seedPath);
         var connectionString = await CreateIsolatedDatabaseAsync("odata_pilot").ConfigureAwait(false);
