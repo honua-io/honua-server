@@ -467,8 +467,9 @@ public class ImageServerEndpointsTests
             string[] queries = ["", "?blankTile=true", "?blankTile=false"];
             for (var selection = 0; selection < 2; selection++)
             {
+                RasterInfo[] selectedRasters = selection == 0 ? [] : [raster!];
                 store.QueryRastersAsync(default, default, default)
-                    .ReturnsForAnyArgs(selection == 0 ? Array.Empty<RasterInfo>() : [raster!]);
+                    .ReturnsForAnyArgs(selectedRasters);
                 foreach (var path in paths)
                 {
                     foreach (var query in queries)
