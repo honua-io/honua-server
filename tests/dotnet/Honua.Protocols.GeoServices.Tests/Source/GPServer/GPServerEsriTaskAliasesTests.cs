@@ -159,10 +159,31 @@ public sealed class GPServerEsriTaskAliasesTests
     public void AliasContract_MatchesThePublishedParityAliasClaim()
     {
         // The GeoServices parity claim (docs/gis/data/geoservices-parity-judgment.json:
-        // "37 unambiguous aliases ... are published alongside canonical process IDs")
+        // "40 unambiguous aliases ... are published alongside canonical process IDs")
         // counts this contract. Changing one without the other is the drift #4781 filed:
         // update the judgement source and rerun scripts/generate-geoservices-parity.sh.
-        GPServerEsriTaskAliases.Contract.Should().HaveCount(37);
+        GPServerEsriTaskAliases.Contract.Should().HaveCount(40);
+    }
+
+    [UnitTheory]
+    [InlineData("routing.closest-facilities", "FindClosestFacilities")]
+    [InlineData("routing.od-cost-matrix", "GenerateOriginDestinationCostMatrix")]
+    [InlineData("routing.location-allocation", "SolveLocationAllocation")]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer")]
+    public void RoutingAlias_ResolvesAndPublishesItsJobCallableProcess(string processId, string alias)
+    {
+        var catalog = new BuiltInProcessCatalog();
+        var definition = catalog.GetProcess(processId);
+
+        definition.Should().NotBeNull();
+        GPServerExecutionPolicy.IsJobCallable(definition!).Should().BeTrue();
+        GPServerEsriTaskAliases.GetAlias(processId).Should().Be(alias);
+        GPServerEsriTaskAliases.TryResolveProcessId(alias, out var resolved).Should().BeTrue();
+        resolved.Should().Be(processId);
+        GPServerEndpoints.BuildPublishedTaskNames(catalog)
+            .Count(name => string.Equals(name, alias, StringComparison.OrdinalIgnoreCase))
+            .Should().Be(1);
     }
 
     // Process IDs that carry an Esri alias, read from the real contract so this file can
