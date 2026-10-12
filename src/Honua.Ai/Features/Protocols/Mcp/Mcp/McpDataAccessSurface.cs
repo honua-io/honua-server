@@ -276,10 +276,27 @@ internal sealed class McpDataAccessSurface
                 Tools = new McpCapabilityFlag { ListChanged = true },
                 Resources = new McpCapabilityFlag { ListChanged = true },
                 Prompts = new McpCapabilityFlag { ListChanged = false }
-            }
+            },
+
+            // State how the issued session is kept so a client or harness can record
+            // the topology that answered it (shared, stateless, or in-memory).
+            Meta = httpContext.RequestServices?.GetService<McpSessionManager>() is { } sessions
+                ? new McpInitializeResultMeta { SessionMode = SessionModeName(sessions.Mode) }
+                : null
         };
         return SuccessResponse(request.Id, result, McpJsonContext.Default.McpInitializeResult);
     }
+
+    /// <summary>
+    /// Wire name of a <see cref="McpSessionMode"/> for
+    /// <c>_meta["honua.io/session-mode"]</c>.
+    /// </summary>
+    internal static string SessionModeName(McpSessionMode mode) => mode switch
+    {
+        McpSessionMode.Shared => "shared",
+        McpSessionMode.Stateless => "stateless",
+        _ => "in-memory"
+    };
 
     /// <summary>
     /// Returns <c>true</c> when the client's <c>initialize</c> capabilities object

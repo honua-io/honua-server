@@ -121,9 +121,14 @@ public sealed class FeatureServerResponse
     public GeoServicesFieldInfo[] Fields { get; init; } = [];
 
     /// <summary>
-    /// Relationships between layers (typically empty for basic implementation)
+    /// Visible relationship classes in this service.
     /// </summary>
-    public object[] Relationships { get; init; } = [];
+    public ServiceRelationshipSummary[] Relationships { get; init; } = [];
+
+    /// <summary>
+    /// Whether the service exposes the relationships child resource.
+    /// </summary>
+    public bool SupportsRelationshipsResource { get; init; }
 
     /// <summary>
     /// Whether the service allows geometry updates on features

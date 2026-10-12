@@ -438,12 +438,13 @@ internal static partial class Log
     /// Logs when the PostGIS preflight check fails and the application is aborting startup.
     /// </summary>
     /// <param name="logger">The logger instance.</param>
+    /// <param name="causeClass">The preflight cause class (<c>incompatible-database</c> for a fatal failure).</param>
     /// <param name="errorMessage">The error message describing the failure.</param>
     [LoggerMessage(
         EventId = 5011,
         Level = LogLevel.Critical,
-        Message = "PostGIS preflight check failed: {ErrorMessage}. Startup aborted.")]
-    public static partial void PostGisPreflightCheckFailedCritical(ILogger logger, string errorMessage);
+        Message = "PostGIS preflight check failed ({CauseClass}): {ErrorMessage}. Startup aborted.")]
+    public static partial void PostGisPreflightCheckFailedCritical(ILogger logger, string causeClass, string errorMessage);
 
     /// <summary>
     /// Logs (loudly, at Warning) when startup enters degraded mode because the database was

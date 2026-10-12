@@ -4,6 +4,8 @@
 using System.Reflection;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.Health;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Helpers;
@@ -80,7 +82,13 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
             // so retries/backoff and the terminal "give up" path both stay reachable.
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                if (!IsTransient(ex))
+                if (IsSchemaBehindBinary(ex, out var schemaFloorReason))
+                {
+                    // The database is reachable but a required migration is not applied yet (a cold
+                    // start before the migration task ran): keep waiting, and say so on readiness.
+                    _context.UpdateReason(ReadinessReasonCodes.SchemaFloor, schemaFloorReason);
+                }
+                else if (!IsTransient(ex))
                 {
                     // A non-transient failure surfaced during recovery (e.g. the database is now
                     // reachable but a migration script is invalid). Stop retrying; this needs an
@@ -179,6 +187,30 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
 
         _migrationState.MarkSucceeded("Database recovered; migrations are up to date.");
     }
+
+    /// <summary>
+    /// Whether <paramref name="exception"/> says the schema is behind this binary: a required
+    /// numbered migration is not journaled as applied. A schema that diverges from its journal, or a
+    /// database newer than this binary (<see cref="DatabaseSchemaCompatibilityException"/>), is not.
+    /// </summary>
+    internal static bool IsSchemaBehindBinary(Exception exception, out string reason)
+    {
+        if (exception is DatabaseSchemaFloorException
+            {
+                FailureKind: DatabaseSchemaFloorFailureKind.MigrationNotApplied,
+            } floor)
+        {
+            reason = BuildSchemaFloorReason(floor.MigrationScript);
+            return true;
+        }
+
+        reason = string.Empty;
+        return false;
+    }
+
+    /// <summary>Sanitized schema-floor reason (the migration script name only).</summary>
+    internal static string BuildSchemaFloorReason(string migrationScript)
+        => "schema guard: migration '" + migrationScript + "' not applied";
 
     private static bool IsTransient(Exception exception)
         => exception is TransientRecoveryFailureException

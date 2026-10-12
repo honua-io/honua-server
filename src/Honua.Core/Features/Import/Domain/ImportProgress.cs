@@ -189,6 +189,19 @@ public sealed record ImportProgress : IOperationProgress, ICancellableOperationP
     /// </summary>
     public string? CurrentPhase { get; init; }
 
+    /// <summary>
+    /// Where this background import runs: <c>batch</c> (a batch-compute execution worker) or
+    /// <c>in-process</c> (a long-lived server process). See <see cref="ImportJobRunners"/>.
+    /// Null for records written before the runner was recorded.
+    /// </summary>
+    public string? Runner { get; init; }
+
+    /// <summary>
+    /// Instance identity (the <c>Honua-Instance</c> value) of the process running the import, or,
+    /// until a worker claims a durable job, of the host that accepted it.
+    /// </summary>
+    public string? InstanceId { get; init; }
+
     // IOperationProgress implementation
     string IOperationProgress.OperationId => JobId;
     OperationType IOperationProgress.Type => OperationType.Import;

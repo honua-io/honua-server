@@ -67,7 +67,7 @@ internal sealed class ConfigurationExecutionJobDefinitionRegistry(IOptionsMonito
         return Task.FromResult(definition);
     }
 
-    private static ExecutionJobDefinition[] BuildDefinitions(ControlPlaneOptions options)
+    internal static ExecutionJobDefinition[] BuildDefinitions(ControlPlaneOptions options)
     {
         var release = options.PlatformRelease.ToDefinition();
         return options.ExecutionWorkloads

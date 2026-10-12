@@ -116,6 +116,8 @@
       "reason": "shared_auth_feature_area",
       "shards": [
         "Caching File Storage Styling and Infrastructure",
+        "Styling Styles Endpoints",
+        "Styling Depth and Catalog",
         "Security and Authorization",
         "Admin & Infrastructure",
         "OData Core"
@@ -126,6 +128,8 @@
       "reason": "shared_security_feature_area",
       "shards": [
         "Caching File Storage Styling and Infrastructure",
+        "Styling Styles Endpoints",
+        "Styling Depth and Catalog",
         "Security and Authorization",
         "Admin & Infrastructure",
         "OData Core"
@@ -200,6 +204,8 @@
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure|FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.Security|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp.RedisMcpSessionStoreTests",
       "children": [
         "Caching File Storage Styling and Infrastructure",
+        "Styling Styles Endpoints",
+        "Styling Depth and Catalog",
         "Security and Authorization"
       ]
     },
@@ -1611,8 +1617,8 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling)|(FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure)|(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp.RedisMcpSessionStoreTests)",
-      "_paths_comment": "Capacity split of the former Infra and Security shard. This child isolates the cache, file-storage, and style endpoint/integration suites that previously shared one 39-minute budget with the control-plane and security suites. The OGC API - Styles protocol slice (src/Honua.Protocols.OgcApi/Styles/) maps here too: its /ogc/styles integration tests live under tests/.../Features/Styling, which this shard's filter selects (#3188).",
+      "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling)|(FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure)|(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp.RedisMcpSessionStoreTests))&FullyQualifiedName!~Honua.Server.Tests.Features.Styling",
+      "_paths_comment": "All three whole-class children retain the original affected source-path set, including shared authentication/security overrides, so targeted changes cannot omit a formerly covered test family.",
       "paths": [
         "observability/",
         "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpSessionStore.cs",
@@ -1646,7 +1652,85 @@
         "tests/dotnet/Shared/SceneUnitSupport/PointCloudSceneFixtures.cs",
         "tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs"
       ],
-      "_comment": "Round-2 offline TRX rebalance (#3770): folds the 4.1m-p90 Infrastructure micro-shard into the same-project caching/file-storage/styling neighbor."
+      "_comment": "Capacity split after run 38245273076 exhausted its 30m test budget while producing output. Excludes only Styling, which is partitioned into the two adjacent children; test bodies, tier predicates and 30m/40m budgets are unchanged."
+    },
+    {
+      "name": "Styling Styles Endpoints",
+      "shard_name": "Styling Styles Endpoints",
+      "dispatch_rank": 12.01,
+      "artifact_suffix": "styling-styles-endpoints",
+      "log_name": "server-tests-styling-styles-endpoints",
+      "timeout_minutes": 40,
+      "test_timeout_minutes": 30,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests",
+      "_paths_comment": "All three whole-class children retain the original affected source-path set, including shared authentication/security overrides, so targeted changes cannot omit a formerly covered test family.",
+      "paths": [
+        "observability/",
+        "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpSessionStore.cs",
+        "src/Honua.Core/Features/Caching/",
+        "src/Honua.Core/Features/ControlPlane/",
+        "src/Honua.Core/Features/Styling/",
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Db/Postgres/Features/Styling/",
+        "src/Honua.Hosting/Features/Services/",
+        "src/Honua.Io/Features/Export/",
+        "src/Honua.Io/Features/FileStorage/",
+        "src/Honua.Protocols.OgcApi/Styles/",
+        "src/Honua.Server/Features/Caching/",
+        "src/Honua.Server/Features/ControlPlane/",
+        "src/Honua.Server/Features/FileStorage/",
+        "src/Honua.Server/Features/Infrastructure/",
+        "src/Honua.Server/Features/Styling/",
+        "tests/dotnet/Honua.Server.Tests/Features/Caching/",
+        "tests/dotnet/Honua.Server.Tests/Features/Export/",
+        "tests/dotnet/Honua.Server.Tests/Features/FileStorage/",
+        "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/RedisMcpSessionStoreTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Styling/"
+      ],
+      "_comment": "Whole-class child of the original caching/file/storage/styling/infrastructure selection. Preserves original tier predicates, CPU policy, path claims and 30m/40m budgets; fixture/assertion behavior is unchanged."
+    },
+    {
+      "name": "Styling Depth and Catalog",
+      "shard_name": "Styling Depth and Catalog",
+      "dispatch_rank": 12.02,
+      "artifact_suffix": "styling-depth-catalog",
+      "log_name": "server-tests-styling-depth-catalog",
+      "timeout_minutes": 40,
+      "test_timeout_minutes": 30,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Styling&FullyQualifiedName!~Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests",
+      "_paths_comment": "All three whole-class children retain the original affected source-path set, including shared authentication/security overrides, so targeted changes cannot omit a formerly covered test family.",
+      "paths": [
+        "observability/",
+        "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpSessionStore.cs",
+        "src/Honua.Core/Features/Caching/",
+        "src/Honua.Core/Features/ControlPlane/",
+        "src/Honua.Core/Features/Styling/",
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Db/Postgres/Features/Styling/",
+        "src/Honua.Hosting/Features/Services/",
+        "src/Honua.Io/Features/Export/",
+        "src/Honua.Io/Features/FileStorage/",
+        "src/Honua.Protocols.OgcApi/Styles/",
+        "src/Honua.Server/Features/Caching/",
+        "src/Honua.Server/Features/ControlPlane/",
+        "src/Honua.Server/Features/FileStorage/",
+        "src/Honua.Server/Features/Infrastructure/",
+        "src/Honua.Server/Features/Styling/",
+        "tests/dotnet/Honua.Server.Tests/Features/Caching/",
+        "tests/dotnet/Honua.Server.Tests/Features/Export/",
+        "tests/dotnet/Honua.Server.Tests/Features/FileStorage/",
+        "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/RedisMcpSessionStoreTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Styling/"
+      ],
+      "_comment": "Whole-class child of the original caching/file/storage/styling/infrastructure selection. Preserves original tier predicates, CPU policy, path claims and 30m/40m budgets; fixture/assertion behavior is unchanged."
     },
     {
       "name": "Operator Eval Harness",

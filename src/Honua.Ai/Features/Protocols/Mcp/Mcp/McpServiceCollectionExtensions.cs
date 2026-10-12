@@ -38,8 +38,9 @@ internal static class McpServiceCollectionExtensions
         // (the governed control plane requires it) session records are shared
         // through RedisMcpSessionStore, so a session negotiated on any instance is
         // honoured by every instance (honua-release#531 journey stage 1.5); without
-        // a multiplexer the registry stays single-instance. An explicitly
-        // registered IMcpSessionStore wins (tests compose a shared fake).
+        // a multiplexer the registry is in-memory on a single instance and
+        // stateless on a multi-instance host. An explicitly registered
+        // IMcpSessionStore wins (tests compose a shared fake).
         services.TryAddSingleton(static sp =>
         {
             var options = sp.GetRequiredService<IOptions<McpOptions>>().Value;
@@ -48,6 +49,34 @@ internal static class McpServiceCollectionExtensions
                 ?? (sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is { } redis
                     ? new RedisMcpSessionStore(redis)
                     : null);
+
+            // Without a store, a host that runs as several instances (Lambda, a
+            // MultiNode deployment) mints signed self-describing session ids so any
+            // instance can serve a session another minted (honua-server#5629).
+            var selection = McpSessionModeResolver.Resolve(
+                options,
+                store is not null,
+                sp.GetService<IConfiguration>(),
+                Environment.GetEnvironmentVariable);
+            var statelessTokens = selection.SigningSecret is { } secret
+                ? new McpStatelessSessionTokens(secret, options.StatelessSessionLifetime, timeProvider)
+                : null;
+            var logger = sp.GetService<ILogger<McpSessionManager>>();
+            if (logger is not null)
+            {
+                if (selection.Degraded)
+                {
+                    McpLog.SessionModeDegraded(logger, selection.Reason);
+                }
+                else
+                {
+                    McpLog.SessionModeSelected(
+                        logger,
+                        McpDataAccessSurface.SessionModeName(selection.Mode),
+                        selection.Reason);
+                }
+            }
+
             return new McpSessionManager(
                 options.MaxSessions,
                 options.SessionIdleTimeout,
@@ -55,7 +84,8 @@ internal static class McpServiceCollectionExtensions
                 timeProvider,
                 options.MaxAnonymousSessions,
                 store,
-                sp.GetService<ILogger<McpSessionManager>>());
+                logger,
+                statelessTokens);
         });
         return services;
     }

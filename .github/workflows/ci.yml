@@ -113,11 +113,11 @@ env:
   DOTNET_NOLOGO: true
   PYTHON_VERSION: '3.11'
   NODE_VERSION: '20'
-  # Exact published MCP0.1.16 source. This includes the direct-SDK certification
-  # scripts; scheduled full runs exercise the live backend matrix rather than
-  # taking the legacy absent-script skip. workflow_dispatch sdk_ref remains an
+  # Immutable SDK source with isolated certification settings and native gRPC
+  # count/statistics support. Scheduled full runs exercise both live backends.
+  # workflow_dispatch sdk_ref remains an
   # explicit override for development/release replays, recorded in each receipt.
-  MCP_SDK_REF: '46ecd25a32ee2bfb7741ccc14ee5842c8824dd19'
+  MCP_SDK_REF: '584551c20dc059223814990d0a4964bbc7a5b8a2'
   # Release certification lanes (honua-io/honua-release#376 R18): the job ids
   # whose check-runs must ALL conclude `success` in the newest completed
   # schedule/workflow_dispatch run of this workflow before a trunk sha is
@@ -2200,7 +2200,6 @@ jobs:
       HONUA_LAYER_ID: '0'
       # Published Metadata V2 layer index, not service binding order.
       HONUA_MCP_LAYER_ID: '10'
-      HONUA_DEV_AUTH: "true"
       HONUA_API_KEY: "ci-admin-password"
     outputs:
       # Matrix job: GHA keeps the last-finishing leg's output.
@@ -2379,7 +2378,6 @@ jobs:
           HONUA_TRANSPORT: rest
           HONUA_SERVICE_ID: test_service
           HONUA_LAYER_ID: '0'
-          HONUA_DEV_AUTH: "true"
           HONUA_API_KEY: "ci-admin-password"
           HONUA_EVAL_BEDROCK: ${{ steps.bedrock.outputs.available == 'true' && '1' || '' }}
           HONUA_EVAL_BEDROCK_MODEL: ${{ vars.HONUA_MCP_SMOKE_BEDROCK_MODEL || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0' }}
@@ -2675,6 +2673,11 @@ jobs:
             -p:StripSymbols=true \
             -o ./publish
         working-directory: src/Honua.Server
+
+      - name: Verify Published Scene Fixture
+        run: |
+          python3 -m unittest discover -s tests/python -p test_scene_fixture_publication.py
+          python3 scripts/ci/verify-scene-fixture-publication.py --publish-dir src/Honua.Server/publish
 
       - name: Verify Binary Size
         run: |

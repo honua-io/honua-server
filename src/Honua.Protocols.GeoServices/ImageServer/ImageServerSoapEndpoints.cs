@@ -158,11 +158,11 @@ internal static partial class ImageServerSoapEndpoints
                     layerResolver,
                     rasterStore,
                     cancellationToken).ConfigureAwait(false),
-                "GetFields" => CreateSoapResponse(
-                    soapNamespace,
-                    operationNamespace,
-                    "GetFieldsResponse",
-                    BuildFields()),
+                "GetFields" => await HandleGetFieldsAsync(
+                    rasterRequest,
+                    layerResolver,
+                    rasterStore,
+                    cancellationToken).ConfigureAwait(false),
                 "GetKeyProperties" => await HandleGetKeyPropertiesAsync(
                     operation,
                     rasterRequest,
@@ -294,8 +294,8 @@ internal static partial class ImageServerSoapEndpoints
         return result;
     }
 
-    private static async Task<IResult> HandleGetServiceInfoAsync(
-        string serviceId,
+    private static async Task<(ImageServerLayerResolution Resolution, RasterInfo[] Rasters,
+        RasterExtent? Extent, IResult? ErrorResult)> ReadServiceRastersAsync(
         SoapRasterRequestContext request,
         IImageServerLayerResolver layerResolver,
         IRasterStore rasterStore,
@@ -310,7 +310,7 @@ internal static partial class ImageServerSoapEndpoints
             cancellationToken).ConfigureAwait(false);
         if (revalidation.ErrorResult is not null)
         {
-            return revalidation.ErrorResult;
+            return (revalidation.Resolution, [], null, revalidation.ErrorResult);
         }
 
         var rasters = await rasterStore.ListRastersAsync(
@@ -318,36 +318,76 @@ internal static partial class ImageServerSoapEndpoints
             cancellationToken).ConfigureAwait(false);
         if (rasters.Length == 0)
         {
-            return CreateSoapFault(
+            return (revalidation.Resolution, rasters, null, CreateSoapFault(
                 "Image service has no rasters.",
                 StatusCodes.Status404NotFound,
-                request.SoapNamespace);
+                request.SoapNamespace));
         }
 
         var extent = ImageServerMosaicHelpers.ComputeAggregateExtent(rasters);
         if (extent is null)
         {
-            return CreateSoapFault(
+            return (revalidation.Resolution, rasters, null, CreateSoapFault(
                 "Image service extent is unavailable.",
                 StatusCodes.Status500InternalServerError,
-                request.SoapNamespace);
+                request.SoapNamespace));
         }
 
+        return (revalidation.Resolution, rasters, extent, null);
+    }
+
+    private static async Task<IResult> HandleGetFieldsAsync(
+        SoapRasterRequestContext request,
+        IImageServerLayerResolver layerResolver,
+        IRasterStore rasterStore,
+        CancellationToken cancellationToken)
+    {
+        var service = await ReadServiceRastersAsync(
+            request, layerResolver, rasterStore, cancellationToken).ConfigureAwait(false);
+        if (service.ErrorResult is not null)
+        {
+            return service.ErrorResult;
+        }
+
+        var srid = service.Extent!.Value.Srid ?? SpatialConstants.DefaultSrid;
+        return CreateSoapResponse(
+            request.SoapNamespace,
+            request.OperationNamespace,
+            "GetFieldsResponse",
+            BuildFields(srid));
+    }
+
+    private static async Task<IResult> HandleGetServiceInfoAsync(
+        string serviceId,
+        SoapRasterRequestContext request,
+        IImageServerLayerResolver layerResolver,
+        IRasterStore rasterStore,
+        CancellationToken cancellationToken)
+    {
+        var service = await ReadServiceRastersAsync(
+            request, layerResolver, rasterStore, cancellationToken).ConfigureAwait(false);
+        if (service.ErrorResult is not null)
+        {
+            return service.ErrorResult;
+        }
+
+        var rasters = service.Rasters;
+        var extent = service.Extent!.Value;
         var referenceRaster = SelectReferenceRaster(rasters);
         var statistics = await ReadServiceStatisticsAsync(
             request.HttpContext,
-            revalidation.Resolution.LayerId,
+            service.Resolution.LayerId,
             rasters,
-            revalidation.Resolution.MergeStrategy,
+            service.Resolution.MergeStrategy,
             cancellationToken).ConfigureAwait(false);
 
         var (pixelSizeX, pixelSizeY) = ImageServerKeyPropertiesHandler.ComputePixelSizes(referenceRaster);
         XNamespace xsi = XmlSchemaInstanceNamespace;
         var extras = await BuildServiceInfoExtrasAsync(
             request.HttpContext,
-            revalidation.Resolution.LayerId,
+            service.Resolution.LayerId,
             rasters,
-            revalidation.Resolution.MergeStrategy,
+            service.Resolution.MergeStrategy,
             request.SoapNamespace,
             cancellationToken).ConfigureAwait(false);
         if (extras.Error is not null)
@@ -360,7 +400,7 @@ internal static partial class ImageServerSoapEndpoints
             new XAttribute(xsi + "type", "tns:ImageServiceInfo"),
             new XElement("Name", serviceId),
             new XElement("Description", $"Image service for {serviceId}"),
-            BuildEnvelope(extent.Value),
+            BuildEnvelope(extent),
             new XElement("PixelSizeX", FormatDouble(pixelSizeX)),
             new XElement("PixelSizeY", FormatDouble(pixelSizeY)),
             new XElement("BandCount", referenceRaster.BandCount),
@@ -1155,7 +1195,7 @@ internal static partial class ImageServerSoapEndpoints
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
-    private static XElement BuildFields()
+    private static XElement BuildFields(int srid)
     {
         XNamespace xsi = XmlSchemaInstanceNamespace;
         return new XElement(
@@ -1165,7 +1205,7 @@ internal static partial class ImageServerSoapEndpoints
                 "FieldArray",
                 new XAttribute(xsi + "type", "tns:ArrayOfField"),
                 BuildField("OBJECTID", "esriFieldTypeOID", false, 4, required: true),
-                BuildField("Shape", "esriFieldTypeGeometry", true, 0, required: true),
+                BuildField("Shape", "esriFieldTypeGeometry", true, 0, required: true, geometryDef: BuildGeometryDef(srid, srid)),
                 BuildField("Name", "esriFieldTypeString", true, 255, required: false)));
     }
 
@@ -1174,7 +1214,8 @@ internal static partial class ImageServerSoapEndpoints
         string type,
         bool nullable,
         int length,
-        bool required)
+        bool required,
+        XElement? geometryDef = null)
     {
         XNamespace xsi = XmlSchemaInstanceNamespace;
         var field = new XElement(
@@ -1189,16 +1230,9 @@ internal static partial class ImageServerSoapEndpoints
             new XElement("Required", required),
             new XElement("Editable", false));
 
-        if (string.Equals(type, "esriFieldTypeGeometry", StringComparison.Ordinal))
+        if (geometryDef is not null)
         {
-            field.Add(
-                new XElement(
-                    "GeometryDef",
-                    new XAttribute(xsi + "type", "tns:GeometryDef"),
-                    new XElement("AvgNumPoints", 0),
-                    new XElement("GeometryType", "esriGeometryPolygon"),
-                    new XElement("HasM", false),
-                    new XElement("HasZ", false)));
+            field.Add(geometryDef);
         }
 
         field.Add(new XElement("AliasName", name), new XElement("ModelName", name));

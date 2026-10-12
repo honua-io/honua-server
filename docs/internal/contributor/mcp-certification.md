@@ -122,15 +122,25 @@ environment variables above.
 | `HONUA_MCP_SERVICE_ID` | cert | Yes (default: `test_service_mcp`) |
 | `HONUA_LAYER_ID` | cert + smoke | Yes (default: `0`) |
 | `HONUA_MCP_LAYER_ID` | cert | Yes (set by CI to `10`, the published layer id for `test_service_mcp`) |
-| `HONUA_DEV_AUTH` | cert + smoke | No (default: `true` in CI) |
+| `HONUA_API_KEY` | cert | Seeded development admin credential, matching the server setup action |
 | `BEDROCK_AWS_ACCESS_KEY_ID` / `BEDROCK_AWS_SECRET_ACCESS_KEY` | smoke only | No (enables live Bedrock driver when both are set) |
 | `HONUA_MCP_SMOKE_BEDROCK_MODEL` | smoke only | No repository variable override for the Bedrock model |
 | `HONUA_MCP_SMOKE_AWS_REGION` | smoke only | No repository variable override for the Bedrock region |
 
 ## Known gaps
 
+For a bounded setup diagnosis, manually dispatch `mcp-certification-focused.yml`
+on the reviewed server branch with the exact published MCP source SHA. Both
+REST and grpc-web execute independently using the same setup action, test
+commands, and live-receipt guard as full CI. Missing scripts fail this focused
+workflow; startup logs and available receipts are retained even on failure.
+This diagnostic is not a replacement for the complete `full_ci=true` matrix
+required before an immutable server image can be published.
+
+The server setup action starts the host in `Development` with `HONUA_ADMIN_PASSWORD`. The live SDK client uses the matching `HONUA_API_KEY`; it does not need `HONUA_DEV_AUTH`. Do not set that obsolete flag at job scope: the server inherits job variables and deliberately rejects development-auth bypasses outside `Test`.
+
 - **Auth certification:** the direct-SDK standalone target has no MCP transport authentication boundary and records that limitation. Native server MCP authentication and governed operations require the separate remote/stdio and Production proof lanes.
-- **Live certification prerequisite:** the default SDK source is the immutable published MCP0.1.16 commit `46ecd25a32ee2bfb7741ccc14ee5842c8824dd19`, which includes the certification scripts. A source pin or workflow definition is not a pass: only actual successful live receipts for both backend transports qualify. The earlier candidate44c run failed fixture setup before tests; its failure remains historical evidence.
+- **Live certification prerequisite:** the default SDK source is immutable commit `584551c20dc059223814990d0a4964bbc7a5b8a2` ([SDK PR #2068](https://github.com/honua-io/honua-sdk-js/pull/2068)), which isolates certification settings and implements count/statistics over native gRPC. A source pin or workflow definition is not a pass: only actual successful live receipts for both backend transports qualify. The earlier candidate44c run failed fixture setup before tests; its failure remains historical evidence. [SDK issue #2067](https://github.com/honua-io/honua-sdk-js/issues/2067) remains open until both live backend runs pass.
 - **LLM smoke availability:** this selected source has no `test:llm-smoke` script, so the best-effort smoke job explicitly skips and produces no model-evaluation evidence.
 - **SDK scripts prerequisite for manual replays:** CI jobs skip cleanly when `test:certification`, `test:certification:artifact`, or `test:llm-smoke` scripts are not present in the checked-out SDK ref.
 - **Cache-invalidation testing:** deferred until anonymous writes are available.

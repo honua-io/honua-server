@@ -169,6 +169,12 @@ internal sealed record CapabilityManifestCapability
     /// whether that target can execute a rollback and why.
     /// </summary>
     public CapabilityManifestRollbackTarget[]? RollbackTargets { get; init; }
+
+    /// <summary>
+    /// Background-import runner: <c>batch</c>, <c>in-process</c> or <c>unavailable</c>. Present
+    /// only on <c>import.background</c> (honua-server#5916).
+    /// </summary>
+    public string? Runner { get; init; }
 }
 
 /// <summary>

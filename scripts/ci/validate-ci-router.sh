@@ -37,6 +37,7 @@ scripts/ci/validate-review-first-dispatch.sh
 echo "Validating PR Gate impact observation..."
 if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-mcp-server-auth.py
   HONUA_PR_GATE_IMPACT_PYTHON="${PYTHON_BIN}" scripts/ci/validate-pr-gate-impact.sh
   "${PYTHON_BIN}" scripts/ci/audit-impact-routing-evidence.test.py
   "${PYTHON_BIN}" scripts/ci/collect-impact-routing-runs.test.py
@@ -1517,6 +1518,18 @@ echo "Checking shard filter/test-class coverage in both directions..."
 "${PYTHON_BIN}" scripts/ci/test-admin-authorization-partition.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Styling Styles Endpoints" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Styling Depth and Catalog" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Styling.StyleCatalogPhase2Tests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Styling Depth and Catalog" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Styles.OgcStylesCaseAuthorizationTests" \
     "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
