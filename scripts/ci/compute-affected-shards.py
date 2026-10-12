@@ -782,6 +782,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--router", default=DEFAULT_ROUTER)
     parser.add_argument("--projects-script", default=DEFAULT_PROJECTS_SCRIPT)
     parser.add_argument("--cap", type=int, default=DEFAULT_CAP)
+    parser.add_argument("--annotate-resources", action="store_true",
+                        help="annotate execution matrix using the shared conservative catalog policy")
     parser.add_argument("--json", dest="json_path", help="write the receipt JSON here")
     parser.add_argument("--summary", dest="summary_path", help="write the markdown summary here")
     parser.add_argument(
@@ -844,6 +846,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def emit(result: dict[str, Any], config: dict[str, Any], args: argparse.Namespace) -> int:
     include = matrix_include(result, config)
+    if getattr(args, "annotate_resources", False):
+        root = _repo_root()
+        include = json.loads(subprocess.check_output(
+            [sys.executable, str(root / "scripts/ci/annotate-shard-resources.py"),
+             "--catalog", str(root / ".github/test-projects.json")],
+            input=json.dumps(include), text=True))
+        # Record the exact annotated fan-out without changing selection/cap evidence.
+        result = {**result, "executionMatrix": include}
     summary = render_summary(result)
     if args.json_path:
         Path(args.json_path).write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
