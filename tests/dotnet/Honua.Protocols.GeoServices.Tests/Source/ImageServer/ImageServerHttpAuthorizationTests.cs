@@ -153,7 +153,7 @@ public sealed class ImageServerHttpAuthorizationTests
             {
                 foreach (var (token, allowed) in new[] { (entitled, true), ((string?)null, false), (unentitled, false) })
                 {
-                    using var request = new HttpRequestMessage(HttpMethod.Post, $"/services/{LayerId}/ImageServer")
+                    using var request = new HttpRequestMessage(HttpMethod.Post, $"/services/{WebAppFixture.TestServiceId}/ImageServer")
                     {
                         Content = new StringContent(
                             """<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><GetFields xmlns="http://www.esri.com/schemas/ArcGIS/10.8" /></soap:Body></soap:Envelope>""",
