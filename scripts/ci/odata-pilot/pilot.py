@@ -118,6 +118,16 @@ def evaluated_inputs(root, project, configuration, composition, evidence, measur
         evaluated = json.loads(raw)
         if evaluated["Properties"].get("TargetFrameworks"):
             raise ValueError(f"Multi-target graph needs explicit per-framework evaluation: {path}")
+        # Restore graphs can omit build-only analyzer/project references. Never
+        # hash only their project file while ignoring their actual source closure.
+        for reference in evaluated["Items"].get("ProjectReference", []):
+            reference_path = reference.get("FullPath") or reference.get("Identity")
+            if not reference_path:
+                raise ValueError(f"Evaluated ProjectReference lacks a path: {path}")
+            child = Path(reference_path)
+            child = (child if child.is_absolute() else path.parent / child).resolve()
+            if child not in projects:
+                raise ValueError(f"Evaluated ProjectReference omitted from restore graph: {child}; complete build-only/analyzer closure required")
         evaluations[str(path)] = evaluated
         files.add(path)
         for imported in evaluated["Properties"].get("MSBuildAllProjects", "").split(";"):

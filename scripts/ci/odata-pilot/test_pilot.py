@@ -157,6 +157,22 @@ class InputTests(unittest.TestCase):
         return json.dumps({"Properties": {"TargetFramework": "net10.0", "MSBuildAllProjects": str(self.root / "Directory.Build.props")},
             "Items": {"Compile": [{"FullPath": str(self.source)}], "EmbeddedResource": [{"FullPath": str(self.linked)}]}})
 
+    def test_build_only_analyzer_reference_missing_from_restore_graph_fails_closed(self):
+        analyzer = self.root / "src/Honua.Analyzers/Honua.Analyzers.csproj"
+        analyzer.parent.mkdir(parents=True)
+        analyzer.write_text("<Project />")
+        analyzer.with_name("Analyzer.cs").write_text("class BuildOnlyAnalyzer {}")
+        def omitted_analyzer(argv, root):
+            output = self.fake_command(argv, root)
+            if any(arg.startswith("-getItem:") for arg in argv):
+                evaluated = json.loads(output)
+                evaluated["Items"]["ProjectReference"] = [{"FullPath": str(analyzer), "ReferenceOutputAssembly": "false"}]
+                return json.dumps(evaluated)
+            return output
+        with patch.object(pilot, "command", side_effect=omitted_analyzer):
+            with self.assertRaisesRegex(ValueError, "omitted from restore graph.*analyzer closure"):
+                pilot.evaluated_inputs(self.root, "src/Selected/Selected.csproj", "Release", "full", self.output)
+
     def test_pilot_metadata_controls_are_used_and_part_of_identity(self):
         from unittest.mock import patch
         with patch.object(pilot, "command", side_effect=self.fake_command):
