@@ -135,7 +135,7 @@ ODATA_UNIT_PROJECT = "tests/dotnet/Honua.Protocols.OData.UnitTests/Honua.Protoco
 
 def catalog_unit_project(root: Path, project: str) -> bool:
     catalog = json.loads((root / ".github/test-projects.json").read_text())
-    return catalog["projects"].get(project, {}).get("role") == "unit"
+    return catalog["projects"].get(project, {}).get("role") in {"unit", "component"}
 
 
 # Default exclusions for integration shards. The independent OData unit project

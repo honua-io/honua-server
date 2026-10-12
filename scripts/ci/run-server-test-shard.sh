@@ -32,7 +32,7 @@ exclude_fast="${HONUA_SERVER_TEST_EXCLUDE_FAST:-true}"
 # The catalogued unit assembly owns all its cases, including Fast tests.
 # Existing integration shards retain their exclusions.
 project_role="$(python3 "${SCRIPT_DIR}/test-projects.py" role --project "${test_csproj}")"
-if [[ "${project_role}" == unit ]]; then
+if [[ "${project_role}" == unit || "${project_role}" == component ]]; then
   exclude_fast=false
 fi
 # #3054 headroom monitoring. `poll_seconds` is how often the supervisor samples
