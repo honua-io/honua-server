@@ -149,7 +149,7 @@
       ]
     }
   ],
-  "_shard_partitions_comment": "Exact class-level partition contracts for split shards. scripts/ci/check-server-test-shard-coverage.py evaluates each legacy parent filter against every discovered test class and requires exactly one listed child to claim it. This preserves the pre-split test surface without gaps or duplicate class ownership while allowing the parent matrix entry to be removed.",
+  "_shard_partitions_comment": "Exact class-level (or explicitly method-level) partition contracts for split shards. scripts/ci/check-server-test-shard-coverage.py evaluates each legacy parent filter against every discovered test class or, for method-level partitions, every runnable method and requires exactly one listed child to claim it. This preserves the pre-split test surface without gaps or duplicate class ownership while allowing the parent matrix entry to be removed.",
   "shard_partitions": [
     {
       "name": "Server Features Admin and Console",
@@ -323,8 +323,12 @@
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer",
       "children": [
         "GeoServices GPServer and NAServer",
+        "GeoServices GPServer SOAP",
+        "GeoServices GPServer SOAP Progress",
+        "GeoServices GPServer Durable and Aliases",
         "GeoServices GPServer Endpoints"
-      ]
+      ],
+      "granularity": "method"
     },
     {
       "name": "Operator Eval Harness capacity partition",
@@ -1202,8 +1206,80 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "ADR-0037 finer-sharding: carved from GeoServices ImageServer. Selects the GPServer and NAServer namespaces except GPServerEndpointTests, which runs in GeoServices GPServer Endpoints. Capacity split 2026-09-11 (trunk red at cec6b0b, run 34616571873): #4615 grew this shard to 16.3m of 22m (74%) and both attempts at cec6b0b then exhausted the cap. Budgets are unchanged; see docs/internal/ci/shard-timeout-budgets.md.",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests",
+      "_comment": "Capacity split after run 38189222963 exhausted 22 minutes while producing output. The identical prior selection passed 265 cases in 1296 of 1320 seconds. SOAP progress, other SOAP cases, and durable/alias cases now have separate siblings. Test bodies, tier predicates and 22m/32m budgets remain unchanged; the method-level parent partition proves exact original coverage.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests",
+      "_paths_comment": "#2693: the canonical Routing feature belongs to the GPServer/NAServer operator slice. Its Honua.Server.Tests routing coverage is additionally owned by Core, while this shard runs the protocol-level NAServer tests. Unrelated future Honua.Routing areas remain under the unmapped-source fail-safe.",
+      "paths": [
+        "src/Honua.Protocols.GeoServices/GPServer/",
+        "src/Honua.Protocols.GeoServices/NAServer/",
+        "src/Honua.Routing/Features/Routing/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/",
+        "src/Honua.Core/Features/Validation/"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    {
+      "name": "GeoServices GPServer SOAP",
+      "shard_name": "GeoServices GPServer SOAP",
+      "dispatch_rank": 12.81,
+      "artifact_suffix": "geoservices-gpserver-soap",
+      "log_name": "server-tests-geoservices-gpserver-soap",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "Prior passing TRX: 64 cases, 800.3 seconds summed test duration. Excludes only the GetJobStatus progress methods, whose 13 cases run in the progress sibling. Original test and job budgets, tier selection, CPU and affected paths are unchanged.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.GetJobStatus_",
+      "_paths_comment": "#2693: the canonical Routing feature belongs to the GPServer/NAServer operator slice. Its Honua.Server.Tests routing coverage is additionally owned by Core, while this shard runs the protocol-level NAServer tests. Unrelated future Honua.Routing areas remain under the unmapped-source fail-safe.",
+      "paths": [
+        "src/Honua.Protocols.GeoServices/GPServer/",
+        "src/Honua.Protocols.GeoServices/NAServer/",
+        "src/Honua.Routing/Features/Routing/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/",
+        "src/Honua.Core/Features/Validation/"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    {
+      "name": "GeoServices GPServer SOAP Progress",
+      "shard_name": "GeoServices GPServer SOAP Progress",
+      "dispatch_rank": 12.82,
+      "artifact_suffix": "geoservices-gpserver-soap-progress",
+      "log_name": "server-tests-geoservices-gpserver-soap-progress",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "Prior passing TRX: 13 GetJobStatus progress cases, 469.5 seconds summed test duration. Theory rows remain together under their original methods. Original test and job budgets, tier selection, CPU and affected paths are unchanged.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.GetJobStatus_",
+      "_paths_comment": "#2693: the canonical Routing feature belongs to the GPServer/NAServer operator slice. Its Honua.Server.Tests routing coverage is additionally owned by Core, while this shard runs the protocol-level NAServer tests. Unrelated future Honua.Routing areas remain under the unmapped-source fail-safe.",
+      "paths": [
+        "src/Honua.Protocols.GeoServices/GPServer/",
+        "src/Honua.Protocols.GeoServices/NAServer/",
+        "src/Honua.Routing/Features/Routing/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/",
+        "src/Honua.Core/Features/Validation/"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    {
+      "name": "GeoServices GPServer Durable and Aliases",
+      "shard_name": "GeoServices GPServer Durable and Aliases",
+      "dispatch_rank": 12.83,
+      "artifact_suffix": "geoservices-gpserver-durable-aliases",
+      "log_name": "server-tests-geoservices-gpserver-durable-aliases",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "Prior passing TRX: 41 durable and alias cases, 993.4 seconds summed test duration. These stateful classes retain all original factories and assertions. Original test and job budgets, tier selection, CPU and affected paths are unchanged.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests)",
       "_paths_comment": "#2693: the canonical Routing feature belongs to the GPServer/NAServer operator slice. Its Honua.Server.Tests routing coverage is additionally owned by Core, while this shard runs the protocol-level NAServer tests. Unrelated future Honua.Routing areas remain under the unmapped-source fail-safe.",
       "paths": [
         "src/Honua.Protocols.GeoServices/GPServer/",

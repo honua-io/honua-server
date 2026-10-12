@@ -604,4 +604,59 @@ test_nested_brackets_in_an_attribute_do_not_hide_the_method()
 test_nested_helper_classes_stay_nested()
 test_attribute_seen_but_unparsed_method_keeps_the_class_runnable()
 test_raster_serving_shard_owns_the_raster_serving_namespaces()
+
+
+def test_method_partition_rejects_holes_duplicates_and_leaks() -> None:
+    parent = MODULE._FilterParser("FullyQualifiedName~Ns.Tests").parse()
+    parsed = {"rest": MODULE._FilterParser(
+        "FullyQualifiedName~Ns.Tests&FullyQualifiedName!~Ns.Tests.Progress").parse(),
+        "progress": MODULE._FilterParser("FullyQualifiedName~Ns.Tests.Progress").parse()}
+    def errors(filters, fqn="Ns.Tests", methods=("Read", "Progress")):
+        return MODULE.partition_claim_errors("split", parent, list(filters), filters,
+                                             fqn, methods, "method")
+    assert errors(parsed) == []
+    assert "exactly one child" in errors({"rest": parsed["rest"]})[0]
+    assert "rest, duplicate" in errors({**parsed, "duplicate": parsed["rest"]})[0]
+    assert "leaks outside parent" in errors(
+        {"leak": MODULE._FilterParser("FullyQualifiedName~Ns.Other").parse()},
+        "Ns.Other", ("Read",))[0]
+    # Default class partitions retain the prior class-FQN contract.
+    assert MODULE.partition_claim_errors("split", parent, ["rest"], parsed,
+                                         "Ns.Tests", ("Progress",)) == []
+
+
+def test_gp_nas_partition_preserves_every_runnable_method_and_budget() -> None:
+    config = json.loads((REPOSITORY_ROOT / ".github/ci-shards.json").read_text())
+    partition = next(p for p in config["shard_partitions"]
+                     if p["name"] == "GPServer and NAServer capacity partition")
+    assert partition["granularity"] == "method"
+    shards = {s["name"]: s for s in config["shards"]}
+    parsed = {name: MODULE._FilterParser(s["filter"]).parse() for name, s in shards.items()}
+    parent = MODULE._FilterParser(partition["filter"]).parse()
+    classes = MODULE.runnable_classes(MODULE.enumerate_classes())
+    selected = 0
+    for fqn, info in classes.items():
+        if info["csproj"] != shards[partition["children"][0]]["csproj"]:
+            continue
+        assert MODULE.partition_claim_errors(partition["name"], parent,
+            partition["children"], parsed, fqn, info["methods"], "method") == [], fqn
+        if MODULE._eval(parent, fqn):
+            selected += len(info["methods"])
+    assert selected > 100
+    soap = "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests"
+    for method, expected in (("GetJobStatus_InvalidProgressHint_ReturnsSoapFaultBeforeJobLookup",
+                             "GeoServices GPServer SOAP Progress"),
+                            ("SoapSubmitJob_PublishedName_UsesCanonicalPlanAndBinding",
+                             "GeoServices GPServer SOAP")):
+        assert method in classes[soap]["methods"]
+        assert [name for name in partition["children"]
+                if MODULE._eval(parsed[name], soap + "." + method)] == [expected]
+    for name in partition["children"]:
+        assert shards[name]["test_timeout_minutes"] == 22
+        assert shards[name]["timeout_minutes"] == 32
+
+
+test_method_partition_rejects_holes_duplicates_and_leaks()
+test_gp_nas_partition_preserves_every_runnable_method_and_budget()
+
 print("shard-filter-dangling-guard=ok")
