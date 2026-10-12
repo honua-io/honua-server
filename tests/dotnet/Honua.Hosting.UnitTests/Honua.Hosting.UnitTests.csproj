@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/Honua.Hosting/Honua.Hosting.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Core/Honua.TestKit.Core.csproj" />
+    <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
