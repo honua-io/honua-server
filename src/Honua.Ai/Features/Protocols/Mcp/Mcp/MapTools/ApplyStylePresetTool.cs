@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Security.Claims;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Infrastructure.Authentication;
@@ -179,6 +180,11 @@ internal sealed class ApplyStylePresetTool : IMcpTool
             OperationId = operation.OperationId,
             OperationInstanceId = operation.OperationInstanceId,
             HandleId = operation.HandleId,
+            Durable = operation.EvidenceRefs.Contains(
+                NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef,
+                StringComparer.Ordinal)
+                ? false
+                : null,
             CorrelationId = operation.CorrelationId,
             AuditId = operation.AuditId,
             CreatedAt = operation.CreatedAt,

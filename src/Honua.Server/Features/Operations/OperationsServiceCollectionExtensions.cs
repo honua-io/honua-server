@@ -288,16 +288,20 @@ internal static class OperationsServiceCollectionExtensions
 
     /// <summary>
     /// Operations a Redis-off host may execute directly, without the durable operation-instance
-    /// store, when the policy decision is Allow. Owner decision 20 (2026-10-10): a Redis-off cell
-    /// is a serving + configure + style/render topology and publishing a service is
-    /// configuration, so a policy-allowed direct publish involves no governed proposal and must
-    /// not be refused for a missing Redis. Governed / proposal-based paths (RequireApproval
-    /// decisions, Studio publication requests, the <c>honua_admin_*</c> catalogs) are not listed
-    /// and keep the typed capability-unavailable refusal.
+    /// store, when the policy decision is Allow. Owner decision 3 (topology) and decision 20
+    /// (2026-10-10): a Redis-off cell is a serving + configure + style/render topology, so the
+    /// configure step (<c>service.publish</c>) and the style step (<c>style.apply-preset</c>, the
+    /// operation behind <c>honua_apply_style_preset</c>) involve no governed proposal when the
+    /// policy allows them and must not be refused for a missing Redis. Rendering is a read and
+    /// never enters the operation runtime. Governed / proposal-based paths (RequireApproval
+    /// decisions, Studio drafts and publication requests, geoprocessing, the
+    /// <c>honua_admin_*</c> catalogs) are not listed and keep the typed capability-unavailable
+    /// refusal.
     /// </summary>
     internal static readonly IReadOnlyList<string> RedisOffDirectOperationIds =
     [
         ServicePublishOperation.OperationId,
+        StylePresetOperation.OperationId,
     ];
 
     /// <summary>
