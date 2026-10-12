@@ -15,9 +15,9 @@ Honua.Redshift.UnitTests.dll
 Honua.SqlServer.UnitTests.dll
 Honua.GeoServicesRest.Tests.dll
 Honua.Geoprocessing.UnitTests.dll
+Honua.Hosting.ComponentTests.dll
 Honua.Hosting.UnitTests.dll
 Honua.Import.UnitTests.dll
-Honua.Io.UnitTests.dll
 Honua.Protocols.GeoServices.ComponentTests.dll
 Honua.Protocols.GeoServices.Tests.dll
 Honua.Protocols.GeoServices.UnitTests.dll

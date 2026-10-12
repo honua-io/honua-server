@@ -861,7 +861,8 @@
         "src/Honua.Core/Features/Validation/",
         "src/Honua.Hosting/Features/Services/",
         "src/Honua.Protocols.OData/",
-        "tests/dotnet/Honua.Protocols.OData.UnitTests/"
+        "tests/dotnet/Honua.Protocols.OData.UnitTests/",
+        "tests/dotnet/Honua.TestKit/OData/ODataProviderTestData.cs"
       ]
     },
     {
@@ -3355,31 +3356,6 @@
       "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
     },
     {
-      "name": "Io Units",
-      "shard_name": "Io Units",
-      "dispatch_rank": 1.1,
-      "artifact_suffix": "honua-io-unittests",
-      "log_name": "server-tests-honua-io-unittests",
-      "timeout_minutes": 20,
-      "test_timeout_minutes": 10,
-      "max_cpu_count": "",
-      "upload_operator_eval_report": false,
-      "upload_odata_evidence": false,
-      "csproj": "tests/dotnet/Honua.Io.UnitTests/Honua.Io.UnitTests.csproj",
-      "filter": "FullyQualifiedName~Honua",
-      "paths": [
-        "src/Honua.Core.Abstractions/",
-        "src/Honua.Core/",
-        "src/Honua.Geometry/",
-        "src/Honua.Hosting/",
-        "src/Honua.Io/",
-        "src/Honua.Plugins.Abstractions/",
-        "src/Honua.ServiceDefaults/",
-        "tests/dotnet/Honua.Io.UnitTests/"
-      ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
-    },
-    {
       "name": "Protocols GeoServices Units",
       "shard_name": "Protocols GeoServices Units",
       "dispatch_rank": 1.1,
@@ -3409,6 +3385,7 @@
         "tests/dotnet/Honua.TestKit/Infrastructure/TestMetadataV2GraphProvider.cs",
         "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
         "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
         "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
       ],
       "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
@@ -3586,7 +3563,9 @@
         "src/Honua.Scene/",
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Scene.UnitTests/",
-        "tests/dotnet/Honua.TestKit/Infrastructure/TestMetadataV2GraphProvider.cs"
+        "tests/dotnet/Honua.TestKit/Infrastructure/TestMetadataV2GraphProvider.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/InMemoryCloudFileStorage.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs"
       ],
       "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
     },
@@ -3739,7 +3718,9 @@
         "src/Honua.Protocols.Scene/",
         "src/Honua.Scene/",
         "src/Honua.ServiceDefaults/",
-        "tests/dotnet/Honua.Protocols.Scene.ComponentTests/"
+        "tests/dotnet/Honua.Protocols.Scene.ComponentTests/",
+        "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneFixturePaths.cs",
+        "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneFixtureRoots.cs"
       ],
       "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
     },
@@ -3850,6 +3831,29 @@
         "src/Honua.Protocols.OgcClassic/",
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Protocols.OgcClassic.ComponentTests/"
+      ],
+      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
+    },
+    {
+      "name": "Hosting Components",
+      "shard_name": "Hosting Components",
+      "dispatch_rank": 1.1,
+      "artifact_suffix": "honua-hosting-componenttests",
+      "log_name": "server-tests-honua-hosting-componenttests",
+      "timeout_minutes": 20,
+      "test_timeout_minutes": 10,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Hosting.ComponentTests/Honua.Hosting.ComponentTests.csproj",
+      "filter": "FullyQualifiedName~Honua",
+      "paths": [
+        "src/Honua.Core.Abstractions/",
+        "src/Honua.Core/",
+        "src/Honua.Geometry/",
+        "src/Honua.Hosting/",
+        "src/Honua.ServiceDefaults/",
+        "tests/dotnet/Honua.Hosting.ComponentTests/"
       ],
       "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
     }

@@ -578,6 +578,20 @@
       "isolated": true,
       "coverageRequired": true
     },
+    "tests/dotnet/Honua.Hosting.ComponentTests/Honua.Hosting.ComponentTests.csproj": {
+      "role": "component",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [],
+      "isolated": false,
+      "coverageRequired": true
+    },
     "tests/dotnet/Honua.Hosting.UnitTests/Honua.Hosting.UnitTests.csproj": {
       "role": "unit",
       "shardRouted": true,
@@ -601,22 +615,6 @@
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
         "src/Honua.Import/Honua.Import.csproj",
-        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
-      ],
-      "resources": [],
-      "isolated": true,
-      "coverageRequired": true
-    },
-    "tests/dotnet/Honua.Io.UnitTests/Honua.Io.UnitTests.csproj": {
-      "role": "unit",
-      "shardRouted": true,
-      "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
-        "src/Honua.Geometry/Honua.Geometry.csproj",
-        "src/Honua.Hosting/Honua.Hosting.csproj",
-        "src/Honua.Io/Honua.Io.csproj",
-        "src/Honua.Plugins.Abstractions/Honua.Plugins.Abstractions.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
       ],
       "resources": [],

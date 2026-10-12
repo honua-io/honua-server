@@ -17,9 +17,9 @@
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Db.SqlServer.UnitTests/Honua.SqlServer.UnitTests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.GeoServicesRest.Tests/Honua.GeoServicesRest.Tests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Geoprocessing.UnitTests/Honua.Geoprocessing.UnitTests.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Hosting.ComponentTests/Honua.Hosting.ComponentTests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Hosting.UnitTests/Honua.Hosting.UnitTests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Import.UnitTests/Honua.Import.UnitTests.csproj" />
-    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Io.UnitTests/Honua.Io.UnitTests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Protocols.GeoServices.ComponentTests/Honua.Protocols.GeoServices.ComponentTests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj" />

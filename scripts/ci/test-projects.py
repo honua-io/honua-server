@@ -105,7 +105,7 @@ def proposed(root, project):
     if role == 'unit' and (resources or any('/Honua.Server/' in p or '/Honua.TestKit/' in p for p in refs) or any(token in text for token in ('WebApplicationFactory<', '[IntegrationTest', '[IntegrationTheory'))):
         role = 'mixed'
     return dict(role=role, shardRouted=name.endswith('.UnitTests') or name in {'Honua.Server.Tests', 'Honua.Ai.Tests', 'Honua.Geoprocessing.Cli.Tests'} or (name.startswith('Honua.Protocols.') and name.endswith('.Tests')), runtimeOwners=owners, resources=resources, isolated=role == 'unit',
-                coverageRequired=test and role != 'architecture' and (role == 'unit' or name.startswith(('Honua.Protocols.', 'Honua.Ai.')) or name in {'Honua.Server.Tests', 'Honua.ProviderSmoke.Tests', 'Honua.Worker.Gdal.Tests'}))
+                coverageRequired=test and role != 'architecture' and (role in {'unit', 'component'} or name.startswith(('Honua.Protocols.', 'Honua.Ai.')) or name in {'Honua.Server.Tests', 'Honua.ProviderSmoke.Tests', 'Honua.Worker.Gdal.Tests'}))
 
 
 def generated(catalog):
