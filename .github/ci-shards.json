@@ -176,7 +176,8 @@
       "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Admin.)&FullyQualifiedName!~RoleEndpointsTests&(FullyQualifiedName~AdminAuth|FullyQualifiedName~OAuth|FullyQualifiedName~Oidc|FullyQualifiedName~ApiKey|FullyQualifiedName~ClientCertificate|FullyQualifiedName~OperatorBearerToken|FullyQualifiedName~UserManagement|FullyQualifiedName~RowLevelSecurity|FullyQualifiedName~RateLimit|FullyQualifiedName~Tenant)",
       "children": [
         "Server Features Admin Authentication and Credentials",
-        "Server Features Admin Authorization"
+        "Server Features Admin Authorization",
+        "Server Features Admin Authorization Matrix"
       ]
     },
     {
@@ -359,6 +360,14 @@
       "children": [
         "Scene",
         "Scene I3S Resources"
+      ]
+    },
+    {
+      "name": "Server Features Admin Authorization original selection",
+      "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Admin.)&FullyQualifiedName!~RoleEndpointsTests&(FullyQualifiedName~AdminAuth|FullyQualifiedName~OAuth|FullyQualifiedName~Oidc|FullyQualifiedName~ApiKey|FullyQualifiedName~ClientCertificate|FullyQualifiedName~OperatorBearerToken|FullyQualifiedName~UserManagement|FullyQualifiedName~RowLevelSecurity|FullyQualifiedName~RateLimit|FullyQualifiedName~Tenant))&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OperatorBearerTokenServiceTests",
+      "children": [
+        "Server Features Admin Authorization",
+        "Server Features Admin Authorization Matrix"
       ]
     }
   ],
@@ -1746,8 +1755,42 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "#3059 catch-all split of Server Features Admin Auth and Identity. Owns admin authorization, user/tenant administration, row-level security, and rate-limit policy tests plus any future class selected by the legacy parent but not assigned to the authentication or credentials children.",
-      "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Admin.)&FullyQualifiedName!~RoleEndpointsTests&(FullyQualifiedName~AdminAuth|FullyQualifiedName~OAuth|FullyQualifiedName~Oidc|FullyQualifiedName~ApiKey|FullyQualifiedName~ClientCertificate|FullyQualifiedName~OperatorBearerToken|FullyQualifiedName~UserManagement|FullyQualifiedName~RowLevelSecurity|FullyQualifiedName~RateLimit|FullyQualifiedName~Tenant))&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OperatorBearerTokenServiceTests",
+      "_comment": "#3059 catch-all split of Server Features Admin Auth and Identity. Owns admin authorization, user/tenant administration, row-level security, and rate-limit policy tests plus any future class selected by the legacy parent but not assigned to the authentication or credentials children. #5912 moves the complete AdminAuthorizationTests and RedisAdminApiKeyEndpointsTests classes to its own matrix shard; this retains every other method selected by the original catch-all, including method-name matches in other classes.",
+      "filter": "(((FullyQualifiedName~Honua.Server.Tests.Features.Admin.)&FullyQualifiedName!~RoleEndpointsTests&(FullyQualifiedName~AdminAuth|FullyQualifiedName~OAuth|FullyQualifiedName~Oidc|FullyQualifiedName~ApiKey|FullyQualifiedName~ClientCertificate|FullyQualifiedName~OperatorBearerToken|FullyQualifiedName~UserManagement|FullyQualifiedName~RowLevelSecurity|FullyQualifiedName~RateLimit|FullyQualifiedName~Tenant))&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OperatorBearerTokenServiceTests)&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.",
+      "paths": [
+        "src/Honua.Server/Features/Admin/",
+        "src/Honua.Server/Features/Admin/AdminEndpoints.cs",
+        "src/Honua.Server/Features/Admin/IdentityAdmin",
+        "src/Honua.Server/Features/Admin/RateLimit",
+        "src/Honua.Server/Features/Admin/RlsPolicy",
+        "src/Honua.Server/Features/Admin/TenantAdmin",
+        "src/Honua.Server/Features/Admin/UserManagement",
+        "src/Honua.Server/Features/Admin/Models/RateLimit",
+        "src/Honua.Server/Features/Admin/Models/RlsPolicy",
+        "src/Honua.Server/Features/Admin/Models/Tenant",
+        "src/Honua.Server/Features/Admin/Models/UserManagement",
+        "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminAuthorizationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Admin/RateLimitEndpointsTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Admin/RowLevelSecurityEndpointsTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Admin/TenantAdminEndpointsTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Admin/UserManagementEndpointsTests.cs",
+        "src/Honua.Core/Features/Validation/"
+      ],
+      "csproj": ""
+    },
+    {
+      "name": "Server Features Admin Authorization Matrix",
+      "shard_name": "Server Features Admin Authorization Matrix",
+      "dispatch_rank": 16.25,
+      "artifact_suffix": "server-features-admin-authorization-matrix",
+      "log_name": "server-tests-server-features-admin-authorization-matrix",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "#5912 measured whole-class capacity cut: all AdminAuthorizationTests and RedisAdminApiKeyEndpointsTests cases move together; original test/job budgets, source triggers and assertions remain unchanged.",
+      "filter": "(((FullyQualifiedName~Honua.Server.Tests.Features.Admin.)&FullyQualifiedName!~RoleEndpointsTests&(FullyQualifiedName~AdminAuth|FullyQualifiedName~OAuth|FullyQualifiedName~Oidc|FullyQualifiedName~ApiKey|FullyQualifiedName~ClientCertificate|FullyQualifiedName~OperatorBearerToken|FullyQualifiedName~UserManagement|FullyQualifiedName~RowLevelSecurity|FullyQualifiedName~RateLimit|FullyQualifiedName~Tenant))&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OperatorBearerTokenServiceTests)&(FullyQualifiedName~Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.|FullyQualifiedName~Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.)",
       "paths": [
         "src/Honua.Server/Features/Admin/",
         "src/Honua.Server/Features/Admin/AdminEndpoints.cs",

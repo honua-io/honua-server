@@ -1381,6 +1381,7 @@ jobs:
             'MCP and Sessions'| \
             'Server Features Admin Runtime Operations'| \
             'Server Features Admin Authorization'| \
+            'Server Features Admin Authorization Matrix'| \
             'Server Features Admin Network and Jobs'| \
             'Server Features Admin Integrations and Automation'| \
             'Server Features Streaming Snapshot and Conformance'| \

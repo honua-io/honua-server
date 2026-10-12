@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "issue": 5912,
+  "baseline": {
+    "runId": 38182837651,
+    "sourceSha": "01449eaed054a508e1fae691c768c26f0f2f19fb",
+    "artifactId": 11719527348,
+    "timing": {
+      "shard": "Server Features Admin Authorization",
+      "log_name": "server-tests-server-features-admin-authorization",
+      "status": "passed",
+      "exit_code": 0,
+      "started_at": "2026-10-11T23:43:23Z",
+      "completed_at": "2026-10-11T23:59:19Z",
+      "duration_seconds": 956,
+      "timeout_minutes": 22,
+      "timeout_seconds": 1320,
+      "timed_out": false,
+      "kill_escalated": false,
+      "headroom_ratio": 0.7242,
+      "headroom_warn_ratio": 0.8,
+      "capacity_status": "ok",
+      "idle_seconds_at_exit": 10,
+      "stall_seconds": 300,
+      "filter": "((((FullyQualifiedName~Honua.Server.Tests.Features.Admin.)&FullyQualifiedName!~RoleEndpointsTests&(FullyQualifiedName~AdminAuth|FullyQualifiedName~OAuth|FullyQualifiedName~Oidc|FullyQualifiedName~ApiKey|FullyQualifiedName~ClientCertificate|FullyQualifiedName~OperatorBearerToken|FullyQualifiedName~UserManagement|FullyQualifiedName~RowLevelSecurity|FullyQualifiedName~RateLimit|FullyQualifiedName~Tenant))&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OperatorBearerTokenServiceTests)&Tier!=Slow)&Tier!=Fast"
+    },
+    "testCounters": {
+      "total": 146,
+      "executed": 146,
+      "passed": 146,
+      "failed": 0,
+      "error": 0,
+      "timeout": 0,
+      "aborted": 0,
+      "inconclusive": 0,
+      "passedButRunAborted": 0,
+      "notRunnable": 0,
+      "notExecuted": 0,
+      "disconnected": 0,
+      "warning": 0,
+      "completed": 0,
+      "inProgress": 0,
+      "pending": 0
+    },
+    "fileSha256": {
+      "server-tests-server-features-admin-authorization.log": "2b9378e095bf07854e93648ff9e34b1d2eceaae73db4c31709087800cc655079",
+      "server-tests-server-features-admin-authorization.timing.json": "b5f614b0a73ffa4152eb266408581fa4dcc4654a94e617a7acdcb7832818813e",
+      "server-tests-server-features-admin-authorization.trx": "160d2e3645964adb982902249199f0c5f2e5ebd818f7cb6fbe8f83cb2ac824e4"
+    }
+  },
+  "failed": {
+    "runId": 38193561888,
+    "sourceSha": "0fd0f53b91c2042810a42b7215afcd5f6d1abeaa",
+    "artifactId": 11723433149,
+    "timing": {
+      "shard": "Server Features Admin Authorization",
+      "log_name": "server-tests-server-features-admin-authorization",
+      "status": "timed_out",
+      "exit_code": 124,
+      "started_at": "2026-10-12T02:14:13Z",
+      "completed_at": "2026-10-12T02:36:15Z",
+      "duration_seconds": 1322,
+      "timeout_minutes": 22,
+      "timeout_seconds": 1320,
+      "timed_out": true,
+      "kill_escalated": false,
+      "headroom_ratio": 1.0015,
+      "headroom_warn_ratio": 0.8,
+      "capacity_status": "capacity_exhausted",
+      "idle_seconds_at_exit": 3,
+      "stall_seconds": 300,
+      "filter": "((((FullyQualifiedName~Honua.Server.Tests.Features.Admin.)&FullyQualifiedName!~RoleEndpointsTests&(FullyQualifiedName~AdminAuth|FullyQualifiedName~OAuth|FullyQualifiedName~Oidc|FullyQualifiedName~ApiKey|FullyQualifiedName~ClientCertificate|FullyQualifiedName~OperatorBearerToken|FullyQualifiedName~UserManagement|FullyQualifiedName~RowLevelSecurity|FullyQualifiedName~RateLimit|FullyQualifiedName~Tenant))&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OperatorBearerTokenServiceTests)&Tier!=Slow)&Tier!=Fast"
+    },
+    "completeTrxPresent": false,
+    "fileSha256": {
+      "server-tests-server-features-admin-authorization.log": "1c62b66d481999a8a9d7ffe80a554e97a3b5a3cb2e0280ded466317df8217cd3",
+      "server-tests-server-features-admin-authorization.timing.json": "be53dd4d7b5f08c808e66c9f7aaf61b4d8c0660c73940a299e9995cc0094ffe4"
+    }
+  },
+  "movedWholeClasses": [
+    "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests",
+    "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests"
+  ],
+  "predictedPartitions": [
+    {
+      "name": "Server Features Admin Authorization Matrix",
+      "baselineCases": 67,
+      "baselineIntervalUnionSeconds": 355.51
+    },
+    {
+      "name": "Server Features Admin Authorization",
+      "baselineCases": 79,
+      "baselineIntervalUnionSeconds": 623.787
+    }
+  ],
+  "limitations": [
+    "One complete baseline does not estimate p90.",
+    "Interval unions account for overlapping cases; sums of class spans would overcount.",
+    "Partition estimates exclude fixed runner/setup overhead and are not fresh passing results.",
+    "The timeout is censored evidence without a complete TRX; it is not a passing test denominator.",
+    "Two fresh executions per changed child and normal PR gates are still required."
+  ]
+}
