@@ -504,6 +504,7 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
     [InlineData("SolveLocationAllocation", "Facilities", "Demand_Points", "Output_Allocation_Lines")]
     [Operation(Operations.Create)]
     [Endpoint("GET /rest/services/{serviceId}/NAServer/{taskName}/submitJob")]
+    [Endpoint("GET /rest/services/{serviceId}/NAServer/{taskName}/jobs/{jobId}")]
     public async Task SubmitJob_NaServerGetAlias_UsesTheSameDurableJobAndResults(string task, string first, string second, string output)
     {
         await using var fixture = Fixture(Provider());
@@ -516,9 +517,57 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
         var jobId = submitted.RootElement.GetProperty("jobId").GetString()!;
         using var terminal = await GPServerJobWait.UntilRestSucceededAsync(client, JobPath(task, jobId, "NAServer"), jobId,
             fixture.GetService<IExecutionJobStore>());
+        using var statusResponse = await client.GetAsync($"/rest/services/{ServiceId}/NAServer/{task}/jobs/{jobId}?f=json");
+        statusResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var status = JsonDocument.Parse(await statusResponse.Content.ReadAsStringAsync());
+        status.RootElement.GetProperty("jobId").GetString().Should().Be(jobId);
+        status.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSucceeded");
         using var alias = await ResultAsync(client, task, jobId, output, "NAServer");
         using var canonical = await ResultAsync(client, task, jobId, output);
         alias.RootElement.GetRawText().Should().Be(canonical.RootElement.GetRawText());
+        (await fixture.GetService<IExecutionJobStore>().GetAsync(jobId))!.ArtifactReferences.Should().HaveCount(4);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/{taskName}/submitJob")]
+    [Endpoint("GET /rest/services/{serviceId}/NAServer/{taskName}/submitJob")]
+    [Endpoint("GET /rest/services/{serviceId}/NAServer/{taskName}/jobs/{jobId}")]
+    [Endpoint("GET /rest/services/{serviceId}/NAServer/{taskName}/jobs/{jobId}/results/{paramName}")]
+    public async Task SubmitJob_NaServerAliases_ExposeDurableStatusAndNamedResults()
+    {
+        await using var fixture = Fixture(Provider());
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateAdminClient();
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json", ["Incidents"] = FirstPoint, ["Facilities"] = SecondPoint
+        });
+        using var post = await client.PostAsync($"/rest/services/{ServiceId}/NAServer/FindClosestFacilities/submitJob", content);
+        post.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var posted = JsonDocument.Parse(await post.Content.ReadAsStringAsync());
+        var postJobId = posted.RootElement.GetProperty("jobId").GetString()!;
+        using var postTerminal = await GPServerJobWait.UntilRestSucceededAsync(client,
+            JobPath("FindClosestFacilities", postJobId, "NAServer"), postJobId, fixture.GetService<IExecutionJobStore>());
+
+        var query = $"f=json&Incidents={Uri.EscapeDataString(FirstPoint)}&Facilities={Uri.EscapeDataString(SecondPoint)}";
+        using var get = await client.GetAsync($"/rest/services/{ServiceId}/NAServer/FindClosestFacilities/submitJob?{query}");
+        get.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var submitted = JsonDocument.Parse(await get.Content.ReadAsStringAsync());
+        var jobId = submitted.RootElement.GetProperty("jobId").GetString()!;
+        jobId.Should().NotBe(postJobId);
+        using var terminal = await GPServerJobWait.UntilRestSucceededAsync(client,
+            JobPath("FindClosestFacilities", jobId, "NAServer"), jobId, fixture.GetService<IExecutionJobStore>());
+        using var statusResponse = await client.GetAsync($"/rest/services/{ServiceId}/NAServer/FindClosestFacilities/jobs/{jobId}?f=json");
+        statusResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var status = JsonDocument.Parse(await statusResponse.Content.ReadAsStringAsync());
+        status.RootElement.GetProperty("jobId").GetString().Should().Be(jobId);
+        status.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSucceeded");
+        using var resultResponse = await client.GetAsync($"/rest/services/{ServiceId}/NAServer/FindClosestFacilities/jobs/{jobId}/results/Output_Routes?f=json");
+        resultResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var result = JsonDocument.Parse(await resultResponse.Content.ReadAsStringAsync());
+        result.RootElement.GetProperty("paramName").GetString().Should().Be("Output_Routes");
+        result.RootElement.GetProperty("value").GetProperty("features").GetArrayLength().Should().Be(1);
         (await fixture.GetService<IExecutionJobStore>().GetAsync(jobId))!.ArtifactReferences.Should().HaveCount(4);
     }
 
