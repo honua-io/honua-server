@@ -23,6 +23,26 @@ public sealed class ODataComponentFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        try
+        {
+            await InitializeCoreAsync();
+        }
+        catch (Exception initializationError)
+        {
+            try
+            {
+                await DisposeAsync();
+            }
+            catch (Exception cleanupError)
+            {
+                throw new AggregateException("OData fixture initialization and cleanup failed.", initializationError, cleanupError);
+            }
+            throw;
+        }
+    }
+
+    private async Task InitializeCoreAsync()
+    {
         var external = Environment.GetEnvironmentVariable("HONUA_ODATA_TEST_BASE_URL");
         string adminKey;
         if (!string.IsNullOrWhiteSpace(external))
@@ -68,12 +88,31 @@ public sealed class ODataComponentFixture : IAsyncLifetime
     {
         Client?.Dispose();
         Anonymous?.Dispose();
-        if (_app is not null) await _app.DisposeAsync();
-        if (_postgres is not null)
+        // Each owned resource gets a cleanup attempt even when an earlier cleanup fails.
+        var app = _app;
+        var postgres = _postgres;
+        var connection = _connection;
+        _app = null;
+        _postgres = null;
+        _connection = null;
+        try
         {
-            if (_connection is not null)
-                await _postgres.DropDatabaseAsync(new NpgsqlConnectionStringBuilder(_connection).Database!);
-            await _postgres.DisposeAsync();
+            if (app is not null) await app.DisposeAsync();
+        }
+        finally
+        {
+            if (postgres is not null)
+            {
+                try
+                {
+                    if (connection is not null)
+                        await postgres.DropDatabaseAsync(new NpgsqlConnectionStringBuilder(connection).Database!);
+                }
+                finally
+                {
+                    await postgres.DisposeAsync();
+                }
+            }
         }
     }
 }
