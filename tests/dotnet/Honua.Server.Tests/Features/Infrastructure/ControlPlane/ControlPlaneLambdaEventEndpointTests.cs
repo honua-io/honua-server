@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using FluentAssertions;
 using Honua.ControlPlane;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Builder;
@@ -12,6 +13,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -147,6 +149,116 @@ public sealed class ControlPlaneLambdaEventEndpointTests
     }
 
     [UnitTheory]
+    [InlineData("batch-event", BatchEvent, null)]
+    [InlineData("backstop", "{}", null)]
+    [InlineData("scheduled-tick", """{"kind":"JobReconciliation"}""", "JobReconciliation")]
+    public async Task WorkNeedingTheDurableStore_OnARedisOffHost_AnswersTypedCapabilityUnavailable503(
+        string selector,
+        string payload,
+        string? subject)
+    {
+        // honua-release run 38242272260 (aws-serverless, Redis-off): these answered 500.
+        var targets = new RecordingTargets
+        {
+            Failure = new ControlPlaneEventDependencyUnavailableException(CapabilityUnavailableCodes.RedisDependency, subject),
+        };
+
+        var (status, body, contentType) = await InvokeWithContentTypeAsync(selector, payload, targets);
+
+        status.Should().Be(StatusCodes.Status503ServiceUnavailable);
+        contentType.Should().StartWith("application/problem+json");
+        body.Should().Contain("\"missingDependency\":\"redis\"")
+            .And.Contain($"\"code\":\"{CapabilityUnavailableCodes.ErrorCode}\"")
+            .And.Contain(CapabilityUnavailableCodes.ProblemType)
+            .And.Contain(CapabilityUnavailableCodes.DurableJobsCapability);
+    }
+
+    [UnitTest]
+    public async Task WorkNeedingTheDurableStore_WithRedisPresentButUnentitled_ReportsTheLicence()
+    {
+        var services = new ServiceCollection().AddLogging();
+        services.Configure<DurableJobSubstrateOptions>(options =>
+        {
+            options.RedisConfigured = true;
+            options.RedisEntitled = false;
+        });
+        var targets = new RecordingTargets
+        {
+            Failure = new ControlPlaneEventDependencyUnavailableException(CapabilityUnavailableCodes.RedisDependency, null),
+        };
+
+        var (status, body, _) = await InvokeWithContentTypeAsync(
+            "backstop", "{}", targets, requestServices: services.BuildServiceProvider());
+
+        status.Should().Be(StatusCodes.Status503ServiceUnavailable);
+        body.Should().Contain($"\"code\":\"{CapabilityUnavailableCodes.EntitlementErrorCode}\"")
+            .And.Contain(CapabilityUnavailableCodes.RedisCacheEntitlement)
+            .And.NotContain("\"missingDependency\":\"redis\"");
+    }
+
+    [UnitTest]
+    public async Task DependencyRefusal_IsLoggedAtWarningOncePerColdStart()
+    {
+        var logger = new RecordingLogger();
+        var latch = new ColdStartWarningLatch();
+        var targets = new RecordingTargets
+        {
+            Failure = new ControlPlaneEventDependencyUnavailableException(CapabilityUnavailableCodes.RedisDependency, null),
+        };
+
+        for (var i = 0; i < 3; i++)
+        {
+            var (status, _, _) = await InvokeWithContentTypeAsync("backstop", "{}", targets, logger: logger, latch: latch);
+            status.Should().Be(StatusCodes.Status503ServiceUnavailable);
+        }
+
+        logger.Entries.Where(entry => entry.Level == LogLevel.Warning).Should().ContainSingle()
+            .Which.Message.Should().Contain("redis");
+        logger.Entries.Should().NotContain(entry => entry.Level >= LogLevel.Error);
+    }
+
+    [UnitTheory]
+    [InlineData("batch-event", BatchEvent)]
+    [InlineData("backstop", "{}")]
+    [InlineData("scheduled-tick", """{"kind":"TemporaryFileCleanup"}""")]
+    public async Task UnexpectedHandlerFailure_Answers500Problem_NamingTheExceptionType_WithoutAStack(
+        string selector,
+        string payload)
+    {
+        var targets = new RecordingTargets
+        {
+            Failure = new InvalidOperationException("No service for type 'Example' has been registered."),
+        };
+
+        var (status, body, contentType) = await InvokeWithContentTypeAsync(selector, payload, targets);
+
+        status.Should().Be(StatusCodes.Status500InternalServerError);
+        contentType.Should().StartWith("application/problem+json");
+        body.Should().Contain("control_plane_lambda_handler_failed")
+            .And.Contain("System.InvalidOperationException")
+            .And.NotContain("   at ", "the stack trace stays in the function log");
+    }
+
+    [UnitTest]
+    public async Task HostWithoutTargets_Answers503ControlPlaneNotReady()
+    {
+        var (status, body, _) = await InvokeWithContentTypeAsync("backstop", "{}", targets: null);
+
+        status.Should().Be(StatusCodes.Status503ServiceUnavailable);
+        body.Should().Contain("control_plane_not_ready");
+    }
+
+    [UnitTheory]
+    [InlineData("batch-event", "batch-event")]
+    [InlineData("Reconcile", "batch-event")]
+    [InlineData("backstop", "backstop")]
+    [InlineData("scheduled-tick", "scheduled-tick")]
+    [InlineData("sweep", null)]
+    [InlineData("", null)]
+    public void CanonicalHandler_MapsSelectorsAndAliases(string selector, string? expected)
+        => ControlPlaneLambdaEventEndpoint.CanonicalHandler(selector).Should().Be(expected);
+
+    [UnitTheory]
     [InlineData(null, "/events")]
     [InlineData("", "/events")]
     [InlineData("/lambda-events", "/lambda-events")]
@@ -199,6 +311,20 @@ public sealed class ControlPlaneLambdaEventEndpointTests
         IPAddress? remoteIp = null,
         bool hasRemote = true)
     {
+        var (status, body, _) = await InvokeWithContentTypeAsync(selector, payload, targets, remoteIp, hasRemote);
+        return (status, body);
+    }
+
+    private static async Task<(int Status, string Body, string? ContentType)> InvokeWithContentTypeAsync(
+        string selector,
+        string payload,
+        RecordingTargets? targets,
+        IPAddress? remoteIp = null,
+        bool hasRemote = true,
+        IServiceProvider? requestServices = null,
+        ILogger? logger = null,
+        ColdStartWarningLatch? latch = null)
+    {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -208,7 +334,7 @@ public sealed class ControlPlaneLambdaEventEndpointTests
 
         var context = new DefaultHttpContext
         {
-            RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider(),
+            RequestServices = requestServices ?? new ServiceCollection().AddLogging().BuildServiceProvider(),
         };
         context.Request.Method = HttpMethods.Post;
         context.Request.Path = "/events";
@@ -222,12 +348,13 @@ public sealed class ControlPlaneLambdaEventEndpointTests
             context,
             configuration,
             targets,
-            NullLogger.Instance);
+            logger ?? NullLogger.Instance,
+            latch ?? new ColdStartWarningLatch());
         await result.ExecuteAsync(context);
 
         context.Response.Body.Position = 0;
         using var reader = new StreamReader(context.Response.Body);
-        return (context.Response.StatusCode, await reader.ReadToEndAsync());
+        return (context.Response.StatusCode, await reader.ReadToEndAsync(), context.Response.ContentType);
     }
 
     private sealed class RecordingTargets : IControlPlaneLambdaEventTargets
@@ -236,14 +363,18 @@ public sealed class ControlPlaneLambdaEventEndpointTests
 
         public bool TickThrows { get; init; }
 
+        public Exception? Failure { get; init; }
+
         public Task ReconcileBatchJobAsync(string providerOperationId, CancellationToken cancellationToken)
         {
+            ThrowIfFailing();
             Calls.Add($"reconcile:{providerOperationId}");
             return Task.CompletedTask;
         }
 
         public Task RunBackstopAsync(CancellationToken cancellationToken)
         {
+            ThrowIfFailing();
             Calls.Add("backstop");
             return Task.CompletedTask;
         }
@@ -255,8 +386,36 @@ public sealed class ControlPlaneLambdaEventEndpointTests
                 throw new ArgumentOutOfRangeException(nameof(kind));
             }
 
+            ThrowIfFailing();
             Calls.Add($"tick:{kind}");
             return Task.CompletedTask;
         }
+
+        private void ThrowIfFailing()
+        {
+            if (Failure is not null)
+            {
+                throw Failure;
+            }
+        }
+    }
+
+    private sealed class RecordingLogger : ILogger
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+            => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+            => Entries.Add((logLevel, formatter(state, exception)));
     }
 }
