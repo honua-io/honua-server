@@ -86,7 +86,7 @@ public sealed class PostgresFixture : IAsyncLifetime
                         // Test hosts skip application migrations. Execute the owning
                         // production DDL once under the shared initialization lock
                         // so registered providers have their required tables.
-                        var assembly = typeof(Program).Assembly;
+                        var assembly = typeof(PostgresFixture).Assembly;
                         // codeql[cs/linq/missed-select]: executes each embedded migration before the next script is read
                         foreach (var filename in SharedStoreMigrations)
                         {
@@ -572,6 +572,43 @@ public sealed class PostgresFixture : IAsyncLifetime
             cancellationToken).ConfigureAwait(false);
 
         return result;
+    }
+
+    /// <summary>
+    /// Provisions a dedicated database from canonical provider/application migrations and
+    /// the OData seed. The caller must drop the returned database before disposing this fixture.
+    /// This is test provisioning, never a substitute for production startup migration gates.
+    /// </summary>
+    public async Task<string> ProvisionODataDatabaseAsync(string seedPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(seedPath);
+        var connectionString = await CreateIsolatedDatabaseAsync("odata_pilot").ConfigureAwait(false);
+        try
+        {
+            await RunUnderSchemaMutationLockAsync(() =>
+            {
+                var upgrade = DbUp.DeployChanges.To.PostgresqlDatabase(connectionString)
+                    .JournalToPostgresqlTable("public", "schema_versions")
+                    .WithScriptsEmbeddedInAssembly(typeof(Honua.Db.Postgres.ServiceCollectionExtensions).Assembly)
+                    .WithScriptsEmbeddedInAssembly(typeof(PostgresFixture).Assembly)
+                    .WithVariable("HonuaSchema", "\"honua\"")
+                    .WithTransaction()
+                    .Build().PerformUpgrade();
+                if (!upgrade.Successful)
+                {
+                    throw new InvalidOperationException("OData pilot database provisioning failed.", upgrade.Error);
+                }
+                return Task.CompletedTask;
+            }).ConfigureAwait(false);
+            await using var dataSource = NpgsqlDataSource.Create(connectionString);
+            await SeedRunner.ApplyAsync(dataSource, seedPath, "public", profileName: null).ConfigureAwait(false);
+            return connectionString;
+        }
+        catch
+        {
+            await DropDatabaseAsync(new NpgsqlConnectionStringBuilder(connectionString).Database!).ConfigureAwait(false);
+            throw;
+        }
     }
 
     private static async Task ExecuteAdvisoryLockCommandAsync(NpgsqlConnection connection, string sql, CancellationToken cancellationToken)
