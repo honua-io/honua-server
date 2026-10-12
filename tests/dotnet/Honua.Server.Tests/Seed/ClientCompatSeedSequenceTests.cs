@@ -53,6 +53,62 @@ public sealed class ClientCompatSeedSequenceTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task McpSeedSequence_WithBaseSeed_PreservesBindingsAndPublishesPolygonOnRepeat()
+    {
+        await using var dataSource = NpgsqlDataSource.Create(_connectionString);
+        for (var iteration = 0; iteration < 2; iteration++)
+        {
+            await ExecuteSqlFileAsync(dataSource, RepositoryPaths.Resolve("tests", "seed", "base-schema.sql"));
+            await ExecuteYamlSqlAsync(dataSource, RepositoryPaths.Resolve("tests", "seed", "mcp.yaml"));
+
+            await using var command = dataSource.CreateCommand("""
+                SELECT service_name, layer_id, layer_order
+                FROM honua.service_layers
+                WHERE service_name IN ('test_service', 'test_service_mcp')
+                ORDER BY service_name, layer_order;
+                """);
+            var bindings = new List<(string Service, int Layer, int Order)>();
+            await using (var reader = await command.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
+                {
+                    bindings.Add((reader.GetString(0), reader.GetInt32(1), reader.GetInt32(2)));
+                }
+            }
+            bindings.Should().Equal(
+                ("test_service", 0, 0), ("test_service", 1, 1),
+                ("test_service", 10, 2), ("test_service_mcp", 10, 0));
+
+            command.CommandText = "SELECT COUNT(*) FROM features WHERE layer_id = 1";
+            (await command.ExecuteScalarAsync()).Should().Be(3L, "the overlay must preserve the base mixed geometry fixture");
+            command.CommandText = "SELECT COUNT(*) FROM features WHERE layer_id = 10 AND ST_GeometryType(geometry) = 'ST_Polygon'";
+            (await command.ExecuteScalarAsync()).Should().Be(5L, "replaying the overlay must not duplicate polygons");
+
+            var snapshots = await ReadCurrentSnapshotsAsync(dataSource);
+            snapshots.Keys.Should().BeEquivalentTo(["default", "Development", "Test", "Production"]);
+            foreach (var snapshot in snapshots.Values)
+            {
+                using var document = JsonDocument.Parse(snapshot);
+                var publications = document.RootElement.GetProperty("publications").EnumerateArray()
+                    .Where(publication => publication.GetProperty("publicationType").GetString() == "esri-feature-layer")
+                    .Select(publication => (
+                        Service: publication.GetProperty("serviceId").GetString(),
+                        Layer: publication.GetProperty("layerIndex").GetInt32(),
+                        Resource: publication.GetProperty("resourceId").GetString()))
+                    .ToArray();
+                publications.Where(publication => publication.Service == "svc-test-service-feature")
+                    .Should().BeEquivalentTo([
+                        ("svc-test-service-feature", 0, "res-layer-0"),
+                        ("svc-test-service-feature", 1, "res-layer-1"),
+                        ("svc-test-service-feature", 10, "res-layer-10")]);
+                publications.Where(publication => publication.Service == "svc-test-service-mcp-feature")
+                    .Should().ContainSingle().Which.Should().Be(("svc-test-service-mcp-feature", 10, "res-layer-10"));
+            }
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task ClientCompatSeedSequence_WithBrowserCompatSeed_RefreshesMetadataV2Snapshots()
     {
         var connectionString = new NpgsqlConnectionStringBuilder(_connectionString)

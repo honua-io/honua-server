@@ -1,6 +1,6 @@
 version: 1
 # MCP certification seed data
-# Depends on: base CI seed (schema + test_service + layer 0 with fields)
+# Depends on: base CI seed (schema + test_service + layers 0 and 1 with fields)
 # Applied AFTER the base seed to add MCP-specific test data
 #
 # This file provides deterministic data for the MCP certification suite
@@ -83,10 +83,10 @@ sql:
     VALUES ('test_service_mcp', 10, 0)
     ON CONFLICT (service_name, layer_id) DO NOTHING;
 
-  # Line ~88: bind test_service → layer 10 (layer_order 1, after existing layer 0)
+  # Line ~88: bind test_service → layer 10 (layer_order 2, after existing layers 0 and 1)
   - |
     INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
-    VALUES ('test_service', 10, 1)
+    VALUES ('test_service', 10, 2)
     ON CONFLICT (service_name, layer_id) DO NOTHING;
 
   # ── 15 point features in layer 0 (objectids 10–24) ────────────────
@@ -178,3 +178,7 @@ sql:
         pg_get_serial_sequence('features', 'objectid'),
         (SELECT COALESCE(MAX(objectid), 0) FROM features)
     );
+
+  # Publish the added MCP service and polygon binding after the base snapshot.
+  - |
+    SELECT honua.seed_metadata_v2_compat_snapshot();

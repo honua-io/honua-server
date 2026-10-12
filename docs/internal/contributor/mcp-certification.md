@@ -55,7 +55,7 @@ annotations instead of failing before the server starts.
 - **Artifact:** `mcp-certification-{transport}`, 30-day retention.
 - **Ref strategy:** the SDK ref is controlled by the `MCP_SDK_REF` env var at the top of `ci.yml`. When set to a branch name, certification runs are useful for development but the artifacts are **not reproducible release evidence** because the same server commit may exercise different SDK test code over time. For release-grade certification, pin `MCP_SDK_REF` to a specific tag or commit SHA (the current value is a pinned commit). The CI job emits a warning annotation when the ref appears to be a branch name rather than a pinned ref. The `workflow_dispatch` `sdk_ref` input overrides the env var for one-off manual replays.
 - **Script guard:** the `setup-honua-mcp` action inspects the SDK `package.json` for `test:certification`, `test:certification:artifact`, and `test:llm-smoke` **before** any heavy setup. If neither `test:certification` nor `test:llm-smoke` is found (e.g. SDK-side work not yet landed), the action skips the server build, database seed, and `npm ci` entirely; the job emits a warning annotation and completes without failure. Artifact generation and upload are also gated on the action's `cert-available` and `cert-artifact-available` outputs, so no artifacts are produced when certification was skipped or the artifact script is absent. If `test:certification` is present but `test:certification:artifact` is missing (partial SDK landing), the job emits a warning annotation noting that no evidence artifacts were produced — this ensures the release-evidence gap is visible even though the certification tests themselves passed.
-- **Layer ids:** `HONUA_MCP_LAYER_ID` is the service-local layer index returned by `honua_list_layers` for `test_service_mcp` (`0`), not the backing storage layer id (`10`).
+- **Layer ids:** `HONUA_MCP_LAYER_ID` is the service-local layer index returned by `honua_list_layers` for `test_service_mcp` (`10`). The Metadata V2 fixture explicitly publishes this index; it is not inferred from the binding order `0`.
 - **Output:** exposes a `cert_ran` output (`true`/`false`) consumed by downstream jobs.
 
 ### mcp-llm-smoke
@@ -118,7 +118,7 @@ environment variables above.
 | `HONUA_SERVICE_ID` | cert + smoke | Yes (default: `test_service`) |
 | `HONUA_MCP_SERVICE_ID` | cert | Yes (default: `test_service_mcp`) |
 | `HONUA_LAYER_ID` | cert + smoke | Yes (default: `0`) |
-| `HONUA_MCP_LAYER_ID` | cert | Yes (default: `0`, service-local layer id for `test_service_mcp`) |
+| `HONUA_MCP_LAYER_ID` | cert | Yes (set by CI to `10`, the published layer id for `test_service_mcp`) |
 | `HONUA_DEV_AUTH` | cert + smoke | No (default: `true` in CI) |
 | `BEDROCK_AWS_ACCESS_KEY_ID` / `BEDROCK_AWS_SECRET_ACCESS_KEY` | smoke only | No (enables live Bedrock driver when both are set) |
 | `HONUA_MCP_SMOKE_BEDROCK_MODEL` | smoke only | No repository variable override for the Bedrock model |

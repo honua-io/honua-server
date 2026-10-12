@@ -2270,7 +2270,7 @@ jobs:
           HONUA_LAYER_ID: '0'
           # MCP map tools accept the service-local layer index advertised by
           # honua_list_layers, not the backing storage layer id from the seed.
-          HONUA_MCP_LAYER_ID: '0'
+          HONUA_MCP_LAYER_ID: '10'
           HONUA_DEV_AUTH: "true"
           HONUA_API_KEY: "ci-admin-password"
 
