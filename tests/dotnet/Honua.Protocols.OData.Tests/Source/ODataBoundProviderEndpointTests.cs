@@ -16,6 +16,7 @@ using Honua.Protocols.OData.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.OData;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
@@ -32,7 +33,7 @@ public sealed class ODataBoundProviderEndpointTests : IAsyncLifetime
     public ODataBoundProviderEndpointTests()
     {
         var connectionId = Guid.NewGuid();
-        var (snapshot, _, _, _) = ODataFeatureProviderResolverTests.CreateSnapshot(connectionId.ToString());
+        var (snapshot, _, _, _) = ODataProviderTestData.CreateSnapshot(connectionId.ToString());
         var graph = snapshot.Graph with
         {
             Services = snapshot.Graph.Services.Select(service => service with
@@ -77,7 +78,7 @@ public sealed class ODataBoundProviderEndpointTests : IAsyncLifetime
         stream.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(EmptyFeatures());
         var resolver = new ODataFeatureProviderResolver(
-            _managedReader, _managedWriter, ODataFeatureProviderResolverTests.CreateRouter(connectionId, provider));
+            _managedReader, _managedWriter, ODataProviderTestData.CreateRouter(connectionId, provider));
         _fixture = new WebAppFixture()
             .ReplaceService(graphProvider)
             .ReplaceService(_managedReader)
