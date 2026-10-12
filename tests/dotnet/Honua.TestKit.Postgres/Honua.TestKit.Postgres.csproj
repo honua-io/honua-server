@@ -31,4 +31,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Protocols.OgcApi.ComponentTests" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.TestKit.Postgres.Hosting" />
+  </ItemGroup>
 </Project>
