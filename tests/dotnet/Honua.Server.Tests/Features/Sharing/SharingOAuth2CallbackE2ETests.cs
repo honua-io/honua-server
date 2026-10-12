@@ -334,8 +334,9 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
         await response.AssertGeoServicesErrorAsync(400);
         response.Headers.Location.Should().BeNull();
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        body.RootElement.GetProperty("error").GetProperty("message").GetString()
-            .Should().Be("SQL injection attempt detected in query parameter 'state'");
+        body.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString())
+            .Should().Contain("SQL injection attempt detected in query parameter 'state'");
     }
 
     private static async Task<string> BeginAuthorizationAsync(HttpClient client)
