@@ -14,6 +14,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../../src/Honua.Scene/Honua.Scene.csproj" />
+    <ProjectReference Include="../../../src/Honua.Hosting/Honua.Hosting.csproj" />
     <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
     <ProjectReference Include="../Honua.TestKit.Core/Honua.TestKit.Core.csproj" />
     <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />

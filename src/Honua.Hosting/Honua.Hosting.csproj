@@ -136,6 +136,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Hosting.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Scene.UnitTests" />
     <InternalsVisibleTo Include="Honua.Core.Tests" />
   </ItemGroup>
 </Project>
