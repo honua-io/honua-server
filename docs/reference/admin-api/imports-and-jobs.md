@@ -42,6 +42,15 @@ Authorization, including OAuth scope restrictions, is checked again before repla
 
 Run `GET /api/v1/admin/import/jobs/{jobId}`, substituting the id returned by the upload.
 
+Besides the progress fields (`status`, `featuresProcessed`, `currentPhase`, `errorMessage`, and so on), the job document reports where the import runs:
+
+| Field | Value |
+|---|---|
+| `runner` | `batch`: a batch-compute execution worker (AWS Batch on `aws-serverless`) runs the import. `in-process`: a long-lived server process runs it, either the job worker of any replica (Redis on) or the server that accepted the upload (Redis off). Absent on jobs recorded before 2026.1. |
+| `instanceId` | The `Honua-Instance` identity of the process running the import; for `batch`, the AWS Batch job id when the worker runs on AWS Batch. Until a worker picks up a queued job, the instance that accepted the upload. |
+
+With a durable runner the job document is stored in Redis, so it survives a restart of the server that accepted the upload. If the worker stops before it records an outcome (crash, timeout, cancellation, or a rejected batch submission), the status reflects the durable job's terminal state instead of staying `processing`. A host that cannot run background imports answers `503 Background import service not available` on the upload; the `import.background` capability states the runner (`batch`, `in-process` or `unavailable`) and, when unavailable, the cause in `reasonCode`.
+
 ## Migration scan
 
 | Method | Path | Purpose |

@@ -2090,6 +2090,24 @@ async Task RunDatabaseMigrationsAsync()
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
+            // A cold start before the migration task ran (honua-server#5916): a required migration is
+            // not applied yet, so the schema is behind this binary. Start degraded (readiness 503
+            // schema-floor, event endpoints 503) and re-check in the background instead of exiting.
+            // A schema newer than this binary (DatabaseSchemaCompatibilityException) or one that
+            // contradicts its journal still fails fast below.
+            if (Honua.Infrastructure.Monitoring.DatabaseRecoveryBackgroundService.IsSchemaBehindBinary(ex, out var schemaFloorReason)
+                && !app.Environment.IsDevelopment()
+                && TryArmDegradedStart(
+                    "schema guard",
+                    schemaFloorReason,
+                    migrationsPending: false,
+                    schemaGuardPending: true,
+                    reasonCode: Honua.Core.Features.Infrastructure.Health.ReadinessReasonCodes.SchemaFloor,
+                    reason: schemaFloorReason))
+            {
+                return;
+            }
+
             // The guard could not reach the database (no free slots, timeout): that is an outage,
             // not schema divergence. Degraded start defers the guard to the recovery loop.
             if (ex is not Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException
@@ -2231,7 +2249,13 @@ bool TryEnterDegradedStart(string phase, Exception error, bool migrationsPending
 
 // Arms degraded start for a failure already classified as transient. The reason carries the phase
 // and the sanitized failure class only (never the provider message, which can name hosts).
-bool TryArmDegradedStart(string phase, string failureClass, bool migrationsPending, bool schemaGuardPending)
+bool TryArmDegradedStart(
+    string phase,
+    string failureClass,
+    bool migrationsPending,
+    bool schemaGuardPending,
+    string? reasonCode = null,
+    string? reason = null)
 {
     var resilienceOptions = app.Services.GetRequiredService<Honua.Core.Configuration.StartupResilienceOptions>();
     if (!resilienceOptions.DegradedStartEnabled)
@@ -2239,16 +2263,19 @@ bool TryArmDegradedStart(string phase, string failureClass, bool migrationsPendi
         return false;
     }
 
-    var warning = Honua.Core.Features.Infrastructure.Resilience.StartupDatabaseResilience
-        .BuildDegradedStartWarning(phase, failureClass);
+    var warning = reasonCode == Honua.Core.Features.Infrastructure.Health.ReadinessReasonCodes.SchemaFloor
+        ? Honua.Infrastructure.Monitoring.StartupDatabasePreflight.BuildSchemaFloorWarning(failureClass)
+        : Honua.Core.Features.Infrastructure.Resilience.StartupDatabaseResilience
+            .BuildDegradedStartWarning(phase, failureClass);
     Honua.Infrastructure.Logging.Log.DatabaseStartupDegraded(app.Logger, warning);
 
     var degradedContext = app.Services.GetRequiredService<Honua.Infrastructure.Monitoring.DegradedStartupContext>();
     degradedContext.MarkDegraded(
         migrationsPending,
         Assembly.GetExecutingAssembly(),
-        Honua.Infrastructure.Monitoring.StartupDatabasePreflight.BuildReason(phase, failureClass),
-        schemaGuardPending: schemaGuardPending && !migrationsPending);
+        reason ?? Honua.Infrastructure.Monitoring.StartupDatabasePreflight.BuildReason(phase, failureClass),
+        schemaGuardPending: schemaGuardPending && !migrationsPending,
+        reasonCode: reasonCode);
     return true;
 }
 
@@ -2308,11 +2335,13 @@ async Task RunPostGisPreflightCheckAsync()
     // The database could not be reached (an outage, not an incompatible install): start degraded
     // when enabled — readiness reports 503 with the failure class until the recovery loop succeeds.
     // A genuinely incompatible database (missing PostGIS) is not transient and still fails below.
+    // honua-server#5916: the readiness reason and the log line carry the cause class
+    // (connection-borrow-timeout, connection-refused, auth, connection-unavailable).
     if (result.IsTransientFailure
         && !app.Environment.IsDevelopment()
         && TryArmDegradedStart(
             "PostGIS preflight",
-            result.FailureClass ?? "database unavailable",
+            Honua.Infrastructure.Monitoring.StartupDatabasePreflight.DescribeCause(result),
             migrationsPending: !skipMigrationsConfigured,
             schemaGuardPending: skipMigrationsConfigured))
     {
@@ -2330,7 +2359,10 @@ async Task RunPostGisPreflightCheckAsync()
 
     if (!app.Environment.IsDevelopment())
     {
-        Honua.Infrastructure.Logging.Log.PostGisPreflightCheckFailedCritical(app.Logger, errorMessage);
+        Honua.Infrastructure.Logging.Log.PostGisPreflightCheckFailedCritical(
+            app.Logger,
+            result.CauseClass ?? Honua.Core.Features.Infrastructure.Domain.DatabasePreflightCauseClasses.IncompatibleDatabase,
+            errorMessage);
         throw new InvalidOperationException($"PostGIS preflight check failed: {errorMessage}");
     }
 
