@@ -220,13 +220,16 @@ var clientCertificateMode = builder.Configuration.GetValue<ClientCertificateAuth
     "Authentication:ClientCertificates:Mode");
 if (clientCertificateMode != ClientCertificateAuthenticationMode.Disabled)
 {
-    builder.WebHost.ConfigureKestrel(options =>
-    {
-        options.ConfigureHttpsDefaults(httpsOptions =>
+    builder.Services.AddOptions<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>()
+        .Configure<ILoggerFactory>((options, loggerFactory) =>
         {
-            httpsOptions.ClientCertificateMode = ClientCertificateMode.AllowCertificate;
+            options.ConfigureHttpsDefaults(httpsOptions =>
+            {
+                httpsOptions.ClientCertificateMode = ClientCertificateMode.AllowCertificate;
+                ClientCertificateTlsObservation.Configure(httpsOptions,
+                    loggerFactory.CreateLogger("Honua.ClientCertificateTls"));
+            });
         });
-    });
 }
 // Keep the protector purpose stable across replay nodes. Production deployments must also
 // persist/share the ASP.NET data-protection key ring; otherwise an approved operation whose
