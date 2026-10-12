@@ -335,6 +335,7 @@ def enumerate_classes() -> dict[str, dict]:
             declared: list[str] = []
             test_methods: dict[str, set[str]] = {}
             attribute_seen: set[str] = set()
+            unresolved_methods: set[str] = set()
             i = 0
             n = len(text)
             while i < n:
@@ -392,6 +393,8 @@ def enumerate_classes() -> dict[str, dict]:
                         method = _method_name_after(text, i)
                         if method:
                             test_methods.setdefault(current_top_class, set()).add(method)
+                        else:
+                            unresolved_methods.add(current_top_class)
                 i += 1
 
             rel = str(path.relative_to(REPO_ROOT)).replace("\\", "/")
@@ -399,12 +402,14 @@ def enumerate_classes() -> dict[str, dict]:
                 fqn = f"{namespace}.{cls}"
                 entry = classes.setdefault(
                     fqn,
-                    {"csproj": csproj, "src": [], "methods": set(), "has_tests": False},
+                    {"csproj": csproj, "src": [], "methods": set(), "has_tests": False,
+                     "unresolved_methods": False},
                 )
                 if rel not in entry["src"]:
                     entry["src"].append(rel)
                 entry["methods"].update(test_methods.get(cls, ()))
                 entry["has_tests"] = entry["has_tests"] or cls in attribute_seen
+                entry["unresolved_methods"] |= cls in unresolved_methods
     return classes
 
 
@@ -431,14 +436,14 @@ def enumerate_test_classes() -> dict[str, dict]:
 
 
 def unresolved_method_classes(all_classes: dict[str, dict]) -> list[str]:
-    """Classes carrying a test attribute whose method name never resolved.
+    """Classes carrying any test attribute whose method name did not resolve.
 
     Non-empty means the enumerator saw a declaration shape it cannot read, so
     method-level filter clauses could be judged dead against an incomplete pool.
     """
     return sorted(
         fqn for fqn, entry in all_classes.items()
-        if entry["has_tests"] and not entry["methods"]
+        if entry["has_tests"] and (not entry["methods"] or entry.get("unresolved_methods", False))
     )
 
 
@@ -735,6 +740,26 @@ def evaluate_assertion(
     )
 
 
+def partition_claim_errors(parent_name, parent_filter, children, parsed, fqn,
+                           methods, granularity="class", unresolved_methods=False) -> list[str]:
+    """Require exact parent/child coverage at the declared selection granularity."""
+    if granularity == "method" and (not methods or unresolved_methods):
+        return [f"{parent_name}: {fqn} has an empty or incomplete runnable-method inventory"]
+    subjects = ([f"{fqn}.{method}" for method in sorted(methods)]
+                if granularity == "method" else [fqn])
+    errors = []
+    for subject in subjects:
+        parent_claims = _eval(parent_filter, subject)
+        child_claims = [child for child in children if _eval(parsed[child], subject)]
+        if parent_claims and len(child_claims) != 1:
+            errors.append(f"{parent_name}: {subject} expected exactly one child, got "
+                          f"{', '.join(child_claims) or '(none)'}")
+        elif not parent_claims and child_claims:
+            errors.append(f"{parent_name}: {subject} leaks outside parent via "
+                          f"{', '.join(child_claims)}")
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", action="store_true",
@@ -785,6 +810,11 @@ def main() -> int:
     for partition in config.get("shard_partitions", []):
         name = partition.get("name", "")
         children = partition.get("children", [])
+        granularity = partition.get("granularity", "class")
+        if granularity not in ("class", "method"):
+            print(f"::error::partition {name!r} has invalid granularity {granularity!r}",
+                  file=sys.stderr)
+            return 2
         if not name or not isinstance(children, list) or not children:
             print(
                 f"::error::invalid shard partition {partition!r}: name and children are required",
@@ -840,7 +870,7 @@ def main() -> int:
         # claimed by the MCP shard — so comparing on FQN alone would demand a
         # child claim a class its `dotnet test <csproj>` can never discover.
         parsed_partitions.append(
-            (name, parent_filter, children, next(iter(child_projects)))
+            (name, parent_filter, children, next(iter(child_projects)), granularity)
         )
 
     # ONE walk feeds both the assertions and the coverage halves below, so the
@@ -865,10 +895,10 @@ def main() -> int:
     classes = runnable_classes(all_classes)
     unresolved = unresolved_method_classes(all_classes)
     if unresolved:
-        # These classes carry a test attribute the enumerator recognises but no
-        # method name it could parse, so selection_pool() has no runnable FQN for
-        # them and a live method-level filter clause could be misreported as
-        # dead. That is a defect in THIS script, not in the shard map, so it
+        # At least one recognised test attribute did not resolve to a method.
+        # Even if other methods parsed, selection_pool() is incomplete and a
+        # method partition could silently miss a runnable test. This is a
+        # defect in THIS script, not in the shard map, so it
         # fails as a tool error rather than a coverage error.
         print(f"::error::{len(unresolved)} class(es) carry a test attribute whose "
               "method declaration this script could not parse — fix "
@@ -902,21 +932,14 @@ def main() -> int:
         elif len(claiming) > 1:
             multi.append((fqn, claiming))
 
-        for parent_name, parent_filter, children, parent_csproj in parsed_partitions:
+        for parent_name, parent_filter, children, parent_csproj, granularity in parsed_partitions:
             if cls_csproj != parent_csproj:
                 continue
-            parent_claims = _eval(parent_filter, fqn)
-            child_claims = [child for child in children if child in claiming]
-            if parent_claims and len(child_claims) != 1:
-                partition_errors.append(
-                    f"{parent_name}: {fqn} expected exactly one child, got "
-                    f"{', '.join(child_claims) or '(none)'}"
-                )
-            elif not parent_claims and child_claims:
-                partition_errors.append(
-                    f"{parent_name}: {fqn} leaks outside parent via "
-                    f"{', '.join(child_claims)}"
-                )
+            partition_errors.extend(partition_claim_errors(
+                parent_name, parent_filter, children, parsed, fqn,
+                classes[fqn]["methods"], granularity,
+                classes[fqn].get("unresolved_methods", False),
+            ))
 
     if args.report:
         for fqn in sorted(claim_map):
