@@ -289,7 +289,7 @@ require(
     text=TEXT,
 )
 require(
-    r'FIXTURE="tests/dotnet/Honua\.TestKit/PostgresFixture\.cs"[\s\S]*?'
+    r'FIXTURE="tests/dotnet/Honua\.TestKit\.Postgres/PostgresFixture\.cs"[\s\S]*?'
     r'resolve_image\(\) \{[\s\S]*?grep[^\n]+"\$\{FIXTURE\}"[\s\S]*?\}[\s\S]*?'
     r'image="\$\(resolve_image \|\| true\)"[\s\S]*?'
     r'nohup docker pull "\$\{image\}" > "\$\{LOG_FILE\}" 2>&1 &$',
