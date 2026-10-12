@@ -832,7 +832,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         {
             await EnsureApprovedAsync(
                 principal, plan, idempotencyKey, protocolMetadata, isCustomCode,
-                resolvedSecurityContext, processCatalog, cancellationToken)
+                resolvedSecurityContext, processCatalog, cancellationToken, gpExecution)
                 .ConfigureAwait(false);
         }
 
@@ -857,6 +857,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             if (existingByKey != null)
             {
                 EnsureMatchingIdempotentRequest(existingByKey, requestFingerprint, ownerId, resolvedSecurityContext.TenantId);
+                EnsureGPServerReplayBinding(existingByKey, gpExecution, principal);
                 existingByKey = await _dispatcher.RepairLocalDispatchAsync(existingByKey, jobStore, cancellationToken)
                     .ConfigureAwait(false);
                 EnsureSubmissionDidNotRollback(existingByKey);
@@ -880,6 +881,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                         && !inheritsSubmitterSecurityContext
                         && JobOwnershipSecurity.MatchesPriorFormatSubmitter(
                             priorFormat.Audit, principal, resolvedSecurityContext.TenantId));
+                EnsureGPServerReplayBinding(priorFormat, gpExecution, principal);
                 priorFormat = await _dispatcher.RepairLocalDispatchAsync(priorFormat, jobStore, cancellationToken)
                     .ConfigureAwait(false);
                 EnsureSubmissionDidNotRollback(priorFormat);
@@ -986,6 +988,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     if (existingInWindow != null)
                     {
                         EnsureMatchingIdempotentRequest(existingInWindow, requestFingerprint, ownerId, resolvedSecurityContext.TenantId);
+                        EnsureGPServerReplayBinding(existingInWindow, gpExecution, principal);
                         existingInWindow = await _dispatcher.RepairLocalDispatchAsync(existingInWindow, jobStore, cancellationToken, admissionWindowHeld: true)
                             .ConfigureAwait(false);
                         EnsureSubmissionDidNotRollback(existingInWindow);
@@ -1070,6 +1073,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     if (existing != null)
                     {
                         EnsureMatchingIdempotentRequest(existing, requestFingerprint, ownerId, resolvedSecurityContext.TenantId);
+                        EnsureGPServerReplayBinding(existing, gpExecution, principal);
                         existing = await _dispatcher.RepairLocalDispatchAsync(existing, jobStore, cancellationToken, admissionWindowHeld: true)
                             .ConfigureAwait(false);
                         EnsureSubmissionDidNotRollback(existing);
@@ -1566,7 +1570,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         bool isCustomCode,
         JobSecurityContext submitterSecurityContext,
         IProcessCatalog processCatalog,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        GPServerExecutionContext? gpExecution = null)
     {
         var approvalGatedProcessId = ProcessDestructiveClassifier.FindFirstApprovalGatedProcessId(
             plan,
@@ -1592,6 +1597,15 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         var policyRef = approval.PolicyRef ?? "unknown";
         GeoprocessingServiceLog.SubmitRejectedApprovalRequired(_logger, policyRef);
+
+        if (gpExecution?.IsGranted(principal) == true)
+        {
+            // A permission snapshot is not a live API-key grant. Do not park a proposal
+            // that cannot safely revalidate this scoped authority when approved later.
+            throw new GeoprocessingApprovalRequiredException(policyRef,
+                "Scoped GPServer execution grants do not support deferred approval. "
+                + "Use an operator-authorized approval workflow; no proposal or job was created.");
+        }
 
         // Park the gated plan on the approval lane. The dispatcher owns the durable
         // proposal/gateway surface (ADR-0064, #2814): when it is available and the
@@ -2108,6 +2122,19 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // of buffer.ToArray(), which would copy the whole written payload just to hand it
         // to SHA256.HashData.
         return Convert.ToHexString(SHA256.HashData(buffer.GetBuffer().AsSpan(0, (int)buffer.Length))).ToLowerInvariant();
+    }
+
+    private static void EnsureGPServerReplayBinding(
+        ExecutionJobRecord existing, GPServerExecutionContext? execution, ClaimsPrincipal principal)
+    {
+        if (execution?.IsGranted(principal) == true
+            && (!HasGPServerJobGrant(existing, execution.ServiceId, execution.TaskName, principal)
+                || !string.Equals(existing.Spec.GPServerBinding?.ProcessId, execution.ProcessId, StringComparison.Ordinal)))
+        {
+            // Check before redispatch as well as before returning: same-owner/same-plan
+            // fingerprints do not establish a GP binding for legacy or other-protocol jobs.
+            throw new GeoprocessingIdempotencyConflictException(existing.OperationId);
+        }
     }
 
     private static void EnsureMatchingIdempotentRequest(

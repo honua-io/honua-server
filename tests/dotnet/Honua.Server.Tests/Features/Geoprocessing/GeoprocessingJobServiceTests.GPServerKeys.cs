@@ -6,6 +6,9 @@ using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Infrastructure.Security;
+using Microsoft.Extensions.Logging.Abstractions;
 using Honua.ControlPlane;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
@@ -199,6 +202,83 @@ public sealed partial class GeoprocessingJobServiceTests
             .Should().ThrowAsync<GeoprocessingAuthorizationException>();
         _approvalEvaluator.DidNotReceive().Evaluate(key,
             Arg.Is<OperatorAuthorizationRequest>(request => request.ResourceType == OperatorResourceType.Job));
+    }
+
+    [UnitTheory]
+    [InlineData("early", "unbound")]
+    [InlineData("window", "unbound")]
+    [InlineData("creation-race", "unbound")]
+    [InlineData("prior-format", "unbound")]
+    [InlineData("early", "wrong-service")]
+    [InlineData("early", "wrong-process")]
+    [Operation(Operations.ErrorHandling)]
+    public async Task GPScopedKey_IdempotentReplay_CannotRedispatchAnUnboundOrDifferentGPJob(string branch, string mismatch)
+    {
+        DenyGenericExecutionAndJobs();
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(true);
+        var key = GPKey("execute:test/geometry.area", "execute:test/geometry.buffer");
+        const string replayKey = "scoped-replay";
+        var job = await _sut.SubmitGPServerJobAsync(AreaPlan(), replayKey, key, AreaExecution);
+        var binding = mismatch switch
+        {
+            "wrong-service" => new GPServerJobBinding("other", "Area", "geometry.area"),
+            "wrong-process" => new GPServerJobBinding("test", "Area", "geometry.buffer"),
+            _ => null,
+        };
+        job = job with { Spec = job.Spec with { GPServerBinding = binding } };
+        if (branch == "prior-format")
+        {
+            const string keyId = "11111111-1111-1111-1111-111111111111";
+            job = job with
+            {
+                OperationId = JobOwnershipSecurity.CreatePriorFormatJobId("gp", replayKey),
+                Audit = CreatePriorFormatAudit(keyId, new JobSecurityClaim("api_key_id", keyId)) with
+                {
+                    RequestFingerprint = GeoprocessingJobService.CreateRequestFingerprint(AreaPlan()),
+                    IdempotencyKey = replayKey,
+                }
+            };
+            _jobStore.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(job);
+        }
+        else if (branch == "window")
+        {
+            _jobStore.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns((ExecutionJobRecord?)null, job);
+        }
+        else if (branch == "creation-race")
+        {
+            _jobStore.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns((ExecutionJobRecord?)null, null, job);
+            _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(false);
+        }
+        else
+        {
+            _jobStore.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(job);
+        }
+        _jobQueue.ClearReceivedCalls();
+        await FluentActions.Awaiting(() => _sut.SubmitGPServerJobAsync(AreaPlan(), replayKey, key, AreaExecution))
+            .Should().ThrowAsync<GeoprocessingIdempotencyConflictException>();
+        await _jobQueue.DidNotReceive().EnqueueAsync(Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.ErrorHandling)]
+    public async Task GPScopedKey_ApprovalRequired_DoesNotParkAnUnresumableProposalOrQueueJob()
+    {
+        DenyGenericExecutionAndJobs();
+        _approvalEvaluator.Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .Returns(ApprovalRequirement.Required("gp-policy", "approval-required"));
+        var gateway = Substitute.For<IOperationGateway>();
+        var service = new GeoprocessingJobService(_progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator, new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance, DefaultExecutorOptions,
+            _jobStore, _jobQueue, operationGateway: gateway);
+        var exception = await FluentActions.Awaiting(() => service.SubmitGPServerJobAsync(
+            AreaPlan(), null, GPKey("execute:test/geometry.area"), AreaExecution))
+            .Should().ThrowAsync<GeoprocessingApprovalRequiredException>();
+        exception.Which.ProposalId.Should().BeNull();
+        exception.Which.Message.Should().Contain("do not support deferred approval").And.Contain("no proposal or job was created");
+        gateway.ReceivedCalls().Should().BeEmpty();
+        await _jobStore.DidNotReceiveWithAnyArgs().TryCreateAsync(default!, default, default);
+        await _jobQueue.DidNotReceiveWithAnyArgs().EnqueueAsync(default!, default, default);
     }
 
     private void DenyGenericExecutionAndJobs()
