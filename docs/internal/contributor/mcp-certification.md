@@ -10,7 +10,7 @@ In the public-interface proof ledger, MCP is a sanctioned cross-repo child surfa
 |---------|------|------|
 | Certification test code | honua-sdk-js | `mcp/test/certification/` |
 | LLM smoke test code | honua-sdk-js | `mcp/test/llm-smoke/` |
-| Artifact reporter | honua-sdk-js | `mcp/test/certification/helpers/artifact-reporter.ts` |
+| Artifact reporter | honua-sdk-js | `mcp/src/certification/cli.ts` |
 | Base schema seed | honua-server | `tests/seed/base-schema.sql` |
 | MCP seed data | honua-server | `tests/seed/mcp.yaml` |
 | YAML seed applicator | honua-server | `tests/seed/apply-yaml-seed.sh` |
@@ -27,7 +27,7 @@ MCP-specific test data lives in `tests/seed/mcp.yaml`. It follows the project's 
 
 | Requirement | Data |
 |-------------|------|
-| Multi-service listing | `test_service_mcp` service with service-local layer `0`, backed by storage layer `10` (storage layer `10` is also bound to `test_service` at order 1) |
+| Multi-service listing | `test_service_mcp` service publishing layer `10` at binding order `0`; layer `10` is also bound to `test_service` at order `2`, after base layers `0` and `1` |
 | Polygon layer | Storage layer 10 (`Polygon` geometry type), 5 polygon features (objectids 1001–1005) |
 | Point features for stats | 15 point features in layer 0 (objectids 10–24) with `count` (Integer) and `ratio` (Double) |
 | Statistics fields | `count`: sum=725, min=10, max=100; `ratio`: sum=76.5, min=1.1, max=10.5 |
@@ -36,7 +36,7 @@ MCP-specific test data lives in `tests/seed/mcp.yaml`. It follows the project's 
 ### Updating seed data
 
 1. Edit `tests/seed/mcp.yaml`.
-2. Update the matching constants in `honua-sdk-js/mcp/test/certification/helpers/constants.ts` (references `mcp.yaml` line numbers).
+2. Update the explicit fixture environment in CI and the real PostgreSQL seed-sequence regression.
 3. Coordinate across both repos when changing expected values.
 
 ## CI jobs
@@ -50,8 +50,8 @@ annotations instead of failing before the server starts.
 ### mcp-certification
 
 - **Trigger:** scheduled/manual full integration runs and PRs labeled `ci/full`, skips dependabot.
-- **Matrix:** `transport: [grpc-web, rest]` — runs full suite in parallel per transport.
-- **Steps:** checkout honua-server → shared setup (`.github/actions/setup-honua-mcp`) → `test:certification` → `test:certification:artifact` (generate report) → artifact upload.
+- **Matrix:** `transport: [grpc-web, rest]` — runs the direct-SDK MCP standalone surface against the actual seeded server. MCP itself uses an in-memory client/server transport; the matrix selects the SDK backend transport. This is distinct from native `/mcp` HTTP or stdio-proxy certification.
+- **Steps:** checkout honua-server → shared setup (`.github/actions/setup-honua-mcp`) → install and build the exact selected SDK source → install its MCP file peer → `test:certification` → `test:certification:artifact` using the same live environment → verify actual mode, backend, transport, suite source and successful round trips → artifact upload.
 - **Artifact:** `mcp-certification-{transport}`, 30-day retention.
 - **Ref strategy:** the SDK ref is controlled by the `MCP_SDK_REF` env var at the top of `ci.yml`. When set to a branch name, certification runs are useful for development but the artifacts are **not reproducible release evidence** because the same server commit may exercise different SDK test code over time. For release-grade certification, pin `MCP_SDK_REF` to a specific tag or commit SHA (the current value is a pinned commit). The CI job emits a warning annotation when the ref appears to be a branch name rather than a pinned ref. The `workflow_dispatch` `sdk_ref` input overrides the env var for one-off manual replays.
 - **Script guard:** the `setup-honua-mcp` action inspects the SDK `package.json` for `test:certification`, `test:certification:artifact`, and `test:llm-smoke` **before** any heavy setup. If neither `test:certification` nor `test:llm-smoke` is found (e.g. SDK-side work not yet landed), the action skips the server build, database seed, and `npm ci` entirely; the job emits a warning annotation and completes without failure. Artifact generation and upload are also gated on the action's `cert-available` and `cert-artifact-available` outputs, so no artifacts are produced when certification was skipped or the artifact script is absent. If `test:certification` is present but `test:certification:artifact` is missing (partial SDK landing), the job emits a warning annotation noting that no evidence artifacts were produced — this ensures the release-evidence gap is visible even though the certification tests themselves passed.
@@ -68,7 +68,7 @@ annotations instead of failing before the server starts.
 
 ## How the seed is applied in CI
 
-All integration-test jobs share a single base schema file (`tests/seed/base-schema.sql`) that creates the `honua` schema, core tables, indexes, and the default `test_service` + layer 0 with all field definitions plus deterministic baseline features. This file is applied first via `psql -f`.
+All integration-test jobs share a single base schema file (`tests/seed/base-schema.sql`) that creates the `honua` schema, core tables, indexes, and the default `test_service` + Point layer 0 and Mixed layer 1 with all field definitions plus deterministic baseline features. This file is applied first via `psql -f`.
 
 MCP-specific data from `tests/seed/mcp.yaml` is then applied using the shared `tests/seed/apply-yaml-seed.sh` script:
 
@@ -83,18 +83,19 @@ bash tests/seed/apply-yaml-seed.sh tests/seed/mcp.yaml
 
 ```json
 {
-  "schemaVersion": 1,
-  "transport": "grpc-web",
-  "timestamp": "...",
-  "durationMs": 8500,
-  "summary": { "total": 48, "passed": 48, "failed": 0, "skipped": 0, "verdict": "PASS" },
-  "tools": [{ "name": "honua_list_services", "tests": [...] }],
-  "resources": [{ "uri": "honua://services", "tests": [...] }],
-  "crossCutting": { "auth": { "tests": [...] }, "retry": {...} }
+  "schemaVersion": 2,
+  "protocol": {
+    "targetMode": "standalone",
+    "backend": "live",
+    "honuaTransport": "grpc-web",
+    "surface": "honua-mcp standalone → http://localhost:5000 (live public FeatureServer, no Honua surfaces)"
+  },
+  "provenance": { "suiteGitSha": "<exact selected SDK checkout>", "targetUrl": "<same live surface>" },
+  "summary": { "pass": true, "failures": 0, "contractsFailed": 0, "contractsBlocked": 0 }
 }
 ```
 
-**Markdown** (`mcp-certification-results.md`): One row per area, columns: Area | Tests | Passed | Failed | Verdict.
+**Markdown** (`mcp-certification-results.md`): provenance, summary, tool conformance/round trips, contracts and explicit known gaps. The JSON also carries actual positive tool/contract counts; the gate rejects empty, offline, wrong-source and failed receipts.
 
 ## LLM smoke scenarios
 
@@ -113,6 +114,8 @@ environment variables above.
 
 | Variable | Used by | Required |
 |----------|---------|----------|
+| `HONUA_MCP_CERT_TARGET` | cert | `standalone` with a real `HONUA_BASE_URL` |
+| `HONUA_SUITE_GIT_SHA` | cert + smoke | Set from the actual checked-out SDK HEAD, not the enclosing server workflow SHA |
 | `HONUA_BASE_URL` | cert + smoke | Yes |
 | `HONUA_TRANSPORT` | cert (matrix) + smoke (`rest`) | Yes |
 | `HONUA_SERVICE_ID` | cert + smoke | Yes (default: `test_service`) |
@@ -126,7 +129,7 @@ environment variables above.
 
 ## Known gaps
 
-- **Auth certification:** skipped when `HONUA_DEV_AUTH=true`. Full auth testing requires a separate CI lane with auth enforcement.
+- **Auth certification:** the direct-SDK standalone target has no MCP transport authentication boundary and records that limitation. Native server MCP authentication and governed operations require the separate remote/stdio and Production proof lanes.
 - **Certification not yet active (#2807):** the currently pinned `MCP_SDK_REF` does **not** contain the `test:certification`, `test:certification:artifact`, or `test:llm-smoke` scripts (they are tracked in `honua-sdk-js` `#484`). As a result the `mcp-certification` and `mcp-llm-smoke` lanes skip cleanly and **no certification artifact has been produced** — the MCP surface is not certified today. Do not cite the presence of these CI jobs as certification evidence. Once the scripts land, re-pin `MCP_SDK_REF` to the SDK commit that contains them so release-evidence runs actually execute and upload the `mcp-certification-{transport}` artifacts.
 - **SDK scripts prerequisite for manual replays:** CI jobs skip cleanly when `test:certification`, `test:certification:artifact`, or `test:llm-smoke` scripts are not present in the checked-out SDK ref.
 - **Cache-invalidation testing:** deferred until anonymous writes are available.

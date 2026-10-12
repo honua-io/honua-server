@@ -165,7 +165,8 @@ jobs:
         run: |
           python3 -m unittest \
             scripts.certification.test_build_client_protocol_requirements \
-            scripts.certification.test_verify_client_certification_receipts
+            scripts.certification.test_verify_client_certification_receipts \
+            scripts.certification.test_verify_mcp_live_certification
 
       - name: Verify review-first admission contract
         run: scripts/ci/validate-review-first-dispatch.sh
