@@ -38,6 +38,7 @@ internal static class NAServerEndpoints
     public static IEndpointRouteBuilder MapNAServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
+        GPServerEndpoints.MapNAServerAsyncRoutingEndpoints(endpoints);
 
         // ANONYMOUS by design (#1144, #1266): NAServer Route/ServiceArea solves are
         // stateless geospatial computations over a fixed routing capability — not a
@@ -220,6 +221,11 @@ internal static class NAServerEndpoints
         // either way, so the two spellings cannot disagree.
         if (NAServerMetadata.IsRoutingWebTool(layerName))
         {
+            if (RoutingAsyncWebTools.IsTask(layerName))
+            {
+                context.Request.RouteValues["taskName"] = layerName;
+                return await GPServerEndpoints.HandleTaskInfo(context, ct).ConfigureAwait(false);
+            }
             return Results.Text(
                 NAServerMetadata.Serialize(
                     NAServerMetadata.BuildUtilityTaskInfo(layerName), IsPrettyJson(context, parameters)),

@@ -242,7 +242,7 @@ internal static partial class GPServerEndpoints
             contentType: "application/json");
     }
 
-    private static async Task<IResult> HandleTaskInfo(HttpContext context, CancellationToken ct)
+    internal static async Task<IResult> HandleTaskInfo(HttpContext context, CancellationToken ct)
     {
         ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
@@ -376,6 +376,15 @@ internal static partial class GPServerEndpoints
                     "Native workspace controls unavailable");
             }
 
+            if (RoutingProcessDefinitions.Handles(definition.ProcessId))
+            {
+                if (envControls.ProcessSr is not null || envControls.Workspace is not null || envControls.OverwriteOutput is not null)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context, "Routing jobs support only output spatial-reference GP environment controls.");
+                }
+                parameters = RoutingAsyncWebTools.Translate(definition, parameters, envControls.OutSr);
+            }
+
             var planResult = BuildSubmissionPlan(
                 definition,
                 serviceId,
@@ -389,7 +398,9 @@ internal static partial class GPServerEndpoints
             }
 
             var plan = planResult.Plan!;
-            var workingSrid = ResolveWorkingSrid(parameters, planResult.InputSpatialReference);
+            var workingSrid = RoutingProcessDefinitions.Handles(definition.ProcessId)
+                ? int.Parse(parameters["output_srid"], CultureInfo.InvariantCulture)
+                : ResolveWorkingSrid(parameters, planResult.InputSpatialReference);
             var protocolMetadata = BuildProtocolMetadata(
                 serviceId, taskName, definition, parameters, envControls, workingSrid, planResult.FeatureSchema);
             var job = await jobService.SubmitJobAsync(
@@ -1169,8 +1180,9 @@ internal static partial class GPServerEndpoints
             var response = new GPResultResponse
             {
                 ParamName = publishedName,
-                DataType = GPServerParameterTranslation.ToEsriDataType(artifact.Kind),
-                Value = GPServerEsriOutputTranslation.Translate(artifact.Kind, value, ResolveResultSrid(job, artifact.Kind),
+                DataType = publishedName == "Solve_Succeeded" && IsRoutingJob(job) ? "GPBoolean" : GPServerParameterTranslation.ToEsriDataType(artifact.Kind),
+                Value = publishedName == "Solve_Succeeded" && IsRoutingJob(job) ? RoutingAsyncWebTools.BooleanResult(value)
+                    : GPServerEsriOutputTranslation.Translate(artifact.Kind, value, ResolveResultSrid(job, artifact.Kind),
                     job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerFeatureSchema))
             };
 
@@ -1842,14 +1854,17 @@ internal static partial class GPServerEndpoints
         {
             parameters.Add(new GPParameterInfo
             {
-                Name = GPServerParameterNames.Publish(parameter.Name, parameterPrefix),
+                Name = RoutingProcessDefinitions.Handles(definition.ProcessId) ? RoutingAsyncWebTools.InputName(parameter.Name, definition.ProcessId)
+                    : GPServerParameterNames.Publish(parameter.Name, parameterPrefix),
                 DisplayName = parameter.DisplayName,
                 Description = parameter.Description,
                 DataType = parameter.AcceptsGeoJsonDataUri
                     ? "GPFeatureRecordSetLayer"
                     : GPServerParameterTranslation.ToEsriDataType(parameter.ValueType),
                 Direction = "esriGPParameterDirectionInput",
-                DefaultValue = GPServerParameterTranslation.TranslateDefaultValue(parameter),
+                DefaultValue = RoutingProcessDefinitions.Handles(definition.ProcessId) && parameter.AcceptsGeoJsonDataUri
+                    ? RoutingAsyncWebTools.DefaultFeatureSet(parameter.Name)
+                    : GPServerParameterTranslation.TranslateDefaultValue(parameter),
                 ParameterType = parameter.Required
                     ? "esriGPParameterTypeRequired"
                     : "esriGPParameterTypeOptional",
@@ -1862,13 +1877,14 @@ internal static partial class GPServerEndpoints
         for (var index = 0; index < definition.OutputArtifactKinds.Count; index++)
         {
             var kind = definition.OutputArtifactKinds[index];
-            var outputName = BuildOutputParameterName(kind, index, definition.OutputArtifactKinds);
+            var outputName = RoutingProcessDefinitions.Handles(definition.ProcessId) ? RoutingAsyncWebTools.Outputs(definition.ProcessId)[index]
+                : BuildOutputParameterName(kind, index, definition.OutputArtifactKinds);
             parameters.Add(new GPParameterInfo
             {
                 Name = outputName,
                 DisplayName = outputName,
                 Description = $"Output artifact of type {kind}.",
-                DataType = GPServerParameterTranslation.ToEsriDataType(kind),
+                DataType = outputName == "Solve_Succeeded" ? "GPBoolean" : GPServerParameterTranslation.ToEsriDataType(kind),
                 Direction = "esriGPParameterDirectionOutput",
                 // Mutually exclusive outputs must NOT all be advertised as
                 // required: exactly one is produced per run, so a client that
@@ -2013,7 +2029,8 @@ internal static partial class GPServerEndpoints
             Outputs = definition.OutputArtifactKinds
         };
 
-        return new SubmissionPlanResult(plan, CapabilityError: null, derivedSrid, featureSchema);
+        return new SubmissionPlanResult(plan, CapabilityError: null, derivedSrid,
+            RoutingProcessDefinitions.Handles(definition.ProcessId) ? null : featureSchema);
     }
 
     /// <summary>
@@ -2044,6 +2061,10 @@ internal static partial class GPServerEndpoints
 
         return derivedSrid ?? 0;
     }
+
+    private static bool IsRoutingJob(ExecutionJobRecord job)
+        => Honua.ControlPlane.GeoprocessingDispatchHelper.ResolveProcessId(job.Spec.Parameters) is { } processId
+            && RoutingProcessDefinitions.Handles(processId);
 
     private static int ResolveResultSrid(ExecutionJobRecord job, ArtifactKind kind)
     {
@@ -2140,10 +2161,8 @@ internal static partial class GPServerEndpoints
 
         for (var index = 0; index < definition.OutputArtifactKinds.Count; index++)
         {
-            var outputName = BuildOutputParameterName(
-                definition.OutputArtifactKinds[index],
-                index,
-                definition.OutputArtifactKinds);
+            var outputName = RoutingProcessDefinitions.Handles(definition.ProcessId) ? RoutingAsyncWebTools.Outputs(definition.ProcessId)[index]
+                : BuildOutputParameterName(definition.OutputArtifactKinds[index], index, definition.OutputArtifactKinds);
             metadata[$"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}{index}"] = outputName;
             metadata[$"{GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix}{index}"] = outputName;
         }
@@ -2157,7 +2176,8 @@ internal static partial class GPServerEndpoints
         if (envControls.OutSr is { } outSr)
         {
             metadata[GeoprocessingProtocolMetadataKeys.GPServerOutSr] =
-                outSr.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                (RoutingProcessDefinitions.Handles(definition.ProcessId)
+                    ? SpatialReferenceExtensions.NormalizeWebMercatorSrid(outSr) : outSr).ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
 
         if (envControls.ProcessSr is { } processSr)
