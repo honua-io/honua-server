@@ -1,11 +1,11 @@
 # CI Workflow Inventory
 
 > Canonical inventory of **every** workflow in `.github/workflows/` in this
-> repository (88 files). Other Honua repositories keep their own inventories;
+> repository (101 files). Other Honua repositories keep their own inventories;
 > this page no longer mirrors the SDK repos, because a copy here could not be
 > verified against their trees and had already drifted.
 >
-> Last updated: 2026-09-11.
+> Last updated: 2026-10-12.
 >
 > To re-derive the file/name/trigger columns after adding or removing a
 > workflow:
@@ -112,6 +112,12 @@ job records `docs_only=true` as a step output and the summary line
 | `ci.yml` | CI | `schedule` (09:00 UTC), `merge_group`, `workflow_dispatch` | No `pull_request` trigger. Its `CI Gate` context is produced only by the train's `train/batch/*` dispatch, so it never appears on a PR head SHA (#2865). Core build, test, architecture gate, CI-router validation, JS typecheck, and Postgres compatibility. Per ADR-0037 the `targeted-shards` job runs `scripts/ci/honua-server-targeted-tests.sh` and emits a JSON `matrix_include` drawn from `.github/ci-shards.json`; `server-tests` consumes it via `strategy.matrix.include: fromJson(...)`, so unselected shards never instantiate a runner. The full shard matrix runs on scheduled/manual full integration runs and PRs labeled `ci/full`. Separately from that shadow, `server-tests` shards can opportunistically materialize their own run-scoped exact-head binary payload on attempt 1 (one designated writer per project publishes; siblings do a single fail-open lookup and never wait) when `HONUA_SERVER_TEST_PREBUILD_CONSUME=true`; absent/false is off and rollback is one variable update — contract in `docs/internal/ci/server-test-binary-artifacts.md`. `scripts/ci/run-server-test-shard.sh` composes each shard filter as `(matrix.filter)&Tier!=Slow&Tier!=Fast`, emits heartbeat/tail diagnostics, writes `.timing.json`, and enforces the inner `test_timeout_minutes` cap before the job-level `timeout_minutes` cancels the runner. The `merge_group` event runs only the lean `Merge Queue Gate` (the queue itself is disabled, ruleset 17808547). `pr-template-check` and `pr-readiness` short-circuit to success on every non-`pull_request` event, so today they are no-op roll-ups into `CI Gate`. |
 
 ## PR-triggered (advisory, not required)
+
+The scoped `GP Alias Contract` check runs the real GeoServices alias tests and OGC HTTP process-list regression when their contract, judgment, tests, or workflow changes. It checks TRX execution counts and canonical method identities, including each routing alias case.
+
+| Workflow file | Name | Triggers | Notes |
+|---|---|---|---|
+| `gp-alias-contract.yml` | GP Alias Contract | `pull_request` (base `trunk`, relevant contract/test/judgment paths) | Runs the GeoServices alias contract and the OGC API process-list HTTP regression in their actual protocol assemblies. Uses the existing .NET setup and pinned PostGIS service conventions; requires all selected cases to execute and pass. |
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|

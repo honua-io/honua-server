@@ -1,0 +1,134 @@
+name: GP Alias Contract
+
+on:
+  pull_request:
+    branches: [trunk]
+    paths:
+      - 'src/Honua.Protocols.GeoServices/GPServer/GPServerEsriTaskAliases.cs'
+      - 'tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/GPServer/GPServerEsriTaskAliasesTests.cs'
+      - 'tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/OgcProcessesEndpointsTests.cs'
+      - 'docs/gis/data/geoservices-parity-judgment.json'
+      - '.github/workflows/gp-alias-contract.yml'
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: gp-alias-contract-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  aliases:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-dotnet-ci
+        with:
+          nuget-cache-read-only: 'true'
+      - name: Run the actual GeoServices alias contract tests
+        run: |
+          dotnet test tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj \
+            --configuration Release -m:1 \
+            --filter 'FullyQualifiedName~GPServerEsriTaskAliasesTests' \
+            --logger 'trx;LogFileName=gp-alias-contract.trx' --results-directory alias-results
+      - name: Verify all original and routing cases executed
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import xml.etree.ElementTree as ET
+          source = Path('tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/GPServer/GPServerEsriTaskAliasesTests.cs').read_text()
+          facts = re.findall(r'\[UnitTest\].*?public void (\w+)\(', source, re.S)
+          routing_cases = re.findall(r'\[InlineData\("(routing\.[^"]+)", "([^"]+)"\)\]', source)
+          expected = len(facts) + len(routing_cases)
+          assert facts and len(routing_cases) == 3
+          root = ET.parse('alias-results/gp-alias-contract.trx').getroot()
+          ns = {'t': 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010'}
+          counters = root.find('t:ResultSummary/t:Counters', ns)
+          assert counters is not None
+          counts = counters.attrib
+          assert counts['total'] == counts['executed'] == counts['passed'] == str(expected), counts
+          assert counts['failed'] == '0', counts
+          results = root.findall('t:Results/t:UnitTestResult', ns)
+          methods = {test.attrib['id']: test.find('t:TestMethod', ns).attrib['name']
+                     for test in root.findall('t:TestDefinitions/t:UnitTest', ns)}
+          assert all(any(methods[result.attrib['testId']] == fact for result in results)
+                     for fact in facts), methods
+          for process_id, alias in routing_cases:
+              assert any(methods[result.attrib['testId']] == 'RoutingAlias_ResolvesAndPublishesItsJobCallableProcess'
+                         and process_id in result.attrib['testName'] and alias in result.attrib['testName']
+                         for result in results), methods
+          print(f'Actual GeoServices alias contract: {expected} executed and passed, 0 failed; all named source cases present.')
+          PY
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: gp-alias-contract-results
+          path: alias-results/
+          if-no-files-found: error
+  ogc-process-list:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TESTCONTAINERS_RYUK_DISABLED: false
+      TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ''
+      HONUA_TEST_CONFIGURATION: Release
+      HONUA_TEST_DB_URL: 'Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=ci-${{ github.run_id }}-${{ github.run_attempt }}'
+    services:
+      postgres:
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-dotnet-ci
+        with:
+          nuget-cache-read-only: 'true'
+      - name: Run the actual OGC HTTP process-list regression
+        run: |
+          dotnet test tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj \
+            --configuration Release -m:1 \
+            --filter 'FullyQualifiedName~OgcProcessesEndpointsTests.ProcessList_ReturnsAtLeastOneProcess' \
+            --logger 'trx;LogFileName=ogc-process-list.trx' --results-directory process-list-results
+      - name: Verify the selected HTTP test executed and passed
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse('process-list-results/ogc-process-list.trx').getroot()
+          ns = {'t': 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010'}
+          counters = root.find('t:ResultSummary/t:Counters', ns)
+          assert counters is not None
+          counts = counters.attrib
+          assert counts['total'] == counts['executed'] == counts['passed'] == '1', counts
+          assert counts['failed'] == '0', counts
+          result = root.find('t:Results/t:UnitTestResult', ns)
+          assert result is not None
+          definition = next(test for test in root.findall('t:TestDefinitions/t:UnitTest', ns)
+                            if test.attrib['id'] == result.attrib['testId'])
+          assert definition.find('t:TestMethod', ns).attrib['name'] == 'ProcessList_ReturnsAtLeastOneProcess'
+          print('Actual OGC HTTP process-list regression: 1 executed and passed, 0 failed.')
+          PY
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ogc-process-list-results
+          path: process-list-results/
+          if-no-files-found: error
