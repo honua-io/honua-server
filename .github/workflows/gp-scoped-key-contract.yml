@@ -32,7 +32,7 @@ jobs:
         include:
           - name: shared-authorization
             project: tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
-            filter: FullyQualifiedName~GeoprocessingJobServiceTests|FullyQualifiedName~GeoprocessingJobTerminalServiceTests
+            filter: FullyQualifiedName~GeoprocessingJobServiceTests|FullyQualifiedName~GeoprocessingJobTerminalServiceTests|FullyQualifiedName~AdminApiKeyEndpointsTests
             source: tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GeoprocessingJobServiceTests.GPServerKeys.cs
             prefix: GPScopedKey_
           - name: soap-durable-runtime
