@@ -1,0 +1,27 @@
+# Runtime-only container. Postgres, Redis, and canonical seed provisioning are
+# external prerequisites; no SDK, source tree, package cache, or Docker socket.
+services:
+  odata:
+    image: ${HONUA_ODATA_PILOT_IMAGE:?Set the locally built pilot image tag}
+    user: "1654:1654"
+    read_only: true
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 2
+    pids_limit: 128
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,nosuid,noexec,size=64m,uid=1654,gid=1654
+    ports:
+      - "127.0.0.1::8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      HONUA_ADMIN_PASSWORD: ${HONUA_ODATA_PILOT_ADMIN_PASSWORD:?Provide runtime-only admin credentials}
+      ConnectionStrings__DefaultConnection: ${HONUA_ODATA_PILOT_CONNECTION:?Provide externally seeded Postgres}
+      ConnectionStrings__Redis: ${HONUA_ODATA_PILOT_REDIS:?Provide external Redis}
+    networks: [pilot]
+networks:
+  pilot:
+    external: true
+    name: ${HONUA_ODATA_PILOT_NETWORK:?Provide the existing isolated pilot network}
