@@ -485,8 +485,19 @@ internal static class McpEndpointExtensions
         // Removes the session from the shared store too, so DELETE on any instance
         // ends the session on every instance. A 204 is only returned once the shared
         // record is gone; otherwise other replicas could still honour the session.
+        // A stateless session (no shared store on a multi-instance host) cannot be
+        // revoked on other instances, so the server answers the spec's 405: "this
+        // server does not allow clients to terminate sessions". Clients treat that
+        // as a completed close; the id simply expires at the end of its lifetime.
         var termination = await sessions.TerminateAsync(sessionId, cancellationToken).ConfigureAwait(false);
         McpLog.SessionTerminated(logger, sessionId, termination == McpSessionTermination.Terminated);
+        if (termination == McpSessionTermination.NotRevocable)
+        {
+            context.Response.Headers[HeaderNames.Allow] = "GET, POST";
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return;
+        }
+
         context.Response.StatusCode = termination switch
         {
             McpSessionTermination.Terminated => StatusCodes.Status204NoContent,
@@ -847,11 +858,12 @@ internal static class McpEndpointExtensions
     /// <summary>
     /// Maximum length accepted for a presented <c>Mcp-Session-Id</c> before the
     /// stateless fallback refuses to treat it as well-formed. Server-minted ids
-    /// are 64 lowercase-hex characters; 128 leaves headroom for other
-    /// spec-compliant issuers while bounding what a hostile client can push
-    /// through the fallback path.
+    /// are 64 lowercase-hex characters, or a signed stateless token of at most
+    /// 172 characters (<see cref="McpStatelessSessionTokens"/>); 256 leaves
+    /// headroom while bounding what a hostile client can push through the
+    /// fallback path.
     /// </summary>
-    private const int MaxWellFormedSessionIdLength = 128;
+    private const int MaxWellFormedSessionIdLength = 256;
 
     /// <summary>
     /// Returns <c>true</c> when a presented session id satisfies the
