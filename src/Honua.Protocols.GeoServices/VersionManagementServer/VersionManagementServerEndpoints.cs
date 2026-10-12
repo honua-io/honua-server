@@ -1140,10 +1140,21 @@ public static class VersionManagementServerEndpoints
         _ => "active",
     };
 
+    // Native clients resolve a version name from versionInfos before issuing its GUID-based
+    // lifecycle request. Storage may contain a bare create input or an already-qualified name;
+    // every response must expose the same owner.name identity without qualifying it twice.
+    private static string ToWireVersionName(GdbVersion version)
+    {
+        var ownerPrefix = version.Owner + ".";
+        return version.VersionName.StartsWith(ownerPrefix, StringComparison.OrdinalIgnoreCase)
+            ? version.VersionName
+            : ownerPrefix + version.VersionName;
+    }
+
     private static VersionInfo ToVersionInfo(GdbVersion version) => new()
     {
         VersionGuid = ToWireGuid(version.VersionId),
-        VersionName = version.VersionName,
+        VersionName = ToWireVersionName(version),
         Owner = version.Owner,
         Access = AccessToString(version.Access),
         Status = StatusToString(version.State),

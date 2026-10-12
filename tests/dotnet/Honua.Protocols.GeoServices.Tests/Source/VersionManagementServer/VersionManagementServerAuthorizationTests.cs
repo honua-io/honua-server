@@ -364,6 +364,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         // No anonymous version was created and the owner's version survived the delete attempt.
         var versions = await ListVersionNamesAsync(_ownerToken);
         versions.Should().NotContain("anonymous.created");
+        versions.Should().NotContain("admin.anonymous.created");
         versions.Should().Contain("alice.anon_target");
     }
 
@@ -400,6 +401,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
 
         var versions = await ListVersionNamesAsync(_ownerToken);
         versions.Should().NotContain("anonymous.private_refused");
+        versions.Should().NotContain("admin.anonymous.private_refused");
     }
 
     [IntegrationTheory]
@@ -435,7 +437,11 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
             token: null, $"{ServiceBase}/create{query}",
             ("versionName", publicName), ("accessPermission", "public"), ("f", "json"));
         using var publicDocument = JsonDocument.Parse(await publicCreate.Content.ReadAsByteArrayAsync());
-        publicDocument.RootElement.TryGetProperty("versionInfo", out _).Should().BeTrue();
+        publicDocument.RootElement.TryGetProperty("versionInfo", out var publicVersion).Should().BeTrue();
+        // Anonymous public creates retain the existing fallback owner; the response
+        // qualifies the supplied name with that actual owner, including dotted inputs.
+        publicVersion.GetProperty("owner").GetString().Should().Be("admin");
+        publicVersion.GetProperty("versionName").GetString().Should().Be($"admin.{publicName}");
 
         using var create = await PostFormAsync(
             token: null, $"{ServiceBase}/create{query}",
@@ -467,9 +473,10 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         }
 
         var versions = await ListVersionNamesAsync(_ownerToken);
-        versions.Should().Contain(publicName);
+        versions.Should().Contain($"admin.{publicName}");
         versions.Should().Contain(ownedName);
         versions.Should().NotContain(refusedName);
+        versions.Should().NotContain($"admin.{refusedName}");
 
         // Admin visibility also catches an orphan private version owned by the anonymous fallback.
         using var adminClient = _fixture.CreateAdminClient();
@@ -478,7 +485,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         using var adminDocument = JsonDocument.Parse(await adminList.Content.ReadAsByteArrayAsync());
         adminDocument.RootElement.GetProperty("versions").EnumerateArray()
             .Select(version => version.GetProperty("versionName").GetString()).Should()
-            .NotContain(refusedName);
+            .NotContain(refusedName).And.NotContain($"admin.{refusedName}");
     }
 
     private static async Task AssertDeniedAsync(HttpResponseMessage response, string operation)
