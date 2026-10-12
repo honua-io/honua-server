@@ -60,6 +60,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs" Link="Shared/ImageServerZarrTestFixture.cs" />
     <Compile Include="../Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs" Link="Shared/GeoServicesErrorAssertions.cs" />
   </ItemGroup>
   <ItemGroup>

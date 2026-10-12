@@ -27,6 +27,7 @@
     <ProjectReference Include="../Honua.TestKit.Core/Honua.TestKit.Core.csproj" />
     <ProjectReference Include="../../../src/Honua.Hosting/Honua.Hosting.csproj" />
     <Compile Include="../Honua.TestKit/Infrastructure/TestMetadataV2GraphProvider.cs" Link="Shared/TestMetadataV2GraphProvider.cs" />
+    <Compile Include="../Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs" Link="Shared/ImageServerZarrTestFixture.cs" />
     <Compile Include="../Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs" Link="Shared/GeoServicesErrorAssertions.cs" />
     <Compile Include="../Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs" Link="Shared/PbfQueryFormatterTests.Shared.cs" />
     <Compile Include="../Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs" Link="Shared/ImageServerMultidimensionalSoapAssertions.cs" />
