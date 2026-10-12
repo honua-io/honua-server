@@ -7,6 +7,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
@@ -35,9 +36,9 @@ public sealed class CompositeRelationshipMetadataTests
                 }
             ]
         };
-        var graph = new MetadataV2Graph { Resources = [resource] };
-        var snapshot = new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UnixEpoch);
-        var response = FeatureServerEndpoints.BuildRelationshipResponseV2(resource, snapshot).Should().ContainSingle().Subject;
+        var (service, snapshot) = RelationshipSnapshot(resource,
+            new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "child" } });
+        var response = FeatureServerEndpoints.BuildRelationshipResponseV2(resource, snapshot, service).Should().ContainSingle().Subject;
         response.Composite.Should().BeTrue();
         response.Id.Should().Be(0);
         response.Role.Should().Be("esriRelRoleOrigin");
@@ -82,19 +83,16 @@ public sealed class CompositeRelationshipMetadataTests
                 }
             ]
         };
-        var snapshot = new MetadataV2GraphSnapshot(
-            new MetadataV2Graph { Resources = [origin, destination] },
-            "test",
-            DateTimeOffset.UnixEpoch);
+        var (service, snapshot) = RelationshipSnapshot(origin, destination);
 
-        var originResponse = FeatureServerEndpoints.BuildRelationshipResponseV2(origin, snapshot)
+        var originResponse = FeatureServerEndpoints.BuildRelationshipResponseV2(origin, snapshot, service)
             .Should().ContainSingle().Subject;
         originResponse.Role.Should().Be("esriRelRoleOrigin");
         originResponse.KeyField.Should().Be("origin_id");
         originResponse.OriginKeyField.Should().Be("origin_id");
         originResponse.DestinationKeyField.Should().Be("origin_fk");
 
-        var destinationResponse = FeatureServerEndpoints.BuildRelationshipResponseV2(destination, snapshot)
+        var destinationResponse = FeatureServerEndpoints.BuildRelationshipResponseV2(destination, snapshot, service)
             .Should().ContainSingle().Subject;
         destinationResponse.Role.Should().Be("esriRelRoleDestination");
         destinationResponse.KeyField.Should().Be("origin_fk");
@@ -137,5 +135,27 @@ public sealed class CompositeRelationshipMetadataTests
             service, [(publication, composite), (new MetadataV2Publication(), new MetadataV2Resource())],
             snapshot, new QueryLimits(), false, false, false, false, offlineSyncEnabled: false);
         mixedService.AllowGeometryUpdates.Should().BeTrue();
+    }
+
+    private static (MetadataV2Service Service, MetadataV2GraphSnapshot Snapshot) RelationshipSnapshot(
+        params MetadataV2Resource[] resources)
+    {
+        var builder = new TestMetadataV2GraphBuilder().AddService("service", "relationship-metadata");
+        for (var index = 0; index < resources.Length; index++)
+        {
+            var resource = resources[index];
+            builder.AddResource(resource.Metadata.Id, resource.Metadata.Id)
+                .AddPublication($"publication-{index}", "service", resource.Metadata.Id,
+                    layerIndex: index, publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+        }
+
+        var graph = builder.Build() with
+        {
+            Resources = [.. resources.Select(resource => resource with
+            {
+                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
+            })]
+        };
+        return (graph.Services.Single(), new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UnixEpoch));
     }
 }

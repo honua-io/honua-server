@@ -494,7 +494,7 @@ internal static partial class MapServerEndpoints
             // relationships) so a MapServer sublayer advertises the related records and
             // attachments the equivalent FeatureServer layer does (#1923).
             HasAttachments = FeatureServerEndpoints.ResourceSupportsAttachmentsV2(resource),
-            Relationships = FeatureServerEndpoints.BuildRelationshipResponseV2(resource, snapshot),
+            Relationships = FeatureServerEndpoints.BuildRelationshipResponseV2(resource, snapshot, service),
             MinScale = resource.Display?.MinScale ?? 0,
             MaxScale = resource.Display?.MaxScale ?? 0,
             DefaultVisibility = resource.Display?.DefaultVisibility ?? true,

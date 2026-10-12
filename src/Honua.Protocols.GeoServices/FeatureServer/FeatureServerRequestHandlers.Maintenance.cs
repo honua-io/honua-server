@@ -835,51 +835,9 @@ internal static partial class FeatureServerEndpoints
 
         var accessibleLayers = FilterAccessibleLayersV2(access, snapshot, allPairs);
 
-        // Layer ids of accessible publications. Relationships pointing at non-accessible
-        // resources are filtered out (matching the v1 path which gated on layer access).
-        var layerIdByResourceId = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (publication, resource) in accessibleLayers)
-        {
-            var id = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1;
-            if (id < 0) continue;
-            // First (primary) publication wins for the resource id mapping.
-            layerIdByResourceId.TryAdd(resource.Metadata.Id, id);
-        }
-
-        var relationships = new List<ServiceRelationshipInfo>();
-        foreach (var (publication, resource) in accessibleLayers)
-        {
-            if (!layerIdByResourceId.TryGetValue(resource.Metadata.Id, out var originLayerId))
-            {
-                continue;
-            }
-
-            foreach (var relationship in resource.Relationships)
-            {
-                if (!layerIdByResourceId.TryGetValue(relationship.RelatedResourceId, out var relatedLayerId))
-                {
-                    continue;
-                }
-
-                var relationshipId = relationship.EsriRelationshipId ?? StableStringHash(relationship.Id);
-                relationships.Add(new ServiceRelationshipInfo
-                {
-                    Id = relationshipId,
-                    Name = relationship.Name,
-                    LayerId = originLayerId,
-                    RelatedTableId = relatedLayerId,
-                    Role = relationship.Role,
-                    KeyField = relationship.DestinationField,
-                    OriginKeyField = relationship.OriginField,
-                    DestinationKeyField = relationship.DestinationField,
-                    Description = relationship.Description
-                });
-            }
-        }
-
         var response = new QueryRelationshipsResponse
         {
-            Relationships = [.. relationships]
+            Relationships = BuildServiceRelationshipResponseV2(accessibleLayers, snapshot)
         };
 
         scope.SetSuccess(response.Relationships?.Length ?? 0);
