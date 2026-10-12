@@ -1,9 +1,11 @@
 # OData modular composition pilot
 
-This opt-in experiment compares the existing OData test assembly with the narrow
-OData unit/component projects and runtime test host. It does not change the PR
-Gate, shard selection, full solution validation, provider coverage, or AOT/image
-release gates. A green pilot is evidence for this composition only.
+This experiment compares the existing OData test assembly with the narrow
+OData unit/component projects and runtime test host. The eighty existing unit
+cases move to a dedicated OData Units shard so normal CI retains their coverage.
+The new minimal-host component tests, image, and performance measurements remain
+opt-in. Full solution validation, provider coverage, and AOT/image release gates
+remain required. A green pilot is evidence for this composition only.
 
 The driver is `scripts/ci/odata-pilot/pilot.py`. Its `plan` operation writes a
 reviewable selection without restoring, evaluating MSBuild, building, testing,

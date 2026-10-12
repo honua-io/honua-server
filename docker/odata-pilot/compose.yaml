@@ -17,6 +17,8 @@ services:
       - "127.0.0.1::8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      OData__MaxPageSize: "2"
+      Limits__Edits__MaxPayloadSize: "4096"
       HONUA_ADMIN_PASSWORD: ${HONUA_ODATA_PILOT_ADMIN_PASSWORD:?Provide runtime-only admin credentials}
       ConnectionStrings__DefaultConnection: ${HONUA_ODATA_PILOT_CONNECTION:?Provide externally seeded Postgres}
       ConnectionStrings__Redis: ${HONUA_ODATA_PILOT_REDIS:?Provide external Redis}
