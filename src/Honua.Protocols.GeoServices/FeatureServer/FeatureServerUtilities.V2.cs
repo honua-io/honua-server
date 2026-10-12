@@ -83,6 +83,7 @@ internal static partial class FeatureServerEndpoints
             ? SpatialReference.Create(srid.Value).ToSpatialReferenceInfo()
             : SpatialReference.WGS84.ToSpatialReferenceInfo();
         var serviceExtent = ResolveServiceExtentV2(publications, srid ?? SpatialReference.WGS84.Wkid);
+        var relationships = BuildServiceRelationshipResponseV2(publications, snapshot);
 
         return new FeatureServerResponse
         {
@@ -105,6 +106,12 @@ internal static partial class FeatureServerEndpoints
             SupportedQueryFormats = NormalizeSupportedQueryFormats(supportedFormats, supportsGeobufOutput),
             Capabilities = BuildServiceCapabilitiesV2(service, publications, supportsAttachmentUploads, offlineSyncEnabled),
             Fields = visibleFields,
+            SupportsRelationshipsResource = true,
+            Relationships = [.. relationships.Select(relationship => new ServiceRelationshipSummary
+            {
+                Id = relationship.Id,
+                Name = relationship.Name
+            })],
             ObjectIdField = objectIdField,
             SupportsAdvancedQueries = supportsAdvancedQueries,
             SupportsStatistics = supportsStatistics,
