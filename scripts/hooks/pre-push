@@ -41,6 +41,20 @@ while read local_ref local_sha remote_ref remote_sha; do
         exit 1
     fi
 
+    # Enrolled sessions accept only an exact source/head/base/toolchain receipt.
+    if [[ "${HONUA_SUPERVISOR_ENABLED:-0}" == "1" ]]; then
+        if ! command -v honua-supervisor >/dev/null 2>&1; then
+            echo "Supervisor enrollment is enabled but the CLI is unavailable." >&2
+            exit 75
+        fi
+        if honua-supervisor ci verify --worktree "$(pwd)" --head "${local_sha}"; then
+            echo "Reusing matching supervisor validation receipt."
+            continue
+        fi
+        echo "No matching receipt. Submit through honua-supervisor, then retry." >&2
+        exit 75
+    fi
+
     # Run pre-PR validation.
     #
     # Default to the FAST tier on push: build + format + affected unit tests +
