@@ -35,7 +35,7 @@ namespace Honua.Server.Tests.Import;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
-public sealed class DurableImportJobExecutionIntegrationTests : IAsyncLifetime
+public sealed class ImportEndpointDurableRunnerIntegrationTests : IAsyncLifetime
 {
     private const int FeatureCount = 250;
     private const string InstanceId = "durable-import-test-instance";
@@ -70,7 +70,7 @@ public sealed class DurableImportJobExecutionIntegrationTests : IAsyncLifetime
 
         var jobId = await service.QueueImportAsync(await StageAsync(tableName), 0);
 
-        var worker = CreateWorkerLoop(queue);
+        using var worker = CreateWorkerLoop(queue);
         await worker.StartAsync(CancellationToken.None);
         try
         {
@@ -79,7 +79,6 @@ public sealed class DurableImportJobExecutionIntegrationTests : IAsyncLifetime
         finally
         {
             await worker.StopAsync(CancellationToken.None);
-            worker.Dispose();
         }
 
         await AssertCompletedAsync(service, jobId, tableName, ImportJobRunners.InProcess);
@@ -113,7 +112,7 @@ public sealed class DurableImportJobExecutionIntegrationTests : IAsyncLifetime
             ExecutionAttempt = 1,
         };
         var assigned = new AssignedExecutionJobQueue(launch, _jobStore, NullLogger<AssignedExecutionJobQueue>.Instance);
-        var worker = CreateWorkerLoop(assigned);
+        using var worker = CreateWorkerLoop(assigned);
         worker.RequeueOnShutdown = true;
         await worker.StartAsync(CancellationToken.None);
         try
@@ -124,7 +123,6 @@ public sealed class DurableImportJobExecutionIntegrationTests : IAsyncLifetime
         finally
         {
             await worker.StopAsync(CancellationToken.None);
-            worker.Dispose();
         }
 
         (await _jobStore.GetAsync(jobId))!.Status.Should().Be(ExecutionJobStatus.Succeeded);

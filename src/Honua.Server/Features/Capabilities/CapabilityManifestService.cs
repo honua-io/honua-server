@@ -61,8 +61,7 @@ internal sealed class CapabilityManifestService(
     IEnumerable<IWorkflowOperationStore> workflowOperationStores,
     WarehouseProviderDecisions warehouseProviders,
     ICapabilityRegistry capabilityRegistry,
-    ILogger<CapabilityManifestService> logger,
-    Honua.Core.Features.FileImport.Abstractions.IBackgroundImportRunnerInfo? backgroundImportRunner = null) : ICapabilityManifestService
+    ILogger<CapabilityManifestService> logger) : ICapabilityManifestService
 {
     internal const string BackgroundImportCapabilityId = "import.background";
 
@@ -1291,7 +1290,7 @@ internal sealed class CapabilityManifestService(
     /// </summary>
     private CapabilityManifestCapability BuildBackgroundImportCapability(CapabilityPolicyContext context)
     {
-        var runner = backgroundImportRunner;
+        var runner = options.BackgroundImportRunner;
         var capability = Capability(
             BackgroundImportCapabilityId,
             "import",

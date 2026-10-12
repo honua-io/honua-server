@@ -23,12 +23,14 @@ internal sealed partial class FileImportJobExecutor(
     IServiceScopeFactory scopeFactory,
     IUniversalProgressStore progressStore,
     ILogger<FileImportJobExecutor> logger,
-    IInstanceIdentity? instanceIdentity = null) : IJobExecutor
+    IInstanceIdentity? instanceIdentity = null,
+    Honua.Core.Features.Licensing.Abstractions.ILicenseOperationPolicy? licensePolicy = null) : IJobExecutor
 {
     /// <summary>Set by AWS Batch in every job container; identifies the executing Batch job.</summary>
     internal const string AwsBatchJobIdVariable = "AWS_BATCH_JOB_ID";
 
     internal const string SafeImportFailureMessage = "Import failed.";
+    internal const string LicenseExpiredMessage = "license expired";
     private static readonly TimeSpan ProgressRetention = TimeSpan.FromDays(1);
 
     public ExecutionJobKind Kind => ExecutionJobKind.FileImport;
@@ -85,6 +87,12 @@ internal sealed partial class FileImportJobExecutor(
             InstanceId = instanceId,
         }));
 
+        // The worker loop already links license revocation into the job token; link it here too so
+        // a revoked licence stops the import even under a custom token, and is reported as such.
+        var licenseCancellation = licensePolicy?.OperationCancellation ?? CancellationToken.None;
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, licenseCancellation);
+        cancellationToken = linked.Token;
+
         ImportResult result;
         try
         {
@@ -108,6 +116,14 @@ internal sealed partial class FileImportJobExecutor(
             // outcome (cancelled, failed or handed back for retry), and the job-status read
             // projects a terminal execution record onto this document.
             await writer.CloseAndDrainAsync().ConfigureAwait(false);
+            if (licenseCancellation.IsCancellationRequested)
+            {
+                // Parity with the in-process runner: a partial import stopped by licence expiry is a
+                // terminal failure, never a retry.
+                await WriteTerminalAsync(jobId, processing, ImportStatus.Failed, null, LicenseExpiredMessage).ConfigureAwait(false);
+                return NonRetryableFailure(LicenseExpiredMessage);
+            }
+
             throw;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -117,7 +133,7 @@ internal sealed partial class FileImportJobExecutor(
             Log.ImportFaulted(logger, jobId, ex);
             await writer.CloseAndDrainAsync().ConfigureAwait(false);
             await WriteTerminalAsync(jobId, processing, ImportStatus.Failed, null, SafeImportFailureMessage).ConfigureAwait(false);
-            return JobExecutionResult.Failed(SafeImportFailureMessage);
+            return NonRetryableFailure(SafeImportFailureMessage);
         }
 
         await writer.CloseAndDrainAsync().ConfigureAwait(false);
@@ -125,7 +141,7 @@ internal sealed partial class FileImportJobExecutor(
         {
             Log.ImportFailed(logger, jobId, result.ErrorMessage ?? "unknown");
             await WriteTerminalAsync(jobId, processing, ImportStatus.Failed, result, SafeImportFailureMessage).ConfigureAwait(false);
-            return JobExecutionResult.Failed(SafeImportFailureMessage, result.Warnings);
+            return NonRetryableFailure(SafeImportFailureMessage, result.Warnings);
         }
 
         await WriteTerminalAsync(jobId, processing, ImportStatus.Completed, result, result.ErrorMessage).ConfigureAwait(false);
@@ -133,6 +149,14 @@ internal sealed partial class FileImportJobExecutor(
         Log.ImportCompleted(logger, jobId, request.TableName, result.FeatureCount);
         return JobExecutionResult.Succeeded(result.Warnings);
     }
+
+    /// <summary>
+    /// An importer failure is deterministic for the staged input (format, schema, constraint):
+    /// the job document is already terminal, so the durable runner must not retry it. Infrastructure
+    /// loss (worker crash, Spot interruption) still goes through the retry policy.
+    /// </summary>
+    private static JobExecutionResult NonRetryableFailure(string message, IReadOnlyList<string>? warnings = null)
+        => JobExecutionResult.Failed(message, warnings) with { IsRetryable = false };
 
     private string? ResolveInstanceId(string runner)
     {
