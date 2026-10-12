@@ -186,8 +186,13 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
         using var terminal = await GPServerJobWait.UntilRestSucceededAsync(client, JobPath(task, jobId), jobId,
             fixture.GetService<IExecutionJobStore>());
         var request = provider.ReceivedCalls().Single(call => call.GetMethodInfo().Name.StartsWith("Solve", StringComparison.Ordinal)).GetArguments()[0];
-        var actual = request switch { ClosestFacilitySolveRequest cf => cf.TravelMode,
-            OdCostMatrixSolveRequest od => od.TravelMode, LocationAllocationSolveRequest la => la.TravelMode, _ => null };
+        var actual = request switch
+        {
+            ClosestFacilitySolveRequest cf => cf.TravelMode,
+            OdCostMatrixSolveRequest od => od.TravelMode,
+            LocationAllocationSolveRequest la => la.TravelMode,
+            _ => null
+        };
         actual.Should().Be("driving");
     }
 
@@ -223,8 +228,12 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
         await using var fixture = Fixture(provider);
         await fixture.InitializeAsync();
         using var client = fixture.CreateAdminClient();
-        var jobId = await SubmitAsync(client, "FindClosestFacilities", new() { ["Incidents"] = FirstPoint,
-            ["Facilities"] = SecondPoint, ["Travel_Direction"] = "Facility to Incident" });
+        var jobId = await SubmitAsync(client, "FindClosestFacilities", new()
+        {
+            ["Incidents"] = FirstPoint,
+            ["Facilities"] = SecondPoint,
+            ["Travel_Direction"] = "Facility to Incident"
+        });
         using var terminal = await GPServerJobWait.UntilRestSucceededAsync(client, JobPath("FindClosestFacilities", jobId), jobId,
             fixture.GetService<IExecutionJobStore>());
         await provider.Received(1).SolveClosestFacilityAsync(Arg.Is<ClosestFacilitySolveRequest>(request => request.Direction == ClosestFacilityTravelDirection.FromFacility), Arg.Any<CancellationToken>());
@@ -246,8 +255,13 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
         await using var fixture = Fixture(provider);
         await fixture.InitializeAsync();
         using var client = fixture.CreateAdminClient();
-        var inputs = new Dictionary<string, string> { [first] = FirstPoint, [second] = SecondPoint,
-            [units] = "Seconds", [task == "SolveLocationAllocation" ? "Default_Measurement_Cutoff" : "Cutoff"] = "120" };
+        var inputs = new Dictionary<string, string>
+        {
+            [first] = FirstPoint,
+            [second] = SecondPoint,
+            [units] = "Seconds",
+            [task == "SolveLocationAllocation" ? "Default_Measurement_Cutoff" : "Cutoff"] = "120"
+        };
         if (task != "SolveLocationAllocation")
         {
             inputs["Distance_Units"] = "Kilometers";
@@ -256,8 +270,13 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
         using var terminal = await GPServerJobWait.UntilRestSucceededAsync(client, JobPath(task, jobId), jobId,
             fixture.GetService<IExecutionJobStore>());
         var request = provider.ReceivedCalls().Single(call => call.GetMethodInfo().Name.StartsWith("Solve", StringComparison.Ordinal)).GetArguments()[0];
-        var cutoff = request switch { ClosestFacilitySolveRequest cf => cf.Cutoff,
-            OdCostMatrixSolveRequest od => od.Cutoff, LocationAllocationSolveRequest la => la.ImpedanceCutoff, _ => null };
+        var cutoff = request switch
+        {
+            ClosestFacilitySolveRequest cf => cf.Cutoff,
+            OdCostMatrixSolveRequest od => od.Cutoff,
+            LocationAllocationSolveRequest la => la.ImpedanceCutoff,
+            _ => null
+        };
         cutoff.Should().Be(2);
         using var result = await ResultAsync(client, task, jobId, output);
         var attributes = result.RootElement.GetProperty("value").GetProperty("features")[0].GetProperty("attributes");
@@ -304,8 +323,13 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
         await using var fixture = Fixture(provider);
         await fixture.InitializeAsync();
         using var client = fixture.CreateAdminClient();
-        using var content = new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json", ["Facilities"] = FirstPoint,
-            ["Demand_Points"] = SecondPoint, ["Travel_Direction"] = direction });
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["Facilities"] = FirstPoint,
+            ["Demand_Points"] = SecondPoint,
+            ["Travel_Direction"] = direction
+        });
         using var response = await client.PostAsync($"/rest/services/{ServiceId}/GPServer/SolveLocationAllocation/submitJob", content);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         body.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
@@ -380,7 +404,8 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
         using var client = fixture.CreateAdminClient();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            ["f"] = "json", [first] = FirstPoint,
+            ["f"] = "json",
+            [first] = FirstPoint,
             [second] = SecondPoint.Replace("4326", "3857", StringComparison.Ordinal),
         });
         using var response = await client.PostAsync($"/rest/services/{ServiceId}/GPServer/{task}/submitJob", content);
@@ -451,7 +476,9 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
         using var client = fixture.CreateAdminClient();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            ["f"] = "json", ["Incidents"] = points, ["Facilities"] = SecondPoint,
+            ["f"] = "json",
+            ["Incidents"] = points,
+            ["Facilities"] = SecondPoint,
         });
         using var response = await client.PostAsync($"/rest/services/{ServiceId}/{family}/FindClosestFacilities/submitJob", content);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -489,8 +516,12 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
         provider.Name.Returns("fixture");
         provider.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new RoutingProviderCapabilities(
             SupportsClosestFacility: true, SupportsOdCostMatrix: true, SupportsLocationAllocation: true)
-        { SupportsOdStraightLines = true, SupportedTravelModes = ["driving"], SupportedLocationAllocationProblemTypes = [LocationAllocationProblemType.MinimizeImpedance,
-            LocationAllocationProblemType.MaximizeCoverage, LocationAllocationProblemType.MinimizeFacilities] });
+        {
+            SupportsOdStraightLines = true,
+            SupportedTravelModes = ["driving"],
+            SupportedLocationAllocationProblemTypes = [LocationAllocationProblemType.MinimizeImpedance,
+            LocationAllocationProblemType.MaximizeCoverage, LocationAllocationProblemType.MinimizeFacilities]
+        });
         provider.SolveClosestFacilityAsync(Arg.Any<ClosestFacilitySolveRequest>(), Arg.Any<CancellationToken>())
             .Returns(new ClosestFacilitySolveResult([new(0, 0, 1, RouteGeometry, 1609.344, 2, [])]));
         provider.SolveOdCostMatrixAsync(Arg.Any<OdCostMatrixSolveRequest>(), Arg.Any<CancellationToken>())

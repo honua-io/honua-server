@@ -57,13 +57,20 @@ internal sealed class RoutingJobExecutor(
             var distanceUnits = inputs.GetValueOrDefault("distance_units") ?? "Miles";
             var minutesPerUnit = (inputs.GetValueOrDefault("time_units") ?? "Minutes").ToUpperInvariant() switch
             {
-                "SECONDS" => 1d / 60, "MINUTES" => 1, "HOURS" => 60, "DAYS" => 1440,
+                "SECONDS" => 1d / 60,
+                "MINUTES" => 1,
+                "HOURS" => 60,
+                "DAYS" => 1440,
                 _ => throw new ArgumentException("Routing impedance must use supported time units; distance-based cutoffs are not supported."),
             };
             var metersPerUnit = (inputs.GetValueOrDefault("distance_units") ?? "Miles").ToUpperInvariant() switch
             {
-                "METERS" => 1, "KILOMETERS" => 1000, "MILES" => 1609.344, "FEET" => 0.3048,
-                "YARDS" => 0.9144, "NAUTICALMILES" => 1852,
+                "METERS" => 1,
+                "KILOMETERS" => 1000,
+                "MILES" => 1609.344,
+                "FEET" => 0.3048,
+                "YARDS" => 0.9144,
+                "NAUTICALMILES" => 1852,
                 _ => throw new ArgumentException("Unsupported routing distance units."),
             };
             var cutoff = ReadPositiveDouble(inputs, "cutoff") * minutesPerUnit;
@@ -120,8 +127,12 @@ internal sealed class RoutingJobExecutor(
                 Require(!straight || capabilities.SupportsOdStraightLines, "The routing provider does not support OD straight lines.");
                 var request = new OdCostMatrixSolveRequest(Points(first), Points(second), outSrid)
                 {
-                    InSrid = inSrid, Cutoff = cutoff, DestinationCount = ReadCount(inputs, "destination_count"),
-                    OutputType = straight ? OdLineOutputType.StraightLines : OdLineOutputType.NoLines, Barriers = barriers, TravelMode = mode,
+                    InSrid = inSrid,
+                    Cutoff = cutoff,
+                    DestinationCount = ReadCount(inputs, "destination_count"),
+                    OutputType = straight ? OdLineOutputType.StraightLines : OdLineOutputType.NoLines,
+                    Barriers = barriers,
+                    TravelMode = mode,
                 };
                 var result = await routing.SolveOdCostMatrixAsync(request, cancellationToken).ConfigureAwait(false);
                 solution = result.Lines.Select(line => Feature(line.GeometryGeoJson,

@@ -45,7 +45,10 @@ internal static class RoutingProcessDefinitions
     private static ProcessDefinition Definition(string id, string title, string description, ProcessParameterSpec[] inputs)
         => new()
         {
-            ProcessId = id, Title = title, Description = description, Category = "routing",
+            ProcessId = id,
+            Title = title,
+            Description = description,
+            Category = "routing",
             Parameters =
             [
                 .. inputs,
@@ -68,8 +71,12 @@ internal static class RoutingProcessDefinitions
     private static ProcessParameterSpec Points(string name, string title, bool required = true)
         => new()
         {
-            Name = name, DisplayName = title, Description = "Feature collection; input geometry and location identity attributes are retained.",
-            ValueType = ProcessParameterValueType.Text, Required = required, AcceptsGeoJsonDataUri = true,
+            Name = name,
+            DisplayName = title,
+            Description = "Feature collection; input geometry and location identity attributes are retained.",
+            ValueType = ProcessParameterValueType.Text,
+            Required = required,
+            AcceptsGeoJsonDataUri = true,
         };
 
     private static ProcessParameterSpec Parameter(string name, string description, ProcessParameterValueType type,
