@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Geoprocessing;
+using Honua.Protocols.GeoServices.GPServer;
 using Honua.Protocols.GeoServices.NAServer;
 using Honua.Routing.Features.Routing.Domain;
 using Honua.TestKit.Attributes;
@@ -113,13 +115,30 @@ public sealed class NAServerMetadataTests
         parameters["Solve_Succeeded"]!["dataType"]!.GetValue<string>().Should().Be("GPBoolean");
     }
 
-    [UnitTest]
-    public void RemainingRoutingWebTools_AreNotAdvertisedAsExecutableUtilities()
+    [UnitTheory]
+    [InlineData("FindClosestFacilities", "Incidents", "Facilities", "Output_Routes")]
+    [InlineData("GenerateOriginDestinationCostMatrix", "Origins", "Destinations", "Output_Origin_Destination_Lines")]
+    [InlineData("SolveLocationAllocation", "Facilities", "Demand_Points", "Output_Allocation_Lines")]
+    public void RoutingWebTools_AdvertiseTheirAsynchronousNamedContracts(string name, string first, string second, string output)
     {
-        foreach (var name in new[] { "FindClosestFacilities", "GenerateOriginDestinationCostMatrix", "SolveLocationAllocation" })
+        NAServerMetadata.IsUtilityTask(name).Should().BeFalse("asynchronous routing tasks use the shared job runtime, not the synchronous utility shortcut");
+        NAServerMetadata.IsRoutingWebTool(name).Should().BeTrue();
+        var definition = GPServerEndpoints.ResolveTaskDefinition(new BuiltInProcessCatalog(), name);
+        definition.Should().NotBeNull();
+        var info = GPServerEndpoints.BuildTaskInfo(name, definition!);
+        info.Name.Should().Be(name);
+        info.ExecutionType.Should().Be("esriExecutionTypeAsynchronous");
+        info.Parameters.Should().NotBeNull();
+        info.Parameters!.Should().OnlyContain(parameter => parameter.Name != null);
+        var parameters = info.Parameters!.ToDictionary(parameter => parameter.Name!);
+        foreach (var input in new[] { first, second })
         {
-            NAServerMetadata.IsUtilityTask(name).Should().BeFalse();
-            NAServerMetadata.IsRoutingWebTool(name).Should().BeFalse();
+            parameters[input].DataType.Should().Be("GPFeatureRecordSetLayer");
+            parameters[input].DefaultValue!.Value.GetProperty("geometryType").GetString().Should().Be("esriGeometryPoint");
         }
+        parameters[output].DataType.Should().Be("GPFeatureRecordSetLayer");
+        parameters["Solve_Succeeded"].DataType.Should().Be("GPBoolean");
+        NAServerMetadata.IsUtilityTask("UnimplementedRoutingTask").Should().BeFalse();
+        NAServerMetadata.IsRoutingWebTool("UnimplementedRoutingTask").Should().BeFalse();
     }
 }

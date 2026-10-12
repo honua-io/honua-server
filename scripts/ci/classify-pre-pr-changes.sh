@@ -39,6 +39,8 @@ LC_ALL=C sort -u \
 classification="CI_ONLY"
 while IFS= read -r path; do
   [[ -z "${path}" ]] && continue
+  # Quoted Git paths cannot safely use this line-oriented selector manifest.
+  [[ "${path}" != \"* ]] || unknown
   case "${path}" in
     README.md|docs/*|.github/ci-shards.json|scripts/ci/*)
       ;;

@@ -184,7 +184,7 @@ internal static partial class PrintingToolsEndpoints
                     return CreateSoapFault("The requested task was not found.", StatusCodes.Status404NotFound, soap);
                 }
 
-                if (name == "SubmitJob" && toolName == PrintingToolsServiceCatalog.LayoutTaskName)
+                if (name == "SubmitJob" && task.Name == PrintingToolsServiceCatalog.LayoutSoapTaskName)
                 {
                     return CreateSoapFault(
                         "Get Layout Templates Info Task executes synchronously. Use Execute.",
@@ -201,7 +201,7 @@ internal static partial class PrintingToolsEndpoints
                 }
 
                 context.Items[SoapParametersItemKey] = parameters;
-                if (name == "Execute" && toolName == PrintingToolsServiceCatalog.LayoutTaskName)
+                if (name == "Execute" && task.Name == PrintingToolsServiceCatalog.LayoutSoapTaskName)
                 {
                     var layout = await HandleGetLayoutTemplatesInfo(context, cancellationToken).ConfigureAwait(false);
                     if ((layout as IValueHttpResult)?.Value is not LayoutTemplatesInfoResponse info
@@ -261,7 +261,7 @@ internal static partial class PrintingToolsEndpoints
                     result = new XElement("Result", status.JobStatus);
                     break;
                 case "GetJobToolName":
-                    result = new XElement("Result", PrintingToolsServiceCatalog.ExportTaskName);
+                    result = new XElement("Result", PrintingToolsServiceCatalog.ExportSoapTaskName);
                     break;
                 case "GetJobMessages":
                     result = GPServerSoapExecution.BuildMessages(ToGpMessages(status.Messages));
@@ -355,7 +355,9 @@ internal static partial class PrintingToolsEndpoints
         [
             new GPTaskInfoResponse
             {
-                Name = PrintingToolsServiceCatalog.ExportTaskName,
+                // ArcPy uses the SOAP Name directly in a generated Python def.
+                // REST retains its established spaced task names and URL aliases.
+                Name = PrintingToolsServiceCatalog.ExportSoapTaskName,
                 DisplayName = "Export Web Map",
                 Description = "",
                 Category = "",
@@ -370,7 +372,7 @@ internal static partial class PrintingToolsEndpoints
             },
             new GPTaskInfoResponse
             {
-                Name = PrintingToolsServiceCatalog.LayoutTaskName,
+                Name = PrintingToolsServiceCatalog.LayoutSoapTaskName,
                 DisplayName = "Get Layout Templates Info",
                 Description = "",
                 Category = "",
@@ -384,7 +386,15 @@ internal static partial class PrintingToolsEndpoints
     }
 
     private static GPTaskInfoResponse? FindTask(HttpContext context, string? name)
-        => BuildTasks(context).FirstOrDefault(task => string.Equals(task.Name, name, StringComparison.Ordinal));
+    {
+        var callableName = name switch
+        {
+            PrintingToolsServiceCatalog.ExportTaskName => PrintingToolsServiceCatalog.ExportSoapTaskName,
+            PrintingToolsServiceCatalog.LayoutTaskName => PrintingToolsServiceCatalog.LayoutSoapTaskName,
+            _ => name
+        };
+        return BuildTasks(context).FirstOrDefault(task => string.Equals(task.Name, callableName, StringComparison.Ordinal));
+    }
 
     private static GPParameterInfo Parameter(
         string name,

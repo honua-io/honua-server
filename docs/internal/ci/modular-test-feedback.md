@@ -211,3 +211,21 @@ runs in its actual Ai.UnitTests assembly. Local Core/Core.Security full-suite
 success suppresses only their duplicate Fast invocation; hosted coverage remains
 unchanged. Local format reuses restored assets, and a service-free FAST selection
 without selected Postgres/Load suites skips unnecessary PostGIS pre-pull.
+
+Both local and hosted change selection treat a rename as a deletion plus an
+addition, so the original and destination owners are tested. The catalog guard
+also requires solution membership and Release build mappings for test projects;
+a selected project cannot silently build under Debug or disappear from a solution
+filter. Windows entrypoints reuse the existing Python interpreter fallback.
+
+Hosted shard matrices derive database requirements from the same catalog.
+Reviewed unit/component projects with no external resources skip the PostGIS
+service and receive no database connection string. Database-backed, mixed, and
+unknown entries retain the service. Provider unit cases run in their new shards;
+obsolete foundation selections that became empty after extraction are removed.
+
+Hosted shards keep the existing single matrix and exact-head artifact reuse. The
+matrix omits its PostGIS service only for reviewed unit/component projects whose
+catalog resources are empty. Missing or malformed catalog metadata, mixed/full
+host suites and any declared resource retain the pinned database service. This
+changes provisioning costs, not shard selection or full gate requirements.

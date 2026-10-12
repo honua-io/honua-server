@@ -1,0 +1,19 @@
+# syntax=docker/dockerfile:1.7
+# Protocol-only runner with lightweight TestKit.Abstractions; no Server or full TestKit reference.
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c
+FROM ${DOTNET_SDK_IMAGE} AS test
+WORKDIR /src
+COPY . .
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    --mount=type=secret,id=github_actor \
+    --mount=type=secret,id=github_token \
+    sh scripts/docker/restore-dotnet-with-github-packages.sh \
+      tests/dotnet/Honua.Protocols.OData.UnitTests/Honua.Protocols.OData.UnitTests.csproj \
+      -p:UseCurrentRuntimeIdentifier=true -p:AppendRuntimeIdentifierToOutputPath=false && \
+    dotnet build tests/dotnet/Honua.Protocols.OData.UnitTests/Honua.Protocols.OData.UnitTests.csproj \
+      -c Release --no-restore -m:4 -p:TreatWarningsAsErrors=true -p:UseSharedCompilation=false \
+      -p:UseCurrentRuntimeIdentifier=true -p:AppendRuntimeIdentifierToOutputPath=false
+FROM ${DOTNET_SDK_IMAGE} AS runner
+WORKDIR /tests
+COPY --from=test /src/tests/dotnet/Honua.Protocols.OData.UnitTests/bin/Release/net10.0/ ./
+ENTRYPOINT ["dotnet", "vstest", "/tests/Honua.Protocols.OData.UnitTests.dll"]

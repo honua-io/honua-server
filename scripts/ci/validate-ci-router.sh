@@ -1981,4 +1981,8 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-rename-selection.py
 fi
 
+if [[ -n "${PYTHON_BIN}" ]]; then
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-shard-resources.py
+fi
+
 echo "CI router validation passed."

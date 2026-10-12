@@ -33,27 +33,47 @@ dotnet format Honua.sln
 
 ## Pre-PR Validation
 
-Run these locally before creating a PR:
+Inspect affected scope before spending build resources:
 
-```bash
-# 1. Canonical instruction check
-bash scripts/ci/check-instructions-sync.sh
+    bash scripts/ci/pre-pr-check.sh --dry-run
+    bash scripts/ci/pre-pr-check.sh --plan-json /tmp/honua-local-plan.json
 
-# 2. Build
-dotnet build Honua.sln --configuration Release /p:TreatWarningsAsErrors=true
+The plan uses one manifest containing committed, staged, unstaged, deleted, and
+untracked changes. Builds, test selection, test-project retention, and formatting
+consume that same manifest. Shared infrastructure and uncertain selection retain
+their existing escalation rules. Explicit --full still records the complete
+manifest; when the manifest cannot be determined, changedFilesStatus is unknown
+and changedFiles is null, and execution escalates to FULL.
 
-# 3. Format
-dotnet format Honua.sln --verify-no-changes
+The version 1 JSON plan separates selector diagnostics (selectionRouting) from
+execution. serverShards lists the shards that will actually run (empty for FAST),
+serverTestActions includes their final filters, projects, timeouts and CPU counts,
+and unitTestActions and architectureTestAction describe the other .NET test
+invocations. FULL overrides FAST and records all shards. A null test filter means
+the complete test project runs.
 
-# 4. Tests
-dotnet test Honua.sln --configuration Release
+In sessions enrolled with the local supervisor, submit validation through
+honua-supervisor and follow its canonical runbook in the honua-supervisor
+repository. The service snapshots the source, queues work, and records a receipt.
+Set HONUA_SUPERVISOR_ENABLED=1 only after enrollment and cutover: the pre-push hook
+then accepts a matching receipt and otherwise asks for queued validation.
 
-# 5. Architecture tests
-dotnet test tests/dotnet/Honua.Architecture.Tests/
+Until enrollment, use the existing host build reservation to run:
 
-# 6. AOT build
-dotnet publish src/Honua.Server --configuration Release -p:PublishAot=true -p:StripSymbols=true -o ./publish
-```
+    bash scripts/ci/pre-pr-check.sh
+
+Use --full deliberately for releases or cross-cutting changes. The existing
+script's --fast skips heavy lanes; it is distinct from the supervisor's
+incident-bound fix-forward mode.
+
+For protocol-only iteration, the OData pilot compiles its dependency closure
+without Honua.Server or full Honua.TestKit. The lightweight
+Honua.TestKit.Abstractions project supplies shared test traits:
+
+    dotnet test tests/dotnet/Honua.Protocols.OData.UnitTests/Honua.Protocols.OData.UnitTests.csproj --configuration Release
+
+Run this through the shared host reservation. Full-server integration coverage
+remains in the existing OData test project.
 
 ---
 

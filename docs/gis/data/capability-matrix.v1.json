@@ -140,7 +140,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 4,
-      "provingTestCount": 130,
+      "provingTestCount": 133,
       "maturity": {
         "implemented": 4
       },
@@ -712,7 +712,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 48,
+      "provingTestCount": 49,
       "maturity": {
         "implemented": 2
       },
@@ -1178,7 +1178,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 74,
-      "provingTestCount": 248,
+      "provingTestCount": 251,
       "maturity": {
         "implemented": 74
       },
@@ -1374,7 +1374,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 16,
-      "provingTestCount": 185,
+      "provingTestCount": 204,
       "maturity": {
         "implemented": 16
       },
@@ -1581,10 +1581,10 @@
       "category": "Routing",
       "edition": "Pro",
       "status": null,
-      "entryCount": 28,
-      "provingTestCount": 109,
+      "entryCount": 32,
+      "provingTestCount": 122,
       "maturity": {
-        "implemented": 28
+        "implemented": 32
       },
       "noSurface": null,
       "cite": [],
@@ -1819,7 +1819,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 143,
-      "provingTestCount": 480,
+      "provingTestCount": 482,
       "maturity": {
         "preview": 143
       },

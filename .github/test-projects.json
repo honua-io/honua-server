@@ -540,6 +540,7 @@
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
         "src/Honua.Jobs/Honua.Jobs.csproj",
+        "src/Honua.Routing/Honua.Routing.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
         "src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj"
       ],
@@ -609,6 +610,7 @@
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
         "src/Honua.Jobs/Honua.Jobs.csproj",
+        "src/Honua.Routing/Honua.Routing.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
       ],
       "resources": [],
@@ -960,6 +962,7 @@
         "src/Honua.Jobs/Honua.Jobs.csproj",
         "src/Honua.Protocols.Ogc.Shared/Honua.Protocols.Ogc.Shared.csproj",
         "src/Honua.Protocols.OgcApi/Honua.Protocols.OgcApi.csproj",
+        "src/Honua.Routing/Honua.Routing.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
       ],
       "resources": [
@@ -1030,6 +1033,7 @@
         "src/Honua.Jobs/Honua.Jobs.csproj",
         "src/Honua.Protocols.Ogc.Shared/Honua.Protocols.Ogc.Shared.csproj",
         "src/Honua.Protocols.OgcApi/Honua.Protocols.OgcApi.csproj",
+        "src/Honua.Routing/Honua.Routing.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
       ],
       "resources": [],
@@ -1050,6 +1054,7 @@
         "src/Honua.Jobs/Honua.Jobs.csproj",
         "src/Honua.Protocols.Ogc.Shared/Honua.Protocols.Ogc.Shared.csproj",
         "src/Honua.Protocols.OgcClassic/Honua.Protocols.OgcClassic.csproj",
+        "src/Honua.Routing/Honua.Routing.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
       ],
       "resources": [
@@ -1118,6 +1123,7 @@
         "src/Honua.Jobs/Honua.Jobs.csproj",
         "src/Honua.Protocols.Ogc.Shared/Honua.Protocols.Ogc.Shared.csproj",
         "src/Honua.Protocols.OgcClassic/Honua.Protocols.OgcClassic.csproj",
+        "src/Honua.Routing/Honua.Routing.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
       ],
       "resources": [],
@@ -1543,6 +1549,7 @@
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
         "src/Honua.Jobs/Honua.Jobs.csproj",
+        "src/Honua.Routing/Honua.Routing.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
       ],
       "resources": [

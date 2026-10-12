@@ -53,11 +53,47 @@ require(
     r'--filter "FullyQualifiedName~McpTaxonomyAlignmentTests\|FullyQualifiedName~CapabilityRegistryConformanceTests"',
     "gate the complete taxonomy-alignment and capability-registry conformance classes",
 )
-require(
-    r'--filter "FullyQualifiedName~McpTaxonomyAlignmentTests\|FullyQualifiedName~CapabilityRegistryConformanceTests"',
-    "mirror the complete MCP drift class filter in the local pre-PR check",
-    text=PRE_PR_TEXT,
-)
+def require_local_mcp_filter(text: str) -> None:
+    """Bind the complete filter to the actual MCP dotnet-test invocation.
+
+    Accept a literal or one immutable-looking constant assignment before the
+    call. Do not accept the right string elsewhere, a partial filter, or a
+    correct constant that the command never uses. This is a static contract for
+    the script's supported forms, not a general shell evaluator.
+    """
+    expected = "FullyQualifiedName~McpTaxonomyAlignmentTests|FullyQualifiedName~CapabilityRegistryConformanceTests"
+    invocation = re.search(
+        r"dotnet test tests/dotnet/Honua\.Ai\.UnitTests/Honua\.Ai\.UnitTests\.csproj"
+        r"(?P<arguments>(?:[^\n]*\\\n)*[^\n]*)", text)
+    if invocation is None:
+        raise AssertionError("local pre-PR check must execute the MCP test project")
+    arguments = invocation.group("arguments")
+    filters = re.findall(r'--filter "([^"\n]*)"', arguments)
+    if filters == [expected]:
+        return
+    assignments = list(re.finditer(r'^\s*(?:export )?MCP_GOVERNANCE_FILTER(?:\+)?=.*$', text, re.M))
+    if (filters != ["${MCP_GOVERNANCE_FILTER}"] or len(assignments) != 1
+            or assignments[0].start() >= invocation.start()
+            or assignments[0].group().strip() != f'MCP_GOVERNANCE_FILTER="{expected}"'):
+        raise AssertionError("lean gate must mirror the complete MCP drift class filter in the local pre-PR check")
+
+
+require_local_mcp_filter(PRE_PR_TEXT)
+
+# Mutation fixtures ensure resolving a constant does not weaken the contract.
+for changed in (
+    PRE_PR_TEXT.replace("FullyQualifiedName~McpTaxonomyAlignmentTests|FullyQualifiedName~CapabilityRegistryConformanceTests",
+                        "FullyQualifiedName~McpTaxonomyAlignmentTests"),
+    PRE_PR_TEXT.replace('--filter "${MCP_GOVERNANCE_FILTER}"', '--filter "FullyQualifiedName~McpTaxonomyAlignmentTests"'),
+    PRE_PR_TEXT.replace('--filter "${MCP_GOVERNANCE_FILTER}"', '--filter "${OTHER_FILTER}"'),
+    PRE_PR_TEXT + '\nMCP_GOVERNANCE_FILTER="FullyQualifiedName~McpTaxonomyAlignmentTests"\n',
+):
+    try:
+        require_local_mcp_filter(changed)
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("local MCP filter checker accepted an incomplete or unbound filter")
 
 # ---------------------------------------------------------------------------
 # Affected-scope build contract (epic #3213).

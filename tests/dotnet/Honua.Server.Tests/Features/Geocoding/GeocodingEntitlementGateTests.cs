@@ -198,6 +198,7 @@ public sealed class GeocodingEntitlementGateTests
         var locatorProperties = payload.RootElement.GetProperty("locatorProperties");
         Assert.Equal("false", locatorProperties.GetProperty("SupportsBatch").GetString());
         Assert.False(locatorProperties.TryGetProperty("SuggestedBatchSize", out _));
+        Assert.False(locatorProperties.TryGetProperty("MaxBatchSize", out _));
     }
 
     [IntegrationTest]
@@ -212,13 +213,13 @@ public sealed class GeocodingEntitlementGateTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Contains(
+        Assert.DoesNotContain(
             "BatchGeocode",
             payload.RootElement.GetProperty("capabilities").GetString()!,
             StringComparison.Ordinal);
         var locatorProperties = payload.RootElement.GetProperty("locatorProperties");
         Assert.Equal("true", locatorProperties.GetProperty("SupportsBatch").GetString());
-        Assert.Equal("100", locatorProperties.GetProperty("SuggestedBatchSize").GetString());
+        Assert.Equal(100, locatorProperties.GetProperty("SuggestedBatchSize").GetInt32());
     }
 
     private static WebApplicationFactory<Program> CreateFactory(string? devGrantEdition)

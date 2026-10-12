@@ -256,12 +256,19 @@ def gate_fast_projects(catalog, completed=()):
                   if entry['role'] == 'unit' and entry['isolated'] and p not in completed)
 
 
+def gate_fast_actions(projects):
+    return [{'project': project,
+             'filter': ('Tier=Fast&FullyQualifiedName!~McpTaxonomyAlignmentTests&FullyQualifiedName!~CapabilityRegistryConformanceTests'
+                        if Path(project).stem == 'Honua.Ai.UnitTests' else 'Tier=Fast'),
+             'maxCpuCount': 1} for project in projects]
+
+
 def execute_gate_fast(root, projects):
-    for project in projects:
+    for action in gate_fast_actions(projects):
+        project = action['project']
         subprocess.run(['dotnet', 'test', project, '--no-build', '--no-restore',
                         '--configuration', 'Release', '--filter',
-                        ('Tier=Fast&FullyQualifiedName!~McpTaxonomyAlignmentTests&FullyQualifiedName!~CapabilityRegistryConformanceTests'
-                         if Path(project).stem == 'Honua.Ai.UnitTests' else 'Tier=Fast'),
+                        action['filter'],
                         '--logger', 'trx;LogFileName=lean-fast-' + Path(project).stem + '.trx',
                         '--logger', 'console;verbosity=minimal',
                         '--results-directory', str(root / 'tests/TestResults')],
@@ -284,7 +291,7 @@ def execute(root, result):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=['update', 'validate', 'plan', 'run', 'role', 'gate-fast-projects', 'gate-fast'])
+    parser.add_argument('operation', choices=['update', 'validate', 'plan', 'run', 'role', 'gate-fast-projects', 'gate-fast-actions', 'gate-fast'])
     parser.add_argument('--project')
     parser.add_argument('--completed-full-suite', action='append', default=[], choices=[
         'tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj',
@@ -322,10 +329,12 @@ def main():
     validate(root, catalog)
     if args.operation == 'validate':
         return
-    if args.operation in {'gate-fast-projects', 'gate-fast'}:
+    if args.operation in {'gate-fast-projects', 'gate-fast-actions', 'gate-fast'}:
         projects = gate_fast_projects(catalog, args.completed_full_suite)
         if args.operation == 'gate-fast-projects':
             print('\n'.join(projects))
+        elif args.operation == 'gate-fast-actions':
+            print(json.dumps(gate_fast_actions(projects)))
         else:
             execute_gate_fast(root, projects)
         return

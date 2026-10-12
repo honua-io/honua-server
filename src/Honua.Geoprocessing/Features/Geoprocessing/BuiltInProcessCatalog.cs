@@ -57,6 +57,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
 
     private static ProcessDefinition[] BuildDefinitions() =>
     [
+        .. RoutingProcessDefinitions.Create(),
         // -----------------------------------------------------------------------
         // Geometry operations (14)
         // -----------------------------------------------------------------------

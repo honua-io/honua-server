@@ -97,7 +97,8 @@ internal static class NAServerMetadata
     public static bool IsRoutingWebTool(string? name)
         => name is not null
            && (name.Equals(FindRoutesTask, StringComparison.OrdinalIgnoreCase)
-               || name.Equals(GenerateServiceAreasTask, StringComparison.OrdinalIgnoreCase));
+               || name.Equals(GenerateServiceAreasTask, StringComparison.OrdinalIgnoreCase)
+               || GPServer.RoutingAsyncWebTools.IsTask(name));
 
     public static bool IsKnownLayer(string? layerName)
         => layerName is not null && Layers.Any(l => l.Name.Equals(layerName, StringComparison.OrdinalIgnoreCase));
