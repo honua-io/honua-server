@@ -27,7 +27,7 @@ public sealed class GatedBootShutdownTests
     [UnitTest]
     public void IsContractGateRefusal_OtherExceptionTypesKeepTheirFailureBehavior()
     {
-        GatedBootShutdown.IsContractGateRefusal(new Exception(GatedBootShutdown.ContractGateRefusalPrefix))
+        GatedBootShutdown.IsContractGateRefusal(new IOException(GatedBootShutdown.ContractGateRefusalPrefix))
             .Should().BeFalse();
         GatedBootShutdown.IsContractGateRefusal(new AggregateException(
             new InvalidOperationException(GatedBootShutdown.ContractGateRefusalPrefix)))
