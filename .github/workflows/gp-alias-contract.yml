@@ -55,11 +55,14 @@ jobs:
           assert counts['total'] == counts['executed'] == counts['passed'] == str(expected), counts
           assert counts['failed'] == '0', counts
           results = root.findall('t:Results/t:UnitTestResult', ns)
-          names = [result.attrib['testName'] for result in results]
-          assert all(any(name.endswith('.' + fact) for name in names) for fact in facts), names
+          methods = {test.attrib['id']: test.find('t:TestMethod', ns).attrib['name']
+                     for test in root.findall('t:TestDefinitions/t:UnitTest', ns)}
+          assert all(any(methods[result.attrib['testId']] == fact for result in results)
+                     for fact in facts), methods
           for process_id, alias in routing_cases:
-              assert any('RoutingAlias_ResolvesAndPublishesItsJobCallableProcess' in name
-                         and process_id in name and alias in name for name in names), names
+              assert any(methods[result.attrib['testId']] == 'RoutingAlias_ResolvesAndPublishesItsJobCallableProcess'
+                         and process_id in result.attrib['testName'] and alias in result.attrib['testName']
+                         for result in results), methods
           print(f'Actual GeoServices alias contract: {expected} executed and passed, 0 failed; all named source cases present.')
           PY
       - uses: actions/upload-artifact@v7
@@ -117,7 +120,10 @@ jobs:
           assert counts['total'] == counts['executed'] == counts['passed'] == '1', counts
           assert counts['failed'] == '0', counts
           result = root.find('t:Results/t:UnitTestResult', ns)
-          assert result is not None and result.attrib['testName'].endswith('.ProcessList_ReturnsAtLeastOneProcess')
+          assert result is not None
+          definition = next(test for test in root.findall('t:TestDefinitions/t:UnitTest', ns)
+                            if test.attrib['id'] == result.attrib['testId'])
+          assert definition.find('t:TestMethod', ns).attrib['name'] == 'ProcessList_ReturnsAtLeastOneProcess'
           print('Actual OGC HTTP process-list regression: 1 executed and passed, 0 failed.')
           PY
       - uses: actions/upload-artifact@v7
