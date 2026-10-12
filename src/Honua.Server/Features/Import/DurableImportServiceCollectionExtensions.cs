@@ -30,30 +30,38 @@ internal static class DurableImportServiceCollectionExtensions
             Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton<
                 Honua.Core.Features.ControlPlane.Abstractions.IJobExecutor,
                 Honua.Import.FileImport.Durable.FileImportJobExecutor>());
+
         // Wrap the provider's in-process runner (registered by AddPostgreSqlServices as a factory).
         var inner = services.LastOrDefault(static d => d.ServiceType == typeof(IImportJobService));
-        if (inner is null || (inner.ImplementationFactory is null && inner.ImplementationInstance is null))
-        {
-            // No import job service is composed (for example a read-only provider): background
-            // imports are refused, and import.background must say so rather than advertise a runner.
-            // A type-registered service (a test or custom composition) is left as is: in-process.
-            services.AddSingleton(inner is null
-                ? new BackgroundImportRunnerDecision(
-                    BackgroundImportRunnerMode.Unavailable,
-                    unavailableReason: BackgroundImportRunnerDecision.ImportServiceMissingReason)
-                : new BackgroundImportRunnerDecision(BackgroundImportRunnerMode.InProcess));
-            services.TryAddSingleton<IBackgroundImportRunnerInfo>(
-                static sp => sp.GetRequiredService<BackgroundImportRunnerDecision>());
-            return services;
-        }
+        var wrap = inner is not null && (inner.ImplementationFactory is not null || inner.ImplementationInstance is not null);
 
-        services.AddSingleton(BackgroundImportRunnerDecision.Resolve);
+        // Decided when first resolved, not here: a composition (or test host) may register its
+        // import job service after this point. Without a job service background imports are
+        // refused and import.background says so; an unwrapped service stays in-process.
+        services.AddSingleton(sp =>
+        {
+            if (sp.GetService<IServiceProviderIsService>() is { } isService && !isService.IsService(typeof(IImportJobService)))
+            {
+                return new BackgroundImportRunnerDecision(
+                    BackgroundImportRunnerMode.Unavailable,
+                    unavailableReason: BackgroundImportRunnerDecision.ImportServiceMissingReason);
+            }
+
+            return wrap
+                ? BackgroundImportRunnerDecision.Resolve(sp)
+                : new BackgroundImportRunnerDecision(BackgroundImportRunnerMode.InProcess);
+        });
         services.TryAddSingleton<IBackgroundImportRunnerInfo>(
             static sp => sp.GetRequiredService<BackgroundImportRunnerDecision>());
 
+        if (!wrap)
+        {
+            return services;
+        }
+
         services.RemoveAll<IImportJobService>();
         services.AddSingleton<IImportJobService>(sp => new DurableImportJobService(
-            (IImportJobService)(inner.ImplementationInstance ?? inner.ImplementationFactory!(sp)),
+            (IImportJobService)(inner!.ImplementationInstance ?? inner.ImplementationFactory!(sp)),
             sp.GetRequiredService<BackgroundImportRunnerDecision>(),
             sp.GetRequiredService<IUniversalProgressStore>(),
             sp.GetRequiredService<IServiceScopeFactory>(),
