@@ -9,6 +9,8 @@
     <PackageReference Include="Npgsql" />
     <PackageReference Include="dbup-postgresql" />
     <PackageReference Include="Testcontainers.PostgreSql" />
+    <!-- Preserve the audited transitive pin from the original TestKit. -->
+    <PackageReference Include="SSH.NET" />
     <PackageReference Include="YamlDotNet" />
     <PackageReference Include="xunit" />
   </ItemGroup>
