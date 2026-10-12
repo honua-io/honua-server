@@ -185,6 +185,33 @@ class InputTests(unittest.TestCase):
         self.assertEqual("key", argv[2])
         self.assertTrue(any(arg.startswith("-getItem:") for arg in argv))
 
+    def test_identical_worktree_inputs_and_intrinsic_metadata_have_same_key(self):
+        import shutil
+        other = self.root / "second-worktree"
+        other.mkdir()
+        for path in (self.project, self.source, self.linked, self.root / "Directory.Build.props"):
+            destination = other / path.relative_to(self.root)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, destination)
+        def evaluate(root, stamp):
+            evidence = root / "evidence-other"
+            evidence.mkdir()
+            def command(argv, selected_root):
+                raw = self.fake_command(argv, selected_root).replace(str(self.root), str(root))
+                if "-t:GenerateRestoreGraphFile" in argv:
+                    graph = Path(next(arg.split("=", 1)[1] for arg in argv if arg.startswith("-p:RestoreGraphOutputPath=")))
+                    graph.write_text(graph.read_text().replace(str(self.root), str(root)))
+                if any(arg.startswith("-getItem:") for arg in argv):
+                    value = json.loads(raw)
+                    item = value["Items"]["Compile"][0]
+                    item.update(Directory=str(Path(item["FullPath"]).parent).lstrip("/") + "/", ModifiedTime=stamp,
+                                DefiningProjectFullPath=str(root / "Directory.Build.props"), DefiningProjectDirectory=str(root) + "/")
+                    return json.dumps(value)
+                return raw
+            with patch.object(pilot, "command", side_effect=command):
+                return pilot.evaluated_inputs(root, "src/Selected/Selected.csproj", "Release", "full", evidence)
+        self.assertEqual(evaluate(self.root, "old")["key"], evaluate(other, "new")["key"])
+
     def test_item_timestamps_do_not_change_identity_but_source_and_metadata_do(self):
         timestamp = "2026-01-01"
         semantic = "PreserveNewest"

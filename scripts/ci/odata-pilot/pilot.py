@@ -96,7 +96,14 @@ def plan(root, variant, selection, configuration, composition, test_filter, runt
 
 def normalize(value, root):
     if isinstance(value, dict):
-        return {normalize(k, root): normalize(v, root) for k, v in value.items()}
+        result = {normalize(k, root): normalize(v, root) for k, v in value.items()}
+        # Intrinsic Directory omits RootDir on Unix. Normalize only this known
+        # metadata field when FullPath supplies its canonical item identity.
+        directory = value.get("Directory")
+        prefix = str(root).lstrip("/") + "/"
+        if "FullPath" in value and isinstance(directory, str) and directory.startswith(prefix):
+            result["Directory"] = "$REPO/" + directory[len(prefix):]
+        return result
     if isinstance(value, list):
         return [normalize(v, root) for v in value]
     return value.replace(str(root), "$REPO") if isinstance(value, str) else value
