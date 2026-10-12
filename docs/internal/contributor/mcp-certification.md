@@ -130,7 +130,8 @@ environment variables above.
 ## Known gaps
 
 - **Auth certification:** the direct-SDK standalone target has no MCP transport authentication boundary and records that limitation. Native server MCP authentication and governed operations require the separate remote/stdio and Production proof lanes.
-- **Certification not yet active (#2807):** the currently pinned `MCP_SDK_REF` does **not** contain the `test:certification`, `test:certification:artifact`, or `test:llm-smoke` scripts (they are tracked in `honua-sdk-js` `#484`). As a result the `mcp-certification` and `mcp-llm-smoke` lanes skip cleanly and **no certification artifact has been produced** — the MCP surface is not certified today. Do not cite the presence of these CI jobs as certification evidence. Once the scripts land, re-pin `MCP_SDK_REF` to the SDK commit that contains them so release-evidence runs actually execute and upload the `mcp-certification-{transport}` artifacts.
+- **Live certification prerequisite:** the default SDK source is the immutable published MCP0.1.16 commit `46ecd25a32ee2bfb7741ccc14ee5842c8824dd19`, which includes the certification scripts. A source pin or workflow definition is not a pass: only actual successful live receipts for both backend transports qualify. The earlier candidate44c run failed fixture setup before tests; its failure remains historical evidence.
+- **LLM smoke availability:** this selected source has no `test:llm-smoke` script, so the best-effort smoke job explicitly skips and produces no model-evaluation evidence.
 - **SDK scripts prerequisite for manual replays:** CI jobs skip cleanly when `test:certification`, `test:certification:artifact`, or `test:llm-smoke` scripts are not present in the checked-out SDK ref.
 - **Cache-invalidation testing:** deferred until anonymous writes are available.
 - **C# SDK interop lane:** deferred to follow-up issue.

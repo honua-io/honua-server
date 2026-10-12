@@ -113,18 +113,11 @@ env:
   DOTNET_NOLOGO: true
   PYTHON_VERSION: '3.11'
   NODE_VERSION: '20'
-  # honua-sdk-js ref for MCP certification and LLM smoke tests.
-  # STATUS (#2807): this pinned commit does NOT yet contain the
-  # `test:certification`, `test:certification:artifact`, or `test:llm-smoke`
-  # scripts (they are honua-sdk-js #484 work), so the mcp-certification /
-  # mcp-llm-smoke lanes skip cleanly and produce NO certification artifact
-  # today. Do not read the pin as evidence that the MCP surface is certified.
-  # IMPORTANT: once the scripts land, re-pin this to the SDK tag or commit SHA
-  # that contains them so results are reproducible release-grade evidence for a
-  # given server commit. A branch name like 'trunk' is useful for development
-  # but its artifacts are not release-grade evidence.
-  # workflow_dispatch `sdk_ref` overrides this value for manual replays.
-  MCP_SDK_REF: '404242df3cbf10f707ee9137405bf93b3de0012d'
+  # Exact published MCP0.1.16 source. This includes the direct-SDK certification
+  # scripts; scheduled full runs exercise the live backend matrix rather than
+  # taking the legacy absent-script skip. workflow_dispatch sdk_ref remains an
+  # explicit override for development/release replays, recorded in each receipt.
+  MCP_SDK_REF: '46ecd25a32ee2bfb7741ccc14ee5842c8824dd19'
   # Release certification lanes (honua-io/honua-release#376 R18): the job ids
   # whose check-runs must ALL conclude `success` in the newest completed
   # schedule/workflow_dispatch run of this workflow before a trunk sha is
