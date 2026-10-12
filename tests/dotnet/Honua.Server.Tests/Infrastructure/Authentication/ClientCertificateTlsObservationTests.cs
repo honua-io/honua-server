@@ -19,6 +19,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
+[Protocol(TestProtocols.Admin)]
 public sealed class ClientCertificateTlsObservationTests
 {
     [UnitTest]
@@ -125,6 +126,7 @@ public sealed class ClientCertificateTlsObservationTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.SecurityTesting)]
     public void ProductionHost_HttpsDefaultsInstallObserverAndPreserveOptionalCertificateMode()
     {
         var logger = new RecordingLogger();
