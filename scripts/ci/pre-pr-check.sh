@@ -48,7 +48,7 @@ set -euo pipefail
 # hits before you commit to a run.
 #
 # CLI flags (aliases for the escape-hatch env vars below): --full, --fast,
-# --dry-run, --base <ref>.
+# --dry-run, --base <ref>, --unit-only (feedback only; no PR validation).
 #
 # Escape hatches:
 #   HONUA_PRE_PR_FULL=1     force the full suite (recommended before a release
@@ -85,9 +85,11 @@ BASE_REF="${HONUA_PRE_PR_BASE:-origin/trunk}"
 FULL="${HONUA_PRE_PR_FULL:-0}"
 FAST="${HONUA_PRE_PR_FAST:-0}"
 DRY_RUN="${HONUA_PRE_PR_DRY_RUN:-0}"
+UNIT_ONLY=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --unit-only) UNIT_ONLY=1; shift ;;
         --full) FULL=1; shift ;;
         --fast) FAST=1; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
@@ -112,6 +114,17 @@ done
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${REPO_ROOT}"
+
+# Explicit developer feedback lane; never substitutes for fast/full PR gates.
+if [[ "${UNIT_ONLY}" == "1" ]]; then
+    if [[ "${FULL}" == "1" || "${FAST}" == "1" ]]; then
+        echo "--unit-only cannot be combined with fast/full modes" >&2
+        exit 2
+    fi
+    unit_operation=run
+    [[ "${DRY_RUN}" != "1" ]] || unit_operation=plan
+    exec python3 scripts/ci/test-projects.py "${unit_operation}" --base "${BASE_REF}"
+fi
 
 if ! command -v jq >/dev/null 2>&1; then
     # Hard requirement, not a soft one: jq reads .github/ci-shards.json and

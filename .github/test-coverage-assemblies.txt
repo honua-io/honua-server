@@ -1,0 +1,16 @@
+Honua.Ai.Tests.dll
+Honua.ControlPlane.Lambda.Tests.dll
+Honua.GeoServicesRest.Tests.dll
+Honua.Protocols.GeoServices.Tests.dll
+Honua.Protocols.OData.ComponentTests.dll
+Honua.Protocols.OData.Tests.dll
+Honua.Protocols.OData.UnitTests.dll
+Honua.Protocols.OgcApi.Tests.dll
+Honua.Protocols.OgcClassic.Tests.dll
+Honua.Protocols.Scene.Tests.dll
+Honua.Protocols.SensorThings.Tests.dll
+Honua.Protocols.Stac.Tests.dll
+Honua.ProviderSmoke.Tests.dll
+Honua.ReleaseWorkflows.Tests.dll
+Honua.Server.Tests.dll
+Honua.Worker.Gdal.Tests.dll

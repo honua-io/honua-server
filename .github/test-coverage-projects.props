@@ -1,0 +1,20 @@
+<Project>
+  <ItemGroup>
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.ControlPlane.Lambda.Tests/Honua.ControlPlane.Lambda.Tests.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.GeoServicesRest.Tests/Honua.GeoServicesRest.Tests.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Protocols.OData.ComponentTests/Honua.Protocols.OData.ComponentTests.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Protocols.OData.UnitTests/Honua.Protocols.OData.UnitTests.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Protocols.Scene.Tests/Honua.Protocols.Scene.Tests.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Protocols.SensorThings.Tests/Honua.Protocols.SensorThings.Tests.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.ProviderSmoke.Tests/Honua.ProviderSmoke.Tests.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.ReleaseWorkflows.Tests/Honua.ReleaseWorkflows.Tests.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj" />
+  </ItemGroup>
+</Project>

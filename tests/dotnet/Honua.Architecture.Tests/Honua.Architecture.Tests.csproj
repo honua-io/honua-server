@@ -19,30 +19,7 @@
     <ProjectReference Include="..\..\..\src\Honua.Snowflake\Honua.Snowflake.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Db\DuckDB\Honua.DuckDB.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Db\Redshift\Honua.Redshift.csproj" />
-    <ProjectReference Include="..\Honua.Server.Tests\Honua.Server.Tests.csproj" />
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
-    <!-- Per-protocol test projects are referenced so their assemblies land in
-         this project's output directory, where ApiSurfaceCoverageTests /
-         OperationCoverageTests load them (via
-         ArchitectureTestHelpers.IntegrationTestAssemblies) to verify endpoint
-         and operation coverage for protocols extracted out of Honua.Server. -->
-    <ProjectReference Include="../Honua.Protocols.OData.UnitTests/Honua.Protocols.OData.UnitTests.csproj" />
-    <ProjectReference Include="..\Honua.Protocols.OData.Tests\Honua.Protocols.OData.Tests.csproj" />
-    <ProjectReference Include="..\Honua.Protocols.OgcApi.Tests\Honua.Protocols.OgcApi.Tests.csproj" />
-    <ProjectReference Include="..\Honua.Protocols.OgcClassic.Tests\Honua.Protocols.OgcClassic.Tests.csproj" />
-    <ProjectReference Include="..\Honua.Protocols.GeoServices.Tests\Honua.Protocols.GeoServices.Tests.csproj" />
-    <ProjectReference Include="..\Honua.Ai.Tests\Honua.Ai.Tests.csproj" />
-    <ProjectReference Include="..\Honua.Protocols.Scene.Tests\Honua.Protocols.Scene.Tests.csproj" />
-    <ProjectReference Include="..\Honua.Protocols.Stac.Tests\Honua.Protocols.Stac.Tests.csproj" />
-    <ProjectReference Include="..\Honua.Protocols.SensorThings.Tests\Honua.Protocols.SensorThings.Tests.csproj" />
-    <ProjectReference Include="..\Honua.Worker.Gdal.Tests\Honua.Worker.Gdal.Tests.csproj" />
-    <!-- honua-server#2947: provider-http-smoke suite (FeatureServer/OGC API Features/
-         OData/Tiles smoke coverage against DuckDB/MySql/SQL Server). Named
-         Honua.ProviderSmoke.Tests rather than Honua.Protocols.*.Tests since it spans
-         multiple protocol families against multiple provider fixtures rather than one
-         protocol; see the matching explicit glob entry in
-         ArchitectureTestHelpers.IntegrationTestAssemblies. -->
-    <ProjectReference Include="..\Honua.ProviderSmoke.Tests\Honua.ProviderSmoke.Tests.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -56,4 +33,8 @@
     </PackageReference>
   </ItemGroup>
 
+  <Import Project="../../../.github/test-coverage-projects.props" />
+  <ItemGroup>
+    <None Include="../../../.github/test-coverage-assemblies.txt" Link="test-coverage-assemblies.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

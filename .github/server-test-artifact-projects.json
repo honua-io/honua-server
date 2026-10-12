@@ -55,6 +55,31 @@
       "artifact_suffix": "server",
       "csproj": "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj",
       "proof_filter": "FullyQualifiedName~GeoservicesServiceUrlValidationTests"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.ControlPlane.Lambda.Tests/Honua.ControlPlane.Lambda.Tests.csproj",
+      "artifact_suffix": "honua-controlplane-lambda-tests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Db.DuckDB.Tests/Honua.DuckDB.Tests.csproj",
+      "artifact_suffix": "honua-duckdb-tests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.GeoServicesRest.Tests/Honua.GeoServicesRest.Tests.csproj",
+      "artifact_suffix": "honua-geoservicesrest-tests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Protocols.OData.ComponentTests/Honua.Protocols.OData.ComponentTests.csproj",
+      "artifact_suffix": "honua-protocols-odata-componenttests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.ReleaseWorkflows.Tests/Honua.ReleaseWorkflows.Tests.csproj",
+      "artifact_suffix": "honua-releaseworkflows-tests",
+      "proof_filter": "FullyQualifiedName~Honua"
     }
   ]
 }

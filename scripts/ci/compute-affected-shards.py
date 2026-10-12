@@ -130,7 +130,13 @@ TIER_ATTRIBUTE_DIRS = (
     "tests/dotnet/Honua.TestKit/Attributes",
     "tests/dotnet/Honua.TestKit.Abstractions/Attributes",
 )
+# Retained for fixture/API compatibility; policy comes from the catalog.
 ODATA_UNIT_PROJECT = "tests/dotnet/Honua.Protocols.OData.UnitTests/Honua.Protocols.OData.UnitTests.csproj"
+
+def catalog_unit_project(root: Path, project: str) -> bool:
+    catalog = json.loads((root / ".github/test-projects.json").read_text())
+    return catalog["projects"].get(project, {}).get("role") == "unit"
+
 
 # Default exclusions for integration shards. The independent OData unit project
 # owns Fast cases as well (see runnable_methods and the runner project override).
@@ -389,9 +395,9 @@ def runnable_methods(root: Path, fqn: str, entry: dict[str, Any]) -> list[str]:
     A method with no Tier trait at all survives `Tier!=X`, which is why the
     untiered majority is unaffected.
     """
-    # The fixture-independent OData unit shard owns Fast tests too; foundation
+    # Catalogued isolated unit shards own Fast tests too; foundation
     # jobs still exclude Fast from every existing integration shard.
-    excluded_tiers = EXCLUDED_TIERS - {"Fast"} if entry.get("csproj") == ODATA_UNIT_PROJECT else EXCLUDED_TIERS
+    excluded_tiers = EXCLUDED_TIERS - {"Fast"} if catalog_unit_project(root, entry.get("csproj", "")) else EXCLUDED_TIERS
     simple = fqn.rsplit(".", 1)[-1]
     class_tiers: set[str] = set()
     method_tiers: dict[str, set[str]] = {}

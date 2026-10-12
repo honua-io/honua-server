@@ -152,6 +152,11 @@ jobs:
           python3 scripts/ci/validate-tracked-file-encoding.py
           python3 scripts/ci/validate-tracked-file-encoding.test.py
 
+      - name: Validate modular test inventory and isolation
+        run: |
+          python3 scripts/ci/test-projects.py validate
+          python3 scripts/ci/test-test-projects.py
+
       - name: Verify terminal error receipt contract
         run: python3 scripts/certification/verify-terminal-error-receipts.py
 
