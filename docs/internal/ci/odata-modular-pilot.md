@@ -219,3 +219,56 @@ Run the lightweight tool tests without Docker or .NET:
 ```bash
 python3 -m unittest discover -s scripts/ci/odata-pilot -p 'test_*.py'
 ```
+
+
+### Orchestration adapter boundary
+
+The current pilot has no qualified image builder or component host controller.
+The interfaces above are acceptance contracts, not evidence that an installed
+adapter already exists. Unit measurements can run independently; image and
+component promotion stay blocked until their actual lifecycle receipts exist.
+
+Flow exposes generic command supervision in
+`honua-flow-work/tools/lib/build-reservation.py run` and canonical fair admission
+in `tools/lib/build-slot-lib.sh` (`build_worktree_take`, then `build_slot_take`).
+The guardian requires the already locked slot and worktree descriptors, their
+canonical paths, graph key, parent PID, fresh reservation token and the real
+command argv. It writes durable owner receipts before starting that command and
+retains locks until its tracked Linux descendants drain. This is a supported
+reservation primitive; renaming Docker commands to dotnet or npm is unnecessary
+and does not provide containment.
+
+Docker workers are processes of the Docker daemon, outside those descendants.
+If a wrapper starts a detached BuildKit worker or host container and then dies,
+the guardian can finish while that container still consumes resources. A shell
+trap does not repair this failure mode. Therefore the existing primitive alone
+cannot produce a genuine image or host receipt for this pilot.
+
+A usable managed adapter needs these additional interfaces:
+
+- A durable owner with canonical Flow reservation identity, actual physical
+  memory admission, and crash recovery that removes only its recorded container
+  IDs. Capacity must remain reserved until those containers have stopped, even
+  after the requesting client disappears. Host and WSL available memory must
+  remain separate measurements under the existing admission policy.
+- An owned BuildKit worker with inspected memory/swap, CPU and PID limits before
+  any build starts, a measured cgroup memory peak, immutable input/image binding,
+  and verified teardown before recording completion. The supervisor's current
+  `ImageBuild` requires a running image job and creates a 16 GiB worker; it does
+  not implement this pilot's 8 GiB/PID/peak receipt contract. Cooperative admission
+  currently rejects image jobs, so invoking that path is not an available bridge.
+- A host controller that uses that same durable ownership model for the full
+  baseline or minimal candidate runtime. It must accept an externally provisioned
+  isolated canonical `odata.yaml` store, verify the matching runtime artifact,
+  apply page limit 2 and edit payload limit 4096, measure startup and queue wait,
+  and keep the host alive while the exact shared component class runs. It then
+  tears down only its owned runtime and records the actual bounds and result.
+
+The shared component runner accepts `HONUA_ODATA_TEST_BASE_URL` and
+`HONUA_ODATA_TEST_ADMIN_KEY`; both variants use
+`Honua.Protocols.OData.ComponentTests.ODataContractTests`. The baseline builds
+its full server graph as well as that identical runner. The seed fixture and
+standalone minimal host are not a durable container owner or generic reservation
+service. Do not substitute manually asserted receipt fields for these missing
+interfaces. Runtime Compose is a bounded manual probe and does not qualify as a
+managed lifecycle receipt.
