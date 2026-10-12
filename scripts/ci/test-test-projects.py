@@ -250,6 +250,13 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual([self.integration], [e['csproj'] for e in orphans])
         self.assertEqual({'HostCase'}, orphans[0]['methods'])
 
+    def test_non_protocol_component_proposal_requires_full_discovery(self):
+        component = self.project('tests/dotnet/Honua.Hosting.ComponentTests', [self.owner])
+        entry = catalog.proposed(self.root, component)
+        self.assertEqual('component', entry['role'])
+        self.assertTrue(entry['coverageRequired'])
+        self.assertFalse(entry['isolated'])
+
     def test_shared_change_selects_units_only(self):
         result = catalog.plan(self.root, self.entries, ['Directory.Build.props'])
         self.assertEqual([self.unit], result['selectedProjects'])
