@@ -101,7 +101,7 @@ internal sealed class RoutingJobExecutor(
                     ("IncidentName", Name(first, route.IncidentId)), ("FacilityName", Name(second, route.FacilityId)),
                     ("IncidentOID", ObjectId(first, route.IncidentId)), ("FacilityOID", ObjectId(second, route.FacilityId)),
                     ("Total_Minutes", route.TotalTimeMinutes), ("Total_Miles", route.TotalLengthMeters / 1609.344),
-                    ("Total_Kilometers", route.TotalLengthMeters / 1000))).ToList();
+                    ("Total_Kilometers", route.TotalLengthMeters / 1000))).ToList<IFeature>();
                 for (var index = 0; index < solution.Count; index++)
                 {
                     AddSelectedUnits(solution[index], result.Routes[index].TotalTimeMinutes, result.Routes[index].TotalLengthMeters,
@@ -128,7 +128,7 @@ internal sealed class RoutingJobExecutor(
                     ("OriginID", Identity(first, line.OriginId)), ("DestinationID", Identity(second, line.DestinationId)),
                     ("DestinationRank", line.DestinationRank), ("OriginName", Name(first, line.OriginId)), ("DestinationName", Name(second, line.DestinationId)),
                     ("OriginOID", ObjectId(first, line.OriginId)), ("DestinationOID", ObjectId(second, line.DestinationId)),
-                    ("Total_Time", line.TotalCostMinutes / minutesPerUnit), ("Total_Distance", line.TotalLengthMeters / metersPerUnit))).ToList();
+                    ("Total_Time", line.TotalCostMinutes / minutesPerUnit), ("Total_Distance", line.TotalLengthMeters / metersPerUnit))).ToList<IFeature>();
             }
             else
             {
@@ -274,7 +274,7 @@ internal sealed class RoutingJobExecutor(
         return features;
     }
 
-    private List<RouteBarrier> ReadBarriers(IReadOnlyDictionary<string, string> inputs)
+    private List<RouteBarrier> ReadBarriers(Dictionary<string, string> inputs)
     {
         List<RouteBarrier> barriers = [];
         foreach (var (name, kind) in new[] { ("point_barriers", RouteBarrierKind.Point), ("line_barriers", RouteBarrierKind.Line), ("polygon_barriers", RouteBarrierKind.Polygon) })
@@ -290,7 +290,7 @@ internal sealed class RoutingJobExecutor(
                 var geometry = feature.Geometry!;
                 Require(kind switch
                 {
-                    RouteBarrierKind.Point => geometry is Point or MultiPoint,
+                    RouteBarrierKind.Point => geometry is NetTopologySuite.Geometries.Point or MultiPoint,
                     RouteBarrierKind.Line => geometry is LineString or MultiLineString,
                     _ => geometry is Polygon or MultiPolygon,
                 }, "Barrier geometry does not match its declared family.");
@@ -351,7 +351,7 @@ internal sealed class RoutingJobExecutor(
 
     private static RoutePoint Point(IFeature feature) => new(((Point)feature.Geometry).X, ((Point)feature.Geometry).Y);
     private static RoutePoint[] Points(FeatureCollection features) => features.Select(Point).ToArray();
-    private static IFeature Feature(string? geometry, params (string Name, object Value)[] properties)
+    private static Feature Feature(string? geometry, params (string Name, object Value)[] properties)
         => new Feature(string.IsNullOrWhiteSpace(geometry) ? null : GeoJsonArtifactCodec.CreateReader().Read<Geometry>(geometry), Attributes(properties));
     private static AttributesTable Attributes(params (string Name, object Value)[] properties)
     {
