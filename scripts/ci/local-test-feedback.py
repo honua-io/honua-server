@@ -106,7 +106,7 @@ def require_tests(directory):
 def execute(root, plan, run=subprocess.run, results_directory=None):
     if not plan['projects']:
         print('No affected tests selected; no validation verdict was produced.', file=sys.stderr)
-        return
+        return None
     results_root = (Path(results_directory) if results_directory else root / 'tests/TestResults/local-feedback').resolve()
     results = results_root / uuid.uuid4().hex
     results.mkdir(parents=True, exist_ok=False)

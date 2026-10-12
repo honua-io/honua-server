@@ -17,7 +17,6 @@ import signal
 import statistics
 import subprocess
 import sys
-import tempfile
 import time
 import xml.etree.ElementTree as ET
 

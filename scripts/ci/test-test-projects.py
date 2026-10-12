@@ -63,7 +63,7 @@ class CatalogTests(unittest.TestCase):
             catalog.validate(self.root, self.entries)
 
     def test_transitive_server_dependency_is_rejected(self):
-        server = self.project('src/Honua.Server')
+        self.project('src/Honua.Server')
         owner = self.root / self.owner
         owner.write_text(owner.read_text().replace('</ItemGroup>', f'<ProjectReference Include="../Honua.Server/Honua.Server.csproj" /></ItemGroup>'))
         with self.assertRaisesRegex(ValueError, 'forbidden runtime'):
@@ -156,7 +156,7 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(sorted([self.unit, second]), result['selectedProjects'])
 
     def test_inherited_build_reference_and_unknown_import_fail_closed(self):
-        server = self.project('src/Honua.Server')
+        self.project('src/Honua.Server')
         (self.root / 'Directory.Build.props').write_text('<Project><ItemGroup><ProjectReference Include="$(MSBuildThisFileDirectory)src/Honua.Server/Honua.Server.csproj" /></ItemGroup></Project>')
         with self.assertRaisesRegex(ValueError, 'forbidden runtime'):
             catalog.validate(self.root, self.entries)

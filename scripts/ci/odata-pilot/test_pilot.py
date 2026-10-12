@@ -331,8 +331,7 @@ class InputTests(unittest.TestCase):
                 raise ValueError("stage failed")
         self.assertEqual(b"original\r\n", source.read_bytes())
         with self.assertRaises(ValueError):
-            with pilot.edit_source(self.root, "odata-only-edit", "src/Other/Example.cs", 1):
-                pass
+            pilot.edit_source(self.root, "odata-only-edit", "src/Other/Example.cs", 1).__enter__()
 
     def test_runtime_context_rejects_compiler_and_credentials(self):
         runtime = self.root / "publish"
