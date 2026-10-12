@@ -85,6 +85,25 @@ class ComparisonTests(unittest.TestCase):
         self.assertFalse(pilot.compare(receipts, "unit")["passed"])
 
 
+class AdmissionEvidenceTests(unittest.TestCase):
+    def test_builder_interval_must_be_finite_ordered_and_contained(self):
+        self.assertTrue(pilot.bounded_interval(11, 19, 10, 20))
+        for start, end in ((19, 11), (9, 19), (11, 21), (float("nan"), 19),
+                           (11, float("inf")), (True, 19), ("11", 19), (None, 19)):
+            self.assertFalse(pilot.bounded_interval(start, end, 10, 20))
+
+    def test_builder_numeric_bounds_reject_bool_and_nonfinite_values(self):
+        for value in (True, False, float("nan"), float("inf"), "128", None):
+            self.assertFalse(pilot.finite_between(value, 1, 512))
+        self.assertTrue(pilot.finite_between(128, 1, 512))
+
+    def test_component_edit_requires_post_build_host_callback(self):
+        with self.assertRaisesRegex(ValueError, "controller callback"):
+            pilot.validate_scenario("component", "odata-only-edit")
+        pilot.validate_scenario("unit", "odata-only-edit")
+        pilot.validate_scenario("component", "unchanged-incremental")
+
+
 class InputTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()

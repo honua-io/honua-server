@@ -295,3 +295,12 @@ limits first. The external mode runs the same six shared contracts. Its result
 proves those contracts only; it does not prove measured resource improvements,
 container lifetime containment, or pilot promotion. Candidate-only route
 isolation lives in `ODataHostIsolationTests` and runs only with the minimal host.
+
+
+Component `odata-only-edit` measurement is explicitly blocked. The harness edits
+source before evaluating the graph and compiling; an ordinary `identity` receipt
+and previously started host describe the unedited source and cannot match that
+new input key. A future host-controller callback must receive the edited build
+and its evaluated key before starting the matching runtime. Consequently the
+complete 18-run component comparison cannot currently execute or promote. This
+does not block direct developer component tests or unit measurements.

@@ -375,11 +375,11 @@ def managed_builder(config_path, receipt_path, context, tag, pin, assembly, inpu
         or receipt.get("inputKey") != input_key or receipt.get("image") != tag
         or receipt.get("sharedAdmission") is not True or receipt.get("boundedBuildKit") is not True
         or not receipt.get("reservationId") or receipt.get("exitCode") != 0
-        or not isinstance(receipt.get("peakJobMemoryBytes"), int) or receipt["peakJobMemoryBytes"] <= 0
-        or not 0 < limits.get("memoryMaxBytes", 0) <= 8 * 1024**3
-        or not 0 < limits.get("cpuQuotaPercent", 0) <= 400 or not 0 < limits.get("pidsMax", 0) <= 512
-        or receipt.get("startedEpochSeconds", 0) < measured["startedEpochSeconds"]
-        or receipt.get("finishedEpochSeconds", float("inf")) > measured["finishedEpochSeconds"]):
+        or not isinstance(receipt.get("peakJobMemoryBytes"), int) or isinstance(receipt.get("peakJobMemoryBytes"), bool) or receipt["peakJobMemoryBytes"] <= 0
+        or not finite_between(limits.get("memoryMaxBytes"), 1, 8 * 1024**3)
+        or not finite_between(limits.get("cpuQuotaPercent"), 1, 400)
+        or not finite_between(limits.get("pidsMax"), 1, 512)
+        or not bounded_interval(receipt.get("startedEpochSeconds"), receipt.get("finishedEpochSeconds"), measured["startedEpochSeconds"], measured["finishedEpochSeconds"])):
         raise ValueError("Managed builder lacks fresh matching bounds, shared reservation, BuildKit ownership, or job-memory evidence")
     measured["managedBuilderReceipt"] = receipt
     measured["peakJobMemoryBytes"] = receipt["peakJobMemoryBytes"]
@@ -400,6 +400,7 @@ def run(args):
     if planned["blockers"]:
         raise ValueError("; ".join(planned["blockers"]))
     project = planned["project"]
+    validate_scenario(args.selection, args.scenario)
     if args.selection == "component" and (not args.host_receipt or not os.environ.get("HONUA_ODATA_TEST_BASE_URL") or not os.environ.get("HONUA_ODATA_TEST_ADMIN_KEY")):
         raise ValueError("Component comparison requires orchestrated host receipt and external host URL/admin key for both variants")
     if args.selection == "image" and (not args.builder_json or not args.builder_receipt):
@@ -494,6 +495,16 @@ def run(args):
     finally:
         write(evidence / "receipt.json", receipt)
     return receipt
+
+
+def validate_scenario(selection, scenario):
+    if selection == "component" and scenario == "odata-only-edit":
+        raise ValueError("Component odata-only-edit requires a controller callback after the edited build; prebuilt host receipts cannot match its changed input key")
+
+
+def bounded_interval(start, end, outer_start, outer_end):
+    return (finite_between(start, outer_start, outer_end)
+            and finite_between(end, outer_start, outer_end) and start <= end)
 
 
 def finite_between(value, low, high):
