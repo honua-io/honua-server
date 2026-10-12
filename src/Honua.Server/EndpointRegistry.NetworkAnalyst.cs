@@ -17,6 +17,11 @@ public static partial class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/NAServer/FindRoutes/execute"),
         new("GET", "/rest/services/{serviceId}/NAServer/GenerateServiceAreas/execute"),
         new("POST", "/rest/services/{serviceId}/NAServer/GenerateServiceAreas/execute"),
+        // Asynchronous ready-to-use routing tools share the canonical GP job runtime.
+        new("POST", "/rest/services/{serviceId}/NAServer/{taskName}/submitJob"),
+        new("GET", "/rest/services/{serviceId}/NAServer/{taskName}/submitJob"),
+        new("GET", "/rest/services/{serviceId}/NAServer/{taskName}/jobs/{jobId}"),
+        new("GET", "/rest/services/{serviceId}/NAServer/{taskName}/jobs/{jobId}/results/{paramName}"),
         new("GET", "/rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea"),
         new("POST", "/rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea"),
         new("POST", "/rest/services/{serviceId}/NAServer/ClosestFacility/solveClosestFacility"),

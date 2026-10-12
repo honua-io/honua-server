@@ -256,6 +256,9 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Geoprocessing, ModuleRole.Abstractions),
         (ModuleRole.Geoprocessing, ModuleRole.Core),
         (ModuleRole.Geoprocessing, ModuleRole.Geometry),
+        // Canonical durable routing processes adapt IRoutingProvider (#5192).
+        // Tier 4 orchestration consumes the tier 3 engine; no reverse edge.
+        (ModuleRole.Geoprocessing, ModuleRole.Routing),
         (ModuleRole.Geoprocessing, ModuleRole.Hosting),
         (ModuleRole.Geoprocessing, ModuleRole.Jobs),
         (ModuleRole.Geoprocessing, ModuleRole.ServiceDefaults),

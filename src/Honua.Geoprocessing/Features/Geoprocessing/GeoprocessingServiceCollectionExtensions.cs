@@ -342,6 +342,7 @@ internal static class GeoprocessingServiceCollectionExtensions
         Register<GeometryIntersectJobExecutor>(services);
         Register<GeometryProjectJobExecutor>(services);
         Register<GeometryAreaJobExecutor>(services);
+        Register<RoutingJobExecutor>(services);
         Register<GeometryUnionJobExecutor>(services);
         Register<GeometryCentroidJobExecutor>(services);
         Register<GeometryLengthJobExecutor>(services);

@@ -2526,6 +2526,30 @@
           "notes": "GET and POST execute the same synchronous adapter as GPServer/GenerateServiceAreas/execute: point facilities, Minutes-only breaks, provider-validated travel modes and directions, canonical polygon output, FacilityOID and input names. GP env:outSR/context.outSR and the NAServer outSR alias forward output projection; malformed or conflicting controls are rejected. Unsupported units, nondefault per-facility solve settings, unknown options and other GP environments return errors before solving. There is no submitJob form; stock arcpy.nax binding and native Route/ServiceArea solve evidence remain open in #5192."
         },
         {
+          "name": "Ready-to-use routing job submission",
+          "status": "partial",
+          "esriPaths": [
+            "/NAServer/{taskName}/submitJob"
+          ],
+          "notes": "GET and POST submit FindClosestFacilities, GenerateOriginDestinationCostMatrix and SolveLocationAllocation through the same canonical durable job runtime as their GPServer aliases. Provider capability, input identity, spatial reference, units and supported travel-mode settings are validated before solving. Endpoint tests exercise the queued worker with controlled routing providers; composed real pgRouting coverage remains open in #5949, #5950 and #5951, and stock arcpy.nax binding and native solves remain open in #5192."
+        },
+        {
+          "name": "Ready-to-use routing job status",
+          "status": "partial",
+          "esriPaths": [
+            "/NAServer/{taskName}/jobs/{jobId}"
+          ],
+          "notes": "GET reads the shared durable GP job state and advertises named results after successful completion. Direct HTTP tests cover both submission methods and terminal status through the NAServer alias. The queued routing composition is currently tested with controlled providers; real pgRouting composition and stock arcpy.nax acceptance remain open in #5949, #5950, #5951 and #5192."
+        },
+        {
+          "name": "Ready-to-use routing job results",
+          "status": "partial",
+          "esriPaths": [
+            "/NAServer/{taskName}/jobs/{jobId}/results/{paramName}"
+          ],
+          "notes": "GET reads the same stored named result packages as the GPServer alias for successful routing jobs. HTTP tests verify the documented output parameter names, identities and canonical feature-set envelopes using controlled providers. Real queued pgRouting output composition and stock arcpy.nax acceptance remain open in #5949, #5950, #5951 and #5192."
+        },
+        {
           "name": "Route solve",
           "status": "implemented",
           "esriPaths": [
