@@ -4,19 +4,18 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.TestKit;
+using Honua.Protocols.OgcApi.ComponentTests;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-[Collection("Database")]
 [Protocol(TestProtocols.OgcApiFeatures)]
 public sealed class OgcFeaturesClientDiscoveryTests : IAsyncLifetime
 {
     private const string Crs84 = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
     private const string Epsg4326 = "http://www.opengis.net/def/crs/EPSG/0/4326";
-    private readonly WebAppFixture _fixture = new();
+    private readonly OgcFeaturesComponentFixture _fixture = new();
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
 

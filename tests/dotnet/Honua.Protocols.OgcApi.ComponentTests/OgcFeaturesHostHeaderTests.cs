@@ -4,7 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.TestKit;
+using Honua.Protocols.OgcApi.ComponentTests;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 
@@ -13,11 +13,10 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 /// <summary>
 /// Verifies OGC Features metadata links are not derived from untrusted Host headers.
 /// </summary>
-[Collection("Database")]
 [Protocol(TestProtocols.OgcApiFeatures)]
 public sealed class OgcFeaturesHostHeaderTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly OgcFeaturesComponentFixture _fixture = new();
 
     public async Task InitializeAsync()
     {
