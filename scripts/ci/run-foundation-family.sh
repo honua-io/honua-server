@@ -59,13 +59,11 @@ tests/dotnet/Honua.Geoprocessing.Testing.Tests/Honua.Geoprocessing.Testing.Tests
 tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj|gp-scaffolder-tests|||
 SPEC
       ;;
-    # #2943's protocol Fast tier: the 8 ADR-0042 protocol-split projects plus
-    # Honua.Ai.Tests. scripts/ci/run-server-test-shard.sh appends `&Tier!=Fast`
-    # to every server-tests shard filter, so these cases run HERE or nowhere.
+    # Retained mixed-assembly Fast cases run here; isolated unit shards include
+    # their own Fast cases. OgcApi's Fast cases all moved to its UnitTests shard.
     protocols)
       cat <<'SPEC'
 tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj|Honua.Protocols.GeoServices-fast-tier|Tier=Fast||
-tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj|Honua.Protocols.OgcApi-fast-tier|Tier=Fast||
 tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj|Honua.Protocols.OgcClassic-fast-tier|Tier=Fast||
 tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj|Honua.Protocols.OData-fast-tier|Tier=Fast||
 tests/dotnet/Honua.Protocols.Scene.Tests/Honua.Protocols.Scene.Tests.csproj|Honua.Protocols.Scene-fast-tier|Tier=Fast||

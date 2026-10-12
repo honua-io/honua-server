@@ -72,8 +72,8 @@ shard artifacts merely by being catalogued. Catalogued unit shards include Fast 
 shard exclusions remain unchanged. Registering a project does not
 schedule its tests in hosted CI: retain/add its full-gate shard separately.
 
-Refs #5958 (catalog, feedback planning and discovery); umbrella #5955 owns the
-remaining module splits and full rollout validation.
+The catalog, feedback planning and discovery are tracked in #5958; the complete
+module rollout is tracked in #5955.
 
 Every catalog project forbids direct or transitive references to executable test
 projects, including references hidden behind support kits. Support and host helpers
@@ -166,14 +166,10 @@ untiered test does not inherit a baseline waiver from a different assembly:
 reviewed pure cases need an explicit Fast tier, component cases an explicit
 Integration tier, and existing Slow/integration choices must remain intact.
 
-At the rollout checkpoint before the latest trunk merge, 21 of 23 directly run
-unit projects and eight of nine component projects passed. The two unit failures
-identified missing Skia native assets; the component failures identified OGC API
-fixture setup. Corrections have been applied but need fresh execution at the
-merged head. Catalog/selection fixtures and static shard coverage have passed;
-the complete expanded .NET graph, live architecture/tier guards, full integration
-gates and hosted PR verification remain pending. These partial runs are not a
-completion receipt. OData image/performance qualification remains a separate
+Record the tested commit, commands and results in the delivery PR. Catalog and
+selection checks complement the expanded .NET build, live architecture/tier
+guards and runtime tests; they do not replace full integration or hosted gates.
+OData image/performance qualification remains a separate
 opt-in pilot with its documented missing managed lifecycle evidence; ordinary
 component execution above does not certify those measurements.
 
@@ -217,15 +213,16 @@ addition, so the original and destination owners are tested. The catalog guard
 also requires solution membership and Release build mappings for test projects;
 a selected project cannot silently build under Debug or disappear from a solution
 filter. Windows entrypoints reuse the existing Python interpreter fallback.
-
-Hosted shard matrices derive database requirements from the same catalog.
-Reviewed unit/component projects with no external resources skip the PostGIS
-service and receive no database connection string. Database-backed, mixed, and
-unknown entries retain the service. Provider unit cases run in their new shards;
-obsolete foundation selections that became empty after extraction are removed.
+Dedicated modular shards must route every declared runtime owner, either through
+their source paths or an unconditional full-suite trigger. The catalog guard
+rejects missing routes and targeted overrides that invalidate that fallback.
 
 Hosted shards keep the existing single matrix and exact-head artifact reuse. The
 matrix omits its PostGIS service only for reviewed unit/component projects whose
-catalog resources are empty. Missing or malformed catalog metadata, mixed/full
+catalog resources are empty; those shards receive no database connection string.
+Missing or malformed catalog metadata, mixed/full
 host suites and any declared resource retain the pinned database service. This
 changes provisioning costs, not shard selection or full gate requirements.
+Provider unit cases run in their new shards; obsolete foundation selections that
+became empty after extraction are removed, while real provider integration lanes
+remain in place.

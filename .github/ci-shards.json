@@ -961,7 +961,11 @@
       "_comment": "Fixture-independent OData classes run only in their dedicated unit assembly. Original namespaces and traits are preserved; fixture-dependent partial classes remain together in the integration project.",
       "filter": "FullyQualifiedName~OData",
       "paths": [
+        "src/Honua.Core.Abstractions/",
+        "src/Honua.Core/",
         "src/Honua.Core/Features/Validation/",
+        "src/Honua.Geometry/",
+        "src/Honua.Hosting/",
         "src/Honua.Hosting/Features/Services/",
         "src/Honua.Protocols.OData/",
         "tests/dotnet/Honua.Protocols.OData.UnitTests/",
@@ -3708,7 +3712,9 @@
         "src/Honua.Geometry/",
         "src/Honua.Geoprocessing/",
         "src/Honua.Hosting/",
+        "src/Honua.Io/",
         "src/Honua.Jobs/",
+        "src/Honua.Plugins.Abstractions/",
         "src/Honua.Routing/",
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Ai.Tests/ConformanceSchemas/fixtures/resources/artifact/artifact-reference-wire-kind.json",
@@ -4109,6 +4115,7 @@
         "src/Honua.Geoprocessing/",
         "src/Honua.Hosting/",
         "src/Honua.Jobs/",
+        "src/Honua.Routing/",
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Geoprocessing.UnitTests/"
       ],
@@ -4224,6 +4231,7 @@
         "src/Honua.Jobs/",
         "src/Honua.Protocols.Ogc.Shared/",
         "src/Honua.Protocols.OgcApi/",
+        "src/Honua.Routing/",
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Protocols.OgcApi.UnitTests/",
         "tests/dotnet/Honua.TestKit/Infrastructure/TestMetadataV2GraphProvider.cs"
@@ -4253,6 +4261,7 @@
         "src/Honua.Jobs/",
         "src/Honua.Protocols.Ogc.Shared/",
         "src/Honua.Protocols.OgcClassic/",
+        "src/Honua.Routing/",
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Protocols.OgcClassic.UnitTests/",
         "tests/dotnet/Honua.TestKit/Infrastructure/TestMetadataV2GraphProvider.cs"
@@ -4517,6 +4526,7 @@
         "src/Honua.Jobs/",
         "src/Honua.Protocols.Ogc.Shared/",
         "src/Honua.Protocols.OgcApi/",
+        "src/Honua.Routing/",
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Protocols.OgcApi.ComponentTests/"
       ],
@@ -4659,6 +4669,7 @@
         "src/Honua.Jobs/",
         "src/Honua.Protocols.Ogc.Shared/",
         "src/Honua.Protocols.OgcClassic/",
+        "src/Honua.Routing/",
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Protocols.OgcClassic.ComponentTests/"
       ],

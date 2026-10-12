@@ -2,6 +2,8 @@
 """Resource-free skips preserve matrix ownership and conservative defaults."""
 import importlib.util
 import json
+import subprocess
+import sys
 from pathlib import Path
 import unittest
 
@@ -41,6 +43,15 @@ class ResourceTests(unittest.TestCase):
             if 'postgres' in entry['resources'] or entry['role'] not in {'unit', 'component'}:
                 self.assertTrue(row['needs_postgres'], row['name'])
         self.assertTrue(any(not row['needs_postgres'] for row in result))
+
+    def test_real_full_matrix_uses_stdin_beyond_argument_limit(self):
+        shards = json.loads((ROOT / '.github/ci-shards.json').read_text())['shards']
+        payload = json.dumps(shards)
+        self.assertGreater(len(payload), 128 * 1024)
+        result = json.loads(subprocess.check_output(
+            [sys.executable, str(ROOT / 'scripts/ci/annotate-shard-resources.py'),
+             '--catalog', str(ROOT / '.github/test-projects.json')], input=payload, text=True))
+        self.assertEqual(shards, [{k: v for k, v in row.items() if k != 'needs_postgres'} for row in result])
 
     def test_workflow_uses_conservative_conditional_image(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text().split('  server-tests:', 1)[1]

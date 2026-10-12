@@ -720,14 +720,16 @@ unit_project_selected() {
 }
 
 if [[ -n "${PLAN_JSON}" ]]; then
+    plan_scratch="$(mktemp -d)"
+    CLEANUP_PATHS+=("${plan_scratch}")
     plan_projects='["ALL"]'
     [[ "${FULL}" == "1" ]] || plan_projects="$(jq '.solution.projects' "${SLNF}")"
-    plan_shards='[]'
+    : > "${plan_scratch}/actions.jsonl"
     while IFS= read -r shard_name; do
         [[ -z "${shard_name}" ]] && continue
         shard_action="$(resolved_shard_json "${shard_name}")"
         [[ -n "${shard_action}" ]] || { echo "Unknown selected shard: ${shard_name}" >&2; exit 1; }
-        plan_shards="$(jq --argjson action "${shard_action}" '. + [$action]' <<< "${plan_shards}")"
+        printf '%s\n' "${shard_action}" >> "${plan_scratch}/actions.jsonl"
     done <<< "${SELECTED_SHARDS}"
     plan_units='[]'
     planned_full_suites=()
@@ -746,11 +748,16 @@ if [[ -n "${PLAN_JSON}" ]]; then
     fast_actions="$("${PYTHON_BIN}" scripts/ci/test-projects.py gate-fast-actions "${planned_full_suites[@]}")"
     plan_units="$(jq --argjson fast "${fast_actions}" '. + $fast + [{project:"tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj",filter:"Tier=Fast",maxCpuCount:1}]' <<< "${plan_units}")"
     plan_units="$(jq --arg filter "${MCP_GOVERNANCE_FILTER}" '. + [{project:"tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj",filter:$filter,maxCpuCount:1}]' <<< "${plan_units}")"
+    printf '%s\n' "${plan_projects}" > "${plan_scratch}/projects.json"
+    printf '%s\n' "${TARGETED}" > "${plan_scratch}/routing.json"
+    printf '%s\n' "${plan_units}" > "${plan_scratch}/units.json"
+    printf '%s\n' "${CHANGED_CS:-}" > "${plan_scratch}/format.txt"
     jq -n --arg base "${BASE_REF}" --arg full "${FULL}" --arg fast "${FAST}" \
         --arg status "${PRE_PR_SCOPE}" --arg architecture "${ARCHITECTURE_TEST_PROJECT}" \
-        --argjson projects "${plan_projects}" --argjson routing "${TARGETED}" \
-        --argjson actions "${plan_shards}" --argjson units "${plan_units}" \
-        --rawfile files "${LOCAL_CHANGED_FILES}" --arg format "${CHANGED_CS:-}" '
+        --slurpfile projects "${plan_scratch}/projects.json" --slurpfile routing "${plan_scratch}/routing.json" \
+        --slurpfile actions "${plan_scratch}/actions.jsonl" --slurpfile units "${plan_scratch}/units.json" \
+        --rawfile files "${LOCAL_CHANGED_FILES}" --rawfile format "${plan_scratch}/format.txt" '
+        $projects[0] as $projects | $routing[0] as $routing | $units[0] as $units |
         {schemaVersion:1,base:$base,mode:(if $full=="1" then "full" else "smart" end),
           fast:($fast=="1"),changedFilesStatus:(if $status=="UNKNOWN" then "unknown" else "complete" end),
           changedFiles:(if $status=="UNKNOWN" then null else ($files|split("\n")|map(select(length>0))) end),

@@ -12,6 +12,8 @@ SPEC.loader.exec_module(MODULE)
 CONFIG = json.loads((ROOT / '.github/ci-shards.json').read_text())
 PARENT = '((FullyQualifiedName~Honua.Server.Tests.Features.Admin.)&FullyQualifiedName!~RoleEndpointsTests&(FullyQualifiedName~AdminAuth|FullyQualifiedName~OAuth|FullyQualifiedName~Oidc|FullyQualifiedName~ApiKey|FullyQualifiedName~ClientCertificate|FullyQualifiedName~OperatorBearerToken|FullyQualifiedName~UserManagement|FullyQualifiedName~RowLevelSecurity|FullyQualifiedName~RateLimit|FullyQualifiedName~Tenant))&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OperatorBearerTokenServiceTests'
 PATHS = ['src/Honua.Server/Features/Admin/', 'src/Honua.Server/Features/Admin/AdminEndpoints.cs', 'src/Honua.Server/Features/Admin/IdentityAdmin', 'src/Honua.Server/Features/Admin/RateLimit', 'src/Honua.Server/Features/Admin/RlsPolicy', 'src/Honua.Server/Features/Admin/TenantAdmin', 'src/Honua.Server/Features/Admin/UserManagement', 'src/Honua.Server/Features/Admin/Models/RateLimit', 'src/Honua.Server/Features/Admin/Models/RlsPolicy', 'src/Honua.Server/Features/Admin/Models/Tenant', 'src/Honua.Server/Features/Admin/Models/UserManagement', 'tests/dotnet/Honua.Server.Tests/Features/Admin/AdminAuthorizationTests.cs', 'tests/dotnet/Honua.Server.Tests/Features/Admin/RateLimitEndpointsTests.cs', 'tests/dotnet/Honua.Server.Tests/Features/Admin/RowLevelSecurityEndpointsTests.cs', 'tests/dotnet/Honua.Server.Tests/Features/Admin/TenantAdminEndpointsTests.cs', 'tests/dotnet/Honua.Server.Tests/Features/Admin/UserManagementEndpointsTests.cs', 'src/Honua.Core/Features/Validation/']
+# Canonical shared Compile inputs retained by the full Server.Tests assembly.
+LINKED_INPUTS = ['tests/dotnet/RedisCollection.cs', 'tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs', 'tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs', 'tests/dotnet/Shared/AlertUnitSupport/AzurePublisherFake.cs', 'tests/dotnet/Shared/ProtocolUnits/Ai/SpecGroundingTestSupport.cs', 'tests/dotnet/Shared/SceneUnitSupport/CityGmlSceneFixtures.cs', 'tests/dotnet/Shared/SceneUnitSupport/InMemoryCloudFileStorage.cs', 'tests/dotnet/Shared/SceneUnitSupport/PointCloudSceneFixtures.cs', 'tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs']
 PROJECT = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
 NAMES = ('Server Features Admin Authorization', 'Server Features Admin Authorization Matrix')
 CHILDREN = [next(s for s in CONFIG['shards'] if s['name'] == n) for n in NAMES]
@@ -27,7 +29,7 @@ def check(children):
     assert sum(map(len, sets)) == len(EXPECTED), 'Duplicate ownership.'
     for child in children:
         assert child['csproj'] == ''
-        assert child['paths'] == PATHS, 'An original source trigger changed.'
+        assert child['paths'] == sorted(PATHS + LINKED_INPUTS), 'An original source trigger or canonical shared input changed.'
         assert (child['test_timeout_minutes'], child['timeout_minutes']) == (22, 32)
     return list(map(len, sets))
 

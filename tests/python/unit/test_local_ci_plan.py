@@ -127,3 +127,12 @@ if sys.argv[1] != "validate":
             self.assertEqual(2, result.returncode)
             self.assertIn("cannot be combined with feedback", result.stderr)
             self.assertFalse((self.root / "invalid.json").exists())
+
+    def test_real_full_shard_catalog_serializes_beyond_per_argument_limit(self):
+        registry = json.loads((ROOT / ".github/ci-shards.json").read_text())
+        (self.root / ".github/ci-shards.json").write_text(json.dumps(registry))
+        plan = self.plan("--full")
+        self.assertEqual(len(registry["shards"]), len(plan["serverTestActions"]))
+        self.assertEqual({s["shard_name"] for s in registry["shards"]},
+                         {s["shard_name"] for s in plan["serverTestActions"]})
+        self.assertGreater(len(json.dumps(plan["serverTestActions"])), 128 * 1024)

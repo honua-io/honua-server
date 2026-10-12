@@ -2,6 +2,7 @@
 """Annotate existing shard selections; uncertain ownership retains PostGIS."""
 import argparse
 import json
+import sys
 from pathlib import Path
 
 MONOLITH = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
@@ -23,14 +24,15 @@ def annotate(matrix, catalog):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--catalog', type=Path, required=True)
-    parser.add_argument('--matrix-json', required=True)
+    parser.add_argument('--matrix-json', help='Small inline input; default reads JSON from stdin')
     args = parser.parse_args()
     # Missing or malformed metadata conservatively retains the existing service.
     try:
         catalog = json.loads(args.catalog.read_text())
     except (OSError, ValueError):
         catalog = {}
-    print(json.dumps(annotate(json.loads(args.matrix_json), catalog)))
+    matrix = json.loads(args.matrix_json) if args.matrix_json is not None else json.load(sys.stdin)
+    print(json.dumps(annotate(matrix, catalog)))
 
 
 if __name__ == '__main__':

@@ -141,6 +141,25 @@ def validate_solution_members(root, entries):
                 raise ValueError(f'{project}: Honua.sln missing Release build configuration')
 
 
+def validate_modular_shard_owners(catalog, registry):
+    # Only dedicated modular suites opt into this complete source-ownership contract.
+    # Legacy shard partitions retain their existing route/filter policy.
+    for shard in registry['shards']:
+        entry = catalog['projects'].get(shard.get('csproj'))
+        if not shard.get('supplemental_source_paths') or not entry or entry['role'] not in {'unit', 'component'}:
+            continue
+        for owner in entry['runtimeOwners']:
+            prefix = Path(owner).parent.as_posix() + '/'
+            # A full-owner infrastructure prefix already selects every shard;
+            # do not rely on it if a targeted override can bypass run_all.
+            covered = any(prefix.startswith(path) for path in shard['paths']) or (
+                any(prefix.startswith(path) for path in registry.get('infrastructure_paths', []))
+                and not any(override['prefix'].startswith(prefix) or prefix.startswith(override['prefix'])
+                            for override in registry.get('targeted_override_prefixes', [])))
+            if not covered:
+                raise ValueError(f"{shard['shard_name']}: runtime owner missing shard route: {prefix}")
+
+
 def validate(root, catalog):
     entries = catalog['projects']
     validate_solution_members(root, entries)
@@ -188,6 +207,7 @@ def validate(root, catalog):
             raise ValueError(f'{project}: integration infrastructure in isolated unit sources (including links)')
     shard_path = root / '.github/ci-shards.json'
     if shard_path.is_file():
+        validate_modular_shard_owners(catalog, json.loads(shard_path.read_text()))
         registry_path = root / '.github/server-test-artifact-projects.json'
         if not registry_path.is_file():
             raise ValueError('Missing shard artifact inventory; run update')

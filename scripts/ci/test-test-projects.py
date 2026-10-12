@@ -333,6 +333,23 @@ class CatalogTests(unittest.TestCase):
             for suffix in ['ActiveCfg', 'Build.0']))
         catalog.validate_solution_members(self.root, {self.unit: {}})
 
+    def test_modular_shard_runtime_owners_require_source_routes(self):
+        registry = {'shards': [{'shard_name': 'Unit', 'csproj': self.unit,
+                               'supplemental_source_paths': True,
+                               'paths': [str(Path(self.unit).parent) + '/']}]}
+        with self.assertRaisesRegex(ValueError, 'runtime owner missing shard route'):
+            catalog.validate_modular_shard_owners(self.entries, registry)
+        registry['shards'][0]['paths'].append(str(Path(self.owner).parent) + '/')
+        catalog.validate_modular_shard_owners(self.entries, registry)
+        registry['shards'][0]['paths'] = []
+        registry['infrastructure_paths'] = [str(Path(self.owner).parent) + '/']
+        catalog.validate_modular_shard_owners(self.entries, registry)
+        registry['targeted_override_prefixes'] = [{'prefix': str(Path(self.owner).parent) + '/SomeFeature/', 'shards': []}]
+        with self.assertRaisesRegex(ValueError, 'runtime owner missing shard route'):
+            catalog.validate_modular_shard_owners(self.entries, registry)
+        registry['shards'][0]['supplemental_source_paths'] = False
+        catalog.validate_modular_shard_owners(self.entries, registry)
+
     def test_shared_change_selects_units_only(self):
         result = catalog.plan(self.root, self.entries, ['Directory.Build.props'])
         self.assertEqual([self.unit], result['selectedProjects'])

@@ -677,8 +677,8 @@ jobs:
               })
             | sort_by(-.dispatch_rank)
           ' .github/ci-shards.json)
-          matrix_include=$(python3 scripts/ci/annotate-shard-resources.py \
-            --catalog .github/test-projects.json --matrix-json "${matrix_include}")
+          matrix_include=$(printf '%s' "${matrix_include}" | python3 scripts/ci/annotate-shard-resources.py \
+            --catalog .github/test-projects.json)
           if [ "$(printf '%s' "${matrix_include}" | jq 'length')" = "0" ]; then
             echo "::error::matrix_include is empty — targeted-shards selected no shards"
             exit 1

@@ -834,7 +834,7 @@ assert_exact_shards \
       'src/Honua.Routing/Features/Routing/Domain/RoutingModels.cs' \
       'src/Honua.Server/EndpointRegistry.ImageServer.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/NAServerPgRoutingEndToEndTests.cs')" \
-  '["Ai Components","Ai Units","Aws Units","Azure Units","Core and Cloud Contracts","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","GeoServices ImageServer","GeoServices ImageServer Raster Rendering","GeoServices ImageServer Rendering and Support","Geoprocessing Units","Hosting Components","Hosting Units","Import Units","Postgres Units","Protocols GeoServices Components","Protocols GeoServices Units","Protocols OData Components","Protocols OgcApi Components","Protocols OgcApi Units","Protocols OgcClassic Components","Protocols OgcClassic Units","Protocols Scene Components","Protocols Scene Units","Protocols SensorThings Components","Protocols SensorThings Units","Protocols Stac Components","Protocols Stac Units","Raster Serving Scene Geometry and Terrain","Routing Units","STAC and API Governance","Scene Units"]'
+  '["Ai Components","Ai Units","Aws Units","Azure Units","Core and Cloud Contracts","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","GeoServices ImageServer","GeoServices ImageServer Raster Rendering","GeoServices ImageServer Rendering and Support","Geoprocessing Units","Hosting Components","Hosting Units","Import Units","OData Units","Postgres Units","Protocols GeoServices Components","Protocols GeoServices Units","Protocols OData Components","Protocols OgcApi Components","Protocols OgcApi Units","Protocols OgcClassic Components","Protocols OgcClassic Units","Protocols Scene Components","Protocols Scene Units","Protocols SensorThings Components","Protocols SensorThings Units","Protocols Stac Components","Protocols Stac Units","Raster Serving Scene Geometry and Terrain","Routing Units","STAC and API Governance","Scene Units"]'
 
 # Follow-up proof from draft PR #2700: pure routing tests share the Core and Cloud Contracts owner
 # with the real pgRouting fixture and must not widen the canonical NAServer diff.
@@ -844,7 +844,7 @@ assert_exact_shards \
       'src/Honua.Routing/Features/Routing/Providers/LocationAllocationSolver.cs' \
       'src/Honua.Protocols.GeoServices/NAServer/NAServerParameterTranslation.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/LocationAllocationSolverTests.cs')" \
-  '["Ai Components","Ai Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Protocols GeoServices Components","Protocols GeoServices Units","Routing Units"]'
+  '["Ai Components","Ai Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Geoprocessing Units","Protocols GeoServices Components","Protocols GeoServices Units","Protocols OgcApi Components","Protocols OgcApi Units","Protocols OgcClassic Components","Protocols OgcClassic Units","Routing Units"]'
 
 # #2712: migration 083 and the exact pgRouting TestKit fixture are bounded
 # companions to the canonical Routing/NAServer slice. Keep other migrations
@@ -879,7 +879,7 @@ assert_exact_shards \
       'src/Honua.Server/Migrations/083_AddNetworkDatasetTravelProfiles.sql' \
       'tests/dotnet/Honua.TestKit/PgRoutingFixture.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/NetworkDatasetValidationTests.cs')" \
-  '["Ai Components","Ai Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Protocols GeoServices Components","Protocols GeoServices Units","Routing Units"]'
+  '["Ai Components","Ai Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Geoprocessing Units","Protocols GeoServices Components","Protocols GeoServices Units","Protocols OgcApi Components","Protocols OgcApi Units","Protocols OgcClassic Components","Protocols OgcClassic Units","Routing Units"]'
 assert_exact_shards \
   "routing-topology-lifecycle-cumulative-batch" \
   "$(printf '%s\n%s\n%s\n%s' \
@@ -887,7 +887,7 @@ assert_exact_shards \
       'src/Honua.Server/Migrations/084_CreateNetworkTopologyGenerations.sql' \
       'tests/dotnet/Honua.Server.Tests/Routing/NetworkTopologyLifecycleTests.cs' \
       'tests/dotnet/Honua.Server.Tests/Features/Admin/NetworkDatasetAdminEndpointsTests.cs')" \
-  '["Ai Components","Ai Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Protocols GeoServices Components","Protocols GeoServices Units","Routing Units","Server Features Admin Network and Jobs"]'
+  '["Ai Components","Ai Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Geoprocessing Units","Protocols GeoServices Components","Protocols GeoServices Units","Protocols OgcApi Components","Protocols OgcApi Units","Protocols OgcClassic Components","Protocols OgcClassic Units","Routing Units","Server Features Admin Network and Jobs"]'
 assert_descriptor \
   "unknown-migration-still-run-all" \
   "src/Honua.Server/Migrations/999_FutureUnmappedMigration.sql" \
@@ -956,7 +956,7 @@ assert_exact_shards \
       'src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs' \
       'src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs' \
       'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerZarrTestFixture.cs')" \
-  '["Ai Components","Ai Units","Aws Units","Azure Units","Databricks Units","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices ImageServer","GeoServices ImageServer Raster Rendering","GeoServices ImageServer Rendering and Support","Geoprocessing Units","Hosting Components","Hosting Units","Import Units","MySql Units","OGC API Tiles Coverages and Processes","OGC API Tiles Endpoints and CRS","Oracle Units","Postgres Units","Protocols GeoServices Components","Protocols GeoServices Units","Protocols OData Components","Protocols OgcApi Components","Protocols OgcApi Units","Protocols OgcClassic Components","Protocols OgcClassic Units","Protocols Scene Components","Protocols Scene Units","Protocols SensorThings Components","Protocols SensorThings Units","Protocols Stac Components","Protocols Stac Units","Raster Serving Scene Geometry and Terrain","Redshift Units","Routing Units","Scene Units","ServiceDefaults Units","Snowflake Units","SqlServer Units","WFS"]'
+  '["Ai Components","Ai Units","Aws Units","Azure Units","Databricks Units","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices ImageServer","GeoServices ImageServer Raster Rendering","GeoServices ImageServer Rendering and Support","Geoprocessing Units","Hosting Components","Hosting Units","Import Units","MySql Units","OData Units","OGC API Tiles Coverages and Processes","OGC API Tiles Endpoints and CRS","Oracle Units","Postgres Units","Protocols GeoServices Components","Protocols GeoServices Units","Protocols OData Components","Protocols OgcApi Components","Protocols OgcApi Units","Protocols OgcClassic Components","Protocols OgcClassic Units","Protocols Scene Components","Protocols Scene Units","Protocols SensorThings Components","Protocols SensorThings Units","Protocols Stac Components","Protocols Stac Units","Raster Serving Scene Geometry and Terrain","Redshift Units","Routing Units","Scene Units","ServiceDefaults Units","Snowflake Units","SqlServer Units","WFS"]'
 
 # Narrowing Zarr must not remove the carved shards' actual feature-area paths.
 assert_descriptor \
@@ -1546,16 +1546,16 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Styling Depth and Catalog" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Styles.OgcStylesCaseAuthorizationTests" \
-    "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
-    "OGC API Tiles Coverages and Processes" \
+    "tests/dotnet/Honua.Protocols.OgcApi.UnitTests/Honua.Protocols.OgcApi.UnitTests.csproj" \
+    "Protocols OgcApi Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests" \
     "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
     "OGC API Maps Basic and Conformance" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsConformanceTests" \
-    "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
-    "OGC API Maps Basic and Conformance" \
+    "tests/dotnet/Honua.Protocols.OgcApi.ComponentTests/Honua.Protocols.OgcApi.ComponentTests.csproj" \
+    "Protocols OgcApi Components" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsParameterValidationTests" \
     "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
@@ -1577,8 +1577,8 @@ echo "Checking shard filter/test-class coverage in both directions..."
   `# GeoServices Catalog and ImageServer Support.` \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.Tiles.CompactTilePackageWriterTests" \
-    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
-    "GeoServices Catalog and ImageServer Support" \
+    "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj" \
+    "Protocols GeoServices Units" \
   --assert-owner \
     "Honua.Server.Tests.PatchConcurrencyTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1776,16 +1776,16 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Core and Cloud Contracts" \
   --assert-owner \
     "Honua.Server.Tests.Routing.NetworkDatasetValidationTests" \
-    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Core and Cloud Contracts" \
+    "tests/dotnet/Honua.Routing.UnitTests/Honua.Routing.UnitTests.csproj" \
+    "Routing Units" \
   --assert-owner \
     "Honua.Server.Tests.Routing.PgRoutingProviderIntegrationTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Core and Cloud Contracts" \
   --assert-owner \
     "Honua.Server.Tests.Import.PostgresMigrationStyleApplicatorTests" \
-    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Migration" \
+    "tests/dotnet/Honua.Db.Postgres.UnitTests/Honua.Postgres.UnitTests.csproj" \
+    "Postgres Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1844,8 +1844,8 @@ echo "Checking shard filter/test-class coverage in both directions..."
   `# Honua.Ai.Tests assembly -> MCP and Sessions family.` \
   --assert-owner \
     "Honua.Ai.Tests.Capabilities.CapabilityRegistryConformanceTests" \
-    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP and Sessions" \
+    "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
+    "Ai Units" \
   --assert-owner \
     "Honua.Ai.Tests.Capabilities.McpRegistryCompositionTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
@@ -1855,55 +1855,55 @@ echo "Checking shard filter/test-class coverage in both directions..."
   `# assertion for that class is dropped rather than repointed.` \
   --assert-owner \
     "Honua.Server.Tests.Features.Infrastructure.Rendering.RasterRenderingUnavailableExceptionTests" \
-    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP and Sessions" \
+    "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
+    "Ai Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.AnthropicStudioAiProxyAdapterTests" \
-    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP and Sessions" \
+    "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
+    "Ai Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.BedrockStudioAiProxyAdapterTests" \
-    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP and Sessions" \
+    "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
+    "Ai Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.OpenAiCompatibleStudioAiProxyAdapterTests" \
-    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP and Sessions" \
+    "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
+    "Ai Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.StudioAiChatRequestMapperTests" \
-    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP and Sessions" \
+    "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
+    "Ai Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyConfigurationTests" \
-    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP and Sessions" \
+    "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
+    "Ai Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyJsonContextReflectionSafetyTests" \
-    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP and Sessions" \
+    "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
+    "Ai Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyLatencyTests" \
-    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP and Sessions" \
+    "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
+    "Ai Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyServiceTests" \
-    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP and Sessions" \
+    "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
+    "Ai Units" \
   `# Honua.Protocols.GeoServices.Tests assembly: two classes use the` \
   `# Honua.Protocols.GeoServices.Tests.Source.* namespace root instead of the` \
   `# Honua.Server.Tests.Features.Protocols.GeoServices.* root every filter used.` \
   --assert-owner \
     "Honua.Protocols.GeoServices.Tests.Source.FeatureServer.GeoServicesGeometryConverterAuditTests" \
-    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
-    "FeatureServer Endpoints Query Services and Replication" \
+    "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj" \
+    "Protocols GeoServices Units" \
   --assert-owner \
     "Honua.Protocols.GeoServices.Tests.Source.FeatureServer.Services.FeatureQuantizerTests" \
-    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
-    "FeatureServer Endpoints Query Services and Replication" \
+    "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj" \
+    "Protocols GeoServices Units" \
   --assert-owner \
     "Honua.Protocols.GeoServices.Tests.Source.ImageServer.ImageServerRenderingRuleMappingTests" \
-    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
-    "GeoServices ImageServer Rendering and Support" \
+    "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj" \
+    "Protocols GeoServices Units" \
   `# Honua.Server.Tests assembly. AlertNotificationRateLimiterTests was swallowed` \
   `# by the Admin-family '!~RateLimit' exclusion, now narrowed to` \
   `# '!~Honua.Server.Tests.Features.Admin.RateLimit'.` \
@@ -1925,8 +1925,8 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Cloud and Streaming Import" \
   --assert-owner \
     "Honua.Server.Tests.Import.ImportValidationErrorMessageTests" \
-    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "File and Raster Import" \
+    "tests/dotnet/Honua.Import.UnitTests/Honua.Import.UnitTests.csproj" \
+    "Import Units" \
   --assert-owner \
     "Honua.Server.Tests.Import.RedisJobQueueFallbackTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
