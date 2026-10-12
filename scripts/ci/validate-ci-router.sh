@@ -1515,6 +1515,18 @@ echo "Checking shard filter/test-class coverage in both directions..."
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
   --assert-owner \
+    "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Styling Styles Endpoints" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Styling Depth and Catalog" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Styling.StyleCatalogPhase2Tests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Styling Depth and Catalog" \
+  --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Styles.OgcStylesCaseAuthorizationTests" \
     "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
     "OGC API Tiles Coverages and Processes" \
