@@ -85,12 +85,19 @@ BASE_REF="${HONUA_PRE_PR_BASE:-origin/trunk}"
 FULL="${HONUA_PRE_PR_FULL:-0}"
 FAST="${HONUA_PRE_PR_FAST:-0}"
 DRY_RUN="${HONUA_PRE_PR_DRY_RUN:-0}"
+PLAN_JSON=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --full) FULL=1; shift ;;
         --fast) FAST=1; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
+        --plan-json)
+            PLAN_JSON="${2:-}"
+            [[ -n "${PLAN_JSON}" ]] || { echo "--plan-json requires a path" >&2; exit 2; }
+            DRY_RUN=1
+            shift 2
+            ;;
         --base)
             BASE_REF="${2:-}"
             if [[ -z "${BASE_REF}" ]]; then
@@ -190,20 +197,34 @@ if [[ "${FULL}" == "1" ]]; then
     FAST=0
 fi
 
-# Include committed, staged, unstaged and untracked files. Only positive,
+# Always collect committed, staged, unstaged and untracked files, even when
+# FULL was explicitly requested or selected because the base is unavailable.
+# Only positive,
 # complete CI_ONLY evidence can bypass managed validation; UNKNOWN and NORMAL
 # both continue through the existing fail-safe path.
 PRE_PR_SCOPE="NORMAL"
 PRE_PR_CHANGED_FILES=""
-if [[ "${FULL}" != "1" ]]; then
-    scope_output="$(scripts/ci/classify-pre-pr-changes.sh "${BASE_REF}" HEAD 2>/dev/null || echo UNKNOWN)"
-    PRE_PR_SCOPE="$(head -1 <<< "${scope_output}")"
-    PRE_PR_CHANGED_FILES="$(tail -n +2 <<< "${scope_output}")"
-fi
+scope_output="$(scripts/ci/classify-pre-pr-changes.sh "${BASE_REF}" HEAD 2>/dev/null || echo UNKNOWN)"
+PRE_PR_SCOPE="$(head -1 <<< "${scope_output}")"
+PRE_PR_CHANGED_FILES="$(tail -n +2 <<< "${scope_output}")"
 
-if [[ "${PRE_PR_SCOPE}" == "CI_ONLY" ]]; then
+# Freeze one complete manifest for every local selector.
+if [[ "${PRE_PR_SCOPE}" == "UNKNOWN" ]]; then
+    FULL=1
+    FAST=0
+fi
+LOCAL_CHANGED_FILES="$(mktemp)"
+CLEANUP_PATHS+=("${LOCAL_CHANGED_FILES}")
+printf '%s\n' "${PRE_PR_CHANGED_FILES}" | sed '/^$/d' > "${LOCAL_CHANGED_FILES}"
+export HONUA_CHANGED_FILES_FILE="${LOCAL_CHANGED_FILES}"
+
+if [[ "${PRE_PR_SCOPE}" == "CI_ONLY" && "${FULL}" != "1" ]]; then
     echo "    Mode: CI-SHELL-ONLY (committed + working tree vs ${BASE_REF})."
     if [[ "${DRY_RUN}" == "1" ]]; then
+        if [[ -n "${PLAN_JSON}" ]]; then
+            jq -n --arg base "${BASE_REF}" --rawfile files "${LOCAL_CHANGED_FILES}" \
+                '{schemaVersion:1,mode:"ci-shell-only",base:$base,changedFilesStatus:"complete",changedFiles:($files|split("\n")|map(select(length>0))),buildProjects:[],serverShards:[],serverTestActions:[],unitTestActions:[],formatFiles:[]}' > "${PLAN_JSON}"
+        fi
         changed_count="$(printf '%s\n' "${PRE_PR_CHANGED_FILES}" | sed '/^$/d' | wc -l | tr -d ' ')"
         echo ""
         echo "📋 Selection summary"
@@ -340,8 +361,8 @@ if [[ "${FULL}" == "1" ]]; then
 else
     echo "    Mode: SMART (diff vs ${BASE_REF}; set HONUA_PRE_PR_FULL=1 to force full)."
     AFFECTED="$(BASE_REF="${BASE_REF}" scripts/ci/compute-affected-projects.sh 2>/dev/null || echo ALL)"
-    TARGETED="$(scripts/ci/honua-server-targeted-tests.sh --base "${BASE_REF}" 2>/dev/null || echo '{"run_all":true,"reason":"router_error"}')"
-    CHANGED_CS="$(git diff --name-only "${BASE_REF}...HEAD" -- '*.cs' 2>/dev/null || true)"
+    TARGETED="$(scripts/ci/honua-server-targeted-tests.sh --stdin < "${LOCAL_CHANGED_FILES}" 2>/dev/null || echo '{"run_all":true,"reason":"router_error"}')"
+    CHANGED_CS="$(grep -E '\.cs$' "${LOCAL_CHANGED_FILES}" || true)"
 fi
 
 affected_contains() {
@@ -504,7 +525,7 @@ fi
 
 # Full committed diff — used to keep directly-edited test projects in the
 # build even when they will not run locally.
-CHANGED_FILES_ALL="$(git diff --name-only "${BASE_REF}...HEAD" 2>/dev/null || true)"
+CHANGED_FILES_ALL="${PRE_PR_CHANGED_FILES}"
 
 test_project_kept() {
     # Usage: test_project_kept <csproj-path> -> 0 keep, 1 prune.
@@ -632,6 +653,63 @@ else
     fi
 fi
 
+# Resolve executable shard settings once for both the plan and actual execution.
+resolved_shard_json() {
+    local name="$1" filter
+    filter="${NARROWED_SHARD_FILTER[${name}]:-}"
+    jq -c --arg n "${name}" --arg narrowed "${filter}" \
+        --arg fallback "${MONOLITH_TEST_PROJECT}" \
+        --arg timeout "${HONUA_PRE_PR_SERVER_TEST_TIMEOUT_MINUTES:-}" \
+        --arg cpu "${HONUA_PRE_PR_MAX_CPU_COUNT:-}" '
+        .shards[] | select(.shard_name==$n) |
+        .filter=(if $narrowed!="" then $narrowed else .filter end) |
+        .csproj=(if (.csproj // "")=="" then $fallback else .csproj end) |
+        .test_timeout_minutes=(if $timeout!="" then $timeout else (.test_timeout_minutes // .timeout_minutes) end) |
+        .max_cpu_count=(if $cpu!="" then $cpu else (.max_cpu_count // "") end)
+        ' .github/ci-shards.json
+}
+
+MCP_GOVERNANCE_FILTER="FullyQualifiedName~McpTaxonomyAlignmentTests|FullyQualifiedName~CapabilityRegistryConformanceTests"
+
+unit_project_selected() {
+    [[ "${AFFECTED}" == "ALL" ]] || affected_contains "$(basename "$1")"
+}
+
+if [[ -n "${PLAN_JSON}" ]]; then
+    plan_projects='["ALL"]'
+    [[ "${FULL}" == "1" ]] || plan_projects="$(jq '.solution.projects' "${SLNF}")"
+    plan_shards='[]'
+    while IFS= read -r shard_name; do
+        [[ -z "${shard_name}" ]] && continue
+        shard_action="$(resolved_shard_json "${shard_name}")"
+        [[ -n "${shard_action}" ]] || { echo "Unknown selected shard: ${shard_name}" >&2; exit 1; }
+        plan_shards="$(jq --argjson action "${shard_action}" '. + [$action]' <<< "${plan_shards}")"
+    done <<< "${SELECTED_SHARDS}"
+    plan_units='[]'
+    while IFS= read -r project; do
+        [[ -z "${project}" ]] && continue
+        [[ "${project}" == *Honua.Ai.Tests.csproj ]] && continue
+        if unit_project_selected "${project}"; then
+            plan_units="$(jq --arg project "${project}" '. + [{project:$project,filter:null,maxCpuCount:1}]' <<< "${plan_units}")"
+        fi
+    done <<< "${UNIT_TEST_PROJECTS}"
+    plan_units="$(jq --arg filter "${MCP_GOVERNANCE_FILTER}" '. + [{project:"tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj",filter:$filter,maxCpuCount:1}]' <<< "${plan_units}")"
+    jq -n --arg base "${BASE_REF}" --arg full "${FULL}" --arg fast "${FAST}" \
+        --arg status "${PRE_PR_SCOPE}" --arg architecture "${ARCHITECTURE_TEST_PROJECT}" \
+        --argjson projects "${plan_projects}" --argjson routing "${TARGETED}" \
+        --argjson actions "${plan_shards}" --argjson units "${plan_units}" \
+        --rawfile files "${LOCAL_CHANGED_FILES}" --arg format "${CHANGED_CS:-}" '
+        {schemaVersion:1,base:$base,mode:(if $full=="1" then "full" else "smart" end),
+          fast:($fast=="1"),changedFilesStatus:(if $status=="UNKNOWN" then "unknown" else "complete" end),
+          changedFiles:(if $status=="UNKNOWN" then null else ($files|split("\n")|map(select(length>0))) end),
+          buildProjects:$projects,selectionRouting:$routing,
+          serverShards:{run_all:($fast!="1" and ($routing.run_all // false)),
+            reason:(if $fast=="1" then "fast_tier_deferred" else $routing.reason end),shards:[$actions[].shard_name]},
+          serverTestActions:$actions,unitTestActions:$units,
+          architectureTestAction:{project:$architecture,filter:null,maxCpuCount:1},
+          formatFiles:(if $full=="1" then ["ALL"] else ($format|split("\n")|map(select(length>0))) end)}' > "${PLAN_JSON}"
+fi
+
 echo "4. Checking code format..."
 # Scope by FULL (not AFFECTED): a force-full build scope (props/CI paths
 # changed) does not widen the set of .cs files whose format could differ —
@@ -697,7 +775,7 @@ mkdir -p ./tests/TestResults
 
 run_unit_project() {
     local proj="$1"
-    if [[ "${AFFECTED}" == "ALL" ]] || affected_contains "$(basename "${proj}")"; then
+    if unit_project_selected "${proj}"; then
         if [[ "${DRY_RUN}" == "1" ]]; then
             echo "   - [dry-run] would run ${proj} (full suite)"
             return
@@ -730,7 +808,7 @@ else
         --no-build \
         --no-restore \
         --configuration Release \
-        --filter "FullyQualifiedName~McpTaxonomyAlignmentTests|FullyQualifiedName~CapabilityRegistryConformanceTests" \
+        --filter "${MCP_GOVERNANCE_FILTER}" \
         --logger "console;verbosity=minimal" \
         --results-directory ./tests/TestResults \
         -- RunConfiguration.MaxCpuCount=1
@@ -766,7 +844,7 @@ else
             local shard_name="$1"
             local safe="${shard_name//[^A-Za-z0-9_]/_}"
             local shard_json log_name filter max_cpu_count test_timeout_minutes csproj
-            shard_json="$(jq -c --arg n "${shard_name}" '.shards[] | select(.shard_name==$n)' .github/ci-shards.json)"
+            shard_json="$(resolved_shard_json "${shard_name}")"
             if [[ -z "${shard_json}" ]]; then
                 echo "unknown" > "${SHARD_STATUS_DIR}/${safe}.status"
                 echo "   ⚠️ unknown shard '${shard_name}'"

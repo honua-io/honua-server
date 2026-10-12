@@ -28,6 +28,8 @@
     ".dockerignore",
     "scripts/ci/verify-serving-image-boundary.py",
     "scripts/ci/serving-image-reuse.py",
+    "scripts/ci/verify-native-migration-refusal.py",
+    "scripts/ci/fixtures/validate-native-migration-refusal.py",
     ".github/workflows/serving-image-boundary.yml",
     ".github/workflows/release-bundle.yml",
     ".github/workflows/deploy.yml",
@@ -64,6 +66,8 @@
       "scripts/docker/restore-dotnet-with-github-packages.sh",
       "scripts/ci/verify-serving-image-boundary.py",
       "scripts/ci/serving-image-reuse.py",
+      "scripts/ci/verify-native-migration-refusal.py",
+      "scripts/ci/fixtures/validate-native-migration-refusal.py",
       "scripts/ci/fixtures/validate-serving-image-boundary.py",
       ".github/workflows/serving-image-boundary.yml"
     ],
@@ -88,6 +92,8 @@
       "scripts/docker/restore-dotnet-with-github-packages.sh",
       "scripts/ci/verify-serving-image-boundary.py",
       "scripts/ci/serving-image-reuse.py",
+      "scripts/ci/verify-native-migration-refusal.py",
+      "scripts/ci/fixtures/validate-native-migration-refusal.py",
       "scripts/ci/fixtures/validate-serving-image-boundary.py",
       ".github/workflows/serving-image-boundary.yml"
     ],
