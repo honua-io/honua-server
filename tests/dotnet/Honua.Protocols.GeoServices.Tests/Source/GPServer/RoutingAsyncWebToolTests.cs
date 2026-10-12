@@ -584,6 +584,12 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
     {
         var instances = new ConcurrentBag<(IRoutingProvider Provider, RoutingScopeProbe Scope)>();
         await using var fixture = Fixture(Provider()).UseEnvironment("Development")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            })
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IRoutingProvider>();
@@ -596,7 +602,9 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
                 });
             });
         await fixture.InitializeAsync();
-        var client = fixture.CreateClient();
+        fixture.GetService<IWebHostEnvironment>().EnvironmentName.Should().Be("Development");
+        fixture.GetService<IConfiguration>()["HONUA_DEV_AUTH"].Should().Be("false");
+        var client = fixture.CreateAdminClient();
         var jobId = await SubmitAsync(client, "FindClosestFacilities", new Dictionary<string, string>
         {
             ["Incidents"] = FirstPoint,
