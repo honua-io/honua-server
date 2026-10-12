@@ -13,10 +13,9 @@ SPEC.loader.exec_module(MODULE)
 CONFIG = json.loads((ROOT / '.github/ci-shards.json').read_text(encoding='utf-8'))
 PARENT = '(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Tiles|FullyQualifiedName~Honua.Protocols.GeoServices.Tests.Source.ImageServer)&FullyQualifiedName!~ImageServerEndpointsTests'
 PROJECT = 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj'
-NAMES = ('GeoServices Catalog and ImageServer Support', 'GeoServices ImageServer Rendering and Support')
+NAMES = ('GeoServices Catalog and ImageServer Support', 'GeoServices ImageServer Rendering and Support',
+         'GeoServices ImageServer Raster Rendering')
 CHILDREN = [next(s for s in CONFIG['shards'] if s['name'] == n) for n in NAMES]
-# Rendering was re-based after exhausting 30m on full-matrix run 38182837651 (#5884).
-BUDGETS = {NAMES[0]: (30, 40), NAMES[1]: (43, 53)}
 METHODS = MODULE.selection_pool(MODULE.enumerate_test_classes(), PROJECT)
 EXPECTED = {m for m in METHODS if MODULE._eval(MODULE._FilterParser(PARENT).parse(), m)}
 assert EXPECTED, 'The actual GeoServices source inventory must be present.'
@@ -24,12 +23,13 @@ assert EXPECTED, 'The actual GeoServices source inventory must be present.'
 
 def check(children):
     sets = [{m for m in METHODS if MODULE._eval(MODULE._FilterParser(s['filter']).parse(), m)} for s in children]
-    assert all(sets), 'Neither child may run zero methods.'
-    assert sets[0] | sets[1] == EXPECTED, 'Lost original methods or leaked foreign methods.'
-    assert not sets[0] & sets[1], 'Duplicate method ownership.'
+    assert all(sets), 'No child may run zero methods.'
+    assert set.union(*sets) == EXPECTED, 'Lost original methods or leaked foreign methods.'
+    assert sum(map(len, sets)) == len(set.union(*sets)), 'Duplicate method ownership.'
     for s in children:
         assert s['csproj'] == PROJECT
-        assert (s['test_timeout_minutes'], s['timeout_minutes']) == BUDGETS[s['name']]
+        assert s['paths'] == CHILDREN[0]['paths'], 'Every original source trigger must remain.'
+        assert (s['test_timeout_minutes'], s['timeout_minutes']) == (30, 40)
     return [len(s) for s in sets]
 
 
@@ -37,7 +37,7 @@ counts = check(CHILDREN)
 for mutation in ('lost', 'duplicated', 'foreign'):
     changed = copy.deepcopy(CHILDREN)
     if mutation == 'lost':
-        changed[1]['filter'] += '&FullyQualifiedName!~ImageServerWmtsReprojectionTests'
+        changed[2]['filter'] = '(' + changed[2]['filter'] + ')&FullyQualifiedName!~ImageServerWmtsReprojectionTests'
     elif mutation == 'duplicated':
         changed[0]['filter'] += '|FullyQualifiedName~ImageServerWmtsReprojectionTests'
     else:
@@ -48,4 +48,4 @@ for mutation in ('lost', 'duplicated', 'foreign'):
         pass
     else:
         raise AssertionError(f'{mutation} mutation was accepted')
-print(f'geoservices-support-partition=ok original_methods={len(EXPECTED)} child_methods={counts} negatives=3 budgets=pinned')
+print(f'geoservices-support-partition=ok original_methods={len(EXPECTED)} child_methods={counts} negatives=3 budgets=unchanged')
