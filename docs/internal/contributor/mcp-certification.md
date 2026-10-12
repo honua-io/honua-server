@@ -129,6 +129,14 @@ environment variables above.
 
 ## Known gaps
 
+For a bounded setup diagnosis, manually dispatch `mcp-certification-focused.yml`
+on the reviewed server branch with the exact published MCP source SHA. Both
+REST and grpc-web execute independently using the same setup action, test
+commands, and live-receipt guard as full CI. Missing scripts fail this focused
+workflow; startup logs and available receipts are retained even on failure.
+This diagnostic is not a replacement for the complete `full_ci=true` matrix
+required before an immutable server image can be published.
+
 The server setup action starts the host in `Development` with `HONUA_ADMIN_PASSWORD`. The live SDK client uses the matching `HONUA_API_KEY`; it does not need `HONUA_DEV_AUTH`. Do not set that obsolete flag at job scope: the server inherits job variables and deliberately rejects development-auth bypasses outside `Test`.
 
 - **Auth certification:** the direct-SDK standalone target has no MCP transport authentication boundary and records that limitation. Native server MCP authentication and governed operations require the separate remote/stdio and Production proof lanes.
