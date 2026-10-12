@@ -1,0 +1,241 @@
+{
+  "schemaVersion": 1,
+  "issue": 5901,
+  "baseline": {
+    "runId": 38151610217,
+    "source": "a8a3a2a953e6e548dd2c42d915533e6f0a35ccf5",
+    "artifactId": 11708155079,
+    "totalCases": 236,
+    "outcomes": {
+      "Passed": 236
+    },
+    "wholeSpanSeconds": 1450.281371,
+    "summedClassSpansSeconds": 1454.859587,
+    "summedToWholeRatio": 1.003157,
+    "timing": {
+      "shard": "GeoServices ImageServer Rendering and Support",
+      "log_name": "server-tests-geoservices-imageserver-rendering-and-support",
+      "status": "passed",
+      "exit_code": 0,
+      "started_at": "2026-10-11T15:40:31Z",
+      "completed_at": "2026-10-11T16:04:47Z",
+      "duration_seconds": 1456,
+      "timeout_minutes": 30,
+      "timeout_seconds": 1800,
+      "timed_out": false,
+      "kill_escalated": false,
+      "headroom_ratio": 0.8089,
+      "headroom_warn_ratio": 0.8,
+      "capacity_status": "low_headroom",
+      "idle_seconds_at_exit": 15,
+      "stall_seconds": 300,
+      "filter": "(((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Protocols.GeoServices.Tests.Source.ImageServer)&FullyQualifiedName!~ImageServerEndpointsTests)&Tier!=Slow)&Tier!=Fast"
+    },
+    "fileSha256": {
+      "server-tests-geoservices-imageserver-rendering-and-support.trx": "3bba068a85d0042fbe24d70c5879eca60b236685e13fcf5cc9e0845ca6a145ad",
+      "server-tests-geoservices-imageserver-rendering-and-support.timing.json": "d1e7690b823c8280f4338e2ed62c7aa7a835a2916fe66c90469b88b9500e7151",
+      "server-tests-geoservices-imageserver-rendering-and-support.log": "6e1e50255e13f3d59bc8d8acc8de887f80047084109c76af4ea20cf369f5acfb"
+    }
+  },
+  "failed": {
+    "runId": 38182837651,
+    "source": "01449eaed054a508e1fae691c768c26f0f2f19fb",
+    "jobId": 114603431264,
+    "artifactId": 11720442043,
+    "timing": {
+      "shard": "GeoServices ImageServer Rendering and Support",
+      "log_name": "server-tests-geoservices-imageserver-rendering-and-support",
+      "status": "timed_out",
+      "exit_code": 124,
+      "started_at": "2026-10-11T23:51:43Z",
+      "completed_at": "2026-10-12T00:21:45Z",
+      "duration_seconds": 1802,
+      "timeout_minutes": 30,
+      "timeout_seconds": 1800,
+      "timed_out": true,
+      "kill_escalated": false,
+      "headroom_ratio": 1.0011,
+      "headroom_warn_ratio": 0.8,
+      "capacity_status": "capacity_exhausted",
+      "idle_seconds_at_exit": 8,
+      "stall_seconds": 300,
+      "filter": "(((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Protocols.GeoServices.Tests.Source.ImageServer)&FullyQualifiedName!~ImageServerEndpointsTests)&Tier!=Slow)&Tier!=Fast"
+    },
+    "fileSha256": {
+      "server-tests-geoservices-imageserver-rendering-and-support.timing.json": "e54f709f386898b13a60189ad874b6852f0bc72f42aa13b58f09013d93180270",
+      "server-tests-geoservices-imageserver-rendering-and-support.log": "a35feb3c892c047b81dc428881bf40c7a718e5d51af6cd85a1462db4803b95f8"
+    },
+    "completedTrx": false,
+    "durationInterpretation": "censored lower bound; not a measured completion duration"
+  },
+  "movedClasses": [
+    "ImageServerRawPixelExportTests",
+    "ImageServerWmtsReprojectionTests",
+    "ImageServerMosaicIntegrationTests"
+  ],
+  "classIntervals": [
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRawPixelExportTests",
+      "cases": 45,
+      "spanSeconds": 301.932455,
+      "unionSeconds": 301.900186,
+      "partition": "raster-rendering"
+    },
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsReprojectionTests",
+      "cases": 8,
+      "spanSeconds": 273.993601,
+      "unionSeconds": 273.989494,
+      "partition": "raster-rendering"
+    },
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests",
+      "cases": 20,
+      "spanSeconds": 227.828692,
+      "unionSeconds": 227.820426,
+      "partition": "raster-rendering"
+    },
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerNativeCatalogTests",
+      "cases": 21,
+      "spanSeconds": 187.076794,
+      "unionSeconds": 187.064377,
+      "partition": "rendering-and-support"
+    },
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerHistogramBinEdgesTests",
+      "cases": 7,
+      "spanSeconds": 89.362928,
+      "unionSeconds": 89.357643,
+      "partition": "rendering-and-support"
+    },
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests",
+      "cases": 12,
+      "spanSeconds": 67.041416,
+      "unionSeconds": 67.038625,
+      "partition": "rendering-and-support"
+    },
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicPixelSizeTests",
+      "cases": 5,
+      "spanSeconds": 50.166821,
+      "unionSeconds": 50.164429,
+      "partition": "rendering-and-support"
+    },
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests",
+      "cases": 28,
+      "spanSeconds": 46.792547,
+      "unionSeconds": 46.787738,
+      "partition": "rendering-and-support"
+    },
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerSoapParityTests",
+      "cases": 9,
+      "spanSeconds": 45.566669,
+      "unionSeconds": 45.55976,
+      "partition": "rendering-and-support"
+    },
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests",
+      "cases": 8,
+      "spanSeconds": 43.050227,
+      "unionSeconds": 43.044566,
+      "partition": "rendering-and-support"
+    },
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerClientCompatibilityTests",
+      "cases": 3,
+      "spanSeconds": 36.920471,
+      "unionSeconds": 36.919807,
+      "partition": "rendering-and-support"
+    },
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests",
+      "cases": 6,
+      "spanSeconds": 35.529096,
+      "unionSeconds": 35.52541,
+      "partition": "rendering-and-support"
+    },
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerKmlTests",
+      "cases": 2,
+      "spanSeconds": 23.677192,
+      "unionSeconds": 23.676851,
+      "partition": "rendering-and-support"
+    },
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMultidimensionalSoapTests",
+      "cases": 1,
+      "spanSeconds": 11.103909,
+      "unionSeconds": 11.103909,
+      "partition": "rendering-and-support"
+    },
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerHttpAuthorizationTests",
+      "cases": 1,
+      "spanSeconds": 10.085192,
+      "unionSeconds": 10.085192,
+      "partition": "rendering-and-support"
+    },
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerErrorHandlingTests",
+      "cases": 17,
+      "spanSeconds": 2.288302,
+      "unionSeconds": 2.286579,
+      "partition": "rendering-and-support"
+    },
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests",
+      "cases": 8,
+      "spanSeconds": 2.037195,
+      "unionSeconds": 2.036332,
+      "partition": "rendering-and-support"
+    },
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerIdentifyHandlerTests",
+      "cases": 20,
+      "spanSeconds": 0.244737,
+      "unionSeconds": 0.216623,
+      "partition": "rendering-and-support"
+    },
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerTileHandlerTests",
+      "cases": 4,
+      "spanSeconds": 0.157715,
+      "unionSeconds": 0.146246,
+      "partition": "rendering-and-support"
+    },
+    {
+      "class": "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicRuleTests",
+      "cases": 11,
+      "spanSeconds": 0.003628,
+      "unionSeconds": 0.000568,
+      "partition": "rendering-and-support"
+    }
+  ],
+  "predictedPartitions": [
+    {
+      "partition": "raster-rendering",
+      "baselineCases": 73,
+      "baselineUnionSeconds": 803.710106,
+      "testBudgetSeconds": 1800,
+      "jobBudgetSeconds": 2400,
+      "freshRunStatus": "pending"
+    },
+    {
+      "partition": "rendering-and-support",
+      "baselineCases": 163,
+      "baselineUnionSeconds": 615.130927,
+      "testBudgetSeconds": 1800,
+      "jobBudgetSeconds": 2400,
+      "freshRunStatus": "pending"
+    }
+  ],
+  "limitations": [
+    "One completed baseline is not a p90 estimate.",
+    "Partition estimates exclude fixed per-job setup overhead.",
+    "New source inventory contains additional methods; current hosted results are still required."
+  ]
+}

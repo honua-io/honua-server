@@ -282,7 +282,8 @@
       "children": [
         "GeoServices ImageServer",
         "GeoServices Catalog and ImageServer Support",
-        "GeoServices ImageServer Rendering and Support"
+        "GeoServices ImageServer Rendering and Support",
+        "GeoServices ImageServer Raster Rendering"
       ]
     },
     {
@@ -2637,8 +2638,35 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "PR5848 raw Catalog job 114488722390 reached 1802 seconds / exit 124 while still executing. Separate ImageServer rendering/support from Catalog/Tiles in independent owned databases. All prior classes remain in exactly one partition child; retain the 30-minute test / 40-minute job caps. Actual post-split timings remain required; no pass inferred from report-mode badges.",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Protocols.GeoServices.Tests.Source.ImageServer)&FullyQualifiedName!~ImageServerEndpointsTests",
+      "_comment": "#5901: retain all other ImageServer rendering/support classes after a 30-minute capacity timeout in run 38182837651. Raw pixel export, WMTS reprojection and mosaic integration move intact to GeoServices ImageServer Raster Rendering. Original partition and all assertions remain covered; no timeout increase.",
+      "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Protocols.GeoServices.Tests.Source.ImageServer)&FullyQualifiedName!~ImageServerEndpointsTests)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRawPixelExportTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsReprojectionTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests",
+      "paths": [
+        "src/Honua.Protocols.GeoServices/ImageServer/",
+        "src/Honua.Protocols.GeoServices/Catalog/",
+        "src/Honua.Hosting/Features/Tiles/",
+        "src/Honua.Server/EndpointRegistry.ImageServer.cs",
+        "src/Honua.Core/Features/Raster/",
+        "src/Honua.Db/Postgres/Features/Raster/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Tiles/",
+        "src/Honua.Core/Features/Validation/"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    {
+      "name": "GeoServices ImageServer Raster Rendering",
+      "shard_name": "GeoServices ImageServer Raster Rendering",
+      "dispatch_rank": 10.85,
+      "artifact_suffix": "geoservices-imageserver-raster-rendering",
+      "log_name": "server-tests-geoservices-imageserver-raster-rendering",
+      "timeout_minutes": 40,
+      "test_timeout_minutes": 30,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "#5901: move three whole rendering classes whose measured serial union was 13.4 minutes in run 38151610217. Keep original 30-minute test / 40-minute job caps and all source triggers. Fresh hosted timing is required; this estimate is not a passing result.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRawPixelExportTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsReprojectionTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests",
       "paths": [
         "src/Honua.Protocols.GeoServices/ImageServer/",
         "src/Honua.Protocols.GeoServices/Catalog/",

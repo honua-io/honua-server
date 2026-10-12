@@ -1239,3 +1239,39 @@ Trunk run [37694901734](https://github.com/honua-io/honua-server/actions/runs/37
 | WFS | 207 | 1 second | 40 / 50 min | 70 / 80 min |
 
 These observations are censored durations, not measured p90 completion times. The bounded increases restore room to obtain a complete run; they do not establish the 70% utilization target. Test selection and every assertion remain enabled, and each outer job retains the required ten-minute overhead. Reassess headroom from the completed branch verification and subsequent timing receipts; persistent growth requires fixture or shard-capacity work rather than unbounded timeout increases.
+
+## ImageServer rendering capacity split (2026-10-12, #5901)
+
+Full run [38182837651](https://github.com/honua-io/honua-server/actions/runs/38182837651/job/114603431264)
+at `01449eaed054a508e1fae691c768c26f0f2f19fb` exhausted the rendering/support
+shard's 30-minute cap after 1,802 seconds, with output eight seconds before
+termination. Its timing receipt records exit 124 and `capacity_exhausted`;
+there is no completed TRX. That duration is a censored lower bound.
+
+The earlier completed [PR run 38151610217](https://github.com/honua-io/honua-server/actions/runs/38151610217)
+at `a8a3a2a953e6e548dd2c42d915533e6f0a35ccf5` passed 236 cases in 1,456 seconds.
+Its summed class spans / whole span ratio is 1.003, so the workload is nearly
+serial. `ImageServerRawPixelExportTests`, `ImageServerWmtsReprojectionTests`
+and `ImageServerMosaicIntegrationTests` move intact to a new
+`GeoServices ImageServer Raster Rendering` shard. The original
+`GeoServices ImageServer Rendering and Support` keeps every other class.
+
+| Partition | Baseline cases | Measured baseline interval union | Unchanged test / job caps |
+|---|---:|---:|---:|
+| Raster Rendering | 73 | 803.7s | 30 / 40 min |
+| Rendering and Support | 163 | 615.1s | 30 / 40 min |
+
+These are estimates from one completed historical run, not a p90 or fresh
+post-split verdict. Fixed job setup and newer tests still need actual hosted
+measurement. The original failed run remains failed. The
+[bounded evidence record](imageserver-shard-capacity-20261012.json) retains
+source/run/artifact identities, file hashes, class intervals and timing data.
+
+Both partitions retain the original test project and every source trigger.
+The existing exact-partition contract now checks all three descendants of the
+older Catalog/support split, including Catalog/Tiles. It rejects missing,
+duplicated and foreign methods and requires unchanged time limits. Current
+source inventory contains 772 methods across these descendants: 174 Catalog,
+563 remaining support and 35 moved rendering methods, before tier selection
+and theory expansion. This source count is distinct from the historical 236
+executed cases. No test assertion or fixture is changed.
