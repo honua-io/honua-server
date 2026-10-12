@@ -163,7 +163,7 @@ public sealed partial class GPServerSoapEndpointsTests
         using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
         using var response = await PostAsync(client, operation, "<JobID>soap-job</JobID>");
         response.StatusCode.Should().Be(HttpStatusCode.NotFound, await response.Content.ReadAsStringAsync());
-        await jobs.DidNotReceiveWithAnyArgs().GetJobResultsAsync(default!, default!, default);
+        await jobs.DidNotReceiveWithAnyArgs().GetGPServerJobResultsAsync(default!, default!, default!, default!, default);
         await terminal.DidNotReceiveWithAnyArgs().CancelGPServerAsync(default!, default!, default!, default!, default, default);
     }
 
@@ -296,7 +296,7 @@ public sealed partial class GPServerSoapEndpointsTests
             ErrorMessage = "A retained diagnostic"
         };
         jobs.GetGPServerJobAsync("soap-job", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>()).Returns(job);
-        jobs.GetJobResultsAsync("soap-job", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+        jobs.GetGPServerJobResultsAsync("soap-job", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Result store unavailable."));
         using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
         {
@@ -319,7 +319,7 @@ public sealed partial class GPServerSoapEndpointsTests
         {
             result.Value.Should().Be(operation == "GetJobStatus" ? "esriJobSucceeded" : AreaTool);
         }
-        await jobs.DidNotReceiveWithAnyArgs().GetJobResultsAsync(default!, default!, default);
+        await jobs.DidNotReceiveWithAnyArgs().GetGPServerJobResultsAsync(default!, default!, default!, default!, default);
     }
 
     private static ExecutionJobRecord SoapJob(string serviceId = "alpha") => new()
