@@ -144,9 +144,9 @@ public sealed partial class GeoprocessingJobServiceTests
     {
         DenyGenericExecutionAndJobs();
         DenyMutatingProcessPermission();
-        var execution = new GPServerExecutionContext("test", "DeleteFeatures", "data-management.delete-features");
-        await FluentActions.Awaiting(() => _sut.SubmitGPServerJobAsync(CreateDeleteFeaturesPlan(), null,
-            GPKey("execute:test/data-management.delete-features"), execution))
+        var execution = new GPServerExecutionContext("test", "ImportDataset", "import.dataset");
+        await FluentActions.Awaiting(() => _sut.SubmitGPServerJobAsync(CreateImportPlan(), null,
+            GPKey("execute:test/import.dataset"), execution))
             .Should().ThrowAsync<GeoprocessingAuthorizationException>();
         await _jobStore.DidNotReceiveWithAnyArgs().TryCreateAsync(default!, default, default);
     }
