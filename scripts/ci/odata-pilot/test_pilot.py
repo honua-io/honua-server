@@ -97,6 +97,27 @@ class AdmissionEvidenceTests(unittest.TestCase):
             self.assertFalse(pilot.finite_between(value, 1, 512))
         self.assertTrue(pilot.finite_between(128, 1, 512))
 
+    def test_measured_component_rejects_precreated_receipt_before_subprocess(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = Path(directory) / "host.json"
+            receipt.write_text(json.dumps({"bounded": True, "ready": True, "inputKey": "matching"}))
+            args = SimpleNamespace(selection="component", host_receipt=receipt)
+            with patch.object(pilot, "command") as command, patch.object(pilot, "stage") as stage:
+                with self.assertRaisesRegex(ValueError, "managed host lifecycle controller"):
+                    pilot.run(args)
+                command.assert_not_called()
+                stage.assert_not_called()
+
+    def test_component_comparison_cannot_promote_precreated_receipts(self):
+        receipts = ComparisonTests().receipts()
+        for receipt in receipts:
+            receipt["selection"] = "component"
+            receipt["host"] = {"queueWaitSeconds": 0, "clockSkewSeconds": 0}
+        result = pilot.compare(receipts, "component")
+        self.assertFalse(result["passed"])
+        self.assertTrue(any("lifecycle" in issue for issue in result["issues"]))
+
     def test_component_edit_requires_post_build_host_callback(self):
         with self.assertRaisesRegex(ValueError, "controller callback"):
             pilot.validate_scenario("component", "odata-only-edit")

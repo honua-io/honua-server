@@ -399,6 +399,8 @@ def managed_builder(config_path, receipt_path, context, tag, pin, assembly, inpu
 
 
 def run(args):
+    if args.selection == "component":
+        raise ValueError("Measured component runs require an implemented managed host lifecycle controller; precreated host receipts cannot bind a live host to this execution. Run the component project directly for developer validation.")
     root = args.root.resolve()
     evidence = args.output.resolve()
     if evidence.exists():
@@ -524,6 +526,8 @@ def compare(receipts, selection):
     selected = [r for r in receipts if r.get("selection") == selection]
     evidence = {}
     issues = []
+    if selection == "component":
+        issues.append("Component promotion is blocked until managed host lifecycle control and live execution binding are implemented; precreated receipts are insufficient")
     signatures = {tuple(sorted((test["identity"], test["outcome"]) for test in receipt.get("tests", []))) for receipt in selected}
     if len(signatures) != 1:
         issues.append("All scenarios and repetitions must retain the same successful test identities/results")

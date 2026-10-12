@@ -9,7 +9,7 @@ The driver is `scripts/ci/odata-pilot/pilot.py`. Its `plan` operation writes a
 reviewable selection without restoring, evaluating MSBuild, building, testing,
 or invoking Docker. Missing extracted projects are reported as blockers. The
 unit selection names the thirteen unchanged classes moved to the unit assembly;
-its identical filter is applied to the original baseline assembly. Component
+its identical filter is applied to the original baseline assembly. The planned component
 measurements use the same six-contract class in both variants:
 `Honua.Protocols.OData.ComponentTests.ODataContractTests`. The separate minimal
 host isolation class is excluded from cross-host comparison.
@@ -144,22 +144,13 @@ substitute for a paired full-host comparison. Full and minimal hosts must be
 externally provisioned with canonical `odata.yaml`, `OData__MaxPageSize=2`, and
 `Limits__Edits__MaxPayloadSize=4096` before shared contracts run.
 
-`run --selection component` requires `--host-receipt FILE` from that orchestration.
-It must bind the host to the current evaluated `inputKey`, name `mode` as `full`
-for baseline or `minimal` for candidate, provide `bounded: true`, `ready: true`,
-`seedManifest: "odata.yaml"`, `pageLimit: 2`, `editPayloadLimit: 4096`, and measured
-`startupSeconds`. For promotion it also requires measured `queueWaitSeconds: 0`
-and `clockSkewSeconds` ≤0.1. These are external controller evidence, not fields to
-invent by hand. Without a matching orchestration receipt the comparison is
-blocked; a previously running unrelated host cannot qualify.
-
-Build/test elapsed time and separately measured host startup are explicitly
-composed in this mode: the host is already ready before the contract test stage,
-so startup is added rather than silently omitted. The receipt labels this basis.
-This script does not install a host controller or seed infrastructure. Until that
-controller emits trustworthy matching evidence, only unit paired measurements
-are executable independently; ordinary minimal-host component validation remains
-available through its normal dotnet test project.
+`run --selection component` currently fails at preflight before any subprocess
+runs. Component `compare` also fails closed, including for previously produced
+receipts. No installed controller proves live host ownership, freshness, endpoint
+binding or test execution order; a handwritten or precreated receipt is not a
+substitute. Completing that lifecycle implementation is an unfinished slice of
+this pilot. Only unit paired measurements are independently executable today;
+ordinary component validation remains available through its normal test project.
 
 ## Runtime-only image
 
@@ -327,3 +318,11 @@ requires at least 12 characters and rejects shipped placeholder passwords. The
 runtime context check rejects nonempty JSON admin passwords, master keys,
 private/signing/encryption keys, and the other recognized credential fields,
 including nested objects and flattened configuration names.
+
+
+Baseline unit comparisons require exactly the same selected cases as candidate,
+including newly added storage-layer regressions. Overlay those tests and any
+corresponding production bug fix onto the baseline so the comparison varies the
+project/reference composition rather than test behavior. A baseline with only
+the original 80 cases cannot be promoted against a candidate with an additional
+regression; exact test identity comparison rejects that mismatch.
