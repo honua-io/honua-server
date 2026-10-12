@@ -230,6 +230,52 @@ internal static class ImportExportTileOperationsRegistration
             services.TryAddSingleton<ITileCacheJobService, TileCacheJobService>();
         }
 
+        services.AddDurableBackgroundImports();
+        return services;
+    }
+
+    /// <summary>
+    /// Routes background file imports to the durable job runner when one is configured
+    /// (honua-server#5916). The file-import executor is registered unconditionally so any worker
+    /// (the server's <c>JobExecutionService</c> loop or a batch-launched execution worker) can run
+    /// <see cref="Honua.Core.Features.ControlPlane.Domain.ExecutionJobKind.FileImport"/> jobs. The
+    /// provider's <see cref="IImportJobService"/> (the in-process runner) is wrapped by
+    /// <see cref="Honua.Server.Features.Import.DurableImportJobService"/>, which applies the runner
+    /// decision resolved once per process.
+    /// </summary>
+    internal static IServiceCollection AddDurableBackgroundImports(this IServiceCollection services)
+    {
+        if (services.Any(static d => d.ServiceType == typeof(Honua.Server.Features.Import.BackgroundImportRunnerDecision)))
+        {
+            return services;
+        }
+
+        services.TryAddEnumerable(
+            Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton<
+                Honua.Core.Features.ControlPlane.Abstractions.IJobExecutor,
+                Honua.Import.FileImport.Durable.FileImportJobExecutor>());
+        services.AddSingleton(Honua.Server.Features.Import.BackgroundImportRunnerDecision.Resolve);
+        services.TryAddSingleton<IBackgroundImportRunnerInfo>(
+            static sp => sp.GetRequiredService<Honua.Server.Features.Import.BackgroundImportRunnerDecision>());
+
+        // Wrap the provider's in-process runner (registered by AddPostgreSqlServices as a factory).
+        var inner = services.LastOrDefault(static d => d.ServiceType == typeof(IImportJobService));
+        if (inner is null || (inner.ImplementationFactory is null && inner.ImplementationInstance is null))
+        {
+            return services;
+        }
+
+        services.RemoveAll<IImportJobService>();
+        services.AddSingleton<IImportJobService>(sp => new Honua.Server.Features.Import.DurableImportJobService(
+            (IImportJobService)(inner.ImplementationInstance ?? inner.ImplementationFactory!(sp)),
+            sp.GetRequiredService<Honua.Server.Features.Import.BackgroundImportRunnerDecision>(),
+            sp.GetRequiredService<IUniversalProgressStore>(),
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetServices<Honua.Core.Features.ControlPlane.Abstractions.IBatchComputeBackend>(),
+            sp.GetRequiredService<ILogger<Honua.Server.Features.Import.DurableImportJobService>>(),
+            sp.GetService<Honua.Core.Features.ControlPlane.Abstractions.IExecutionJobStore>(),
+            sp.GetService<Honua.Core.Features.ControlPlane.Abstractions.IJobQueue>(),
+            sp.GetService<IInstanceIdentity>()));
         return services;
     }
 }

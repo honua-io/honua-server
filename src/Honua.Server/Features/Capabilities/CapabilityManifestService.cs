@@ -61,8 +61,11 @@ internal sealed class CapabilityManifestService(
     IEnumerable<IWorkflowOperationStore> workflowOperationStores,
     WarehouseProviderDecisions warehouseProviders,
     ICapabilityRegistry capabilityRegistry,
-    ILogger<CapabilityManifestService> logger) : ICapabilityManifestService
+    ILogger<CapabilityManifestService> logger,
+    Honua.Core.Features.FileImport.Abstractions.IBackgroundImportRunnerInfo? backgroundImportRunner = null) : ICapabilityManifestService
 {
+    internal const string BackgroundImportCapabilityId = "import.background";
+
     private const string AuthorizationNotice =
         "Manifest availability is informational only; operation endpoints remain the source of truth for authorization, tenant, environment, license, and resource checks.";
 
@@ -113,6 +116,7 @@ internal sealed class CapabilityManifestService(
             ? BuildCapabilitiesFromRegistry(policyContext, gateContext, operationCapabilities)
             : BuildCapabilities(policyContext, operationCapabilities);
         capabilities = StampRollbackTargets(capabilities, operationCapabilities);
+        capabilities = [.. capabilities, BuildBackgroundImportCapability(policyContext)];
         capabilities = [.. capabilities, .. BuildFileFormatCapabilities(policyContext, request.Principal)];
         var packages = options.ManifestFromRegistry
             ? BuildPackagesFromRegistry(gateContext)
@@ -1277,6 +1281,33 @@ internal sealed class CapabilityManifestService(
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// <c>import.background</c> (honua-server#5916): whether this host accepts a background file
+    /// import and which runner executes it (<c>batch</c>, <c>in-process</c> or
+    /// <c>unavailable</c>, with the cause in <c>reasonCode</c>). <c>upload.file</c> covers only
+    /// the synchronous path.
+    /// </summary>
+    private CapabilityManifestCapability BuildBackgroundImportCapability(CapabilityPolicyContext context)
+    {
+        var runner = backgroundImportRunner;
+        var capability = Capability(
+            BackgroundImportCapabilityId,
+            "import",
+            context,
+            configured: runner?.AcceptsBackgroundImports ?? false,
+            unavailableReasonOverride: runner is null
+                ? CapabilityReasonCodes.DependencyUnavailable
+                : runner.UnavailableReason,
+            entitlementKey: "import.file",
+            policyCapability: "metadata.write");
+        return capability with
+        {
+            Runner = runner is { AcceptsBackgroundImports: true }
+                ? runner.Runner
+                : Honua.Core.Features.FileImport.Domain.ImportJobRunners.Unavailable,
+        };
     }
 
     private static CapabilityManifestCapability[] StampRollbackTargets(
