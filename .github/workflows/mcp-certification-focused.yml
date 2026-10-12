@@ -1,0 +1,114 @@
+name: Focused MCP Certification
+
+# Diagnostic proof only. This workflow never substitutes for full_ci admission
+# in nightly-container-build.yml.
+on:
+  workflow_dispatch:
+    inputs:
+      sdk_ref:
+        description: 'Exact published MCP SDK source SHA to exercise'
+        required: true
+        default: '46ecd25a32ee2bfb7741ccc14ee5842c8824dd19'
+
+permissions:
+  contents: read
+  # The canonical setup restores Honua.Sdk.Admin from github-honua.
+  packages: read
+
+concurrency:
+  group: focused-mcp-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  certification:
+    name: Focused MCP (${{ matrix.transport }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        transport: [rest, grpc-web]
+    env:
+      HONUA_MCP_CERT_TARGET: standalone
+      HONUA_BASE_URL: http://localhost:5000
+      HONUA_TRANSPORT: ${{ matrix.transport }}
+      HONUA_SERVICE_ID: test_service
+      HONUA_MCP_SERVICE_ID: test_service_mcp
+      HONUA_LAYER_ID: '0'
+      HONUA_MCP_LAYER_ID: '10'
+      HONUA_API_KEY: ci-admin-password
+    services:
+      postgres:
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: honua
+          POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Require immutable source identity
+        env:
+          SDK_REF: ${{ inputs.sdk_ref }}
+        run: |
+          [[ "$SDK_REF" =~ ^[0-9a-f]{40}$ ]] || { echo 'sdk_ref must be an exact SHA' >&2; exit 1; }
+          echo "Server source: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          echo "SDK source: $SDK_REF" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Setup the canonical live MCP environment
+        id: setup
+        uses: ./.github/actions/setup-honua-mcp
+        with:
+          dotnet-version: '10.0.x'
+          node-version: '20'
+          python-version: '3.11'
+          sdk-ref: ${{ inputs.sdk_ref }}
+
+      - name: Require certification and artifact scripts
+        env:
+          CERT_AVAILABLE: ${{ steps.setup.outputs.cert-available }}
+          ARTIFACT_AVAILABLE: ${{ steps.setup.outputs.cert-artifact-available }}
+          SDK_REF: ${{ inputs.sdk_ref }}
+        run: |
+          [[ "$CERT_AVAILABLE" == true && "$ARTIFACT_AVAILABLE" == true ]] || {
+            echo 'Both certification and artifact scripts are required for focused proof' >&2
+            exit 1
+          }
+          [[ "$(git -C honua-sdk-js rev-parse HEAD)" == "$SDK_REF" ]]
+
+      - name: Run actual live transport certification
+        run: npm run test:certification
+        working-directory: honua-sdk-js/mcp
+
+      - name: Generate certification artifact
+        if: always() && steps.setup.outcome == 'success' && steps.setup.outputs.cert-artifact-available == 'true'
+        run: npm run test:certification:artifact
+        working-directory: honua-sdk-js/mcp
+
+      - name: Verify live certification artifact identity
+        if: always() && steps.setup.outcome == 'success' && steps.setup.outputs.cert-artifact-available == 'true'
+        run: |
+          python3 scripts/certification/verify_mcp_live_certification.py \
+            honua-sdk-js/mcp/mcp-certification-results.json \
+            --transport "$HONUA_TRANSPORT" --base-url "$HONUA_BASE_URL" \
+            --sdk-source "$(git -C honua-sdk-js rev-parse HEAD)"
+
+      - name: Retain live receipts and startup diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: focused-mcp-${{ matrix.transport }}
+          path: |
+            honua-sdk-js/mcp/mcp-certification-results.json
+            honua-sdk-js/mcp/mcp-certification-results.md
+            ${{ runner.temp }}/honua-server-setup.log
+          if-no-files-found: error
+          retention-days: 30

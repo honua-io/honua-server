@@ -791,6 +791,7 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Delete_TerminatesSession_AndSubsequentPostReturns404",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Delete_UnknownSession_Returns404",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpSessionAcrossInstancesTests.SessionDeletedOnB_Returns404OnA",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionAcrossInstancesTests.Delete_OnB_Answers405_BecauseAStatelessSessionCannotBeRevoked",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionFallbackEnabledTests.Delete_TerminatesSession_WhenFallbackEnabled_SubsequentPostIsServedSessionless"
       ],
       "proof_ledger_surface": "mcp-operator",
@@ -2340,6 +2341,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Import.ImportEndpointDurableRunnerIntegrationTests.BatchRunner_ExecutionWorkerComposition_RunsTheLaunchedImportAndReportsBatch",
+        "Honua.Server.Tests.Import.ImportEndpointDurableRunnerIntegrationTests.LocalDurableRunner_InProcessWorkerLoop_CompletesImportAndReportsRunner",
         "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_WithClientUploadId_ExposesAcceptedUploadAndImportJobResultFields",
         "Honua.Server.Tests.Import.ImportReadWriteContractTests.Import_GetJobStatus_ShouldReturnJobStatus",
         "Honua.Server.Tests.Import.StreamingImportTests.GetJobStatus_WithInvalidJobId_ReturnsNotFound"
@@ -4779,7 +4782,8 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamConformanceEndpointsTests.Manifest_PublishesTheImmutableRevisionUnderBothNames",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Manifest_ExposesImmutableDeploymentRevisionSeparatelyFromServerVersion",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Manifest_RejectsMalformedDeploymentRevisionRatherThanEchoingIt",
-        "Honua.Server.Tests.Features.Studio.StudioPublishRequestNonAttestedRedisTests.StockRedis_Production_AdvertisesOperationsProposalsAndPublishesDurabilityAsInformation"
+        "Honua.Server.Tests.Features.Studio.StudioPublishRequestNonAttestedRedisTests.StockRedis_Production_AdvertisesOperationsProposalsAndPublishesDurabilityAsInformation",
+        "Honua.Server.Tests.Import.ImportEndpointBackgroundRefusalTests.ForcedBackgroundImport_OnHostWithoutRunner_ReturnsTyped503BeforeStaging"
       ],
       "proof_ledger_surface": "capability-manifest",
       "maturity": "implemented",
@@ -17071,6 +17075,7 @@
         "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithTimeAndBinaryColumns_ImportsSuccessfully",
         "Honua.Server.Tests.Import.ImportAuthorizationParityTests.BearerAdminGrant_ScopeCanOnlyNarrowBothImportTransports",
         "Honua.Server.Tests.Import.ImportAuthorizationParityTests.ImportAuthority_RealTransportTenCaseMatrix_MatchesRestAdminWriteContract",
+        "Honua.Server.Tests.Import.ImportEndpointBackgroundRefusalTests.ForcedBackgroundImport_OnHostWithoutRunner_ReturnsTyped503BeforeStaging",
         "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_DefaultOperationalSchema_CanDiscoverPublishAndQueryFeatureServer",
         "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_RepeatRequest_WithValidRequest_ReturnsImportResult",
         "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_TargetSchemaOutsideOperationalSchemas_Returns400AndCreatesNoSchema",
@@ -19700,6 +19705,8 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpScopeAuthorizationTests.ToolsCall_AdminTokenWithNoScope_IsFailClosed",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpSessionAcrossInstancesTests.IdNoInstanceHolds_Returns404_SoTheClientReinitializes",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpSessionAcrossInstancesTests.SessionInitializedOnA_ServesTheSameNegotiatedViewOnB",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionAcrossInstancesTests.SessionInitializedOnA_ServesTheNegotiatedViewOnB_WithoutASharedStore",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionAcrossInstancesTests.TamperedSessionId_Returns404_OnEveryInstance",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionFallbackEnabledTests.Request_WithIssuedSessionId_WhenFallbackEnabled_IsAccepted",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionFallbackEnabledTests.Request_WithMalformedSessionId_WhenFallbackEnabled_Returns404",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionFallbackEnabledTests.Request_WithUnknownSessionId_WhenFallbackEnabled_IsServedSessionless",
@@ -23509,7 +23516,9 @@
         "Honua.Server.Tests.Features.PrintingTools.PrintingToolsGpServerService5546Tests.PrintingTools5546_SoapExecuteExport_ReturnsDownloadablePng",
         "Honua.Server.Tests.Features.PrintingTools.PrintingToolsGpServerService5546Tests.PrintingTools5546_SoapExecuteWithDefaultEnvironment_ReturnsLayoutTemplates",
         "Honua.Server.Tests.Features.PrintingTools.PrintingToolsGpServerService5546Tests.PrintingTools5546_SoapExecutionWithUnsupportedEnvironment_ReturnsFault",
-        "Honua.Server.Tests.Features.PrintingTools.PrintingToolsGpServerService5546Tests.PrintingTools_SoapBindingAndCatalog_ListBothTasks"
+        "Honua.Server.Tests.Features.PrintingTools.PrintingToolsGpServerService5546Tests.PrintingTools_SoapBindingAndCatalog_ListBothTasks",
+        "Honua.Server.Tests.Features.PrintingTools.PrintingToolsGpServerService5546Tests.PrintingTools_SoapCallableNames_ExecuteOriginalLayoutAndPngContracts",
+        "Honua.Server.Tests.Features.PrintingTools.PrintingToolsGpServerService5546Tests.PrintingTools_SoapToolInfo_ResolvesCallableAndLegacyNames"
       ],
       "proof_ledger_surface": "gpserver-soap-discovery",
       "maturity": "implemented",
@@ -23588,6 +23597,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.SoapXmlSecurityTests.PostSoap_DtdWithExternalEntity_RejectsWithoutResolving",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.SoapXmlSecurityTests.PostSoap_InvalidEnvelopeWithSchemaLocation_RejectsWithoutLoadingClientSchema",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerHistogramBinEdgesTests.ConstantHistograms_SoapAndRest_PreserveSqlCentersCountsAndNoData",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerHttpAuthorizationTests.RestrictedGetFields_RequiresEntitledPrincipalBeforeReturningGeometryReference",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMultidimensionalSoapTests.PersistedCoverage_SoapPropertySetsPreserveSqlAndRestSemantics",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerNativeCatalogTests.CatalogSoap_DefaultOrNilOutputSpatialReference_MatchesIndependentSql",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerNativeCatalogTests.CatalogSoap_MembershipAndNegativeFilters_MatchIndependentSql",
@@ -23604,6 +23614,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerSoapParityTests.CatalogSoapOperations_MatchRestQuery",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerSoapParityTests.CatalogSpatialFilter_MatchesRestQuery",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerSoapParityTests.ComputeHistogramsAoi_MatchesRestComputeHistograms",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerSoapParityTests.GetFields_GeometryReferenceMatchesServiceExtent",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerSoapParityTests.HistogramsSoap_MatchRestHistograms",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerSoapParityTests.KeyPropertiesHistograms_KeepRevalidatedPolicyWhenGraphChangesDuringStatisticsRead",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerSoapParityTests.KeyPropertiesRasterInfo_UsesServiceMosaicStatisticsAndOrderedHistograms",

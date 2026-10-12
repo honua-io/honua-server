@@ -528,6 +528,17 @@ internal static partial class ImportEndpoints
             return;
         }
 
+        // A forced background import on a host without a runner is refused before the download
+        // (honua-server#5916); a size-triggered one is refused once the size is known.
+        if (request.ForceBackground && !CanAcceptBackgroundImports(context.RequestServices))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                BackgroundImportUnavailableMessage,
+                StatusCodes.Status503ServiceUnavailable);
+            return;
+        }
+
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
         var securityOptions = context.RequestServices.GetRequiredService<IOptions<FileUploadSecurityOptions>>();
         var maxFileSizeBytes = Math.Max(importService.Limits.BackgroundJobThresholdBytes, importService.Limits.MaxMemoryBytes);
@@ -609,6 +620,18 @@ internal static partial class ImportEndpoints
         return false;
     }
 
+    internal const string BackgroundImportUnavailableMessage =
+        "Background import service not available. File is too large for synchronous import.";
+
+    /// <summary>
+    /// Whether this host accepts a background import: a job service is registered and the
+    /// runner resolved at composition (<see cref="IBackgroundImportRunnerInfo"/>) is not
+    /// <c>unavailable</c>.
+    /// </summary>
+    internal static bool CanAcceptBackgroundImports(IServiceProvider services)
+        => services.GetService<IImportJobService>() is not null
+            && services.GetService<IBackgroundImportRunnerInfo>() is not { AcceptsBackgroundImports: false };
+
     private static async Task ExecuteStagedImportAsync(
         HttpContext context,
         ImportExecutionRequest request,
@@ -622,6 +645,19 @@ internal static partial class ImportEndpoints
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
         var limits = importService.Limits;
         var shouldQueueBackground = request.ForceBackground || request.File.SizeBytes > limits.BackgroundJobThresholdBytes;
+
+        // honua-server#5916: decide before staging anything whether this host can run a background
+        // import at all. A Lambda host without a durable runner (and any host without a job
+        // service) refuses with the typed 503 instead of accepting work it cannot finish.
+        if (shouldQueueBackground && !CanAcceptBackgroundImports(context.RequestServices))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                BackgroundImportUnavailableMessage,
+                StatusCodes.Status503ServiceUnavailable);
+            return;
+        }
+
         var cloudStorage = context.RequestServices.GetService<ICloudFileStorage>();
         var deleteLocalFile = true;
         string? cloudFileId = null;
@@ -678,7 +714,7 @@ internal static partial class ImportEndpoints
                 {
                     await AdminResponseWriter.WriteErrorAsync(
                         context,
-                        "Background import service not available. File is too large for synchronous import.",
+                        BackgroundImportUnavailableMessage,
                         StatusCodes.Status503ServiceUnavailable);
                     return;
                 }

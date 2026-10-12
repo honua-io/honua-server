@@ -220,13 +220,16 @@ var clientCertificateMode = builder.Configuration.GetValue<ClientCertificateAuth
     "Authentication:ClientCertificates:Mode");
 if (clientCertificateMode != ClientCertificateAuthenticationMode.Disabled)
 {
-    builder.WebHost.ConfigureKestrel(options =>
-    {
-        options.ConfigureHttpsDefaults(httpsOptions =>
+    builder.Services.AddOptions<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>()
+        .Configure<ILoggerFactory>((options, loggerFactory) =>
         {
-            httpsOptions.ClientCertificateMode = ClientCertificateMode.AllowCertificate;
+            options.ConfigureHttpsDefaults(httpsOptions =>
+            {
+                httpsOptions.ClientCertificateMode = ClientCertificateMode.AllowCertificate;
+                ClientCertificateTlsObservation.Configure(httpsOptions,
+                    loggerFactory.CreateLogger("Honua.ClientCertificateTls"));
+            });
         });
-    });
 }
 // Keep the protector purpose stable across replay nodes. Production deployments must also
 // persist/share the ASP.NET data-protection key ring; otherwise an approved operation whose
@@ -678,10 +681,9 @@ if (connectedRedis != null && redisCacheEntitled)
     // that owns the matching background service's idempotent tick body. Handlers are contributed by
     // the owning assemblies (registered alongside each service above). Under TriggerMode=Poll the
     // in-process timers drive the ticks; under Event the timers are not hosted and EventBridge
-    // Scheduler -> the scheduled-tick endpoint drives them through this dispatcher.
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickDispatcher,
-        Honua.ControlPlane.ScheduledTickDispatcher>();
+    // Scheduler -> the scheduled-tick endpoint drives them through this dispatcher. The dispatcher
+    // itself is registered by AddHonuaControlPlaneReconcilers (AddHonuaControlPlaneLambdaEventTargets)
+    // and again, idempotently, for every host below.
 
     var controlPlaneTriggerMode = builder.Configuration
         .GetSection(Honua.ControlPlane.ControlPlaneTriggerOptions.SectionName)
@@ -772,6 +774,12 @@ else
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore,
         Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore>();
 }
+
+// The control-plane Lambda event route (POST /events) is mapped whenever
+// HONUA_CONTROL_PLANE_LAMBDA_HANDLER is set, Redis or not, so what it resolves is registered on
+// every host. On a Redis-off cell the Redis-independent ticks run and the rest refuse with a typed
+// 503 (missingDependency=redis) instead of a 500 (honua-release run 38242272260).
+builder.Services.AddHonuaControlPlaneLambdaEventTargets();
 
 // Pending-approval notification channel (#1695): emitted from the gateway/store
 // boundary, not per-endpoint. Safe to register regardless of Redis availability.
@@ -2090,6 +2098,24 @@ async Task RunDatabaseMigrationsAsync()
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
+            // A cold start before the migration task ran (honua-server#5916): a required migration is
+            // not applied yet, so the schema is behind this binary. Start degraded (readiness 503
+            // schema-floor, event endpoints 503) and re-check in the background instead of exiting.
+            // A schema newer than this binary (DatabaseSchemaCompatibilityException) or one that
+            // contradicts its journal still fails fast below.
+            if (Honua.Infrastructure.Monitoring.DatabaseRecoveryBackgroundService.IsSchemaBehindBinary(ex, out var schemaFloorReason)
+                && !app.Environment.IsDevelopment()
+                && TryArmDegradedStart(
+                    "schema guard",
+                    schemaFloorReason,
+                    migrationsPending: false,
+                    schemaGuardPending: true,
+                    reasonCode: Honua.Core.Features.Infrastructure.Health.ReadinessReasonCodes.SchemaFloor,
+                    reason: schemaFloorReason))
+            {
+                return;
+            }
+
             // The guard could not reach the database (no free slots, timeout): that is an outage,
             // not schema divergence. Degraded start defers the guard to the recovery loop.
             if (ex is not Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException
@@ -2231,7 +2257,13 @@ bool TryEnterDegradedStart(string phase, Exception error, bool migrationsPending
 
 // Arms degraded start for a failure already classified as transient. The reason carries the phase
 // and the sanitized failure class only (never the provider message, which can name hosts).
-bool TryArmDegradedStart(string phase, string failureClass, bool migrationsPending, bool schemaGuardPending)
+bool TryArmDegradedStart(
+    string phase,
+    string failureClass,
+    bool migrationsPending,
+    bool schemaGuardPending,
+    string? reasonCode = null,
+    string? reason = null)
 {
     var resilienceOptions = app.Services.GetRequiredService<Honua.Core.Configuration.StartupResilienceOptions>();
     if (!resilienceOptions.DegradedStartEnabled)
@@ -2239,16 +2271,19 @@ bool TryArmDegradedStart(string phase, string failureClass, bool migrationsPendi
         return false;
     }
 
-    var warning = Honua.Core.Features.Infrastructure.Resilience.StartupDatabaseResilience
-        .BuildDegradedStartWarning(phase, failureClass);
+    var warning = reasonCode == Honua.Core.Features.Infrastructure.Health.ReadinessReasonCodes.SchemaFloor
+        ? Honua.Infrastructure.Monitoring.StartupDatabasePreflight.BuildSchemaFloorWarning(failureClass)
+        : Honua.Core.Features.Infrastructure.Resilience.StartupDatabaseResilience
+            .BuildDegradedStartWarning(phase, failureClass);
     Honua.Infrastructure.Logging.Log.DatabaseStartupDegraded(app.Logger, warning);
 
     var degradedContext = app.Services.GetRequiredService<Honua.Infrastructure.Monitoring.DegradedStartupContext>();
     degradedContext.MarkDegraded(
         migrationsPending,
         Assembly.GetExecutingAssembly(),
-        Honua.Infrastructure.Monitoring.StartupDatabasePreflight.BuildReason(phase, failureClass),
-        schemaGuardPending: schemaGuardPending && !migrationsPending);
+        reason ?? Honua.Infrastructure.Monitoring.StartupDatabasePreflight.BuildReason(phase, failureClass),
+        schemaGuardPending: schemaGuardPending && !migrationsPending,
+        reasonCode: reasonCode);
     return true;
 }
 
@@ -2308,11 +2343,13 @@ async Task RunPostGisPreflightCheckAsync()
     // The database could not be reached (an outage, not an incompatible install): start degraded
     // when enabled — readiness reports 503 with the failure class until the recovery loop succeeds.
     // A genuinely incompatible database (missing PostGIS) is not transient and still fails below.
+    // honua-server#5916: the readiness reason and the log line carry the cause class
+    // (connection-borrow-timeout, connection-refused, auth, connection-unavailable).
     if (result.IsTransientFailure
         && !app.Environment.IsDevelopment()
         && TryArmDegradedStart(
             "PostGIS preflight",
-            result.FailureClass ?? "database unavailable",
+            Honua.Infrastructure.Monitoring.StartupDatabasePreflight.DescribeCause(result),
             migrationsPending: !skipMigrationsConfigured,
             schemaGuardPending: skipMigrationsConfigured))
     {
@@ -2330,7 +2367,10 @@ async Task RunPostGisPreflightCheckAsync()
 
     if (!app.Environment.IsDevelopment())
     {
-        Honua.Infrastructure.Logging.Log.PostGisPreflightCheckFailedCritical(app.Logger, errorMessage);
+        Honua.Infrastructure.Logging.Log.PostGisPreflightCheckFailedCritical(
+            app.Logger,
+            result.CauseClass ?? Honua.Core.Features.Infrastructure.Domain.DatabasePreflightCauseClasses.IncompatibleDatabase,
+            errorMessage);
         throw new InvalidOperationException($"PostGIS preflight check failed: {errorMessage}");
     }
 
