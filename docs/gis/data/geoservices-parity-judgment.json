@@ -2477,6 +2477,7 @@
         "code": [
           "src/Honua.Protocols.GeoServices/NAServer/NAServerEndpoints.cs",
           "src/Honua.Protocols.GeoServices/NAServer/FindRoutesWebTool.cs",
+          "src/Honua.Protocols.GeoServices/NAServer/GenerateServiceAreasWebTool.cs",
           "src/Honua.Protocols.GeoServices/NAServer/NAServerMetadata.cs",
           "src/Honua.Protocols.GeoServices/NAServer/NAServerParameterTranslation.cs",
           "src/Honua.Protocols.GeoServices/NAServer/NAServerResultMapping.cs",
@@ -2487,7 +2488,8 @@
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerTranslationUnitTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerMetadataEndpointTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/NetworkAnalysisUtilitiesTaskTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/FindRoutesExecuteTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/FindRoutesExecuteTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GenerateServiceAreasExecuteTests.cs"
         ]
       },
       "operations": [
@@ -2514,6 +2516,14 @@
             "/NAServer/FindRoutes/execute"
           ],
           "notes": "GET and POST execute the same bounded adapter as GPServer/FindRoutes/execute: input-order stops, Minutes-only travel time, provider-validated modes and barriers. Unsupported units, stop optimization, unknown options and conflicting aliases return errors before solving. There is no submitJob form; full arcpy.nax binding remains open in #5192."
+        },
+        {
+          "name": "GenerateServiceAreas synchronous subset",
+          "status": "partial",
+          "esriPaths": [
+            "/NAServer/GenerateServiceAreas/execute"
+          ],
+          "notes": "GET and POST execute the same synchronous adapter as GPServer/GenerateServiceAreas/execute: point facilities, Minutes-only breaks, provider-validated travel modes and directions, canonical polygon output, FacilityOID and input names. GP env:outSR/context.outSR and the NAServer outSR alias forward output projection; malformed or conflicting controls are rejected. Unsupported units, nondefault per-facility solve settings, unknown options and other GP environments return errors before solving. There is no submitJob form; stock arcpy.nax binding and native Route/ServiceArea solve evidence remain open in #5192."
         },
         {
           "name": "Route solve",

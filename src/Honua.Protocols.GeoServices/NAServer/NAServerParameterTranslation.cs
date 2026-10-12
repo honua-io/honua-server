@@ -138,11 +138,18 @@ internal static class NAServerParameterTranslation
     public static ServiceAreaSolveRequest BuildServiceAreaSolveRequest(
         IReadOnlyDictionary<string, string> parameters,
         NAServerInputCaps caps)
+        => BuildServiceAreaSolveRequest(parameters, caps, defaultInputSrid: null);
+
+    /// <summary>Builds a service-area request with a task-specific default for undeclared input coordinates.</summary>
+    internal static ServiceAreaSolveRequest BuildServiceAreaSolveRequest(
+        IReadOnlyDictionary<string, string> parameters,
+        NAServerInputCaps caps,
+        int? defaultInputSrid)
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
         var outSrid = ParseOutSr(parameters);
-        var inSrid = ParseInSr(parameters, outSrid, "facilities");
+        var inSrid = ParseInSr(parameters, defaultInputSrid ?? outSrid, "facilities");
         var facilities = ParsePoints(GetValue(parameters, "facilities"), "facilities");
         if (facilities.Count == 0)
         {
@@ -895,7 +902,7 @@ internal static class NAServerParameterTranslation
     /// Reads the output spatial reference from <c>outSR</c>. Accepts a bare WKID or a
     /// spatial-reference JSON object (<c>{ "wkid": 3857 }</c>). Defaults to 4326.
     /// </summary>
-    private static int ParseOutSr(IReadOnlyDictionary<string, string> parameters)
+    internal static int ParseOutSr(IReadOnlyDictionary<string, string> parameters)
         => ParseSpatialReference(parameters, "outSR") ?? DefaultSrid;
 
     /// <summary>

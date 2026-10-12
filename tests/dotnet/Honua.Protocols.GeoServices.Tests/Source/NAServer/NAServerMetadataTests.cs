@@ -8,6 +8,7 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.NAServer;
 
+/// <summary>Checks routing metadata against the supported canonical and REST utility contracts.</summary>
 public sealed class NAServerMetadataTests
 {
     /// <summary>Esri's published FindRoutes parameter names, which arcpy.nax matches on.</summary>
@@ -86,5 +87,36 @@ public sealed class NAServerMetadataTests
         units["choiceList"]!.AsArray().Select(v => v!.GetValue<string>()).Should().Equal("Minutes");
         var reorder = info["parameters"]!.AsArray().Single(p => p!["name"]!.GetValue<string>() == "Reorder_Stops_to_Find_Optimal_Routes")!;
         reorder["defaultValue"]!.GetValue<bool>().Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void GenerateServiceAreas_AdvertisesItsBoundedPointAndPolygonContract()
+    {
+        NAServerMetadata.IsUtilityTask("generateserviceareas").Should().BeTrue();
+        NAServerMetadata.IsRoutingWebTool("GENERATESERVICEAREAS").Should().BeTrue();
+        var info = NAServerMetadata.BuildUtilityTaskInfo(NAServerMetadata.GenerateServiceAreasTask);
+        info["executionType"]!.GetValue<string>().Should().Be("esriExecutionTypeSynchronous");
+        var parameters = info["parameters"]!.AsArray().ToDictionary(parameter => parameter!["name"]!.GetValue<string>());
+        parameters.Keys.Should().Equal("Facilities", "Break_Values", "Break_Units", "Travel_Direction", "Travel_Mode", "Service_Areas", "Solve_Succeeded");
+        parameters["Facilities"]!["dataType"]!.GetValue<string>().Should().Be("GPFeatureRecordSetLayer");
+        parameters["Facilities"]!["parameterType"]!.GetValue<string>().Should().Be("esriGPParameterTypeRequired");
+        parameters["Facilities"]!["defaultValue"]!["geometryType"]!.GetValue<string>().Should().Be("esriGeometryPoint");
+        parameters["Break_Units"]!["choiceList"]!.AsArray().Select(value => value!.GetValue<string>()).Should().Equal("Minutes");
+        parameters["Travel_Direction"]!["choiceList"]!.AsArray().Select(value => value!.GetValue<string>())
+            .Should().Equal("Away From Facility", "Towards Facility");
+        parameters["Service_Areas"]!["defaultValue"]!["geometryType"]!.GetValue<string>().Should().Be("esriGeometryPolygon");
+        parameters["Service_Areas"]!["defaultValue"]!["fields"]!.AsArray()
+            .Select(field => field!["name"]!.GetValue<string>()).Should().Equal("ObjectID", "FacilityID", "FacilityOID", "Name", "FromBreak", "ToBreak");
+        parameters["Solve_Succeeded"]!["dataType"]!.GetValue<string>().Should().Be("GPBoolean");
+    }
+
+    [UnitTest]
+    public void RemainingRoutingWebTools_AreNotAdvertisedAsExecutableUtilities()
+    {
+        foreach (var name in new[] { "FindClosestFacilities", "GenerateOriginDestinationCostMatrix", "SolveLocationAllocation" })
+        {
+            NAServerMetadata.IsUtilityTask(name).Should().BeFalse();
+            NAServerMetadata.IsRoutingWebTool(name).Should().BeFalse();
+        }
     }
 }

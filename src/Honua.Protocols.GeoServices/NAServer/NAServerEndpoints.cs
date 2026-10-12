@@ -135,6 +135,15 @@ internal static class NAServerEndpoints
             .Produces(StatusCodes.Status200OK, contentType: JsonContentType)
             .AllowAnonymous();
 
+        endpoints.MapMethods($"{RouteBase}/GenerateServiceAreas/execute", ["GET", "POST"],
+                static (HttpContext context, CancellationToken ct) => GenerateServiceAreasWebTool.ExecuteAsync(context, ct))
+            .WithDisplayName("NAServer Generate Service Areas Execute")
+            .WithName("NAServerGenerateServiceAreasExecute")
+            .WithSummary("Execute the synchronous, minutes-only service-area tool")
+            .WithTags("NAServer")
+            .Produces(StatusCodes.Status200OK, contentType: JsonContentType)
+            .AllowAnonymous();
+
         // Metadata resources (#5035): the service resource and the per-solver analysis
         // layer resources ArcGIS Pro and arcpy.nax read before they will bind a
         // stand-alone routing service. They describe the same provider the solves run

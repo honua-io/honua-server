@@ -50,6 +50,11 @@ internal static partial class GPServerEndpoints
             return await FindRoutesWebTool.ExecuteAsync(context, ct).ConfigureAwait(false);
         }
 
+        if (taskName.Equals(NAServerMetadata.GenerateServiceAreasTask, StringComparison.OrdinalIgnoreCase))
+        {
+            return await GenerateServiceAreasWebTool.ExecuteAsync(context, ct).ConfigureAwait(false);
+        }
+
         var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
         var formatError = ValidateJsonFormat(context, parameters);
         if (formatError is not null)

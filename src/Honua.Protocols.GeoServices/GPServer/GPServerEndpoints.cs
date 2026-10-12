@@ -1384,7 +1384,7 @@ internal static partial class GPServerEndpoints
     /// <c>context</c> JSON parameter feeds the same <c>OutSr</c>/<c>ProcessSr</c> slots
     /// (see <see cref="TryApplyContextControls"/>).
     /// </summary>
-    private readonly record struct EnvControls(int? OutSr, int? ProcessSr, string? Workspace, bool? OverwriteOutput);
+    internal readonly record struct EnvControls(int? OutSr, int? ProcessSr, string? Workspace, bool? OverwriteOutput);
 
     /// <summary>
     /// Parses GP environment controls. <c>env:outSR</c>, <c>env:processSR</c>,
@@ -1396,7 +1396,7 @@ internal static partial class GPServerEndpoints
     /// recognized controls through <see cref="BuildProtocolMetadata"/> onto the
     /// durable job spec. See #1228.
     /// </summary>
-    private static IResult? TryParseEnvControls(
+    internal static IResult? TryParseEnvControls(
         HttpContext context,
         ILogger logger,
         IReadOnlyDictionary<string, string> allParams,
