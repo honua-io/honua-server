@@ -20,6 +20,7 @@
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Postgres.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.OData.ComponentTests" />
+    <Compile Include="../../../src/Honua.Server/Startup/ServerCoreSchemaMigrations.cs" Link="Provisioning/ServerCoreSchemaMigrations.cs" />
     <!-- Canonical SQL, linked rather than forked. Keep original resource/journal identities. -->
     <EmbeddedResource Include="../../../src/Honua.Server/Migrations/*.sql"
                       Link="Migrations/%(Filename)%(Extension)"

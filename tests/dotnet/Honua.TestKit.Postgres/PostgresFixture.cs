@@ -4,6 +4,12 @@
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using Honua.TestKit.Seeding;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Db.Postgres;
+using Honua.Server.Startup;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Testcontainers.PostgreSql;
 using Xunit;
@@ -628,12 +634,51 @@ public sealed class PostgresFixture : IAsyncLifetime
             }).ConfigureAwait(false);
             await using var dataSource = NpgsqlDataSource.Create(connectionString);
             await SeedRunner.ApplyAsync(dataSource, seedPath, "public", profileName: null).ConfigureAwait(false);
+            await ActivateODataSeedMetadataAsync(connectionString).ConfigureAwait(false);
             return connectionString;
         }
         catch
         {
             await DropDatabaseAsync(new NpgsqlConnectionStringBuilder(connectionString).Database!).ConfigureAwait(false);
             throw;
+        }
+    }
+
+    private static async Task ActivateODataSeedMetadataAsync(string connectionString)
+    {
+        // Match the production cloud-demo seeder: legacy SQL catalog writes are followed
+        // by projection and activation through the real graph store. Never substitute a
+        // hand-authored fixture graph or weaken the protocol's strict field validation.
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:DefaultConnection"] = connectionString
+        }).Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMemoryCache();
+        services.AddPostgreSqlServices(configuration, ServerCoreSchemaMigrations.Manifest);
+        await using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var graph = await scope.ServiceProvider.GetRequiredService<IMetadataV2LegacyCatalogProjector>()
+            .BuildFromLegacyCatalogAsync(timeout.Token).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Canonical OData seed did not project a metadata graph.");
+        ValidateODataSeedFields(graph);
+        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
+        await store.SaveAsync(graph, expectedEtag: null, timeout.Token).ConfigureAwait(false);
+        var persisted = await store.GetCurrentAsync(timeout.Token).ConfigureAwait(false);
+        ValidateODataSeedFields(persisted.Graph);
+    }
+
+    private static void ValidateODataSeedFields(MetadataV2Graph graph)
+    {
+        var cities = graph.Resources.Single(resource => resource.Metadata.Id == "res-layer-0");
+        foreach (var fieldName in new[] { "name", "population", "rating" })
+        {
+            if (!cities.SchemaFields.Any(field => field.Name == fieldName))
+            {
+                throw new InvalidOperationException($"Canonical OData seed metadata is missing field '{fieldName}'.");
+            }
         }
     }
 
