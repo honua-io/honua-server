@@ -116,7 +116,7 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
     [InlineData("FindClosestFacilities", "Incidents", "Output_Routes", "Measurement_Units")]
     [InlineData("GenerateOriginDestinationCostMatrix", "Origins", "Output_Origin_Destination_Lines", "Time_Units")]
     [InlineData("SolveLocationAllocation", "Facilities", "Output_Allocation_Lines", "Measurement_Units")]
-    [Operation(Operations.Get)]
+    [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
     [Endpoint("GET /rest/services/{serviceId}/NAServer/{layerName}")]
     public async Task TaskInfo_PublishesAsyncPointSchemaAndDocumentedOutputs(string task, string points, string output, string units)
