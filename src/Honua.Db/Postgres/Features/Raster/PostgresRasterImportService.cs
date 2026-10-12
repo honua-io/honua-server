@@ -172,10 +172,11 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                     warnings.Add("Tile pre-generation skipped: raster has no known CRS (SRID 0). Set 'srid' explicitly to enable tiling.");
                 }
 
-                // Phase 5: Build persisted overview pyramids (reduced-resolution copies in
-                // EPSG:3857) so the dynamic tile read path reuses a pyramid level instead of
-                // recomputing an ST_Rescale reduction per low-zoom request (#1836). Best-effort:
-                // a missing raster_overviews table (schema predates migration 061) is tolerated.
+                // Phase 5: Optional persisted overview pyramids. Dynamic tile reads sample the
+                // original raster because these rows have no native-source lineage (#5848), so
+                // the default request leaves OverviewFactors empty (#5856). Best-effort when a
+                // caller still sets factors: a missing raster_overviews table (schema predates
+                // migration 061) is tolerated.
                 if (request.OverviewFactors.Length > 0 && srid > 0)
                 {
                     await GenerateAndStoreOverviewsAsync(
