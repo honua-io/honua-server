@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -321,7 +322,7 @@ public class ImageServerTileHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.GetImageTileAsync(context, 1, 0, 0, 0, "png");
-        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
+        await AssertMissingTileAsync(context, result);
     }
 
     [UnitTest]
@@ -335,7 +336,7 @@ public class ImageServerTileHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.GetImageTileAsync(context, 1, 0, 0, 0, "png");
-        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
+        await AssertMissingTileAsync(context, result);
     }
 
     [UnitTest]
@@ -471,7 +472,7 @@ public class ImageServerTileHandlerTests
             cacheLayerId: 7);
 
         await _rasterStore.Received(1).QueryRastersAsync(42, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>());
-        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
+        await AssertMissingTileAsync(context, result);
         await cogResolver.DidNotReceiveWithAnyArgs().GetTileForLayerAsync(
             default, default, default, default, default, default);
     }
@@ -646,6 +647,17 @@ public class ImageServerTileHandlerTests
         await result.ExecuteAsync(context);
 
         context.Response.StatusCode.Should().NotBe(StatusCodes.Status400BadRequest);
+    }
+
+    private static async Task AssertMissingTileAsync(HttpContext context, IResult result)
+    {
+        await result.ExecuteAsync(context);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        context.Response.Headers.ContainsKey("blank-tile").Should().BeFalse();
+        context.Response.Body.Position = 0;
+        using var json = await JsonDocument.ParseAsync(context.Response.Body);
+        json.RootElement.GetProperty("error").GetProperty("code").GetInt32()
+            .Should().Be(StatusCodes.Status404NotFound);
     }
 
     private static DefaultHttpContext CreateImageServerContext(Action<IServiceCollection>? configureServices = null)
