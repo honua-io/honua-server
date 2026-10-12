@@ -7,12 +7,13 @@
     "catalogSourceRevision": "14d101ec17f4b7ccdc6106ee2cb5bd4d621d779f",
     "candidateBinding": "https://github.com/honua-io/honua-server/issues/3848",
     "layerReceiptEnforcement": "PR Gate step 'Prove the layer execution cases ran, not skipped' reads back layer-execution-proof.trx and fails unless every evidence test these rows still call proven in the Category=LayerExecutionProof files reports its own Passed receipt: source.honua-layer, source.esri-featureserver and sink.honua-layer. dotnet test exits 0 on a filter that matches nothing and on a cleanly-skipping fixture, so the step count alone could not tell a real PostGIS run from no run at all.",
-    "catalogSourceContentDigest": "sha256:59c1cc480d57a5eeda728ac9475d6d46d2030cebc68ed5b4c842e90a270eca7f",
+    "catalogSourceContentDigest": "sha256:0384f6baaf676731a1d1d8d8ccb093399982569beec91609ccbff5ec162945ae",
     "securityRemediationAudit": "certification/gp-security-remediation-audit-20261009.md",
     "importPublishingScopeAudit": "docs/audit/platform-20261006/issue-5622.md",
     "workspaceRetryAudit": "certification/gp-workspace-retry-audit-20260914.md",
     "workspaceStoreAudit": "certification/gp-workspace-store-audit-20260914.md",
-    "workspaceOwnerAudit": "certification/gp-workspace-owner-audit-20261003.md"
+    "workspaceOwnerAudit": "certification/gp-workspace-owner-audit-20261003.md",
+    "routingWebToolsAudit": "certification/gp-routing-webtool-audit-20261012.md"
   },
   "scope": "Every process returned by BuiltInProcessCatalog.ListProcesses(). A proven row requires concrete input, the production operation/executor path, and a semantic output-content assertion.",
   "statusDefinitions": {
@@ -43,14 +44,14 @@
     "https://github.com/honua-io/honua-server/issues/3857"
   ],
   "summary": {
-    "total": 98,
+    "total": 101,
     "byStatus": {
       "proven": 98,
-      "partially-proven": 0,
+      "partially-proven": 3,
       "unproven": 0
     },
     "byEntryPoint": {
-      "job": 82,
+      "job": 85,
       "protocol": 4,
       "workflow": 12
     }
@@ -1608,6 +1609,57 @@
           "bodyDigest": "sha256:608bcc5d8798b42213fb01c31a760b9f67f5288bdc9089d3ca39e2ea9acb311d"
         }
       ]
+    },
+    {
+      "processId": "routing.closest-facilities",
+      "status": "partially-proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/RoutingAsyncWebToolTests.cs",
+          "test": "SubmitJob_StockFeatureSet_CompletesWithNamedResultsAndInputIdentity",
+          "assertion": "Both GPServer and NAServer submit through the real durable worker; named result assertions preserve input OBJECTID=0 and17, expected cost, declared SR and success result. IRoutingProvider is substituted, so this is adapter/runtime evidence only.",
+          "bodyDigest": "sha256:181500b4cbbb56e3e49ad9cbd00fdd7a4d371b7c80511ce05fb7a14427fef1f4"
+        }
+      ],
+      "gap": {
+        "missing": "Compose this queued job with the real pgRouting provider and independent seeded graph cost/identity/geometry oracles; current durable HTTP evidence substitutes the solver.",
+        "issue": "https://github.com/honua-io/honua-server/issues/5949"
+      }
+    },
+    {
+      "processId": "routing.od-cost-matrix",
+      "status": "partially-proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/RoutingAsyncWebToolTests.cs",
+          "test": "SubmitJob_StockFeatureSet_CompletesWithNamedResultsAndInputIdentity",
+          "assertion": "Both GPServer and NAServer submit through the real durable worker; named result assertions preserve input OBJECTID=0 and17, expected cost, declared SR and success result. IRoutingProvider is substituted, so this is adapter/runtime evidence only.",
+          "bodyDigest": "sha256:181500b4cbbb56e3e49ad9cbd00fdd7a4d371b7c80511ce05fb7a14427fef1f4"
+        }
+      ],
+      "gap": {
+        "missing": "Compose this queued job with the real pgRouting provider and independent seeded graph cost/identity/geometry oracles; current durable HTTP evidence substitutes the solver.",
+        "issue": "https://github.com/honua-io/honua-server/issues/5950"
+      }
+    },
+    {
+      "processId": "routing.location-allocation",
+      "status": "partially-proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/RoutingAsyncWebToolTests.cs",
+          "test": "SubmitJob_StockFeatureSet_CompletesWithNamedResultsAndInputIdentity",
+          "assertion": "Both GPServer and NAServer submit through the real durable worker; named result assertions preserve input OBJECTID=0 and17, expected cost, declared SR and success result. IRoutingProvider is substituted, so this is adapter/runtime evidence only.",
+          "bodyDigest": "sha256:181500b4cbbb56e3e49ad9cbd00fdd7a4d371b7c80511ce05fb7a14427fef1f4"
+        }
+      ],
+      "gap": {
+        "missing": "Compose this queued job with the real pgRouting provider and independent seeded graph cost/identity/geometry oracles; current durable HTTP evidence substitutes the solver.",
+        "issue": "https://github.com/honua-io/honua-server/issues/5951"
+      }
     }
   ],
   "entryPointDefinitions": {
