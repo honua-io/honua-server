@@ -19,6 +19,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 public sealed class FeatureServerRelationshipResourceTests
 {
     private const string ServiceName = "relationship-resource";
+    private static readonly string[] EditableCapabilities = ["Query", "Create", "Update", "Delete"];
 
     [IntegrationTheory]
     [InlineData("origin", "destination", true)]
@@ -209,7 +210,7 @@ public sealed class FeatureServerRelationshipResourceTests
                     accessPolicy: new AccessPolicy { AllowAnonymous = true },
                     options: new Dictionary<string, JsonElement>
                     {
-                        ["capabilities"] = JsonSerializer.SerializeToElement(new[] { "Query", "Create", "Update", "Delete" })
+                        ["capabilities"] = JsonSerializer.SerializeToElement(EditableCapabilities)
                     })
                 .AddService("other-service", "other-relationships", protocols: [ServiceProtocols.FeatureServer]);
             // Put the other service first to expose accidental global publication lookup.
