@@ -9,6 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Honua.OData.TestHost" />
+    <InternalsVisibleTo Include="Honua.TestKit.Postgres" />
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>Honua.Server</_Parameter1>
     </AssemblyAttribute>

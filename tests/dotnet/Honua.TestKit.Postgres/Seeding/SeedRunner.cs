@@ -501,7 +501,7 @@ internal static class SeedRunner
             return;
         }
 
-        var assembly = typeof(Program).Assembly;
+        var assembly = typeof(PostgresFixture).Assembly;
         await using var stream = assembly.GetManifestResourceStream(migration)
             ?? throw new InvalidOperationException($"Embedded seed migration '{migration}' was not found.");
         using var reader = new StreamReader(stream);

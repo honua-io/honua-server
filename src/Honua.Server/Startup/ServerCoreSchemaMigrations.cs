@@ -13,7 +13,7 @@ namespace Honua.Server.Startup;
 internal static class ServerCoreSchemaMigrations
 {
     internal static readonly PostgresCoreSchemaMigrationManifest Manifest = new(
-        "Honua.Server",
+        typeof(ServerCoreSchemaMigrations).Assembly.GetName().Name!,
         "Honua.Server.Migrations.031_CreateMetadataV2Snapshot.sql",
         "Honua.Server.Migrations.034_CreateMetadataV2ReleasePackages.sql",
         "Honua.Server.Migrations.055_SetRasterDataExternalStorage.sql",
