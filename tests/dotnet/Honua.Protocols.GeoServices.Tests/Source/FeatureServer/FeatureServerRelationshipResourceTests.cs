@@ -166,8 +166,13 @@ public sealed class FeatureServerRelationshipResourceTests
         foreach (var suffix in new[] { "", "/relationships" })
         {
             using var response = await client.GetAsync($"/rest/services/{ServiceName}/FeatureServer{suffix}?f=json");
-            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError,
+            response.StatusCode.Should().Be(HttpStatusCode.OK,
+                "ordinary GeoServices errors carry their code in the JSON envelope");
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            body.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(500,
                 "independent relationship classes cannot be silently collapsed into one successful result");
+            body.RootElement.TryGetProperty("relationships", out _).Should().BeFalse(
+                "ambiguous metadata must not return a partial relationship projection");
         }
     }
 
