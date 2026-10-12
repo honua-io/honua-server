@@ -106,7 +106,7 @@ internal sealed class ODataCrudHandler(
                 layerValidation.Publication, storageLayerId, FeatureProviderReadOperation.Query,
                 effectiveToken).ConfigureAwait(false);
         var result = await _crudService.GetFeatureAsync(
-            layerId, objectId, baseUrl, reader, storageLayerId, effectiveToken, layerValidation.Resource);
+            layerId, objectId, baseUrl, reader, storageLayerId, layerValidation.Resource, effectiveToken);
         if (result.IsSuccess && result.Data is Dictionary<string, object?> payload)
         {
             if (!string.IsNullOrWhiteSpace(result.ETag))
@@ -189,7 +189,7 @@ internal sealed class ODataCrudHandler(
                 layerValidation.Publication, storageLayerId, FeatureProviderReadOperation.Query,
                 effectiveToken).ConfigureAwait(false);
         var result = await _crudService.GetFeatureAsync(
-            layerId, objectId, baseUrl, reader, storageLayerId, effectiveToken, layerValidation.Resource);
+            layerId, objectId, baseUrl, reader, storageLayerId, layerValidation.Resource, effectiveToken);
         if (!result.IsSuccess)
         {
             return ODataUtilityService.CreateResultFromCrudResult(context, result);
@@ -383,7 +383,7 @@ internal sealed class ODataCrudHandler(
         using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(createOutboxScopeData))
         {
             result = await _crudService.CreateFeatureAsync(
-                resolvedLayerId.Value, payload, baseUrl, createStorageLayerId!.Value, effectiveToken, layerValidation.Resource);
+                resolvedLayerId.Value, payload, baseUrl, createStorageLayerId!.Value, layerValidation.Resource, effectiveToken);
         }
         if (result.IsSuccess)
         {
@@ -640,8 +640,8 @@ internal sealed class ODataCrudHandler(
                 ifNoneMatch,
                 updateStorageLayerId!.Value,
                 replace,
-                effectiveToken,
-                layerValidation.Resource);
+                layerValidation.Resource,
+                effectiveToken);
         }
         if (result.IsSuccess)
         {
@@ -774,7 +774,7 @@ internal sealed class ODataCrudHandler(
         using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(deleteOutboxScopeData))
         {
             result = await _crudService.DeleteFeatureAsync(
-                layerId, objectId, ifMatch, ifNoneMatch, deleteStorageLayerId!.Value, effectiveToken, layerValidation.Resource);
+                layerId, objectId, ifMatch, ifNoneMatch, deleteStorageLayerId!.Value, layerValidation.Resource, effectiveToken);
         }
         if (result.IsSuccess)
         {

@@ -107,7 +107,7 @@ public sealed class ODataCrudServiceStorageLayerTests
 
         var result = await service.CreateFeatureAsync(RouteLayerId,
             new ParsedFeaturePayload { Attributes = new Dictionary<string, object?> { ["name"] = "Canonical City" } },
-            "https://example.test", StorageLayerId, CancellationToken.None, featureResource);
+            "https://example.test", StorageLayerId, featureResource, CancellationToken.None);
 
         result.ErrorMessage.Should().Be("Conversion reached the authorized feature resource.");
         await adapter.Received(1).ConvertAsync(Arg.Any<ODataEditRequest>(), featureResource, Arg.Any<CancellationToken>());

@@ -82,14 +82,24 @@ internal sealed partial class ODataCrudService
         CancellationToken cancellationToken = default)
         => GetFeatureAsync(layerId, objectId, baseUrl, _featureReader, layerId, cancellationToken);
 
+    public Task<ODataCrudResult<Dictionary<string, object?>>> GetFeatureAsync(
+        int layerId,
+        long objectId,
+        string baseUrl,
+        IFeatureReader reader,
+        int storageLayerId,
+        CancellationToken cancellationToken = default)
+        => GetFeatureAsync(layerId, objectId, baseUrl, reader, storageLayerId, null, cancellationToken);
+
+    /// <summary>Executes against the canonical resource resolved and authorized by the protocol handler.</summary>
     public async Task<ODataCrudResult<Dictionary<string, object?>>> GetFeatureAsync(
         int layerId,
         long objectId,
         string baseUrl,
         IFeatureReader reader,
         int storageLayerId,
-        CancellationToken cancellationToken = default,
-        MetadataV2Resource? resolvedResource = null)
+        MetadataV2Resource? resolvedResource,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -151,13 +161,28 @@ internal sealed partial class ODataCrudService
     /// resolver. Only coincides with <paramref name="layerId"/> when the publication's
     /// identifier was assigned from the storage id.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    public Task<ODataCrudResult<Dictionary<string, object?>>> CreateFeatureAsync(
+        int layerId,
+        ParsedFeaturePayload payload,
+        string baseUrl,
+        int storageLayerId,
+        CancellationToken cancellationToken = default)
+        => CreateFeatureAsync(layerId, payload, baseUrl, storageLayerId, null, cancellationToken);
+
+    /// <summary>Executes against the canonical resource resolved and authorized by the protocol handler.</summary>
+    /// <param name="layerId">Service-local layer identifier.</param>
+    /// <param name="payload">Parsed feature payload.</param>
+    /// <param name="baseUrl">Base URL used for entity links.</param>
+    /// <param name="storageLayerId">Resolved physical storage-layer handle.</param>
+    /// <param name="resolvedResource">Authorized canonical feature resource, or null for legacy internal callers.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<ODataCrudResult<Dictionary<string, object?>>> CreateFeatureAsync(
         int layerId,
         ParsedFeaturePayload payload,
         string baseUrl,
         int storageLayerId,
-        CancellationToken cancellationToken = default,
-        MetadataV2Resource? resolvedResource = null)
+        MetadataV2Resource? resolvedResource,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -261,7 +286,7 @@ internal sealed partial class ODataCrudService
     /// <summary>
     /// Updates an existing feature with partial update support (PATCH semantics).
     /// </summary>
-    public async Task<ODataCrudResult<Dictionary<string, object?>>> UpdateFeatureAsync(
+    public Task<ODataCrudResult<Dictionary<string, object?>>> UpdateFeatureAsync(
         int layerId,
         long objectId,
         ParsedFeaturePayload payload,
@@ -270,8 +295,21 @@ internal sealed partial class ODataCrudService
         string? ifNoneMatch,
         int storageLayerId,
         bool replace = false,
-        CancellationToken cancellationToken = default,
-        MetadataV2Resource? resolvedResource = null)
+        CancellationToken cancellationToken = default)
+        => UpdateFeatureAsync(layerId, objectId, payload, baseUrl, ifMatch, ifNoneMatch, storageLayerId, replace, null, cancellationToken);
+
+    /// <summary>Executes against the canonical resource resolved and authorized by the protocol handler.</summary>
+    public async Task<ODataCrudResult<Dictionary<string, object?>>> UpdateFeatureAsync(
+        int layerId,
+        long objectId,
+        ParsedFeaturePayload payload,
+        string baseUrl,
+        string? ifMatch,
+        string? ifNoneMatch,
+        int storageLayerId,
+        bool replace,
+        MetadataV2Resource? resolvedResource,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -465,14 +503,24 @@ internal sealed partial class ODataCrudService
     /// <summary>
     /// Deletes a feature with proper validation and error handling.
     /// </summary>
+    public Task<ODataCrudResult<object>> DeleteFeatureAsync(
+        int layerId,
+        long objectId,
+        string? ifMatch,
+        string? ifNoneMatch,
+        int storageLayerId,
+        CancellationToken cancellationToken = default)
+        => DeleteFeatureAsync(layerId, objectId, ifMatch, ifNoneMatch, storageLayerId, null, cancellationToken);
+
+    /// <summary>Executes against the canonical resource resolved and authorized by the protocol handler.</summary>
     public async Task<ODataCrudResult<object>> DeleteFeatureAsync(
         int layerId,
         long objectId,
         string? ifMatch,
         string? ifNoneMatch,
         int storageLayerId,
-        CancellationToken cancellationToken = default,
-        MetadataV2Resource? resolvedResource = null)
+        MetadataV2Resource? resolvedResource,
+        CancellationToken cancellationToken = default)
     {
         try
         {
