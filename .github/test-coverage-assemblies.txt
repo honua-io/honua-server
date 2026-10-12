@@ -1,3 +1,4 @@
+Honua.Ai.ComponentTests.dll
 Honua.Ai.Tests.dll
 Honua.Ai.UnitTests.dll
 Honua.Aws.UnitTests.dll
@@ -26,6 +27,7 @@ Honua.Protocols.OData.UnitTests.dll
 Honua.Protocols.OgcApi.ComponentTests.dll
 Honua.Protocols.OgcApi.Tests.dll
 Honua.Protocols.OgcApi.UnitTests.dll
+Honua.Protocols.OgcClassic.ComponentTests.dll
 Honua.Protocols.OgcClassic.Tests.dll
 Honua.Protocols.OgcClassic.UnitTests.dll
 Honua.Protocols.Scene.ComponentTests.dll

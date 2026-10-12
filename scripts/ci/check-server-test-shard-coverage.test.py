@@ -347,7 +347,7 @@ def walk(source: str, filename: str = "Sample.cs") -> dict[str, dict]:
              mock.patch.object(MODULE, "TEST_PROJECT_DIRS", {"proj": KNOWN}):
             MODULE.enumerate_classes.cache_clear()
             try:
-                return MODULE.enumerate_classes()
+                return {entry["fqn"]: entry for entry in MODULE.enumerate_classes().values()}
             finally:
                 MODULE.enumerate_classes.cache_clear()
 
@@ -506,8 +506,8 @@ def test_raster_serving_shard_owns_the_raster_serving_namespaces() -> None:
     csprojs = {s["name"]: s.get("csproj") or MODULE.DEFAULT_CSPROJ for s in shard_defs}
     classes = MODULE.enumerate_test_classes()
     raster = [
-        fqn for fqn in classes
-        if fqn.startswith((
+        key for key, entry in classes.items()
+        if entry["fqn"].startswith((
             "Honua.Server.Tests.Features.Protocols.Cog.",
             "Honua.Server.Tests.Features.Protocols.Zarr.",
             "Honua.Server.Tests.Features.Protocols.Coverages.",
@@ -517,7 +517,7 @@ def test_raster_serving_shard_owns_the_raster_serving_namespaces() -> None:
     for fqn in raster:
         owners = [
             name for name, node in parsed.items()
-            if csprojs[name] == classes[fqn]["csproj"] and MODULE._eval(node, fqn)
+            if csprojs[name] == classes[fqn]["csproj"] and MODULE._eval(node, classes[fqn]["fqn"])
         ]
         assert owners == ["Raster Serving Scene Geometry and Terrain"], (fqn, owners)
 
@@ -529,11 +529,11 @@ def test_studio_dashboard_mcp_integration_has_one_server_assembly_owner() -> Non
     )
     fqn = "Honua.Server.Tests.Features.Protocols.Mcp.StudioDashboardMcpIntegrationTests"
     classes = MODULE.enumerate_test_classes()
-    assert classes[fqn]["csproj"] == KNOWN
-    assert classes[fqn]["has_tests"]
+    assert classes[f"{KNOWN}::{fqn}"]["csproj"] == KNOWN
+    assert classes[f"{KNOWN}::{fqn}"]["has_tests"]
     owners = [
         shard["name"] for shard in config["shards"]
-        if (shard.get("csproj") or KNOWN) == classes[fqn]["csproj"]
+        if (shard.get("csproj") or KNOWN) == classes[f"{KNOWN}::{fqn}"]["csproj"]
         and MODULE._eval(MODULE._FilterParser(shard["filter"]).parse(), fqn)
     ]
     # #3204 moved Features.Studio (and this fixture with it) to `Server Features
@@ -561,11 +561,11 @@ def test_core_capacity_moves_have_exactly_one_server_assembly_owner() -> None:
         ("PatchConcurrencyTests", "Core Mutation Concurrency"),
     ):
         fqn = f"Honua.Server.Tests.{name}"
-        assert classes[fqn]["csproj"] == KNOWN
-        assert classes[fqn]["has_tests"]
+        assert classes[f"{KNOWN}::{fqn}"]["csproj"] == KNOWN
+        assert classes[f"{KNOWN}::{fqn}"]["has_tests"]
         owners = [
             shard["name"] for shard in config["shards"]
-            if (shard.get("csproj") or KNOWN) == classes[fqn]["csproj"]
+            if (shard.get("csproj") or KNOWN) == classes[f"{KNOWN}::{fqn}"]["csproj"]
             and MODULE._eval(MODULE._FilterParser(shard["filter"]).parse(), fqn)
         ]
         assert owners == [owner], (fqn, owners)
@@ -658,7 +658,8 @@ def test_gp_nas_partition_preserves_every_runnable_method_and_budget() -> None:
     parent = MODULE._FilterParser(partition["filter"]).parse()
     classes = MODULE.runnable_classes(MODULE.enumerate_classes())
     selected = 0
-    for fqn, info in classes.items():
+    for key, info in classes.items():
+        fqn = info["fqn"]
         if info["csproj"] != shards[partition["children"][0]]["csproj"]:
             continue
         assert MODULE.partition_claim_errors(partition["name"], parent,
@@ -671,7 +672,7 @@ def test_gp_nas_partition_preserves_every_runnable_method_and_budget() -> None:
                              "GeoServices GPServer SOAP Progress"),
                             ("SoapSubmitJob_PublishedName_UsesCanonicalPlanAndBinding",
                              "GeoServices GPServer SOAP")):
-        assert method in classes[soap]["methods"]
+        assert method in classes[f"{shards[partition['children'][0]]['csproj']}::{soap}"]["methods"]
         assert [name for name in partition["children"]
                 if MODULE._eval(parsed[name], soap + "." + method)] == [expected]
     for name in partition["children"]:

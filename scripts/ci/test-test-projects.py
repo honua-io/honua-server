@@ -210,6 +210,46 @@ class CatalogTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'executable test dependency'):
             catalog.validate(self.root, self.entries)
 
+    def test_component_boundary_rejects_server_and_full_kit_through_support(self):
+        component = self.project('tests/dotnet/Honua.Example.ComponentTests', [self.owner])
+        self.entries['projects'][component] = dict(role='component', runtimeOwners=[self.owner], resources=[], isolated=False, coverageRequired=False)
+        for forbidden in ('src/Honua.Server', 'tests/dotnet/Honua.TestKit'):
+            target = self.project(forbidden)
+            support = self.project('tests/dotnet/Honua.TestKit.Hosting', [target])
+            self.entries['projects'][support] = dict(role='support', runtimeOwners=[], resources=[], isolated=False, coverageRequired=False)
+            if target.startswith('tests/'):
+                self.entries['projects'][target] = dict(role='support', runtimeOwners=[], resources=[], isolated=False, coverageRequired=False)
+            import os
+            path = self.root / component
+            path.write_text('<Project><ItemGroup><ProjectReference Include="' + os.path.relpath(self.root / support, path.parent) + '" /></ItemGroup></Project>')
+            self.entries['projects'][component]['runtimeOwners'] = []
+            self.generate()
+            with self.assertRaisesRegex(ValueError, 'component references full host'):
+                catalog.validate(self.root, self.entries)
+
+    def test_same_class_in_two_assemblies_keeps_distinct_methods_and_owners(self):
+        spec = importlib.util.spec_from_file_location('coverage', Path(__file__).with_name('check-server-test-shard-coverage.py'))
+        coverage = importlib.util.module_from_spec(spec)
+        import sys
+        sys.modules[spec.name] = coverage
+        spec.loader.exec_module(coverage)
+        for project, method in ((self.unit, 'PureCase'), (self.integration, 'HostCase')):
+            (self.root / project).with_name('Example.cs').write_text(
+                f'namespace Honua.Same; public class SplitTests {{ [Fact] public void {method}() {{ }} }}')
+        directories = {str(Path(p).parent): p for p in (self.unit, self.integration)}
+        with patch.object(coverage, 'REPO_ROOT', self.root), patch.object(coverage, 'TEST_PROJECT_DIRS', directories):
+            classes = coverage.runnable_classes(coverage.enumerate_classes())
+        self.assertEqual(2, len(classes))
+        self.assertEqual(['Honua.Same.SplitTests.PureCase'], coverage.selection_pool(classes, self.unit))
+        self.assertEqual(['Honua.Same.SplitTests.HostCase'], coverage.selection_pool(classes, self.integration))
+        parsed = {name: coverage._FilterParser('FullyQualifiedName~Honua.Same.SplitTests').parse() for name in ('unit', 'host')}
+        projects = {'unit': self.unit, 'host': self.integration}
+        self.assertTrue(all(coverage.claiming_shards(e, parsed, projects) for e in classes.values()))
+        del parsed['host']
+        orphans = [e for e in classes.values() if not coverage.claiming_shards(e, parsed, projects)]
+        self.assertEqual([self.integration], [e['csproj'] for e in orphans])
+        self.assertEqual({'HostCase'}, orphans[0]['methods'])
+
     def test_shared_change_selects_units_only(self):
         result = catalog.plan(self.root, self.entries, ['Directory.Build.props'])
         self.assertEqual([self.unit], result['selectedProjects'])

@@ -172,11 +172,6 @@
       "proof_filter": "FullyQualifiedName~Honua"
     },
     {
-      "csproj": "tests/dotnet/Honua.Db.DuckDB.Tests/Honua.DuckDB.Tests.csproj",
-      "artifact_suffix": "honua-duckdb-tests",
-      "proof_filter": "FullyQualifiedName~Honua"
-    },
-    {
       "csproj": "tests/dotnet/Honua.Protocols.GeoServices.ComponentTests/Honua.Protocols.GeoServices.ComponentTests.csproj",
       "artifact_suffix": "honua-protocols-geoservices-componenttests",
       "proof_filter": "FullyQualifiedName~Honua"
@@ -204,6 +199,16 @@
     {
       "csproj": "tests/dotnet/Honua.Protocols.Stac.ComponentTests/Honua.Protocols.Stac.ComponentTests.csproj",
       "artifact_suffix": "honua-protocols-stac-componenttests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Ai.ComponentTests/Honua.Ai.ComponentTests.csproj",
+      "artifact_suffix": "honua-ai-componenttests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.ComponentTests/Honua.Protocols.OgcClassic.ComponentTests.csproj",
+      "artifact_suffix": "honua-protocols-ogcclassic-componenttests",
       "proof_filter": "FullyQualifiedName~Honua"
     }
   ]

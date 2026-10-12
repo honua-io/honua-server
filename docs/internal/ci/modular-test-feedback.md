@@ -81,3 +81,14 @@ are allowed dependencies. The canonical `Honua.Architecture.Tests` project is th
 sole exception: its generated references intentionally collect every required
 test assembly for full coverage discovery; this exception does not apply to
 component hosts or ordinary tests.
+
+Minimal component projects reject transitive Server, full TestKit, and protocol
+modules outside their reviewed runtime owners, independently of the unit-only
+`isolated` flag. They may use Hosting and explicit provider/fixture support. New
+component suites have dedicated shards; existing foundation/provider families
+(such as the in-process DuckDB suite) retain their existing scheduling and are
+not duplicated merely because their catalog role is component.
+
+Coverage inventory keys include both project and fully qualified class name.
+Partial migrations may preserve the same class name in multiple assemblies;
+each assembly retains its own methods, source files, and shard ownership.

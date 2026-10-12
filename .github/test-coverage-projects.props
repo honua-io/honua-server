@@ -1,5 +1,6 @@
 <Project>
   <ItemGroup>
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Ai.ComponentTests/Honua.Ai.ComponentTests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Aws.UnitTests/Honua.Aws.UnitTests.csproj" />
@@ -28,6 +29,7 @@
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Protocols.OgcApi.ComponentTests/Honua.Protocols.OgcApi.ComponentTests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Protocols.OgcApi.UnitTests/Honua.Protocols.OgcApi.UnitTests.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Protocols.OgcClassic.ComponentTests/Honua.Protocols.OgcClassic.ComponentTests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Protocols.OgcClassic.UnitTests/Honua.Protocols.OgcClassic.UnitTests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Protocols.Scene.ComponentTests/Honua.Protocols.Scene.ComponentTests.csproj" />

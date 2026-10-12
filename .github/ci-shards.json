@@ -3633,28 +3633,6 @@
       "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
     },
     {
-      "name": "DuckDB Tests Components",
-      "shard_name": "DuckDB Tests Components",
-      "dispatch_rank": 1.1,
-      "artifact_suffix": "honua-duckdb-tests",
-      "log_name": "server-tests-honua-duckdb-tests",
-      "timeout_minutes": 20,
-      "test_timeout_minutes": 10,
-      "max_cpu_count": "",
-      "upload_operator_eval_report": false,
-      "upload_odata_evidence": false,
-      "csproj": "tests/dotnet/Honua.Db.DuckDB.Tests/Honua.DuckDB.Tests.csproj",
-      "filter": "FullyQualifiedName~Honua",
-      "paths": [
-        "src/Honua.Core.Abstractions/",
-        "src/Honua.Core/",
-        "src/Honua.Db/DuckDB/",
-        "src/Honua.Geometry/",
-        "tests/dotnet/Honua.Db.DuckDB.Tests/"
-      ],
-      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
-    },
-    {
       "name": "Protocols GeoServices Components",
       "shard_name": "Protocols GeoServices Components",
       "dispatch_rank": 1.1,
@@ -3815,6 +3793,63 @@
         "src/Honua.Protocols.Stac/",
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Protocols.Stac.ComponentTests/"
+      ],
+      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
+    },
+    {
+      "name": "Ai Components",
+      "shard_name": "Ai Components",
+      "dispatch_rank": 1.1,
+      "artifact_suffix": "honua-ai-componenttests",
+      "log_name": "server-tests-honua-ai-componenttests",
+      "timeout_minutes": 20,
+      "test_timeout_minutes": 10,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Ai.ComponentTests/Honua.Ai.ComponentTests.csproj",
+      "filter": "FullyQualifiedName~Honua",
+      "paths": [
+        "src/Honua.Ai/",
+        "src/Honua.Core.Abstractions/",
+        "src/Honua.Core/",
+        "src/Honua.Geocoding/",
+        "src/Honua.Geometry/",
+        "src/Honua.Geoprocessing/",
+        "src/Honua.Hosting/",
+        "src/Honua.Jobs/",
+        "src/Honua.Routing/",
+        "src/Honua.ServiceDefaults/",
+        "tests/dotnet/Honua.Ai.ComponentTests/"
+      ],
+      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
+    },
+    {
+      "name": "Protocols OgcClassic Components",
+      "shard_name": "Protocols OgcClassic Components",
+      "dispatch_rank": 1.1,
+      "artifact_suffix": "honua-protocols-ogcclassic-componenttests",
+      "log_name": "server-tests-honua-protocols-ogcclassic-componenttests",
+      "timeout_minutes": 20,
+      "test_timeout_minutes": 10,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.ComponentTests/Honua.Protocols.OgcClassic.ComponentTests.csproj",
+      "filter": "FullyQualifiedName~Honua",
+      "paths": [
+        "src/Honua.Core.Abstractions/",
+        "src/Honua.Core/",
+        "src/Honua.Db/Postgres.Shared/",
+        "src/Honua.Db/Postgres/",
+        "src/Honua.Geometry/",
+        "src/Honua.Geoprocessing/",
+        "src/Honua.Hosting/",
+        "src/Honua.Jobs/",
+        "src/Honua.Protocols.Ogc.Shared/",
+        "src/Honua.Protocols.OgcClassic/",
+        "src/Honua.ServiceDefaults/",
+        "tests/dotnet/Honua.Protocols.OgcClassic.ComponentTests/"
       ],
       "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
     }

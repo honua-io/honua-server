@@ -398,6 +398,7 @@ def runnable_methods(root: Path, fqn: str, entry: dict[str, Any]) -> list[str]:
     # Catalogued isolated unit shards own Fast tests too; foundation
     # jobs still exclude Fast from every existing integration shard.
     excluded_tiers = EXCLUDED_TIERS - {"Fast"} if catalog_unit_project(root, entry.get("csproj", "")) else EXCLUDED_TIERS
+    fqn = entry.get("fqn", fqn)
     simple = fqn.rsplit(".", 1)[-1]
     class_tiers: set[str] = set()
     method_tiers: dict[str, set[str]] = {}
@@ -464,7 +465,7 @@ def count_test_class_hits(
                     if entry["csproj"] != project:
                         continue
                     if any(
-                        coverage.shard_claims(shard["filter"], f"{fqn}.{method}")
+                        coverage.shard_claims(shard["filter"], f"{entry.get('fqn', fqn)}.{method}")
                         for method in runnable[fqn]
                     ):
                         count += 1

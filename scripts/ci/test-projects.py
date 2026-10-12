@@ -131,6 +131,12 @@ def validate(root, catalog):
                     raise ValueError(f'{project}: executable test dependency {reference} (including transitive support dependencies)')
         if not set(entry['runtimeOwners']) <= refs:
             raise ValueError(f'{project}: runtime owner outside dependency closure')
+        if entry['role'] == 'component':
+            for reference in refs - {project}:
+                if '/Honua.Server/' in reference or '/Honua.TestKit/' in reference:
+                    raise ValueError(f'{project}: component references full host infrastructure {reference}')
+                if reference.startswith('src/') and 'Honua.Protocols.' in reference and reference not in entry['runtimeOwners']:
+                    raise ValueError(f'{project}: component references unreviewed protocol {reference}')
         if not entry['isolated']:
             continue
         if entry['role'] != 'unit' or entry['resources']:
