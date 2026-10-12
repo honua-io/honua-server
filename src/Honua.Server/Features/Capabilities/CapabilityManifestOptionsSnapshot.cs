@@ -47,8 +47,10 @@ internal sealed class CapabilityManifestOptionsSnapshot
         DeploymentIdentity deploymentIdentity,
         IOptions<DurableJobSubstrateOptions>? durableJobSubstrateOptions = null,
         IExecutionJobStore? executionJobStore = null,
-        IJobQueue? jobQueue = null)
+        IJobQueue? jobQueue = null,
+        Honua.Core.Features.FileImport.Abstractions.IBackgroundImportRunnerInfo? backgroundImportRunner = null)
     {
+        BackgroundImportRunner = backgroundImportRunner;
         ArgumentNullException.ThrowIfNull(limitsOptions);
         ArgumentNullException.ThrowIfNull(streamOptions);
         ArgumentNullException.ThrowIfNull(eventOptions);
@@ -93,6 +95,12 @@ internal sealed class CapabilityManifestOptionsSnapshot
             EnabledCapabilities = deploymentProfile.EnabledCapabilities.ToArray()
         };
     }
+
+    /// <summary>
+    /// The background-import runner resolved at composition (honua-server#5916); null when no
+    /// import job service is composed.
+    /// </summary>
+    public Honua.Core.Features.FileImport.Abstractions.IBackgroundImportRunnerInfo? BackgroundImportRunner { get; }
 
     public LimitsOptions Limits { get; }
 

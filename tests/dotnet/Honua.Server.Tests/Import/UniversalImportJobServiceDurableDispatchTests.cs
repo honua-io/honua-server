@@ -26,7 +26,7 @@ namespace Honua.Server.Tests.Import;
 /// runner receives an execution job carrying the staged storage reference; a Lambda host without
 /// one refuses; a long-lived host without one keeps the in-process runner.
 /// </summary>
-public sealed class DurableImportJobDispatchTests
+public sealed class UniversalImportJobServiceDurableDispatchTests
 {
     private const string BatchBackendName = "honua-aws-batch";
 
@@ -239,6 +239,42 @@ public sealed class DurableImportJobDispatchTests
     }
 
     [UnitTest]
+    public async Task QueueImportAsync_WhenDurableImportQueueIsFull_ThrowsQueueFull()
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        var progressStore = new InMemoryProgressStore();
+        var queue = Substitute.For<IJobQueue>();
+        var service = CreateService(
+            BackgroundImportRunnerDecision.Decide(true, null, frozenBetweenRequests: false),
+            new ProgressReadingImportJobService(progressStore), jobStore, progressStore, [], queue,
+            new ImportLimits { MaxConcurrentBackgroundJobs = 1, MaxBackgroundJobQueueDepth = 1 });
+
+        await service.QueueImportAsync(StagedRequest(), 1);
+        await service.QueueImportAsync(StagedRequest(), 1);
+        var act = () => service.QueueImportAsync(StagedRequest(), 1);
+
+        await act.Should().ThrowAsync<ImportJobQueueFullException>();
+        await queue.Received(2).EnqueueAsync(Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task GetActiveJobsAsync_DropsDurableJobsWhoseExecutionRecordEnded()
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        var progressStore = new InMemoryProgressStore();
+        var service = CreateService(
+            BackgroundImportRunnerDecision.Decide(true, null, frozenBetweenRequests: false),
+            new ProgressReadingImportJobService(progressStore), jobStore, progressStore, [], Substitute.For<IJobQueue>());
+        var live = await service.QueueImportAsync(StagedRequest(), 1);
+        var dead = await service.QueueImportAsync(StagedRequest(), 1);
+        await jobStore.SetAsync((await jobStore.GetAsync(dead))! with { Status = ExecutionJobStatus.Failed });
+
+        var active = await service.GetActiveJobsAsync();
+
+        active.Select(p => p.JobId).Should().Equal(live);
+    }
+
+    [UnitTest]
     public async Task GetProgressAsync_WhenExecutionRecordFailedWithoutTerminalDocument_ReportsFailed()
     {
         var jobStore = new InMemoryExecutionJobStore();
@@ -311,10 +347,12 @@ public sealed class DurableImportJobDispatchTests
         IExecutionJobStore? jobStore,
         IUniversalProgressStore progressStore,
         IEnumerable<IBatchComputeBackend> backends,
-        IJobQueue? queue = null)
+        IJobQueue? queue = null,
+        ImportLimits? limits = null)
     {
         var importService = Substitute.For<IFileImportService>();
         importService.DetectFormat(Arg.Any<string>()).Returns(SupportedFileFormat.GeoJson);
+        importService.Limits.Returns(limits ?? new ImportLimits());
         var services = new ServiceCollection();
         services.AddScoped(_ => importService);
         var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();

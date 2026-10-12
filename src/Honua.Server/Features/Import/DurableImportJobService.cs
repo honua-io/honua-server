@@ -38,6 +38,7 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
     /// <summary>Ephemeral (scratch) storage headroom per staged byte for the batch job-definition tier.</summary>
     private const int EphemeralBytesMultiplier = 3;
     private const long BytesPerGib = 1024L * 1024 * 1024;
+    private static readonly TimeSpan DispatchTimeout = TimeSpan.FromSeconds(30);
 
     private readonly IImportJobService _inProcess;
     private readonly BackgroundImportRunnerDecision _decision;
@@ -88,8 +89,9 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
         }
 
         var jobId = Guid.NewGuid().ToString("N");
-        var queued = FileImportJobSubmission.CreateQueuedProgress(
+        var (queued, limits) = FileImportJobSubmission.CreateQueuedProgress(
             _scopeFactory, request, fileSize, jobId, _decision.Runner, _instanceId);
+        await EnsureAdmittedAsync(limits, cancellationToken).ConfigureAwait(false);
         var job = BuildJobRecord(jobId, request, fileSize, _decision, DateTimeOffset.UtcNow);
 
         if (!await _jobStore!.TryCreateAsync(job, cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -97,13 +99,16 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
             throw new InvalidOperationException($"Failed to create file-import execution job '{jobId}'.");
         }
 
-        // The store stamps the created record's version; the remote submission's CAS writes must
-        // start from the persisted record, not the unversioned draft.
-        job = await _jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false) ?? job;
-
+        // Once the record exists the dispatch must finish (or be compensated) whatever happens to
+        // the request: a caller that disconnects now must not strand a Queued record nobody enqueued.
+        using var dispatch = new CancellationTokenSource(DispatchTimeout);
+        var dispatchToken = dispatch.Token;
         try
         {
-            await _progressStore.SetProgressAsync(jobId, queued, ProgressRetention, cancellationToken).ConfigureAwait(false);
+            // The store stamps the created record's version; the remote submission's CAS writes must
+            // start from the persisted record, not the unversioned draft.
+            job = await _jobStore.GetAsync(jobId, dispatchToken).ConfigureAwait(false) ?? job;
+            await _progressStore.SetProgressAsync(jobId, queued, ProgressRetention, dispatchToken).ConfigureAwait(false);
             if (_decision.Mode == BackgroundImportRunnerMode.DurableLocal)
             {
                 if (_jobQueue is null)
@@ -111,7 +116,7 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
                     throw new InvalidOperationException("The local durable job queue is not composed.");
                 }
 
-                await _jobQueue.EnqueueAsync(jobId, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await _jobQueue.EnqueueAsync(jobId, cancellationToken: dispatchToken).ConfigureAwait(false);
             }
             else
             {
@@ -119,11 +124,13 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
                     ?? throw new InvalidOperationException(
                         $"No batch compute backend registered for '{job.Spec.Backend}' ({job.Spec.TargetKind}).");
                 await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
-                    job, backend, _jobStore, _progressStore, ProgressRetention, _logger, cancellationToken).ConfigureAwait(false);
+                    job, backend, _jobStore, _progressStore, ProgressRetention, _logger, dispatchToken).ConfigureAwait(false);
             }
         }
-        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
+            // Deliberately broad: any dispatch fault, timeout included, fails the record and the
+            // document so the job never reads as queued forever.
             using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
                 _jobStore,
@@ -223,8 +230,46 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
         return requested;
     }
 
-    public Task<IReadOnlyList<ImportProgress>> GetActiveJobsAsync(CancellationToken cancellationToken = default)
-        => _inProcess.GetActiveJobsAsync(cancellationToken);
+    public async Task<IReadOnlyList<ImportProgress>> GetActiveJobsAsync(CancellationToken cancellationToken = default)
+    {
+        var active = await _inProcess.GetActiveJobsAsync(cancellationToken).ConfigureAwait(false);
+        if (_jobStore is null || active.Count == 0)
+        {
+            return active;
+        }
+
+        // A durable job whose execution record ended without a terminal document (worker crash,
+        // timeout, cancel) is no longer active.
+        var stillActive = new List<ImportProgress>(active.Count);
+        foreach (var progress in active)
+        {
+            var job = await _jobStore.GetAsync(progress.JobId, cancellationToken).ConfigureAwait(false);
+            var projected = job is null ? progress : ProjectExecutionOutcome(progress, job);
+            if (!IsTerminal(projected.Status))
+            {
+                stillActive.Add(projected);
+            }
+        }
+
+        return stillActive;
+    }
+
+    /// <summary>
+    /// Applies the background-import queue limits to durable submissions: the active
+    /// <see cref="ExecutionJobKind.FileImport"/> records across every host count against
+    /// <c>MaxConcurrentBackgroundJobs + MaxBackgroundJobQueueDepth</c>, as the in-process runner
+    /// counts its own. Best-effort (not atomic across hosts); a full queue is a 429.
+    /// </summary>
+    private async Task EnsureAdmittedAsync(ImportLimits limits, CancellationToken cancellationToken)
+    {
+        var maxOutstanding = Math.Max(1, limits.MaxConcurrentBackgroundJobs) + Math.Max(0, limits.MaxBackgroundJobQueueDepth);
+        var active = await _jobStore!.ListActiveAsync(ExecutionJobKind.FileImport, maxOutstanding + 1, cancellationToken)
+            .ConfigureAwait(false);
+        if (active.Count >= maxOutstanding)
+        {
+            throw new ImportJobQueueFullException();
+        }
+    }
 
     public void Dispose() => (_inProcess as IDisposable)?.Dispose();
 

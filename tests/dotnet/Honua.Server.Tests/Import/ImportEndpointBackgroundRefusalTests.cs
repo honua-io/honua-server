@@ -28,7 +28,7 @@ namespace Honua.Server.Tests.Import;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
-public sealed class BackgroundImportRefusalTests
+public sealed class ImportEndpointBackgroundRefusalTests
 {
     private const string GeoJson = """
         {

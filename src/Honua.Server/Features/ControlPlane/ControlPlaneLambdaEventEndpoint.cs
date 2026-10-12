@@ -128,7 +128,7 @@ internal static partial class ControlPlaneLambdaEventEndpoint
         // against a database it cannot use (honua-server#5916).
         if (ControlPlaneNotReadyGuard.TryRefuse(context, degradedStartup) is { } notReady)
         {
-            LogNotReady(logger, degradedStartup?.ReasonCode ?? ReadinessReasonCodes.DatabaseStartupDegraded);
+            LogNotReady(logger, context.Response.Headers[ReadinessReasonCodes.HeaderName].ToString());
             return notReady;
         }
 

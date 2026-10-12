@@ -15,10 +15,11 @@ namespace Honua.Import.FileImport.Durable;
 internal static class FileImportJobSubmission
 {
     /// <summary>
-    /// Validates <paramref name="request"/> and returns the queued job document.
+    /// Validates <paramref name="request"/> and returns the queued job document with the import
+    /// limits the submission is admitted against.
     /// </summary>
     /// <exception cref="NotSupportedException">The format is unknown or gated off.</exception>
-    public static ImportProgress CreateQueuedProgress(
+    public static (ImportProgress Progress, ImportLimits Limits) CreateQueuedProgress(
         IServiceScopeFactory scopeFactory,
         ImportRequest request,
         long fileSizeBytes,
@@ -35,7 +36,7 @@ internal static class FileImportJobSubmission
         var format = ImportFormatDispatchGuard.RequireGatedFormat(
             importService.DetectFormat(request.FileName), request.FileName);
 
-        return ImportProgress.CreateInitial(
+        var progress = ImportProgress.CreateInitial(
             jobId,
             request.TableName,
             format,
@@ -53,5 +54,6 @@ internal static class FileImportJobSubmission
             Runner = runner,
             InstanceId = instanceId,
         };
+        return (progress, importService.Limits);
     }
 }

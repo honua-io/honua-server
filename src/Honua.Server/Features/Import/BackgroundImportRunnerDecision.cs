@@ -47,6 +47,9 @@ internal sealed class BackgroundImportRunnerDecision : IBackgroundImportRunnerIn
     /// </summary>
     internal const string SharedFileStorageRequiredReason = "shared-file-storage-required";
 
+    /// <summary>Reason code when no import job service is composed on this host.</summary>
+    internal const string ImportServiceMissingReason = "dependency-unavailable";
+
     /// <summary>Set by the AWS Lambda runtime in every function (including web-adapter functions).</summary>
     internal const string AwsLambdaFunctionNameKey = "AWS_LAMBDA_FUNCTION_NAME";
 
