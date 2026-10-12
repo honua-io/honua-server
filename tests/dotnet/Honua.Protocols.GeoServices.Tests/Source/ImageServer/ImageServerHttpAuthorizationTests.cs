@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -145,16 +146,23 @@ public sealed class ImageServerHttpAuthorizationTests
         try
         {
             await fixture.InitializeAsync();
-            fixture.UpdateV2ResourceMetadata(
-                LayerId, accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = [EntitledRole] });
-            // SOAP resolves the ImageServer publication, which has a distinct resource
-            // from the first feature publication sharing layer index zero.
-            fixture.UpdateV2ServiceMetadata(
-                WebAppFixture.TestServiceId,
-                accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = [EntitledRole] });
-            fixture.GetCurrentV2GraphSnapshot().Graph.Services
-                .Where(service => service.Metadata.Id == "svc-image-test")
-                .Should().ContainSingle().Which.AccessPolicy!.AllowedRoles.Should().Equal(EntitledRole);
+            var graph = fixture.GetCurrentV2GraphSnapshot().Graph;
+            var provider = (TestMetadataV2GraphProvider)fixture.GetService<IMetadataV2GraphProvider>();
+            provider.SetGraph(graph with
+            {
+                Revision = graph.Revision + 1,
+                Resources = graph.Resources.Select(resource => resource.Metadata.Id == "res-image-test"
+                    ? resource with
+                    {
+                        AccessPolicy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = [EntitledRole] }
+                    }
+                    : resource).ToArray()
+            }, schema: fixture.CurrentSchema);
+            var restricted = fixture.GetCurrentV2GraphSnapshot().Graph;
+            restricted.Resources.Single(resource => resource.Metadata.Id == "res-image-test")
+                .AccessPolicy!.AllowedRoles.Should().Equal(EntitledRole);
+            restricted.Services.Single(service => service.Metadata.Id == "svc-image-test")
+                .AccessPolicy.Should().BeNull("denial must be enforced by the raster resource, not a service gate");
             var entitled = await IssueAsync(fixture, "imagery-analyst", EntitledRole);
             var unentitled = await IssueAsync(fixture, "map-viewer", UnrelatedRole);
             await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
