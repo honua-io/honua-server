@@ -78,7 +78,9 @@
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Io/Honua.Io.csproj",
         "src/Honua.Jobs/Honua.Jobs.csproj",
+        "src/Honua.Plugins.Abstractions/Honua.Plugins.Abstractions.csproj",
         "src/Honua.Routing/Honua.Routing.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
       ],

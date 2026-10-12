@@ -80,4 +80,7 @@
   <ItemGroup>
     <Compile Include="../Shared/ProtocolUnits/Ai/McpSessionSharedStoreTests.Shared.cs" Link="Shared/McpSessionSharedStoreTests.Shared.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/Ai/McpServiceCollectionExtensionsTests.Shared.cs" Link="Shared/McpServiceCollectionExtensionsTests.Shared.cs" />
+  </ItemGroup>
 </Project>

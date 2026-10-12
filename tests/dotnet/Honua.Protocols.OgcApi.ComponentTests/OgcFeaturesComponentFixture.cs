@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Cryptography;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.TestKit.Hosting;
 using Honua.TestKit.Postgres.Hosting;
@@ -37,10 +38,12 @@ public sealed class OgcFeaturesComponentFixture : IAsyncLifetime, IAsyncDisposab
                     ["Security:ConnectionEncryption:MasterKey"] = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
                 });
                 PostgresComponentServices.Configure(builder, _database.ConnectionString);
+                builder.Services.AddHonuaTenantContext(builder.Configuration);
                 builder.Services.AddOgcFeatures(builder.Configuration);
             }, app =>
             {
                 PostgresComponentServices.UseRequestPipeline(app);
+                app.UseHonuaTenantContext();
                 app.MapOgcFeaturesEndpoints();
             });
             Client.DefaultRequestHeaders.Add("X-API-Key", key);

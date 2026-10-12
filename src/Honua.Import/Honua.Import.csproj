@@ -54,6 +54,5 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Import.UnitTests" />
-    <InternalsVisibleTo Include="Honua.Postgres.UnitTests" />
   </ItemGroup>
 </Project>

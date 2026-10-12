@@ -162,7 +162,8 @@ public sealed class GeoServerInventoryBaselineTests
 
         var sourceBaselinePath = Path.GetFullPath(Path.Join(
             AppContext.BaseDirectory,
-            "..", "..", "..",
+            "..", "..", "..", "..",
+            "Honua.Db.Postgres.Tests",
             "Features",
             "Import",
             "Baselines",

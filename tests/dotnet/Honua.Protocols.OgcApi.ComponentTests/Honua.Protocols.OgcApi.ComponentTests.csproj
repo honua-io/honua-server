@@ -25,6 +25,7 @@
     <ProjectReference Include="../Honua.TestKit.Postgres/Honua.TestKit.Postgres.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="../../../src/Honua.Server/openapi.json" Link="openapi.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Shared/RunnerConfig/component.xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -40,4 +40,12 @@
   <ItemGroup>
     <None Include="../Shared/RunnerConfig/unit.xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="../Honua.Db.Postgres.Tests/Features/Import/Fixtures/ArcGis/*.json" Link="Features/Import/Fixtures/ArcGis/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Honua.Db.Postgres.Tests/Features/Import/Baselines/ArcGis/*.json" Link="Features/Import/Baselines/ArcGis/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Honua.Db.Postgres.Tests/Features/Import/Fixtures/GeoServer/*.json" Link="Features/Import/Fixtures/GeoServer/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Honua.Db.Postgres.Tests/Features/Import/Baselines/GeoServer/*.json" Link="Features/Import/Baselines/GeoServer/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Honua.Db.Postgres.Tests/Features/Import/Fixtures/RetryResume/*.json" Link="Features/Import/Fixtures/RetryResume/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Honua.Db.Postgres.Tests/Features/Import/Fixtures/LoadMode/*.geojson" Link="Features/Import/Fixtures/LoadMode/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

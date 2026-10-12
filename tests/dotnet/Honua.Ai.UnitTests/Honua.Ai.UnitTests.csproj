@@ -24,6 +24,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../../src/Honua.Ai/Honua.Ai.csproj" />
+    <ProjectReference Include="../../../src/Honua.Io/Honua.Io.csproj" />
     <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
     <ProjectReference Include="../Honua.TestKit.Core/Honua.TestKit.Core.csproj" />
     <ProjectReference Include="../../../src/Honua.Hosting/Honua.Hosting.csproj" />
@@ -40,5 +41,8 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../Shared/ProtocolUnits/Ai/SpecGroundingTestSupport.cs" Link="Shared/SpecGroundingTestSupport.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/Ai/McpServiceCollectionExtensionsTests.Shared.cs" Link="Shared/McpServiceCollectionExtensionsTests.Shared.cs" />
   </ItemGroup>
 </Project>

@@ -437,7 +437,8 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
 
         var sourceBaselinePath = Path.GetFullPath(Path.Join(
             AppContext.BaseDirectory,
-            "..", "..", "..",
+            "..", "..", "..", "..",
+            "Honua.Db.Postgres.Tests",
             "Features",
             "Import",
             "Baselines",

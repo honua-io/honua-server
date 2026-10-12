@@ -13,6 +13,12 @@
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="NSubstitute" />
+    <!-- Rendering tests previously received these runtime assets through Honua.Server.
+         Preserve the host's JIT/AOT asset selection for actual in-process rendering. -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux"
+                      Condition="'$(HonuaUseSkiaNoDependencies)' != 'true'" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies"
+                      Condition="'$(HonuaUseSkiaNoDependencies)' == 'true'" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../../src/Honua.Hosting/Honua.Hosting.csproj" />
