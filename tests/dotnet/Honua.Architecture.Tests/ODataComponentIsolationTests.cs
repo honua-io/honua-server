@@ -55,8 +55,8 @@ public sealed class ODataComponentIsolationTests
         var host = ProjectPath(root, "Honua.OData.TestHost");
         var manifest = Path.Combine(root, "src", "Honua.Server", "Startup", "ServerCoreSchemaMigrations.cs");
         var project = XDocument.Load(host);
-        Assert.Single(project.Descendants("Compile").Where(item =>
-            ResolveInclude(host, item.Attribute("Include")!.Value) == manifest && item.Attribute("Link") is not null));
+        Assert.Single(project.Descendants("Compile"), item =>
+            ResolveInclude(host, item.Attribute("Include")!.Value) == manifest && item.Attribute("Link") is not null);
         var migrations = Path.Combine(root, "src", "Honua.Server", "Migrations");
         var canonical = Directory.GetFiles(migrations, "*.sql").Select(Path.GetFileName).Order().ToArray();
         Assert.NotEmpty(canonical);
@@ -71,11 +71,11 @@ public sealed class ODataComponentIsolationTests
             Assert.Equal(canonical, Directory.GetFiles(Path.GetDirectoryName(ResolveInclude(path, linked.Attribute("Include")!.Value))!, "*.sql")
                 .Select(Path.GetFileName).Order().ToArray());
             var directory = Path.GetDirectoryName(path)!;
-            Assert.Empty(Directory.GetFiles(directory, "*.sql", SearchOption.AllDirectories).Where(file =>
-                !Path.GetRelativePath(directory, file).Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj")));
+            Assert.DoesNotContain(Directory.GetFiles(directory, "*.sql", SearchOption.AllDirectories), file =>
+                !Path.GetRelativePath(directory, file).Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj"));
         }
-        Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(host)!, "ServerCoreSchemaMigrations.cs", SearchOption.AllDirectories)
-            .Where(file => !Path.GetRelativePath(Path.GetDirectoryName(host)!, file).Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj")));
+        Assert.DoesNotContain(Directory.GetFiles(Path.GetDirectoryName(host)!, "ServerCoreSchemaMigrations.cs", SearchOption.AllDirectories),
+            file => !Path.GetRelativePath(Path.GetDirectoryName(host)!, file).Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj"));
     }
 
     private static HashSet<string> ProjectClosure(string name)

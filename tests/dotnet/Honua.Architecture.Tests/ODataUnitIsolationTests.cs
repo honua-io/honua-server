@@ -52,7 +52,7 @@ public sealed class ODataUnitIsolationTests
         Assert.Contains(assemblies, assembly => assembly.GetName().Name == "Honua.Protocols.OData.UnitTests");
         foreach (var name in MovedClasses)
         {
-            var type = Assert.Single(assemblies.SelectMany(ArchitectureTestHelpers.GetTypesSafely).Where(type => type.Name == name));
+            var type = Assert.Single(assemblies.SelectMany(ArchitectureTestHelpers.GetTypesSafely), type => type.Name == name);
             Assert.Equal("Honua.Protocols.OData.UnitTests", type.Assembly.GetName().Name);
             var methods = type.GetMethods().Where(method => method.GetCustomAttributes<FactAttribute>().Any()).ToArray();
             Assert.NotEmpty(methods);
@@ -62,7 +62,7 @@ public sealed class ODataUnitIsolationTests
         var discoveredTypes = odataAssemblies.SelectMany(ArchitectureTestHelpers.GetTypesSafely)
             .Where(type => type.GetMethods().Any(method => method.GetCustomAttributes<FactAttribute>().Any()));
         Assert.All(discoveredTypes.GroupBy(type => type.FullName), group => Assert.Single(group));
-        var integration = Assert.Single(assemblies.Where(assembly => assembly.GetName().Name == "Honua.Protocols.OData.Tests"));
+        var integration = Assert.Single(assemblies, assembly => assembly.GetName().Name == "Honua.Protocols.OData.Tests");
         Assert.NotNull(integration.GetType("Honua.Server.Tests.Features.Protocols.OData.ODataDeltaTests"));
     }
 

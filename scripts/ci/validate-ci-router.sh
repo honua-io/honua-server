@@ -187,6 +187,9 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   echo "Checking Python helper syntax..."
   "${PYTHON_BIN}" -m py_compile scripts/ci/*.py
 
+  echo "Checking OData pilot tooling..."
+  "${PYTHON_BIN}" -m unittest discover -s scripts/ci/odata-pilot -p 'test_*.py'
+
   echo "Checking Docker integration gate timeout budget..."
   "${PYTHON_BIN}" scripts/ci/validate-docker-gate-timeouts.py
 

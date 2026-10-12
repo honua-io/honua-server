@@ -94,10 +94,14 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
     public async Task AtomicBatchFailure_DoesNotPersistEarlierCreate()
     {
         var name = "rollback-" + Guid.NewGuid().ToString("N");
-        var batch = new { requests = new object[] {
-            new { id = "1", method = "POST", url = "Layers(0)/Features", atomicityGroup = "a", headers = new Dictionary<string,string> { ["Content-Type"] = "application/json" }, body = new { Attributes = new { name, population = 42 } } },
-            new { id = "2", method = "PATCH", url = "Features(LayerId=0,ObjectId=9223372036854775806)", atomicityGroup = "a", headers = new Dictionary<string,string> { ["Content-Type"] = "application/json" }, body = new { Attributes = new { population = 1 } } }
-        } };
+        var batch = new
+        {
+            requests = new object[]
+            {
+                new { id = "1", method = "POST", url = "Layers(0)/Features", atomicityGroup = "a", headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" }, body = new { Attributes = new { name, population = 42 } } },
+                new { id = "2", method = "PATCH", url = "Features(LayerId=0,ObjectId=9223372036854775806)", atomicityGroup = "a", headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" }, body = new { Attributes = new { population = 1 } } }
+            }
+        };
         using var batchPayload = ODataContent(batch);
         using var response = await fixture.Client.PostAsync("/odata/$batch", batchPayload);
         response.StatusCode.Should().Be(HttpStatusCode.OK);

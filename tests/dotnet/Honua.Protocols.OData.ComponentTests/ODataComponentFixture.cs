@@ -5,7 +5,6 @@ using System.Security.Cryptography;
 using Honua.OData.TestHost;
 using Honua.TestKit;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
