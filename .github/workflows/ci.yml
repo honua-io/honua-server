@@ -1374,7 +1374,9 @@ jobs:
             'Migration'| \
             'FeatureServer Endpoints Query Services and Replication'| \
             'OGC API Tiles Coverages and Processes'| \
-            'GeoServices GPServer and NAServer'| \
+            'GeoServices GPServer Runtime and NAServer'| \
+            'GeoServices GPServer SOAP'| \
+            'GeoServices GPServer Task Aliases'| \
             'Caching File Storage Styling and Infrastructure'| \
             'Operator Eval Harness'| \
             'gRPC Protocol and Scene'| \

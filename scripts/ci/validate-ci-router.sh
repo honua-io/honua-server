@@ -720,8 +720,8 @@ assert_descriptor \
   "src/Honua.Routing/Features/Routing/Providers/PgRoutingProvider.cs" \
   "targeted" \
   "false" \
-  "GeoServices GPServer and NAServer"
-# 2026-09-11 capacity split: a GPServer diff selects both GPServer shards.
+  "GeoServices GPServer Runtime and NAServer"
+# Capacity partitions: a GPServer diff selects every GPServer child.
 assert_descriptor \
   "gpserver-source-targets-gpserver-endpoints" \
   "src/Honua.Protocols.GeoServices/GPServer/GPServerEndpoints.cs" \
@@ -733,7 +733,19 @@ assert_descriptor \
   "src/Honua.Protocols.GeoServices/GPServer/GPServerEndpoints.cs" \
   "targeted" \
   "false" \
-  "GeoServices GPServer and NAServer"
+  "GeoServices GPServer Runtime and NAServer"
+assert_descriptor \
+  "gpserver-source-targets-geoservices-gpserver-soap" \
+  "src/Honua.Protocols.GeoServices/GPServer/GPServerEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices GPServer SOAP"
+assert_descriptor \
+  "gpserver-source-targets-geoservices-gpserver-task-aliases" \
+  "src/Honua.Protocols.GeoServices/GPServer/GPServerEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices GPServer Task Aliases"
 # 2026-09-14 capacity split: gRPC source selects both Operator Eval children
 # (GrpcProcessServiceIntegrationTests stays in the parent); Scene tests only
 # run in gRPC Protocol and Scene.
@@ -798,7 +810,7 @@ assert_exact_shards \
       'src/Honua.Routing/Features/Routing/Domain/RoutingModels.cs' \
       'src/Honua.Server/EndpointRegistry.ImageServer.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/NAServerPgRoutingEndToEndTests.cs')" \
-  '["Core and Cloud Contracts","Raster Serving Scene Geometry and Terrain","GeoServices ImageServer","GeoServices GPServer and NAServer","STAC and API Governance","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices ImageServer Rendering and Support","GeoServices ImageServer Raster Rendering"]'
+  '["Core and Cloud Contracts","Raster Serving Scene Geometry and Terrain","GeoServices ImageServer","GeoServices GPServer Runtime and NAServer","GeoServices GPServer SOAP","GeoServices GPServer Task Aliases","STAC and API Governance","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices ImageServer Rendering and Support","GeoServices ImageServer Raster Rendering"]'
 
 # Follow-up proof from draft PR #2700: pure routing tests share the Core and Cloud Contracts owner
 # with the real pgRouting fixture and must not widen the canonical NAServer diff.
@@ -808,7 +820,7 @@ assert_exact_shards \
       'src/Honua.Routing/Features/Routing/Providers/LocationAllocationSolver.cs' \
       'src/Honua.Protocols.GeoServices/NAServer/NAServerParameterTranslation.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/LocationAllocationSolverTests.cs')" \
-  '["Core and Cloud Contracts","GeoServices GPServer and NAServer"]'
+  '["Core and Cloud Contracts","GeoServices GPServer Runtime and NAServer","GeoServices GPServer SOAP","GeoServices GPServer Task Aliases"]'
 
 # #2712: migration 083 and the exact pgRouting TestKit fixture are bounded
 # companions to the canonical Routing/NAServer slice. Keep other migrations
@@ -843,7 +855,7 @@ assert_exact_shards \
       'src/Honua.Server/Migrations/083_AddNetworkDatasetTravelProfiles.sql' \
       'tests/dotnet/Honua.TestKit/PgRoutingFixture.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/NetworkDatasetValidationTests.cs')" \
-  '["Core and Cloud Contracts","GeoServices GPServer and NAServer"]'
+  '["Core and Cloud Contracts","GeoServices GPServer Runtime and NAServer","GeoServices GPServer SOAP","GeoServices GPServer Task Aliases"]'
 assert_exact_shards \
   "routing-topology-lifecycle-cumulative-batch" \
   "$(printf '%s\n%s\n%s\n%s' \
@@ -851,7 +863,7 @@ assert_exact_shards \
       'src/Honua.Server/Migrations/084_CreateNetworkTopologyGenerations.sql' \
       'tests/dotnet/Honua.Server.Tests/Routing/NetworkTopologyLifecycleTests.cs' \
       'tests/dotnet/Honua.Server.Tests/Features/Admin/NetworkDatasetAdminEndpointsTests.cs')" \
-  '["Core and Cloud Contracts","GeoServices GPServer and NAServer","Server Features Admin Network and Jobs"]'
+  '["Core and Cloud Contracts","GeoServices GPServer Runtime and NAServer","GeoServices GPServer SOAP","GeoServices GPServer Task Aliases","Server Features Admin Network and Jobs"]'
 assert_descriptor \
   "unknown-migration-still-run-all" \
   "src/Honua.Server/Migrations/999_FutureUnmappedMigration.sql" \
@@ -1494,6 +1506,7 @@ echo "Checking shard headroom audit and its drain guard..."
 echo "Checking shard filter/test-class coverage in both directions..."
 "${PYTHON_BIN}" scripts/ci/test-geoservices-support-partition.py
 "${PYTHON_BIN}" scripts/ci/test-admin-authorization-partition.py
+  "${PYTHON_BIN}" scripts/ci/test-gp-naserver-partition.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
   --assert-owner \
@@ -1669,7 +1682,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
-    "GeoServices GPServer and NAServer" \
+    "GeoServices GPServer SOAP" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \

@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "issue": 5922,
+  "baseline": {
+    "runId": 38193561888,
+    "source": "0fd0f53b91c2042810a42b7215afcd5f6d1abeaa",
+    "artifactId": 11723028714,
+    "totalCases": 265,
+    "counters": {
+      "total": "265",
+      "executed": "265",
+      "passed": "265",
+      "failed": "0",
+      "error": "0",
+      "timeout": "0",
+      "aborted": "0",
+      "inconclusive": "0",
+      "passedButRunAborted": "0",
+      "notRunnable": "0",
+      "notExecuted": "0",
+      "disconnected": "0",
+      "warning": "0",
+      "completed": "0",
+      "inProgress": "0",
+      "pending": "0"
+    },
+    "timing": {
+      "shard": "GeoServices GPServer and NAServer",
+      "log_name": "server-tests-geoservices-gpserver-naserver",
+      "status": "passed",
+      "exit_code": 0,
+      "started_at": "2026-10-12T01:59:52Z",
+      "completed_at": "2026-10-12T02:19:24Z",
+      "duration_seconds": 1172,
+      "timeout_minutes": 22,
+      "timeout_seconds": 1320,
+      "timed_out": false,
+      "kill_escalated": false,
+      "headroom_ratio": 0.8879,
+      "headroom_warn_ratio": 0.8,
+      "capacity_status": "low_headroom",
+      "idle_seconds_at_exit": 10,
+      "stall_seconds": 300,
+      "filter": "(((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests)&Tier!=Slow)&Tier!=Fast"
+    },
+    "files": [
+      {
+        "name": "server-tests-geoservices-gpserver-naserver.log",
+        "bytes": 7714833,
+        "sha256": "7c38d48595266605742a18f7389a63d513c533ddd3d4aea93b83ee4918cf8933"
+      },
+      {
+        "name": "server-tests-geoservices-gpserver-naserver.timing.json",
+        "bytes": 742,
+        "sha256": "42305d2b1bdd3bb389dd37957df3c5858ecc3681891575fd0b0bb418dbb76bad"
+      },
+      {
+        "name": "server-tests-geoservices-gpserver-naserver.trx",
+        "bytes": 8094377,
+        "sha256": "27f9201057446cbe68e9b84337f3678ea6b2bbcefae4d23fdab14eeac2af9f91"
+      }
+    ],
+    "children": [
+      {
+        "name": "Runtime and NAServer",
+        "cases": 163,
+        "intervalUnionSeconds": 809.009312,
+        "classes": {
+          "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests": 32,
+          "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests": 16,
+          "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GenerateServiceAreasExecuteTests": 61,
+          "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.FindRoutesExecuteTests": 11,
+          "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerMetadataTests": 3,
+          "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDefaultServiceTests": 5,
+          "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.NetworkAnalysisUtilitiesTaskTests": 7,
+          "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.PortalHelperServicesTests": 6,
+          "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerAnonymousContractTests": 2,
+          "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerClientCompatibilityTests": 3,
+          "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDefaultValueTests": 8,
+          "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerMetadataEndpointTests": 6,
+          "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerParameterTranslationTests": 2,
+          "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDegradedJobStoreTests": 1
+        }
+      },
+      {
+        "name": "SOAP",
+        "cases": 77,
+        "intervalUnionSeconds": 1140.077388,
+        "classes": {
+          "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests": 77
+        }
+      },
+      {
+        "name": "Task Aliases",
+        "cases": 25,
+        "intervalUnionSeconds": 1062.460884,
+        "classes": {
+          "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests": 25
+        }
+      }
+    ]
+  },
+  "capacityFailure": {
+    "runId": 38203830505,
+    "source": "44c56748f03a30f021ca3b7dd8a2751f278e3cd5",
+    "artifactId": 11727782777,
+    "timing": {
+      "shard": "GeoServices GPServer and NAServer",
+      "log_name": "server-tests-geoservices-gpserver-naserver",
+      "status": "timed_out",
+      "exit_code": 124,
+      "started_at": "2026-10-12T04:47:15Z",
+      "completed_at": "2026-10-12T05:17:17Z",
+      "duration_seconds": 1802,
+      "timeout_minutes": 30,
+      "timeout_seconds": 1800,
+      "timed_out": true,
+      "kill_escalated": false,
+      "headroom_ratio": 1.0011,
+      "headroom_warn_ratio": 0.8,
+      "capacity_status": "capacity_exhausted",
+      "idle_seconds_at_exit": 3,
+      "stall_seconds": 300,
+      "filter": "(((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests)&Tier!=Slow)&Tier!=Fast"
+    },
+    "files": [
+      {
+        "name": "server-tests-geoservices-gpserver-naserver.log",
+        "bytes": 8240088,
+        "sha256": "17a5a806528914297855cae648e8e1d23308e6ec90d983360c1086b19ad06f20"
+      },
+      {
+        "name": "server-tests-geoservices-gpserver-naserver.timing.json",
+        "bytes": 751,
+        "sha256": "55f6bdc776a3dddc43fa1c0aa9299da50a007aec7c34998ae8d48762d46e38da"
+      }
+    ],
+    "completedTrx": false,
+    "interpretation": "Censored capacity exhaustion with active output; not an assertion result or p90"
+  },
+  "limits": {
+    "testMinutes": 30,
+    "jobMinutes": 40,
+    "changed": false
+  },
+  "scope": "Historical case partition estimate; fresh repeated child TRX and normal PR gates required before merge; not full-server or image qualification"
+}

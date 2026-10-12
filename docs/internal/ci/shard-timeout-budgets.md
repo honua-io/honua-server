@@ -1318,3 +1318,40 @@ These observations justified [PR5904](https://github.com/honua-io/honua-server/p
 merged as `19e2007ce1381c337aadae646b2856acb51b5aaf`. Two fresh observations
 per child establish observed headroom, not a p90 distribution. Full-server
 qualification and immutable release-image admission remain separate gates.
+
+## GPServer / NAServer capacity partition (2026-10-12, #5922)
+
+Full candidate [run 38203830505](https://github.com/honua-io/honua-server/actions/runs/38203830505)
+at `44c56748f03a30f021ca3b7dd8a2751f278e3cd5` exhausted the 30-minute inner
+budget after 1,802 seconds, with output three seconds before termination and no
+completed TRX. This is a censored capacity observation, not an assertion failure
+or an idle hang. The enclosing job budget remains 40 minutes.
+
+The completed parent shard in [run 38193561888](https://github.com/honua-io/honua-server/actions/runs/38193561888)
+at `0fd0f53b91c2042810a42b7215afcd5f6d1abeaa` passed all 265 cases in 1,172
+wrapper seconds. That historical shard still had the earlier 22-minute inner
+limit; the current limit is already 30 minutes. The historical full workflow
+failed elsewhere and is not a qualified server candidate.
+
+| Whole-class child | Historical passed cases | Union of case wall intervals |
+|---|---:|---:|
+| GPServer Runtime and NAServer | 163 | 809.009 seconds |
+| GPServer SOAP | 77 | 1,140.077 seconds |
+| GPServer Task Aliases | 25 | 1,062.461 seconds |
+
+These intervals exclude setup outside the test cases and overlap across children.
+They are observed wall intervals, not sums of CPU time, a p90, or promises of
+fresh runtimes. All three children retain the current 30-minute test and
+40-minute job limits, original assembly, tier predicates and conservative source
+triggers. `GPServerEndpointTests` remains in its existing separate shard.
+
+The canonical partition guard checks every original class, while
+`test-gp-naserver-partition.py` additionally compares runnable source methods
+against the frozen parent filter and rejects missing/duplicate/foreign methods,
+changed source triggers and changed budgets. Source methods differ from expanded,
+tier-filtered test cases. Each child receives Redis prefetch as its parent did.
+
+The [raw-artifact identity receipt](gp-naserver-capacity-20261012.json) retains
+baseline and timeout source/run/artifact identities, file hashes, counters and
+timings. Two actual executions of every new child and normal exact-head gates
+remain required before merge. Full-server and image qualification are separate.
