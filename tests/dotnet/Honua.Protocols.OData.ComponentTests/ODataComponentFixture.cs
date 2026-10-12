@@ -54,9 +54,12 @@ public sealed class ODataComponentFixture : IAsyncLifetime
                     ["Limits:Edits:MaxPayloadSize"] = "4096"
                 });
             });
-            await _app.StartAsync();
+            using var startupTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            await _app.StartAsync(startupTimeout.Token);
             Client = _app.GetTestClient();
             Anonymous = _app.GetTestClient();
+            Client.Timeout = TimeSpan.FromSeconds(30);
+            Anonymous.Timeout = TimeSpan.FromSeconds(30);
         }
         Client.DefaultRequestHeaders.Add("X-API-Key", adminKey);
     }
