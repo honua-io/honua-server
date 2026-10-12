@@ -236,14 +236,29 @@ public sealed class PostgresFixture : IAsyncLifetime
 
         // Enable the same extensions the shared container provisions, so migrations that
         // depend on PostGIS/pgcrypto behave identically in the isolated database.
-        await ExecuteWithInitializationRetryAsync(async () =>
+        try
         {
-            await using var conn = new NpgsqlConnection(databaseConnectionString);
-            await conn.OpenAsync().ConfigureAwait(false);
-            await using var cmd = conn.CreateCommand();
-            cmd.CommandText = "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster; CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pgcrypto;";
-            await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
-        }).ConfigureAwait(false);
+            await ExecuteWithInitializationRetryAsync(async () =>
+            {
+                await using var conn = new NpgsqlConnection(databaseConnectionString);
+                await conn.OpenAsync().ConfigureAwait(false);
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster; CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pgcrypto;";
+                await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+            }).ConfigureAwait(false);
+        }
+        catch (Exception initializationError)
+        {
+            try
+            {
+                await DropDatabaseAsync(databaseName).ConfigureAwait(false);
+            }
+            catch (Exception cleanupError)
+            {
+                throw new AggregateException("Isolated database initialization and cleanup failed.", initializationError, cleanupError);
+            }
+            throw;
+        }
 
         return databaseConnectionString;
     }
