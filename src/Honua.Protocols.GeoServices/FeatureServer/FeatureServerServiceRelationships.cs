@@ -21,7 +21,9 @@ internal static partial class FeatureServerEndpoints
         ArgumentNullException.ThrowIfNull(snapshot);
 
         var visible = new Dictionary<string, (int LayerId, MetadataV2Resource Resource)>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (publication, resource) in publications)
+        foreach (var (publication, resource) in publications
+            .OrderByDescending(pair => pair.Publication.IsPrimary)
+            .ThenBy(pair => pair.Publication.LayerIndex ?? snapshot.ResolveStorageLayerId(pair.Resource) ?? -1))
         {
             if (!snapshot.IsRoutable(publication))
             {
@@ -36,6 +38,8 @@ internal static partial class FeatureServerEndpoints
         }
 
         var result = new Dictionary<int, ServiceRelationshipInfo>();
+        var identities = new Dictionary<int, (ServiceRelationshipClassIdentity Class, bool DestinationSide)>();
+        var reciprocals = new HashSet<int>();
         // Prefer the origin declaration when reciprocal declarations have the same id.
         var declarations = visible.Values
             .SelectMany(local => local.Resource.Relationships.Select(relationship => (Local: local, Relationship: relationship)))
@@ -59,7 +63,26 @@ internal static partial class FeatureServerEndpoints
             var origin = destinationSide ? related : local;
             var destination = destinationSide ? local : related;
             var id = relationship.EsriRelationshipId ?? StableStringHash(relationship.Id);
-            result.TryAdd(id, new ServiceRelationshipInfo
+            var originPrimaryKey = destinationSide ? relationship.DestinationField : relationship.OriginField;
+            var originForeignKey = destinationSide ? relationship.OriginField : relationship.DestinationField;
+            var cardinality = MapEsriCardinality(relationship.Cardinality);
+            var identity = new ServiceRelationshipClassIdentity(origin.Resource.Metadata.Id,
+                destination.Resource.Metadata.Id, originPrimaryKey, originForeignKey,
+                relationship.Name, cardinality, relationship.Composite);
+            if (identities.TryGetValue(id, out var existing))
+            {
+                if (existing.Class != identity || existing.DestinationSide == destinationSide || !reciprocals.Add(id))
+                {
+                    // Resource-local identities cannot safely be remapped independently of
+                    // the layer metadata and related-records query contract.
+                    throw new InvalidOperationException($"Relationship class id {id} is ambiguous within the service.");
+                }
+
+                continue;
+            }
+
+            identities.Add(id, (identity, destinationSide));
+            result.Add(id, new ServiceRelationshipInfo
             {
                 Id = id,
                 Name = relationship.Name,
@@ -67,13 +90,13 @@ internal static partial class FeatureServerEndpoints
                 ForwardPathLabel = relationship.Name,
                 OriginLayerId = origin.LayerId,
                 DestinationLayerId = destination.LayerId,
-                OriginPrimaryKey = destinationSide ? relationship.DestinationField : relationship.OriginField,
-                OriginForeignKey = destinationSide ? relationship.OriginField : relationship.DestinationField,
+                OriginPrimaryKey = originPrimaryKey,
+                OriginForeignKey = originForeignKey,
                 DestinationPrimaryKey = destination.Resource.SchemaFields
                     .FirstOrDefault(field => field.SemanticRoles.Any(semanticRole =>
                         semanticRole.Equals("id.primary", StringComparison.OrdinalIgnoreCase)))?.Name
                     ?? GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(destination.Resource),
-                Cardinality = MapEsriCardinality(relationship.Cardinality),
+                Cardinality = cardinality,
                 Composite = relationship.Composite,
                 Description = relationship.Description
             });
@@ -81,4 +104,8 @@ internal static partial class FeatureServerEndpoints
 
         return [.. result.Values.OrderBy(relationship => relationship.Id)];
     }
+
+    private sealed record ServiceRelationshipClassIdentity(
+        string OriginResourceId, string DestinationResourceId, string OriginPrimaryKey,
+        string OriginForeignKey, string Name, string Cardinality, bool Composite);
 }
