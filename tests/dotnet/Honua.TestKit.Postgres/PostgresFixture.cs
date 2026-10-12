@@ -40,6 +40,7 @@ public sealed class PostgresFixture : IAsyncLifetime
     private const int InitializationMaxAttempts = 5;
     private string? _connectionString;
     private readonly bool _boundedResources;
+    private bool _hasSharedReference;
 
     public PostgresFixture() : this(boundedResources: false)
     {
@@ -60,6 +61,7 @@ public sealed class PostgresFixture : IAsyncLifetime
         await _sharedLock.WaitAsync();
         try
         {
+            if (_hasSharedReference) return;
             if (_boundedResources && SharedState.SharedContainer is not null && !SharedState.BoundedResources)
             {
                 throw new InvalidOperationException("A bounded fixture cannot reuse an unbounded Postgres container.");
@@ -134,6 +136,7 @@ public sealed class PostgresFixture : IAsyncLifetime
             }
 
             SharedState.SharedRefCount++;
+            _hasSharedReference = true;
             _connectionString = SharedState.SharedConnectionString;
             DataSource = SharedState.SharedDataSource ?? throw new InvalidOperationException("Shared data source not initialized.");
         }
@@ -148,10 +151,9 @@ public sealed class PostgresFixture : IAsyncLifetime
         await _sharedLock.WaitAsync();
         try
         {
-            if (SharedState.SharedRefCount > 0)
-            {
-                SharedState.SharedRefCount--;
-            }
+            if (!_hasSharedReference) return;
+            _hasSharedReference = false;
+            SharedState.SharedRefCount--;
 
             if (SharedState.SharedRefCount == 0 && SharedState.SharedInitialized)
             {
@@ -610,13 +612,14 @@ public sealed class PostgresFixture : IAsyncLifetime
         {
             await RunUnderSchemaMutationLockAsync(() =>
             {
-                var upgrade = DbUp.DeployChanges.To.PostgresqlDatabase(connectionString)
-                    .JournalToPostgresqlTable("public", "schema_versions")
-                    .WithScriptsEmbeddedInAssembly(typeof(Honua.Db.Postgres.ServiceCollectionExtensions).Assembly)
-                    .WithScriptsEmbeddedInAssembly(typeof(PostgresFixture).Assembly)
-                    .WithVariable("HonuaSchema", "\"honua\"")
-                    .WithTransaction()
-                    .Build().PerformUpgrade();
+                // Use the production numeric/root ordering and default-schema exclusion:
+                // provider migration 001 depends on server migration 001, while 109 is only
+                // meaningful for a non-default configured schema.
+                var upgrade = Honua.Db.Postgres.Features.Infrastructure.Migrations.PostgresDatabaseMigrationRunner
+                    .BuildUpgrader(connectionString, typeof(PostgresFixture).Assembly, "\"honua\"",
+                        includeRasterProviderMigrations: true, includeConfiguredSchemaAdoption: false,
+                        configuredSchemaAdoptionMigration: "Honua.Server.Migrations.109_AdoptConfiguredGuardedSchema.sql")
+                    .PerformUpgrade();
                 if (!upgrade.Successful)
                 {
                     throw new InvalidOperationException("OData pilot database provisioning failed.", upgrade.Error);
