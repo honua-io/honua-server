@@ -825,10 +825,9 @@ public sealed class TemporaryFileServiceTests : IDisposable
         retrieved!.Value.contentType.Should().Be("image/png");
     }
 
-    // honua-server#5826: evicting the issuer's process-local cache must not make the URL
-    // node-affine. Another replica resolves it from Redis for the advertised retention, and
-    // deleting that Redis key makes both replicas miss even though the issuer still holds
-    // the token in _issuedCloudTokens.
+    // honua-server#5826: the shared mapping is a Redis string under its own key. A stale
+    // process-local cache entry, including one stored at the IDistributedCache key, must not
+    // resolve the file. Deleting the shared key makes every replica miss.
     [UnitTest]
     public async Task GetTemporaryFileAsync_SharedRedisToken_ResolvesOnAnotherReplicaAfterLocalCacheEviction()
     {
@@ -856,16 +855,69 @@ public sealed class TemporaryFileServiceTests : IDisposable
         var url = await issuer.StoreTemporaryFileAsync([9, 8, 7], "image/png");
         var fileId = Path.GetFileName(url);
         var token = Path.GetFileNameWithoutExtension(fileId);
-        await issuerCache.RemoveAsync("honua:temporary-files:cloud:" + token);
+        await issuerCache.SetStringAsync(
+            "honua:temporary-files:cloud:" + token,
+            "temporary-files/not-the-uploaded-object");
 
         var fromReader = await reader.GetTemporaryFileAsync(fileId);
         fromReader.Should().NotBeNull();
         fromReader!.Value.data.Should().Equal(9, 8, 7);
         fromReader.Value.contentType.Should().Be("image/png");
+        (await issuer.GetTemporaryFileAsync(fileId))!.Value.data.Should().Equal(9, 8, 7);
 
-        (await redis.GetDatabase().KeyDeleteAsync("honua:temporary-files:cloud:" + token)).Should().BeTrue();
+        (await redis.GetDatabase().KeyDeleteAsync("honua:temporary-files:cloud:" + token)).Should().BeFalse();
+        (await redis.GetDatabase().KeyDeleteAsync("honua:temporary-files:shared:" + token)).Should().BeTrue();
         (await issuer.GetTemporaryFileAsync(fileId)).Should().BeNull();
         (await reader.GetTemporaryFileAsync(fileId)).Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task StoreTemporaryFileAsync_WhenSharedTokenPublishFails_DeletesTheUploadedObject()
+    {
+        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
+        var redis = CreateRedisLeaseMultiplexer();
+        redis.GetDatabase().StringSetAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
+                Arg.Any<When>(),
+                Arg.Any<CommandFlags>())
+            .Returns<Task<bool>>(_ => throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, "lost"));
+        var service = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
+                BaseUrl = "/temp",
+            },
+            cloudStorage,
+            redis: redis);
+
+        var act = () => service.StoreTemporaryFileAsync([1, 2, 3], "image/png");
+
+        await act.Should().ThrowAsync<RedisConnectionException>();
+        (await cloudStorage.ListFilesAsync("temporary-files")).Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task StoreTemporaryFileAsync_WhenRedisDisconnectsBeforeTokenPublish_DoesNotLeaveAnObject()
+    {
+        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
+        var redis = CreateRedisLeaseMultiplexer();
+        redis.IsConnected.Returns(true, false);
+        var service = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
+                BaseUrl = "/temp",
+            },
+            cloudStorage,
+            redis: redis);
+
+        var act = () => service.StoreTemporaryFileAsync([1, 2, 3], "image/png");
+
+        await act.Should().ThrowAsync<TemporaryStorageLimitExceededException>();
+        (await cloudStorage.ListFilesAsync("temporary-files")).Should().BeEmpty();
     }
 
     public void Dispose()
