@@ -301,7 +301,8 @@ public sealed partial class GeoprocessingJobServiceTests
 
     private static AnalysisPlan AreaPlan() => new()
     {
-        PlanId = "scoped-area", IntentId = "gpserver:test:Area",
+        PlanId = "scoped-area",
+        IntentId = "gpserver:test:Area",
         Steps = [new AnalysisPlanStep
         {
             StepId = "area", Kind = AnalysisPlanStepKind.Geoprocess, ProcessId = "geometry.area",
