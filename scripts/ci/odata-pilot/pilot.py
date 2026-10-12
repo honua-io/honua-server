@@ -161,6 +161,8 @@ def evaluated_inputs(root, project, configuration, composition, evidence, measur
     files = set()
     evaluations = {}
     for index, path in enumerate(projects):
+        if not path.is_file() or not path.is_relative_to(root):
+            raise ValueError(f"Project closure requires an existing project inside the source root: {path}")
         raw = invoke(f"evaluate-{index:03d}", ["dotnet", "msbuild", str(path), f"-getItem:{ITEMS}", f"-getProperty:{PROPERTIES}",
                        *props(configuration, composition, runtime)])
         evaluated = json.loads(raw)
@@ -174,8 +176,14 @@ def evaluated_inputs(root, project, configuration, composition, evidence, measur
                 raise ValueError(f"Evaluated ProjectReference lacks a path: {path}")
             child = Path(reference_path)
             child = (child if child.is_absolute() else path.parent / child).resolve()
+            if not child.is_file() or not child.is_relative_to(root):
+                raise ValueError(f"ProjectReference requires an existing project inside the source root: {child}")
+            if any(reference.get(field) for field in ("AdditionalProperties", "SetTargetFramework", "SetConfiguration", "SetPlatform", "GlobalPropertiesToRemove", "UndefineProperties")):
+                raise ValueError(f"ProjectReference has per-reference evaluation properties requiring explicit support: {child}")
             if child not in projects:
-                raise ValueError(f"Evaluated ProjectReference omitted from restore graph: {child}; complete build-only/analyzer closure required")
+                # Appending to this worklist evaluates omitted build-only refs
+                # recursively. Canonical paths deduplicate cycles and aliases.
+                projects.append(child)
         evaluations[str(path)] = evaluated
         files.add(path)
         for imported in evaluated["Properties"].get("MSBuildAllProjects", "").split(";"):
@@ -213,6 +221,7 @@ def evaluated_inputs(root, project, configuration, composition, evidence, measur
     # Only the three documented filesystem timestamps are nonsemantic item
     # metadata. Keep every other evaluated item value in the hashed identity;
     # raw query output remains untouched in its evidence stage output.log.
+    graph["evaluatedProjectClosure"] = sorted(str(path) for path in projects)
     stable_evaluations = json.loads(json.dumps(evaluations))
     for evaluation in stable_evaluations.values():
         for items in evaluation["Items"].values():

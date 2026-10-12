@@ -246,20 +246,47 @@ class InputTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "only to image"):
             pilot.plan(self.root, "candidate", "unit", "Release", "full", "", "linux-x64")
 
-    def test_build_only_analyzer_reference_missing_from_restore_graph_fails_closed(self):
+    def test_build_only_analyzer_closure_counts_and_hashes_sources(self):
         analyzer = self.root / "src/Honua.Analyzers/Honua.Analyzers.csproj"
         analyzer.parent.mkdir(parents=True)
         analyzer.write_text("<Project />")
-        analyzer.with_name("Analyzer.cs").write_text("class BuildOnlyAnalyzer {}")
+        source = analyzer.with_name("Analyzer.cs")
+        source.write_text("class BuildOnlyAnalyzer {}")
         def omitted_analyzer(argv, root):
             output = self.fake_command(argv, root)
             if any(arg.startswith("-getItem:") for arg in argv):
                 evaluated = json.loads(output)
-                evaluated["Items"]["ProjectReference"] = [{"FullPath": str(analyzer), "ReferenceOutputAssembly": "false"}]
+                if str(analyzer) in argv:
+                    evaluated["Items"]["Compile"] = [{"FullPath": str(source)}]
+                    evaluated["Items"]["ProjectReference"] = [{"FullPath": str(self.project)}]
+                else:
+                    evaluated["Items"]["ProjectReference"] = [{"FullPath": str(analyzer), "ReferenceOutputAssembly": "false"}]
                 return json.dumps(evaluated)
             return output
-        with patch.object(pilot, "command", side_effect=omitted_analyzer):
-            with self.assertRaisesRegex(ValueError, "omitted from restore graph.*analyzer closure"):
+        def identity():
+            with patch.object(pilot, "command", side_effect=omitted_analyzer):
+                return pilot.evaluated_inputs(self.root, "src/Selected/Selected.csproj", "Release", "full", self.output)
+        first = identity()
+        self.assertEqual(2, first["projectCount"])
+        self.assertEqual(2, first["compileItemCount"])
+        self.assertIn("src/Honua.Analyzers/Analyzer.cs", first["identity"]["inputs"])
+        self.assertEqual(2, len(first["identity"]["evaluatedGraph"]["evaluations"]))
+        source.write_text("class BuildOnlyAnalyzer { int semanticChange; }")
+        self.assertNotEqual(first["key"], identity()["key"])
+        analyzer.unlink()
+        with self.assertRaisesRegex(ValueError, "existing project"):
+            identity()
+
+    def test_project_reference_property_overrides_fail_closed(self):
+        def ambiguous(argv, root):
+            output = self.fake_command(argv, root)
+            if any(arg.startswith("-getItem:") for arg in argv):
+                evaluated = json.loads(output)
+                evaluated["Items"]["ProjectReference"] = [{"FullPath": str(self.project), "AdditionalProperties": "TargetFramework=net9.0"}]
+                return json.dumps(evaluated)
+            return output
+        with patch.object(pilot, "command", side_effect=ambiguous):
+            with self.assertRaisesRegex(ValueError, "per-reference evaluation properties"):
                 pilot.evaluated_inputs(self.root, "src/Selected/Selected.csproj", "Release", "full", self.output)
 
     def test_pilot_metadata_controls_are_used_and_part_of_identity(self):

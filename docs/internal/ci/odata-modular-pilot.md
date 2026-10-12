@@ -381,3 +381,11 @@ Artifact hashing excludes only the evaluated item's `ModifiedTime`,
 [MSBuild well-known item metadata](https://learn.microsoft.com/en-us/visualstudio/msbuild/msbuild-well-known-item-metadata).
 Raw evaluation output remains in stage logs. Source bytes and all other item
 metadata, including reference and copy behavior, remain identity inputs.
+
+
+The evaluated graph follows ProjectReference items recursively, including
+build-only analyzers omitted from NuGet's restore graph. Every discovered
+project's evaluated inputs and source bytes contribute to identity and project
+counts; cycles are deduplicated by canonical path. Missing or external projects,
+multi-target graphs, and per-reference evaluation property overrides fail closed
+rather than silently evaluating a different configuration.
