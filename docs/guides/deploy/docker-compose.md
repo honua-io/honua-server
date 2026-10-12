@@ -122,24 +122,30 @@ style and render. It cannot persist the following, and refuses them with a typed
 - governed operation proposals and approvals (`/api/v1/admin/proposals`,
   `honua_propose_*`), including any operation whose policy decision is
   "require approval";
-- typed operations invoked through MCP (the `honua_admin_*` tools,
-  `honua_apply_style_preset`), whose durable operation record is also
-  Redis-backed in Production;
+- typed operations invoked through MCP (the `honua_admin_*` tools), whose
+  durable operation record is also Redis-backed in Production;
 - durable geoprocessing jobs and workflows (`jobs.runner`);
 - Studio drafts.
 
-Publishing a service is configuration, so a direct publish works without Redis.
-When `Operations:Policy` allows the caller (an `admin` or `scoped-admin-key`
-role, such as an `admin:write` API key), `honua_publish_service` and
-`POST /api/v1/operations/service.publish/submit` publish the layer and return the
-usual handle: `operationId`, `operationInstanceId`, `correlationId`, `auditId`,
-`status`, `policyOutcome` and `authorizationOutcome`. The audit log records the
-acceptance and the completion. The operation instance record itself is kept
-only in memory, so the handle carries `durable: false` (and the evidence
-reference `operation-instance:non-durable`) and cannot be polled afterwards.
-A caller the policy denies gets a `Denied` handle. A publish whose policy
-decision is "require approval" still refuses with the typed `redis` receipt,
-because it needs a governed proposal.
+A server without Redis still serves, configures, styles and renders, so two
+operations execute directly without Redis: publishing a service
+(`service.publish`) and applying a style preset to a published layer
+(`style.apply-preset`). When `Operations:Policy` allows the caller (an `admin`
+or `scoped-admin-key` role, such as an `admin:write` API key),
+`honua_publish_service`, `honua_apply_style_preset` and
+`POST /api/v1/operations/{service.publish|style.apply-preset}/submit` make the
+change and return the usual handle: `operationId`, `operationInstanceId`,
+`correlationId`, `auditId`, `status`, `policyOutcome` and
+`authorizationOutcome`. The audit log records the acceptance and the
+completion. The operation instance record itself is kept only in memory, so the
+handle carries `durable: false` (and the evidence reference
+`operation-instance:non-durable`) and cannot be polled afterwards.
+`honua_render_map` and the OGC styles endpoints are reads and do not use the
+operation runtime. A caller the policy denies gets a `Denied` handle. A publish
+or style preset whose policy decision is "require approval" still refuses with
+the typed `redis` receipt, because it needs a governed proposal. Geoprocessing,
+Studio compositions and publication requests, proposals and approvals, and the
+`honua_admin_*` tools keep the typed refusal.
 
 On a Development or Test host without Redis, Studio drafts still compose against a
 volatile operation store (create, validate, preview-plan and save a content version

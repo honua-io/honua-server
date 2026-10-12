@@ -678,10 +678,9 @@ if (connectedRedis != null && redisCacheEntitled)
     // that owns the matching background service's idempotent tick body. Handlers are contributed by
     // the owning assemblies (registered alongside each service above). Under TriggerMode=Poll the
     // in-process timers drive the ticks; under Event the timers are not hosted and EventBridge
-    // Scheduler -> the scheduled-tick endpoint drives them through this dispatcher.
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickDispatcher,
-        Honua.ControlPlane.ScheduledTickDispatcher>();
+    // Scheduler -> the scheduled-tick endpoint drives them through this dispatcher. The dispatcher
+    // itself is registered by AddHonuaControlPlaneReconcilers (AddHonuaControlPlaneLambdaEventTargets)
+    // and again, idempotently, for every host below.
 
     var controlPlaneTriggerMode = builder.Configuration
         .GetSection(Honua.ControlPlane.ControlPlaneTriggerOptions.SectionName)
@@ -772,6 +771,12 @@ else
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore,
         Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore>();
 }
+
+// The control-plane Lambda event route (POST /events) is mapped whenever
+// HONUA_CONTROL_PLANE_LAMBDA_HANDLER is set, Redis or not, so what it resolves is registered on
+// every host. On a Redis-off cell the Redis-independent ticks run and the rest refuse with a typed
+// 503 (missingDependency=redis) instead of a 500 (honua-release run 38242272260).
+builder.Services.AddHonuaControlPlaneLambdaEventTargets();
 
 // Pending-approval notification channel (#1695): emitted from the gateway/store
 // boundary, not per-endpoint. Safe to register regardless of Redis availability.
