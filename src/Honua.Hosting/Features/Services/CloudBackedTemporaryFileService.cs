@@ -502,6 +502,20 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
                 cancellationToken).ConfigureAwait(false);
         }
 
+        // honua-server#5826: the process-local dictionary and IDistributedCache are not shared
+        // across replicas. A connected multiplexer is the authoritative mapping for the
+        // advertised retention, including when the cache is only in-process memory.
+        if (_redis is { IsConnected: true })
+        {
+            await _redis.GetDatabase().StringSetAsync(
+                GetCloudTemporaryFileCacheKey(publicToken),
+                cloudObjectKey,
+                retention,
+                false,
+                When.Always,
+                CommandFlags.None).ConfigureAwait(false);
+        }
+
         return publicToken;
     }
 
@@ -516,6 +530,21 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
             {
                 return cached;
             }
+        }
+
+        // A connected Redis miss must not fall through to _issuedCloudTokens. That dictionary
+        // exists only on the issuing process, so answering from it makes the URL node-affine.
+        if (_redis is { IsConnected: true })
+        {
+            var shared = await _redis.GetDatabase().StringGetAsync(
+                GetCloudTemporaryFileCacheKey(publicToken)).ConfigureAwait(false);
+            if (!shared.IsNullOrEmpty &&
+                TryAcceptIssuedObjectKey(shared.ToString(), out var fromRedis))
+            {
+                return fromRedis;
+            }
+
+            return null;
         }
 
         if (_issuedCloudTokens.TryGetValue(publicToken, out var issued))
@@ -602,12 +631,21 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         }
     }
 
-    private Task DeletePublicTokenAsync(string publicToken, CancellationToken cancellationToken)
+    private async Task DeletePublicTokenAsync(string publicToken, CancellationToken cancellationToken)
     {
         _issuedCloudTokens.TryRemove(publicToken, out _);
-        return _distributedCache == null
-            ? Task.CompletedTask
-            : _distributedCache.RemoveAsync(GetCloudTemporaryFileCacheKey(publicToken), cancellationToken);
+        if (_distributedCache != null)
+        {
+            await _distributedCache.RemoveAsync(
+                GetCloudTemporaryFileCacheKey(publicToken),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        if (_redis is { IsConnected: true })
+        {
+            await _redis.GetDatabase().KeyDeleteAsync(
+                GetCloudTemporaryFileCacheKey(publicToken)).ConfigureAwait(false);
+        }
     }
 
     private static string GetCloudTemporaryFileCacheKey(string publicToken)
