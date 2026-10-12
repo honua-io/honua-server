@@ -12,7 +12,9 @@ using Honua.TestKit;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -133,7 +135,11 @@ public sealed class ClientCertificateTlsObservationTests
         using var factory = new TestWebApplicationFactory().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("Authentication:ClientCertificates:Mode", "Optional");
-            builder.ConfigureLogging(logging => logging.AddProvider(new ObservationLoggerProvider(logger)));
+            // Keep the production AddOptions<...>.Configure<ILoggerFactory>
+            // composition, without relying on Serilog's process-wide forwarding
+            // to a provider while other test hosts are being created/disposed.
+            builder.ConfigureTestServices(services => services.Replace(
+                ServiceDescriptor.Singleton<ILoggerFactory>(new ObservationLoggerFactory(logger))));
         });
         var options = factory.Services.GetRequiredService<IOptions<KestrelServerOptions>>().Value;
         using var serverCertificate = CreateCertificate(expired: false);
@@ -168,10 +174,11 @@ public sealed class ClientCertificateTlsObservationTests
         ((X509ChainStatusFlags)fields["ChainStatus"]!).Should().HaveFlag(X509ChainStatusFlags.NotTimeValid);
     }
 
-    private sealed class ObservationLoggerProvider(RecordingLogger logger) : ILoggerProvider
+    private sealed class ObservationLoggerFactory(RecordingLogger logger) : ILoggerFactory
     {
         public ILogger CreateLogger(string categoryName) => categoryName == "Honua.ClientCertificateTls"
             ? logger : NullLogger.Instance;
+        public void AddProvider(ILoggerProvider provider) { }
         public void Dispose() { }
     }
 
