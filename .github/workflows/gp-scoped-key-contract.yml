@@ -37,7 +37,7 @@ jobs:
             prefix: GPScopedKey_
           - name: soap-durable-runtime
             project: tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj
-            filter: FullyQualifiedName~GPServerDurableRuntimeTests|FullyQualifiedName~GPServerSoapEndpointsTests|FullyQualifiedName~GPServerEndpointTests
+            filter: FullyQualifiedName~SoapScopedAPIKey_|FullyQualifiedName~SoapArea_WithProductionExecutor|FullyQualifiedName~SoapJobOperation_OtherCaller|FullyQualifiedName~GetJobStatus_ProgressHint|FullyQualifiedName~GetJobStatus_InvalidProgressHint|FullyQualifiedName~OtherJobOperations_ProgressHint
             source: tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerDurableRuntimeTests.ScopedKeys.cs
             prefix: SoapScopedAPIKey_
     env:

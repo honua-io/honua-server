@@ -44,7 +44,7 @@ public sealed partial class GPServerDurableRuntimeTests
             foreach (var operation in new[] { "GetJobStatus", "GetJobMessages", "GetJobToolName", "GetJobResult", "CancelJob" })
             {
                 using var refused = await PostSoapAsync(other, operation, $"<JobID>{jobId}</JobID>" +
-                    "<ParameterNames><String>outputScalar</String></ParameterNames>");
+                    (operation == "GetJobResult" ? "<ParameterNames><String>outputScalar</String></ParameterNames>" : string.Empty));
                 var refusedBody = await refused.Content.ReadAsStringAsync();
                 refused.StatusCode.Should().Be(HttpStatusCode.NotFound, refusedBody);
                 refusedBody.Should().NotContain("esriJob").And.NotContain("data:application/json");
