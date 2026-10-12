@@ -18,7 +18,7 @@ Solve multi-stop routes with the configured routing engine (MCP honua_solve_rout
 | Edition | Pro |
 | Surface maturity | 28 implemented |
 | Registry entries | 28 |
-| Proving tests | 105 |
+| Proving tests | 109 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
