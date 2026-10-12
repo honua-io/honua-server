@@ -374,11 +374,11 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
     {
         var provider = Provider();
         provider.SolveClosestFacilityAsync(Arg.Any<ClosestFacilitySolveRequest>(), Arg.Any<CancellationToken>())
-            .Returns(_ => throw new InvalidOperationException("fixture routing failure"));
+            .Returns<Task<ClosestFacilitySolveResult>>(_ => throw new InvalidOperationException("fixture routing failure"));
         provider.SolveOdCostMatrixAsync(Arg.Any<OdCostMatrixSolveRequest>(), Arg.Any<CancellationToken>())
-            .Returns(_ => throw new InvalidOperationException("fixture routing failure"));
+            .Returns<Task<OdCostMatrixSolveResult>>(_ => throw new InvalidOperationException("fixture routing failure"));
         provider.SolveLocationAllocationAsync(Arg.Any<LocationAllocationSolveRequest>(), Arg.Any<CancellationToken>())
-            .Returns(_ => throw new InvalidOperationException("fixture routing failure"));
+            .Returns<Task<LocationAllocationSolveResult>>(_ => throw new InvalidOperationException("fixture routing failure"));
         await using var fixture = Fixture(provider);
         await fixture.InitializeAsync();
         using var client = fixture.CreateAdminClient();
