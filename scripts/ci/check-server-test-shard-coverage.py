@@ -110,7 +110,7 @@ TEST_PROJECT_DIRS = {
 # Every isolated unit assembly is independently routed; retain legacy integration
 # mappings and discover new units from the reviewed catalog.
 for project, entry in json.loads((REPO_ROOT / ".github/test-projects.json").read_text())["projects"].items():
-    if entry.get("shardRouted") and entry["role"] == "unit":
+    if entry.get("shardRouted"):
         TEST_PROJECT_DIRS[str(Path(project).parent)] = project
 
 # Namespaces that ci-shards.json intentionally leaves to a non-PR lane and so

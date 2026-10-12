@@ -10,7 +10,7 @@ from pathlib import Path
 
 CONTRACT = "honua.server-test-reuse-plan/v1"
 DEFAULT_PROJECT = "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
-MAX_SHARDS = 100
+MAX_SHARDS = 128
 
 
 def load_object(path: Path) -> dict:

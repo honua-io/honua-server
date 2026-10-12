@@ -4,7 +4,7 @@
 only affected catalogued isolated unit projects, building their forward runtime
 and pure support dependencies once through a temporary solution filter, then
 running each selected project with `dotnet test --no-build --no-restore`. It does not build
-Architecture.Tests, integration consumers, or a solution filter. It does not
+Architecture.Tests or integration consumers. It does not
 validate a PR and does not replace normal fast/full checks, shard execution,
 image, AOT or provider gates. Shared build/CI changes select all isolated units. Unaccounted source, test,
 eng or build-input changes also select all eligible units with an explicit reason.
@@ -65,10 +65,19 @@ and copies `.github/test-coverage-assemblies.txt`. Its coverage discovery loads
 all required assemblies and throws if the inventory or any assembly is missing;
 new UnitTests and ComponentTests therefore cannot silently vanish from full
 coverage scans. The generator is checked by PR Gate, while `.github/ci-shards.json`
-remains the authority for test shard routing. The updater also registers unit/component projects in the existing artifact
-transfer/prebuild registry. Catalogued unit shards include Fast cases; integration
+remains the authority for test shard routing. The updater synchronizes the existing artifact transfer/prebuild registry to
+the exact scheduled project set from ci-shards.json, preserving reviewed proof
+filters. Foundation-only and opt-in component projects do not acquire duplicate
+shard artifacts merely by being catalogued. Catalogued unit shards include Fast cases; integration
 shard exclusions remain unchanged. Registering a project does not
 schedule its tests in hosted CI: retain/add its full-gate shard separately.
 
 Refs #5958 (catalog, feedback planning and discovery); umbrella #5955 owns the
 remaining module splits and full rollout validation.
+
+Every catalog project forbids direct or transitive references to executable test
+projects, including references hidden behind support kits. Support and host helpers
+are allowed dependencies. The canonical `Honua.Architecture.Tests` project is the
+sole exception: its generated references intentionally collect every required
+test assembly for full coverage discovery; this exception does not apply to
+component hosts or ordinary tests.

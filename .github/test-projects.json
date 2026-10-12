@@ -48,6 +48,25 @@
       "coverageRequired": true,
       "shardRouted": true
     },
+    "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Ai/Honua.Ai.csproj",
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Geocoding/Honua.Geocoding.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Jobs/Honua.Jobs.csproj",
+        "src/Honua.Routing/Honua.Routing.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
+    },
     "tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj": {
       "role": "architecture",
       "runtimeOwners": [
@@ -98,6 +117,38 @@
       "isolated": false,
       "coverageRequired": false,
       "shardRouted": false
+    },
+    "tests/dotnet/Honua.Aws.UnitTests/Honua.Aws.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Cloud/Aws/Honua.Aws.csproj",
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Jobs/Honua.Jobs.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
+    },
+    "tests/dotnet/Honua.Azure.UnitTests/Honua.Azure.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Cloud/Azure/Honua.Azure.csproj",
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Jobs/Honua.Jobs.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
     },
     "tests/dotnet/Honua.CloudIntegration.Tests/Honua.CloudIntegration.Tests.csproj": {
       "role": "mixed",
@@ -159,141 +210,55 @@
       "shardRouted": false
     },
     "tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj": {
-      "role": "mixed",
+      "role": "unit",
       "runtimeOwners": [
-        "src/Honua.Ai/Honua.Ai.csproj",
-        "src/Honua.Cloud/Aws/Honua.Aws.csproj",
-        "src/Honua.Cloud/Azure/Honua.Azure.csproj",
         "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
-        "src/Honua.Db/Databricks/Honua.Databricks.csproj",
-        "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
-        "src/Honua.Db/MySql/Honua.MySql.csproj",
-        "src/Honua.Db/Oracle/Honua.Oracle.csproj",
-        "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
-        "src/Honua.Db/Postgres/Honua.Postgres.csproj",
-        "src/Honua.Db/Redshift/Honua.Redshift.csproj",
-        "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
-        "src/Honua.Geocoding/Honua.Geocoding.csproj",
-        "src/Honua.Geometry/Honua.Geometry.csproj",
-        "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
-        "src/Honua.Hosting/Honua.Hosting.csproj",
-        "src/Honua.Import/Honua.Import.csproj",
-        "src/Honua.Io/Honua.Io.csproj",
-        "src/Honua.Jobs/Honua.Jobs.csproj",
-        "src/Honua.Plugins.Abstractions/Honua.Plugins.Abstractions.csproj",
-        "src/Honua.Plugins/Honua.Plugins.csproj",
-        "src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj",
-        "src/Honua.Protocols.OData/Honua.Protocols.OData.csproj",
-        "src/Honua.Protocols.Ogc.Shared/Honua.Protocols.Ogc.Shared.csproj",
-        "src/Honua.Protocols.OgcApi/Honua.Protocols.OgcApi.csproj",
-        "src/Honua.Protocols.OgcClassic/Honua.Protocols.OgcClassic.csproj",
-        "src/Honua.Protocols.Scene/Honua.Protocols.Scene.csproj",
-        "src/Honua.Protocols.SensorThings/Honua.Protocols.SensorThings.csproj",
-        "src/Honua.Protocols.Stac/Honua.Protocols.Stac.csproj",
-        "src/Honua.Routing/Honua.Routing.csproj",
-        "src/Honua.Scene/Honua.Scene.csproj",
-        "src/Honua.Server/Honua.Server.csproj",
-        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Core/Honua.Core.csproj"
       ],
       "resources": [],
-      "isolated": false,
-      "coverageRequired": false,
+      "isolated": true,
+      "coverageRequired": true,
       "shardRouted": false
     },
     "tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj": {
-      "role": "mixed",
+      "role": "unit",
       "runtimeOwners": [
-        "src/Honua.Ai/Honua.Ai.csproj",
-        "src/Honua.Cloud/Aws/Honua.Aws.csproj",
-        "src/Honua.Cloud/Azure/Honua.Azure.csproj",
         "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
         "src/Honua.Core/Honua.Core.csproj",
-        "src/Honua.Db/Databricks/Honua.Databricks.csproj",
-        "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
-        "src/Honua.Db/MySql/Honua.MySql.csproj",
-        "src/Honua.Db/Oracle/Honua.Oracle.csproj",
-        "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
-        "src/Honua.Db/Postgres/Honua.Postgres.csproj",
-        "src/Honua.Db/Redshift/Honua.Redshift.csproj",
-        "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
-        "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
-        "src/Honua.Import/Honua.Import.csproj",
-        "src/Honua.Io/Honua.Io.csproj",
-        "src/Honua.Jobs/Honua.Jobs.csproj",
-        "src/Honua.Plugins.Abstractions/Honua.Plugins.Abstractions.csproj",
-        "src/Honua.Plugins/Honua.Plugins.csproj",
-        "src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj",
-        "src/Honua.Protocols.OData/Honua.Protocols.OData.csproj",
-        "src/Honua.Protocols.Ogc.Shared/Honua.Protocols.Ogc.Shared.csproj",
-        "src/Honua.Protocols.OgcApi/Honua.Protocols.OgcApi.csproj",
-        "src/Honua.Protocols.OgcClassic/Honua.Protocols.OgcClassic.csproj",
-        "src/Honua.Protocols.Scene/Honua.Protocols.Scene.csproj",
-        "src/Honua.Protocols.SensorThings/Honua.Protocols.SensorThings.csproj",
-        "src/Honua.Protocols.Stac/Honua.Protocols.Stac.csproj",
-        "src/Honua.Routing/Honua.Routing.csproj",
         "src/Honua.Scene/Honua.Scene.csproj",
-        "src/Honua.Server/Honua.Server.csproj",
-        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
       ],
-      "resources": [
-        "redis"
-      ],
-      "isolated": false,
-      "coverageRequired": false,
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true,
       "shardRouted": false
     },
     "tests/dotnet/Honua.Db.Databricks.Tests/Honua.Databricks.Tests.csproj": {
       "role": "mixed",
       "runtimeOwners": [
-        "src/Honua.Ai/Honua.Ai.csproj",
-        "src/Honua.Cloud/Aws/Honua.Aws.csproj",
-        "src/Honua.Cloud/Azure/Honua.Azure.csproj",
         "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
         "src/Honua.Core/Honua.Core.csproj",
-        "src/Honua.Db/Databricks/Honua.Databricks.csproj",
-        "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
-        "src/Honua.Db/MySql/Honua.MySql.csproj",
-        "src/Honua.Db/Oracle/Honua.Oracle.csproj",
-        "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
-        "src/Honua.Db/Postgres/Honua.Postgres.csproj",
-        "src/Honua.Db/Redshift/Honua.Redshift.csproj",
-        "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
-        "src/Honua.Geocoding/Honua.Geocoding.csproj",
-        "src/Honua.Geometry/Honua.Geometry.csproj",
-        "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
-        "src/Honua.Hosting/Honua.Hosting.csproj",
-        "src/Honua.Import/Honua.Import.csproj",
-        "src/Honua.Io/Honua.Io.csproj",
-        "src/Honua.Jobs/Honua.Jobs.csproj",
-        "src/Honua.Plugins.Abstractions/Honua.Plugins.Abstractions.csproj",
-        "src/Honua.Plugins/Honua.Plugins.csproj",
-        "src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj",
-        "src/Honua.Protocols.OData/Honua.Protocols.OData.csproj",
-        "src/Honua.Protocols.Ogc.Shared/Honua.Protocols.Ogc.Shared.csproj",
-        "src/Honua.Protocols.OgcApi/Honua.Protocols.OgcApi.csproj",
-        "src/Honua.Protocols.OgcClassic/Honua.Protocols.OgcClassic.csproj",
-        "src/Honua.Protocols.Scene/Honua.Protocols.Scene.csproj",
-        "src/Honua.Protocols.SensorThings/Honua.Protocols.SensorThings.csproj",
-        "src/Honua.Protocols.Stac/Honua.Protocols.Stac.csproj",
-        "src/Honua.Routing/Honua.Routing.csproj",
-        "src/Honua.Scene/Honua.Scene.csproj",
-        "src/Honua.Server/Honua.Server.csproj",
-        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Databricks/Honua.Databricks.csproj"
       ],
       "resources": [],
       "isolated": false,
       "coverageRequired": false,
       "shardRouted": false
+    },
+    "tests/dotnet/Honua.Db.Databricks.UnitTests/Honua.Databricks.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Db/Databricks/Honua.Databricks.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
     },
     "tests/dotnet/Honua.Db.DuckDB.Tests/Honua.DuckDB.Tests.csproj": {
       "role": "component",
@@ -313,42 +278,9 @@
     "tests/dotnet/Honua.Db.MySql.Tests/Honua.MySql.Tests.csproj": {
       "role": "mixed",
       "runtimeOwners": [
-        "src/Honua.Ai/Honua.Ai.csproj",
-        "src/Honua.Cloud/Aws/Honua.Aws.csproj",
-        "src/Honua.Cloud/Azure/Honua.Azure.csproj",
         "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
         "src/Honua.Core/Honua.Core.csproj",
-        "src/Honua.Db/Databricks/Honua.Databricks.csproj",
-        "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
-        "src/Honua.Db/MySql/Honua.MySql.csproj",
-        "src/Honua.Db/Oracle/Honua.Oracle.csproj",
-        "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
-        "src/Honua.Db/Postgres/Honua.Postgres.csproj",
-        "src/Honua.Db/Redshift/Honua.Redshift.csproj",
-        "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
-        "src/Honua.Geocoding/Honua.Geocoding.csproj",
-        "src/Honua.Geometry/Honua.Geometry.csproj",
-        "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
-        "src/Honua.Hosting/Honua.Hosting.csproj",
-        "src/Honua.Import/Honua.Import.csproj",
-        "src/Honua.Io/Honua.Io.csproj",
-        "src/Honua.Jobs/Honua.Jobs.csproj",
-        "src/Honua.Plugins.Abstractions/Honua.Plugins.Abstractions.csproj",
-        "src/Honua.Plugins/Honua.Plugins.csproj",
-        "src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj",
-        "src/Honua.Protocols.OData/Honua.Protocols.OData.csproj",
-        "src/Honua.Protocols.Ogc.Shared/Honua.Protocols.Ogc.Shared.csproj",
-        "src/Honua.Protocols.OgcApi/Honua.Protocols.OgcApi.csproj",
-        "src/Honua.Protocols.OgcClassic/Honua.Protocols.OgcClassic.csproj",
-        "src/Honua.Protocols.Scene/Honua.Protocols.Scene.csproj",
-        "src/Honua.Protocols.SensorThings/Honua.Protocols.SensorThings.csproj",
-        "src/Honua.Protocols.Stac/Honua.Protocols.Stac.csproj",
-        "src/Honua.Routing/Honua.Routing.csproj",
-        "src/Honua.Scene/Honua.Scene.csproj",
-        "src/Honua.Server/Honua.Server.csproj",
-        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/MySql/Honua.MySql.csproj"
       ],
       "resources": [
         "docker"
@@ -356,46 +288,25 @@
       "isolated": false,
       "coverageRequired": false,
       "shardRouted": false
+    },
+    "tests/dotnet/Honua.Db.MySql.UnitTests/Honua.MySql.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Db/MySql/Honua.MySql.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
     },
     "tests/dotnet/Honua.Db.Oracle.Tests/Honua.Oracle.Tests.csproj": {
       "role": "mixed",
       "runtimeOwners": [
-        "src/Honua.Ai/Honua.Ai.csproj",
-        "src/Honua.Cloud/Aws/Honua.Aws.csproj",
-        "src/Honua.Cloud/Azure/Honua.Azure.csproj",
         "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
         "src/Honua.Core/Honua.Core.csproj",
-        "src/Honua.Db/Databricks/Honua.Databricks.csproj",
-        "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
-        "src/Honua.Db/MySql/Honua.MySql.csproj",
-        "src/Honua.Db/Oracle/Honua.Oracle.csproj",
-        "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
-        "src/Honua.Db/Postgres/Honua.Postgres.csproj",
-        "src/Honua.Db/Redshift/Honua.Redshift.csproj",
-        "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
-        "src/Honua.Geocoding/Honua.Geocoding.csproj",
-        "src/Honua.Geometry/Honua.Geometry.csproj",
-        "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
-        "src/Honua.Hosting/Honua.Hosting.csproj",
-        "src/Honua.Import/Honua.Import.csproj",
-        "src/Honua.Io/Honua.Io.csproj",
-        "src/Honua.Jobs/Honua.Jobs.csproj",
-        "src/Honua.Plugins.Abstractions/Honua.Plugins.Abstractions.csproj",
-        "src/Honua.Plugins/Honua.Plugins.csproj",
-        "src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj",
-        "src/Honua.Protocols.OData/Honua.Protocols.OData.csproj",
-        "src/Honua.Protocols.Ogc.Shared/Honua.Protocols.Ogc.Shared.csproj",
-        "src/Honua.Protocols.OgcApi/Honua.Protocols.OgcApi.csproj",
-        "src/Honua.Protocols.OgcClassic/Honua.Protocols.OgcClassic.csproj",
-        "src/Honua.Protocols.Scene/Honua.Protocols.Scene.csproj",
-        "src/Honua.Protocols.SensorThings/Honua.Protocols.SensorThings.csproj",
-        "src/Honua.Protocols.Stac/Honua.Protocols.Stac.csproj",
-        "src/Honua.Routing/Honua.Routing.csproj",
-        "src/Honua.Scene/Honua.Scene.csproj",
-        "src/Honua.Server/Honua.Server.csproj",
-        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Oracle/Honua.Oracle.csproj"
       ],
       "resources": [
         "docker"
@@ -404,49 +315,30 @@
       "coverageRequired": false,
       "shardRouted": false
     },
-    "tests/dotnet/Honua.Db.Postgres.Security.Tests/Honua.Postgres.Security.Tests.csproj": {
-      "role": "mixed",
+    "tests/dotnet/Honua.Db.Oracle.UnitTests/Honua.Oracle.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Ai/Honua.Ai.csproj",
-        "src/Honua.Cloud/Aws/Honua.Aws.csproj",
-        "src/Honua.Cloud/Azure/Honua.Azure.csproj",
         "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
         "src/Honua.Core/Honua.Core.csproj",
-        "src/Honua.Db/Databricks/Honua.Databricks.csproj",
-        "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
-        "src/Honua.Db/MySql/Honua.MySql.csproj",
-        "src/Honua.Db/Oracle/Honua.Oracle.csproj",
-        "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
-        "src/Honua.Db/Postgres/Honua.Postgres.csproj",
-        "src/Honua.Db/Redshift/Honua.Redshift.csproj",
-        "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
-        "src/Honua.Geocoding/Honua.Geocoding.csproj",
-        "src/Honua.Geometry/Honua.Geometry.csproj",
-        "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
-        "src/Honua.Hosting/Honua.Hosting.csproj",
-        "src/Honua.Import/Honua.Import.csproj",
-        "src/Honua.Io/Honua.Io.csproj",
-        "src/Honua.Jobs/Honua.Jobs.csproj",
-        "src/Honua.Plugins.Abstractions/Honua.Plugins.Abstractions.csproj",
-        "src/Honua.Plugins/Honua.Plugins.csproj",
-        "src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj",
-        "src/Honua.Protocols.OData/Honua.Protocols.OData.csproj",
-        "src/Honua.Protocols.Ogc.Shared/Honua.Protocols.Ogc.Shared.csproj",
-        "src/Honua.Protocols.OgcApi/Honua.Protocols.OgcApi.csproj",
-        "src/Honua.Protocols.OgcClassic/Honua.Protocols.OgcClassic.csproj",
-        "src/Honua.Protocols.Scene/Honua.Protocols.Scene.csproj",
-        "src/Honua.Protocols.SensorThings/Honua.Protocols.SensorThings.csproj",
-        "src/Honua.Protocols.Stac/Honua.Protocols.Stac.csproj",
-        "src/Honua.Routing/Honua.Routing.csproj",
-        "src/Honua.Scene/Honua.Scene.csproj",
-        "src/Honua.Server/Honua.Server.csproj",
-        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Oracle/Honua.Oracle.csproj"
       ],
       "resources": [],
-      "isolated": false,
-      "coverageRequired": false,
+      "isolated": true,
+      "coverageRequired": true
+    },
+    "tests/dotnet/Honua.Db.Postgres.Security.Tests/Honua.Postgres.Security.Tests.csproj": {
+      "role": "unit",
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
+        "src/Honua.Db/Postgres/Honua.Postgres.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true,
       "shardRouted": false
     },
     "tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj": {
@@ -498,45 +390,29 @@
       "coverageRequired": false,
       "shardRouted": false
     },
+    "tests/dotnet/Honua.Db.Postgres.UnitTests/Honua.Postgres.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
+        "src/Honua.Db/Postgres/Honua.Postgres.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Scene/Honua.Scene.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
+    },
     "tests/dotnet/Honua.Db.Redshift.Tests/Honua.Redshift.Tests.csproj": {
       "role": "mixed",
       "runtimeOwners": [
-        "src/Honua.Ai/Honua.Ai.csproj",
-        "src/Honua.Cloud/Aws/Honua.Aws.csproj",
-        "src/Honua.Cloud/Azure/Honua.Azure.csproj",
         "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
         "src/Honua.Core/Honua.Core.csproj",
-        "src/Honua.Db/Databricks/Honua.Databricks.csproj",
-        "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
-        "src/Honua.Db/MySql/Honua.MySql.csproj",
-        "src/Honua.Db/Oracle/Honua.Oracle.csproj",
-        "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
-        "src/Honua.Db/Postgres/Honua.Postgres.csproj",
-        "src/Honua.Db/Redshift/Honua.Redshift.csproj",
-        "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
-        "src/Honua.Geocoding/Honua.Geocoding.csproj",
-        "src/Honua.Geometry/Honua.Geometry.csproj",
-        "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
-        "src/Honua.Hosting/Honua.Hosting.csproj",
-        "src/Honua.Import/Honua.Import.csproj",
-        "src/Honua.Io/Honua.Io.csproj",
-        "src/Honua.Jobs/Honua.Jobs.csproj",
-        "src/Honua.Plugins.Abstractions/Honua.Plugins.Abstractions.csproj",
-        "src/Honua.Plugins/Honua.Plugins.csproj",
-        "src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj",
-        "src/Honua.Protocols.OData/Honua.Protocols.OData.csproj",
-        "src/Honua.Protocols.Ogc.Shared/Honua.Protocols.Ogc.Shared.csproj",
-        "src/Honua.Protocols.OgcApi/Honua.Protocols.OgcApi.csproj",
-        "src/Honua.Protocols.OgcClassic/Honua.Protocols.OgcClassic.csproj",
-        "src/Honua.Protocols.Scene/Honua.Protocols.Scene.csproj",
-        "src/Honua.Protocols.SensorThings/Honua.Protocols.SensorThings.csproj",
-        "src/Honua.Protocols.Stac/Honua.Protocols.Stac.csproj",
-        "src/Honua.Routing/Honua.Routing.csproj",
-        "src/Honua.Scene/Honua.Scene.csproj",
-        "src/Honua.Server/Honua.Server.csproj",
-        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Redshift/Honua.Redshift.csproj"
       ],
       "resources": [
         "docker"
@@ -545,50 +421,43 @@
       "coverageRequired": false,
       "shardRouted": false
     },
+    "tests/dotnet/Honua.Db.Redshift.UnitTests/Honua.Redshift.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Db/Redshift/Honua.Redshift.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
+    },
     "tests/dotnet/Honua.Db.SqlServer.Tests/Honua.SqlServer.Tests.csproj": {
       "role": "mixed",
       "runtimeOwners": [
-        "src/Honua.Ai/Honua.Ai.csproj",
-        "src/Honua.Cloud/Aws/Honua.Aws.csproj",
-        "src/Honua.Cloud/Azure/Honua.Azure.csproj",
         "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
         "src/Honua.Core/Honua.Core.csproj",
-        "src/Honua.Db/Databricks/Honua.Databricks.csproj",
-        "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
-        "src/Honua.Db/MySql/Honua.MySql.csproj",
-        "src/Honua.Db/Oracle/Honua.Oracle.csproj",
-        "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
-        "src/Honua.Db/Postgres/Honua.Postgres.csproj",
-        "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
-        "src/Honua.Geocoding/Honua.Geocoding.csproj",
-        "src/Honua.Geometry/Honua.Geometry.csproj",
-        "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
-        "src/Honua.Hosting/Honua.Hosting.csproj",
-        "src/Honua.Import/Honua.Import.csproj",
-        "src/Honua.Io/Honua.Io.csproj",
-        "src/Honua.Jobs/Honua.Jobs.csproj",
-        "src/Honua.Plugins.Abstractions/Honua.Plugins.Abstractions.csproj",
-        "src/Honua.Plugins/Honua.Plugins.csproj",
-        "src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj",
-        "src/Honua.Protocols.OData/Honua.Protocols.OData.csproj",
-        "src/Honua.Protocols.Ogc.Shared/Honua.Protocols.Ogc.Shared.csproj",
-        "src/Honua.Protocols.OgcApi/Honua.Protocols.OgcApi.csproj",
-        "src/Honua.Protocols.OgcClassic/Honua.Protocols.OgcClassic.csproj",
-        "src/Honua.Protocols.Scene/Honua.Protocols.Scene.csproj",
-        "src/Honua.Protocols.SensorThings/Honua.Protocols.SensorThings.csproj",
-        "src/Honua.Protocols.Stac/Honua.Protocols.Stac.csproj",
-        "src/Honua.Routing/Honua.Routing.csproj",
-        "src/Honua.Scene/Honua.Scene.csproj",
-        "src/Honua.Server/Honua.Server.csproj",
-        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Geometry/Honua.Geometry.csproj"
       ],
       "resources": [],
       "isolated": false,
       "coverageRequired": false,
       "shardRouted": false
+    },
+    "tests/dotnet/Honua.Db.SqlServer.UnitTests/Honua.SqlServer.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
     },
     "tests/dotnet/Honua.GeoServicesRest.Tests/Honua.GeoServicesRest.Tests.csproj": {
       "role": "unit",
@@ -673,6 +542,67 @@
       "isolated": false,
       "coverageRequired": false,
       "shardRouted": false
+    },
+    "tests/dotnet/Honua.Geoprocessing.UnitTests/Honua.Geoprocessing.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Jobs/Honua.Jobs.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
+    },
+    "tests/dotnet/Honua.Hosting.UnitTests/Honua.Hosting.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
+    },
+    "tests/dotnet/Honua.Import.UnitTests/Honua.Import.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Import/Honua.Import.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
+    },
+    "tests/dotnet/Honua.Io.UnitTests/Honua.Io.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Io/Honua.Io.csproj",
+        "src/Honua.Plugins.Abstractions/Honua.Plugins.Abstractions.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
     },
     "tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj": {
       "role": "integration",
@@ -834,6 +764,27 @@
       "coverageRequired": true,
       "shardRouted": true
     },
+    "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Geocoding/Honua.Geocoding.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Jobs/Honua.Jobs.csproj",
+        "src/Honua.Plugins.Abstractions/Honua.Plugins.Abstractions.csproj",
+        "src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj",
+        "src/Honua.Routing/Honua.Routing.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
+    },
     "tests/dotnet/Honua.Protocols.OData.ComponentTests/Honua.Protocols.OData.ComponentTests.csproj": {
       "role": "component",
       "runtimeOwners": [
@@ -965,6 +916,24 @@
       "coverageRequired": true,
       "shardRouted": true
     },
+    "tests/dotnet/Honua.Protocols.OgcApi.UnitTests/Honua.Protocols.OgcApi.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Jobs/Honua.Jobs.csproj",
+        "src/Honua.Protocols.Ogc.Shared/Honua.Protocols.Ogc.Shared.csproj",
+        "src/Honua.Protocols.OgcApi/Honua.Protocols.OgcApi.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
+    },
     "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj": {
       "role": "mixed",
       "runtimeOwners": [
@@ -1012,6 +981,24 @@
       "coverageRequired": true,
       "shardRouted": true
     },
+    "tests/dotnet/Honua.Protocols.OgcClassic.UnitTests/Honua.Protocols.OgcClassic.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Jobs/Honua.Jobs.csproj",
+        "src/Honua.Protocols.Ogc.Shared/Honua.Protocols.Ogc.Shared.csproj",
+        "src/Honua.Protocols.OgcClassic/Honua.Protocols.OgcClassic.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
+    },
     "tests/dotnet/Honua.Protocols.Scene.Tests/Honua.Protocols.Scene.Tests.csproj": {
       "role": "mixed",
       "runtimeOwners": [
@@ -1056,6 +1043,22 @@
       "isolated": false,
       "coverageRequired": true,
       "shardRouted": true
+    },
+    "tests/dotnet/Honua.Protocols.Scene.UnitTests/Honua.Protocols.Scene.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Protocols.Scene/Honua.Protocols.Scene.csproj",
+        "src/Honua.Scene/Honua.Scene.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
     },
     "tests/dotnet/Honua.Protocols.SensorThings.Tests/Honua.Protocols.SensorThings.Tests.csproj": {
       "role": "mixed",
@@ -1106,6 +1109,21 @@
       "coverageRequired": true,
       "shardRouted": true
     },
+    "tests/dotnet/Honua.Protocols.SensorThings.UnitTests/Honua.Protocols.SensorThings.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Protocols.SensorThings/Honua.Protocols.SensorThings.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
+    },
     "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj": {
       "role": "mixed",
       "runtimeOwners": [
@@ -1150,6 +1168,22 @@
       "isolated": false,
       "coverageRequired": true,
       "shardRouted": true
+    },
+    "tests/dotnet/Honua.Protocols.Stac.UnitTests/Honua.Protocols.Stac.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Protocols.Ogc.Shared/Honua.Protocols.Ogc.Shared.csproj",
+        "src/Honua.Protocols.Stac/Honua.Protocols.Stac.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
     },
     "tests/dotnet/Honua.ProviderSmoke.Tests/Honua.ProviderSmoke.Tests.csproj": {
       "role": "mixed",
@@ -1206,6 +1240,33 @@
       "coverageRequired": true,
       "shardRouted": false
     },
+    "tests/dotnet/Honua.Routing.UnitTests/Honua.Routing.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Routing/Honua.Routing.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
+    },
+    "tests/dotnet/Honua.Scene.UnitTests/Honua.Scene.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Scene/Honua.Scene.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
+    },
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj": {
       "role": "mixed",
       "runtimeOwners": [
@@ -1256,50 +1317,41 @@
       "coverageRequired": true,
       "shardRouted": true
     },
+    "tests/dotnet/Honua.ServiceDefaults.UnitTests/Honua.ServiceDefaults.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
+    },
     "tests/dotnet/Honua.Snowflake.Tests/Honua.Snowflake.Tests.csproj": {
       "role": "mixed",
       "runtimeOwners": [
-        "src/Honua.Ai/Honua.Ai.csproj",
-        "src/Honua.Cloud/Aws/Honua.Aws.csproj",
-        "src/Honua.Cloud/Azure/Honua.Azure.csproj",
         "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
         "src/Honua.Core/Honua.Core.csproj",
-        "src/Honua.Db/Databricks/Honua.Databricks.csproj",
-        "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
-        "src/Honua.Db/MySql/Honua.MySql.csproj",
-        "src/Honua.Db/Oracle/Honua.Oracle.csproj",
-        "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
-        "src/Honua.Db/Postgres/Honua.Postgres.csproj",
-        "src/Honua.Db/Redshift/Honua.Redshift.csproj",
-        "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
-        "src/Honua.Geocoding/Honua.Geocoding.csproj",
-        "src/Honua.Geometry/Honua.Geometry.csproj",
-        "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
-        "src/Honua.Hosting/Honua.Hosting.csproj",
-        "src/Honua.Import/Honua.Import.csproj",
-        "src/Honua.Io/Honua.Io.csproj",
-        "src/Honua.Jobs/Honua.Jobs.csproj",
-        "src/Honua.Plugins.Abstractions/Honua.Plugins.Abstractions.csproj",
-        "src/Honua.Plugins/Honua.Plugins.csproj",
-        "src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj",
-        "src/Honua.Protocols.OData/Honua.Protocols.OData.csproj",
-        "src/Honua.Protocols.Ogc.Shared/Honua.Protocols.Ogc.Shared.csproj",
-        "src/Honua.Protocols.OgcApi/Honua.Protocols.OgcApi.csproj",
-        "src/Honua.Protocols.OgcClassic/Honua.Protocols.OgcClassic.csproj",
-        "src/Honua.Protocols.Scene/Honua.Protocols.Scene.csproj",
-        "src/Honua.Protocols.SensorThings/Honua.Protocols.SensorThings.csproj",
-        "src/Honua.Protocols.Stac/Honua.Protocols.Stac.csproj",
-        "src/Honua.Routing/Honua.Routing.csproj",
-        "src/Honua.Scene/Honua.Scene.csproj",
-        "src/Honua.Server/Honua.Server.csproj",
-        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
         "src/Honua.Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [],
       "isolated": false,
       "coverageRequired": false,
       "shardRouted": false
+    },
+    "tests/dotnet/Honua.Snowflake.UnitTests/Honua.Snowflake.UnitTests.csproj": {
+      "role": "unit",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+      ],
+      "resources": [],
+      "isolated": true,
+      "coverageRequired": true
     },
     "tests/dotnet/Honua.StaleAttemptWorker/Honua.StaleAttemptWorker.csproj": {
       "role": "host",
@@ -1327,6 +1379,25 @@
       "coverageRequired": false,
       "shardRouted": false
     },
+    "tests/dotnet/Honua.TestKit.Core/Honua.TestKit.Core.csproj": {
+      "role": "support",
+      "shardRouted": false,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj"
+      ],
+      "resources": [],
+      "isolated": false,
+      "coverageRequired": false
+    },
+    "tests/dotnet/Honua.TestKit.Hosting/Honua.TestKit.Hosting.csproj": {
+      "role": "support",
+      "shardRouted": false,
+      "runtimeOwners": [],
+      "resources": [],
+      "isolated": false,
+      "coverageRequired": false
+    },
     "tests/dotnet/Honua.TestKit.Postgres/Honua.TestKit.Postgres.csproj": {
       "role": "support",
       "runtimeOwners": [
@@ -1343,6 +1414,17 @@
       "isolated": false,
       "coverageRequired": false,
       "shardRouted": false
+    },
+    "tests/dotnet/Honua.TestKit.Redis/Honua.TestKit.Redis.csproj": {
+      "role": "support",
+      "shardRouted": false,
+      "runtimeOwners": [],
+      "resources": [
+        "docker",
+        "redis"
+      ],
+      "isolated": false,
+      "coverageRequired": false
     },
     "tests/dotnet/Honua.TestKit/Honua.TestKit.csproj": {
       "role": "support",

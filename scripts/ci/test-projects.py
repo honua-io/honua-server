@@ -123,6 +123,12 @@ def validate(root, catalog):
         if entry['role'] not in ROLES or not isinstance(entry['isolated'], bool) or not isinstance(entry['coverageRequired'], bool):
             raise ValueError(f'{project}: invalid role or flags')
         refs = closure(root, project)
+        # Only the canonical full-coverage collector may load executable test assemblies.
+        collector = project == 'tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj' and entry['role'] == 'architecture'
+        if not collector:
+            for reference in sorted(refs - {project}):
+                if reference in entries and entries[reference]['role'] not in {'support', 'host'}:
+                    raise ValueError(f'{project}: executable test dependency {reference} (including transitive support dependencies)')
         if not set(entry['runtimeOwners']) <= refs:
             raise ValueError(f'{project}: runtime owner outside dependency closure')
         if not entry['isolated']:
@@ -147,6 +153,15 @@ def validate(root, catalog):
         text = '\n'.join((root / p).read_text(errors='replace') for dependency in refs if dependency == project or '/Honua.TestKit.Core/' in dependency for p in sources(root, dependency))
         if any(token in text for token in ('Testcontainers', 'PostgresFixture', 'WebApplicationFactory<', '[IntegrationTest', '[IntegrationTheory')):
             raise ValueError(f'{project}: integration infrastructure in isolated unit sources (including links)')
+    shard_path = root / '.github/ci-shards.json'
+    if shard_path.is_file():
+        registry_path = root / '.github/server-test-artifact-projects.json'
+        if not registry_path.is_file():
+            raise ValueError('Missing shard artifact inventory; run update')
+        routed = {entry.get('csproj') or 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj' for entry in json.loads(shard_path.read_text())['shards']}
+        registered = {entry['csproj'] for entry in json.loads(registry_path.read_text())['projects']}
+        if registered != routed:
+            raise ValueError('Stale shard artifact inventory; run update')
     for path, content in generated(catalog).items():
         if not (root / path).is_file() or (root / path).read_text() != content:
             raise ValueError(f'{path}: stale generated coverage inventory; run update')
@@ -163,7 +178,7 @@ def plan(root, catalog, changed):
         if entry['role'] != 'unit' or not entry['isolated']:
             continue
         refs = closure(root, project)
-        inputs = set().union(*(sources(root, p) for p in refs)) | refs
+        inputs = set().union(*(sources(root, p) | set(items(root, p, 'Content')) | set(items(root, p, 'EmbeddedResource')) for p in refs)) | refs
         directories = [(root / p).parent.relative_to(root).as_posix() + '/' for p in refs]
         eligible_inputs |= inputs
         eligible_directories.extend(directories)
@@ -222,10 +237,12 @@ def main():
         registry_path = root / '.github/server-test-artifact-projects.json'
         if registry_path.is_file():
             registry = json.loads(registry_path.read_text())
+            shard_file = root / '.github/ci-shards.json'
+            routed = {entry.get('csproj') or 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj' for entry in json.loads(shard_file.read_text())['shards']}
+            registry['projects'] = [entry for entry in registry['projects'] if entry['csproj'] in routed]
             known = {entry['csproj'] for entry in registry['projects']}
-            for project, entry in catalog['projects'].items():
-                if entry['role'] in {'unit', 'component'} and project not in known:
-                    registry['projects'].append({'csproj': project, 'artifact_suffix': Path(project).stem.lower().replace('.', '-'), 'proof_filter': 'FullyQualifiedName~Honua'})
+            for project in sorted(routed - known):
+                registry['projects'].append({'csproj': project, 'artifact_suffix': Path(project).stem.lower().replace('.', '-'), 'proof_filter': 'FullyQualifiedName~Honua'})
             registry_path.write_text(json.dumps(registry, indent=2) + '\n')
         print('Updated inventory; review roles, runtimeOwners, resources and isolation before commit.')
         return

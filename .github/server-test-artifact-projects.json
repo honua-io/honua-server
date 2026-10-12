@@ -57,28 +57,118 @@
       "proof_filter": "FullyQualifiedName~GeoservicesServiceUrlValidationTests"
     },
     {
-      "csproj": "tests/dotnet/Honua.ControlPlane.Lambda.Tests/Honua.ControlPlane.Lambda.Tests.csproj",
-      "artifact_suffix": "honua-controlplane-lambda-tests",
+      "csproj": "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj",
+      "artifact_suffix": "honua-ai-unittests",
       "proof_filter": "FullyQualifiedName~Honua"
     },
     {
-      "csproj": "tests/dotnet/Honua.Db.DuckDB.Tests/Honua.DuckDB.Tests.csproj",
-      "artifact_suffix": "honua-duckdb-tests",
+      "csproj": "tests/dotnet/Honua.Aws.UnitTests/Honua.Aws.UnitTests.csproj",
+      "artifact_suffix": "honua-aws-unittests",
       "proof_filter": "FullyQualifiedName~Honua"
     },
     {
-      "csproj": "tests/dotnet/Honua.GeoServicesRest.Tests/Honua.GeoServicesRest.Tests.csproj",
-      "artifact_suffix": "honua-geoservicesrest-tests",
+      "csproj": "tests/dotnet/Honua.Azure.UnitTests/Honua.Azure.UnitTests.csproj",
+      "artifact_suffix": "honua-azure-unittests",
       "proof_filter": "FullyQualifiedName~Honua"
     },
     {
-      "csproj": "tests/dotnet/Honua.Protocols.OData.ComponentTests/Honua.Protocols.OData.ComponentTests.csproj",
-      "artifact_suffix": "honua-protocols-odata-componenttests",
+      "csproj": "tests/dotnet/Honua.Db.Databricks.UnitTests/Honua.Databricks.UnitTests.csproj",
+      "artifact_suffix": "honua-databricks-unittests",
       "proof_filter": "FullyQualifiedName~Honua"
     },
     {
-      "csproj": "tests/dotnet/Honua.ReleaseWorkflows.Tests/Honua.ReleaseWorkflows.Tests.csproj",
-      "artifact_suffix": "honua-releaseworkflows-tests",
+      "csproj": "tests/dotnet/Honua.Db.MySql.UnitTests/Honua.MySql.UnitTests.csproj",
+      "artifact_suffix": "honua-mysql-unittests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Db.Oracle.UnitTests/Honua.Oracle.UnitTests.csproj",
+      "artifact_suffix": "honua-oracle-unittests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Db.Postgres.UnitTests/Honua.Postgres.UnitTests.csproj",
+      "artifact_suffix": "honua-postgres-unittests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Db.Redshift.UnitTests/Honua.Redshift.UnitTests.csproj",
+      "artifact_suffix": "honua-redshift-unittests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Db.SqlServer.UnitTests/Honua.SqlServer.UnitTests.csproj",
+      "artifact_suffix": "honua-sqlserver-unittests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Geoprocessing.UnitTests/Honua.Geoprocessing.UnitTests.csproj",
+      "artifact_suffix": "honua-geoprocessing-unittests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Hosting.UnitTests/Honua.Hosting.UnitTests.csproj",
+      "artifact_suffix": "honua-hosting-unittests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Import.UnitTests/Honua.Import.UnitTests.csproj",
+      "artifact_suffix": "honua-import-unittests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Io.UnitTests/Honua.Io.UnitTests.csproj",
+      "artifact_suffix": "honua-io-unittests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj",
+      "artifact_suffix": "honua-protocols-geoservices-unittests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Protocols.OgcApi.UnitTests/Honua.Protocols.OgcApi.UnitTests.csproj",
+      "artifact_suffix": "honua-protocols-ogcapi-unittests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.UnitTests/Honua.Protocols.OgcClassic.UnitTests.csproj",
+      "artifact_suffix": "honua-protocols-ogcclassic-unittests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Protocols.Scene.UnitTests/Honua.Protocols.Scene.UnitTests.csproj",
+      "artifact_suffix": "honua-protocols-scene-unittests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Protocols.SensorThings.UnitTests/Honua.Protocols.SensorThings.UnitTests.csproj",
+      "artifact_suffix": "honua-protocols-sensorthings-unittests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Protocols.Stac.UnitTests/Honua.Protocols.Stac.UnitTests.csproj",
+      "artifact_suffix": "honua-protocols-stac-unittests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Routing.UnitTests/Honua.Routing.UnitTests.csproj",
+      "artifact_suffix": "honua-routing-unittests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Scene.UnitTests/Honua.Scene.UnitTests.csproj",
+      "artifact_suffix": "honua-scene-unittests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.ServiceDefaults.UnitTests/Honua.ServiceDefaults.UnitTests.csproj",
+      "artifact_suffix": "honua-servicedefaults-unittests",
+      "proof_filter": "FullyQualifiedName~Honua"
+    },
+    {
+      "csproj": "tests/dotnet/Honua.Snowflake.UnitTests/Honua.Snowflake.UnitTests.csproj",
+      "artifact_suffix": "honua-snowflake-unittests",
       "proof_filter": "FullyQualifiedName~Honua"
     }
   ]

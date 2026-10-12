@@ -164,6 +164,52 @@ class CatalogTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unresolved import'):
             catalog.validate(self.root, self.entries)
 
+    def test_updater_preserves_reviewed_owners_and_exact_shard_artifacts(self):
+        reviewed = json.loads(json.dumps(self.entries))
+        (self.root / catalog.CATALOG).write_text(json.dumps(self.entries))
+        (self.root / '.github/ci-shards.json').write_text(json.dumps({'shards': [{'csproj': self.unit}]}))
+        registry = self.root / '.github/server-test-artifact-projects.json'
+        registry.write_text(json.dumps({'contract_version': 1, 'projects': [
+            {'csproj': self.unit, 'artifact_suffix': 'reviewed', 'proof_filter': 'FullyQualifiedName~SpecificCase'},
+            {'csproj': self.integration, 'artifact_suffix': 'not-routed', 'proof_filter': 'FullyQualifiedName~Honua'}]}))
+        with patch.object(catalog.sys, 'argv', ['test-projects.py', 'update', '--root', str(self.root)]):
+            catalog.main()
+        updated = json.loads((self.root / catalog.CATALOG).read_text())
+        self.assertEqual(reviewed, updated)
+        self.assertEqual([{'csproj': self.unit, 'artifact_suffix': 'reviewed', 'proof_filter': 'FullyQualifiedName~SpecificCase'}], json.loads(registry.read_text())['projects'])
+        catalog.validate(self.root, updated)
+        registry.write_text(json.dumps({'projects': []}))
+        with self.assertRaisesRegex(ValueError, 'Stale shard artifact inventory'):
+            catalog.validate(self.root, updated)
+
+    def test_external_linked_content_selects_unit_consumer(self):
+        schema = self.root / 'tests/schemas/contract.json'
+        schema.parent.mkdir()
+        schema.write_text('{}')
+        unit = self.root / self.unit
+        unit.write_text(unit.read_text().replace('</ItemGroup>', '<Content Include="../../schemas/*.json" /></ItemGroup>'))
+        result = catalog.plan(self.root, self.entries, ['tests/schemas/contract.json'])
+        self.assertEqual([self.unit], result['selectedProjects'])
+        self.assertEqual([], result['selectionReasons'])
+
+    def test_component_support_cannot_pull_executable_test_transitively(self):
+        support = self.project('tests/dotnet/Honua.TestKit.Component', [self.unit])
+        component = self.project('tests/dotnet/Honua.Example.ComponentTests', [support])
+        for project, role in ((support, 'support'), (component, 'component')):
+            self.entries['projects'][project] = dict(role=role, runtimeOwners=[self.owner], resources=[], isolated=False, coverageRequired=False)
+        self.generate()
+        with self.assertRaisesRegex(ValueError, 'executable test dependency'):
+            catalog.validate(self.root, self.entries)
+
+    def test_only_canonical_architecture_collector_can_reference_tests(self):
+        architecture = self.project('tests/dotnet/Honua.Architecture.Tests', [self.unit, self.integration])
+        self.entries['projects'][architecture] = dict(role='architecture', runtimeOwners=[self.owner], resources=[], isolated=False, coverageRequired=False)
+        self.generate()
+        catalog.validate(self.root, self.entries)
+        self.entries['projects'][architecture]['role'] = 'component'
+        with self.assertRaisesRegex(ValueError, 'executable test dependency'):
+            catalog.validate(self.root, self.entries)
+
     def test_shared_change_selects_units_only(self):
         result = catalog.plan(self.root, self.entries, ['Directory.Build.props'])
         self.assertEqual([self.unit], result['selectedProjects'])

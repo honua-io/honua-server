@@ -542,13 +542,21 @@ def check_unrouted_test_selects_its_owning_shard(config: dict[str, Any]) -> str:
         if len(owners) == 1:
             candidates.append((entry["src"][0], owners[0]))
 
+    # Unit projects have broad directory routes, so a real routing gap need not
+    # exist among the first classes after modularization. Create a precise gap
+    # in a copied map while preserving every filter/assembly ownership rule.
     for source, owner in candidates[:40]:
-        descriptor = router(config, [source])
+        if owner in config.get("default_shards_when_no_match", []):
+            continue
+        probe_config = copy.deepcopy(config)
+        for shard in probe_config["shards"]:
+            shard["paths"] = [prefix for prefix in shard.get("paths", []) if not source.startswith(prefix)]
+        descriptor = router(probe_config, [source])
         if descriptor.get("reason") != "no_path_match":
             continue
         owners = [owner]
 
-        result = select_offline(config, [source], descriptor=descriptor, cap=6)
+        result = select_offline(probe_config, [source], descriptor=descriptor, cap=6)
         if owners[0] not in result["shards"]:
             raise FixtureError(
                 f"changing {source!r} answers {descriptor['reason']!r} and did not "
