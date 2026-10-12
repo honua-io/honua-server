@@ -6,6 +6,8 @@ using System.Text;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Infrastructure.Health;
+using Honua.Infrastructure.Monitoring;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -122,6 +124,47 @@ public sealed class ControlPlaneLambdaEventEndpointTests
     }
 
     [UnitTheory]
+    [InlineData("batch-event", null)]
+    [InlineData("backstop", "schema-floor")]
+    [InlineData("scheduled-tick", "schema-floor")]
+    public async Task DegradedHost_Returns503NotReady_SoTheEventIsRetried(string selector, string? reasonCode)
+    {
+        // honua-server#5916: cp-tick and cp-backstop cold-started before migrations were applied and
+        // exited. A degraded host must answer a typed 503 instead of running the handler.
+        var targets = new RecordingTargets();
+        var degraded = new DegradedStartupContext();
+        degraded.MarkDegraded(
+            migrationsPending: false,
+            migrationsAssembly: null,
+            reason: "schema guard: migration '001_CreateRasterTables.sql' not applied",
+            schemaGuardPending: true,
+            reasonCode: reasonCode);
+        var payload = selector == "scheduled-tick" ? """{"kind":"jobReconciliation"}""" : BatchEvent;
+
+        var (status, body, headers) = await InvokeWithHeadersAsync(selector, payload, targets, degraded);
+
+        status.Should().Be(StatusCodes.Status503ServiceUnavailable);
+        body.Should().Contain(ControlPlaneNotReadyGuard.ProblemCode);
+        headers[ReadinessReasonCodes.HeaderName].ToString()
+            .Should().Be(reasonCode ?? ReadinessReasonCodes.DatabaseStartupDegraded);
+        targets.Calls.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task RecoveredHost_RunsTheHandler()
+    {
+        var targets = new RecordingTargets();
+        var degraded = new DegradedStartupContext();
+        degraded.MarkDegraded(false, null, "schema guard", schemaGuardPending: true, reasonCode: ReadinessReasonCodes.SchemaFloor);
+        degraded.MarkRecovered();
+
+        var (status, _, _) = await InvokeWithHeadersAsync("backstop", "{}", targets, degraded);
+
+        status.Should().Be(StatusCodes.Status200OK);
+        targets.Calls.Should().Equal("backstop");
+    }
+
+    [UnitTheory]
     [InlineData("203.0.113.9")]
     [InlineData("none")]
     public async Task NonLoopbackCaller_Returns403_AndRunsNothing(string remoteIp)
@@ -199,6 +242,18 @@ public sealed class ControlPlaneLambdaEventEndpointTests
         IPAddress? remoteIp = null,
         bool hasRemote = true)
     {
+        var (status, body, _) = await InvokeWithHeadersAsync(selector, payload, targets, null, remoteIp, hasRemote);
+        return (status, body);
+    }
+
+    private static async Task<(int Status, string Body, IHeaderDictionary Headers)> InvokeWithHeadersAsync(
+        string selector,
+        string payload,
+        RecordingTargets targets,
+        DegradedStartupContext? degraded,
+        IPAddress? remoteIp = null,
+        bool hasRemote = true)
+    {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -222,12 +277,13 @@ public sealed class ControlPlaneLambdaEventEndpointTests
             context,
             configuration,
             targets,
-            NullLogger.Instance);
+            NullLogger.Instance,
+            degraded);
         await result.ExecuteAsync(context);
 
         context.Response.Body.Position = 0;
         using var reader = new StreamReader(context.Response.Body);
-        return (context.Response.StatusCode, await reader.ReadToEndAsync());
+        return (context.Response.StatusCode, await reader.ReadToEndAsync(), context.Response.Headers);
     }
 
     private sealed class RecordingTargets : IControlPlaneLambdaEventTargets

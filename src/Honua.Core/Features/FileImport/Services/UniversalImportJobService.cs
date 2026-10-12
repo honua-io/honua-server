@@ -4,7 +4,6 @@
 using Honua.Core.Features.Licensing.Abstractions;
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Security.Cryptography;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Admin.Abstractions;
@@ -39,6 +38,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellationTokens = new();
     private readonly SemaphoreSlim _backgroundSlots;
     private readonly int _maxOutstanding;
+    private readonly string? _instanceId;
     private int _outstanding;
     private int _disposed;
 
@@ -48,9 +48,11 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         IPerformanceMonitor performanceMonitor,
         ILogger<UniversalImportJobService> logger,
         ILicenseOperationPolicy? licensePolicy = null,
-        ImportLimits? limits = null)
+        ImportLimits? limits = null,
+        string? instanceId = null)
     {
         _licensePolicy = licensePolicy;
+        _instanceId = instanceId;
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _progressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
         _performanceMonitor = performanceMonitor ?? throw new ArgumentNullException(nameof(performanceMonitor));
@@ -130,7 +132,12 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             operationInstanceId: request.OperationInstanceId,
             correlationId: request.CorrelationId,
             auditId: request.AuditId,
-            proposalId: request.ProposalId);
+            proposalId: request.ProposalId) with
+        {
+            // honua-server#5916: this service is the in-process runner for long-lived hosts.
+            Runner = ImportJobRunners.InProcess,
+            InstanceId = _instanceId
+        };
 
         // Store initial progress in the unified store. The write is retried a bounded number of
         // times for transient store failures; cancellation propagates and an unreachable store
@@ -305,6 +312,8 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 CorrelationId = request.CorrelationId,
                 AuditId = request.AuditId,
                 ProposalId = request.ProposalId,
+                Runner = ImportJobRunners.InProcess,
+                InstanceId = _instanceId,
             }));
 
             using var scope = _scopeFactory.CreateScope();
@@ -314,35 +323,14 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             // The background path must perform the same canonical snapshot refresh as the
             // synchronous upload path. The importer stores file targets under its physical
             // imported_* name, while callers submit the logical table name (#22).
-            if (result.Success &&
-                scope.ServiceProvider.GetService<ILayerPublishingService>() is { } publishingService &&
-                scope.ServiceProvider.GetService<IDatabaseConnectionProvider>() is { } connectionProvider)
+            if (result.Success)
             {
-                try
-                {
-                    var connectionString = connectionProvider.GetConnectionString();
-                    foreach (var physicalTableName in ResolvePhysicalImportedTableNames(request.TableName))
-                    {
-                        try
-                        {
-                            await publishingService.RefreshMaterializedFeaturesForSourceTableAsync(
-                                connectionString,
-                                request.TargetSchema,
-                                physicalTableName,
-                                cancellationToken).ConfigureAwait(false);
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException)
-                        {
-                            // A legacy 41-63 character physical name may not exist; continue
-                            // to the current hashed name so published snapshots remain fresh.
-                            UniversalImportJobLog.ProgressUpdateFailed(_logger, jobId, ex);
-                        }
-                    }
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    UniversalImportJobLog.ProgressUpdateFailed(_logger, jobId, ex);
-                }
+                await ImportedSnapshotRefresher.RefreshAsync(
+                    scope.ServiceProvider,
+                    request.TargetSchema,
+                    request.TableName,
+                    ex => UniversalImportJobLog.ProgressUpdateFailed(_logger, jobId, ex),
+                    cancellationToken).ConfigureAwait(false);
             }
 
             if (_jobs.TryGetValue(jobId, out state))
@@ -476,20 +464,6 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
 
             _jobs.TryRemove(jobId, out _);
         }
-    }
-
-    private static IReadOnlyList<string> ResolvePhysicalImportedTableNames(string tableName)
-    {
-        var sanitized = System.Text.RegularExpressions.Regex.Replace(tableName, "[^a-zA-Z0-9_]", "_");
-        var physical = "imported_" + sanitized.ToLowerInvariant();
-        if (physical.Length <= 40) return [physical];
-
-        var hash = Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(physical)))[..12];
-        var hashed = $"{physical[..(40 - hash.Length - 1)]}_{hash}";
-        // Imports before the length-limit fix used the unsuffixed name through
-        // PostgreSQL's 63-character identifier limit. Refresh both candidates so
-        // those published layers are not stranded after an upgrade.
-        return physical.Length <= 63 ? [physical, hashed] : [hashed];
     }
 
     /// <inheritdoc/>

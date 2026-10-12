@@ -227,6 +227,100 @@ public sealed class DatabasePreflightTransientClassificationTests
             .DegradedStartEnabled.Should().Be(expected);
     }
 
+    [UnitTheory]
+    [Operation(Operations.HealthCheck)]
+    [InlineData("28P01", DatabasePreflightCauseClasses.Auth)]                   // invalid_password
+    [InlineData("28000", DatabasePreflightCauseClasses.Auth)]                   // invalid_authorization_specification
+    [InlineData("08001", DatabasePreflightCauseClasses.ConnectionRefused)]      // sqlclient_unable_to_establish_sqlconnection
+    [InlineData("08004", DatabasePreflightCauseClasses.ConnectionRefused)]      // server rejected the connection
+    [InlineData("53300", DatabasePreflightCauseClasses.ConnectionUnavailable)]  // too_many_connections
+    [InlineData("57P03", DatabasePreflightCauseClasses.ConnectionUnavailable)]  // cannot_connect_now
+    [InlineData("08006", DatabasePreflightCauseClasses.ConnectionUnavailable)]  // connection_failure
+    [InlineData("0A000", DatabasePreflightCauseClasses.IncompatibleDatabase)]   // PostGIS library mismatch
+    [InlineData("42704", DatabasePreflightCauseClasses.IncompatibleDatabase)]   // type geometry does not exist
+    public void Classify_WithServerSqlState_NamesTheCauseClass(string sqlState, string expected)
+    {
+        var wrapped = new NpgsqlException("Failed to connect", BuildPostgresException(sqlState));
+
+        PostgresPreflightFailureClassifier.Classify(BuildPostgresException(sqlState)).Should().Be(expected);
+        PostgresPreflightFailureClassifier.Classify(wrapped).Should().Be(expected);
+        DatabasePreflightCauseClasses.IsDegradable(expected)
+            .Should().Be(expected != DatabasePreflightCauseClasses.IncompatibleDatabase);
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
+    public void Classify_WithNpgsqlPoolExhausted_IsConnectionBorrowTimeout()
+    {
+        var exhausted = new NpgsqlException(
+            "The connection pool has been exhausted, either raise 'Max Pool Size' (currently 10) or 'Timeout' (currently 15 seconds) in your connection string.",
+            new TimeoutException("The operation has timed out."));
+
+        PostgresPreflightFailureClassifier.Classify(exhausted)
+            .Should().Be(DatabasePreflightCauseClasses.ConnectionBorrowTimeout);
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
+    public void Classify_WithRdsProxyBorrowTimeout_IsBorrowTimeoutWhateverTheSqlState()
+    {
+        // RDS Proxy answers a borrow-queue timeout with an error the SQLSTATE rules alone would call
+        // incompatible; that is what logged "Database compatibility check failed" in run 38192851328.
+        var proxy = new NpgsqlException(
+            "Failed to connect",
+            new PostgresException(
+                messageText: "Timed-out waiting to acquire database connection",
+                severity: "FATAL",
+                invariantSeverity: "FATAL",
+                sqlState: "XX000"));
+
+        PostgresPreflightFailureClassifier.IsTransient(proxy).Should().BeFalse();
+        PostgresPreflightFailureClassifier.Classify(proxy)
+            .Should().Be(DatabasePreflightCauseClasses.ConnectionBorrowTimeout);
+    }
+
+    [UnitTheory]
+    [Operation(Operations.HealthCheck)]
+    [InlineData(SocketError.ConnectionRefused, DatabasePreflightCauseClasses.ConnectionRefused)]
+    [InlineData(SocketError.HostNotFound, DatabasePreflightCauseClasses.ConnectionRefused)]
+    [InlineData(SocketError.HostUnreachable, DatabasePreflightCauseClasses.ConnectionRefused)]
+    [InlineData(SocketError.TimedOut, DatabasePreflightCauseClasses.ConnectionUnavailable)]
+    public void Classify_WithSocketFailure_SeparatesRefusedFromOtherOutages(SocketError error, string expected)
+    {
+        var failure = new NpgsqlException("Failed to connect to 10.0.1.5:5432", new SocketException((int)error));
+
+        PostgresPreflightFailureClassifier.Classify(failure).Should().Be(expected);
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
+    public void Classify_WithPermanentTlsFailure_StaysIncompatibleAndFatal()
+    {
+        var permanent = new NpgsqlException(
+            "The remote certificate was rejected by the provided RemoteCertificateValidationCallback.");
+
+        PostgresPreflightFailureClassifier.Classify(permanent)
+            .Should().Be(DatabasePreflightCauseClasses.IncompatibleDatabase);
+        DatabasePreflightCauseClasses.IsDegradable(DatabasePreflightCauseClasses.IncompatibleDatabase).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
+    public void Results_CarryTheCauseClass_InTheMessageAndTheReadinessReason()
+    {
+        var borrow = DatabaseCompatibilityResult.Unavailable(
+            "timeout", error: null, causeClass: DatabasePreflightCauseClasses.ConnectionBorrowTimeout);
+
+        borrow.CauseClass.Should().Be(DatabasePreflightCauseClasses.ConnectionBorrowTimeout);
+        borrow.ErrorMessage.Should().Contain("connection-borrow-timeout")
+            .And.NotContain("Database compatibility check failed");
+        StartupDatabasePreflight.DescribeCause(borrow).Should().Be("connection-borrow-timeout (timeout)");
+        DatabaseCompatibilityResult.Unavailable(SlotsExhaustedClass).CauseClass
+            .Should().Be(DatabasePreflightCauseClasses.ConnectionUnavailable);
+        DatabaseCompatibilityResult.Incompatible("PostGIS extension is not installed.").CauseClass
+            .Should().Be(DatabasePreflightCauseClasses.IncompatibleDatabase);
+    }
+
     private static PostgresException BuildPostgresException(string sqlState)
         => new(
             messageText: "test",
