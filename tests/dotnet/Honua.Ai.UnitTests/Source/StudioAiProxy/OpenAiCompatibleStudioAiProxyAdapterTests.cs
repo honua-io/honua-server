@@ -380,6 +380,7 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
         toolChoice.GetProperty("function").GetProperty("name").GetString().Should().Be("list_incidents");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("data: {not-json}\n\ndata: [DONE]\n\n")]
     [InlineData("data: {\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":\"partial\"},\"finish_reason\":null}]}\n\ndata: {bad}\n\ndata: [DONE]\n\n")]
@@ -393,6 +394,7 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
         events.Last().ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("data: {\"model\":\"m\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"late\"}}]}\n\ndata: [DONE]\n\n")]
     [InlineData("data: {\"model\":\"m\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\ndata: {\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}}\n\n")]

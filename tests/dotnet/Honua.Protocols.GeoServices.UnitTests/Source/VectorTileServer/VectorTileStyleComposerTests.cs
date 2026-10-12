@@ -25,6 +25,7 @@ public sealed class VectorTileStyleComposerTests
     private const string GlyphsUrl = "https://host/rest/services/test/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf";
     private const string ServiceUrl = "https://host/rest/services/test/VectorTileServer";
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void Compose_DefaultPointStyle_OmitsSpriteAndGlyphs()
     {
@@ -45,6 +46,7 @@ public sealed class VectorTileStyleComposerTests
         root.TryGetProperty("glyphs", out _).Should().BeFalse("the default point style has no symbol layers");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void Compose_StoredStyleWithSymbolLayer_EmitsAbsoluteSpriteAndGlyphs()
     {
@@ -87,6 +89,7 @@ public sealed class VectorTileStyleComposerTests
         tile.Should().Be(TileUrl);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void Compose_StoredStyleWithSymbolLayer_StripsStaleStoredSpriteAndGlyphs()
     {
@@ -121,6 +124,7 @@ public sealed class VectorTileStyleComposerTests
         root.GetProperty("glyphs").GetString().Should().Be(GlyphsUrl);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void Compose_StoredStyleWithoutSymbolLayer_OmitsSpriteAndGlyphs()
     {

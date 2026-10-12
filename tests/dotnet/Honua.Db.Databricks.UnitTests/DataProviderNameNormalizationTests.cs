@@ -5,6 +5,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Db.Databricks.Tests;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public class DataProviderNameNormalizationTests
 {
     [Theory]

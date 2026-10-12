@@ -40,6 +40,7 @@ public sealed class ODataCrudServiceStorageLayerTests
 
     private const long ObjectId = 42;
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task UpdateFeatureAsync_ReadsTheSuppliedStorageLayerNotTheRouteLayer()
     {
@@ -62,6 +63,7 @@ public sealed class ODataCrudServiceStorageLayerTests
         await reader.DidNotReceive().GetAsync(RouteLayerId, ObjectId, Arg.Any<CancellationToken>());
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task DeleteFeatureAsync_ReadsTheSuppliedStorageLayerNotTheRouteLayer()
     {

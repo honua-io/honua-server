@@ -18,6 +18,7 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoServerImportServiceScanTests
 {
     [Fact]

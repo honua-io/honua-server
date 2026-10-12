@@ -199,6 +199,7 @@ public sealed class SceneAccessEnvelopeServiceTests
             .WithMessage("*SigningKey*");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
@@ -223,6 +224,7 @@ public sealed class SceneAccessEnvelopeServiceTests
             .WithMessage("*TokenTtlMinutes*");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(-0.01)]
     [InlineData(1.01)]

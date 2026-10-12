@@ -13,6 +13,7 @@ namespace Honua.Snowflake.Tests;
 /// SEC-23: the Snowflake connection string carries exactly the account, user, password and
 /// database keys, with every value quoted so it parses back to itself.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public class SnowflakeConnectionDriverTests
 {
     [Theory]

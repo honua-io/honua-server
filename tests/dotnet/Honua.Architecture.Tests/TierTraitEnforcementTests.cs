@@ -480,13 +480,7 @@ internal static class TierTraitScanner
     {
         var genericArity = method.GetGenericArguments().Length;
         var parameters = string.Join(",", method.GetParameters().Select(parameter => parameter.ParameterType.ToString()));
-        // This fixture-independent extraction preserves existing untiered debt identities.
-        // FQN/signature still identify every method, so new methods cannot inherit a waiver.
         var assemblyName = type.Assembly.GetName().Name;
-        if (assemblyName == "Honua.Protocols.OData.UnitTests")
-        {
-            assemblyName = "Honua.Protocols.OData.Tests";
-        }
         return $"{assemblyName}:{type.FullName}.{method.Name}`{genericArity}({parameters})";
     }
 

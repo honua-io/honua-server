@@ -71,4 +71,7 @@
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Geoprocessing.UnitTests" />
+  </ItemGroup>
 </Project>

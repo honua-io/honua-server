@@ -9,6 +9,7 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Services;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class SpatialReferenceResolverTests
 {
     private readonly FakeCrsDetectionService _crsDetectionService = new();

@@ -27,6 +27,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 
 public sealed class FeatureServerQueryExecutorTests
 {
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task CountAsync_WhenLayerMappingIsNotSourceBacked_UsesCanonicalFeatureReader()
     {
@@ -47,6 +48,7 @@ public sealed class FeatureServerQueryExecutorTests
             .CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task CountAsync_WhenLayerMappingIsSourceBackedWithoutConnection_UsesProviderReader()
     {
@@ -72,6 +74,7 @@ public sealed class FeatureServerQueryExecutorTests
             .CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryWithValidationAsync_WhenReaderThrowsArgumentException_ThrowsInvalidOperationException()
     {
@@ -87,6 +90,7 @@ public sealed class FeatureServerQueryExecutorTests
             .WithMessage("Invalid query.");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryWithValidationAsync_WhenReaderThrowsSqlWordedException_PropagatesOriginalException()
     {
@@ -103,6 +107,7 @@ public sealed class FeatureServerQueryExecutorTests
         thrown.Which.Should().BeSameAs(expected);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryFlatGeobufWithValidationAsync_WhenReaderThrowsArgumentException_ThrowsInvalidOperationException()
     {
@@ -118,6 +123,7 @@ public sealed class FeatureServerQueryExecutorTests
             .WithMessage("Invalid query.");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryFlatGeobufWithValidationAsync_WhenReaderThrowsSqlWordedException_PropagatesOriginalException()
     {
@@ -134,6 +140,7 @@ public sealed class FeatureServerQueryExecutorTests
         thrown.Which.Should().BeSameAs(expected);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryFlatGeobufWithValidationAsync_WhenReaderThrowsProviderException_PropagatesOriginalException()
     {
@@ -150,6 +157,7 @@ public sealed class FeatureServerQueryExecutorTests
         thrown.Which.Should().BeSameAs(expected);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryGeobufWithValidationAsync_WhenReaderThrowsArgumentException_ThrowsInvalidOperationException()
     {
@@ -165,6 +173,7 @@ public sealed class FeatureServerQueryExecutorTests
             .WithMessage("Invalid query.");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryGeobufWithValidationAsync_WhenStoreNotSupported_ThrowsInvalidOperationException()
     {
@@ -177,6 +186,7 @@ public sealed class FeatureServerQueryExecutorTests
             .WithMessage("Geobuf output is not supported by the configured feature store.");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryGeobufWithValidationAsync_WhenReaderThrowsProviderException_PropagatesOriginalException()
     {
@@ -193,6 +203,7 @@ public sealed class FeatureServerQueryExecutorTests
         thrown.Which.Should().BeSameAs(expected);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryWithValidationAsync_WhenReaderThrowsProviderException_PropagatesOriginalException()
     {
@@ -209,6 +220,7 @@ public sealed class FeatureServerQueryExecutorTests
         thrown.Which.Should().BeSameAs(expected);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryWithValidationAsync_WhenPagedQuerySupported_UsesPagedFastPath()
     {
@@ -230,6 +242,7 @@ public sealed class FeatureServerQueryExecutorTests
         await featureReader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryWithValidationAsync_WhenPagedQueryNotSupported_FallsBackToRegularQuery()
     {
@@ -249,6 +262,7 @@ public sealed class FeatureServerQueryExecutorTests
         await featureReader.Received(1).QueryAsync(5, query, Arg.Any<CancellationToken>());
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryRawGeoServicesPointJsonWithValidationAsync_SanitizesStoredAttributesAndInjectsObjectId()
     {
@@ -291,6 +305,7 @@ public sealed class FeatureServerQueryExecutorTests
         feature.GetProperty("geometry").GetProperty("y").GetDouble().Should().Be(2.5);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryRawGeoServicesPointJsonWithValidationAsync_TemporalFields_PreserveCalendarDateAndEpoch()
     {
@@ -321,6 +336,7 @@ public sealed class FeatureServerQueryExecutorTests
         attributes.GetProperty("timestamp").GetInt64().Should().Be(new DateTimeOffset(2024, 2, 29, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds());
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryRawGeoServicesPointJsonWithValidationAsync_WithNoStoredAttributes_InjectsInternalObjectId()
     {
@@ -353,6 +369,7 @@ public sealed class FeatureServerQueryExecutorTests
         attributes.GetProperty(FieldNames.ObjectId).GetInt64().Should().Be(42);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryRawGeoServicesPointJsonWithValidationAsync_WhenReturnGeometryFalse_OmitsGeometry()
     {
@@ -390,6 +407,7 @@ public sealed class FeatureServerQueryExecutorTests
         feature.TryGetProperty("geometry", out _).Should().BeFalse();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task StreamQueryAsync_WithPagedQuery_UsesLimitProbeInsteadOfCount()
     {
@@ -438,6 +456,7 @@ public sealed class FeatureServerQueryExecutorTests
         document.RootElement.GetProperty("exceededTransferLimit").GetBoolean().Should().BeTrue();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task StreamQueryAsync_WithPagedQueryThatFits_EmitsExceededTransferLimitFalse()
     {
@@ -480,6 +499,7 @@ public sealed class FeatureServerQueryExecutorTests
         exceeded.GetBoolean().Should().BeFalse();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task StreamQueryAsync_WithLowercaseObjectId_DoesNotEmitCaseVariantAlias()
     {
@@ -519,6 +539,7 @@ public sealed class FeatureServerQueryExecutorTests
         attributes.TryGetProperty("OBJECTID", out _).Should().BeFalse();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task StreamQueryAsync_WithOutputSrid_SetsTopLevelSpatialReferenceOnly()
     {
@@ -563,6 +584,7 @@ public sealed class FeatureServerQueryExecutorTests
             .BeFalse();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task StreamQueryAsync_WithPointGeometryPrecision_RoundsCoordinates()
     {
@@ -600,6 +622,7 @@ public sealed class FeatureServerQueryExecutorTests
         geometry.GetProperty("y").GetDouble().Should().Be(2.77);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task StreamQueryAsync_WithGeoJson_UsesSharedIdAndObjectIdProperties()
     {
@@ -638,6 +661,7 @@ public sealed class FeatureServerQueryExecutorTests
         properties.TryGetProperty("OBJECTID", out _).Should().BeFalse();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task StreamQueryAsync_WithGeoJson_AllFields_PreservesObjectIdAlias()
     {
@@ -678,6 +702,7 @@ public sealed class FeatureServerQueryExecutorTests
         properties.GetProperty("name").GetString().Should().Be("alpha");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryWithValidationAsync_V2_WithComputedFieldPipeline_ProjectsComputedFields()
     {
@@ -712,6 +737,7 @@ public sealed class FeatureServerQueryExecutorTests
         pipeline.LastContext.Actor.Should().Be("tester");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryWithValidationAsync_V2_WithoutComputedFields_LeavesFeaturesUnchanged()
     {

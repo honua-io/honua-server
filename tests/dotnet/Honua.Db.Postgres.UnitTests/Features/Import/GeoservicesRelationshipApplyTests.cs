@@ -25,6 +25,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// mock the catalog writer and assert that the apply step routes the right
 /// Honua layer ids, foreign-key fields, and skip outcomes through it.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoservicesRelationshipApplyTests
 {
     [Theory]

@@ -18,6 +18,7 @@ public sealed class NAServerMetadataTests
         "Reorder_Stops_to_Find_Optimal_Routes", "Output_Routes", "Solve_Succeeded"
     ];
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void GetTravelModes_ProviderWithoutNamedModes_HasNoModesOrDefault()
     {
@@ -28,6 +29,7 @@ public sealed class NAServerMetadataTests
         document["results"]![1]!["value"]!.GetValue<string>().Should().BeEmpty();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void RouteLayer_ProviderWithoutNamedModes_HasNoModesOrDefault()
     {
@@ -39,6 +41,7 @@ public sealed class NAServerMetadataTests
         document["defaultTravelMode"]!.GetValue<string>().Should().BeEmpty();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void GetToolInfo_LocationAllocation_UsesItsOwnConfiguredLimits()
     {

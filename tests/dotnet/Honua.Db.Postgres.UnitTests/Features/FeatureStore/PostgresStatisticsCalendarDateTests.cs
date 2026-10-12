@@ -7,6 +7,7 @@ using Honua.Db.Postgres.Features.FeatureStore.Services;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class PostgresStatisticsCalendarDateTests
 {
     [Theory]

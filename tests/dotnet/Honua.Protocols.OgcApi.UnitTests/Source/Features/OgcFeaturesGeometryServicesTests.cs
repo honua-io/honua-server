@@ -20,6 +20,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
 public sealed class OgcFeaturesGeometryServicesTests
 {
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void ConvertGeoJsonToSimpleGeometry_WithNorthEastAxis_SwapsCoordinates()
     {
@@ -38,6 +39,7 @@ public sealed class OgcFeaturesGeometryServicesTests
         values[1].GetDouble().Should().Be(-122.5);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void ConvertGeoJsonToSimpleGeometry_WithInvalidJson_ReturnsNull()
     {
@@ -48,6 +50,7 @@ public sealed class OgcFeaturesGeometryServicesTests
         result.Should().BeNull();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void ConvertGeoJsonToSimpleGeometry_WithMissingCoordinates_ReturnsNull()
     {
@@ -58,6 +61,7 @@ public sealed class OgcFeaturesGeometryServicesTests
         result.Should().BeNull();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void ConvertGeoJsonToSimpleGeometry_WithMalformedCoordinates_ReturnsNull()
     {
@@ -70,6 +74,7 @@ public sealed class OgcFeaturesGeometryServicesTests
         result.Should().BeNull();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void ConvertGeoJsonToSimpleGeometry_WithMalformedGeometryCollection_ReturnsNull()
     {
@@ -82,6 +87,7 @@ public sealed class OgcFeaturesGeometryServicesTests
         result.Should().BeNull();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void ConvertGeoJsonToSimpleGeometry_WithEmptyGeometryCollection_ReturnsGeometryCollection()
     {
@@ -96,6 +102,7 @@ public sealed class OgcFeaturesGeometryServicesTests
         result.GeometriesJson.Should().Be("[]");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("""{"type":"LineString","coordinates":[[0,0]]}""")]
     [InlineData("""{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,1]]]}""")]
@@ -109,6 +116,7 @@ public sealed class OgcFeaturesGeometryServicesTests
         result.Should().BeNull();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void ConvertGeoJsonToSimpleGeometry_WithEastNorthAxis_ReusesRoundedCoordinates()
     {
@@ -123,6 +131,7 @@ public sealed class OgcFeaturesGeometryServicesTests
         result.CoordinatesJson.Should().Be("[-122.12345679,37.98765432]");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void TryCreateWkbFromGeoJson_WithTooManyVertices_ReturnsFailure()
     {

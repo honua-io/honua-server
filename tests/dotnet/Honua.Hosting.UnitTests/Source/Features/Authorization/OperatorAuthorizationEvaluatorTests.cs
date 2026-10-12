@@ -463,6 +463,7 @@ public sealed class OperatorAuthorizationEvaluatorTests
         decision.RequiresAuthentication.Should().BeTrue();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(OperatorOperation.Create)]
     [InlineData(OperatorOperation.Execute)]

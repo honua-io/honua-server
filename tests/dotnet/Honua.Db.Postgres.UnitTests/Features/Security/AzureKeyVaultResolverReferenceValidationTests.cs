@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Honua.Db.Postgres.Tests.Features.Security;
 
 [Collection("Security")]
+[global::Xunit.Trait("Tier", "Fast")]
 public class AzureKeyVaultResolverReferenceValidationTests
 {
     [SecurityTest]

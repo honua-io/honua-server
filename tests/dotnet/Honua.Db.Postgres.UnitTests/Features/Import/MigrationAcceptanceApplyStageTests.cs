@@ -29,6 +29,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// <see cref="MigrationManifestArtifact"/> per fixture deterministically while preserving the
 /// slice-1 redaction and manual-review-classification contracts.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class MigrationAcceptanceApplyStageTests
 {
     private static readonly JsonSerializerOptions ArtifactJsonOptions = new()

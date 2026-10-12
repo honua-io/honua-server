@@ -17,6 +17,7 @@ namespace Honua.Server.Tests.Features.Protocols.Stac.Services;
 
 public sealed class StacItemIdWhereBuilderTests
 {
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void GetCandidateFields_ReturnsCanonicalFieldsInPrecedenceOrder()
     {
@@ -27,6 +28,7 @@ public sealed class StacItemIdWhereBuilderTests
             field => Assert.Equal("id", field.Name));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void TryBuildFieldMatch_MultipleIds_UsesProviderNeutralInPredicate()
     {
@@ -38,6 +40,7 @@ public sealed class StacItemIdWhereBuilderTests
         Assert.Equal("stac_id IN ('123', 'fallback-item')", where);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void TryBuildFieldMatch_EscapesStringLiteral()
     {

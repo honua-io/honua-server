@@ -16,6 +16,7 @@ public sealed class PostgresAuditLogTruncationTests
 {
     private const string Ellipsis = "\u2026";
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void Truncate_OverlongAsciiValue_TruncatesToMaxAndEndsWithEllipsis()
     {
@@ -27,6 +28,7 @@ public sealed class PostgresAuditLogTruncationTests
         result.Should().EndWith(Ellipsis);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void Truncate_MarkerIsSingleEllipsisChar_NotMojibake()
     {
@@ -38,6 +40,7 @@ public sealed class PostgresAuditLogTruncationTests
         result.Should().NotContain("\u00E2\u20AC\u00A6");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void Truncate_OverlongMultiByteValue_DoesNotSplitAndEndsWithEllipsis()
     {
@@ -53,6 +56,7 @@ public sealed class PostgresAuditLogTruncationTests
         result[..^1].Should().Be(new string('\u4E2D', 255));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void Truncate_ValueWithinLimit_ReturnedUnchanged()
     {
@@ -61,6 +65,7 @@ public sealed class PostgresAuditLogTruncationTests
         PostgresAuditLog.Truncate(value, 256).Should().Be(value);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void SRV_DB_013_Truncate_DoesNotSplitSurrogatePairAtBoundary()
     {

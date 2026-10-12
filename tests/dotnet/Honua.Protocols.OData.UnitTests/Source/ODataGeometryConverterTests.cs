@@ -11,6 +11,7 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class ODataGeometryConverterTests
 {
     private readonly Honua.Infrastructure.Services.GeometryService _geometryService = new(Options.Create(new LimitsOptions()));

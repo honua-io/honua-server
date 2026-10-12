@@ -35,6 +35,7 @@ public sealed class StudioAiProxyApiKeyResolverTests
         result.Should().NotContain(SecretReference);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -50,6 +51,7 @@ public sealed class StudioAiProxyApiKeyResolverTests
         exception.Which.InnerException.Should().BeNull();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -142,6 +144,7 @@ public sealed class StudioAiProxyApiKeyResolverTests
         result.Should().Be("literal-key");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(StudioAiProxyConfiguration.OpenAiKind)]
     [InlineData(StudioAiProxyConfiguration.AnthropicKind)]

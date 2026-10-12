@@ -10,6 +10,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 /// <summary>
 /// Tests for WFS 2.0 capability metadata validation.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public class Wfs20ComplianceValidationTests
 {
     [Fact]

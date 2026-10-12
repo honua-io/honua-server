@@ -11,6 +11,7 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoPackagePreviewTests
 {
     [Fact]

@@ -22,6 +22,7 @@ public sealed class PostgresDataSourceFactoryTests
 {
     private const string TestConnectionString = "Host=localhost;Database=honua;Username=honua";
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("false", false, false)]
     [InlineData("true", false, true)]
@@ -236,6 +237,7 @@ public sealed class PostgresDataSourceFactoryTests
         sql.Should().NotContain("search_path");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     // Valid identifiers pass through trimmed.
     [InlineData(false, "tenant", "tenant")]

@@ -11,6 +11,7 @@ namespace Honua.Db.Redshift.Tests;
 /// Ungated unit tests for <see cref="RedshiftLayerMapping"/> identifier validation and
 /// provider-option resolution.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public class RedshiftLayerMappingTests
 {
     [Fact]

@@ -21,6 +21,7 @@ public class FileUploadSecurityTests
         _output = output;
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("test.shp", true)]
     [InlineData("data.csv", true)]
@@ -46,6 +47,7 @@ public class FileUploadSecurityTests
         _output.WriteLine($"File '{fileName}': {(result.IsValid ? "Valid" : $"Invalid - {result.ErrorMessage}")}");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("../../etc/passwd", false)]
     [InlineData("../config.txt", false)]
@@ -68,6 +70,7 @@ public class FileUploadSecurityTests
         _output.WriteLine($"Path traversal test '{fileName}': {(result.IsValid ? "Valid" : $"Invalid - {result.ErrorMessage}")}");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("C:\\fakepath\\layer.gpkg")]
     [InlineData("C:/fakepath/layer.gpkg")]
@@ -83,6 +86,7 @@ public class FileUploadSecurityTests
         _output.WriteLine($"Fake path test '{fileName}': Valid");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(".csv", true)]
     [InlineData(".geojson", true)]
@@ -106,6 +110,7 @@ public class FileUploadSecurityTests
         _output.WriteLine($"Extension '{extension}': {(result.IsValid ? "Allowed" : "Blocked")}");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("text/csv", true)]
     [InlineData("application/geo+json", true)]
@@ -129,6 +134,7 @@ public class FileUploadSecurityTests
         _output.WriteLine($"MIME type '{mimeType}': {(result.IsValid ? "Allowed" : "Blocked")}");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(1024, true)]              // 1KB
     [InlineData(1024 * 1024, true)]       // 1MB
@@ -148,6 +154,7 @@ public class FileUploadSecurityTests
         _output.WriteLine($"File size {fileSize:N0} bytes: {(result.IsValid ? "Allowed" : "Blocked")}");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     [SecurityTest]
     public async Task ValidateFileContent_MaliciousExecutable_RejectsFile()
@@ -216,6 +223,7 @@ public class FileUploadSecurityTests
         Assert.True(result.IsValid);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     [SecurityTest]
     public async Task ValidateFileContent_LegitimateCSV_AcceptsFile()
@@ -233,6 +241,7 @@ public class FileUploadSecurityTests
         _output.WriteLine("Legitimate CSV file validated successfully");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("file<script>.csv")]
     [InlineData("data\x00file.csv")]
@@ -251,6 +260,7 @@ public class FileUploadSecurityTests
         _output.WriteLine($"Dangerous character test '{fileName}': Rejected - {result.ErrorMessage}");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     [SecurityTest]
     public void SanitizeFileName_VeryLongExtension_DoesNotThrow()
@@ -267,6 +277,7 @@ public class FileUploadSecurityTests
         _output.WriteLine($"Sanitized long extension: '{sanitizedName}' (length={sanitizedName.Length})");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     [SecurityTest]
     public void SanitizeFileName_DangerousName_ReturnsSafeName()

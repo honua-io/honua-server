@@ -246,6 +246,7 @@ public sealed class TileExportJobExecutorTests
         await storage.DidNotReceiveWithAnyArgs().UploadAsync((FileUploadRequest)null!, default);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(3599, true)]
     [InlineData(3600, false)]

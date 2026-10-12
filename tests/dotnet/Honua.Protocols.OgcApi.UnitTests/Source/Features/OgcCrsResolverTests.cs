@@ -35,6 +35,7 @@ public sealed class OgcCrsResolverTests
         definition.AxisOrder.Should().Be(AxisOrder.EastNorth);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("CRS84")]
     [InlineData("OGC:CRS84")]
@@ -61,6 +62,7 @@ public sealed class OgcCrsResolverTests
         definition.AxisOrder.Should().Be(AxisOrder.EastNorth);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("[EPSG:26910]")]
     [InlineData("<EPSG:26910>")]

@@ -22,6 +22,7 @@ namespace Honua.Snowflake.Tests;
 /// and resolves through <see cref="FeatureProviderQueryRouter"/> for source-backed publications
 /// whose connection selects the Snowflake engine. These tests run in normal CI; no live warehouse.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public class SnowflakeProviderResolutionTests
 {
     private const int LayerId = 1;

@@ -620,6 +620,7 @@ public class ImageServerTileHandlerTests
             Arg.Any<CancellationToken>());
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Trait("Category", "Unit")]
     [Operation(Operations.GetTile)]
     [Theory]

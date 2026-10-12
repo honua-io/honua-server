@@ -25,6 +25,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// fixture-backed baselines. Baselines are regenerated on demand by setting
 /// <c>UPDATE_GEOSERVER_INVENTORY_BASELINES=1</c>.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoServerInventoryBaselineTests
 {
     private static readonly JsonSerializerOptions IndentedSerializerOptions = new()

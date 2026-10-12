@@ -28,6 +28,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 ///   <item>Many-to-many relationship downgrades to ManualReview</item>
 /// </list>
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoservicesArcGisRelationshipFidelityTests
 {
     [Fact]

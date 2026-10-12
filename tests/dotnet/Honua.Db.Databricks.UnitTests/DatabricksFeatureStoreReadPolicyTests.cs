@@ -16,6 +16,7 @@ namespace Honua.Db.Databricks.Tests;
 /// filter, row-level security predicate or field mask applies to the layer (the provider
 /// applies none of them), and the emitted SQL is unchanged when nothing resolves.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public class DatabricksFeatureStoreReadPolicyTests
 {
     private const int LayerId = 1;

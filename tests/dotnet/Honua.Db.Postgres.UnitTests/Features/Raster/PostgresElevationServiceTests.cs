@@ -7,6 +7,7 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class PostgresElevationServiceTests
 {
     [Fact]

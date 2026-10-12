@@ -45,6 +45,7 @@ public sealed class StudioMcpOwnershipAuthorizationTests
     private static readonly Guid ItemId = Guid.Parse("61616161-6161-6161-6161-616161616161");
     private static readonly Guid VersionId = Guid.Parse("71717171-7171-7171-7171-717171717171");
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(DraftToolFamily.Read, CallerKind.Anonymous)]
     [InlineData(DraftToolFamily.Read, CallerKind.Owner)]
@@ -213,6 +214,7 @@ public sealed class StudioMcpOwnershipAuthorizationTests
         }
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(CallerKind.Owner)]
     [InlineData(CallerKind.NonOwner)]
@@ -365,6 +367,7 @@ public sealed class StudioMcpOwnershipAuthorizationTests
         });
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(
         PreliminaryDenialKind.Anonymous,
@@ -613,6 +616,7 @@ public sealed class StudioMcpOwnershipAuthorizationTests
             Arg.Any<CancellationToken>());
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(DraftToolFamily.Update)]
     [InlineData(DraftToolFamily.Composition)]
@@ -644,6 +648,7 @@ public sealed class StudioMcpOwnershipAuthorizationTests
             Arg.Any<CancellationToken>());
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(DraftToolFamily.Read)]
     [InlineData(DraftToolFamily.Update)]
@@ -679,6 +684,7 @@ public sealed class StudioMcpOwnershipAuthorizationTests
             .Should().ThrowAsync<GeoprocessingNotFoundException>();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(DraftToolFamily.Validate, CallerKind.NonOwner)]
     [InlineData(DraftToolFamily.Preview, CallerKind.NonOwner)]

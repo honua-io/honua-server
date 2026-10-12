@@ -14,6 +14,7 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 /// </summary>
 public sealed class LayerScopedWriteKeyTests
 {
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void ConfersFullAdmin_NullPermissions_ReturnsTrue()
     {
@@ -22,6 +23,7 @@ public sealed class LayerScopedWriteKeyTests
         LayerScopedWriteKey.ConfersFullAdmin(null).Should().BeTrue();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void ConfersFullAdmin_EmptyPermissions_ReturnsTrue()
     {
@@ -30,6 +32,7 @@ public sealed class LayerScopedWriteKeyTests
         LayerScopedWriteKey.ConfersFullAdmin(["   "]).Should().BeTrue();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("admin")]
     [InlineData("*")]
@@ -42,12 +45,14 @@ public sealed class LayerScopedWriteKeyTests
         LayerScopedWriteKey.ConfersFullAdmin([grant]).Should().BeTrue();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void ConfersFullAdmin_AdminGrantAmongScopedGrants_ReturnsTrue()
     {
         LayerScopedWriteKey.ConfersFullAdmin(["read:layers", "admin"]).Should().BeTrue();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("admin:read")]
     [InlineData("admin:approve")]
@@ -57,6 +62,7 @@ public sealed class LayerScopedWriteKeyTests
         LayerScopedWriteKey.ConfersFullAdmin([grant]).Should().BeFalse();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("read:layers")]
     [InlineData("metadata:read")]
@@ -70,18 +76,21 @@ public sealed class LayerScopedWriteKeyTests
         LayerScopedWriteKey.ConfersFullAdmin([grant]).Should().BeFalse();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void IsScopedWriteKey_WriteGrant_ReturnsTrue()
     {
         LayerScopedWriteKey.IsScopedWriteKey(["write:demo/parcels"]).Should().BeTrue();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void IsScopedWriteKey_AdminGrant_ReturnsFalse()
     {
         LayerScopedWriteKey.IsScopedWriteKey(["write:demo", "admin"]).Should().BeFalse();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void IsScopedWriteKey_ReadOnlyScopedGrant_ReturnsFalse()
     {

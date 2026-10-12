@@ -209,6 +209,7 @@ public sealed class StudioAiProxyServiceTests
         error.Should().Contain("configured limit");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -453,6 +454,7 @@ public sealed class StudioAiProxyServiceTests
         }
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [MemberData(nameof(InvalidStreamFixtures))]
     public async Task StreamChatAsync_InvalidProviderGrammar_RejectsBeforeSuccessfulTerminal(

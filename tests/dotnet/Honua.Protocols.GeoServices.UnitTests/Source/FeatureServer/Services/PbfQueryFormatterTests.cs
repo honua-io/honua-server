@@ -13,6 +13,7 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed partial class PbfQueryFormatterTests
 {
     private readonly PbfQueryFormatter _sut = new(Options.Create(new LimitsOptions()));

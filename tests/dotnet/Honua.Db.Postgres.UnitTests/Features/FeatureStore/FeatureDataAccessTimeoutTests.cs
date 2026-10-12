@@ -8,6 +8,7 @@ using Honua.Db.Postgres.Features.FeatureStore.Services;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureDataAccessTimeoutTests
 {
     private static readonly OpCode[] _singleByteOpCodes = new OpCode[0x100];

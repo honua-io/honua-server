@@ -246,6 +246,7 @@ public class OgcMapsRenderingHandlerTests
             styleId).Should().BeTrue();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void IsStyleAssociatedWithResource_ReferencedDataResource_ReturnsFalse()
     {
@@ -269,6 +270,7 @@ public class OgcMapsRenderingHandlerTests
             .Should().BeFalse();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void IsStyleAssociatedWithResource_MissingReferencedResource_ReturnsFalse()
     {

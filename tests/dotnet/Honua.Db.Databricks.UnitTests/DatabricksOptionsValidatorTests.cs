@@ -3,6 +3,7 @@
 
 namespace Honua.Db.Databricks.Tests;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public class DatabricksOptionsValidatorTests
 {
     private static DatabricksOptions Valid() => new()

@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Tests;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class ServiceCollectionExtensionsImportLimitsTests
 {
     [Fact]

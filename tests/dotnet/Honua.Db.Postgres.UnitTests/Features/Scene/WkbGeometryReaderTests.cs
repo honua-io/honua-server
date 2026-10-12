@@ -13,6 +13,7 @@ namespace Honua.Db.Postgres.Tests.Features.Scene;
 /// correctly consumes (and ignores) the M ordinate so vertex streams from
 /// PostGIS LineStringM/PolygonZM/etc. are not corrupted.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class WkbGeometryReaderTests
 {
     [Fact]

@@ -215,6 +215,7 @@ public sealed class McpIngestDatasetToolTests
             .Contain("/api/v1/admin/import/upload").And.Contain("inline cap");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("""{"format":"shapefile","data":"x","datasetName":"d"}""", "format")]
     [InlineData("""{"format":"csv","data":"a,b\n1,2\n","datasetName":"1bad name"}""", "datasetName")]

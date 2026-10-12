@@ -23,6 +23,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// error incremented <c>SkippedCount</c> but still imported the same style downstream
 /// (issue #375 review finding).
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoServerImportServiceSldDispositionTests
 {
     [Fact]

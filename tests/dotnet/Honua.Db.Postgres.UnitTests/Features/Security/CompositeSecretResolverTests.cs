@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Honua.Db.Postgres.Tests.Features.Security;
 
 [Collection("Security")]
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class CompositeSecretResolverTests
 {
     private const string VariableName = "HONUA_TEST_COMPOSITE_RESOLVER_VALUE";

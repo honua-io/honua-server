@@ -26,6 +26,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// embedded JSON files; baselines are regenerated on demand by setting
 /// <c>UPDATE_ARCGIS_INVENTORY_BASELINES=1</c>.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoservicesArcGisInventoryBaselineTests
 {
     private static readonly JsonSerializerOptions IndentedSerializerOptions = new()

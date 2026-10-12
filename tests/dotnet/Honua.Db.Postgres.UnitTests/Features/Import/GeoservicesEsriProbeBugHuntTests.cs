@@ -11,6 +11,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// <summary>
 /// Regression probes for ArcGIS geometry and field fidelity in the migration importer.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoservicesEsriProbeBugHuntTests
 {
     [Fact]

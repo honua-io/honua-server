@@ -20,6 +20,7 @@ using Honua.Protocols.OData.Services;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class ODataSearchServiceSqlTests
 {
     [Theory]

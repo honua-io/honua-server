@@ -146,4 +146,9 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Ai.ComponentTests" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Geoprocessing.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Aws.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Azure.UnitTests" />
+  </ItemGroup>
 </Project>

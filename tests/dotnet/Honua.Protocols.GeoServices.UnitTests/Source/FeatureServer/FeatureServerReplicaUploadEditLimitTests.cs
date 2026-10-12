@@ -15,6 +15,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 /// handler and its own limit checks would not see them. That pre-check must use the same semantics
 /// the shared handler does, or a valid upload is rejected at the replica boundary (#2430).
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureServerReplicaUploadEditLimitTests
 {
     private static readonly EditLimits Limits = new()

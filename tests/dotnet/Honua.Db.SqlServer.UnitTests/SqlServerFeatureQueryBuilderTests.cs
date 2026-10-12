@@ -45,6 +45,7 @@ public class SqlServerFeatureQueryBuilderTests
         return SqlServerLayerMapping.FromStorage(TestLayerId, storage);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_TextSearch_BindsLiteralTermsInProviderDialect()
     {
@@ -68,6 +69,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Equal("closed", result.WhereParameters[2]);
         Assert.Equal("closed", result.WhereParameters[3]);
     }
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_DefaultQuery_ProjectsKeyAndGeometryAndAttributes()
     {
@@ -85,6 +87,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Empty(result.WhereParameters);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_ExcludeAttributes_OmitsAttributeColumns()
     {
@@ -98,6 +101,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.DoesNotContain("[category]", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_EmptyOutFields_OmitsAttributeColumns()
     {
@@ -122,6 +126,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.DoesNotContain("[category]", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_OutFields_LimitsProjection()
     {
@@ -135,6 +140,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.DoesNotContain("[category]", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_PaginationWithoutOrderBy_FallsBackToPrimaryKeyOrder()
     {
@@ -151,6 +157,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Equal(25, result.WhereParameters[1]);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_OrderByCustom_UsesProvidedColumns()
     {
@@ -168,6 +175,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Contains("FETCH NEXT @p1 ROWS ONLY", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("eo:cloud_cover")]
     [InlineData("owner.name")]
@@ -184,6 +192,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Contains($"ORDER BY [{fieldName}] ASC", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("name;DROP")]
     [InlineData("owner name")]
@@ -199,6 +208,7 @@ public class SqlServerFeatureQueryBuilderTests
             SqlServerFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WhereWithLiteralAndNullCheck_ProducesParameterizedSql()
     {
@@ -213,6 +223,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Equal("Alpha", result.WhereParameters[0]);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_StacCandidateInWhere_UsesTsqlParameters()
     {
@@ -224,6 +235,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Equal(new object?[] { "first", "second" }, result.WhereParameters);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_SRV_DB_008_WhereAndSqlFilterFailsClosed()
     {
@@ -439,6 +451,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Equal(new object?[] { "Alpha", 7L, 9L }, result.WhereParameters);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_SqlFilterOnlyWithoutWhere_Throws()
     {
@@ -456,6 +469,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Contains("SqlFilter", ex.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_ObjectIdsFilter_GeneratesInClause()
     {
@@ -468,6 +482,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Equal(3, result.WhereParameters.Count);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_IntersectsFilter_UsesGeometryStaticConstructor()
     {
@@ -483,6 +498,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Equal(new byte[] { 0x01, 0x02, 0x03 }, result.WhereParameters[0]);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_GeoServicesEwkb_BindsIsoFlavoredPlainWkbWithZmPreserved()
     {
@@ -519,6 +535,7 @@ public class SqlServerFeatureQueryBuilderTests
         return ewkb;
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithinFilter_LeadsWithFilterGeometry()
     {
@@ -536,6 +553,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Contains("geometry::STGeomFromWKB(@p0, 4326).STWithin([shape]) = 1", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_ContainsFilter_LeadsWithFilterGeometry()
     {
@@ -552,6 +570,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Contains("geometry::STGeomFromWKB(@p0, 4326).STContains([shape]) = 1", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_GeographyEnvelopeIntersects_Throws()
     {
@@ -568,6 +587,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Contains("geography", ex.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_GeographyIntersects_UsesGeographyStaticConstructor()
     {
@@ -583,6 +603,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Contains("[shape].STIntersects(geography::STGeomFromWKB(@p0, 4326)) = 1", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_DistanceFilter_NotSupported_Throws()
     {
@@ -596,6 +617,7 @@ public class SqlServerFeatureQueryBuilderTests
             () => SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildCountQuery_ProducesCountBigSelect()
     {
@@ -607,6 +629,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Contains("FROM [dbo].[parcels]", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildExtentQuery_UsesEnvelopeAggregate()
     {
@@ -619,6 +642,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Contains("envelope.STPointN(3).STY AS [max_y]", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildExtentQuery_GeographyMapping_UsesGeographyEnvelopeAggregateAndLatLongProperties()
     {
@@ -635,6 +659,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.DoesNotContain(".STY", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildObjectIdsQuery_ReturnsOnlyPrimaryKey()
     {
@@ -647,6 +672,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.DoesNotContain("STAsBinary", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_InvalidFieldName_RejectsInjection()
     {
@@ -657,6 +683,7 @@ public class SqlServerFeatureQueryBuilderTests
             () => SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void FromStorage_UnsupportedGeometryType_Throws()
     {
@@ -676,6 +703,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Throws<ArgumentException>(() => SqlServerLayerMapping.FromStorage(TestLayerId, storage));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void FromStorage_DefaultsToGeometryAndDboSchema()
     {
@@ -691,6 +719,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Equal("[dbo].[parcels]", mapping.QuotedTableReference);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void FromStorage_RejectsInvalidIdentifier()
     {
@@ -703,6 +732,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Throws<ArgumentException>(() => SqlServerLayerMapping.FromStorage(TestLayerId, storage));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("parcels", true)]
     [InlineData("parcels\n", false)]
@@ -714,6 +744,7 @@ public class SqlServerFeatureQueryBuilderTests
 
     // BH2-D01 regression: SRID resolves to 0 when both filter and mapping SRID are absent ->
     // SQL Server spatial predicates return NULL (not false) -> silent zero-row result.
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_SpatialFilter_NullFilterSridAndNullMappingSrid_Throws()
     {
@@ -730,6 +761,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Contains("zero rows", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_SpatialFilter_NullFilterSridWithMappingSrid_UsesMappingSrid()
     {
@@ -747,6 +779,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Contains("STGeomFromWKB(@p0, 4326)", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_TemporalFilter_ThrowsNotSupported()
     {
@@ -767,6 +800,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Contains("Temporal filters", ex.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void CountObjectIdsAndExtentQueries_TemporalFilter_ThrowNotSupported()
     {

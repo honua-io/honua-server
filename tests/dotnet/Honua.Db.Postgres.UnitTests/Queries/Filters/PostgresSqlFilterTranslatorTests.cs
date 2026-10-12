@@ -9,6 +9,7 @@ using Honua.Db.Postgres.Queries.Filters;
 
 namespace Honua.Db.Postgres.Tests.Queries.Filters;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public class PostgresSqlFilterTranslatorTests
 {
     private readonly PostgresSqlFilterTranslator _translator = new();

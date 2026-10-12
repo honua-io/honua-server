@@ -21,6 +21,7 @@ public sealed class PostgresRasterStoreExportOptionsTests
         options.Should().Equal("QUALITY=82");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0, "QUALITY=10")]
     [InlineData(1, "QUALITY=10")]
@@ -51,6 +52,7 @@ public sealed class PostgresRasterStoreExportOptionsTests
         options.Should().Equal("COMPRESS=JPEG", "JPEG_QUALITY=67");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildExportCreationOptions_TiffJpegCompression_ClampsQualityToGdalRange()
     {

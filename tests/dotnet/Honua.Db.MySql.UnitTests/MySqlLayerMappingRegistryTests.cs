@@ -10,6 +10,7 @@ namespace Honua.Db.MySql.Tests;
 /// Unit tests for <see cref="MySqlLayerMappingRegistry"/> behaviour:
 /// resolution, missing-layer rejection, qualified table SQL formatting.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public class MySqlLayerMappingRegistryTests
 {
     [Fact]

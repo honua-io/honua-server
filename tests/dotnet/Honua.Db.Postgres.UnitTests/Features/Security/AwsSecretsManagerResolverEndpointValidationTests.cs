@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Honua.Db.Postgres.Tests.Features.Security;
 
 [Collection("Security")]
+[global::Xunit.Trait("Tier", "Fast")]
 public class AwsSecretsManagerResolverEndpointValidationTests
 {
     // Bootstrap (HttpClient-based) constructor added for honua-server#3011: Program.cs's Redis

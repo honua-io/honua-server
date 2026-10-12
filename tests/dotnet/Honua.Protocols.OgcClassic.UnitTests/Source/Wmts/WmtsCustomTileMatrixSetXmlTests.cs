@@ -13,6 +13,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts;
 /// GetCapabilities. These tests pin the shape of the additive custom-grid XML, including
 /// CRS-identifier-specific TopLeftCorner axis order and round-trip coordinate precision.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public class WmtsCustomTileMatrixSetXmlTests
 {
     private static TileMatrixSetRegistry RegistryWith(CustomTileMatrixSet custom)

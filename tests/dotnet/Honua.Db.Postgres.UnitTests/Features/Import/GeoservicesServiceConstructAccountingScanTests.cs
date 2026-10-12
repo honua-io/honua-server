@@ -22,6 +22,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// attachments, one simple and one composite relationship, a nonspatial table and a multipatch layer; the
 /// expected accounting follows from that source, not from the accountant's output.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoservicesServiceConstructAccountingScanTests
 {
     private const string ServiceUrl = "https://example.com/arcgis/rest/services/Inspections/FeatureServer";

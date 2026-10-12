@@ -14,6 +14,7 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 /// only ever used as <b>jsonb keys</b> and are bound as query parameters. A jsonb
 /// key is not an identifier, so the two must not share one character class.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureQueryBuilderFieldNameValidationTests
 {
     [Theory]

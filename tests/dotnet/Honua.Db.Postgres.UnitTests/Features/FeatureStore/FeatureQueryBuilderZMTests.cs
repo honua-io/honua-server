@@ -14,6 +14,7 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 /// preserve Z/M must read extended WKB (ST_AsEWKB) so the higher ordinates survive to the converter;
 /// the default read stays 2D OGC WKB (ST_AsBinary), byte-identical to the historical behavior.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureQueryBuilderZMTests
 {
     private static FeatureQueryBuilder CreateQueryBuilder()

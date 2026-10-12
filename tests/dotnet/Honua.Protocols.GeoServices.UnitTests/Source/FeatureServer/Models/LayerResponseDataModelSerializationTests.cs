@@ -12,6 +12,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Models
 /// <c>contingentValuesDefinition</c> and subtype-derived <c>types</c> are emitted when the
 /// layer authors them, and omitted (byte-stable for existing Esri clients) when it does not.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class LayerResponseDataModelSerializationTests
 {
     private static JsonElement Number(int value) => JsonSerializer.SerializeToElement(value);

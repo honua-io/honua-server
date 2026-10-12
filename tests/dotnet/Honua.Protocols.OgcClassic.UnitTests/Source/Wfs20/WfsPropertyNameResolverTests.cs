@@ -10,6 +10,7 @@ using Honua.TestKit.Constants;
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
 [Protocol(TestProtocols.Wfs20)]
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class WfsPropertyNameResolverTests
 {
     private static readonly MetadataV2Resource _resource = new()

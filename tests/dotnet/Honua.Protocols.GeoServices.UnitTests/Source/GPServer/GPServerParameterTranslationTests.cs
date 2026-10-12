@@ -412,6 +412,7 @@ public sealed class GPServerParameterTranslationTests
             .Should().Be("GPString");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(ProcessParameterValueType.Wkb, "GPString")]
     [InlineData(ProcessParameterValueType.WkbArray, "GPMultiValue:GPString")]

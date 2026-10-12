@@ -26,6 +26,7 @@ public class RenderZoomTests
     private const int Wgs84 = 4326;
     private const double WorldSpanMeters = 40075016.685578488;
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     // center lng/lat, camera zoom, viewport px -> the EPSG:3857 bounds MapLibre covers.
     [InlineData("SF", -13637449.2108385768, 4540337.3996251794, -13617881.3315975722, 4555013.3090559337, 1024, 768, 12.0)]
@@ -66,6 +67,7 @@ public class RenderZoomTests
         geographic.Level!.Value.Should().BeApproximately(0.0, 1e-9);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     // A whole-world Web Mercator envelope is MapLibre zoom 0 at 512px, because MapLibre's world
     // is 512 * 2^zoom pixels wide. Halving the pixels halves the detail: one zoom level down.
@@ -83,6 +85,7 @@ public class RenderZoomTests
         zoom.Level!.Value.Should().BeApproximately(expectedZoom, 1e-9);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     // A WebMercatorQuad tile matrix level is not the MapLibre camera zoom: these tiles are 256px,
     // so a client consuming them as a 256px raster source sits one camera zoom below the level.
@@ -104,6 +107,7 @@ public class RenderZoomTests
         zoom.Level!.Value.Should().BeApproximately(expectedZoom, 1e-9);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     // MapLibre's world is 512 * 2^zoom pixels, so zoom 0 is a 0.28mm-pixel scale denominator of
     // worldSpan / 512 / 0.00028 = 279_541_132.0143589 and each zoom halves it. The 256px
@@ -126,6 +130,7 @@ public class RenderZoomTests
         zoom.NotDerivableReason.Should().BeNull();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0)]
     [InlineData(2)]
@@ -179,6 +184,7 @@ public class RenderZoomTests
         }
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
@@ -220,6 +226,7 @@ public class RenderZoomTests
         zoom.NotDerivableReason.Should().Contain("25832");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0, 512)]
     [InlineData(512, 0)]

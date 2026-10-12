@@ -15,6 +15,7 @@ namespace Honua.Db.SqlServer.Tests;
 /// (left-hand rule) so clockwise-exterior Esri polygons select the intended region instead of the
 /// complement (#2741).
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public class SqlServerGeographyWindingTests
 {
     private const int TestLayerId = 7;

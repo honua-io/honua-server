@@ -14,6 +14,7 @@ using Microsoft.Extensions.Configuration;
 namespace Honua.Db.Postgres.Tests.Features.Security;
 
 [Collection("Security")]
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class PostgresSecureConnectionRegistryErrorHandlingTests
 {
     [SecurityTest]

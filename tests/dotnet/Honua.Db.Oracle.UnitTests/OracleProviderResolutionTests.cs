@@ -23,6 +23,7 @@ namespace Honua.Db.Oracle.Tests;
 /// and resolves through <see cref="FeatureProviderQueryRouter"/> for source-backed publications
 /// whose connection selects the Oracle engine.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public class OracleProviderResolutionTests
 {
     private const int LayerId = 1;

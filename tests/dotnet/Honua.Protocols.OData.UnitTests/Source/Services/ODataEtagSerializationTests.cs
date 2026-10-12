@@ -17,6 +17,7 @@ namespace Honua.Protocols.OData.Tests.Services;
 [Trait("Category", "Unit")]
 [Trait("Component", "OData")]
 [Trait("Feature", "ETag")]
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class ODataEtagSerializationTests
 {
     [Fact]

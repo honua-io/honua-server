@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class LayerDefsParserTests
 {
     private static readonly CommonQueryValidator Validator =

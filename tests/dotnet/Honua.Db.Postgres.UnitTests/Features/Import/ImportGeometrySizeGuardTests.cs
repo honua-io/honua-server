@@ -11,6 +11,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// Unit tests for <see cref="ImportGeometrySizeGuard"/> — the bounded memory guard that rejects
 /// oversized geometries before they are serialized to WKB, preventing import OOM crashes (#1626).
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class ImportGeometrySizeGuardTests
 {
     private static readonly GeometryFactory Factory = new();

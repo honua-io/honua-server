@@ -13,6 +13,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
 /// <summary>Checks the JSON wire types consumed by Esri's toolbox importer.</summary>
 [Protocol(TestProtocols.GPServer)]
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GPServerDefaultValueTests
 {
     [Theory]

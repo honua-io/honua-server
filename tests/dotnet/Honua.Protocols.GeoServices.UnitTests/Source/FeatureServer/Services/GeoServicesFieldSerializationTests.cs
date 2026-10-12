@@ -29,6 +29,7 @@ public sealed class GeoServicesFieldSerializationTests
 {
     private const int DefaultStringLength = 256;
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(MetadataV2FieldType.Json)]
     [InlineData(MetadataV2FieldType.Time)]
@@ -41,6 +42,7 @@ public sealed class GeoServicesFieldSerializationTests
         mapped.Length.Should().Be(DefaultStringLength);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(MetadataV2FieldType.String, "sqlTypeNVarchar")]
     [InlineData(MetadataV2FieldType.Integer, "sqlTypeInteger")]
@@ -75,6 +77,7 @@ public sealed class GeoServicesFieldSerializationTests
 
     // ----- Bug 1: string field length -----
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task Json_StringFieldWithoutDeclaredLength_ReportsDefaultPositiveLength()
     {
@@ -106,6 +109,7 @@ public sealed class GeoServicesFieldSerializationTests
         }
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task Json_StringFieldWithDeclaredLength_PreservesDeclaredLength()
     {
@@ -174,6 +178,7 @@ public sealed class GeoServicesFieldSerializationTests
 
     // ----- Bug 2: date as epoch-ms (streaming f=json path) -----
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task Streaming_Json_DateFields_AreEmittedAsEpochMilliseconds()
     {
@@ -208,6 +213,7 @@ public sealed class GeoServicesFieldSerializationTests
         attributes.GetProperty("created_date").GetInt64().Should().Be(expectedCreated);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task Streaming_Json_DateValues_HandleDateTimeAndDateOnlyClrTypes()
     {
@@ -240,6 +246,7 @@ public sealed class GeoServicesFieldSerializationTests
         attributes.GetProperty("created_date").GetInt64().Should().Be(expectedCreated);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task Streaming_Json_AlreadyEpochValue_IsNotDoubleConverted()
     {
@@ -268,6 +275,7 @@ public sealed class GeoServicesFieldSerializationTests
 
     // ----- Bug 2: object (non-streaming) f=json path -----
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task Json_ObjectPath_DateFields_AreEmittedAsEpochMilliseconds()
     {
@@ -312,6 +320,7 @@ public sealed class GeoServicesFieldSerializationTests
 
     // ----- Bug 2 negative: GeoServices f=geojson keeps ISO date strings -----
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task Streaming_GeoJson_DateStrings_RemainIso()
     {
@@ -337,6 +346,7 @@ public sealed class GeoServicesFieldSerializationTests
         properties.GetProperty("timestamp").GetString().Should().Be("2023-01-02T00:00:00Z");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("buffered")]
     [InlineData("streaming")]

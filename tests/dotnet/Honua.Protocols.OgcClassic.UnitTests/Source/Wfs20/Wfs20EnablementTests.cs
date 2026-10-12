@@ -40,6 +40,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 [Protocol(TestProtocols.Wfs20)]
 public sealed class Wfs20EnablementTests
 {
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("mysql")]
     [InlineData("mariadb")]

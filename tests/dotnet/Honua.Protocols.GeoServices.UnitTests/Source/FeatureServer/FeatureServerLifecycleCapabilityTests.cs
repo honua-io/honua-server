@@ -8,6 +8,7 @@ using Honua.Protocols.GeoServices.FeatureServer;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureServerLifecycleCapabilityTests
 {
     private static readonly string[] DeclaredCapabilities = ["Query", "Sync"];

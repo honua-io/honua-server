@@ -6,6 +6,7 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Infrastructure;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class NpgsqlDataSourceExtensionsTests
 {
     [Fact]

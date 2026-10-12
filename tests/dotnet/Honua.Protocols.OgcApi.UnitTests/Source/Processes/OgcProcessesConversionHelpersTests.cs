@@ -17,6 +17,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 /// Unit tests for <see cref="OgcProcessesConversionHelpers"/>.
 /// </summary>
 [Protocol(TestProtocols.OgcApiProcesses)]
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class OgcProcessesConversionHelpersTests
 {
     private const string BaseUrl = "https://example.com";

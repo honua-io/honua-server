@@ -9,6 +9,7 @@ using Honua.Protocols.GeoServices.FeatureServer.Services;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureServerReplicaClientStateSerializerTests
 {
     [Fact]

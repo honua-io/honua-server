@@ -89,6 +89,7 @@ public sealed class MgrsConverterTests
         decoded.Latitude.Should().BeApproximately(38.8895, 0.00002);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(-77.0739, 38.9587)]   // Washington, DC
     [InlineData(-122.4194, 37.7749)]  // San Francisco

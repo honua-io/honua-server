@@ -123,6 +123,7 @@ public sealed class SceneOpenUsdManifestReaderTests
         }
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("EPSG:3857")]
     [InlineData("http://www.opengis.net/def/crs/EPSG/0/3857")]

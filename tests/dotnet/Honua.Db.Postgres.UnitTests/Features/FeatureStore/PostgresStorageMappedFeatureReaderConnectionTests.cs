@@ -22,6 +22,7 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 /// while a layer bound to a real (decryptable) connection still uses that source, and a
 /// genuinely unresolvable binding still fails loudly.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class PostgresStorageMappedFeatureReaderConnectionTests
 {
     private static readonly ObjectPool<Dictionary<string, object?>> DictionaryPool =

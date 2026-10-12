@@ -17,6 +17,7 @@ namespace Honua.Protocols.OData.Tests.Services;
 [Trait("Category", "Unit")]
 [Trait("Component", "OData")]
 [Trait("Feature", "Compute")]
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class ODataComputeServiceTests
 {
     private static double? EvaluateSingle(string expression, IReadOnlyDictionary<string, object?> values)

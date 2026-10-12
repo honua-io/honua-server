@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Db.Postgres.Tests;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class ServiceCollectionExtensionsWorkspaceTests
 {
     [Fact]

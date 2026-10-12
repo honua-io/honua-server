@@ -107,6 +107,7 @@ public sealed class StreamingGeoJsonReaderTests
         }
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadFeaturesAsync_WithNestedObjectAndArrayProperties_PreservesStructuredJson()
     {
@@ -159,6 +160,7 @@ public sealed class StreamingGeoJsonReaderTests
         tags[1].GetProperty("kind").GetString().Should().Be("commercial");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task ValidateAsync_WithSelfIntersectingPolygon_ReportsNonFatalRepairWarning()
     {
@@ -190,6 +192,7 @@ public sealed class StreamingGeoJsonReaderTests
         issue.FeatureIndex.Should().Be(1);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task ValidateAsync_WithValidPolygon_ReportsNoIssues()
     {
@@ -213,6 +216,7 @@ public sealed class StreamingGeoJsonReaderTests
         result.Issues.Should().BeEmpty();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void ImportJsonContext_DictionaryStringObject_SerializesNestedJsonElements()
     {

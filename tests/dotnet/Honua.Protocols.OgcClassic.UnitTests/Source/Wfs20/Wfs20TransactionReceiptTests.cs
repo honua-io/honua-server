@@ -7,6 +7,7 @@ using Honua.Protocols.Ogc.Classic.Wfs20;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class Wfs20TransactionReceiptTests
 {
     [Fact]

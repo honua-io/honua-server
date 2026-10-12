@@ -173,6 +173,7 @@ public sealed class McpLocationToolTests
             Arg.Any<CancellationToken>());
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(RouteTool.ToolName, RouteTool.EntitlementKey, """{"stops":[{"lon":0,"lat":0},{"lon":1,"lat":1}]}""")]
     [Operation(Operations.Query)]

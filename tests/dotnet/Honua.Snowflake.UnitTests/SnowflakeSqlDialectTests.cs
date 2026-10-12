@@ -12,6 +12,7 @@ namespace Honua.Snowflake.Tests;
 /// case-preserving identifiers, positional parameter prefix, literal escaping, and rejection of
 /// identifiers outside the safe allow-list.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public class SnowflakeSqlDialectTests
 {
     [Fact]

@@ -13,6 +13,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 /// the BH5-001 atomic-reserve primitive (SET NX / ConcurrentDictionary.TryAdd) and
 /// the pending-sentinel behaviour.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class ApplyEditsIdempotencyStoreTests
 {
     // ─── BH5-001 regression ──────────────────────────────────────────────────────

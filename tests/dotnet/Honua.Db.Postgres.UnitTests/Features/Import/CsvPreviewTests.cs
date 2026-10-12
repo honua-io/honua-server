@@ -17,6 +17,7 @@ using NetTopologySuite.Features;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class CsvPreviewTests
 {
     [Fact]

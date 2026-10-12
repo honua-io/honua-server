@@ -8,6 +8,7 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureDataAccessCommitClassificationTests
 {
     [Fact]

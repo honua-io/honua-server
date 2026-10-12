@@ -12,6 +12,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Models
 /// the flags are emitted when authored true, and omitted (CITE/byte-stable) when false/default so
 /// 2D layer documents stay identical to prior behavior.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class LayerResponseHasZMSerializationTests
 {
     private static LayerResponse BuildLayer(bool hasZ, bool hasM) => new()

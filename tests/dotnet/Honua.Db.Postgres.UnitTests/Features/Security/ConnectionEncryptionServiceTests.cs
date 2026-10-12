@@ -20,6 +20,7 @@ namespace Honua.Db.Postgres.Tests.Features.Security;
 /// - Performance characteristics
 /// </remarks>
 [Collection("Security")]
+[global::Xunit.Trait("Tier", "Fast")]
 public class ConnectionEncryptionServiceTests : IDisposable
 {
     private readonly ConnectionEncryptionService _encryptionService;

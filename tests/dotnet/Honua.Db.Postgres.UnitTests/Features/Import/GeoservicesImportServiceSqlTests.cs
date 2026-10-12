@@ -13,6 +13,7 @@ using Honua.Db.Postgres.Features.FileImport;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoservicesImportServiceSqlTests
 {
     [Fact]

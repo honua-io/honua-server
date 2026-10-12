@@ -17,6 +17,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 /// registration; these tests force source-generated-only metadata so the gap surfaces as a
 /// failing test instead of a runtime 500 on the AOT image.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class MapServerFindSerializationTests
 {
     // Mirrors the published image: only source-generated metadata, no reflection fallback.

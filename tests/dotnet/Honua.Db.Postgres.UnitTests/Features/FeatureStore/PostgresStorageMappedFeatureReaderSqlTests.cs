@@ -19,6 +19,7 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 public sealed class PostgresStorageMappedFeatureReaderSqlTests
 {
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void SRV_DB_005_PagedCallerOrdering_AppendsPrimaryKeyTiebreaker()
     {
@@ -38,6 +39,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         sql.Should().Contain("ORDER BY page_source.\"__honua_page_order_0\" DESC, page_source.\"__honua_page_order_1\"");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void SRV_DB_006_SourceTemporalFilterConvertsTypedColumnToTextBeforeEpochDetection()
     {
@@ -50,6 +52,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         expression.Should().NotContain("NULLIF(\"observed_at\", '')");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void SRV_DB_020_JsonbNumericSortTreatsEmptyStringAsNull()
     {
@@ -66,6 +69,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         sql.Should().Contain("NULLIF(((\"attributes\" ->> $2::text))::text, '')::bigint");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(MetadataV2FieldType.Integer)]
     [InlineData(MetadataV2FieldType.BigInteger)]
@@ -89,6 +93,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         sql.Should().NotContain("NULLIF");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(MetadataV2FieldType.Integer)]
     [InlineData(MetadataV2FieldType.BigInteger)]
@@ -112,6 +117,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         sql.Should().NotContain("WHERE (\"measurement\" >=");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(MetadataV2FieldType.Double, "integer")]
     [InlineData(MetadataV2FieldType.Integer, "double precision")]
@@ -133,6 +139,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
 
 
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildFeatureSelect_TextSearch_UsesMappedColumns()
     {
@@ -151,6 +158,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         sql.Should().NotContain("attributes->>");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryPageAsync_TextSearchOnMaskedField_RejectsBeforeDatabaseAccess()
     {
@@ -169,6 +177,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         (await act.Should().ThrowAsync<ArgumentException>())
             .Which.Message.Should().Contain("secret");
     }
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task ApplyReadSecurityAsync_WithRlsAndFieldMask_EnforcesBothOnTileQuery()
     {
@@ -196,6 +205,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         securedQuery.EnforcedMaskedFields.Should().ContainSingle().Which.Should().Be("secret");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryPageAsync_WithSecurityPolicies_ValidatesBeforeThePagedProbe()
     {
@@ -222,6 +232,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             .Which.Message.Should().Contain("secret");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void ResolveAttributeFields_WithEnforcedMask_DropsMaskedTileAttribute()
     {
@@ -239,6 +250,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         fields.Select(static field => field.Name).Should().Equal("tenant_id", "name");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void RewriteAttributeTextAccessExpressions_WithCanonicalAttributeFilter_UsesMappedSourceColumn()
     {
@@ -253,6 +265,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         rewritten.Should().Be("NULLIF((\"dam_name\")::text, '') IN ($1, $2)");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void RewriteAttributeTextAccessExpressions_WithStringField_PreservesEmptyStringForIsNotNull()
     {
@@ -271,6 +284,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         rewritten.Should().Be("(\"uniquedesignation\")::text IS NOT NULL");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void RewriteAttributeTextAccessExpressions_WithNumericField_KeepsEmptyStringCoercion()
     {
@@ -285,6 +299,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         rewritten.Should().Be("NULLIF((\"shape__length\")::text, '') IS NOT NULL");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildDistancePredicateSql_WithProjectedStorage_ReprojectsBothOperandsToWgs84Geography()
     {
@@ -313,6 +328,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         parameters.Last().Should().Be(1000d);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildDistancePredicateSql_WithWgs84Storage_CastsDirectlyToGeography()
     {
@@ -337,6 +353,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         predicate.Should().Contain("> $1");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildStatisticsAggregateExpression_WithNumericAggregate_CastsMappedSourceColumn()
     {
@@ -348,6 +365,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         expression.Should().Be("AVG(NULLIF((\"longitude\")::text, '')::numeric)");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildStatisticsAggregateExpression_WithDateTimeMinMax_OrdersChronologically()
     {
@@ -361,6 +379,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         expression.Should().Contain("::timestamptz END)");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSourceMappedStatisticsSql_PreservesHavingOrderByAndPagination()
     {
@@ -543,6 +562,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         parameters.Should().ContainSingle().Which.Should().Be(fieldName);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildEncodedBinarySelect_WithPrefixedSchemaFieldAndJsonbColumn_AliasesInsteadOfThrowing()
     {
@@ -573,6 +593,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             "the value still comes from the JSONB accessor with a bound key");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildEncodedBinarySelect_WithPrefixedSchemaFieldAndNoJsonbColumn_OmitsTheField()
     {
@@ -592,6 +613,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         sql.Should().Contain("\"plain_field\"");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildEncodedBinarySelect_WithOverlongJsonbAlias_RejectsInsteadOfTruncating()
     {

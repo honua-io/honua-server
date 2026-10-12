@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureCacheManagerTests
 {
     [Fact]

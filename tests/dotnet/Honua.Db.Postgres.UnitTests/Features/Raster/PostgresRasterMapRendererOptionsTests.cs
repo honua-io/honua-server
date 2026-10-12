@@ -7,6 +7,7 @@ using Honua.Db.Postgres.Features.Raster;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class PostgresRasterMapRendererOptionsTests
 {
     [Theory]

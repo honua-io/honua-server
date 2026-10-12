@@ -11,6 +11,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 /// translate a missing/incompatible ParquetSharpNative runtime into a clean capability
 /// response (HTTP 501) instead of an unhandled 500 (honua-server#1942).
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class ParquetRuntimeUnavailableExceptionTests
 {
     [Fact]

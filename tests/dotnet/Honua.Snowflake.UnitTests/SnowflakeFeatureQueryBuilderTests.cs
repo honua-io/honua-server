@@ -15,6 +15,7 @@ namespace Honua.Snowflake.Tests;
 /// unsupported relationships and injection attempts. These tests run in normal CI; they do not
 /// require a live Snowflake warehouse.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public class SnowflakeFeatureQueryBuilderTests
 {
     private const int TestLayerId = 7;

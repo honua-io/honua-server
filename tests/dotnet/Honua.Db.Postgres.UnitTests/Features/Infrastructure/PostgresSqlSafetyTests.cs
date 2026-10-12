@@ -5,6 +5,7 @@ using Honua.Db.Postgres.Features.Infrastructure;
 
 namespace Honua.Db.Postgres.Tests.Features.Infrastructure;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class PostgresSqlSafetyTests
 {
     [Theory]

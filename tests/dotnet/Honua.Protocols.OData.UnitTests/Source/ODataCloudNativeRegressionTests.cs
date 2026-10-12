@@ -15,6 +15,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class ODataCloudNativeRegressionTests
 {
     [Theory]

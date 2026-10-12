@@ -12,6 +12,7 @@ namespace Honua.Db.Oracle.Tests;
 /// Verifies that <see cref="OracleSpatialGuard"/> refuses to read non-SDO geometry columns or
 /// ArcSDE-versioned tables (IP / clean-room enforcement point).
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public class OracleSpatialGuardTests
 {
     private const int LayerId = 11;

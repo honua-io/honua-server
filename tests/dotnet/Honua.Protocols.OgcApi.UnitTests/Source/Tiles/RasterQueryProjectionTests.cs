@@ -7,6 +7,7 @@ using Honua.Protocols.Ogc.Api.Tiles;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class RasterQueryProjectionTests
 {
     private static readonly TileBounds WebMercatorBounds =

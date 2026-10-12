@@ -22,4 +22,10 @@
   <ItemGroup>
     <Compile Include="../Honua.TestKit/Infrastructure/TestMetadataV2GraphProvider.cs" Link="Shared/TestMetadataV2GraphProvider.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/SceneUnitSupport/*.cs" Link="Shared/%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Honua.TestKit.Core/Honua.TestKit.Core.csproj" />
+  </ItemGroup>
 </Project>

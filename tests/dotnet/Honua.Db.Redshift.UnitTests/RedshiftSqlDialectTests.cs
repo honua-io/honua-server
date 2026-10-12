@@ -10,6 +10,7 @@ namespace Honua.Db.Redshift.Tests;
 /// <summary>
 /// Ungated unit tests for the Redshift SQL dialect and provider-name normalization.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public class RedshiftSqlDialectTests
 {
     [Fact]

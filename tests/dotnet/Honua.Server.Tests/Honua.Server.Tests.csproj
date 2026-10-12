@@ -91,4 +91,7 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="../Shared/SceneUnitSupport/*.cs" Link="Shared/%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>

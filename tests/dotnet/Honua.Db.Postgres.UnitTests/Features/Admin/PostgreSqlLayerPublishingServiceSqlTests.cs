@@ -20,6 +20,7 @@ namespace Honua.Db.Postgres.Tests.Features.Admin;
 
 public sealed class PostgreSqlLayerPublishingServiceSqlTests
 {
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("honua")]
     [InlineData("pg_catalog")]
@@ -37,6 +38,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         discovery.VerifyNoOtherCalls();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -103,6 +105,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             .Should().BeEquivalentTo(managed ? [] : new[] { connectionId.ToString("D") });
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -133,6 +136,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             .Should().BeEquivalentTo(graph.Resources.Where(resource => resource.Metadata.Id != targetResourceId));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -161,6 +165,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             .Should().BeEquivalentTo(graph.Publications.Where(item => item.ResourceId != targetResourceId));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -178,6 +183,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         foreignAccess.Should().Throw<LayerPublishingException>().Which.ErrorKind.Should().Be(LayerPublishingErrorKind.NotFound);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -276,6 +282,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             scope, bindings[managed ? 2 : 0].ResourceId);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void Finding_SRV_DB_009_GraphIdsAreUniqueAcrossDatabaseConnections()
     {
@@ -522,6 +529,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         await (Task)method.Invoke(service, [extents, scope, CancellationToken.None])!;
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("committed", true)]
     [InlineData("aborted", false)]
@@ -532,6 +540,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         PostgresTransactionOutcomeObserver.InterpretStatus(status).Should().Be(expected);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task RetryUnresolvedTransactionObservation_WaitsForTerminalOutcome()
     {
@@ -551,6 +560,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         delays.Should().Equal(TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(200));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildCompensatingMetadataV2Graph_RestoresContentAtANewRevision()
     {
@@ -583,6 +593,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         compensation.StorageBindings.Should().BeEquivalentTo(original.StorageBindings);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task PersistMetadataV2MutationAsync_WithUnknownGraphCommit_CompensatesUsingReceipt()
     {
@@ -626,6 +637,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         store.SavedGraphs[1].Resources.Should().BeEquivalentTo(previous.Resources);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RemovesFailedMutationAndPreservesConcurrentWriter()
     {
@@ -755,6 +767,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             .Should().Equal("pub-original", "pub-concurrent");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_DerivesResourceLifecycleFromRebasedBindings()
     {
@@ -825,6 +838,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             .Should().Be(MetadataV2LifecycleStatus.Active);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("resource-concurrent", "binding-failed", true)]
     [InlineData("resource-failed", "binding-concurrent", true)]
@@ -866,6 +880,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         }
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_PreservesRepurposedAddedService()
     {
@@ -921,6 +936,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         compensation.Publications.Should().BeEmpty();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_PreservesRepurposedAddedResource()
     {
@@ -998,6 +1014,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             .Should().Equal(repurposedPublication.Metadata.Id);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RemovesIncidentallyStyledFailedResource()
     {
@@ -1068,6 +1085,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         compensation.Services.Should().ContainSingle().Which.PublicationIds.Should().BeEmpty();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_PreservesRepurposedAddedBindingAndConnection()
     {
@@ -1131,6 +1149,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         retainedConnection.Endpoint.Should().Be(new Uri("https://example.test/api"));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_PreservesPublicationOverRepurposedBinding()
     {
@@ -1199,6 +1218,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             .Should().Equal(concurrentPublication.Metadata.Id);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_PreservesAddedPublicationIdOverRepurposedBinding()
     {
@@ -1261,6 +1281,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             .Should().Equal(failedPublication.Metadata.Id);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_DoesNotTreatBindingOwnershipAsTargetRepurposing()
     {
@@ -1337,6 +1358,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         compensation.Services.Should().ContainSingle().Which.PublicationIds.Should().BeEmpty();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RepairsExistingPublicationBeforeRemovingFailedBinding()
     {
@@ -1449,6 +1471,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         }
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RemovesExistingPublicationWhenOriginalTargetWasDeleted()
     {
@@ -1568,6 +1591,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         }
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RestoresPublicationReplacedByFailedUpsert()
     {
@@ -1646,6 +1670,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             .Should().Equal(previousPublication.Metadata.Id, concurrentPublication.Metadata.Id);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RestoresReplacementDespiteConcurrentNonTargetEdit()
     {
@@ -1680,6 +1705,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         compensation.Publications.Should().ContainSingle().Which.Should().Be(previousPublication);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RestoresExistingPublicationFieldsThreeWay()
     {
@@ -1744,6 +1770,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         publication.Status.Should().Be(previousPublication.Status);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RestoresExistingServiceFieldsThreeWay()
     {
@@ -1830,6 +1857,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         service.Metadata.Publisher.Should().Be("Concurrent Data Office");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RestoresExistingResourceFieldsThreeWay()
     {
@@ -2044,6 +2072,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         resource.Status.Should().Be(previousResource.Status);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RestoresAbsentSpatialMembersIndependently()
     {
@@ -2089,6 +2118,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         spatial.StorageCrsCoordinateEpoch.Should().BeNull();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RestoresAttributeRulesIndependently()
     {
@@ -2170,6 +2200,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             options => options.WithStrictOrdering());
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RestoresCompositeResourceMembersIndependently()
     {
@@ -2519,6 +2550,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         resource.Editing.Should().Be(previousResource.Editing with { CreatorField = "concurrent_creator" });
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RebasesArraysAcrossAbsentCompositeBaselines()
     {
@@ -2595,6 +2627,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         retainedSubtype.Name.Should().Be("Concurrent subtype");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_AlignsRepeatedSymbologyRuleAttributesByOccurrence()
     {
@@ -2648,6 +2681,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         rules.Should().NotContain(rule => rule.Value == "residential");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RestoresSchemaFieldsIndependently()
     {
@@ -2716,6 +2750,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         fields.Should().ContainSingle(field => field.Name == concurrentField.Name).Which.Should().Be(concurrentField);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_AlignsSchemaFieldAcrossRenames()
     {
@@ -2765,6 +2800,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         field.Description.Should().Be("Original description", "the aborted description change is reverted");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RestoresBindingAndConnectionFieldsThreeWay()
     {
@@ -2958,6 +2994,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         connection.Extensions.Should().NotContainKey("failed");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void IndexSourceGovernanceByStorageLayer_WithSameServiceIndex_UsesGlobalStorageIdentity()
     {
@@ -3038,6 +3075,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             graph.Resources[1].Metadata));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void FindCanonicalGovernanceLink_PrefersManagedThenFallsBackToAuthoredRelation()
     {
@@ -3062,6 +3100,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             .Should().Be("https://example.test/imported-source");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void HydrateSourceGovernance_WithPersistedGraph_UsesSnapshotMetadata()
     {
@@ -3131,6 +3170,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         hydrated.LayerName.Should().Be(layer.LayerName);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void IndexSourceGovernanceByStorageLayer_WithActiveAndRetiredPublications_PrefersActive()
     {
@@ -3253,6 +3293,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             new KeyValuePair<int, MetadataV2ObjectMetadata>(7, activeMetadata));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void IndexSourceGovernanceByStorageLayer_WithActiveAndNonServingSameNameServices_PrefersActive()
     {
@@ -3350,6 +3391,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             new KeyValuePair<int, MetadataV2ObjectMetadata>(8, activeMetadata));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void IndexSourceGovernanceByStorageLayer_WithProtocolSpecificNameCollision_UsesFeatureServerResource()
     {
@@ -3403,6 +3445,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             new KeyValuePair<int, MetadataV2ObjectMetadata>(7, featureMetadata));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void IndexSourceGovernanceByStorageLayer_WithDisabledSameNameFeatureService_UsesEnabledService()
     {
@@ -3458,6 +3501,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             new KeyValuePair<int, MetadataV2ObjectMetadata>(8, enabledMetadata));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void IndexSourceGovernanceByStorageLayer_WithDisabledExactIdCollision_ReturnsConflict()
     {
@@ -3514,6 +3558,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         exception.Message.Should().Contain("does not resolve to one unique Esri FeatureServer service");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void IndexSourceGovernanceByStorageLayer_WithDisabledNameOnly_ReturnsConflict()
     {
@@ -3560,6 +3605,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         exception.Message.Should().Contain("does not resolve to one unique Esri FeatureServer service");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void IndexSourceGovernanceByStorageLayer_WithProtocolAggregateAndDedicatedFeatureServices_UsesDedicatedFeatureResource()
     {
@@ -3633,6 +3679,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             new KeyValuePair<int, MetadataV2ObjectMetadata>(7, featureMetadata));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void IndexSourceGovernanceByStorageLayer_WithMixedPublicationsOnFeatureService_UsesEsriResource()
     {
@@ -3681,6 +3728,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             new KeyValuePair<int, MetadataV2ObjectMetadata>(7, featureMetadata));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildLayerEnabledMetadataV2Graph_UpdatesAffectedResourceAndPublicationLifecycles()
     {
@@ -3787,6 +3835,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         enabled.Publications.Should().AllSatisfy(publication => publication.Status.ObservedAt.Should().Be(enabledAt));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildLayerEnabledMetadataV2Graph_WithSharedResource_OnlyRetiresAffectedBinding()
     {
@@ -3891,6 +3940,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             publication.Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Retired));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildLinkedLayerMetadataV2Graph_WithTargetIndexCollision_RejectsAmbiguousStorageRoute()
     {
@@ -3996,6 +4046,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             .ResourceId.Should().Be("resource-beta");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildLinkedLayerMetadataV2Graph_WithOtherProtocolAtTargetIndex_AddsFeaturePublication()
     {
@@ -4079,6 +4130,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             .Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Retired);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildLinkedLayerMetadataV2Graph_ReactivatesPublicationsAcrossServices()
     {
@@ -4155,6 +4207,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         });
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildLinkedLayerMetadataV2Graph_WithSharedResource_OnlyRetiresTargetBinding()
     {
@@ -4233,6 +4286,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             .Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildLinkedLayerMetadataV2Graph_WithExistingPublication_PreservesAuthoredIdentityAndSettings()
     {
@@ -4319,6 +4373,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         updatedService.PublicationIds.Should().Equal("legacy-imported-parcels");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildLinkedLayerMetadataV2Graph_WithDuplicateStorageHandles_PrefersCanonicalBindingIdentity()
     {
@@ -4370,6 +4425,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         publication.LayerIndex.Should().Be(101);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildLinkedLayerMetadataV2Graph_WithAmbiguousLegacyStorageHandles_ReturnsConflict()
     {
@@ -4406,6 +4462,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         exception.Message.Should().Contain("multiple legacy storage bindings");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildLinkedLayerMetadataV2Graph_WithMissingCanonicalBinding_ReturnsConflict()
     {
@@ -4436,6 +4493,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         exception.Message.Should().Contain("absent from the canonical metadata graph");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildLinkedLayerMetadataV2Graph_WithMissingCanonicalResource_ReturnsConflict()
     {
@@ -4466,6 +4524,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         exception.Message.Should().Contain("references missing canonical resource 'resource-missing'");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildLinkedLayerMetadataV2Graph_WithProtocolSpecificNameCollision_SelectsFeatureServer()
     {
@@ -4517,6 +4576,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         updated.Publications.Should().ContainSingle().Which.ServiceId.Should().Be("service-feature");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildLinkedLayerMetadataV2Graph_WithNonFeatureExactIdCollision_ReturnsConflict()
     {
@@ -4566,6 +4626,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         exception.Message.Should().Contain("does not resolve to one unique Esri FeatureServer service");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildLinkedLayerMetadataV2Graph_WithDisabledNameOnly_ReturnsConflict()
     {
@@ -4609,6 +4670,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         exception.Message.Should().Contain("does not resolve to one unique Esri FeatureServer service");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildLinkedLayerMetadataV2Graph_WithAmbiguousFeatureServerName_ReturnsConflict()
     {
@@ -4732,6 +4794,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         }
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildAttributesExpression_WithWideTables_ChunksJsonbBuildObjectCalls()
     {

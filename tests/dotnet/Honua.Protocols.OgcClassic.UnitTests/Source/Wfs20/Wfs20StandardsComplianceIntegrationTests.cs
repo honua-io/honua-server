@@ -11,6 +11,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 /// <summary>
 /// Integration tests for WFS 2.0 standards-facing capability metadata.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public class Wfs20StandardsComplianceIntegrationTests
 {
     [Fact]

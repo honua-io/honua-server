@@ -16,6 +16,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// file-import path selects WKB writer dimensionality from the source geometry,
 /// so XYZ, XYM, and XYZM geometries round-trip through WKB.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class ImportZmRoundTripTests
 {
     private static readonly GeometryFactory Factory = new();

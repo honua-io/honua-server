@@ -13,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureServerQueryHandlerExtentFallbackTests
 {
     [Fact]

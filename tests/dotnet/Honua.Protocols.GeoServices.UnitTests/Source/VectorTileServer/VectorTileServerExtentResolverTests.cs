@@ -15,6 +15,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer;
 /// Unit tests for <see cref="VectorTileServerExtentResolver"/>: the service extent is reported in
 /// the tiling scheme's spatial reference whatever spatial reference each resource declares.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class VectorTileServerExtentResolverTests
 {
     private static readonly VectorTileSpatialReference _tilingSpatialReference =

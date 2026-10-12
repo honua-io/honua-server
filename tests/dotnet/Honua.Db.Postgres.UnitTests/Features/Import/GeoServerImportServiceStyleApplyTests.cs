@@ -42,6 +42,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 ///    cause cross-workspace style mutations.
 /// 4. Re-apply is idempotent on (source_kind, source_id).
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoServerImportServiceStyleApplyTests
 {
     [Fact]

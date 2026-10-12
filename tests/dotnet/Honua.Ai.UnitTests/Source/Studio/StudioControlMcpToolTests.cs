@@ -173,6 +173,7 @@ public sealed class StudioControlMcpToolTests
         await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("draw")]
     [InlineData("edit")]
@@ -259,6 +260,7 @@ public sealed class StudioControlMcpToolTests
         (await harness.ReadCompositionAsync()).Controls.Should().BeNullOrEmpty();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("""{"draftId":"33333333-3333-3333-3333-333333333333","generation":1}""")]
     [InlineData("""{"draftId":"33333333-3333-3333-3333-333333333333","generation":1,"control":{"kind":"navigation"}}""")]

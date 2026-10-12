@@ -13,6 +13,7 @@ namespace Honua.Db.Redshift.Tests;
 /// and the NotSupportedException contract for out-of-scope operations. These tests require no
 /// external Redshift service and run in normal CI.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public class RedshiftFeatureQueryBuilderTests
 {
     private const int LayerId = 1;

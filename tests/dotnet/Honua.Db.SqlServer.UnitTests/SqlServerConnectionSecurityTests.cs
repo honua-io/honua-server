@@ -6,6 +6,7 @@ using Microsoft.Data.SqlClient;
 
 namespace Honua.Db.SqlServer.Tests;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class SqlServerConnectionSecurityTests
 {
     [Theory]

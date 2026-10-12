@@ -8,6 +8,7 @@ using Honua.Protocols.Ogc.Shared;
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Shared;
 #pragma warning restore CA1716
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class OgcParameterValidatorTests
 {
     // ------------------------------------------------------------------

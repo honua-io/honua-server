@@ -9,6 +9,7 @@ using Xunit;
 
 namespace Honua.Protocols.OData.Tests.Services;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class ODataSqlFragmentMergeHelperTests
 {
     [Fact]

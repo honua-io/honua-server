@@ -11,6 +11,7 @@ using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class PostgresRasterImportAdmissionTests
 {
     [Fact]

@@ -43,6 +43,7 @@ public class MySqlFeatureQueryBuilderTests
         _builder = new MySqlFeatureQueryBuilder(registry);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_TextSearch_BindsLiteralTermsInProviderDialect()
     {
@@ -66,6 +67,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Equal("closed", result.WhereParameters[2]);
         Assert.Equal("closed", result.WhereParameters[3]);
     }
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_DefaultQuery_QuotesIdentifiersAndProjectsAttributes()
     {
@@ -80,6 +82,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Empty(result.WhereParameters);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithOutFields_OnlyProjectsRequestedColumns()
     {
@@ -94,6 +97,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.DoesNotContain("`type`", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_ExcludeAttributes_OmitsAttributeColumns()
     {
@@ -106,6 +110,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.DoesNotContain("`type`", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_EmptyOutFields_OmitsAttributeColumns()
     {
@@ -126,6 +131,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.DoesNotContain("`type`", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithPagination_GeneratesNamedLimitOffsetParameters()
     {
@@ -139,6 +145,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Equal(20, result.WhereParameters[1]);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithObjectIds_GeneratesInClause()
     {
@@ -153,6 +160,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Equal(3, result.WhereParameters.Count);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithSqlFilter_RenumbersEmbeddedParameters()
     {
@@ -167,6 +175,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Equal(5, result.WhereParameters[1]);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithWhereClause_ParameterizesComparison()
     {
@@ -179,6 +188,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Equal("commercial", result.WhereParameters[0]);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("missing_field = 1")]
     [InlineData("missing_field IS NULL")]
@@ -196,6 +206,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("missing_field", ex.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WhereReferencesPrimaryKey_DoesNotThrow()
     {
@@ -209,6 +220,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("AND (`id` = @p0)", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WhereReferencesGeometryColumn_DoesNotThrow()
     {
@@ -221,6 +233,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("`geom` IS NOT NULL", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("start_and_end = 1")]   // 'and' embedded between underscores
     [InlineData("and_flag = 1")]         // 'and' as a leading token
@@ -253,6 +266,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Single(result.WhereParameters);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithGeoServicesEwkb_BindsPlainWkb()
     {
@@ -271,6 +285,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Equal(ewkb.AsSpan(9).ToArray(), boundWkb.AsSpan(5).ToArray());
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithZmDimensionedEwkb_RejectsRatherThanBindingUnparseableWkb()
     {
@@ -309,6 +324,7 @@ public class MySqlFeatureQueryBuilderTests
         return ewkb;
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WhereClauseChainingMultipleUnderscoreFields_SplitsOnLogicalAndOnly()
     {
@@ -334,6 +350,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Equal(2, result.WhereParameters.Count);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithIntersectsSpatialFilter_AddsMbrAndStIntersectsClauses()
     {
@@ -352,6 +369,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Single(result.WhereParameters);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithEnvelopeIntersects_UsesMbrOnly()
     {
@@ -369,6 +387,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.DoesNotContain("ST_Intersects", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_EnvelopeOnlyIntersectsOnPointLayer_UsesMbrOnly()
     {
@@ -410,6 +429,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.DoesNotContain("ST_Intersects", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_EnvelopeOnlyIntersectsOnMultiPointLayer_KeepsExactIntersects()
     {
@@ -449,6 +469,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("ST_Intersects", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_EnvelopeOnlyIntersectsOnPolygonLayer_KeepsExactIntersects()
     {
@@ -474,6 +495,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("ST_Intersects", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithinFilter_LeadsWithFilterGeometry()
     {
@@ -494,6 +516,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.DoesNotContain("ST_Within(`geom`", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_ContainsFilter_LeadsWithFilterGeometry()
     {
@@ -513,6 +536,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.DoesNotContain("ST_Contains(`geom`", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_CrossSridFilter_ThrowsNotSupported()
     {
@@ -529,6 +553,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("4326", ex.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_NearestNeighborFilter_ThrowsNotSupported()
     {
@@ -541,6 +566,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("Nearest-neighbor", ex.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_OutputSridDifferentFromLayer_ThrowsNotSupported()
     {
@@ -550,6 +576,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("Output SRID", ex.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_DistanceFilter_OnPolygonLayer_ThrowsNotSupported()
     {
@@ -562,6 +589,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("point layers", ex.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(3857)]
     [InlineData(2154)]
@@ -596,6 +624,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains(layerSrid.ToString(CultureInfo.InvariantCulture), ex.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_DistanceFilter_Srid0PointLayer_EmitsStDistanceSphere()
     {
@@ -626,6 +655,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("6371008.8", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_TemporalFilter_ThrowsNotSupported()
     {
@@ -647,6 +677,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("Temporal filters", ex.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildCountQuery_TemporalFilter_ThrowsNotSupported()
     {
@@ -664,6 +695,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("Temporal filters", ex.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildExtentQuery_TemporalFilter_ThrowsNotSupported()
     {
@@ -681,6 +713,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("Temporal filters", ex.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildObjectIdsQuery_TemporalFilter_ThrowsNotSupported()
     {
@@ -698,6 +731,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("Temporal filters", ex.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildCountQuery_GeneratesCorrectSql()
     {
@@ -706,6 +740,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("SELECT COUNT(*) FROM `honua`.`parcels` WHERE 1=1", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildExtentQuery_PolygonLayer_UsesEnvelopeWithoutTwoArgStSrid()
     {
@@ -721,6 +756,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("`geom` IS NOT NULL", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildExtentQuery_MultiPolygonLayer_UsesEnvelopePattern()
     {
@@ -743,6 +779,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.DoesNotContain("ST_SRID(`shape`, 0)", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildExtentQuery_SRV_DB_018_MySql4326PointUsesLongitudeLatitude()
     {
@@ -768,6 +805,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.DoesNotContain("ST_Envelope", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildExtentQuery_SRV_DB_018_MariaDb4326PointKeepsStoredAxisAccessors()
     {
@@ -865,6 +903,7 @@ public class MySqlFeatureQueryBuilderTests
         GeometryType = GeometryType.Point
     };
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(GeometryType.MultiPoint)]
     [InlineData(GeometryType.LineString)]
@@ -894,6 +933,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("Point, Polygon, MultiPolygon", ex.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildExtentQuery_WithSpatialFilter_AppendsSpatialClause()
     {
@@ -910,6 +950,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("MBRIntersects(`geom`, ST_GeomFromWKB(@p0, 4326, 'axis-order=long-lat'))", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildObjectIdsQuery_GeneratesCorrectSql()
     {
@@ -918,6 +959,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("SELECT `id` FROM `honua`.`parcels`", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithOrderBy_QuotesFields()
     {
@@ -931,6 +973,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("ORDER BY `name` ASC", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("eo:cloud_cover")]
     [InlineData("owner.name")]
@@ -947,6 +990,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains($"ORDER BY `{field}` ASC", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("name;DROP")]
     [InlineData("owner name")]
@@ -961,6 +1005,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Throws<ArgumentException>(() => _builder.BuildSelectQuery(LayerId, query));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectGmlQuery_ThrowsNotSupported()
     {
@@ -970,6 +1015,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("MySQL/MariaDB", ex.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildStatisticsQuery_ThrowsNotSupported()
     {
@@ -978,6 +1024,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("BuildStatisticsQuery", ex.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildMvtTileQuery_ThrowsNotSupported()
     {
@@ -988,18 +1035,21 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("MySQL/MariaDB", ex.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void Constructor_NullRegistry_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new MySqlFeatureQueryBuilder(null!));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_UnregisteredLayer_Throws()
     {
         Assert.Throws<KeyNotFoundException>(() => _builder.BuildSelectQuery(999, new FeatureQuery()));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_MariaDbFlavor_OmitsAxisOrderOptionOnAsWkb()
     {
@@ -1027,6 +1077,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.DoesNotContain("axis-order", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithPaginationAndNoOrderBy_InjectsPrimaryKeyOrder()
     {
@@ -1042,6 +1093,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("ORDER BY `id` ASC LIMIT @p0", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithOffsetOnly_EmitsSentinelLimitBeforeOffset()
     {
@@ -1061,6 +1113,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Equal(50, result.WhereParameters[0]);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_NoPaginationAndNoOrderBy_OmitsOrderBy()
     {
@@ -1072,6 +1125,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.DoesNotContain("ORDER BY", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithLimitAndOffset_EmitsLimitBeforeOffset()
     {
@@ -1091,6 +1145,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Equal(20, result.WhereParameters[1]);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithCallerOrderBy_DoesNotAppendPrimaryKey()
     {
@@ -1108,6 +1163,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.DoesNotContain("`id` ASC", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildObjectIdsQuery_WithPaginationAndNoOrderBy_InjectsPrimaryKeyOrder()
     {
@@ -1121,6 +1177,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("ORDER BY `id` ASC LIMIT @p0", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_MariaDbFlavor_OmitsAxisOrderOptionOnSpatialFilter()
     {
@@ -1157,6 +1214,7 @@ public class MySqlFeatureQueryBuilderTests
     /// The enforced filter is applied before any caller-supplied SqlFilter so it cannot be
     /// bypassed.
     /// </summary>
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithEnforcedSqlFilter_IncludesFilterInWhereClause()
     {
@@ -1170,6 +1228,7 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("active", result.WhereParameters);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithEnforcedSqlFilterAndSqlFilter_EnforcedAppearsFirst()
     {

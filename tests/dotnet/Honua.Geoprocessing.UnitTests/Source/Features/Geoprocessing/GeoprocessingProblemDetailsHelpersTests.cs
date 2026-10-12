@@ -14,6 +14,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 
 public sealed class GeoprocessingProblemDetailsHelpersTests
 {
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task StoreUnavailable_WithReceipt_EmitsCanonicalCapabilityProblem()
     {

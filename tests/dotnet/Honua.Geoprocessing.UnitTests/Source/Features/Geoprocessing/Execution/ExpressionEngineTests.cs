@@ -18,6 +18,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 /// </summary>
 public sealed class ExpressionEngineTests
 {
+    [global::Xunit.Trait("Tier", "Fast")]
     [InlineData("1 + 2 * 3", 7d)]
     [InlineData("(1 + 2) * 3", 9d)]
     [InlineData("10 / 4", 2.5d)]
@@ -106,6 +107,7 @@ public sealed class ExpressionEngineTests
         ExpressionEngine.Evaluate("cast(123, string)", context).Should().Be("123");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [InlineData("1 +")]                       // dangling operator
     [InlineData("(1 + 2")]                     // unbalanced paren
     [InlineData("1 + + 2")]                    // double operator
@@ -119,6 +121,7 @@ public sealed class ExpressionEngineTests
         act.Should().Throw<ExpressionParseException>();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [InlineData("system(\"rm -rf /\")")]       // arbitrary function name
     [InlineData("GetType()")]                  // reflection-flavored identifier as call
     [InlineData("eval(\"1\")")]               // not whitelisted

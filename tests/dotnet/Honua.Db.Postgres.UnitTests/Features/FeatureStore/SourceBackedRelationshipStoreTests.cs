@@ -14,6 +14,7 @@ using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class SourceBackedRelationshipStoreTests
 {
     [Theory]

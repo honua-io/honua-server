@@ -55,6 +55,7 @@ public sealed class ImportedDomainEnforcementTests
         }
         """;
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [Operation(Operations.ApplyEdits)]
     [InlineData("A")]
@@ -67,6 +68,7 @@ public sealed class ImportedDomainEnforcementTests
         result.IsValid.Should().BeTrue(result.ErrorMessage);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [Operation(Operations.ApplyEdits)]
     [InlineData("X")]
@@ -80,6 +82,7 @@ public sealed class ImportedDomainEnforcementTests
         result.ErrorMessage.Should().Contain("status").And.Contain("coded-value domain");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [Operation(Operations.ApplyEdits)]
     [InlineData(0L, true)]
@@ -128,6 +131,7 @@ public sealed class ImportedDomainEnforcementTests
     /// persisted by the parser yet accepts a value outside anything the source declared; each enforceable
     /// variant rejects it.
     /// </summary>
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [Operation(Operations.ApplyEdits)]
     [InlineData("""{ "type": "codedValue", "name": "EmptyCodes", "codedValues": [] }""", false)]

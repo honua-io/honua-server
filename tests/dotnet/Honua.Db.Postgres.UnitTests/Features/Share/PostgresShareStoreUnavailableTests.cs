@@ -18,6 +18,7 @@ namespace Honua.Db.Postgres.Tests.Features.Share;
 /// Verifies Share Postgres stores translate durable store outages to store-unavailable exceptions
 /// so admin endpoints can return retryable 503 responses instead of generic 500s.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class PostgresShareStoreUnavailableTests
 {
     [Fact]

@@ -15,6 +15,7 @@ using Org.BouncyCastle.Security;
 
 namespace Honua.Server.Tests.Features.StudioAi;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class StudioAiTranscriptSignerTests
 {
     [Fact]

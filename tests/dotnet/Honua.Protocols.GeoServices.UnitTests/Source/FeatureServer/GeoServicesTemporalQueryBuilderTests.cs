@@ -62,6 +62,7 @@ public sealed class GeoServicesTemporalQueryBuilderTests
         expression.Should().NotBeNull();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("esriTimeRelationAfterStartTime")]
     [InlineData("esriTimeRelationBeforeStartTime")]
@@ -82,6 +83,7 @@ public sealed class GeoServicesTemporalQueryBuilderTests
         expression.Should().NotBeNull();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("afterStartTime")]
     [InlineData("beforeStartTime")]
@@ -100,6 +102,7 @@ public sealed class GeoServicesTemporalQueryBuilderTests
         act.Should().NotThrow();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("[1672527600000, 1728950400000]", "1672527600000,1728950400000", true, true)]
     [InlineData("[1672527600000,1728950400000]", "1672527600000,1728950400000", true, true)]
@@ -143,6 +146,7 @@ public sealed class GeoServicesTemporalQueryBuilderTests
         end.Should().BeNull();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("[1672527600000, 1728950400000")]
     [InlineData("1672527600000, 1728950400000]")]

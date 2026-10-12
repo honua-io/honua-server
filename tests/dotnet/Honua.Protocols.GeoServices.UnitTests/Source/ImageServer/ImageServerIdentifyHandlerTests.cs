@@ -826,6 +826,7 @@ public class ImageServerIdentifyHandlerTests
         }
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("{x: -122.498828, y: 37.838906}", null)]
     [InlineData("{x: -122.498828, y: 37.838906}", "4326")]
@@ -857,6 +858,7 @@ public class ImageServerIdentifyHandlerTests
             sr is null ? null : 4326, Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("{x:NaN,y:37.838906}")]
     [InlineData("{x:Infinity,y:37.838906}")]
@@ -876,6 +878,7 @@ public class ImageServerIdentifyHandlerTests
         await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyAsync(default, default, default, default, default, default, default);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("esriGeometryEnvelope")]
     [InlineData("esriGeometryPolygon")]
@@ -890,6 +893,7 @@ public class ImageServerIdentifyHandlerTests
     }
 
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -945,6 +949,7 @@ public class ImageServerIdentifyHandlerTests
         feature.GetProperty("geometry").TryGetProperty("spatialReference", out _).Should().BeFalse();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

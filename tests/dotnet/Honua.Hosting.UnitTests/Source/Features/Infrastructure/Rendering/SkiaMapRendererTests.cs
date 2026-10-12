@@ -234,6 +234,7 @@ public class SkiaMapRendererTests
         result.Should().NotBeEmpty();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
@@ -248,6 +249,7 @@ public class SkiaMapRendererTests
             .Which.ParamName.Should().Be("imageWidth");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
@@ -262,6 +264,7 @@ public class SkiaMapRendererTests
             .Which.ParamName.Should().Be("imageHeight");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
@@ -275,6 +278,7 @@ public class SkiaMapRendererTests
             .Which.ParamName.Should().Be("width");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]

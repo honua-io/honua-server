@@ -14,6 +14,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 /// recording, expiry, and scope isolation. Exercises the in-process path of the shared
 /// <see cref="IdempotencyPayloadStore"/>.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class ReplicaUploadIdempotencyStoreTests
 {
     private static readonly ReplicaUploadRecord Recorded = new() { Fingerprint = "f00d", AppliedAdds = 1, ServerGeneration = 7 };

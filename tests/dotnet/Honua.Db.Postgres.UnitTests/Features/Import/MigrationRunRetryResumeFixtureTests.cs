@@ -21,6 +21,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// in-process pipeline driven by a JSON fixture so the test stays fast and can run on
 /// the PR gate alongside the other Postgres test-project fixtures.
 /// </remarks>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class MigrationRunRetryResumeFixtureTests
 {
     private const string RunId = "fixture-geoserver-small-001";

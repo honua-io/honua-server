@@ -12,6 +12,7 @@ using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class OgcFeaturesRawGeoJsonTests
 {
     [Fact]

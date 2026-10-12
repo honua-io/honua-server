@@ -11,6 +11,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Import;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class PostgresMigrationStyleApplicatorTests
 {
     private const string ConvertedLayers = """

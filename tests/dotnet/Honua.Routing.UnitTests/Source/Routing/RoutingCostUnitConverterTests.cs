@@ -13,6 +13,7 @@ namespace Honua.Server.Tests.Routing;
 /// declared contract that maps the topology's raw pgRouting cost weight onto the
 /// travel-time minutes the routing request/response surface speaks in (#2008).
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class RoutingCostUnitConverterTests
 {
     [Theory]

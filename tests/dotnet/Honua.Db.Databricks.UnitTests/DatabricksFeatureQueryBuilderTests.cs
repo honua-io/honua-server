@@ -10,6 +10,7 @@ using Honua.Db.Databricks.Features.Infrastructure;
 
 namespace Honua.Db.Databricks.Tests;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public class DatabricksFeatureQueryBuilderTests
 {
     private static readonly DatabricksFeatureQueryBuilder Builder = new();

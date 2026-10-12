@@ -25,6 +25,7 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoServerImportServiceApplyPlanTests
 {
     private static readonly JsonSerializerOptions SerializerOptions = new()

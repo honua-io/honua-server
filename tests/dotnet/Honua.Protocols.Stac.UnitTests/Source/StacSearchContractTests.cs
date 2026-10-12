@@ -14,6 +14,7 @@ namespace Honua.Server.Tests.Features.Protocols.Stac;
 /// or container, so canonical extension-field regressions fail locally before the endpoint
 /// integration suite is available.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class StacSearchContractTests
 {
     /// <summary>

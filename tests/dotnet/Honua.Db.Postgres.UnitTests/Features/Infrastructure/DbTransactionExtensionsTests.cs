@@ -15,6 +15,7 @@ namespace Honua.Db.Postgres.Tests.Features.Infrastructure;
 /// <see cref="CancellationToken.None"/> to the underlying commit so the in-flight
 /// round-trip is never interrupted.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class DbTransactionExtensionsTests
 {
     [Fact]

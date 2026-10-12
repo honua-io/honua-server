@@ -19,6 +19,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 
 public sealed class GeoServicesQueryParameterAdapterTests
 {
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task ConvertAsync_WithoutResultRecordCount_UsesAdvertisedMaxRecordCount()
     {

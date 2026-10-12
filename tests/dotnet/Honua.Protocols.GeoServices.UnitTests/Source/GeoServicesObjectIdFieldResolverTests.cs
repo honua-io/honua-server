@@ -7,6 +7,7 @@ using Honua.Protocols.GeoServices;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoServicesObjectIdFieldResolverTests
 {
     [Theory]

@@ -91,6 +91,7 @@ public sealed class GeoServicesGeometryParserTests
         error!.Should().Contain("four");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("esriGeometryPoint")]
     [InlineData("esriGeometryMultipoint")]

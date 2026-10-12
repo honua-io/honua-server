@@ -17,6 +17,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerMosaicRuleTests
 {
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [Trait("Category", "Unit")]
     [Operation(Operations.Export)]
@@ -118,6 +119,7 @@ public class ImageServerMosaicRuleTests
 
     // #4063: the raster store orders ByAttribute by the attribute itself, not by distance from a
     // base sortValue, so a base value is unsupported while a direction token still executes.
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [Trait("Category", "Unit")]
     [Operation(Operations.Export)]

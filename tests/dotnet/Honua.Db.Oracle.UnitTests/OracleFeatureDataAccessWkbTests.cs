@@ -11,6 +11,7 @@ namespace Honua.Db.Oracle.Tests;
 /// types (DBNull included), masking driver upgrade regressions and server-side conversion
 /// errors by dropping geometry for the row rather than throwing a diagnostic exception.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class OracleFeatureDataAccessWkbTests
 {
     [Fact]

@@ -8,6 +8,7 @@ using Honua.Db.Databricks.Queries.Filters;
 
 namespace Honua.Db.Databricks.Tests;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class DatabricksSqlFilterTranslatorTests
 {
     [Fact]

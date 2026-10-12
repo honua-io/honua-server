@@ -84,6 +84,7 @@ public sealed class SceneTileCatalogTests
         SceneTileCatalog.ToBoundingVolume(volume: null).Should().BeNull();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0)] // empty region
     [InlineData(4)] // horizontal-only, missing min/max height
@@ -99,6 +100,7 @@ public sealed class SceneTileCatalogTests
         SceneTileCatalog.ToBoundingVolume(volume).Should().BeNull();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("tiles/0.b3dm", Proto.TileContentType.B3Dm)]
     [InlineData("model.glb", Proto.TileContentType.Glb)]
@@ -141,6 +143,7 @@ public sealed class SceneTileCatalogTests
         SceneTileCatalog.IntersectsExtent(node, filter).Should().BeTrue();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0)] // region entirely absent
     [InlineData(3)] // shorter than the 4 horizontal elements TryDecodeRegion needs

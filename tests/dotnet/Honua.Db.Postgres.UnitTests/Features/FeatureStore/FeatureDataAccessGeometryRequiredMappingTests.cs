@@ -15,6 +15,7 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 /// constraint actually fired), so it can never wrongly reject a valid attribute-only
 /// create on a nullable geometry column (Issue #45).
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureDataAccessGeometryRequiredMappingTests
 {
     private static PostgresException NotNullViolation(string columnName) =>

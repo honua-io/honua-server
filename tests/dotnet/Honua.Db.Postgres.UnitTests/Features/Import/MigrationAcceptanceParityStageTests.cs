@@ -30,6 +30,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// per fixture deterministically while routing manual-review resources through the manual-review
 /// classification path.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class MigrationAcceptanceParityStageTests
 {
     private static readonly JsonSerializerOptions ArtifactJsonOptions = new()

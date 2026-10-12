@@ -17,6 +17,7 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 /// <c>geometry</c> references under bytea storage or a trailing LIMIT after
 /// buffer aggregation) fail loudly at unit-test time.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureQueryBuilderAnalyticsTests
 {
     [Fact]

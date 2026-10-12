@@ -15,6 +15,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
 /// the transformable CRS set directly, mirroring the bounded set the handler builds
 /// from the CRS registry at runtime.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class Wcs20RequestCrsValidationTests
 {
     // Native 4326 coverage; supported set matches the default {native, 4326, 3857}.

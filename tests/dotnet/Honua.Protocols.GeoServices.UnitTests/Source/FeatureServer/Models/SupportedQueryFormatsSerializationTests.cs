@@ -18,6 +18,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Models
 /// (string-or-array) read path the internal <c>string[]</c> contract relies on, and
 /// verify the response DTOs apply the converter.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class SupportedQueryFormatsSerializationTests
 {
     private sealed record Holder

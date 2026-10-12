@@ -7,6 +7,7 @@ namespace Honua.Db.MySql.Tests;
 /// Validates the startup-time configuration validator surfaces meaningful errors
 /// for missing connection strings, missing layers, and incomplete layer mappings.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public class MySqlOptionsValidatorTests
 {
     [Fact]

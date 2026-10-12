@@ -9,6 +9,7 @@ using Oracle.ManagedDataAccess.Client;
 
 namespace Honua.Db.Oracle.Tests;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class OracleConnectionDriverTests
 {
     [Theory]

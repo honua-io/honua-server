@@ -9,6 +9,7 @@ namespace Honua.Server.Tests.Routing;
 /// <summary>
 /// Provider-neutral batched topology edit validation contract tests (#2716).
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class NetworkTopologyEditValidationTests
 {
     private const int Srid = 4326;

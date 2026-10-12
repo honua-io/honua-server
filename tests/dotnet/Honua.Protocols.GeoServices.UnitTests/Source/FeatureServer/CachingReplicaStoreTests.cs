@@ -13,6 +13,7 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class CachingReplicaStoreTests
 {
     [Fact]

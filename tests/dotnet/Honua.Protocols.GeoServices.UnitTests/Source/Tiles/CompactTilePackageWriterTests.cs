@@ -209,6 +209,7 @@ public sealed class CompactTilePackageWriterTests
         }
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [Trait("Category", "Unit")]
     [Operation(Operations.Export)]

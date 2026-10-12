@@ -51,6 +51,7 @@ public class OracleFeatureQueryBuilderTests
         return OracleLayerMapping.FromStorage(TestLayerId, storage);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_TextSearch_BindsLiteralTermsInProviderDialect()
     {
@@ -74,6 +75,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Equal("closed", result.WhereParameters[2]);
         Assert.Equal("closed", result.WhereParameters[3]);
     }
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_DefaultQuery_ProjectsKeyAndGeometryAndAttributes()
     {
@@ -91,6 +93,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Empty(result.WhereParameters);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_NoSchema_OmitsOwnerQualifier()
     {
@@ -102,6 +105,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.DoesNotContain("..\"PARCELS\"", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_PaginationWithoutOrderBy_FallsBackToPrimaryKeyOrder()
     {
@@ -117,6 +121,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Equal(25, result.WhereParameters[1]);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_OrderByCustom_UsesProvidedColumns()
     {
@@ -133,6 +138,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Contains("FETCH NEXT :p1 ROWS ONLY", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("eo:cloud_cover")]
     [InlineData("owner.name")]
@@ -149,6 +155,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Contains($"ORDER BY \"{fieldName}\" ASC", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("name;DROP")]
     [InlineData("owner name")]
@@ -164,6 +171,7 @@ public class OracleFeatureQueryBuilderTests
             OracleFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WhereWithLiteralAndNullCheck_ProducesParameterizedSql()
     {
@@ -178,6 +186,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Equal("Alpha", result.WhereParameters[0]);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WhereFieldCasingDiffersFromCatalog_UsesPhysicalOracleIdentifier()
     {
@@ -188,6 +197,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Contains("\"NAME\" = :p0", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WhereFieldExactlyMatchesCaseDistinctColumn_PreservesExactIdentifier()
     {
@@ -199,6 +209,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.DoesNotContain("\"NAME\" = :p0", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_AttributeDifferingFromPrimaryKeyOnlyByCase_PreservesExactIdentifier()
     {
@@ -212,6 +223,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.DoesNotContain("\"ID\" = :p0", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_OutFieldsWithCaseDistinctNames_ProjectsOnlyExactAttributes()
     {
@@ -226,6 +238,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.DoesNotContain(", \"name\"", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_EmptyOutFields_OmitsAttributeColumns()
     {
@@ -250,6 +263,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.DoesNotContain("\"category\"", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_AmbiguousCaseDistinctOutField_Throws()
     {
@@ -262,6 +276,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Contains("ambiguously matches", exception.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WhereFieldAmbiguouslyMatchesCaseDistinctColumns_FailsClosed()
     {
@@ -272,6 +287,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Contains("\"Name\" = :p0", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_StacCandidateInWhere_UsesOracleParameters()
     {
@@ -283,6 +299,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Equal(new object?[] { "first", "second" }, result.WhereParameters);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_ObjectIdsFilter_GeneratesInClause()
     {
@@ -295,6 +312,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Equal(3, result.WhereParameters.Count);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_IntersectsFilter_UsesSdoRelateAnyInteract()
     {
@@ -311,6 +329,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Equal(new byte[] { 0x01, 0x02, 0x03 }, result.WhereParameters[0]);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithinFilter_UsesInsideCoveredbyMask()
     {
@@ -328,6 +347,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Contains($"SDO_RELATE({StampedWkb4326}, \"SHAPE\", 'mask=INSIDE+COVEREDBY') = 'TRUE'", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_ContainsFilter_UsesContainsCoversMask()
     {
@@ -345,6 +365,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Contains($"SDO_RELATE({StampedWkb4326}, \"SHAPE\", 'mask=CONTAINS+COVERS') = 'TRUE'", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_DisjointFilter_NegatesAnyInteract()
     {
@@ -359,6 +380,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Contains($"NOT (SDO_RELATE(\"SHAPE\", {StampedWkb4326}, 'mask=ANYINTERACT') = 'TRUE')", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_EnvelopeIntersects_UsesSdoMbrColumn()
     {
@@ -373,6 +395,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Contains($"SDO_RELATE(SDO_GEOM.SDO_MBR(\"SHAPE\"), {StampedWkb4326}, 'mask=ANYINTERACT') = 'TRUE'", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_DistanceFilter_NotSupported_Throws()
     {
@@ -386,6 +409,7 @@ public class OracleFeatureQueryBuilderTests
             () => OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_SqlFilterWithoutWhere_ThrowsNotSupported()
     {
@@ -406,6 +430,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Contains("Oracle", ex.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildCountQuery_SqlFilterWithoutWhere_ThrowsNotSupported()
     {
@@ -419,6 +444,7 @@ public class OracleFeatureQueryBuilderTests
             () => OracleFeatureQueryBuilder.BuildCountQuery(mapping, query));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_SRV_DB_008_WhereAndSqlFilterFailsClosed()
     {
@@ -435,6 +461,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Contains("cannot safely combine", exception.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_SRV_DB_008_NoOpWhereWithObjectIdInListUsesPrimaryKey()
     {
@@ -456,6 +483,7 @@ public class OracleFeatureQueryBuilderTests
         AssertObjectIdParameters(extent, "\"id\" IN (:p0, :p1)");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_SRV_DB_008_ParenthesizedNoOpWhereStillLiftsObjectIds()
     {
@@ -560,6 +588,7 @@ public class OracleFeatureQueryBuilderTests
         AssertObjectIdParameters(extent, "\"id\" IN (:p0, :p1)");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_SRV_DB_008_NoOpWhereWithTimeSqlFilterFailsClosed()
     {
@@ -580,6 +609,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Contains("cannot safely combine", extent.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_SRV_DB_008_ProvedWhereTranslationIsReparsed()
     {
@@ -600,6 +630,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Equal(new object?[] { "Alpha" }, result.WhereParameters);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_SRV_DB_008_ProvedWhereAndObjectIdsKeepsBoth()
     {
@@ -624,6 +655,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Equal(new object?[] { "Alpha", 7L, 9L }, result.WhereParameters);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_SRV_DB_010_EwkbIsNormalizedAndSridAssigned()
     {
@@ -649,6 +681,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.DoesNotContain("FROM_WKBGEOMETRY(:p0,", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildCountQuery_ProducesCountSelect()
     {
@@ -660,6 +693,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Contains("FROM \"GIS\".\"PARCELS\"", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildExtentQuery_UsesSdoAggrMbrAndOrdinates()
     {
@@ -674,6 +708,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Contains("WHERE \"SHAPE\" IS NOT NULL", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildObjectIdsQuery_ReturnsOnlyPrimaryKey()
     {
@@ -686,6 +721,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.DoesNotContain("TO_WKBGEOMETRY", result.Sql, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_InvalidFieldName_RejectsInjection()
     {
@@ -696,6 +732,7 @@ public class OracleFeatureQueryBuilderTests
             () => OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void FromStorage_RejectsInvalidIdentifier()
     {
@@ -708,6 +745,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Throws<ArgumentException>(() => OracleLayerMapping.FromStorage(TestLayerId, storage));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("PARCELS", true)]
     [InlineData("PARCELS\n", false)]
@@ -717,6 +755,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Equal(expected, OracleIdentifier.IsValid(value));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void FromStorage_DefaultsToNoSchema()
     {
@@ -732,6 +771,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Equal("\"PARCELS\"", mapping.QuotedTableReference);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_TemporalFilter_ThrowsNotSupported()
     {
@@ -752,6 +792,7 @@ public class OracleFeatureQueryBuilderTests
         Assert.Contains("Temporal filters", ex.Message, StringComparison.Ordinal);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void CountObjectIdsAndExtentQueries_TemporalFilter_ThrowNotSupported()
     {

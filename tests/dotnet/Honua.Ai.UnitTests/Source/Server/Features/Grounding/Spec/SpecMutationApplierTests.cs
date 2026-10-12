@@ -12,6 +12,7 @@ namespace Honua.Server.Tests.Features.Grounding.Spec;
 /// Regression coverage for grounding mutations that materialize typed spec
 /// literals from planner-emitted strings.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class SpecMutationApplierTests
 {
     [Theory]

@@ -18,6 +18,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles;
 /// paths so OGC API Tiles 16/16 conformance does not regress. A drift here means the gridset
 /// generalization changed advertised metadata and the WMTS/Tiles CITE suites must be re-checked.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public class TileMatrixSetDefinitionSnapshotTests
 {
     private static readonly TileLimits Limits = new() { MinTileZoom = 0, MaxTileZoom = 18 };

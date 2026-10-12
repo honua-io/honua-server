@@ -11,6 +11,7 @@ using Xunit.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureAttributeJsonReaderTests(ITestOutputHelper output)
 {
     [Theory]

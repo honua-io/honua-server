@@ -14,6 +14,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class RelatedRecordsServiceTests
 {
     [Fact]

@@ -155,6 +155,7 @@ public sealed class ResiliencePoliciesTests
             "tripping the breaker on one data source must not affect another");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("57P03", true)]   // cannot_connect_now
     [InlineData("08000", true)]   // connection_exception

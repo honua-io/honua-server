@@ -388,6 +388,7 @@ public sealed class AnthropicStudioAiProxyAdapterTests
         handler.CapturedRequestBody.Should().Contain("\"system\":\"You are a GIS analyst.\\n\\nBe terse.\"");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("data: {not-json}\n\n")]
     [InlineData("data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude\"}}\n\ndata: {bad}\n\ndata: {\"type\":\"message_stop\"}\n\n")]
@@ -401,6 +402,7 @@ public sealed class AnthropicStudioAiProxyAdapterTests
         events.Last().ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude\"}}\n\ndata: {\"type\":\"message_stop\"}\n\n")]
     [InlineData("data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude\"}}\n\ndata: {\"type\":\"message_delta\",\"delta\":{}}\n\ndata: {\"type\":\"message_stop\"}\n\n")]

@@ -15,6 +15,7 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 /// must emit byte-identical SQL to the non-versioned base path. A non-DEFAULT version overlays the
 /// version_edits table onto DEFAULT.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureQueryBuilderVersionTests
 {
     private static readonly Guid SampleVersionId = Guid.Parse("11111111-2222-3333-4444-555555555555");

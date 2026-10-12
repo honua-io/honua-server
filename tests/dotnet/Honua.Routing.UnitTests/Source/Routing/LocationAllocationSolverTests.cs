@@ -14,6 +14,7 @@ namespace Honua.Server.Tests.Routing;
 /// maximize-coverage and bounded minimize-facilities objectives over a fixed
 /// impedance matrix.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class LocationAllocationSolverTests
 {
     private static LocationAllocationSolveRequest Request(

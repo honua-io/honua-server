@@ -29,6 +29,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// <see cref="MigrationReadinessStageReport"/>, classifying each source as <c>ready</c>,
 /// <c>conditional</c>, or <c>not-ready</c> with cited evidence artifact hashes.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class MigrationAcceptanceReadinessStageTests
 {
     private static readonly JsonSerializerOptions ArtifactJsonOptions = new()

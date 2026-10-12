@@ -13,6 +13,7 @@ using Honua.Ai.Grounding.Spec;
 
 namespace Honua.Server.Tests.Features.Grounding.Spec;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class SpecGroundingServiceTests
 {
     [Fact]

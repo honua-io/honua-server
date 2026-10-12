@@ -671,6 +671,7 @@ public sealed class McpAuthorizationHelperTests
         }
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void ResolveDistinctPrincipalKey_WithOnlyRawSubject_FailsClosed()
     {

@@ -73,6 +73,7 @@ public sealed class FileSystemGeoprocessingOutputObjectStoreTests : IDisposable
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("/rooted.tif")]
     [InlineData("../escape.tif")]

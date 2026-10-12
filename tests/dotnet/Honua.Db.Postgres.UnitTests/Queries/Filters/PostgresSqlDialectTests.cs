@@ -13,6 +13,7 @@ namespace Honua.Db.Postgres.Tests.Queries.Filters;
 /// surface. Identifier quoting drift between providers was the SQL-injection boundary
 /// risk audit C4 was closing — these tests are the regression net.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class PostgresSqlDialectTests
 {
     // Deliberately typed through the interface — these tests assert the ISqlDialect contract

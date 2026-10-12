@@ -20,6 +20,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles;
 /// secondary/additional provider connection must route to that provider's reader/tile
 /// capability rather than the DI-registered primary reader/tile provider.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class TileFeatureProviderResolverTests
 {
     [Fact]

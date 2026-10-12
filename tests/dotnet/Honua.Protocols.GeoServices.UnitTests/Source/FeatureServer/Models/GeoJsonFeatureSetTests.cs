@@ -7,6 +7,7 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Models;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoJsonFeatureSetTests
 {
     [Fact]

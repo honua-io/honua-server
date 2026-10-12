@@ -12,6 +12,7 @@ namespace Honua.Server.Tests.Infrastructure.Middleware;
 /// Unit tests for <see cref="DefaultAuditActionResolver"/> — the data-driven
 /// audit coverage matrix that keeps audit emission middleware-driven (#507).
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class DefaultAuditActionResolverTests
 {
     private readonly DefaultAuditActionResolver _resolver = new();

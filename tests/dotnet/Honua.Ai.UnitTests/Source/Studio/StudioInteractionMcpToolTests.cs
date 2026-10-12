@@ -215,6 +215,7 @@ public sealed class StudioInteractionMcpToolTests
         error.Which.Message.Should().Contain("does not resolve");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("featureDoubleClick", "setFilter")]
     [InlineData("featureSelect", "setBasemap")]
@@ -355,6 +356,7 @@ public sealed class StudioInteractionMcpToolTests
         await act.Should().ThrowAsync<GeoprocessingValidationException>();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("""{"draftId":"22222222-2222-2222-2222-222222222222","generation":1}""")]
     [InlineData("""{"draftId":"22222222-2222-2222-2222-222222222222","generation":1,"interaction":{"id":"i1"}}""")]
@@ -414,6 +416,7 @@ public sealed class StudioInteractionMcpToolTests
         error.Which.Message.Should().Contain("must be a JSON boolean");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData("\"disable\":true")]
     [InlineData("\"on\":{\"ref\":\"layer:parcels\",\"event\":\"featureSelect\",\"once\":true}")]

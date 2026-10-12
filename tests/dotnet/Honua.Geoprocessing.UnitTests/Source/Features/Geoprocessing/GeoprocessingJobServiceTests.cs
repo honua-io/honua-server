@@ -24,7 +24,6 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Security;
 using Honua.Geoprocessing.CustomCode;
-using Honua.Protocols.GeoServices.GPServer;
 using Honua.ControlPlane;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -3413,7 +3412,7 @@ public sealed class GeoprocessingJobServiceTests
         result.Artifacts.Should().ContainSingle();
         result.Artifacts[0].Kind.Should().Be(ArtifactKind.FeatureLayer);
         result.Artifacts[0].Uri.Should().Be("https://example.test/artifacts/output.geojson");
-        result.Artifacts[0].Metadata.Should().ContainKey(GPServerParameterTranslation.OutputParameterMetadataKey)
+        result.Artifacts[0].Metadata.Should().ContainKey(GeoprocessingProtocolMetadataKeys.GeoServicesOutputParameterMetadataKey)
             .WhoseValue.Should().Be("outputFeatureLayer");
         await _resultPackageStore.Received(1).SetAsync(
             "job-1",

@@ -11,6 +11,7 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Admin;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class LayerPublicationNamespaceTests
 {
     [Theory]

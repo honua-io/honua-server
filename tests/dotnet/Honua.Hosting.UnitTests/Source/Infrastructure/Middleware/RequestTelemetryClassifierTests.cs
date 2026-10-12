@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class RequestTelemetryClassifierTests
 {
     [Theory]

@@ -50,6 +50,7 @@ public sealed class QueryFormatterTests
         await act.Should().ThrowAsync<GeoParquetLimitExceededException>();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -74,6 +75,7 @@ public sealed class QueryFormatterTests
         result.Features.Should().ContainSingle().Subject.Attributes.Should().Contain("large_int", value);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task FormatQueryResultAsync_WithOutputSrid_SetsTopLevelSpatialReferenceOnly()
     {
@@ -110,6 +112,7 @@ public sealed class QueryFormatterTests
         queryResponse.Features[0].Geometry?.SpatialReference.Should().BeNull();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task FormatQueryResultAsync_WithJsonReturnCentroid_OnPolygonLayer_EmitsCentroidWithoutGeometry()
     {
@@ -153,6 +156,7 @@ public sealed class QueryFormatterTests
         json.Should().NotContain("\"geometry\"");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task FormatQueryResultAsync_WithGeoJson_UsesSharedIdAndPropertyProjection()
     {
@@ -193,6 +197,7 @@ public sealed class QueryFormatterTests
         geoJson.Features[0].Properties.Should().NotContainKey("OBJECTID");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task FormatQueryResultAsync_WithGeoJson_AllFields_PreservesObjectIdAlias()
     {
@@ -232,6 +237,7 @@ public sealed class QueryFormatterTests
         geoJson.Features[0].Properties.Should().Contain("name", "alpha");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task FormatQueryResultAsync_WithJson_AllFields_PreservesObjectIdAlias()
     {
@@ -268,6 +274,7 @@ public sealed class QueryFormatterTests
         queryResponse.Features[0].Attributes.Should().Contain("name", "alpha");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task FormatQueryResultAsync_WithDeclaredField_IncludesInJsonAndGeoJson()
     {
@@ -322,6 +329,7 @@ public sealed class QueryFormatterTests
         geoJson.Features[0].Properties.Should().Contain("secret", "hidden");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task FormatQueryResultAsync_WithGeoJsonAndMeasuredGeometry_DropsMOrdinate()
     {
@@ -365,6 +373,7 @@ public sealed class QueryFormatterTests
         coordinates[2].GetDouble().Should().Be(3);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task FormatQueryResultAsync_WithJson_OmitsNullExtentAndFalseDimensionFlags()
     {
@@ -409,6 +418,7 @@ public sealed class QueryFormatterTests
         geometry.TryGetProperty("hasM", out _).Should().BeFalse();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task FormatQueryResultAsync_WithJson_PointPrecision_RoundsCoordinates()
     {
@@ -445,6 +455,7 @@ public sealed class QueryFormatterTests
         queryResponse.Features[0].Geometry!.Y.Should().Be(2.77);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task FormatQueryResultAsync_WithJson_ExcludesUndeclaredAttributes()
     {
@@ -483,6 +494,7 @@ public sealed class QueryFormatterTests
         attributes.Should().NotContainKey("objectid");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task FormatQueryResultAsync_WithJsonAndProjectedFields_PreservesPublicObjectId()
     {
@@ -522,6 +534,7 @@ public sealed class QueryFormatterTests
         attributes.Should().NotContainKey("objectid");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task FormatQueryResultAsync_WithJson_StringIdAndNumericObjectId_UsesObjectIdField()
     {
@@ -565,6 +578,7 @@ public sealed class QueryFormatterTests
         attributes.Should().Contain(FieldNames.ObjectId, 42L);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task FormatQueryResultAsync_WithJson_RuntimeDistance_IncludesFieldAndAttribute()
     {
@@ -603,6 +617,7 @@ public sealed class QueryFormatterTests
         queryResponse.Features[0].Attributes.Should().Contain("distance", 12.5);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task FormatQueryResultAsync_GeoJson_MultipartPolygon_EmitsMultiPolygonNotGeometryCollection()
     {
@@ -618,6 +633,7 @@ public sealed class QueryFormatterTests
         geoJson.Features[0].Geometry!.Geometries.Should().BeNull("a Multi* geometry has coordinates, not nested geometries");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task FormatQueryResultAsync_GeoJson_MultipartPolyline_EmitsMultiLineString()
     {
@@ -629,6 +645,7 @@ public sealed class QueryFormatterTests
         geoJson.Features[0].Geometry!.Type.Should().Be("MultiLineString");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task FormatQueryResultAsync_GeoJson_MultipartPoint_EmitsMultiPoint()
     {
@@ -640,6 +657,7 @@ public sealed class QueryFormatterTests
         geoJson.Features[0].Geometry!.Type.Should().Be("MultiPoint");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task FormatQueryResultAsync_GeoJson_SinglePartHoledPolygon_StaysPolygon()
     {

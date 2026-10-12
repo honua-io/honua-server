@@ -27,6 +27,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// artifact contracts shipped by issue #1024 slice 1 (no credentials in artifact output, unsupported
 /// items are classified, deterministic re-run produces identical output).
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class MigrationAcceptanceScanStageTests
 {
     private static readonly JsonSerializerOptions ArtifactJsonOptions = new()

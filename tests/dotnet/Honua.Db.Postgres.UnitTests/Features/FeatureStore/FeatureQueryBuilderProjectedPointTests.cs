@@ -8,6 +8,7 @@ using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Db.Postgres.Features.F
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureQueryBuilderProjectedPointTests
 {
     [Fact]

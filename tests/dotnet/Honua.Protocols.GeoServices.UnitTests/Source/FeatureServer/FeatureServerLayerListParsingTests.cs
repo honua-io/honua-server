@@ -21,6 +21,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 /// bracketed JSON-array form (<c>[0]</c> / <c>[0,1]</c>), while the comma-separated
 /// form (<c>0</c> / <c>0,1</c>) is also widely used. Both forms must parse identically.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureServerLayerListParsingTests
 {
     [Theory]

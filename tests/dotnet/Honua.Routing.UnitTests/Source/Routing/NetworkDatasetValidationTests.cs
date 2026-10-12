@@ -15,6 +15,7 @@ namespace Honua.Server.Tests.Routing;
 /// Unit tests (no database) for network-dataset editing validation (#1882) and the
 /// Postgres-only registration of the editing store.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class NetworkDatasetValidationTests
 {
     [Theory]

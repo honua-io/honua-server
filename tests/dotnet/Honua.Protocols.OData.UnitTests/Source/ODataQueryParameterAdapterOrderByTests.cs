@@ -18,6 +18,7 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 /// The OData adapter is the only protocol adapter that requests an explicit
 /// <see cref="NullOrdering"/>; every other adapter leaves the provider default.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class ODataQueryParameterAdapterOrderByTests
 {
     private readonly ODataQueryParameterAdapter _adapter = new(

@@ -232,6 +232,7 @@ public class StyleTranslatorTests
         StyleTranslator.ShouldRenderLayer(layers[0], RenderZoom.NotDerivable("unit test")).Should().BeFalse();
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null, true)]
     [InlineData(4.99, false)]
@@ -246,6 +247,7 @@ public class StyleTranslatorTests
         StyleTranslator.ShouldRenderLayer(layers[0], renderZoom).Should().Be(expected);
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(4.99, false)]
     [InlineData(5.0, true)]

@@ -7,6 +7,7 @@ using Honua.Db.Postgres.Features.Scene;
 
 namespace Honua.Db.Postgres.Tests.Features.Scene;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class CompositeSceneDatasetRegistryTests
 {
     private const string SlugFromPostgres = "downtown";

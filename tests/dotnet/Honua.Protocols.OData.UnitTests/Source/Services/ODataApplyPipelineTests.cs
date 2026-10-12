@@ -16,6 +16,7 @@ namespace Honua.Protocols.OData.Tests.Services;
 [Trait("Category", "Unit")]
 [Trait("Component", "OData")]
 [Trait("Feature", "Apply")]
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class ODataApplyPipelineTests
 {
     [Fact]

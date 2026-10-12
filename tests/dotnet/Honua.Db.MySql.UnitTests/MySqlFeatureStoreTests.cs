@@ -18,6 +18,7 @@ namespace Honua.Db.MySql.Tests;
 /// Unit tests for <see cref="MySqlFeatureStore"/> behaviours that do not require a real
 /// MySQL/MariaDB connection — primarily streaming-path budget handling.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public class MySqlFeatureStoreTests
 {
     private const int LayerId = 1;

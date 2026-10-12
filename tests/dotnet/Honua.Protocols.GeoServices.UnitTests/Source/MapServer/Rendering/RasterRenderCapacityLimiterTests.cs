@@ -6,6 +6,7 @@ using Honua.Infrastructure.Rendering;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.Rendering;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class RasterRenderCapacityLimiterTests
 {
     [Fact]

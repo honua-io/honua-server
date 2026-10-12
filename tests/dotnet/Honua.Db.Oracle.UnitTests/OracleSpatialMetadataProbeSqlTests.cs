@@ -12,6 +12,7 @@ namespace Honua.Db.Oracle.Tests;
 /// the parameter through <c>UPPER()</c> would silently miss valid <c>SDO_GEOMETRY</c>
 /// columns on tables created with quoted lower- or mixed-case names.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public class OracleSpatialMetadataProbeSqlTests
 {
     [Fact]
