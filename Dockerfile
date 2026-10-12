@@ -37,6 +37,7 @@ RUN groupadd --gid 1001 --system builduser && \
 # Restore sees project/configuration inputs only. The extraction stage tracks
 # additions automatically without tying NuGet restore to every source edit.
 COPY --from=restore-inputs /restore-inputs/ ./
+COPY eng/Honua.BuildProfiles.props eng/
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 
 ARG TARGETARCH

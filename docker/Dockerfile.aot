@@ -47,6 +47,7 @@ RUN apt-get update && \
 # The extraction stage discovers project/configuration files automatically;
 # ordinary source edits do not invalidate this restore-input tree.
 COPY --from=restore-inputs /restore-inputs/ ./
+COPY eng/Honua.BuildProfiles.props eng/
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 
 ARG TARGETARCH
