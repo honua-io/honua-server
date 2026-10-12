@@ -40,6 +40,13 @@ internal enum McpSessionTermination
     /// <summary>The session was not held by this instance.</summary>
     NotFound,
 
+    /// <summary>
+    /// The session is stateless (<see cref="McpSessionMode.Stateless"/>): its
+    /// node-local work here was ended, but the id stays valid on every instance
+    /// until its lifetime ends, so the server does not claim to have terminated it.
+    /// </summary>
+    NotRevocable,
+
     /// <summary>The shared record could not be removed; the session may still be live elsewhere.</summary>
     StoreUnavailable
 }
@@ -68,6 +75,15 @@ internal enum McpSessionTermination
 /// The per-session notification <see cref="Channel"/>, its lifetime token, and
 /// the job-to-session index are inherently node-local (they back the SSE
 /// stream held open on this node) and are never shared.
+/// </para>
+/// <para>
+/// Without a store on a host that runs as several instances, sessions are
+/// stateless (<see cref="McpSessionMode.Stateless"/>): the id minted at
+/// <c>initialize</c> is a signed token (<see cref="McpStatelessSessionTokens"/>)
+/// carrying the negotiated view, elicitation flag, and principal binding, so any
+/// instance validates it and rebuilds the session with no shared memory. The
+/// in-memory table is then only a cache of node-local state; an id that fails
+/// the signature, lifetime, or principal check is refused exactly as before.
 /// </para>
 /// <para>
 /// Each session owns a bounded notification channel (honua-server#1954). The
@@ -136,6 +152,7 @@ internal sealed class McpSessionManager
     private readonly McpSessionEvictionPolicy _evictionPolicy;
     private readonly TimeProvider _timeProvider;
     private readonly IMcpSessionStore? _store;
+    private readonly McpStatelessSessionTokens? _statelessTokens;
     private readonly ILogger? _logger;
 
     // Held for the manager's (process) lifetime; the multiplexer owns teardown.
@@ -155,7 +172,8 @@ internal sealed class McpSessionManager
         TimeProvider? timeProvider = null,
         int maxAnonymousSessions = 1_000,
         IMcpSessionStore? store = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        McpStatelessSessionTokens? statelessTokens = null)
     {
         _maxSessions = maxSessions > 0 ? maxSessions : 1;
         _maxAnonymousSessions = Math.Clamp(maxAnonymousSessions, 1, _maxSessions);
@@ -164,6 +182,10 @@ internal sealed class McpSessionManager
         _evictionPolicy = evictionPolicy;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _store = store;
+
+        // A shared store is authoritative and supports revocation; stateless ids are
+        // only for hosts without one.
+        _statelessTokens = store is null ? statelessTokens : null;
         _logger = logger;
 
         // A DELETE served by another replica must end this replica's node-local
@@ -194,6 +216,12 @@ internal sealed class McpSessionManager
     /// <see cref="IMcpSessionStore"/>.
     /// </summary>
     public bool HasSharedStore => _store is not null;
+
+    /// <summary>How this instance keeps sessions.</summary>
+    public McpSessionMode Mode =>
+        _store is not null ? McpSessionMode.Shared
+        : _statelessTokens is not null ? McpSessionMode.Stateless
+        : McpSessionMode.InMemory;
 
     /// <summary>
     /// <c>true</c> when this instance receives other instances' session removals.
@@ -338,7 +366,7 @@ internal sealed class McpSessionManager
                 }
             }
 
-            var id = GenerateSessionId();
+            var id = _statelessTokens?.Mint(key, elicitationSupported, workflowView) ?? GenerateSessionId();
             _sessions[id] = new McpSession(
                 key,
                 now,
@@ -490,6 +518,13 @@ internal sealed class McpSessionManager
         // Local first: the store's removal broadcast also reaches this instance and
         // must not race the result reported here.
         var found = Terminate(sessionId);
+        if (_statelessTokens is not null)
+        {
+            // Nothing outside this process remembers the session, so it cannot be
+            // revoked on other instances: report that instead of a termination.
+            return McpSessionTermination.NotRevocable;
+        }
+
         if (_store is not null && !string.IsNullOrEmpty(sessionId))
         {
             try
@@ -635,6 +670,11 @@ internal sealed class McpSessionManager
     /// </summary>
     public McpSessionValidation ValidateAccess(string sessionId, string? principalKey)
     {
+        if (_statelessTokens is not null)
+        {
+            return ValidateStatelessAccess(sessionId, principalKey ?? AnonymousPrincipalKey);
+        }
+
         if (string.IsNullOrEmpty(sessionId) || !_sessions.TryGetValue(sessionId, out var session))
         {
             return McpSessionValidation.Unknown;
@@ -655,6 +695,42 @@ internal sealed class McpSessionManager
         // Sliding TTL: any accepted request keeps the session alive.
         session.Touch(now);
         return McpSessionValidation.Valid;
+    }
+
+    /// <summary>
+    /// Validates a stateless session id. The token is authoritative: its signature,
+    /// lifetime, and principal binding decide, and the local table only caches the
+    /// node-local state (notification channel, lifetime token, job index) of a
+    /// session this instance has served. A valid token this instance has never seen
+    /// is adopted with the view and elicitation flag it carries.
+    /// </summary>
+    private McpSessionValidation ValidateStatelessAccess(string sessionId, string callerKey)
+    {
+        if (!_statelessTokens!.TryRead(sessionId, out var claims, out var binding))
+        {
+            Terminate(sessionId);
+            return McpSessionValidation.Unknown;
+        }
+
+        if (!_statelessTokens.IsBoundTo(binding, callerKey))
+        {
+            return McpSessionValidation.PrincipalMismatch;
+        }
+
+        var now = _timeProvider.GetUtcNow();
+        if (_sessions.TryGetValue(sessionId, out var cached))
+        {
+            cached.Touch(now);
+            return McpSessionValidation.Valid;
+        }
+
+        var record = new McpSessionRecord(
+            sessionId,
+            callerKey,
+            claims.ElicitationSupported,
+            claims.WorkflowView,
+            claims.CreatedUtc);
+        return Adopt(record) ? McpSessionValidation.Valid : McpSessionValidation.Unknown;
     }
 
     /// <summary>
