@@ -658,7 +658,7 @@ assert_excludes_shard \
 # Honua.Core/Queries still escalate to run_all.
 assert_descriptor \
   "testkit-still-run-all" \
-  "tests/dotnet/Honua.TestKit/PostgresFixture.cs" \
+  "tests/dotnet/Honua.TestKit.Postgres/PostgresFixture.cs" \
   "infrastructure_change" \
   "true" \
   "Core and Cloud Contracts"

@@ -683,7 +683,7 @@ else
     # downloaded an image nothing used and then let Testcontainers pull the real
     # one cold anyway. Reading the fixture keeps the two from drifting again.
     PREPULL_IMAGE="$(grep -oE 'postgis/postgis:[0-9]+(\.[0-9]+)*-[0-9]+(\.[0-9]+)*' \
-        tests/dotnet/Honua.TestKit/PostgresFixture.cs 2>/dev/null | head -n 1 || true)"
+        tests/dotnet/Honua.TestKit.Postgres/PostgresFixture.cs 2>/dev/null | head -n 1 || true)"
     if [[ -z "${PREPULL_IMAGE}" ]]; then
         echo "   ⚠️ Could not resolve the PostGIS image from PostgresFixture.cs; skipping pre-pull"
     else

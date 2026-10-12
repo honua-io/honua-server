@@ -47,7 +47,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 STATE_DIR="${RUNNER_TEMP:-/tmp}"
-IMAGE="${HONUA_LOCAL_TARGET_POSTGIS_IMAGE:-$(grep -oE 'postgis/postgis:[0-9]+(\.[0-9]+)*-[0-9]+(\.[0-9]+)*' tests/dotnet/Honua.TestKit/PostgresFixture.cs | head -n 1)}"
+IMAGE="${HONUA_LOCAL_TARGET_POSTGIS_IMAGE:-$(grep -oE 'postgis/postgis:[0-9]+(\.[0-9]+)*-[0-9]+(\.[0-9]+)*' tests/dotnet/Honua.TestKit.Postgres/PostgresFixture.cs | head -n 1)}"
 DB_CONTAINER="honua-post-apply-postgis-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 DB_PORT="${HONUA_LOCAL_TARGET_DB_PORT:-5432}"
 DB_NAME="honua_post_apply"
