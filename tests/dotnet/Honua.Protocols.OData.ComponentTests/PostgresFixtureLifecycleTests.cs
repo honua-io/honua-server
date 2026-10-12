@@ -13,6 +13,15 @@ namespace Honua.Protocols.OData.ComponentTests;
 public sealed class PostgresFixtureLifecycleTests
 {
     [Fact]
+    public void LegacyXunitFixtureActivation_HasOneParameterlessPublicConstructor()
+    {
+        // xUnit collection fixtures reject multiple public constructors.
+        // The bounded pilot entry point must not change that activation contract.
+        var constructor = Assert.Single(typeof(PostgresFixture).GetConstructors());
+        Assert.Empty(constructor.GetParameters());
+    }
+
+    [Fact]
     public async Task DisposingUninitializedFixture_DoesNotReleaseActiveBoundedDatabase()
     {
         var active = new PostgresFixture(boundedResources: true);

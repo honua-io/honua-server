@@ -76,6 +76,13 @@ Cancellation/failure never certifies successful tests; inspect reservation
 children before retrying an interrupted run. Do not edit a worktree being used
 by another worker.
 
+Keep selected source files unchanged while a build/test invocation runs, including
+edits by its owning supervisor. A compiler can read the old source and write a DLL
+after a concurrent edit, leaving incremental timestamp checks satisfied by stale
+output. If this happens, invalidate the affected project's compilation inputs and
+rerun the affected tests. Verify executed TRX cases: a successful `dotnet test`
+exit with no matching tests is not validation.
+
 Each receipt contains the source commit and tracked-diff digest for provenance;
 these global identifiers are deliberately excluded from the artifact key. The
 key hashes the evaluated transitive restore graph, actual Compile/Content/

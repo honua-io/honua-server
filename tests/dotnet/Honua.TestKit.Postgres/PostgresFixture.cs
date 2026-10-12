@@ -47,7 +47,7 @@ public sealed class PostgresFixture : IAsyncLifetime
     }
 
     /// <summary>Optionally bounds the owned Postgres container for local component tests.</summary>
-    public PostgresFixture(bool boundedResources)
+    internal PostgresFixture(bool boundedResources)
     {
         _boundedResources = boundedResources;
     }
