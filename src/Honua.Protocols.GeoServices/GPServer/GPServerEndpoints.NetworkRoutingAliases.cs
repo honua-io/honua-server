@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Infrastructure.Helpers;
-using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Middleware;
 
 namespace Honua.Protocols.GeoServices.GPServer;
 
@@ -24,20 +24,20 @@ internal static partial class GPServerEndpoints
             .WithSummary("Submit an asynchronous routing web tool using GET").WithTags("NAServer")
             .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]));
         endpoints.MapGet($"{routingBase}/jobs/{{jobId}}",
-                static (HttpContext context, CancellationToken ct) => HandleRoutingAlias(context, ct, HandleJobStatus))
+                static (HttpContext context, CancellationToken ct) => HandleRoutingAlias(context, HandleJobStatus, ct))
             .WithName("NAServerRoutingJobStatus").WithDisplayName("NAServer Routing Job Status")
             .WithSummary("Get asynchronous routing job status").WithTags("NAServer");
         endpoints.MapGet($"{routingBase}/jobs/{{jobId}}/results/{{paramName}}",
-                static (HttpContext context, CancellationToken ct) => HandleRoutingAlias(context, ct, HandleJobResult))
+                static (HttpContext context, CancellationToken ct) => HandleRoutingAlias(context, HandleJobResult, ct))
             .WithName("NAServerRoutingJobResult").WithDisplayName("NAServer Routing Job Result")
             .WithSummary("Get a named routing job result").WithTags("NAServer");
     }
 
     private static Task<IResult> HandleRoutingSubmit(HttpContext context, CancellationToken ct)
-        => HandleRoutingAlias(context, ct, static (request, token) => HandleSubmitJob(request, token));
+        => HandleRoutingAlias(context, static (request, token) => HandleSubmitJob(request, token), ct);
 
-    private static Task<IResult> HandleRoutingAlias(HttpContext context, CancellationToken ct,
-        Func<HttpContext, CancellationToken, Task<IResult>> handler)
+    private static Task<IResult> HandleRoutingAlias(HttpContext context,
+        Func<HttpContext, CancellationToken, Task<IResult>> handler, CancellationToken ct)
         => RoutingAsyncWebTools.IsTask(context.Request.RouteValues["taskName"]?.ToString())
             ? handler(context, ct)
             : Task.FromResult(StandardErrorHelpers.CreateNotFound(context, "Routing web tool was not found."));

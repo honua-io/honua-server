@@ -8,6 +8,7 @@ using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Helpers;
@@ -2063,7 +2064,7 @@ internal static partial class GPServerEndpoints
     }
 
     private static bool IsRoutingJob(ExecutionJobRecord job)
-        => Honua.ControlPlane.GeoprocessingDispatchHelper.ResolveProcessId(job.Spec.Parameters) is { } processId
+        => Honua.Geoprocessing.Execution.GeoprocessingDispatchHelper.ResolveProcessId(job.Spec.Parameters) is { } processId
             && RoutingProcessDefinitions.Handles(processId);
 
     private static int ResolveResultSrid(ExecutionJobRecord job, ArtifactKind kind)
