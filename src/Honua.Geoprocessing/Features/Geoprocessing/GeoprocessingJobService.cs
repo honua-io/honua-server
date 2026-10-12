@@ -216,24 +216,27 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // Read the owned record before deriving any scoped authority. Generic entrypoints never
         // use this binding, and request-controlled protocol parameter bags cannot produce it.
         var job = await GetJobForTerminalAsync(jobId, principal, cancellationToken).ConfigureAwait(false);
-        var binding = job.Spec.GPServerBinding;
-        if (binding is not null
-            && job.Spec.Kind == ExecutionJobKind.Geoprocessing
-            && string.Equals(job.Spec.Parameters.GetValueOrDefault(ExecutionJobParameterKeys.GeoprocessingProcessDefinitions),
-                binding.ProcessId, StringComparison.Ordinal)
-            && string.Equals(serviceId, binding.ServiceId, StringComparison.OrdinalIgnoreCase)
-            && (taskName is null || string.Equals(taskName, binding.TaskName, StringComparison.OrdinalIgnoreCase)))
+        if (HasGPServerJobGrant(job, serviceId, taskName, principal))
         {
-            var execution = new GPServerExecutionContext(binding.ServiceId, binding.TaskName, binding.ProcessId);
-            if (execution.IsGranted(principal))
-            {
-                return job;
-            }
+            return job;
         }
 
         await _authorizer.EnsureAuthorizedAsync(principal, OperatorResourceType.Job, OperatorOperation.Read, cancellationToken)
             .ConfigureAwait(false);
         return job;
+    }
+
+    private static bool HasGPServerJobGrant(
+        ExecutionJobRecord job, string serviceId, string? taskName, ClaimsPrincipal principal)
+    {
+        var binding = job.Spec.GPServerBinding;
+        return binding is not null
+            && job.Spec.Kind == ExecutionJobKind.Geoprocessing
+            && string.Equals(job.Spec.Parameters.GetValueOrDefault(ExecutionJobParameterKeys.GeoprocessingProcessDefinitions),
+                binding.ProcessId, StringComparison.Ordinal)
+            && string.Equals(serviceId, binding.ServiceId, StringComparison.OrdinalIgnoreCase)
+            && (taskName is null || string.Equals(taskName, binding.TaskName, StringComparison.OrdinalIgnoreCase))
+            && new GPServerExecutionContext(binding.ServiceId, binding.TaskName, binding.ProcessId).IsGranted(principal);
     }
 
     public async Task<AnalysisResultPackage> GetGPServerJobResultsAsync(
@@ -1333,9 +1336,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         var gpJob = gpServiceId is null ? null
             : await GetGPServerJobAsync(jobId, gpServiceId, gpTaskName, principal, cancellationToken).ConfigureAwait(false);
-        var gpBinding = gpJob?.Spec.GPServerBinding;
-        if (gpBinding is null || !new GPServerExecutionContext(
-            gpBinding.ServiceId, gpBinding.TaskName, gpBinding.ProcessId).IsGranted(principal))
+        var hasGPGrant = gpJob is not null && HasGPServerJobGrant(gpJob, gpServiceId!, gpTaskName, principal);
+        if (!hasGPGrant)
         {
             await _authorizer.EnsureAuthorizedAsync(
                 principal, OperatorResourceType.Job, OperatorOperation.Execute, cancellationToken).ConfigureAwait(false);
@@ -1350,6 +1352,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         EnsureJobOwnership(job, principal);
+        if (hasGPGrant && !HasGPServerJobGrant(job, gpServiceId!, gpTaskName, principal))
+        {
+            throw new GeoprocessingNotFoundException($"Job '{jobId}' no longer matches its authorized GPServer binding.");
+        }
+
 
         if (job.Status == ExecutionJobStatus.Cancelled)
         {
