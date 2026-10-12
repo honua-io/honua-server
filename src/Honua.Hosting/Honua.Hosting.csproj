@@ -150,5 +150,6 @@
     <InternalsVisibleTo Include="Honua.Geoprocessing.UnitTests" />
     <InternalsVisibleTo Include="Honua.Aws.UnitTests" />
     <InternalsVisibleTo Include="Honua.Azure.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Hosting.ComponentTests" />
   </ItemGroup>
 </Project>

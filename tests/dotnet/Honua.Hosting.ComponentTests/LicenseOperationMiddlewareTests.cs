@@ -89,7 +89,7 @@ public sealed class LicenseOperationMiddlewareTests
     [Trait("Tier", "Fast")]
     public async Task ExistingData_ReadAndExport_StopAtPaidExpiryOnly(HonuaEdition edition)
     {
-        var clock = new LicenseFailureContractTests.TransitionClock();
+        var clock = new TransitionClock();
         var license = LicenseTestSupport.CreateSignedLicense(edition, clock.GetUtcNow().AddMinutes(2));
         using var policy = new FileBackedLicenseService(Options.Create(new LicenseOptions
         {
