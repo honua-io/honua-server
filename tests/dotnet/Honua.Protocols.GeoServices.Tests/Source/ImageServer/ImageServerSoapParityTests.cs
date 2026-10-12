@@ -692,7 +692,15 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
             description.Status.Should().Be(HttpStatusCode.OK, description.Body);
             description.Body.Should().NotContain("Unsupported ImageServer operation");
             AssertTileCache(Element(description.Document, "TileCacheInfo"), tileInfo);
-            Element(description.Document, "ServiceType").Value.Should().Be("esriCachedMapServiceSingleFused");
+            Element(description.Document, "ServiceType").Value.Should().Be("esriSingleFusedMapCache");
+            var layerCaches = Element(description.Document, "LayerCacheInfos").Elements().ToArray();
+            layerCaches.Should().ContainSingle();
+            layerCaches[0].Name.LocalName.Should().Be("LayerCacheInfo");
+            layerCaches[0].Elements().Select(element => element.Name.LocalName)
+                .Should().Equal("LayerID", "HasCache");
+            Child(layerCaches[0], "LayerID").Value.Should().Be("0");
+            Child(layerCaches[0], "HasCache").Value.Should().Be("false",
+                "the fused service cache does not advertise an individual-layer cache");
             var imageInfo = Element(description.Document, "TileImageInfo");
             Child(imageInfo, "CacheTileFormat").Value.Should().Be(tileInfo.GetProperty("format").GetString());
             Child(imageInfo, "CompressionQuality").Value.Should().Be("0");
@@ -737,6 +745,8 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         soapLods.Should().HaveCount(restLods.Length);
         for (var index = 0; index < restLods.Length; index++)
         {
+            soapLods[index].Elements().Select(element => element.Name.LocalName)
+                .Should().Equal("LevelID", "Scale", "Resolution");
             Child(soapLods[index], "LevelID").Value.Should().Be(
                 restLods[index].GetProperty("level").GetInt32().ToString(CultureInfo.InvariantCulture));
             double.Parse(Child(soapLods[index], "Resolution").Value, CultureInfo.InvariantCulture)
