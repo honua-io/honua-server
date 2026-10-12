@@ -182,6 +182,25 @@ public sealed partial class GeoprocessingJobServiceTests
                 && request.Operation == OperatorOperation.Execute));
     }
 
+    [UnitTest]
+    [Operation(Operations.ErrorHandling)]
+    public async Task GPScopedKey_JobReadRole_DoesNotTurnWrongRouteIntoCancellationAuthority()
+    {
+        DenyGenericExecutionAndJobs();
+        _authEvaluator.EvaluateAsync(Arg.Any<ClaimsPrincipal>(),
+            Arg.Is<OperatorAuthorizationRequest>(request => request.ResourceType == OperatorResourceType.Job
+                && request.Operation == OperatorOperation.Read), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Allowed()));
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(true);
+        var key = GPKey("execute:test/geometry.area");
+        var job = await _sut.SubmitGPServerJobAsync(AreaPlan(), null, key, AreaExecution);
+        _jobStore.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(job);
+        await FluentActions.Awaiting(() => _sut.CancelGPServerJobAsync(job.OperationId, "other", "Area", key))
+            .Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        _approvalEvaluator.DidNotReceive().Evaluate(key,
+            Arg.Is<OperatorAuthorizationRequest>(request => request.ResourceType == OperatorResourceType.Job));
+    }
+
     private void DenyGenericExecutionAndJobs()
         => _authEvaluator.EvaluateAsync(Arg.Any<ClaimsPrincipal>(),
             Arg.Is<OperatorAuthorizationRequest>(request =>

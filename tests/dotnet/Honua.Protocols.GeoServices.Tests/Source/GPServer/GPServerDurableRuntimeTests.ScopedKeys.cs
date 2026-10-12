@@ -41,8 +41,14 @@ public sealed partial class GPServerDurableRuntimeTests
             var job = (await store.GetAsync(jobId))!;
             job.Spec.GPServerBinding.Should().Be(new GPServerJobBinding(ServiceId, areaTool, "geometry.area"));
             (await SendSoapAsync(owner, "GetJobStatus", $"<JobID>{jobId}</JobID>")).Value.Should().Be("esriJobSucceeded");
-            using var refused = await PostSoapAsync(other, "GetJobStatus", $"<JobID>{jobId}</JobID>");
-            refused.StatusCode.Should().Be(HttpStatusCode.NotFound, await refused.Content.ReadAsStringAsync());
+            foreach (var operation in new[] { "GetJobStatus", "GetJobMessages", "GetJobToolName", "GetJobResult", "CancelJob" })
+            {
+                using var refused = await PostSoapAsync(other, operation, $"<JobID>{jobId}</JobID>" +
+                    "<ParameterNames><String>outputScalar</String></ParameterNames>");
+                var refusedBody = await refused.Content.ReadAsStringAsync();
+                refused.StatusCode.Should().Be(HttpStatusCode.NotFound, refusedBody);
+                refusedBody.Should().NotContain("esriJob").And.NotContain("data:application/json");
+            }
             var results = await SendSoapAsync(owner, "GetJobResult", $"<JobID>{jobId}</JobID>" +
                 "<ParameterNames><String>outputScalar</String></ParameterNames>");
             var dataUri = results.Element("Values")!.Elements("GPValue").Single().Element("Value")!.Value;
