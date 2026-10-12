@@ -17,6 +17,7 @@ public class Cql2JsonParserTests
 {
     private readonly Cql2JsonParser _parser = new();
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_EqualityExpression_ReturnsBinaryExpression()
     {
@@ -34,6 +35,7 @@ public class Cql2JsonParserTests
         ((Literal)binary.Right).Value.Should().Be("Test");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("and")]
     [InlineData("or")]
@@ -45,6 +47,7 @@ public class Cql2JsonParserTests
             .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_FlatLogicalOperatorWithinDepthLimit_ReturnsLeftDeepChain()
     {
@@ -54,6 +57,7 @@ public class Cql2JsonParserTests
         result.Should().BeOfType<BinaryExpression>().Which.Operator.Should().Be(BinaryOperator.And);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_FlatLogicalOperatorUnderNegationsBeyondDepthLimit_ThrowsArgumentException()
     {
@@ -76,6 +80,7 @@ public class Cql2JsonParserTests
            string.Join(",", Enumerable.Repeat("""{"op":"=","args":[{"property":"name"},"a"]}""", operandCount)) +
            "]}";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SpatialPredicate_ReturnsSpatialPredicate()
     {
@@ -93,6 +98,7 @@ public class Cql2JsonParserTests
         spatial.Right.Should().BeOfType<GeometryLiteral>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SpatialPredicate_WithExplicitGeometryCrsObject_UsesExplicitSrid()
     {
@@ -109,6 +115,7 @@ public class Cql2JsonParserTests
         geometry.Srid.Should().Be(3857);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SpatialPredicate_WithExplicitGeometryCrsUri_UsesExplicitSrid()
     {
@@ -125,6 +132,7 @@ public class Cql2JsonParserTests
         geometry.Srid.Should().Be(26910);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SpatialPredicate_WithMalformedExplicitGeometryCrs_ThrowsArgumentException()
     {
@@ -140,6 +148,7 @@ public class Cql2JsonParserTests
             .WithMessage("*Invalid geometry CRS identifier*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_BboxLiteral_WithMalformedExplicitGeometryCrs_ThrowsArgumentException()
     {
@@ -155,6 +164,7 @@ public class Cql2JsonParserTests
             .WithMessage("*Invalid geometry CRS identifier*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_BboxLiteral_AntimeridianCrossing_ReturnsMultiPolygonGeometry()
     {
@@ -171,6 +181,7 @@ public class Cql2JsonParserTests
         ((MultiPolygon)parsed).NumGeometries.Should().Be(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_BboxLiteral_WithProjectedCrsAndInvertedX_ThrowsArgumentException()
     {
@@ -183,6 +194,7 @@ public class Cql2JsonParserTests
             .WithMessage("*Invalid bbox literal in CQL2-JSON*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_BboxLiteral_WithGeographicCrsAndOutOfRangeCoordinates_ThrowsArgumentException()
     {
@@ -195,6 +207,7 @@ public class Cql2JsonParserTests
             .WithMessage("*Invalid bbox literal in CQL2-JSON*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_BboxLiteral_3DBox_ThrowsArgumentException()
     {
@@ -207,6 +220,7 @@ public class Cql2JsonParserTests
             .WithMessage("*3D bounding boxes are not supported*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_GeometryLiteral_WithTooManyVertices_ThrowsArgumentException()
     {
@@ -219,6 +233,7 @@ public class Cql2JsonParserTests
             .WithMessage("*maximum geometry complexity*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SpatialDWithin_ReturnsSpatialDistancePredicate()
     {
@@ -235,6 +250,7 @@ public class Cql2JsonParserTests
         spatial.Distance.Should().BeOfType<Literal>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_TemporalPredicateWithInterval_ReturnsTemporalPredicate()
     {
@@ -251,6 +267,7 @@ public class Cql2JsonParserTests
         temporal.Right.Should().BeOfType<IntervalLiteral>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_ArrayPredicate_ReturnsArrayPredicate()
     {
@@ -267,6 +284,7 @@ public class Cql2JsonParserTests
         arrayPredicate.Right.Should().BeOfType<ArrayLiteral>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CaseInsensitiveFunction_ReturnsFunctionCall()
     {

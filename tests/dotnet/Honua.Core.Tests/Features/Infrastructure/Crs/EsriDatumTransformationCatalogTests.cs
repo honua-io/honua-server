@@ -112,6 +112,7 @@ public sealed class EsriDatumTransformationCatalogTests
         selection!.ProjPipeline.Should().Contain("us_noaa_hawaii.tif");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(Nad83Harn, 1580, "NAD_1983_HARN_To_WGS_1984_1")]
     [InlineData(Nad83Nsrs2007, 15931, "NAD_1983_NSRS2007_To_WGS_1984_1")]
@@ -134,6 +135,7 @@ public sealed class EsriDatumTransformationCatalogTests
         selection.TransformForward.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(Nad83Harn)]
     [InlineData(Nad83Nsrs2007)]

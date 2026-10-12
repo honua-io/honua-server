@@ -12,6 +12,7 @@ namespace Honua.Core.Tests.Features.Compliance;
 /// </summary>
 public sealed class ComplianceControlCatalogTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Catalog_IncludesSoc2AndFedRampControls()
     {
@@ -24,6 +25,7 @@ public sealed class ComplianceControlCatalogTests
         byFramework[ComplianceFramework.FedRamp].Should().BeGreaterThanOrEqualTo(5);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Catalog_AllControlsHaveStableId()
     {
@@ -38,6 +40,7 @@ public sealed class ComplianceControlCatalogTests
         });
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetControl_ReturnsControlOrNull()
     {
@@ -49,6 +52,7 @@ public sealed class ComplianceControlCatalogTests
         catalog.GetControl(string.Empty).Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Catalog_FedRampControlsCoverBoundaryAndEncryption()
     {
@@ -63,6 +67,7 @@ public sealed class ComplianceControlCatalogTests
         ids.Should().Contain("fedramp.sc-28", "FedRAMP at-rest cryptographic protection must be tracked");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Catalog_DependencyDeclarationsAreNonEmpty()
     {

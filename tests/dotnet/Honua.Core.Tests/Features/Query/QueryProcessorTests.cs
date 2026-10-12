@@ -49,6 +49,7 @@ public sealed class QueryProcessorTests
             NullLogger<QueryProcessor>.Instance);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("javascript:alert('xss')")]
     [InlineData("<script>alert('xss')</script>")]
@@ -69,6 +70,7 @@ public sealed class QueryProcessorTests
         result.ErrorMessage.Should().NotContain("onerror=");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("javascript:alert('xss')")]
     [InlineData("<svg onload=alert('xss')>")]
@@ -88,6 +90,7 @@ public sealed class QueryProcessorTests
         result.ErrorMessage.Should().NotContain("onload=");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildCacheKey_FilterParametersWithDelimiter_DoNotCollide()
     {
@@ -102,6 +105,7 @@ public sealed class QueryProcessorTests
         firstKey.Should().NotBe(secondKey);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildCacheKey_ResultAffectingExtensions_DoNotCollide()
     {
@@ -120,6 +124,7 @@ public sealed class QueryProcessorTests
         firstKey.Should().NotBe(secondKey);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildCacheKey_ResultAffectingHints_DoNotCollide()
     {
@@ -138,6 +143,7 @@ public sealed class QueryProcessorTests
         firstKey.Should().NotBe(secondKey);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildCacheKey_TemporalFilterEndPropertyName_DoesNotCollide()
     {
@@ -179,6 +185,7 @@ public sealed class QueryProcessorTests
         instantKey.Should().NotBe(intervalKey);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ToFeatureQuery_IncludeNullGeometryExtension_PropagatesToFeatureQuery()
     {
@@ -192,6 +199,7 @@ public sealed class QueryProcessorTests
         featureQuery.IncludeNullGeometry.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void OptimizeQuery_PagedQueryWithoutOrdering_UsesResourcePrimaryIdForProviderOrdering()
     {
@@ -220,6 +228,7 @@ public sealed class QueryProcessorTests
             .Which.Should().Be(new OrderByClause("feature_id", ascending: true, MetadataV2FieldType.Integer));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void OptimizeQuery_PagedQueryWithConventionalObjectId_PreservesObjectIdOrdering()
     {

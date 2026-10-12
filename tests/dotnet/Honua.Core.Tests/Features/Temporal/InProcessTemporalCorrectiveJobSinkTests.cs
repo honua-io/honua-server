@@ -19,6 +19,7 @@ public sealed class InProcessTemporalCorrectiveJobSinkTests
 {
     private static readonly TimeSpan WaitTimeout = TimeSpan.FromSeconds(10);
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SubmitAsync_PersistsQueuedProgress_AndRunsToCompleted()
     {
@@ -42,6 +43,7 @@ public sealed class InProcessTemporalCorrectiveJobSinkTests
         completed.ErrorMessage.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SubmitAsync_WhenWorkFails_RecordsFailedStatusWithError()
     {
@@ -57,6 +59,7 @@ public sealed class InProcessTemporalCorrectiveJobSinkTests
         failed.LayerId.Should().Be(3);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SubmitAsync_WhenTerminalStateRecordedExternally_DoesNotOverwriteIt()
     {
@@ -83,6 +86,7 @@ public sealed class InProcessTemporalCorrectiveJobSinkTests
             "the sink's terminal compare-and-set must not clobber a terminal state another writer recorded");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SubmitAsync_WithoutProgressStore_StillRunsWork()
     {

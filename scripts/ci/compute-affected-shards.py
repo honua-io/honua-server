@@ -226,7 +226,7 @@ def git_changed_files(root: Path, base: str, head: str) -> list[str] | None:
     if probe.returncode != 0:
         return None
     result = subprocess.run(
-        ["git", "-C", str(root), "diff", "--name-only", f"{base}...{head}"],
+        ["git", "-C", str(root), "diff", "--no-renames", "--name-only", f"{base}...{head}"],
         capture_output=True,
         text=True,
     )

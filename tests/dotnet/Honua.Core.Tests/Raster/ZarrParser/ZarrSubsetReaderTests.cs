@@ -20,6 +20,7 @@ namespace Honua.Core.Tests.Raster.ZarrParser;
 
 public class ZarrSubsetReaderTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadSubsetAsync_UncompressedSpansMultipleChunks_ReturnsContiguousRowMajor()
     {
@@ -58,6 +59,7 @@ public class ZarrSubsetReaderTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadSubsetAsync_ZlibCompressed_DecodesCorrectly()
     {
@@ -97,6 +99,7 @@ public class ZarrSubsetReaderTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadSubsetAsync_V3UncompressedCPrefixedChunks_ReturnsContiguousRowMajor()
     {
@@ -135,6 +138,7 @@ public class ZarrSubsetReaderTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadSubsetAsync_V3GzipCoded_DecodesCorrectly()
     {
@@ -171,6 +175,7 @@ public class ZarrSubsetReaderTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadSubsetAsync_OutOfBounds_Throws()
     {
@@ -203,6 +208,7 @@ public class ZarrSubsetReaderTests
     /// 8 such chunks would otherwise allocate ~2 GB of heap before the caller receives
     /// any error.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadSubsetAsync_OversizedChunkDimensions_ThrowsBeforeAllocatingChunkBuffer()
     {
@@ -235,6 +241,7 @@ public class ZarrSubsetReaderTests
     /// Regression test for BH-017: ResolveElementSize must reject unrealistically
     /// large element-size suffixes (> 16) before any array-wide computation occurs.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ResolveElementSize_ElementSizeExceedsMaxSupported_Throws()
     {
@@ -250,6 +257,7 @@ public class ZarrSubsetReaderTests
     /// After the fix the chunk buffer must be filled with the correct little-endian
     /// representation of the fill value.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadSubsetAsync_Int64DtypeWithNonzeroFillValue_MissingChunkFillsCorrectly()
     {
@@ -295,6 +303,7 @@ public class ZarrSubsetReaderTests
     /// buffers for a request where the per-request cap is 256 MiB.
     /// After the fix the ceiling equals chunkBytes so the allocation is bounded.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadSubsetAsync_UncompressedChunk_ReadLengthBoundedToChunkBytes()
     {
@@ -332,6 +341,7 @@ public class ZarrSubsetReaderTests
     /// be consumed (the ICloudRangeReader implementation returns at most <c>length</c> bytes).
     /// The read completes successfully and returns the correct subset values.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadSubsetAsync_ChunkObjectLargerThanDeclaredSize_ReadsOnlyDeclaredBytes()
     {
@@ -389,6 +399,7 @@ public class ZarrSubsetReaderTests
     /// Regression test for BH2-015: WriteFillScalar had no case for &lt;u8 (uint64) so
     /// a missing chunk was zero-filled instead of using the declared fill_value.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadSubsetAsync_UInt64DtypeWithNonzeroFillValue_MissingChunkFillsCorrectly()
     {
@@ -422,6 +433,7 @@ public class ZarrSubsetReaderTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadSubsetAsync_FloatNaNStringFillValue_MissingChunkFillsWithNaN()
     {
@@ -447,6 +459,7 @@ public class ZarrSubsetReaderTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadSubsetAsync_V2NestedDimensionSeparator_UsesSlashChunkKeys()
     {
@@ -475,6 +488,7 @@ public class ZarrSubsetReaderTests
         subset.Data.Should().Equal(raw);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadSubsetAsync_IncompressibleCompressedChunk_ReadsFullObject()
     {

@@ -65,7 +65,7 @@ if ! git rev-parse --verify --quiet "${base_ref}" >/dev/null 2>&1; then
   exit 0
 fi
 
-changed_files="$(git diff --name-only "${base_ref}...${head_ref}" 2>/dev/null || true)"
+changed_files="$(git diff --no-renames --name-only "${base_ref}...${head_ref}" 2>/dev/null || true)"
 if [[ -z "${changed_files}" ]]; then
   # No diff = no projects to build. Emit nothing so callers can short-circuit.
   exit 0

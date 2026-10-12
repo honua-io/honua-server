@@ -117,6 +117,31 @@ done
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${REPO_ROOT}"
 
+# Resolve an interpreter that actually runs. `command -v python3` alone is not
+# enough on Windows: the Microsoft Store ships a python3.exe App Execution
+# Alias stub that is present on PATH but exits non-zero with "Python was not
+# found", while the real interpreter installs as `python`/`py`. The old guard
+# therefore passed, the stub failed, and the script blamed the code —
+# reporting "architecture review found blocking issues" when Python was simply
+# absent (#2871). Probe each candidate by executing it, and require Python 3 so
+# a legacy `python` == python2 is not selected. On Linux `python3` matches
+# first, exactly as before. Resolved early (rather than only before the local
+# architecture review) because the capability-impact crosswalk validation and
+# select-local narrowing below also need it.
+PYTHON_BIN=""
+for candidate in python3 python py; do
+    if command -v "${candidate}" >/dev/null 2>&1 \
+        && "${candidate}" -c 'import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1; then
+        PYTHON_BIN="${candidate}"
+        break
+    fi
+done
+
+if [[ "${AFFECTED_TESTS}" == "1" || "${UNIT_ONLY}" == "1" ]] && [[ -z "${PYTHON_BIN}" ]]; then
+    echo "Python 3 is required for affected-test or unit-only feedback" >&2
+    exit 2
+fi
+
 # Shared-router affected unit/component feedback, without the full collector.
 if [[ "${AFFECTED_TESTS}" == "1" ]]; then
     if [[ "${FULL}" == "1" || "${FAST}" == "1" || "${UNIT_ONLY}" == "1" ]]; then
@@ -125,7 +150,7 @@ if [[ "${AFFECTED_TESTS}" == "1" ]]; then
     fi
     feedback_operation=run
     [[ "${DRY_RUN}" != "1" ]] || feedback_operation=plan
-    exec python3 scripts/ci/local-test-feedback.py "${feedback_operation}" --base "${BASE_REF}"
+    exec "${PYTHON_BIN}" scripts/ci/local-test-feedback.py "${feedback_operation}" --base "${BASE_REF}"
 fi
 
 # Explicit developer feedback lane; never substitutes for fast/full PR gates.
@@ -136,7 +161,7 @@ if [[ "${UNIT_ONLY}" == "1" ]]; then
     fi
     unit_operation=run
     [[ "${DRY_RUN}" != "1" ]] || unit_operation=plan
-    exec python3 scripts/ci/test-projects.py "${unit_operation}" --base "${BASE_REF}"
+    exec "${PYTHON_BIN}" scripts/ci/test-projects.py "${unit_operation}" --base "${BASE_REF}"
 fi
 
 if ! command -v jq >/dev/null 2>&1; then
@@ -162,26 +187,6 @@ fi
 # `${var%${HONUA_CR}}` patches, which are now redundant. Sourced AFTER the presence
 # guard above so that guard still probes the real jq binary, not this function.
 source "$(dirname "${BASH_SOURCE[0]}")/lib/jq-cr-safe.sh"
-
-# Resolve an interpreter that actually runs. `command -v python3` alone is not
-# enough on Windows: the Microsoft Store ships a python3.exe App Execution
-# Alias stub that is present on PATH but exits non-zero with "Python was not
-# found", while the real interpreter installs as `python`/`py`. The old guard
-# therefore passed, the stub failed, and the script blamed the code —
-# reporting "architecture review found blocking issues" when Python was simply
-# absent (#2871). Probe each candidate by executing it, and require Python 3 so
-# a legacy `python` == python2 is not selected. On Linux `python3` matches
-# first, exactly as before. Resolved early (rather than only before the local
-# architecture review) because the capability-impact crosswalk validation and
-# select-local narrowing below also need it.
-PYTHON_BIN=""
-for candidate in python3 python py; do
-    if command -v "${candidate}" >/dev/null 2>&1 \
-        && "${candidate}" -c 'import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1; then
-        PYTHON_BIN="${candidate}"
-        break
-    fi
-done
 
 # Unified cleanup: register scratch paths here (rather than a fresh `trap ...
 # EXIT` per section) so later traps do not silently clobber earlier ones.
@@ -373,7 +378,7 @@ else
     echo "    Mode: SMART (diff vs ${BASE_REF}; set HONUA_PRE_PR_FULL=1 to force full)."
     AFFECTED="$(BASE_REF="${BASE_REF}" scripts/ci/compute-affected-projects.sh 2>/dev/null || echo ALL)"
     TARGETED="$(scripts/ci/honua-server-targeted-tests.sh --base "${BASE_REF}" 2>/dev/null || echo '{"run_all":true,"reason":"router_error"}')"
-    CHANGED_CS="$(git diff --name-only "${BASE_REF}...HEAD" -- '*.cs' 2>/dev/null || true)"
+    CHANGED_CS="$(git diff --no-renames --name-only "${BASE_REF}...HEAD" -- '*.cs' 2>/dev/null || true)"
 fi
 
 affected_contains() {
@@ -536,7 +541,7 @@ fi
 
 # Full committed diff — used to keep directly-edited test projects in the
 # build even when they will not run locally.
-CHANGED_FILES_ALL="$(git diff --name-only "${BASE_REF}...HEAD" 2>/dev/null || true)"
+CHANGED_FILES_ALL="$(git diff --no-renames --name-only "${BASE_REF}...HEAD" 2>/dev/null || true)"
 
 test_project_kept() {
     # Usage: test_project_kept <csproj-path> -> 0 keep, 1 prune.

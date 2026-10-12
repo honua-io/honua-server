@@ -18,6 +18,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// </summary>
 public sealed class OgcApiFeaturesMigrationEvidencePackBuilderTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_ProducesDeterministicFingerprint_ForIdenticalInputs()
     {
@@ -50,6 +51,7 @@ public sealed class OgcApiFeaturesMigrationEvidencePackBuilderTests
         second.RunId.Should().Be("nightly-20260601");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_ProducesStableCollectionOrder_RegardlessOfInputOrder()
     {
@@ -68,6 +70,7 @@ public sealed class OgcApiFeaturesMigrationEvidencePackBuilderTests
             .Should().BeInAscendingOrder(StringComparer.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_FingerprintChanges_WhenACollectionResultChanges()
     {
@@ -91,6 +94,7 @@ public sealed class OgcApiFeaturesMigrationEvidencePackBuilderTests
             "any change to the bundle inputs must propagate to the fingerprint.");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_FingerprintChanges_WhenFilterScopePushdownChanges()
     {
@@ -111,6 +115,7 @@ public sealed class OgcApiFeaturesMigrationEvidencePackBuilderTests
             "slice-3 filter pushdown participates in the fingerprint so callers can detect scope drift.");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_AggregatesSummary_AcrossCollectionResults()
     {
@@ -135,6 +140,7 @@ public sealed class OgcApiFeaturesMigrationEvidencePackBuilderTests
             "conformance classes are recorded as ogc-api-features-conformance external dependencies by slice 1.");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_SurfacesFilterScopeAndManualReviewReason()
     {
@@ -148,6 +154,7 @@ public sealed class OgcApiFeaturesMigrationEvidencePackBuilderTests
         drifted.FilterScope.ManualReviewReason.Should().NotBeNullOrWhiteSpace();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_RedactsCredentials_FromSourceUrlAndArtifact()
     {
@@ -180,6 +187,7 @@ public sealed class OgcApiFeaturesMigrationEvidencePackBuilderTests
         json.Should().NotContain("?token");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithEmptyCollectionResults_EmitsInventoryOnlyPack()
     {
@@ -195,6 +203,7 @@ public sealed class OgcApiFeaturesMigrationEvidencePackBuilderTests
         pack.BundleFingerprint.Should().StartWith("sha256:");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Artifact_Shape_HasStableTopLevelFields()
     {

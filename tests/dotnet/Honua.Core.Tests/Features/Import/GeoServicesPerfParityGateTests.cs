@@ -23,6 +23,7 @@ public sealed class GeoServicesPerfParityGateTests
         MinimumSampleCount = 5
     };
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WithRatiosWithinBudget_EmitsPassVerdict()
     {
@@ -39,6 +40,7 @@ public sealed class GeoServicesPerfParityGateTests
         verdict.Summary.Should().Contain("within budget");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_OnWarnBoundary_EmitsWarnVerdict()
     {
@@ -55,6 +57,7 @@ public sealed class GeoServicesPerfParityGateTests
         p95.ObservedRatio.Should().Be(1.5d);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_OnFailBoundary_EmitsFailVerdict()
     {
@@ -72,6 +75,7 @@ public sealed class GeoServicesPerfParityGateTests
         verdict.Summary.Should().Contain("failed the budget");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenP99RegressesButP95Passes_FailsOnAggregate()
     {
@@ -88,6 +92,7 @@ public sealed class GeoServicesPerfParityGateTests
             .Should().Be(PerfParityVerdicts.Fail);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WithTooFewSamples_EmitsUnknownVerdict()
     {
@@ -102,6 +107,7 @@ public sealed class GeoServicesPerfParityGateTests
         verdict.Signals.Should().OnlyContain(s => s.ObservedRatio == null);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WithNullRatio_EmitsUnknownForThatMetric()
     {
@@ -118,6 +124,7 @@ public sealed class GeoServicesPerfParityGateTests
         verdict.Verdict.Should().Be(PerfParityVerdicts.Pass);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WithNonPositiveRatio_FailsTheMetric()
     {
@@ -132,6 +139,7 @@ public sealed class GeoServicesPerfParityGateTests
         verdict.Verdict.Should().Be(PerfParityVerdicts.Fail);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WithDisabledBudget_DoesNotGrade()
     {
@@ -155,6 +163,7 @@ public sealed class GeoServicesPerfParityGateTests
         verdict.Signals.Should().OnlyContain(s => s.Summary.Contains("disabled"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_ThrowsOnNullBudget()
     {
@@ -162,6 +171,7 @@ public sealed class GeoServicesPerfParityGateTests
         act.Should().Throw<ArgumentNullException>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GeoServicesDefaultBudget_HasExpectedThresholds()
     {
@@ -172,6 +182,7 @@ public sealed class GeoServicesPerfParityGateTests
         budget.MinimumSampleCount.Should().Be(5);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Verdict_SerializesWithStableShape()
     {

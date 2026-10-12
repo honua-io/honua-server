@@ -966,7 +966,8 @@
         "src/Honua.Protocols.OData/",
         "tests/dotnet/Honua.Protocols.OData.UnitTests/",
         "tests/dotnet/Honua.TestKit/OData/ODataProviderTestData.cs"
-      ]
+      ],
+      "supplemental_source_paths": true
     },
     {
       "name": "OData Core",
@@ -3871,7 +3872,8 @@
         "tests/dotnet/Shared/ProtocolUnits/Ai/SpecGroundingTestSupport.cs",
         "tests/dotnet/Shared/ProtocolUnits/Ai/StudioAiProxyTestHttp.cs"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Aws Units",
@@ -3898,7 +3900,8 @@
         "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
         "tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Azure Units",
@@ -3925,7 +3928,8 @@
         "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
         "tests/dotnet/Shared/AlertUnitSupport/AzurePublisherFake.cs"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Databricks Units",
@@ -3946,7 +3950,8 @@
         "src/Honua.Db/Databricks/",
         "tests/dotnet/Honua.Db.Databricks.UnitTests/"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "MySql Units",
@@ -3967,7 +3972,8 @@
         "src/Honua.Db/MySql/",
         "tests/dotnet/Honua.Db.MySql.UnitTests/"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Oracle Units",
@@ -3988,7 +3994,8 @@
         "src/Honua.Db/Oracle/",
         "tests/dotnet/Honua.Db.Oracle.UnitTests/"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Postgres Units",
@@ -4034,7 +4041,8 @@
         "tests/dotnet/Honua.Db.Postgres.UnitTests/",
         "tests/dotnet/Honua.TestKit/Infrastructure/ImportPreviewTestFakes.cs"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Redshift Units",
@@ -4055,7 +4063,8 @@
         "src/Honua.Db/Redshift/",
         "tests/dotnet/Honua.Db.Redshift.UnitTests/"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "SqlServer Units",
@@ -4077,7 +4086,8 @@
         "src/Honua.Geometry/",
         "tests/dotnet/Honua.Db.SqlServer.UnitTests/"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Geoprocessing Units",
@@ -4102,7 +4112,8 @@
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Geoprocessing.UnitTests/"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Hosting Units",
@@ -4126,7 +4137,8 @@
         "tests/dotnet/Honua.Hosting.UnitTests/",
         "tests/dotnet/Honua.TestKit/Infrastructure/TestMetadataV2GraphProvider.cs"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Import Units",
@@ -4150,7 +4162,8 @@
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Import.UnitTests/"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Protocols GeoServices Units",
@@ -4186,7 +4199,8 @@
         "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
         "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Protocols OgcApi Units",
@@ -4214,7 +4228,8 @@
         "tests/dotnet/Honua.Protocols.OgcApi.UnitTests/",
         "tests/dotnet/Honua.TestKit/Infrastructure/TestMetadataV2GraphProvider.cs"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Protocols OgcClassic Units",
@@ -4242,7 +4257,8 @@
         "tests/dotnet/Honua.Protocols.OgcClassic.UnitTests/",
         "tests/dotnet/Honua.TestKit/Infrastructure/TestMetadataV2GraphProvider.cs"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Protocols Scene Units",
@@ -4267,7 +4283,8 @@
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Protocols.Scene.UnitTests/"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Protocols SensorThings Units",
@@ -4291,7 +4308,8 @@
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Protocols.SensorThings.UnitTests/"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Protocols Stac Units",
@@ -4317,7 +4335,8 @@
         "tests/dotnet/Honua.Protocols.Stac.UnitTests/",
         "tests/dotnet/Honua.TestKit/Infrastructure/TestMetadataV2GraphProvider.cs"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Routing Units",
@@ -4338,7 +4357,8 @@
         "src/Honua.Routing/",
         "tests/dotnet/Honua.Routing.UnitTests/"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Scene Units",
@@ -4367,7 +4387,8 @@
         "tests/dotnet/Shared/SceneUnitSupport/PointCloudSceneFixtures.cs",
         "tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "ServiceDefaults Units",
@@ -4388,7 +4409,8 @@
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.ServiceDefaults.UnitTests/"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Snowflake Units",
@@ -4409,7 +4431,8 @@
         "src/Honua.Snowflake/",
         "tests/dotnet/Honua.Snowflake.UnitTests/"
       ],
-      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+      "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Protocols GeoServices Components",
@@ -4440,7 +4463,8 @@
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Protocols.GeoServices.ComponentTests/"
       ],
-      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
+      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Protocols OData Components",
@@ -4466,7 +4490,8 @@
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Protocols.OData.ComponentTests/"
       ],
-      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
+      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Protocols OgcApi Components",
@@ -4495,7 +4520,8 @@
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Protocols.OgcApi.ComponentTests/"
       ],
-      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
+      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Protocols Scene Components",
@@ -4522,7 +4548,8 @@
         "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneFixturePaths.cs",
         "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneFixtureRoots.cs"
       ],
-      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
+      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Protocols SensorThings Components",
@@ -4548,7 +4575,8 @@
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Protocols.SensorThings.ComponentTests/"
       ],
-      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
+      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Protocols Stac Components",
@@ -4575,7 +4603,8 @@
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Protocols.Stac.ComponentTests/"
       ],
-      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
+      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Ai Components",
@@ -4603,7 +4632,8 @@
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Ai.ComponentTests/"
       ],
-      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
+      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Protocols OgcClassic Components",
@@ -4632,7 +4662,8 @@
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Protocols.OgcClassic.ComponentTests/"
       ],
-      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
+      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases.",
+      "supplemental_source_paths": true
     },
     {
       "name": "Hosting Components",
@@ -4655,7 +4686,8 @@
         "src/Honua.ServiceDefaults/",
         "tests/dotnet/Honua.Hosting.ComponentTests/"
       ],
-      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
+      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases.",
+      "supplemental_source_paths": true
     }
   ]
 }

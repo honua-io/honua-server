@@ -21,6 +21,7 @@ public sealed class RateLimitPolicyResolverTests
         WindowDuration = TimeSpan.FromMinutes(1),
     };
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_ApiKeyTier_WinsOverTenantAndPlan()
     {
@@ -43,6 +44,7 @@ public sealed class RateLimitPolicyResolverTests
         resolved.RequestsPerWindow.Should().Be(1000);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_TenantTier_WinsOverPlan_WhenNoApiKeyPolicy()
     {
@@ -62,6 +64,7 @@ public sealed class RateLimitPolicyResolverTests
         resolved!.Scope.Should().Be(RateLimitScopes.Tenant);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_PlanTier_WinsWhenOnlyPlanMatches()
     {
@@ -76,6 +79,7 @@ public sealed class RateLimitPolicyResolverTests
         resolved!.Scope.Should().Be(RateLimitScopes.Plan);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_DisabledMostSpecificPolicy_FallsThroughToNextTier()
     {
@@ -100,6 +104,7 @@ public sealed class RateLimitPolicyResolverTests
         resolved!.Scope.Should().Be(RateLimitScopes.Tenant);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_NoMatchingTier_ReturnsNull()
     {
@@ -114,6 +119,7 @@ public sealed class RateLimitPolicyResolverTests
         resolved.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_KeyMatch_IsCaseInsensitive()
     {
@@ -127,6 +133,7 @@ public sealed class RateLimitPolicyResolverTests
         resolved!.Scope.Should().Be(RateLimitScopes.Tenant);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsKnown_RecognisesAllTiersAndRejectsOthers()
     {

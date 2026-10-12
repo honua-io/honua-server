@@ -10,6 +10,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class EsriConstructCapabilityRegistryTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ServiceIdentity, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ServiceCapabilities, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
@@ -52,6 +53,7 @@ public sealed class EsriConstructCapabilityRegistryTests
         descriptor.Reason.Should().NotBeNullOrWhiteSpace();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ServiceCapabilities, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ManualReview)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceCapabilities, MigrationFidelityAutomationStatuses.Unsupported, ImportCompatibilityCodes.ArcGisQueryCapabilityMissing)]
@@ -74,6 +76,7 @@ public sealed class EsriConstructCapabilityRegistryTests
         descriptor.UnsupportedReason.Should().NotBeNullOrWhiteSpace();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("not-a-real-construct")]
     [InlineData("")]
@@ -92,6 +95,7 @@ public sealed class EsriConstructCapabilityRegistryTests
         descriptor.RequiresCheck.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RegisteredConstructKeys_ContainsAllBuiltInKeys()
     {
@@ -123,6 +127,7 @@ public sealed class EsriConstructCapabilityRegistryTests
         ]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Constructor_DuplicateConstructKey_ThrowsInvalidOperationException()
     {
@@ -144,6 +149,7 @@ public sealed class EsriConstructCapabilityRegistryTests
             .WithMessage($"*Duplicate*'{EsriConstructCapabilityRegistry.Keys.ResourceIdentity}'*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Constructor_DescriptorWithEmptyConstructKey_ThrowsInvalidOperationException()
     {

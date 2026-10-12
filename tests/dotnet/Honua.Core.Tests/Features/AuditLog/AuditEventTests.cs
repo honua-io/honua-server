@@ -13,6 +13,7 @@ namespace Honua.Core.Tests.Features.AuditLog;
 /// </summary>
 public sealed class AuditEventTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AuditEvent_RoundTrips_AllFields()
     {
@@ -47,6 +48,7 @@ public sealed class AuditEventTests
         evt.Details.Should().Be("{\"scheme\":\"api-key\"}");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AuditEvent_OptionalFields_DefaultSensibly()
     {
@@ -69,6 +71,7 @@ public sealed class AuditEventTests
         evt.Details.Should().Be(string.Empty);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AnonymousActor_Sentinel_IsStable()
     {
@@ -77,6 +80,7 @@ public sealed class AuditEventTests
         AuditEvent.AnonymousActor.Should().Be("anonymous");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AuditEventType_CoversAllRequiredCategories()
     {
@@ -92,6 +96,7 @@ public sealed class AuditEventTests
         });
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AuditOutcome_CoversAllRequiredOutcomes()
     {
@@ -104,6 +109,7 @@ public sealed class AuditEventTests
         });
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AuditActorType_CoversAllRequiredTypes()
     {
@@ -124,6 +130,7 @@ public sealed class AuditEventTests
 /// </summary>
 public sealed class NullAuditLogTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RecordAsync_ReturnsCompleted_AndDoesNotThrow()
     {
@@ -143,6 +150,7 @@ public sealed class NullAuditLogTests
         auditId.Should().BeNull("a no-op sink cannot claim a durable audit identity");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RecordAsync_NullEvent_Throws()
     {
@@ -150,6 +158,7 @@ public sealed class NullAuditLogTests
         await act.Should().ThrowAsync<ArgumentNullException>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Instance_IsSingleton()
     {

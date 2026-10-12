@@ -13,6 +13,7 @@ namespace Honua.Core.Tests.Features.Compliance;
 /// </summary>
 public sealed class ComplianceReportRendererTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Csv_Renderer_ProducesBomPrefixedUtf8WithHeader()
     {
@@ -55,6 +56,7 @@ public sealed class ComplianceReportRendererTests
         return count;
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Csv_Renderer_EscapesQuotesAndCommas()
     {
@@ -110,6 +112,7 @@ public sealed class ComplianceReportRendererTests
         body.Should().Contain("\"multi\nline\"");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Pdf_Renderer_ProducesValidPdfHeaderAndTrailer()
     {
@@ -130,6 +133,7 @@ public sealed class ComplianceReportRendererTests
         body.Should().Contain("Helvetica");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Pdf_Renderer_IncludesAllControlIds()
     {
@@ -145,6 +149,7 @@ public sealed class ComplianceReportRendererTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Pdf_Renderer_EscapesParensInText()
     {

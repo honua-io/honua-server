@@ -14,6 +14,7 @@ namespace Honua.Core.Tests.Features.Compliance;
 /// </summary>
 public sealed class DataResidencyPolicyTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Disabled_Policy_IsInformationalOnly()
     {
@@ -26,6 +27,7 @@ public sealed class DataResidencyPolicyTests
         decision.Reason.Should().Contain("informational only");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Enforced_Policy_AllowsPrimaryRegionEvenWhenNotListed()
     {
@@ -46,6 +48,7 @@ public sealed class DataResidencyPolicyTests
         decision.Policy.AllowedRegions.Should().Contain("us-gov-west-1");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Enforced_Policy_DeniesUnlistedRegion()
     {
@@ -66,6 +69,7 @@ public sealed class DataResidencyPolicyTests
         decision.Reason.Should().Contain("eu-west-1").And.Contain("not in the active residency allow-list");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Empty_Region_Always_Denied()
     {
@@ -84,6 +88,7 @@ public sealed class DataResidencyPolicyTests
         decision.Allowed.Should().BeFalse("egress requires an explicit region");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Allowed_Region_Match_IsCaseInsensitive()
     {
@@ -103,6 +108,7 @@ public sealed class DataResidencyPolicyTests
         provider.Evaluate("US-GOV-EAST-1").Allowed.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Whitespace_Padded_PrimaryRegion_IsTrimmed_AndStillImplicitlyAllowed()
     {
@@ -130,6 +136,7 @@ public sealed class DataResidencyPolicyTests
             "the trimmed primary region must remain implicitly allowed for un-padded callers");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Whitespace_Padded_EvaluatedRegion_IsTrimmed_BeforeComparison()
     {
@@ -162,6 +169,7 @@ public sealed class DataResidencyPolicyTests
         deniedDecision.Reason.Should().NotContain(" eu-west-1 ", "the reason must use the trimmed region");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TopLevel_PrimaryRegion_Used_WhenNestedResidencyPrimaryRegionIsDefault()
     {

@@ -13,6 +13,7 @@ namespace Honua.Core.Tests.Features.EnrichmentCatalog;
 /// </summary>
 public sealed class EnrichmentDatasetCategoriesTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData("boundary", true)]

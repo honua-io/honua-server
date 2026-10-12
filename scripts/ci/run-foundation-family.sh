@@ -75,20 +75,16 @@ tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj|Honua.Ai-fast-tier|Tier=Fast||
 SPEC
       ;;
     # The #2943 orphan-revival provider units, the #2949 advisory Postgres
-    # security suite, the Testcontainers MySQL suite and the #58 SQL/warehouse
-    # unit subsets. All small, and none of them pull the server closure.
+    # security suite and the Testcontainers MySQL suite. Extracted provider units
+    # run in their canonical UnitTests shards; retained SQL/warehouse live tests
+    # keep their existing opt-in lanes. MySQL retains its full HTTP host case.
     providers)
       cat <<'SPEC'
 tests/dotnet/Honua.Db.DuckDB.Tests/Honua.DuckDB.Tests.csproj|Honua.DuckDB-tests|||
 tests/dotnet/Honua.Plugins.Tests/Honua.Plugins.Tests.csproj|Honua.Plugins-tests|||
 tests/dotnet/Honua.GeoServicesRest.Tests/Honua.GeoServicesRest.Tests.csproj|Honua.GeoServicesRest-tests|||
-tests/dotnet/Honua.Db.Oracle.Tests/Honua.Oracle.Tests.csproj|Honua.Oracle-tests|||
 tests/dotnet/Honua.Db.Postgres.Security.Tests/Honua.Postgres.Security.Tests.csproj|postgres-security-tests|||advisory
 tests/dotnet/Honua.Db.MySql.Tests/Honua.MySql.Tests.csproj|mysql-tests||HONUA_TEST_MYSQL=1|
-tests/dotnet/Honua.Db.SqlServer.Tests/Honua.SqlServer.Tests.csproj|Honua.SqlServer-unit-tests|FullyQualifiedName!~IntegrationTests||
-tests/dotnet/Honua.Snowflake.Tests/Honua.Snowflake.Tests.csproj|Honua.Snowflake-unit-tests|FullyQualifiedName!~IntegrationTests||
-tests/dotnet/Honua.Db.Redshift.Tests/Honua.Redshift.Tests.csproj|Honua.Redshift-unit-tests|FullyQualifiedName!~IntegrationTests||
-tests/dotnet/Honua.Db.Databricks.Tests/Honua.Databricks.Tests.csproj|Honua.Databricks-unit-tests|FullyQualifiedName!~IntegrationTests||
 SPEC
       ;;
     *)

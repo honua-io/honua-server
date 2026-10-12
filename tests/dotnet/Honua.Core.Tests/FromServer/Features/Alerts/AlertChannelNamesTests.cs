@@ -8,6 +8,7 @@ namespace Honua.Server.Tests.Features.Alerts;
 
 public sealed class AlertChannelNamesTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("webhook", AlertChannelType.Webhook)]
     [InlineData("websocket", AlertChannelType.WebSocket)]
@@ -25,6 +26,7 @@ public sealed class AlertChannelNamesTests
         Assert.Equal(expected, channelType);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(AlertChannelType.Webhook, "webhook")]
     [InlineData(AlertChannelType.WebSocket, "websocket")]
@@ -42,6 +44,7 @@ public sealed class AlertChannelNamesTests
         Assert.Equal(expected, channelType.ToExternalName());
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("awssns", AlertChannelType.AwsSns)]
     [InlineData("azureeventgrid", AlertChannelType.AzureEventGrid)]

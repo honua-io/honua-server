@@ -42,6 +42,7 @@ public sealed class ExternalFormatCorpusReaderTests
 
     private static CuratedCorpus Corpus => CuratedCorpus.LoadExternalFormats();
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Corpus_EveryDeclaredAsset_MatchesItsRecordedDigest()
     {
@@ -52,6 +53,7 @@ public sealed class ExternalFormatCorpusReaderTests
         Corpus.Assets.Should().HaveCountGreaterThanOrEqualTo(14);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task KmlFormatReader_GdalAuthoredPoints_PreservesEveryOrdinateAndAttribute()
     {
@@ -70,6 +72,7 @@ public sealed class ExternalFormatCorpusReaderTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task KmlFormatReader_GdalAuthoredPolygonWithHole_PreservesBothRings()
     {
@@ -88,6 +91,7 @@ public sealed class ExternalFormatCorpusReaderTests
         polygon.GetInteriorRingN(0).EnvelopeInternal.MaxY.Should().Be(37.85);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task KmlFormatReader_GdalAuthoredLineString_PreservesVertexOrder()
     {
@@ -102,6 +106,7 @@ public sealed class ExternalFormatCorpusReaderTests
         line.Coordinates[2].Y.Should().Be(37.8044);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GpxFormatReader_GdalAuthoredWaypoints_PreservesEveryOrdinate()
     {
@@ -121,6 +126,7 @@ public sealed class ExternalFormatCorpusReaderTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task CsvFormatReader_GdalAuthoredWktColumn_PreservesEveryOrdinateAndUtf8Attribute()
     {
@@ -148,6 +154,7 @@ public sealed class ExternalFormatCorpusReaderTests
     /// asserted a failure. This fixture is a single feature class written by GDAL's OpenFileGDB
     /// driver (honua-server#4419).
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task FileGdbReader_SingleFeatureClass_StreamsEveryFeatureWithExactOrdinates()
     {
@@ -174,6 +181,7 @@ public sealed class ExternalFormatCorpusReaderTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void FileGdbReader_SingleFeatureClass_DetectsTheDeclaredSrid()
     {

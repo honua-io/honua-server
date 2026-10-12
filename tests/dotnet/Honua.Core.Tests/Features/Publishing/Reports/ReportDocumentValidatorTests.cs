@@ -32,6 +32,7 @@ public sealed class ReportDocumentValidatorTests
         result.Issues.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Operation(Operations.Query)]
     [Theory]
     [InlineData(ReportPanelKinds.Map)]
@@ -55,6 +56,7 @@ public sealed class ReportDocumentValidatorTests
         issue.Message.Should().Contain(kind);
     }
 
+    [Trait("Tier", "Fast")]
     [Operation(Operations.Query)]
     [Theory]
     [InlineData(ReportPanelKinds.Map)]

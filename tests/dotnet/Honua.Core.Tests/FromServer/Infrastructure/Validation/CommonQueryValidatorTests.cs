@@ -35,6 +35,7 @@ public class CommonQueryValidatorTests
         _validator = new CommonQueryValidator(options);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null, null, true)]
     [InlineData(0, 100, true)]
@@ -57,6 +58,7 @@ public class CommonQueryValidatorTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null, new[] { "json", "geojson" }, "json")] // Default to first format
     [InlineData("", new[] { "json", "geojson" }, "json")] // Empty defaults to first format
@@ -85,6 +87,7 @@ public class CommonQueryValidatorTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null, true, null)] // Null SRID is allowed
     [InlineData("", true, null)] // Empty SRID is allowed
@@ -119,6 +122,7 @@ public class CommonQueryValidatorTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateAllowedParameters_ValidParameters_ReturnsSuccess()
     {
@@ -137,6 +141,7 @@ public class CommonQueryValidatorTests
         result.IsValid.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateAllowedParameters_InvalidParameter_ReturnsFailure()
     {
@@ -156,6 +161,7 @@ public class CommonQueryValidatorTests
         result.ErrorMessage.Should().Contain("invalidParam");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null, true)] // Null bbox is allowed
     [InlineData("", true)] // Empty bbox is allowed
@@ -181,6 +187,7 @@ public class CommonQueryValidatorTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateBbox_WithGeographicCrsOutsideNarrowAllowlist_AllowsAntimeridian()
     {
@@ -191,6 +198,7 @@ public class CommonQueryValidatorTests
         result.Value!.MinX.Should().BeGreaterThan(result.Value.MaxX);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateBbox_WithProjectedCrs_DisallowsAntimeridian()
     {
@@ -200,6 +208,7 @@ public class CommonQueryValidatorTests
         result.ErrorMessage.Should().NotBeNullOrEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null, true)] // Null where clause allowed
     [InlineData("", true)] // Empty where clause allowed
@@ -223,6 +232,7 @@ public class CommonQueryValidatorTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateWhereClause_TooLong_ReturnsFailure()
     {
@@ -237,6 +247,7 @@ public class CommonQueryValidatorTests
         result.ErrorMessage.Should().Contain("too long");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateBbox_NonGeographicSRID_SkipsCoordinateValidation()
     {
@@ -256,6 +267,7 @@ public class CommonQueryValidatorTests
     // PA-025: OGC API Features /req/core/fc-limit-definition (d) mandates that over-maximum limits
     // are clamped to the server maximum, not rejected with a 400 error.
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateAndNormalizePagination_OgcFeaturesOptions_ClampsOverMaxLimit()
     {
@@ -270,6 +282,7 @@ public class CommonQueryValidatorTests
             "limit should be clamped to the configured maximum");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateAndNormalizePagination_DefaultOptions_RejectsOverMaxLimit()
     {

@@ -16,6 +16,7 @@ namespace Honua.Core.Tests.Features.Infrastructure.Crs;
 /// </summary>
 public sealed class GeoParquetProjJsonCatalogTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(3857)]
     [InlineData(25832)]
@@ -39,6 +40,7 @@ public sealed class GeoParquetProjJsonCatalogTests
         id.GetProperty("code").GetInt32().Should().Be(srid);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(102100)]
     [InlineData(900913)]

@@ -297,6 +297,42 @@ class CatalogTests(unittest.TestCase):
             catalog.plan(self.root, self.entries, [])
             self.assertEqual(2, sum(call.args[1] == self.owner for call in sources.call_args_list))
 
+    def test_known_nonunit_source_does_not_select_unrelated_units(self):
+        for filename in ['Example.cs', 'NewCase.cs', 'DeletedCase.cs']:
+            changed = str(Path(self.integration).parent / filename)
+            result = catalog.plan(self.root, self.entries, [changed])
+            self.assertEqual([], result['selectedProjects'])
+            self.assertEqual([], result['selectionReasons'])
+
+    def test_nonunit_owned_source_link_still_selects_unit_consumer(self):
+        shared = Path(self.integration).parent / 'Example.cs'
+        project = self.root / self.unit
+        import os
+        project.write_text(project.read_text().replace('</ItemGroup>',
+            '<Compile Include="' + os.path.relpath(self.root / shared, project.parent) + '" /></ItemGroup>'))
+        self.assertEqual([self.unit], catalog.plan(self.root, self.entries, [shared.as_posix()])['selectedProjects'])
+
+    def test_unregistered_test_and_eng_and_runtime_inputs_still_broaden(self):
+        for changed in ['tests/dotnet/Unregistered/Case.cs', 'eng/new.cs', 'src/Unregistered/Runtime.cs']:
+            result = catalog.plan(self.root, self.entries, [changed])
+            self.assertEqual([self.unit], result['selectedProjects'])
+            self.assertTrue(result['selectionReasons'])
+
+    def test_solution_membership_and_release_configuration_fail_closed(self):
+        solution = self.root / 'Honua.sln'
+        solution.write_text('Global\nEndGlobal\n')
+        with self.assertRaisesRegex(ValueError, 'missing from Honua.sln'):
+            catalog.validate_solution_members(self.root, {self.unit: {}})
+        guid = '{11111111-1111-1111-1111-111111111111}'
+        declaration = 'Project("{TYPE}") = "Unit", "' + self.unit.replace('/', '\\') + '", "' + guid + '"\nEndProject\n'
+        solution.write_text(declaration)
+        with self.assertRaisesRegex(ValueError, 'Release build configuration'):
+            catalog.validate_solution_members(self.root, {self.unit: {}})
+        solution.write_text(declaration + '\n'.join(
+            guid + '.Release|Any CPU.' + suffix + ' = Release|Any CPU'
+            for suffix in ['ActiveCfg', 'Build.0']))
+        catalog.validate_solution_members(self.root, {self.unit: {}})
+
     def test_shared_change_selects_units_only(self):
         result = catalog.plan(self.root, self.entries, ['Directory.Build.props'])
         self.assertEqual([self.unit], result['selectedProjects'])

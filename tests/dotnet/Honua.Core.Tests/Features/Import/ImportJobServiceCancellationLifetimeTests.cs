@@ -17,6 +17,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class ImportJobServiceCancellationLifetimeTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -32,6 +33,7 @@ public sealed class ImportJobServiceCancellationLifetimeTests
         act.Should().NotThrow();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -49,6 +51,7 @@ public sealed class ImportJobServiceCancellationLifetimeTests
         act.Should().NotThrow();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task InMemoryService_DisposeAfterCancellation_DoesNotThrow()
     {
@@ -64,6 +67,7 @@ public sealed class ImportJobServiceCancellationLifetimeTests
         act.Should().NotThrow();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task UniversalService_DisposeAfterCancellation_DoesNotThrow()
     {
@@ -80,6 +84,7 @@ public sealed class ImportJobServiceCancellationLifetimeTests
         act.Should().NotThrow();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void InMemoryService_DisposeWithOutOfBandDisposedSource_DoesNotThrow()
     {
@@ -92,6 +97,7 @@ public sealed class ImportJobServiceCancellationLifetimeTests
         GetCancellationSourceCount(service).Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void UniversalService_DisposeWithOutOfBandDisposedSource_DoesNotThrow()
     {

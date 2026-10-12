@@ -4,6 +4,7 @@ import argparse
 import glob
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -124,8 +125,25 @@ def generated(catalog):
     return {'.github/test-coverage-projects.props': props, '.github/test-coverage-assemblies.txt': assemblies}
 
 
+def validate_solution_members(root, entries):
+    solution = root / 'Honua.sln'
+    if not solution.is_file():
+        return  # Synthetic catalog fixtures need not supply a solution.
+    text = solution.read_text()
+    members = {path.replace('\\', '/'): guid for path, guid in re.findall(
+        r'Project\("[^"\n]+"\) = "[^"\n]+", "([^"\n]+\.csproj)", "([^"\n]+)"', text)}
+    for project in entries:
+        if project not in members:
+            raise ValueError(f'{project}: catalog project missing from Honua.sln')
+        guid = members[project]
+        for suffix in ('ActiveCfg', 'Build.0'):
+            if f'{guid}.Release|Any CPU.{suffix} = Release|Any CPU' not in text:
+                raise ValueError(f'{project}: Honua.sln missing Release build configuration')
+
+
 def validate(root, catalog):
     entries = catalog['projects']
+    validate_solution_members(root, entries)
     if set(entries) != set(discover(root)):
         raise ValueError('Catalog project inventory differs; run test-projects.py update and review new entries')
     for project, entry in entries.items():
@@ -204,7 +222,19 @@ def plan(root, catalog, changed):
         eligible_inputs |= inputs
         eligible_directories.extend(directories)
         candidates.append((project, inputs, directories))
-    unknown = [p for p in changed if (p.startswith(('src/', 'tests/', 'eng/')) or Path(p).suffix in {'.props', '.targets'}) and p not in eligible_inputs and not any(p.startswith(d) for d in eligible_directories)]
+    # Known non-unit test sources are handled by the canonical shard router.
+    # They are not unknown runtime inputs; unit-linked consumers still match
+    # their own inputs below. Keep unregistered tests and src/eng fail-closed.
+    nonunit_sources = set()
+    nonunit_directories = []
+    for project, entry in catalog['projects'].items():
+        if entry['role'] not in {'mixed', 'component', 'integration', 'architecture'}:
+            continue
+        nonunit_sources.update(p for p in sources(root, project) if p.startswith('tests/'))
+        nonunit_directories.append((root / project).parent.relative_to(root).as_posix() + '/')
+    known_nonunit = {p for p in changed if p.startswith('tests/') and p.endswith('.cs')
+                     and (p in nonunit_sources or any(p.startswith(d) for d in nonunit_directories))}
+    unknown = [p for p in changed if p not in known_nonunit and (p.startswith(('src/', 'tests/', 'eng/')) or Path(p).suffix in {'.props', '.targets'}) and p not in eligible_inputs and not any(p.startswith(d) for d in eligible_directories)]
     if unknown:
         broad = True
         reasons.append('Unaccounted source/test/build inputs select all eligible units: ' + ', '.join(unknown))
@@ -301,7 +331,7 @@ def main():
         return
     changed = args.changed
     if changed is None:
-        changed = subprocess.check_output(['git', 'diff', '--name-only', args.base], cwd=root, text=True).splitlines()
+        changed = subprocess.check_output(['git', 'diff', '--no-renames', '--name-only', args.base], cwd=root, text=True).splitlines()
         changed += subprocess.check_output(['git', 'ls-files', '--others', '--exclude-standard'], cwd=root, text=True).splitlines()
     result = plan(root, catalog, changed)
     print(json.dumps(result, indent=2), flush=True)

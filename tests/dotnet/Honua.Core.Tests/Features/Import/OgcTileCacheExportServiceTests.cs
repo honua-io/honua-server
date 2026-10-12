@@ -27,6 +27,7 @@ public sealed class OgcTileCacheExportServiceTests
     private const string LayerId = "basemap";
     private const string TileMatrixSetId = "WebMercatorQuad";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_AutomatedTileSet_DeterministicallyFetchesAndPersistsTiles()
     {
@@ -70,6 +71,7 @@ public sealed class OgcTileCacheExportServiceTests
         sink.Records.Should().HaveCount(5);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_DryRun_DoesNotFetchTilesOrWriteSink()
     {
@@ -101,6 +103,7 @@ public sealed class OgcTileCacheExportServiceTests
         sink.EnsureCalls.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_RerunWithSameSink_IsIdempotent()
     {
@@ -151,6 +154,7 @@ public sealed class OgcTileCacheExportServiceTests
         sink.Records.Should().HaveCount(1, "no duplicate row should be created on rerun");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_RequestedZoomBeyondSafetyThreshold_ReclassifiesAsManualReview()
     {
@@ -185,6 +189,7 @@ public sealed class OgcTileCacheExportServiceTests
         tileSet.Code.Should().Be(ImportCompatibilityCodes.OgcWmtsTileCacheZoomThresholdExceeded);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_NonTrivialTileMatrixSet_IsSkippedAsManualReview()
     {
@@ -216,6 +221,7 @@ public sealed class OgcTileCacheExportServiceTests
         tileSet.Code.Should().Be(ImportCompatibilityCodes.OgcWmtsTileCacheSkippedManualReview);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_TileFetchFailure_PropagatesAsTileSetWarning()
     {
@@ -248,6 +254,7 @@ public sealed class OgcTileCacheExportServiceTests
         sink.Records.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_ScannerFailure_ReturnsFailureResult()
     {
@@ -273,6 +280,7 @@ public sealed class OgcTileCacheExportServiceTests
         sink.Records.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_NonWmtsInventory_ReturnsFailureResult()
     {

@@ -10,6 +10,7 @@ namespace Honua.Core.Tests.Features.Infrastructure.Monitoring;
 /// </summary>
 public class MemoryMonitorTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetMemoryUsage_ShouldReturnValidData()
     {
@@ -26,6 +27,7 @@ public class MemoryMonitorTests
         Assert.True(memoryUsage.Timestamp != default, "Timestamp should be set");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetAllocatedMemory_ShouldReturnPositiveValue()
     {
@@ -36,6 +38,7 @@ public class MemoryMonitorTests
         Assert.True(allocatedMemory > 0, "Allocated memory should be positive");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetAllocatedMemory_WithForceCollection_ShouldReturnValue()
     {
@@ -46,6 +49,7 @@ public class MemoryMonitorTests
         Assert.True(allocatedMemory > 0, "Allocated memory should be positive after forced collection");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ForceGarbageCollectionAndMeasure_ShouldReturnValidData()
     {
@@ -64,6 +68,7 @@ public class MemoryMonitorTests
         Assert.True(memoryUsage.Timestamp != default, "Timestamp should be set");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CalculateMemoryPressure_WithValidData_ShouldReturnCorrectPercentage()
     {
@@ -89,6 +94,7 @@ public class MemoryMonitorTests
         Assert.Equal(25.0, pressure, 1); // 4GB / 16GB = 25%
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CalculateMemoryPressure_WithZeroAvailableMemory_ShouldReturnZero()
     {
@@ -113,6 +119,7 @@ public class MemoryMonitorTests
         Assert.Equal(0.0, pressure);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void MemoryUsage_MemoryPressurePercentage_ShouldCalculateCorrectly()
     {
@@ -134,6 +141,7 @@ public class MemoryMonitorTests
         Assert.Equal(25.0, memoryUsage.MemoryPressurePercentage, 1); // 2GB / 8GB = 25%
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void MemoryUsage_IsHighMemoryPressure_ShouldReturnCorrectValue()
     {
@@ -170,6 +178,7 @@ public class MemoryMonitorTests
         Assert.False(lowPressureUsage.IsHighMemoryPressure, "Should not detect high memory pressure for low usage");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void MemoryUsage_TotalGCCollections_ShouldSumAllGenerations()
     {
@@ -191,6 +200,7 @@ public class MemoryMonitorTests
         Assert.Equal(28, memoryUsage.TotalGCCollections); // 15 + 10 + 3 = 28
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetMemoryUsage_ShouldTimestampMeasurementWithinCallWindow()
     {

@@ -37,6 +37,7 @@ public class SecretProviderTests
         };
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsSecretReference_RecognizesValidReferences()
     {
@@ -57,6 +58,7 @@ public class SecretProviderTests
         Assert.False(provider.IsSecretReference(""));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetSecretAsync_ResolvesSecretReference()
     {
@@ -76,6 +78,7 @@ public class SecretProviderTests
         Assert.Equal(expectedValue, result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetSecretAsync_CachesResults()
     {
@@ -100,6 +103,7 @@ public class SecretProviderTests
         _mockResolver.Verify(r => r.ResolveConnectionStringAsync(secretRef, It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetSecretOrDefaultAsync_ReturnsDefaultOnFailure()
     {
@@ -119,6 +123,7 @@ public class SecretProviderTests
         Assert.Equal(defaultValue, result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task CanResolveSecretAsync_ValidatesReferences()
     {
@@ -149,6 +154,7 @@ public class SecretProviderTests
 
 public class ConfigurationValidationAttributeTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RequiredConfigurationAttribute_ValidatesRequired()
     {
@@ -165,6 +171,7 @@ public class ConfigurationValidationAttributeTests
         Assert.False(IsValid(attribute, "   "));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidUrlAttribute_ValidatesUrls()
     {
@@ -182,6 +189,7 @@ public class ConfigurationValidationAttributeTests
         Assert.True(IsValid(attribute, null)); // Null is valid (use RequiredConfiguration for required)
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidTtlAttribute_ValidatesTtl()
     {
@@ -200,6 +208,7 @@ public class ConfigurationValidationAttributeTests
         Assert.False(IsValid(attribute, "invalid"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SecretReferenceAttribute_ValidatesSecretReferences()
     {

@@ -2,6 +2,9 @@
 """Service-free contracts for local affected-test feedback orchestration."""
 import importlib.util
 import json
+import os
+import shutil
+import sys
 from pathlib import Path
 import subprocess
 import tempfile
@@ -138,6 +141,28 @@ class FeedbackTests(unittest.TestCase):
             self.assertFalse(status['validatesPullRequest'])
             self.assertTrue(Path(status['commands'][0]['log']).is_absolute())
 
+    def test_pre_pr_feedback_uses_working_python_after_broken_python3_alias(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ci = root / 'scripts/ci'
+            ci.mkdir(parents=True)
+            shutil.copyfile(SCRIPT.parent / 'pre-pr-check.sh', ci / 'pre-pr-check.sh')
+            stub = 'import json,sys; print(json.dumps(sys.argv[1:]))'
+            (ci / 'local-test-feedback.py').write_text(stub)
+            (ci / 'test-projects.py').write_text(stub)
+            binaries = root / 'bin'
+            binaries.mkdir()
+            (binaries / 'python3').write_text('#!/bin/sh\nexit 99\n')
+            (binaries / 'python').symlink_to(sys.executable)
+            (binaries / 'python3').chmod(0o755)
+            env = os.environ.copy()
+            env['PATH'] = str(binaries) + os.pathsep + env['PATH']
+            for flag in ['--affected-tests', '--unit-only']:
+                result = subprocess.run(['bash', str(ci / 'pre-pr-check.sh'), flag,
+                                         '--dry-run', '--base', 'fixture-base'],
+                                        env=env, text=True, capture_output=True, check=True)
+                self.assertEqual(json.loads(result.stdout), ['plan', '--base', 'fixture-base'])
+
     def test_namespaced_trx_is_supported(self):
         with tempfile.TemporaryDirectory() as root:
             (Path(root) / 'good.trx').write_text('<TestRun xmlns="urn:test"><Counters total="1" executed="1"/></TestRun>')
@@ -156,7 +181,7 @@ class FeedbackTests(unittest.TestCase):
     def test_base_worktree_and_untracked_changes_share_one_changed_list(self):
         with patch.object(feedback.subprocess, 'check_output', side_effect=[b'src/a.cs\0tests/b.cs\0', b'new.cs\0src/a.cs\0']) as command:
             self.assertEqual(feedback.changed_files(Path('/fixture'), 'base'), ['new.cs', 'src/a.cs', 'tests/b.cs'])
-        self.assertEqual(command.call_args_list[0].args[0], ['git', 'diff', '--name-only', '-z', 'base'])
+            self.assertEqual(command.call_args_list[0].args[0], ['git', 'diff', '--no-renames', '--name-only', '-z', 'base'])
         self.assertEqual(command.call_args_list[1].args[0], ['git', 'ls-files', '--others', '--exclude-standard', '-z'])
 
 

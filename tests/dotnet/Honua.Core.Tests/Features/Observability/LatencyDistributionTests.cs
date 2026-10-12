@@ -12,6 +12,7 @@ namespace Honua.Core.Tests.Features.Observability;
 /// </summary>
 public class LatencyDistributionTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void FromDurations_BucketsCountsAndReportsTotal()
     {
@@ -21,6 +22,7 @@ public class LatencyDistributionTests
         distribution.BucketCounts.Should().HaveCount(LatencyDistribution.BucketCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void FromDurations_IgnoresNegativeAndNaN()
     {
@@ -29,12 +31,14 @@ public class LatencyDistributionTests
         distribution.TotalCount.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Quantile_OnEmptyDistribution_ReturnsZero()
     {
         LatencyDistribution.Empty.Quantile(0.99).Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Quantile_NearestRank_ReturnsContainingBucketUpperBound()
     {
@@ -48,6 +52,7 @@ public class LatencyDistributionTests
         distribution.Quantile(1.0).Should().BeGreaterThanOrEqualTo(9000);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Merge_IsElementwiseAdditionOfCounts()
     {

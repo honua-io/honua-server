@@ -7,6 +7,7 @@ namespace Honua.Core.Tests.Features.Geocoding;
 
 public sealed class GeocodeMagicKeyCodecTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Encode_ThenDecode_RoundTripsAllFields()
     {
@@ -22,6 +23,7 @@ public sealed class GeocodeMagicKeyCodecTests
         Assert.Equal(original.Provider, result.Provider);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Encode_IsDeterministic_SameInputProducesSameToken()
     {
@@ -33,6 +35,7 @@ public sealed class GeocodeMagicKeyCodecTests
         Assert.Equal(first, second);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Encode_DifferentSuggestions_ProduceDifferentTokens()
     {
@@ -42,6 +45,7 @@ public sealed class GeocodeMagicKeyCodecTests
         Assert.NotEqual(a, b);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Encode_ProducesUrlSafeToken()
     {
@@ -56,6 +60,7 @@ public sealed class GeocodeMagicKeyCodecTests
         Assert.Equal("Café Müller, Île-de-France", decoded!.Text);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryDecode_RoundTripsWhenCategoryAndProviderAreNull()
     {
@@ -67,6 +72,7 @@ public sealed class GeocodeMagicKeyCodecTests
         Assert.Null(decoded.Provider);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -81,6 +87,7 @@ public sealed class GeocodeMagicKeyCodecTests
         Assert.Null(decoded);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryDecode_RejectsTamperedPayload()
     {
@@ -97,6 +104,7 @@ public sealed class GeocodeMagicKeyCodecTests
         Assert.Null(decoded);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryDecode_RejectsTamperedSignature()
     {

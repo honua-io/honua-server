@@ -8,6 +8,7 @@ namespace Honua.Core.Tests.Features.Tiles;
 
 public class MetatileGroupingTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0, 1)]
     [InlineData(-5, 1)]
@@ -18,6 +19,7 @@ public class MetatileGroupingTests
         MetatileGrouping.NormalizeFactor(input).Should().Be(expected);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Group_FactorOne_YieldsOneTilePerBlock()
     {
@@ -34,6 +36,7 @@ public class MetatileGroupingTests
         blocks.Should().OnlyContain(block => block.Tiles.Count == 1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Group_FactorTwo_GroupsAlignedBlock()
     {
@@ -56,6 +59,7 @@ public class MetatileGroupingTests
         block.Tiles.Should().HaveCount(4);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Group_FactorTwo_AlignsToBlockGridAcrossBoundary()
     {
@@ -73,6 +77,7 @@ public class MetatileGroupingTests
         blocks.Should().Contain(block => block.MinX == 2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Group_SeparatesByZoomLevel()
     {
@@ -88,6 +93,7 @@ public class MetatileGroupingTests
         blocks.Select(block => block.Z).Should().BeEquivalentTo(new[] { 1, 2 });
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Group_PreservesEveryRequestedTileExactlyOnce()
     {
@@ -105,6 +111,7 @@ public class MetatileGroupingTests
         flattened.Should().BeEquivalentTo(tiles);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Group_IsDeterministicAcrossOrdering()
     {

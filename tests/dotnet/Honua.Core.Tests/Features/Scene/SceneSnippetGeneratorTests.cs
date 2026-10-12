@@ -58,6 +58,7 @@ public class SceneSnippetGeneratorTests
         Assert.Contains("&gt;", snippet, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("")]
     [InlineData(" ")]
@@ -67,6 +68,7 @@ public class SceneSnippetGeneratorTests
         Assert.ThrowsAny<ArgumentException>(() => SceneSnippetGenerator.BuildCesiumJs(url!));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("")]
     [InlineData(" ")]

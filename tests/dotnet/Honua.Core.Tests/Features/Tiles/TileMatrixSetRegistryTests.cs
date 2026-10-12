@@ -27,6 +27,7 @@ public class TileMatrixSetRegistryTests
             ]
         };
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void All_WithNoCustom_ReturnsTwoBuiltIns()
     {
@@ -37,6 +38,7 @@ public class TileMatrixSetRegistryTests
         registry.All.Should().OnlyContain(e => e.IsBuiltIn);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void All_WithCustom_AppendsCustomAfterBuiltIns()
     {
@@ -49,6 +51,7 @@ public class TileMatrixSetRegistryTests
         registry.All[2].Title.Should().Be("Hawaii Albers");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsSupported_BuiltInsAndCustom_AreCaseInsensitive()
     {
@@ -60,6 +63,7 @@ public class TileMatrixSetRegistryTests
         registry.IsSupported("Nope").Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryGet_WebMercatorQuad_HasProjectedMetadata()
     {
@@ -71,6 +75,7 @@ public class TileMatrixSetRegistryTests
         entry.IsGeographic.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryGet_WorldCrs84Quad_IsGeographic()
     {
@@ -81,6 +86,7 @@ public class TileMatrixSetRegistryTests
         entry.Srid.Should().Be(4326);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryGetGeometry_WebMercatorQuad_MatchesCanonicalGrid()
     {
@@ -103,6 +109,7 @@ public class TileMatrixSetRegistryTests
         bounds.YMax.Should().BeApproximately(20037508.342789244, 1e-3);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryGetGeometry_WorldCrs84Quad_IsTwoTilesWideAtZoomZero()
     {
@@ -115,6 +122,7 @@ public class TileMatrixSetRegistryTests
         geometry.TopLeftY.Should().Be(90.0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryGetGeometry_Custom_ReturnsConfiguredLevels()
     {
@@ -128,6 +136,7 @@ public class TileMatrixSetRegistryTests
         geometry.TopLeftY.Should().Be(2400000.0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Constructor_ReservedIdCollision_IsIgnoredDefensively()
     {
@@ -159,6 +168,7 @@ public class TileMatrixSetRegistryTests
         return (x, y);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GridGeometry_PixelCenter_WebMercatorQuad_MatchesLegacyInlineMath()
     {
@@ -182,6 +192,7 @@ public class TileMatrixSetRegistryTests
         y.Should().BeApproximately(expectedY, 1e-6);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GridGeometry_PixelCenter_CustomGrid_UsesGridOriginAndCellSize()
     {
@@ -196,6 +207,7 @@ public class TileMatrixSetRegistryTests
         y.Should().BeApproximately(2400000.0 - (128.5 * 1120.0), 1e-6);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GridGeometry_FindLevel_MissingLevel_ReturnsNull()
     {

@@ -28,6 +28,7 @@ public sealed class ArcGisRestPaginationTests
     private const string ServiceUrl = "https://services.arcgis.com/org/arcgis/rest/services/parcels/FeatureServer";
     private const string TestSourceName = "Honua.GeoServicesRest.Tests.Pagination";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryAsync_NoCallerLimit_PagesUntilUpstreamStopsFlaggingMore()
     {
@@ -49,6 +50,7 @@ public sealed class ArcGisRestPaginationTests
         Assert.Equal<long>([0, 1, 2, 3, 4], [.. result.Items.Select(f => f.Id)]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryAsync_WithCallerLimit_HonorsLimitAndDoesNotOverFetch()
     {
@@ -70,6 +72,7 @@ public sealed class ArcGisRestPaginationTests
         Assert.Equal<long>([0, 1, 2], [.. result.Items.Select(f => f.Id)]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryAsync_WithCallerOffset_PagesFromTheRequestedWindow()
     {
@@ -85,6 +88,7 @@ public sealed class ArcGisRestPaginationTests
         Assert.Contains("resultOffset=3", client.QueryRequests[0], StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryAsync_UpstreamAlwaysFlagsMoreButReturnsEmptyPage_TerminatesWithoutHang()
     {
@@ -99,6 +103,7 @@ public sealed class ArcGisRestPaginationTests
         Assert.Equal(1, client.QueryCallCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryObjectIdsAsync_ShortPage_ReturnsAllIdsInOneRequest()
     {
@@ -114,6 +119,7 @@ public sealed class ArcGisRestPaginationTests
         Assert.Single(client.ObjectIdsRequests);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryObjectIdsAsync_WithCallerLimit_TrimsToLimit()
     {
@@ -125,6 +131,7 @@ public sealed class ArcGisRestPaginationTests
         Assert.Equal<long>([0, 1, 2], [.. ids]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryObjectIdsAsync_UpstreamMaxRecordCountLessThanDefaultPageSize_ReturnsAllIds()
     {
@@ -146,6 +153,7 @@ public sealed class ArcGisRestPaginationTests
         Assert.Contains("resultOffset=1000", client.ObjectIdsRequests[1], StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryObjectIdsAsync_FullPageUpstream_LoopsUntilShortPage()
     {
@@ -166,6 +174,7 @@ public sealed class ArcGisRestPaginationTests
         Assert.Contains("resultOffset=" + ArcGisRestFeatureStore.DefaultPageSize, client.Requests[1], StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryAsync_MultiPageResult_EmitsOneSpanTaggedWithPageAndFeatureCounts()
     {

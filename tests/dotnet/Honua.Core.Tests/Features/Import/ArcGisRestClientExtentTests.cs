@@ -12,6 +12,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class ArcGisRestClientExtentTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("\"wkid\":4326", 4326)]
     [InlineData("\"wkid\":102100,\"latestWkid\":3857", 3857)]

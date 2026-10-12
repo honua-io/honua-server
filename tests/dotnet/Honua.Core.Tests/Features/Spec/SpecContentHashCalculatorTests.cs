@@ -18,6 +18,7 @@ public class SpecContentHashCalculatorTests
     private const string FamilyV1 = "family/1.0";
     private const string FamilyV2 = "family/2.0";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SameInputs_ProduceSameHash()
     {
@@ -36,6 +37,7 @@ public class SpecContentHashCalculatorTests
         Assert.Matches("^[0-9a-f]{64}$", hashA);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DifferentGrammarVersion_ProducesDifferentHash()
     {
@@ -47,6 +49,7 @@ public class SpecContentHashCalculatorTests
         Assert.NotEqual(hashV1, hashV2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DifferentProcessFamilyVersion_ProducesDifferentHash()
     {
@@ -58,6 +61,7 @@ public class SpecContentHashCalculatorTests
         Assert.NotEqual(hashV1, hashV2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DifferentCanonicalFragment_ProducesDifferentHash()
     {
@@ -70,6 +74,7 @@ public class SpecContentHashCalculatorTests
         Assert.NotEqual(hashA, hashB);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DifferentParameters_ProducesDifferentHash()
     {
@@ -88,6 +93,7 @@ public class SpecContentHashCalculatorTests
         Assert.NotEqual(hashA, hashB);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ParameterOrder_DoesNotAffectHash()
     {
@@ -116,6 +122,7 @@ public class SpecContentHashCalculatorTests
         Assert.Equal(hashA, hashB);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void InputHashOrder_DoesNotAffectHash()
     {
@@ -138,6 +145,7 @@ public class SpecContentHashCalculatorTests
         Assert.Equal(hashA, hashB);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DifferentInputHashes_ProduceDifferentHash()
     {
@@ -152,6 +160,7 @@ public class SpecContentHashCalculatorTests
         Assert.NotEqual(hashA, hashB);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SourcePinChange_WithoutCanonicalFragment_ProducesDifferentHash()
     {
@@ -170,6 +179,7 @@ public class SpecContentHashCalculatorTests
         Assert.NotEqual(hashA, hashB);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ScalarInputChange_WithoutCanonicalFragment_ProducesDifferentHash()
     {
@@ -192,6 +202,7 @@ public class SpecContentHashCalculatorTests
         Assert.NotEqual(hashA, hashB);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SwappedInputBindings_WithoutCanonicalFragment_ProduceDifferentHash()
     {
@@ -228,6 +239,7 @@ public class SpecContentHashCalculatorTests
         Assert.NotEqual(hashA, hashB);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CanonicalFragment_SupersedesParametersAndSourcePins()
     {
@@ -252,6 +264,7 @@ public class SpecContentHashCalculatorTests
         Assert.Equal(hashA, hashB);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void HashBytes_ReturnsLowercaseHex()
     {

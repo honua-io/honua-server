@@ -19,6 +19,7 @@ public sealed class OperatorScopeAuthorizerTests
 {
     private readonly OperatorScopeAuthorizer _authorizer = new();
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_NonOAuthPrincipal_IsNotScopeGovernedAndNotNarrowed()
     {
@@ -32,6 +33,7 @@ public sealed class OperatorScopeAuthorizerTests
         decision.IsAllowed.Should().BeTrue("non-OAuth principals are never narrowed by scopes");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_BearerWithMatchingScope_IsAllowed()
     {
@@ -43,6 +45,7 @@ public sealed class OperatorScopeAuthorizerTests
         decision.IsAllowed.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_BearerWithNarrowerScope_CannotEscalateToStrongerOperation()
     {
@@ -60,6 +63,7 @@ public sealed class OperatorScopeAuthorizerTests
         mutating.IsAllowed.Should().BeFalse("honua.mcp.discover does not include ExecuteMutatingProcess");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_BearerWithNoRecognizedScope_IsFailClosed()
     {
@@ -77,6 +81,7 @@ public sealed class OperatorScopeAuthorizerTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_BearerWithFullScope_PermitsEveryOperation()
     {
@@ -91,6 +96,7 @@ public sealed class OperatorScopeAuthorizerTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_ReadScope_ImpliesDiscover()
     {
@@ -101,6 +107,7 @@ public sealed class OperatorScopeAuthorizerTests
         _authorizer.Evaluate(principal, OperatorResourceType.Process, OperatorOperation.Execute).IsAllowed.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_MutatingScope_ImpliesBaselineExecute()
     {
@@ -111,6 +118,7 @@ public sealed class OperatorScopeAuthorizerTests
         _authorizer.Evaluate(principal, OperatorResourceType.Process, OperatorOperation.ExecuteCustomCode).IsAllowed.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_SpaceDelimitedScopeClaim_IsExpanded()
     {

@@ -11,6 +11,7 @@ public sealed class InMemoryOpsAutonomyProposalAccountingTests
 {
     private const string Rule = "alert-dispatch-backlog";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RecordProposalResolution_ConcurrentApprovalRetries_IncrementsExactlyOnce()
     {
@@ -28,6 +29,7 @@ public sealed class InMemoryOpsAutonomyProposalAccountingTests
         snapshot.TrackRecord.ProposalsRejected.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RecordProposalResolution_ConflictingReplay_PreservesOriginalCounter()
     {

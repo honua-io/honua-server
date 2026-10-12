@@ -8,6 +8,7 @@ namespace Honua.Core.Tests.Features.FeatureStore;
 
 public sealed class WkbSridNormalizerTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0xA0000001u, 3)]
     [InlineData(0x60000001u, 3)]
@@ -22,6 +23,7 @@ public sealed class WkbSridNormalizerTests
         Assert.Equal(ewkb.AsSpan(9).ToArray(), result.AsSpan(5).ToArray());
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RemoveEmbeddedSrid_RemovesNestedCollectionSridsWithoutChangingPayload()
     {
@@ -41,6 +43,7 @@ public sealed class WkbSridNormalizerTests
         Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(result.AsSpan(10)));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RemoveEmbeddedSrid_TruncatedInput_ReturnsOriginalReference()
     {
@@ -51,6 +54,7 @@ public sealed class WkbSridNormalizerTests
         Assert.Same(truncated, result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RemoveEmbeddedSrid_TrailingJunk_ReturnsOriginalReference()
     {
@@ -62,6 +66,7 @@ public sealed class WkbSridNormalizerTests
         Assert.Same(withJunk, result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RemoveEmbeddedSrid_UnsupportedGeometryType_ReturnsOriginalReference()
     {
@@ -72,6 +77,7 @@ public sealed class WkbSridNormalizerTests
         Assert.Same(unsupported, result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RemoveEmbeddedSrid_MismatchedCollectionChildType_ReturnsOriginalReference()
     {

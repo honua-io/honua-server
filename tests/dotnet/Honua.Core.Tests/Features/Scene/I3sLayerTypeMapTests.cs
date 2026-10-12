@@ -14,6 +14,7 @@ namespace Honua.Core.Tests.Features.Scene;
 /// </summary>
 public sealed class I3sLayerTypeMapTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData(SceneDatasetType.HostedTiles, "3DObject")]
@@ -23,6 +24,7 @@ public sealed class I3sLayerTypeMapTests
     public void ToLayerType_MapsEachSourceKind(SceneDatasetType type, string expected)
         => I3sLayerTypeMap.ToLayerType(type).Should().Be(expected);
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData(SceneDatasetType.HostedTiles, "meshpyramids")]

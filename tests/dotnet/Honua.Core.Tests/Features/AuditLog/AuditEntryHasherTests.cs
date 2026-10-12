@@ -36,12 +36,14 @@ public sealed class AuditEntryHasherTests
             "agent/1.0",
             details);
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ComputeEntryHash_IsDeterministic()
     {
         Hash().Should().Be(Hash());
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ComputeEntryHash_ReturnsLowercaseHex64()
     {
@@ -50,6 +52,7 @@ public sealed class AuditEntryHasherTests
         hash.Should().MatchRegex("^[0-9a-f]{64}$");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ComputeEntryHash_ChangesWhenAnyFieldChanges()
     {
@@ -59,6 +62,7 @@ public sealed class AuditEntryHasherTests
         Hash(details: "{\"x\":1}").Should().NotBe(baseline, "details is part of the canonical form");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ComputeEntryHash_ChangesWhenPreviousHashChanges()
     {
@@ -67,6 +71,7 @@ public sealed class AuditEntryHasherTests
         Hash(prev: null).Should().NotBe(Hash(prev: new string('a', 64)));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ComputeEntryHash_NullResourceId_DiffersFromEmpty()
     {
@@ -75,6 +80,7 @@ public sealed class AuditEntryHasherTests
         Hash(resourceId: null).Should().NotBe(Hash(resourceId: string.Empty));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ComputeEntryHash_IsInjective_AcrossFieldBoundaries()
     {

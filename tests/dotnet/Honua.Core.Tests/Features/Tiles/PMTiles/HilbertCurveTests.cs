@@ -8,12 +8,14 @@ namespace Honua.Core.Tests.Features.Tiles.PMTiles;
 
 public class HilbertCurveTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void XYZToTileId_Zoom0_Returns0()
     {
         HilbertCurve.XYZToTileId(0, 0, 0).Should().Be(0UL);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(1, 0, 0, 1)]
     [InlineData(1, 0, 1, 2)]
@@ -24,6 +26,7 @@ public class HilbertCurveTests
         HilbertCurve.XYZToTileId(z, x, y).Should().Be(expectedId);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void XYZToTileId_Zoom2_HasExpectedOffset()
     {
@@ -33,6 +36,7 @@ public class HilbertCurveTests
         id.Should().BeLessThan(5UL + 16UL); // 4^2 = 16 tiles at zoom 2
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0, 0, 0)]
     [InlineData(1, 0, 0)]
@@ -50,6 +54,7 @@ public class HilbertCurveTests
         ry.Should().Be(y);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void XYZToTileId_DifferentCoordinates_ProduceDifferentIds()
     {
@@ -68,6 +73,7 @@ public class HilbertCurveTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void XYZToTileId_IdsAreContiguous()
     {

@@ -24,7 +24,7 @@ def planner(root):
 
 def changed_files(root, base):
     # Match test-projects.py: base-to-working-tree diff includes staged/unstaged changes.
-    paths = subprocess.check_output(['git', 'diff', '--name-only', '-z', base], cwd=root).decode().split('\0')
+    paths = subprocess.check_output(['git', 'diff', '--no-renames', '--name-only', '-z', base], cwd=root).decode().split('\0')
     paths += subprocess.check_output(['git', 'ls-files', '--others', '--exclude-standard', '-z'], cwd=root).decode().split('\0')
     return sorted(set(filter(None, paths)))
 
@@ -123,6 +123,7 @@ def execute(root, plan, run=subprocess.run, results_directory=None):
         status['commands'][-1]['status'] = 'passed'
     # PATH dotnet preserves the supervisor/Flow admission wrapper.
     try:
+        (results / 'result.json').write_text(json.dumps(status, indent=2) + '\n')
         with tempfile.TemporaryDirectory(prefix='.honua-local-feedback-', dir=root) as temporary:
             temporary = Path(temporary)
             selection = temporary / 'feedback.slnf'

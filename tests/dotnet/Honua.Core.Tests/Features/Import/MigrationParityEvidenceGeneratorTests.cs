@@ -20,6 +20,7 @@ public sealed class MigrationParityEvidenceGeneratorTests
         WriteIndented = false
     };
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Generate_WithoutReadinessAttestation_LeavesChecklistUnknown()
     {
@@ -55,6 +56,7 @@ public sealed class MigrationParityEvidenceGeneratorTests
             item.Id == "known-gaps-accepted" || item.State == MigrationEvidenceStates.Unknown);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Generate_WithPassingAttestationAndNoGaps_ReturnsPass()
     {
@@ -80,6 +82,7 @@ public sealed class MigrationParityEvidenceGeneratorTests
             .Which.State.Should().Be(MigrationEvidenceStates.NotApplicable);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Generate_WithIncompatibleResource_ReturnsFailOverallState()
     {
@@ -108,6 +111,7 @@ public sealed class MigrationParityEvidenceGeneratorTests
             .Which.State.Should().Be(MigrationEvidenceStates.Unknown);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Generate_WithFidelityClassifications_ReportsAutomationDisposition()
     {
@@ -151,6 +155,7 @@ public sealed class MigrationParityEvidenceGeneratorTests
         evidence.OverallState.Should().Be(MigrationEvidenceStates.Fail);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Generate_WithoutManifest_DoesNotInferDataSuccess()
     {
@@ -174,6 +179,7 @@ public sealed class MigrationParityEvidenceGeneratorTests
                 item.Remediation.SequenceEqual(new[] { "Generate and review the migration manifest." }));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Generate_WithPerformanceCostEvidence_AttachesStableSecretSafeMetrics()
     {

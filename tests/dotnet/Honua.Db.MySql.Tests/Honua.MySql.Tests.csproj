@@ -10,7 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Honua.Db\MySql\Honua.MySql.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
-    <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
+    <ProjectReference Include="../Honua.TestKit/Honua.TestKit.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -19,6 +19,7 @@
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="MySqlConnector" />
     <PackageReference Include="Testcontainers.MySql" />
+    <PackageReference Include="SSH.NET" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

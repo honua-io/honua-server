@@ -17,6 +17,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class InMemoryImportJobServiceCleanupTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     [Trait("Category", "Performance")]
     public async Task CleanupCompletedJobs_EnforcesMaxCompletedJobs()
@@ -67,6 +68,7 @@ public sealed class InMemoryImportJobServiceCleanupTests
         newest.Should().NotBeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueueImportAsync_WithLocalFilePath_DeletesStagedFileAfterCompletion()
     {

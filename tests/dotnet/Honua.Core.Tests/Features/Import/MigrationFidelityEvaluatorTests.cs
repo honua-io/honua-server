@@ -22,6 +22,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// </remarks>
 public sealed class MigrationFidelityEvaluatorTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenEveryCheckRanAndPassed_ReportsFullFidelity()
     {
@@ -33,6 +34,7 @@ public sealed class MigrationFidelityEvaluatorTests
         evaluation.BlockingReason.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenCatalogReconciliationFails_BlocksEvenThoughDataReconciliationPassed()
     {
@@ -70,6 +72,7 @@ public sealed class MigrationFidelityEvaluatorTests
         evaluation.BlockingReason.Should().Contain(MigrationCatalogReconciliationCodes.DomainMissing);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenCatalogFindingIsWarnOnly_DoesNotBlock()
     {
@@ -95,6 +98,7 @@ public sealed class MigrationFidelityEvaluatorTests
         evaluation.Differences.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenRecordsWereDropped_BlocksWithTheDroppedCount()
     {
@@ -111,6 +115,7 @@ public sealed class MigrationFidelityEvaluatorTests
         difference.Actual.Should().Be("4 dropped source records");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenAttachmentsAreLost_BlocksIndependentlyOfMatchingFeatureCounts()
     {
@@ -139,6 +144,7 @@ public sealed class MigrationFidelityEvaluatorTests
         difference.Actual.Should().Be("7 attachments in the target store");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenAdvertisedAttachmentsExceedCopiedWithoutFailures_StillBlocks()
     {
@@ -161,6 +167,7 @@ public sealed class MigrationFidelityEvaluatorTests
             .ContainSingle(d => d.Code == MigrationFidelityDifferenceCodes.AttachmentsLost);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenAttachmentInventoryCouldNotBeRead_DowngradesToUnverifiedWithoutBlocking()
     {
@@ -188,6 +195,7 @@ public sealed class MigrationFidelityEvaluatorTests
         difference.Actual.Should().Be("12 features with an unreadable attachment inventory");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenAttachmentCopyWasSkipped_IsUnverifiedRatherThanFullFidelity()
     {
@@ -203,6 +211,7 @@ public sealed class MigrationFidelityEvaluatorTests
             .ContainSingle(d => d.Code == MigrationFidelityDifferenceCodes.AttachmentsUnverified);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenARelationshipWasDeferred_BlocksRatherThanOmittingSilently()
     {
@@ -241,6 +250,7 @@ public sealed class MigrationFidelityEvaluatorTests
         difference.Subject.Should().Be("rel:Inspections:2");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenCatalogCheckNeverExecuted_IsUnverifiedNotFullFidelity()
     {
@@ -260,6 +270,7 @@ public sealed class MigrationFidelityEvaluatorTests
             .ContainSingle(d => d.Code == MigrationFidelityDifferenceCodes.CatalogReconciliationNotExecuted);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenDataCheckNeverExecuted_IsUnverifiedNotFullFidelity()
     {
@@ -276,6 +287,7 @@ public sealed class MigrationFidelityEvaluatorTests
             .ContainSingle(d => d.Code == MigrationFidelityDifferenceCodes.DataReconciliationNotExecuted);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenNothingWasPublished_DoesNotInventNotExecutedDifferencesForPostPublishProbes()
     {
@@ -293,6 +305,7 @@ public sealed class MigrationFidelityEvaluatorTests
         evaluation.Differences.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenPublishWasRequestedButNoLayerWasPublished_IsIncompleteNotFullFidelity()
     {
@@ -317,6 +330,7 @@ public sealed class MigrationFidelityEvaluatorTests
             difference.Subject == "Inspections");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenRequestedPublishCompletedAndEveryCheckPassed_ReportsFullFidelity()
     {
@@ -326,6 +340,7 @@ public sealed class MigrationFidelityEvaluatorTests
         evaluation.Differences.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenDataReconciliationFails_BlocksAndCarriesItsReasons()
     {
@@ -350,6 +365,7 @@ public sealed class MigrationFidelityEvaluatorTests
         difference.Summary.Should().Contain("31 of 900");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenDataReconciliationWasSkipped_IsUnverifiedNotFullFidelity()
     {
@@ -365,6 +381,7 @@ public sealed class MigrationFidelityEvaluatorTests
             .ContainSingle(d => d.Code == MigrationFidelityDifferenceCodes.DataReconciliationNotExecuted);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenAResourceHadNoPublishedCatalogEntry_IsUnverified()
     {
@@ -385,6 +402,7 @@ public sealed class MigrationFidelityEvaluatorTests
         difference.Subject.Should().Be("resource:Inspections:table:3");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenBlockingAndUnverifiedDifferencesCoexist_BlockingWins()
     {
@@ -403,6 +421,7 @@ public sealed class MigrationFidelityEvaluatorTests
         evaluation.BlockingReason.Should().StartWith("Migration is not full fidelity: 1 blocking difference(s).");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_OrdersDifferencesByCodeThenSubject()
     {
@@ -442,6 +461,7 @@ public sealed class MigrationFidelityEvaluatorTests
         ]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenSourceCountChangedDuringTransfer_BlocksWithBothCounts()
     {
@@ -467,6 +487,7 @@ public sealed class MigrationFidelityEvaluatorTests
         difference.Actual.Should().Be("123 source records when the transfer finished");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenSourceObjectIdsChangedButCountDidNot_StillBlocks()
     {
@@ -488,6 +509,7 @@ public sealed class MigrationFidelityEvaluatorTests
             .Should().Be("40 source records when the transfer finished (different object IDs)");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenSourcePopulationWasStableAcrossTheTransfer_AddsNoDifference()
     {
@@ -506,6 +528,7 @@ public sealed class MigrationFidelityEvaluatorTests
         evaluation.Differences.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WhenSourceCountCouldNotBeReadAfterTheTransfer_IsUnverifiedNotFullFidelity()
     {
@@ -528,6 +551,7 @@ public sealed class MigrationFidelityEvaluatorTests
         difference.Actual.Should().Be("source record count unavailable after the transfer");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_IsDeterministic()
     {
@@ -545,6 +569,7 @@ public sealed class MigrationFidelityEvaluatorTests
         second.Differences.Should().Equal(first.Differences);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WithNullInput_Throws()
     {

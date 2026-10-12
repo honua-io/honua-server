@@ -12,6 +12,7 @@ namespace Honua.Core.Tests.Features.Spec;
 /// </summary>
 public class InMemoryContentHashArtifactCacheTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Put_ThenTryGet_ReturnsReference()
     {
@@ -32,6 +33,7 @@ public class InMemoryContentHashArtifactCacheTests
         Assert.Equal(put.ProducedAt, got.ProducedAt);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task TryGet_UnknownHash_ReturnsNull()
     {
@@ -42,6 +44,7 @@ public class InMemoryContentHashArtifactCacheTests
         Assert.Null(got);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task OpenRead_ReturnsStoredBytes()
     {
@@ -56,6 +59,7 @@ public class InMemoryContentHashArtifactCacheTests
         Assert.Equal(bytes, ms.ToArray());
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PutWithTtl_ExpiresAfterAdvance()
     {
@@ -78,6 +82,7 @@ public class InMemoryContentHashArtifactCacheTests
         Assert.Null(afterExpiry);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Put_OverwritesEntryForSameHash()
     {
@@ -91,6 +96,7 @@ public class InMemoryContentHashArtifactCacheTests
         Assert.Equal(4, got!.Bytes);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PutAsync_SweepsPreviouslyExpiredEntries()
     {
@@ -130,6 +136,7 @@ public class InMemoryContentHashArtifactCacheTests
         Assert.Null(expired);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PutAsync_PreservesNonExpiredTtlEntries()
     {
@@ -158,6 +165,7 @@ public class InMemoryContentHashArtifactCacheTests
         Assert.NotNull(await cache.TryGetAsync("fresh"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PutAsync_ExceedsMaxEntries_EvictsDownToBudget()
     {
@@ -192,6 +200,7 @@ public class InMemoryContentHashArtifactCacheTests
             $"expected at most {InMemoryContentHashArtifactCache.MaxEntries} surviving entries, found {survivingCount}");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PutAsync_OverwriteThenEvict_RunningByteTotalStaysConsistent()
     {

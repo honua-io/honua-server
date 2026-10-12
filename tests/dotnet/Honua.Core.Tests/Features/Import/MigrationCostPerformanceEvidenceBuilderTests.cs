@@ -20,6 +20,7 @@ public sealed class MigrationCostPerformanceEvidenceBuilderTests
         WriteIndented = false
     };
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithUnorderedPhaseMeasurements_EmitsDeterministicPhasesAndTotals()
     {
@@ -74,6 +75,7 @@ public sealed class MigrationCostPerformanceEvidenceBuilderTests
             !privacy.SourceDataIncluded);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithThresholdBreaches_ClassifiesWarnAndFailSignals()
     {
@@ -112,6 +114,7 @@ public sealed class MigrationCostPerformanceEvidenceBuilderTests
                 phase.Signals.Single(signal => signal.Metric == "bytesRead").Classification == MigrationCostPerformanceClassifications.Fail);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithLowDerivedThroughput_ClassifiesLowerBoundSignal()
     {
@@ -150,6 +153,7 @@ public sealed class MigrationCostPerformanceEvidenceBuilderTests
                 signal.Observed == 0.1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithMissingRecoveryScenario_ReturnsWarnForIncompleteRecoveryEvidence()
     {
@@ -178,6 +182,7 @@ public sealed class MigrationCostPerformanceEvidenceBuilderTests
             recovery.Classification == MigrationCostPerformanceClassifications.Warn);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithFailedRepeatedApplyAttempt_ReturnsFailRecoveryEvidence()
     {
@@ -227,6 +232,7 @@ public sealed class MigrationCostPerformanceEvidenceBuilderTests
             .Which.Classification.Should().Be(MigrationCostPerformanceClassifications.Fail);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithIdempotentRepeatedApplyWithoutRecoveryOrResume_ReturnsPassRecoveryEvidence()
     {
@@ -258,6 +264,7 @@ public sealed class MigrationCostPerformanceEvidenceBuilderTests
                 recoveryEvidence.IdempotentReplay == true);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithDuplicateRecoveryMeasurements_AggregatesWorstEvidenceAndAttemptCounts()
     {
@@ -318,6 +325,7 @@ public sealed class MigrationCostPerformanceEvidenceBuilderTests
                 recovery.Summary.Contains("2 recovery measurements were aggregated.", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithMissingRequiredPhases_ReturnsWarnForIncompleteEvidence()
     {
@@ -339,6 +347,7 @@ public sealed class MigrationCostPerformanceEvidenceBuilderTests
                 phase.Signals.Single().Metric == "phaseMeasured");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithCredentialBearingSource_DoesNotEmitPrivateUrlsOrCredentialValues()
     {

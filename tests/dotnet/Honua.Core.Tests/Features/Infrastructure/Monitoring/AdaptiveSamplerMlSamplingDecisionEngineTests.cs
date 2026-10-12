@@ -10,6 +10,7 @@ namespace Honua.Core.Tests.Features.Infrastructure.Monitoring;
 
 public sealed class AdaptiveSamplerMlSamplingDecisionEngineTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void MakeSamplingDecision_UsesAdaptiveSamplingRateAsBaseRate()
     {
