@@ -966,13 +966,76 @@ public sealed class StudioPackageLifecycleServiceTests
         Assert.NotNull(published);
         Assert.Equal(bridged.ItemId, published!.ItemId);
         Assert.Equal(StudioPublicationRequestStatus.Accepted, published.Status);
+        Assert.Null(published.PublicationUrl);
+        Assert.Equal(StudioPublishedRoutes.BuildActiveUrl("/maps/shared"), native!.PublicationUrl);
         Assert.Equal(published.RequestId, Assert.Single(bridge.Published).RequestId);
         var governing = await service.GetActivePublicationRequestByRouteAsync("/maps/shared");
         Assert.NotNull(governing);
         Assert.Equal(owner.ItemId, governing!.ItemId);
+        Assert.Equal(native.PublicationUrl, governing.PublicationUrl);
         var ownerPointers = await store.GetPointersAsync(owner.ItemId);
         Assert.NotNull(ownerPointers);
         Assert.Equal(owner.VersionId, ownerPointers!.PublishedVersionId);
+        var bridgedPointers = await service.GetPointersAsync(bridged.ItemId);
+        Assert.NotNull(bridgedPointers);
+        Assert.False(bridgedPointers!.GovernsStudioRoutes);
+    }
+
+    // honua-server#5825: a bridge registered for Form does not waive route ownership for a Form
+    // that still lives in the inner Studio store. Approval-gated hosts reject that proposal
+    // here, rather than accepting it and failing when the inner store actuates.
+    [UnitTest]
+    public async Task CreatePublicationRequest_InnerItemOfBridgedFamily_StillRejectsRouteConflict()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var unbridged = BuildServiceProvider(store).GetRequiredService<IStudioPackageLifecycleService>();
+        var legacyDraft = await unbridged.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "legacy-form",
+            WorkspaceId = "studio",
+            OwnerId = "tester",
+            ActorId = "tester",
+            Envelope = BuildEnvelope("1=1", "content.parcels") with
+            {
+                Family = StudioPackageFamily.Form,
+                Format = "studio_form_package.v1",
+            },
+        });
+        var legacy = await unbridged.SaveDraftAsVersionAsync(legacyDraft.DraftId, "saved before the form bridge", "tester");
+        Assert.NotNull(legacy);
+
+        var bridge = new SingleItemFamilyBridge(StudioPackageFamily.Form);
+        var service = BuildServiceProvider(
+                store,
+                bridgeCatalog: new StudioFamilyPersistenceBridgeCatalog([bridge]))
+            .GetRequiredService<IStudioPackageLifecycleService>();
+        var intent = new StudioPublicationIntent { Route = "/maps/shared", Visibility = "organization" };
+        var owner = await SaveVersionAsync(service, "publication-owner");
+        var native = await service.CreatePublicationRequestAsync(
+            owner.ItemId,
+            owner.VersionId,
+            expectedCurrentVersionId: owner.VersionId,
+            intent,
+            warningAcknowledgement: null,
+            actorId: "tester");
+        Assert.NotNull(native);
+
+        var conflict = await Assert.ThrowsAsync<StudioPublicationRouteConflictException>(
+            () => service.CreatePublicationRequestAsync(
+                legacy!.ItemId,
+                legacy.VersionId,
+                expectedCurrentVersionId: legacy.VersionId,
+                intent,
+                warningAcknowledgement: null,
+                actorId: "tester"));
+
+        Assert.Equal("/maps/shared", conflict.Route);
+        Assert.Equal(legacy.ItemId, conflict.ItemId);
+        Assert.Equal(owner.ItemId, conflict.OwningItemId);
+        Assert.Empty(bridge.Published);
+        var legacyPointers = await service.GetPointersAsync(legacy.ItemId);
+        Assert.NotNull(legacyPointers);
+        Assert.True(legacyPointers!.GovernsStudioRoutes);
     }
 
     private static async Task<StudioContentVersion> SaveVersionAsync(
