@@ -343,24 +343,35 @@ internal sealed class GeoprocessingJobDispatcher
         // independently of request cancellation; missing acknowledgements remain
         // recoverable through the idempotent queue and active-job sweep.
         using var completion = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        for (var attempt = 0; attempt < 3; attempt++)
+        try
         {
-            var accepted = current with
+            for (var attempt = 0; attempt < 3; attempt++)
             {
-                CurrentPhase = ExecutionJobSubmissionHelper.LocalDispatchAcceptedPhase,
-                UpdatedAt = DateTimeOffset.UtcNow
-            };
-            if (await jobStore.TrySetAsync(accepted, cancellationToken: completion.Token).ConfigureAwait(false))
-            {
-                return await jobStore.GetAsync(job.OperationId, completion.Token).ConfigureAwait(false) ?? accepted;
+                var accepted = current with
+                {
+                    CurrentPhase = ExecutionJobSubmissionHelper.LocalDispatchAcceptedPhase,
+                    UpdatedAt = DateTimeOffset.UtcNow
+                };
+                if (await jobStore.TrySetAsync(accepted, cancellationToken: completion.Token).ConfigureAwait(false))
+                {
+                    return await jobStore.GetAsync(job.OperationId, completion.Token).ConfigureAwait(false) ?? accepted;
+                }
+                var latest = await jobStore.GetAsync(job.OperationId, completion.Token).ConfigureAwait(false);
+                if (latest == null || !ExecutionJobSubmissionHelper.NeedsLocalDispatchRepair(latest)
+                    || latest.CurrentPhase == ExecutionJobSubmissionHelper.LocalDispatchAcceptedPhase)
+                {
+                    return latest ?? current;
+                }
+                current = latest;
             }
-            var latest = await jobStore.GetAsync(job.OperationId, completion.Token).ConfigureAwait(false);
-            if (latest == null || !ExecutionJobSubmissionHelper.NeedsLocalDispatchRepair(latest)
-                || latest.CurrentPhase == ExecutionJobSubmissionHelper.LocalDispatchAcceptedPhase)
-            {
-                return latest ?? current;
-            }
-            current = latest;
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or TimeoutException)
+        {
+            // The delivery is already on the queue, so a slow or stalled store must not turn an
+            // accepted submission into a failure: the caller would roll the record back and
+            // answer 408 while a worker claims and runs the job. The record is still initial
+            // local Queued dispatch intent, which the active-job sweep repairs.
+            GeoprocessingServiceLog.LocalDispatchAcknowledgementDeferred(_logger, current.OperationId, ex);
         }
         return current;
     }
