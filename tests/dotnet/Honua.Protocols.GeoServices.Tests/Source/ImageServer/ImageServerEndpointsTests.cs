@@ -455,7 +455,8 @@ public class ImageServerEndpointsTests
     public async Task Tile_MissingWithoutBlankFallback_ReturnsHttp404ForBothRoutes()
     {
         var store = CreateRasterStoreSubstitute();
-        var raster = await store.GetPrimaryRasterInfoAsync(TestLayerId, CancellationToken.None);
+        var raster = await store.GetPrimaryRasterInfoAsync(TestLayerId, CancellationToken.None)
+            ?? throw new InvalidOperationException("The raster substitute must provide its primary raster.");
         var fixture = await CreateFixtureAsync(store);
         try
         {
@@ -467,7 +468,7 @@ public class ImageServerEndpointsTests
             string[] queries = ["", "?blankTile=true", "?blankTile=false"];
             for (var selection = 0; selection < 2; selection++)
             {
-                RasterInfo[] selectedRasters = selection == 0 ? [] : [raster!];
+                RasterInfo[] selectedRasters = selection == 0 ? [] : [raster];
                 store.QueryRastersAsync(default, default, default)
                     .ReturnsForAnyArgs(selectedRasters);
                 foreach (var path in paths)
