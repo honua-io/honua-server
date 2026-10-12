@@ -138,9 +138,9 @@ public sealed class QueryRelationshipsResponse
 }
 
 /// <summary>
-/// Relationship metadata at the service level.
+/// Relationship class identifier advertised on the service resource.
 /// </summary>
-public sealed class ServiceRelationshipInfo
+public sealed class ServiceRelationshipSummary
 {
     /// <summary>
     /// Relationship identifier.
@@ -153,42 +153,76 @@ public sealed class ServiceRelationshipInfo
     /// </summary>
     [JsonPropertyName("name")]
     public string? Name { get; set; }
+}
+
+/// <summary>
+/// Non-attributed relationship class metadata returned by the service relationships resource.
+/// </summary>
+public sealed class ServiceRelationshipInfo
+{
+    /// <summary>Unique relationship class identifier within the service.</summary>
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
+
+    /// <summary>Relationship class name.</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    /// <summary>Label for navigation from destination to origin.</summary>
+    [JsonPropertyName("backwardPathLabel")]
+    public string? BackwardPathLabel { get; set; }
+
+    /// <summary>Label for navigation from origin to destination.</summary>
+    [JsonPropertyName("forwardPathLabel")]
+    public string? ForwardPathLabel { get; set; }
 
     /// <summary>
     /// Origin layer identifier.
     /// </summary>
-    [JsonPropertyName("layerId")]
-    public int LayerId { get; set; }
+    [JsonPropertyName("originLayerId")]
+    public int OriginLayerId { get; set; }
 
     /// <summary>
     /// Related table/layer identifier.
     /// </summary>
-    [JsonPropertyName("relatedTableId")]
-    public int RelatedTableId { get; set; }
+    [JsonPropertyName("destinationLayerId")]
+    public int DestinationLayerId { get; set; }
 
     /// <summary>
-    /// Relationship role value.
+    /// Primary key on the origin resource.
     /// </summary>
-    [JsonPropertyName("role")]
-    public string? Role { get; set; }
+    [JsonPropertyName("originPrimaryKey")]
+    public string? OriginPrimaryKey { get; set; }
 
     /// <summary>
-    /// Key field used for lookups.
+    /// Foreign key on the destination resource that references the origin.
     /// </summary>
-    [JsonPropertyName("keyField")]
-    public string? KeyField { get; set; }
+    [JsonPropertyName("originForeignKey")]
+    public string? OriginForeignKey { get; set; }
 
     /// <summary>
-    /// Origin key field.
+    /// Primary key on the destination resource.
     /// </summary>
-    [JsonPropertyName("originKeyField")]
-    public string? OriginKeyField { get; set; }
+    [JsonPropertyName("destinationPrimaryKey")]
+    public string? DestinationPrimaryKey { get; set; }
 
     /// <summary>
-    /// Destination key field.
+    /// Esri relationship cardinality.
     /// </summary>
-    [JsonPropertyName("destinationKeyField")]
-    public string? DestinationKeyField { get; set; }
+    [JsonPropertyName("cardinality")]
+    public string? Cardinality { get; set; }
+
+    /// <summary>Whether an intermediate relationship table carries attributes.</summary>
+    [JsonPropertyName("attributed")]
+    public bool Attributed { get; set; }
+
+    /// <summary>Whether the canonical relationship declares composite ownership.</summary>
+    [JsonPropertyName("composite")]
+    public bool Composite { get; set; }
+
+    /// <summary>Relationship rules; the canonical graph currently declares none.</summary>
+    [JsonPropertyName("rules")]
+    public object[] Rules { get; set; } = [];
 
     /// <summary>
     /// Optional relationship description.

@@ -411,11 +411,16 @@ public class ImageServerMetadataHandlerTests
         // Default depth is levels 0..23 inclusive.
         tileInfo.Lods.Should().HaveCount(24);
         tileInfo.Lods[0].Level.Should().Be(0);
-        tileInfo.Lods[0].Scale.Should().BeApproximately(559082264.0287178, 1e-3);
+        tileInfo.Lods[0].Scale.Should().BeApproximately(591657527.591555, 1e-3);
         tileInfo.Lods[0].Resolution.Should().BeApproximately(156543.03392804097, 1e-6);
 
         // Each successive level halves the scale denominator and resolution.
-        tileInfo.Lods[1].Scale.Should().BeApproximately(559082264.0287178 / 2.0, 1e-3);
+        tileInfo.Lods[1].Scale.Should().BeApproximately(591657527.591555 / 2.0, 1e-3);
+        tileInfo.Dpi.Should().Be(96);
+        foreach (var lod in tileInfo.Lods)
+        {
+            lod.Scale.Should().BeApproximately(lod.Resolution * tileInfo.Dpi * 39.37, 1e-6);
+        }
         tileInfo.Lods[23].Level.Should().Be(23);
         tileInfo.Lods[23].Resolution.Should()
             .BeApproximately(156543.03392804097 / (1L << 23), 1e-9);

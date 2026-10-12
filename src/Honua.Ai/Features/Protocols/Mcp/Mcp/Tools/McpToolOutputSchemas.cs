@@ -963,6 +963,10 @@ internal static class McpToolOutputSchemas
             "operationId": { "type": "string", "const": "style.apply-preset" },
             "operationInstanceId": { "type": "string", "minLength": 1 },
             "handleId": { "type": "string", "minLength": 1 },
+            "durable": {
+              "type": "boolean",
+              "description": "Present and false when the operation instance record was not durably persisted (a direct style.apply-preset on a server started without Redis). The ids and audit receipts are real; the handle cannot be polled afterwards."
+            },
             "correlationId": { "type": "string", "minLength": 1 },
             "auditId": { "type": ["string", "null"], "description": "Durable audit identity of the style.apply-preset operation." },
             "createdAt": { "type": "string", "format": "date-time" },

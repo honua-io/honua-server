@@ -2378,7 +2378,6 @@ jobs:
           HONUA_TRANSPORT: rest
           HONUA_SERVICE_ID: test_service
           HONUA_LAYER_ID: '0'
-          HONUA_DEV_AUTH: "true"
           HONUA_API_KEY: "ci-admin-password"
           HONUA_EVAL_BEDROCK: ${{ steps.bedrock.outputs.available == 'true' && '1' || '' }}
           HONUA_EVAL_BEDROCK_MODEL: ${{ vars.HONUA_MCP_SMOKE_BEDROCK_MODEL || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0' }}

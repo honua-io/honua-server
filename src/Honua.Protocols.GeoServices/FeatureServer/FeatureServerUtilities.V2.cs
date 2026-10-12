@@ -83,6 +83,7 @@ internal static partial class FeatureServerEndpoints
             ? SpatialReference.Create(srid.Value).ToSpatialReferenceInfo()
             : SpatialReference.WGS84.ToSpatialReferenceInfo();
         var serviceExtent = ResolveServiceExtentV2(publications, srid ?? SpatialReference.WGS84.Wkid);
+        var relationships = BuildServiceRelationshipResponseV2(publications, snapshot);
 
         return new FeatureServerResponse
         {
@@ -105,6 +106,12 @@ internal static partial class FeatureServerEndpoints
             SupportedQueryFormats = NormalizeSupportedQueryFormats(supportedFormats, supportsGeobufOutput),
             Capabilities = BuildServiceCapabilitiesV2(service, publications, supportsAttachmentUploads, offlineSyncEnabled),
             Fields = visibleFields,
+            SupportsRelationshipsResource = true,
+            Relationships = [.. relationships.Select(relationship => new ServiceRelationshipSummary
+            {
+                Id = relationship.Id,
+                Name = relationship.Name
+            })],
             ObjectIdField = objectIdField,
             SupportsAdvancedQueries = supportsAdvancedQueries,
             SupportsStatistics = supportsStatistics,
@@ -137,7 +144,8 @@ internal static partial class FeatureServerEndpoints
         bool supportsGeobufOutput,
         bool supportsAttachmentUploads,
         bool branchVersioningEnabled,
-        bool offlineSyncEnabled)
+        bool offlineSyncEnabled,
+        LayerRelationshipInfo[]? authorizedRelationships = null)
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(resource);
@@ -149,7 +157,8 @@ internal static partial class FeatureServerEndpoints
         var globalIdField = ResolveGlobalIdFieldV2(resource);
         var supportsStatistics = true;
         var supportsAdvancedQueries = ServiceSupportsAdvancedQueriesV2(service);
-        var supportsRelated = resource.Relationships.Count > 0;
+        var relationships = authorizedRelationships ?? BuildRelationshipResponseV2(resource, snapshot, service);
+        var supportsRelated = relationships.Length > 0;
         var supportsOrderBy = supportsAdvancedQueries;
         var supportsDistinct = supportsAdvancedQueries;
         var supportsPagination = supportsAdvancedQueries;
@@ -240,7 +249,7 @@ internal static partial class FeatureServerEndpoints
             SupportsQueryRelated = supportsRelated,
             SupportedQueryFormats = NormalizeSupportedQueryFormats(supportedFormats, supportsGeobufOutput),
             SupportsCoordinatesQuantization = true,
-            Relationships = BuildRelationshipResponseV2(resource, snapshot),
+            Relationships = relationships,
             AllowGeometryUpdates = supportsEditing,
             EditFieldsInfo = null,
             EditingInfo = supportsEditing ? new EditingInfo() : null,
@@ -738,10 +747,12 @@ internal static partial class FeatureServerEndpoints
     /// </summary>
     internal static LayerRelationshipInfo[] BuildRelationshipResponseV2(
         MetadataV2Resource resource,
-        MetadataV2GraphSnapshot snapshot)
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service service)
     {
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(service);
 
         if (resource.Relationships.Count == 0)
         {
@@ -760,14 +771,23 @@ internal static partial class FeatureServerEndpoints
             var relatedResource = snapshot.Index.ResourcesById.TryGetValue(relationship.RelatedResourceId, out var found)
                 ? found
                 : null;
-            var relatedLayerId = relatedResource is null
-                ? -1
-                : (snapshot.Index.PublicationsByResource[relatedResource.Metadata.Id]
-                       .Where(snapshot.IsRoutable)
-                       .Select(pub => (int?)pub.LayerIndex)
-                       .FirstOrDefault(idx => idx is not null)
-                   ?? snapshot.ResolveStorageLayerId(relatedResource)
-                   ?? -1);
+            var relatedPublication = relatedResource is null ? null
+                : snapshot.Index.PublicationsByResource[relatedResource.Metadata.Id]
+                    .Where(pub => snapshot.IsRoutable(pub) &&
+                        pub.ServiceId.Equals(service.Metadata.Id, StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(pub => pub.IsPrimary)
+                    .ThenBy(pub => pub.LayerIndex ?? snapshot.ResolveStorageLayerId(relatedResource) ?? -1)
+                    .FirstOrDefault();
+            if (relatedPublication is null)
+            {
+                continue;
+            }
+
+            var relatedLayerId = relatedPublication.LayerIndex ?? snapshot.ResolveStorageLayerId(relatedResource!) ?? -1;
+            if (relatedLayerId < 0)
+            {
+                continue;
+            }
 
             result.Add(new LayerRelationshipInfo
             {

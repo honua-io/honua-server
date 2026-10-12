@@ -3,9 +3,12 @@
 
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
+using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -120,6 +123,80 @@ public sealed class ImageServerHttpAuthorizationTests
                 {
                     await AssertDeniedAsync(fixture, token: null, name, url, "an anonymous caller");
                     await AssertDeniedAsync(fixture, unentitled, name, url, "a principal without the granted role");
+                }
+            });
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetFields")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task RestrictedGetFields_RequiresEntitledPrincipalBeforeReturningGeometryReference()
+    {
+        var fixture = new WebAppFixture().ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
+        try
+        {
+            await fixture.InitializeAsync();
+            var graph = fixture.GetCurrentV2GraphSnapshot().Graph;
+            var provider = (TestMetadataV2GraphProvider)fixture.GetService<IMetadataV2GraphProvider>();
+            provider.SetGraph(graph with
+            {
+                Revision = graph.Revision + 1,
+                Resources = graph.Resources.Select(resource => resource.Metadata.Id == "res-image-test"
+                    ? resource with
+                    {
+                        AccessPolicy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = [EntitledRole] }
+                    }
+                    : resource).ToArray()
+            }, schema: fixture.CurrentSchema);
+            var restricted = fixture.GetCurrentV2GraphSnapshot().Graph;
+            restricted.Resources.Single(resource => resource.Metadata.Id == "res-image-test")
+                .AccessPolicy!.AllowedRoles.Should().Equal(EntitledRole);
+            restricted.Services.Single(service => service.Metadata.Id == "svc-image-test")
+                .AccessPolicy.Should().BeNull("denial must be enforced by the raster resource, not a service gate");
+            var entitled = await IssueAsync(fixture, "imagery-analyst", EntitledRole);
+            var unentitled = await IssueAsync(fixture, "map-viewer", UnrelatedRole);
+            await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
+            {
+                foreach (var (token, allowed) in new[] { (entitled, true), ((string?)null, false), (unentitled, false) })
+                {
+                    using var request = new HttpRequestMessage(HttpMethod.Post, $"/services/{WebAppFixture.TestServiceId}/ImageServer")
+                    {
+                        Content = new StringContent(
+                            """<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><GetFields xmlns="http://www.esri.com/schemas/ArcGIS/10.8" /></soap:Body></soap:Envelope>""",
+                            Encoding.UTF8, "text/xml"),
+                    };
+                    if (token is not null)
+                    {
+                        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                        request.Headers.Referrer = new Uri(Referer);
+                    }
+                    using var client = fixture.CreateClient();
+                    using var response = await client.SendAsync(request);
+                    var body = await response.Content.ReadAsStringAsync();
+                    var document = XDocument.Parse(body);
+                    if (allowed)
+                    {
+                        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+                        document.Descendants().Count(element => element.Name.LocalName == "SpatialReference").Should().Be(1);
+                        document.Descendants().Single(element => element.Name.LocalName == "WKID").Value.Should().Be("4326");
+                    }
+                    else
+                    {
+                        response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+                        document.Descendants().Any(element => element.Name.LocalName == "Fault").Should().BeTrue();
+                        document.Descendants().Any(element => element.Name.LocalName is "Fields" or "FieldArray" or "GeometryDef" or "SpatialReference")
+                            .Should().BeFalse("unauthorized callers must not receive field or CRS metadata");
+                    }
                 }
             });
         }

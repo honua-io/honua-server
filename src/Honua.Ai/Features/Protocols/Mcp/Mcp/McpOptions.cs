@@ -84,6 +84,36 @@ internal sealed class McpOptions
         environment?.IsDevelopment() == true;
 
     /// <summary>
+    /// How sessions are kept when no shared session store (Redis) is composed
+    /// (<see cref="McpSessionModeSetting"/>). With a store sessions are always
+    /// shared. <see cref="McpSessionModeSetting.Auto"/> (the default) selects
+    /// stateless signed session ids on a host that runs as several instances that
+    /// cannot share memory (AWS Lambda, Azure Functions, Cloud Run, or
+    /// <c>Deployment:Mode=MultiNode</c>) and in-memory sessions otherwise.
+    /// </summary>
+    public McpSessionModeSetting SessionMode { get; set; } = McpSessionModeSetting.Auto;
+
+    /// <summary>
+    /// Secret every instance of the deployment shares, used to key stateless
+    /// session ids (<see cref="McpSessionMode.Stateless"/>). When unset the
+    /// database connection string (<c>ConnectionStrings:DefaultConnection</c>),
+    /// which every instance already shares, is used as the key input. Without
+    /// either, stateless mode is unavailable and sessions stay in memory.
+    /// </summary>
+    public string? SessionSigningKey { get; set; }
+
+    /// <summary>Default for <see cref="StatelessSessionLifetime"/>: 8 hours.</summary>
+    internal static readonly TimeSpan DefaultStatelessSessionLifetime = TimeSpan.FromHours(8);
+
+    /// <summary>
+    /// Absolute lifetime of a stateless session id, counted from <c>initialize</c>.
+    /// A stateless session cannot slide an idle window across instances, so it
+    /// expires this long after it was minted and the client re-initializes.
+    /// Default 8 hours.
+    /// </summary>
+    public TimeSpan StatelessSessionLifetime { get; set; } = DefaultStatelessSessionLifetime;
+
+    /// <summary>
     /// Maximum number of concurrently tracked sessions. When reached, a new
     /// <c>initialize</c> is handled per <see cref="SessionEvictionPolicy"/>. Bounds
     /// host memory on a public endpoint. Default 10,000.
