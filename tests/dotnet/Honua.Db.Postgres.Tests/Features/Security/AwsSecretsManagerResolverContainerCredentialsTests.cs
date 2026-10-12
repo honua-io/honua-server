@@ -26,7 +26,7 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
     private const string EcsRelativeAccessKey = "AKIA_ECS_RELATIVE";
     private const string NodeRoleAccessKey = "AKIA_NODE_ROLE";
 
-    private readonly string _tempDirectory = Path.Combine(Path.GetTempPath(), "honua-pod-identity-" + Guid.NewGuid().ToString("N"));
+    private readonly string _tempDirectory = Path.Join(Path.GetTempPath(), "honua-pod-identity-" + Guid.NewGuid().ToString("N"));
 
     public AwsSecretsManagerResolverContainerCredentialsTests()
     {
@@ -66,7 +66,7 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
     public async Task TokenFileOnly_SendsTrimmedFileContents_AndRereadsTheFileAfterRotation()
     {
         using var agent = new FakeCredentialsAgent();
-        var tokenFile = Path.Combine(_tempDirectory, "eks-pod-identity-token");
+        var tokenFile = Path.Join(_tempDirectory, "eks-pod-identity-token");
         await File.WriteAllTextAsync(tokenFile, "pod-identity-token-v1\n");
         using var env = CredentialEnvironment(fullUri: agent.Uri, token: null, tokenFile: tokenFile);
         using var harness = new ResolverHarness();
@@ -88,7 +88,7 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
     public async Task TokenEnvironmentVariableAndFile_EnvironmentVariableWins()
     {
         using var agent = new FakeCredentialsAgent();
-        var tokenFile = Path.Combine(_tempDirectory, "token");
+        var tokenFile = Path.Join(_tempDirectory, "token");
         await File.WriteAllTextAsync(tokenFile, "file-token\n");
         using var env = CredentialEnvironment(fullUri: agent.Uri, token: "env-token-wins", tokenFile: tokenFile);
         using var harness = new ResolverHarness();
@@ -103,7 +103,7 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
     public async Task MissingTokenFile_LogsTheVariableName_AndFallsBackToTheNextCredentialSource()
     {
         using var agent = new FakeCredentialsAgent();
-        var missingFile = Path.Combine(_tempDirectory, "does-not-exist");
+        var missingFile = Path.Join(_tempDirectory, "does-not-exist");
         using var env = CredentialEnvironment(fullUri: agent.Uri, token: null, tokenFile: missingFile);
         using var harness = new ResolverHarness();
 
@@ -120,7 +120,7 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
     public async Task MalformedTokenFile_IsRejected_WithoutLoggingItsContents()
     {
         using var agent = new FakeCredentialsAgent();
-        var tokenFile = Path.Combine(_tempDirectory, "multi-line-token");
+        var tokenFile = Path.Join(_tempDirectory, "multi-line-token");
         await File.WriteAllTextAsync(tokenFile, "super-secret-line-one\nsuper-secret-line-two\n");
         using var env = CredentialEnvironment(fullUri: agent.Uri, token: null, tokenFile: tokenFile);
         using var harness = new ResolverHarness();
@@ -184,6 +184,7 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
     {
         private readonly HttpClient _secretsClient;
         private readonly HttpClient _metadataClient;
+        private readonly SocketsHttpHandler _loopbackHandler = new();
 
         public ResolverHarness()
         {
@@ -194,7 +195,7 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
                 SigningAccessKeys.Enqueue(credential[..credential.IndexOf('/', StringComparison.Ordinal)]);
                 return Json("{\"SecretString\":\"resolved\"}");
             }));
-            _metadataClient = new HttpClient(new LinkLocalStubHandler(this));
+            _metadataClient = new HttpClient(new LinkLocalStubHandler(this, _loopbackHandler));
             Resolver = new AwsSecretsManagerResolver(_secretsClient, _metadataClient, Logger);
         }
 
@@ -213,12 +214,16 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
             Resolver.Dispose();
             _secretsClient.Dispose();
             _metadataClient.Dispose();
+            _loopbackHandler.Dispose();
         }
 
         private static HttpResponseMessage Json(string body)
             => new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
 
-        private sealed class LinkLocalStubHandler(ResolverHarness owner) : DelegatingHandler(new SocketsHttpHandler())
+        private static HttpResponseMessage Text(string body)
+            => new(HttpStatusCode.OK) { Content = new StringContent(body) };
+
+        private sealed class LinkLocalStubHandler(ResolverHarness owner, HttpMessageHandler loopback) : DelegatingHandler(loopback)
         {
             protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             {
@@ -228,11 +233,11 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
                     owner.ImdsRequests.Enqueue(uri);
                     if (request.Method == HttpMethod.Put)
                     {
-                        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("imds-token") });
+                        return Task.FromResult(Text("imds-token"));
                     }
 
                     return Task.FromResult(uri.AbsolutePath.EndsWith("/security-credentials/", StringComparison.Ordinal)
-                        ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("honua-eks-node") }
+                        ? Text("honua-eks-node")
                         : Json(CredentialsJson(NodeRoleAccessKey)));
                 }
 
@@ -327,14 +332,11 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
                 received.Append(Encoding.ASCII.GetString(buffer, 0, read));
             }
 
-            string? authorization = null;
-            foreach (var line in received.ToString().Split("\r\n"))
-            {
-                if (line.StartsWith("Authorization:", StringComparison.OrdinalIgnoreCase))
-                {
-                    authorization = line["Authorization:".Length..].Trim();
-                }
-            }
+            var authorization = received.ToString()
+                .Split("\r\n")
+                .Where(static line => line.StartsWith("Authorization:", StringComparison.OrdinalIgnoreCase))
+                .Select(static line => line["Authorization:".Length..].Trim())
+                .LastOrDefault();
 
             string status;
             string body;
