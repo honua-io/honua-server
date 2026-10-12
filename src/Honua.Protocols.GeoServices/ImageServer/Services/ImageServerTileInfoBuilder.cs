@@ -28,12 +28,11 @@ internal static class ImageServerTileInfoBuilder
     private const double Resolution0 = (2.0 * SpatialConstants.WebMercatorExtent) / TileSize;
 
     /// <summary>
-    /// Scale denominator at zoom level 0 for the WebMercatorQuad /
-    /// GoogleMapsCompatible tile matrix set. This is the OGC-standardized value that
-    /// Esri clients and the WMTS capabilities document (<c>WmtsRequestHandlers</c>)
-    /// both use; each subsequent level halves it.
+    /// ArcGIS scale at the advertised 96 DPI. Web Mercator uses meters as map
+    /// units; 39.37 converts meters to inches. WMTS independently uses its
+    /// standardized 0.28 mm pixel size and must retain its own scale denominator.
     /// </summary>
-    private const double ScaleDenominator0 = 559082264.0287178;
+    private const double Scale0 = Resolution0 * Dpi * 39.37;
 
     /// <summary>WebMercator spatial reference well-known id used by Esri tile caches.</summary>
     private const int WebMercatorWkid = 102100;
@@ -61,7 +60,7 @@ internal static class ImageServerTileInfoBuilder
             {
                 Level = level,
                 Resolution = Resolution0 / factor,
-                Scale = ScaleDenominator0 / factor
+                Scale = Scale0 / factor
             };
         }
 
