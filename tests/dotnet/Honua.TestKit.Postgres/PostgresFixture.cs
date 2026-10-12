@@ -30,6 +30,7 @@ public sealed class PostgresFixture : IAsyncLifetime
         public string? SharedConnectionString { get; set; }
         public int SharedRefCount { get; set; }
         public bool SharedInitialized { get; set; }
+        public bool BoundedResources { get; set; }
     }
     private const string ExternalConnectionStringEnv = "HONUA_TEST_DB_URL";
     private const string SeedPathEnv = "HONUA_TEST_DB_SEED_PATH";
@@ -38,9 +39,16 @@ public sealed class PostgresFixture : IAsyncLifetime
     private const int DropSchemaMaxAttempts = 3;
     private const int InitializationMaxAttempts = 5;
     private string? _connectionString;
+    private readonly bool _boundedResources;
 
-    public PostgresFixture()
+    public PostgresFixture() : this(boundedResources: false)
     {
+    }
+
+    /// <summary>Optionally bounds the owned Postgres container for local component tests.</summary>
+    public PostgresFixture(bool boundedResources)
+    {
+        _boundedResources = boundedResources;
     }
 
     public string ConnectionString => _connectionString ?? throw new InvalidOperationException("Postgres fixture not initialized.");
@@ -52,6 +60,10 @@ public sealed class PostgresFixture : IAsyncLifetime
         await _sharedLock.WaitAsync();
         try
         {
+            if (_boundedResources && SharedState.SharedContainer is not null && !SharedState.BoundedResources)
+            {
+                throw new InvalidOperationException("A bounded fixture cannot reuse an unbounded Postgres container.");
+            }
             if (!SharedState.SharedInitialized)
             {
                 try
@@ -59,14 +71,25 @@ public sealed class PostgresFixture : IAsyncLifetime
                     var externalConnectionString = Environment.GetEnvironmentVariable(ExternalConnectionStringEnv);
                     if (ShouldStartContainer(externalConnectionString))
                     {
-                        SharedState.SharedContainer = new PostgreSqlBuilder()
+                        var containerBuilder = new PostgreSqlBuilder()
                             .WithImage("postgis/postgis:18-3.6")
                             .WithDatabase("honua_test")
                             .WithUsername("test")
                             .WithPassword(Convert.ToHexString(RandomNumberGenerator.GetBytes(32)))
                             .WithEnvironment("POSTGIS_GDAL_ENABLED_DRIVERS", "ENABLE_ALL")
-                            .WithCommand("-c", "max_connections=200")
-                            .Build();
+                            .WithCommand("-c", "max_connections=200");
+                        if (_boundedResources)
+                        {
+                            containerBuilder = containerBuilder.WithCreateParameterModifier(parameters =>
+                            {
+                                parameters.HostConfig.Memory = 2L * 1024 * 1024 * 1024;
+                                parameters.HostConfig.MemorySwap = parameters.HostConfig.Memory;
+                                parameters.HostConfig.NanoCPUs = 2_000_000_000;
+                                parameters.HostConfig.PidsLimit = 256;
+                            });
+                        }
+                        SharedState.SharedContainer = containerBuilder.Build();
+                        SharedState.BoundedResources = _boundedResources;
                         await SharedState.SharedContainer.StartAsync();
                         SharedState.SharedConnectionString = SharedState.SharedContainer.GetConnectionString();
                     }
@@ -716,6 +739,7 @@ public sealed class PostgresFixture : IAsyncLifetime
         SharedState.SharedContainer = null;
         SharedState.SharedConnectionString = null;
         SharedState.SharedInitialized = false;
+        SharedState.BoundedResources = false;
     }
 
     private static bool IsTransientInitializationFailure(Exception ex)
