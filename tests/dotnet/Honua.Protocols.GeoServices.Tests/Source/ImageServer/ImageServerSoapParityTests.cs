@@ -55,6 +55,40 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
+    [IntegrationTheory]
+    [InlineData(4326, "GeographicCoordinateSystem")]
+    [InlineData(3857, "ProjectedCoordinateSystem")]
+    [Operation(Operations.GetServiceInfo)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetFields")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task GetFields_GeometryReferenceMatchesServiceExtent(int srid, string coordinateSystem)
+    {
+        var store = _fixture.GetService<IRasterStore>();
+        var rasters = await store.ListRastersAsync(WebAppFixture.TestLayerId, CancellationToken.None);
+        var projected = rasters.Select(raster => raster with
+        {
+            Srid = srid,
+            Extent = raster.Extent!.Value with { Srid = srid },
+        }).ToArray();
+        store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(projected);
+
+        var fields = await PostSoapAsync($"""<GetFields xmlns="{ArcGisNamespace}" />""");
+        var info = await PostSoapAsync($"""<GetServiceInfo xmlns="{ArcGisNamespace}" />""");
+        fields.Status.Should().Be(HttpStatusCode.OK, fields.Body);
+        info.Status.Should().Be(HttpStatusCode.OK, info.Body);
+        var geometry = Element(fields.Document, "GeometryDef");
+        geometry.Elements().Select(element => element.Name.LocalName).Should().Equal(
+            "AvgNumPoints", "GeometryType", "HasM", "HasZ", "SpatialReference");
+        var reference = Child(geometry, "SpatialReference");
+        XElement.DeepEquals(reference, Child(Element(info.Document, "Extent"), "SpatialReference"))
+            .Should().BeTrue("GetFields describes the same resolved service CRS as GetServiceInfo");
+        reference.Attribute(XName.Get("type", XsiNamespace))!.Value.Should().Be("tns:" + coordinateSystem);
+        Child(reference, "WKID").Value.Should().Be(srid.ToString(CultureInfo.InvariantCulture));
+        Child(reference, "LatestWKID").Value.Should().Be(srid.ToString(CultureInfo.InvariantCulture));
+        fields.Document.Descendants().Where(element => element.Name.LocalName == "Field")
+            .Select(field => Child(field, "Name").Value).Should().Equal("OBJECTID", "Shape", "Name");
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [InterfaceOperation(TestProtocols.ImageServer, "GetCatalogItemCount")]
