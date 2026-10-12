@@ -58,8 +58,16 @@ def runtime_pin(root):
     return match[1]
 
 
+PILOT_METADATA_PROPERTIES = {
+    "IncludeSourceRevisionInInformationalVersion": "false",
+    "EnableSourceControlManagerQueries": "false",
+    "EnableSourceLink": "false",
+}
+
+
 def props(configuration, composition):
-    return [f"-p:Configuration={configuration}", f"-p:HonuaBuildProfile={composition}", "-p:TreatWarningsAsErrors=true", "-p:UseSharedCompilation=false"]
+    return [f"-p:Configuration={configuration}", f"-p:HonuaBuildProfile={composition}", "-p:TreatWarningsAsErrors=true", "-p:UseSharedCompilation=false",
+            *[f"-p:{key}={value}" for key, value in PILOT_METADATA_PROPERTIES.items()]]
 
 
 def plan(root, variant, selection, configuration, composition, test_filter):
@@ -146,7 +154,7 @@ def evaluated_inputs(root, project, configuration, composition, evidence, measur
         inputs[key] = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else "MISSING"
     evaluated = normalize({"graph": graph, "evaluations": evaluations}, root)
     identity = {"sdk": command(["dotnet", "--version"], root), "os": platform.system(), "osVersion": platform.release(), "architecture": platform.machine(),
-                "configuration": configuration, "composition": composition, "evaluatedGraph": evaluated, "inputs": inputs}
+                "configuration": configuration, "composition": composition, "buildProperties": props(configuration, composition), "evaluatedGraph": evaluated, "inputs": inputs}
     return {"key": digest(identity), "identity": identity, "projectCount": len(projects),
             "compileItemCount": sum(len(e["Items"].get("Compile", [])) for e in evaluations.values()),
             "projects": [str(p.relative_to(root)) for p in projects]}

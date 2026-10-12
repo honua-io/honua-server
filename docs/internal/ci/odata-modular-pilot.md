@@ -304,3 +304,15 @@ new input key. A future host-controller callback must receive the edited build
 and its evaluated key before starting the matching runtime. Consequently the
 complete 18-run component comparison cannot currently execute or promote. This
 does not block direct developer component tests or unit measurements.
+
+
+Pilot evaluation, restore, build and publish explicitly use
+`IncludeSourceRevisionInInformationalVersion=false`,
+`EnableSourceControlManagerQueries=false`, and `EnableSourceLink=false` in both
+variants. These exact command properties are included in the artifact identity.
+The installed .NET 10 SDK gates revision assembly metadata, source-control
+initialization, and SourceLink generation on these properties. This controls
+Git-derived metadata for the closure experiment: unrelated commits must not
+silently change compiler outputs while retaining the same input key. Production
+build properties are unchanged. The pilot still rebuilds before execution; it
+does not claim byte-for-byte reproducibility or restore external binary caches.

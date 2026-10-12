@@ -136,6 +136,16 @@ class InputTests(unittest.TestCase):
         return json.dumps({"Properties": {"TargetFramework": "net10.0", "MSBuildAllProjects": str(self.root / "Directory.Build.props")},
             "Items": {"Compile": [{"FullPath": str(self.source)}], "EmbeddedResource": [{"FullPath": str(self.linked)}]}})
 
+    def test_pilot_metadata_controls_are_used_and_part_of_identity(self):
+        from unittest.mock import patch
+        with patch.object(pilot, "command", side_effect=self.fake_command):
+            first = self.identity()
+            for key in ("IncludeSourceRevisionInInformationalVersion", "EnableSourceControlManagerQueries", "EnableSourceLink"):
+                self.assertIn(f"-p:{key}=false", first["identity"]["buildProperties"])
+            with patch.dict(pilot.PILOT_METADATA_PROPERTIES, {"EnableSourceLink": "true"}):
+                changed = self.identity()
+        self.assertNotEqual(first["key"], changed["key"])
+
     def identity(self):
         with patch.object(pilot, "command", self.fake_command):
             return pilot.evaluated_inputs(self.root, "src/Selected/Selected.csproj", "Release", "full", self.output)
