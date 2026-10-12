@@ -338,3 +338,12 @@ and its receipt must record that same `platform`. The driver independently
 checks the loaded image's Docker OS/architecture before accepting it. This avoids
 packaging all RIDs' native assets or accepting an image built for a different
 architecture; it does not unblock the missing managed builder implementation.
+
+
+On the shared Flow worker, identity/run first use the canonical reservation
+helper's read-only `key` operation to check MSBuild query argument support before
+restore. Older installed parsers reject stock `-getItem:`/`-getProperty:` flags;
+that capability failure blocks measurements until the Flow parser is reviewed
+and updated. Graph evaluation uses the supported `/verbosity:quiet` spelling.
+Do not bypass shared admission, rename the executable, or manually assert an
+identity receipt to work around this prerequisite.

@@ -157,6 +157,16 @@ class InputTests(unittest.TestCase):
         return json.dumps({"Properties": {"TargetFramework": "net10.0", "MSBuildAllProjects": str(self.root / "Directory.Build.props")},
             "Items": {"Compile": [{"FullPath": str(self.source)}], "EmbeddedResource": [{"FullPath": str(self.linked)}]}})
 
+    def test_evaluation_capability_preflight_reports_unsupported_query_before_work(self):
+        helper = self.root / "build-reservation.py"
+        helper.write_text("# installed helper")
+        with patch.object(pilot.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, "", "unsupported reservation option: -getItem")) as probe:
+            with self.assertRaisesRegex(ValueError, "No restore or build started"):
+                pilot.evaluation_preflight(self.root, "src/Selected/Selected.csproj", "Release", "full", helper=helper)
+        argv = probe.call_args.args[0]
+        self.assertEqual("key", argv[2])
+        self.assertTrue(any(arg.startswith("-getItem:") for arg in argv))
+
     def test_image_runtime_properties_are_explicit_and_identity_bound(self):
         portable = pilot.props("Release", "full")
         self.assertFalse(any("RuntimeIdentifier" in arg for arg in portable))

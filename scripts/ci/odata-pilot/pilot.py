@@ -102,6 +102,22 @@ def normalize(value, root):
     return value.replace(str(root), "$REPO") if isinstance(value, str) else value
 
 
+def evaluation_preflight(root, project, configuration, composition, runtime=None, helper=None):
+    # The canonical helper's key operation is read-only: it validates argument
+    # parsing without acquiring capacity or starting MSBuild.
+    helper = Path(helper or "/home/mike/honua-io/honua-flow-work/tools/lib/build-reservation.py")
+    if not helper.is_file():
+        return
+    query = ["msbuild", str(root / project), f"-getItem:{ITEMS}", f"-getProperty:{PROPERTIES}",
+             *props(configuration, composition, runtime)]
+    checked = subprocess.run([sys.executable, str(helper), "key", *query], cwd=root,
+                             capture_output=True, text=True, timeout=10)
+    if checked.returncode:
+        raise ValueError("Installed Flow reservation parser cannot admit MSBuild evaluation queries; "
+                         "review/update its support for -getItem: and -getProperty: before retrying. "
+                         "No restore or build started. " + checked.stderr.strip()[-1000:])
+
+
 def evaluated_inputs(root, project, configuration, composition, evidence, measure=None, runtime=None):
     def invoke(name, argv):
         if measure is None:
@@ -113,7 +129,7 @@ def evaluated_inputs(root, project, configuration, composition, evidence, measur
     for index, entry in enumerate(entries):
         graph_file = evidence / f"restore-graph-{index}.json"
         invoke(f"evaluate-graph-{index}", ["dotnet", "msbuild", entry, "-t:GenerateRestoreGraphFile", f"-p:RestoreGraphOutputPath={graph_file}",
-                 "-verbosity:quiet", *props(configuration, composition, runtime)])
+                 "/verbosity:quiet", *props(configuration, composition, runtime)])
         restored = json.loads(graph_file.read_text())
         graph["projects"].update(restored["projects"])
     projects = sorted(Path(p).resolve() for p in graph["projects"])
@@ -429,6 +445,7 @@ def run(args):
     if planned["blockers"]:
         raise ValueError("; ".join(planned["blockers"]))
     project = planned["project"]
+    evaluation_preflight(root, project, args.configuration, args.composition, planned["runtimeIdentifier"])
     validate_scenario(args.selection, args.scenario)
     if args.selection == "component" and (not args.host_receipt or not os.environ.get("HONUA_ODATA_TEST_BASE_URL") or not os.environ.get("HONUA_ODATA_TEST_ADMIN_KEY")):
         raise ValueError("Component comparison requires orchestrated host receipt and external host URL/admin key for both variants")
@@ -661,6 +678,7 @@ def main():
             planned = plan(root, args.variant, args.selection, args.configuration, args.composition, args.filter, getattr(args, "runtime", None))
             if planned["blockers"]:
                 raise ValueError("; ".join(planned["blockers"]))
+            evaluation_preflight(root, planned["project"], args.configuration, args.composition, planned["runtimeIdentifier"])
             if args.output.exists():
                 raise ValueError("Identity evidence destination must be new")
             args.output.mkdir(parents=True)
