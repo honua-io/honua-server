@@ -64,6 +64,14 @@ public sealed record DatabaseCompatibilityResult
     public string? FailureClass { get; init; }
 
     /// <summary>
+    /// Stable cause class of a failed check (see <see cref="DatabasePreflightCauseClasses"/>):
+    /// <c>connection-borrow-timeout</c>, <c>connection-refused</c>, <c>auth</c>,
+    /// <c>connection-unavailable</c> or <c>incompatible-database</c>. Only
+    /// <c>incompatible-database</c> is fatal at startup; the others degrade. Null when compatible.
+    /// </summary>
+    public string? CauseClass { get; init; }
+
+    /// <summary>
     /// Creates a compatible result with detected versions.
     /// </summary>
     public static DatabaseCompatibilityResult Compatible(
@@ -98,7 +106,8 @@ public sealed record DatabaseCompatibilityResult
             InstalledExtensions = installedExtensions ?? Array.Empty<string>(),
             Warnings = warnings ?? Array.Empty<string>(),
             ErrorMessage = errorMessage,
-            Error = error
+            Error = error,
+            CauseClass = DatabasePreflightCauseClasses.IncompatibleDatabase
         };
 
     /// <summary>
@@ -107,16 +116,24 @@ public sealed record DatabaseCompatibilityResult
     /// </summary>
     /// <param name="failureClass">Sanitized failure class (no connection-string fragments).</param>
     /// <param name="error">The underlying exception.</param>
-    public static DatabaseCompatibilityResult Unavailable(string failureClass, Exception? error = null)
+    /// <param name="causeClass">
+    /// Degradable cause class (<see cref="DatabasePreflightCauseClasses"/>); defaults to
+    /// <see cref="DatabasePreflightCauseClasses.ConnectionUnavailable"/>.
+    /// </param>
+    public static DatabaseCompatibilityResult Unavailable(
+        string failureClass,
+        Exception? error = null,
+        string causeClass = DatabasePreflightCauseClasses.ConnectionUnavailable)
         => new()
         {
             IsCompatible = false,
             IsTransientFailure = true,
             FailureClass = failureClass,
+            CauseClass = causeClass,
             EngineVersion = "unknown",
             InstalledExtensions = Array.Empty<string>(),
             Warnings = Array.Empty<string>(),
-            ErrorMessage = "Database unavailable during the compatibility check: " + failureClass + ".",
+            ErrorMessage = "Database unavailable during the compatibility check (" + causeClass + "): " + failureClass + ".",
             Error = error
         };
 }

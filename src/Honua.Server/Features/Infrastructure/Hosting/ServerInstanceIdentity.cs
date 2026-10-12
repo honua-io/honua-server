@@ -12,12 +12,9 @@ namespace Honua.Infrastructure.Hosting;
 /// external observer (the release harness, an operator) tell which replica behind a load
 /// balancer or Lambda alias answered a request, so a cross-replica read can be proven.
 /// </summary>
-internal interface IServerInstanceIdentity
+internal interface IServerInstanceIdentity : Honua.Core.Features.Infrastructure.Abstractions.IInstanceIdentity
 {
-    /// <summary>Identifier of this instance; stable for the life of the process.</summary>
-    string InstanceId { get; }
-
-    /// <summary>Which source produced <see cref="InstanceId"/> (see <see cref="ServerInstanceIdentitySources"/>).</summary>
+    /// <summary>Which source produced <see cref="Honua.Core.Features.Infrastructure.Abstractions.IInstanceIdentity.InstanceId"/> (see <see cref="ServerInstanceIdentitySources"/>).</summary>
     string Source { get; }
 
     /// <summary>When this instance resolved its identity (process start, UTC).</summary>
@@ -240,6 +237,8 @@ internal static class ServerInstanceIdentityServiceCollectionExtensions
         services.TryAddSingleton<IServerInstanceIdentity>(static sp => ServerInstanceIdentity.Resolve(
             sp.GetService<IConfiguration>() ?? EmptyConfiguration,
             sp.GetService<TimeProvider>() ?? TimeProvider.System));
+        services.TryAddSingleton<Honua.Core.Features.Infrastructure.Abstractions.IInstanceIdentity>(
+            static sp => sp.GetRequiredService<IServerInstanceIdentity>());
         return services;
     }
 }

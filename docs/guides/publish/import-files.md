@@ -47,6 +47,19 @@ Run `GET /api/v1/admin/import/jobs/{jobId}`, substituting the `jobId` returned b
 
 Cancel with `POST /api/v1/admin/import/jobs/{jobId}/cancel`; list active jobs with `GET /api/v1/admin/import/jobs`.
 
+#### Where background imports run
+
+The server that accepts the upload stages the file in its configured file storage. Where the import then runs depends on the deployment. The job status reports it as `runner`, together with the `instanceId` of the process running the import:
+
+| Deployment | Runner | `runner` |
+|---|---|---|
+| Redis on, with a batch workload (AWS Batch on `aws-serverless`) | The import becomes a durable execution job. A batch worker downloads the staged file from file storage and imports it. | `batch` |
+| Redis on, long-lived servers (ECS, EKS, Compose) | The import becomes a durable execution job. Any server replica's job worker runs it. | `in-process` |
+| Redis off, long-lived server | The server that accepted the upload runs the import. | `in-process` |
+| Lambda without a batch runner (Redis off, or no batch workload) | A background import is refused with `503 Background import service not available` before anything is staged. Imports below the background threshold still run synchronously. | n/a |
+
+A Lambda instance is frozen as soon as it returns a response, so it never runs a background import itself. A batch runner needs shared file storage (`FileStorage__Provider=AwsS3` or `AzureBlob`): a worker on another machine cannot read the API host's local disk. `GET /api/v1/capabilities/manifest` reports the runner this deployment uses as the `import.background` capability.
+
 ### 5. Import from a public object URL (alternative to upload)
 
 Run `POST /api/v1/admin/import/upload-url` with this JSON body:
@@ -94,7 +107,7 @@ When the server cannot detect a source CRS and no `sourceSrid` was supplied, the
 - **`Shapefile uploads must be a .zip containing .shp and .dbf files.`** — zip the full shapefile sidecar set instead of uploading `.shp` alone.
 - **`Unsupported file format`** — the extension is not in your build's `GET /formats` list; convert to a supported format.
 - **Import fails with `import.source_srid_required`** — the file carries no CRS information; re-run with `sourceSrid` set to the EPSG code of the source data.
-- **`Background import service not available` (503)** — the file exceeds the synchronous size limit and no job queue is configured; check `GET /api/v1/admin/import/limits` and your deployment's job/Redis configuration.
+- **`Background import service not available` (503)** — the file exceeds the synchronous size limit (or `forceBackground` was set) and this host has no runner for background imports: a Lambda host without Redis and a batch workload, or a host without an import job service. Check `GET /api/v1/admin/import/limits` and the `import.background` capability in `GET /api/v1/capabilities/manifest`; its `reasonCode` is `durable-runner-required` or `shared-file-storage-required`.
 - **FileGDB import succeeds but data looks incomplete** — check the `warnings` array; advanced geodatabase constructs are not preserved.
 
 More help: [troubleshooting](../deploy/troubleshooting.md).

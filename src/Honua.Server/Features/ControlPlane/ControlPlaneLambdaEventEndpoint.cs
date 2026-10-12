@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Infrastructure.Health;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -106,7 +107,8 @@ internal static partial class ControlPlaneLambdaEventEndpoint
             context,
             configuration,
             context.RequestServices.GetService<IControlPlaneLambdaEventTargets>(),
-            logger);
+            logger,
+            degradedStartup: context.RequestServices.GetService<Honua.Infrastructure.Monitoring.DegradedStartupContext>());
 
     /// <summary>Dispatches one adapter invocation to the handler the selector names.</summary>
     internal static async Task<IResult> HandleAsync(
@@ -114,7 +116,8 @@ internal static partial class ControlPlaneLambdaEventEndpoint
         IConfiguration configuration,
         IControlPlaneLambdaEventTargets? targets,
         ILogger logger,
-        ColdStartWarningLatch? warningLatch = null)
+        ColdStartWarningLatch? warningLatch = null,
+        Honua.Infrastructure.Monitoring.DegradedStartupContext? degradedStartup = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -126,6 +129,16 @@ internal static partial class ControlPlaneLambdaEventEndpoint
                 StatusCodes.Status403Forbidden,
                 "control_plane_lambda_event_not_loopback",
                 "Control-plane Lambda events are accepted only from the local web adapter.");
+        }
+
+        // A degraded start (database unreachable, or the schema behind this build before the
+        // migration task ran) cannot do the control-plane work. Answer a typed not-ready 503 so the
+        // invocation fails and EventBridge/Scheduler retries it, instead of running the handler
+        // against a database it cannot use (honua-server#5916).
+        if (ControlPlaneNotReadyGuard.TryRefuse(context, degradedStartup) is { } notReady)
+        {
+            LogNotReady(logger, context.Response.Headers[ReadinessReasonCodes.HeaderName].ToString());
+            return notReady;
         }
 
         var selector = configuration[ControlPlaneLambdaConnectionRelease.HandlerSelectorKey]?.Trim() ?? string.Empty;
@@ -394,6 +407,9 @@ internal static partial class ControlPlaneLambdaEventEndpoint
 
     [LoggerMessage(19633, LogLevel.Information, "Control-plane Lambda running scheduled tick {Kind}")]
     private static partial void LogRunningScheduledTick(ILogger logger, string kind);
+
+    [LoggerMessage(19638, LogLevel.Warning, "Control-plane Lambda event refused: the host is not ready ({ReasonCode}); returning 503 so the event is retried")]
+    private static partial void LogNotReady(ILogger logger, string reasonCode);
 
     [LoggerMessage(19634, LogLevel.Error, "Control-plane Lambda handler selector '{Selector}' is not recognised; the event was not handled")]
     private static partial void LogUnknownHandler(ILogger logger, string selector);
