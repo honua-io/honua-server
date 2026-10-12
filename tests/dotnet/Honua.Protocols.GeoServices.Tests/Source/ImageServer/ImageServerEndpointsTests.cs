@@ -448,6 +448,91 @@ public class ImageServerEndpointsTests
         return fixture;
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/tile/{level}/{row}/{col}")]
+    public async Task Tile_MissingWithoutBlankFallback_ReturnsHttp404ForBothRoutes()
+    {
+        var store = CreateRasterStoreSubstitute();
+        var raster = await store.GetPrimaryRasterInfoAsync(TestLayerId, CancellationToken.None);
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            string[] paths =
+            [
+                $"/rest/services/{TestLayerId}/ImageServer/tile/9/197/79",
+                $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/tile/9/197/79"
+            ];
+            string[] queries = ["", "?blankTile=true", "?blankTile=false"];
+            for (var selection = 0; selection < 2; selection++)
+            {
+                store.QueryRastersAsync(default, default, default)
+                    .ReturnsForAnyArgs(selection == 0 ? Array.Empty<RasterInfo>() : [raster!]);
+                foreach (var path in paths)
+                {
+                    foreach (var query in queries)
+                    {
+                        using var response = await fixture.Client.GetAsync(path + query);
+                        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+                        response.Headers.Contains("blank-tile").Should().BeFalse();
+                        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                        body.RootElement.GetProperty("error").GetProperty("code").GetInt32()
+                            .Should().Be(StatusCodes.Status404NotFound);
+                    }
+                }
+            }
+
+            await store.Received(6).GetImageTileAsync(
+                TestLayerId, 100, 9, 197, 79, RasterFormat.PNG, Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/tile/{level}/{row}/{col}")]
+    public async Task Tile_Available_ReturnsUnchangedImageBytesForBothRoutes()
+    {
+        var store = CreateRasterStoreSubstitute();
+        byte[] bytes = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        store.GetImageTileAsync(
+                TestLayerId, 100, 9, 196, 79, RasterFormat.PNG, Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = bytes,
+                ContentType = "image/png",
+                Width = 256,
+                Height = 256,
+                Srid = 3857
+            });
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            string[] paths =
+            [
+                $"/rest/services/{TestLayerId}/ImageServer/tile/9/196/79",
+                $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/tile/9/196/79"
+            ];
+            foreach (var path in paths)
+            {
+                using var response = await fixture.Client.GetAsync(path);
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+                (await response.Content.ReadAsByteArrayAsync()).Should().Equal(bytes);
+                response.Headers.Contains("blank-tile").Should().BeFalse();
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     private static async Task<WebAppFixture> CreateFixtureAsync(
         IRasterStore rasterStore,
         IElevationService elevationService)

@@ -150,7 +150,7 @@ internal sealed class ImageServerTileHandler
             if (selectedRasters.Length == 0 && _cogTileResolver == null)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
-                return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+                return CreateMissingTileResponse(context, "No rasters found for layer.");
             }
 
             if (selectedRasters.Length > 0)
@@ -272,7 +272,7 @@ internal sealed class ImageServerTileHandler
             }
 
             ImageServerLog.ImageTileNotFound(_logger, layerId, level, row, col);
-            return StandardErrorHelpers.CreateNotFound(context, "Image tile not found.");
+            return CreateMissingTileResponse(context, "Image tile not found.");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -389,7 +389,7 @@ internal sealed class ImageServerTileHandler
             if (selectedRasters.Length == 0)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
-                return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+                return CreateMissingTileResponse(context, "No rasters found for layer.");
             }
 
             var storage = context.RequestServices.GetService<ICloudFileStorage>();
@@ -456,7 +456,7 @@ internal sealed class ImageServerTileHandler
             if (tileResult == null)
             {
                 ImageServerLog.ImageTileNotFound(_logger, layerId, level, row, col);
-                return StandardErrorHelpers.CreateNotFound(context, "Image tile not found.");
+                return CreateMissingTileResponse(context, "Image tile not found.");
             }
 
             var result = tileResult.Value;
@@ -578,6 +578,14 @@ internal sealed class ImageServerTileHandler
             }
         }
     }
+
+    private static IResult CreateMissingTileResponse(HttpContext context, string detail)
+        // Tile misses are transport 404s, unlike ordinary GeoServices operation errors.
+        // There is no configured blank-tile fallback to advertise or synthesize here.
+        => StandardErrorResponseFormatter.FormatError(
+            context,
+            StandardErrorResponse.NotFound(detail),
+            new ErrorResponseFormatterOptions { GeoServicesUseHttpStatus = true });
 
     // ImageServer tiles are only served in the "default" style; kept as a named constant so the
     // cache key partitions by style even though a non-default style cannot currently be requested.
