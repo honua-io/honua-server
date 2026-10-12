@@ -15,7 +15,7 @@ namespace Honua.TestKit.Attributes;
 /// <c>nightly-slow-tier.yml</c> (filter <c>Tier=Slow&amp;Category=Emulator</c>).
 /// See ADR-0037.
 /// </summary>
-[TraitDiscoverer("Honua.TestKit.Attributes.EmulatorTestDiscoverer", "Honua.TestKit")]
+[TraitDiscoverer("Honua.TestKit.Attributes.EmulatorTestDiscoverer", "Honua.TestKit.Abstractions")]
 public sealed class EmulatorTestAttribute : FactAttribute, ITraitAttribute
 {
     private static readonly Dictionary<string, string> _defaultEmulatorValues =

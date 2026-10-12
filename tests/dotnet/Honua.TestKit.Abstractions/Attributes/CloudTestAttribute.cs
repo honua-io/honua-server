@@ -15,7 +15,7 @@ namespace Honua.TestKit.Attributes;
 /// (real cloud credentials); the existing nightly slow-tier workflow scopes to
 /// Category=Emulator. See ADR-0037.
 /// </summary>
-[TraitDiscoverer("Honua.TestKit.Attributes.CloudTestDiscoverer", "Honua.TestKit")]
+[TraitDiscoverer("Honua.TestKit.Attributes.CloudTestDiscoverer", "Honua.TestKit.Abstractions")]
 public sealed class CloudTestAttribute : FactAttribute, ITraitAttribute
 {
     private readonly string[] _requiredEnvironmentVariables;

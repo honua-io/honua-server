@@ -22,7 +22,7 @@ namespace Honua.TestKit.Attributes;
 /// <c>sha256sum</c>. Use <see cref="UnitTestAttribute"/> for portable unit tests.
 /// See ADR-0037.
 /// </remarks>
-[TraitDiscoverer("Honua.TestKit.Attributes.GnuLinuxUnitTestDiscoverer", "Honua.TestKit")]
+[TraitDiscoverer("Honua.TestKit.Attributes.GnuLinuxUnitTestDiscoverer", "Honua.TestKit.Abstractions")]
 public sealed class GnuLinuxUnitTestAttribute : FactAttribute, ITraitAttribute
 {
     public GnuLinuxUnitTestAttribute()

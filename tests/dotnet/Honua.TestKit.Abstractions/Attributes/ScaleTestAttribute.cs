@@ -15,7 +15,7 @@ namespace Honua.TestKit.Attributes;
 /// (multi-node compose fixtures); the existing nightly slow-tier workflow scopes
 /// to Category=Emulator. See ADR-0037.
 /// </summary>
-[TraitDiscoverer("Honua.TestKit.Attributes.ScaleTestDiscoverer", "Honua.TestKit")]
+[TraitDiscoverer("Honua.TestKit.Attributes.ScaleTestDiscoverer", "Honua.TestKit.Abstractions")]
 public sealed class ScaleTestAttribute : FactAttribute, ITraitAttribute
 {
     public ScaleTestAttribute(params string[] requiredEnvironmentVariables)

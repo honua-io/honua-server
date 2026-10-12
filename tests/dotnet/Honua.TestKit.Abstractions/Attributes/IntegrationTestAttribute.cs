@@ -14,13 +14,13 @@ namespace Honua.TestKit.Attributes;
 /// Tier=Integration — runs on merge-to-trunk and on PRs scoped via
 /// <c>scripts/honua-server-targeted-tests.sh</c>. See ADR-0037.
 /// </summary>
-[TraitDiscoverer("Honua.TestKit.Attributes.IntegrationTestDiscoverer", "Honua.TestKit")]
+[TraitDiscoverer("Honua.TestKit.Attributes.IntegrationTestDiscoverer", "Honua.TestKit.Abstractions")]
 public sealed class IntegrationTestAttribute : FactAttribute, ITraitAttribute
 {
 }
 
 /// <summary>Marks a parameterized test as integration-tier while retaining xUnit theory discovery.</summary>
-[TraitDiscoverer("Honua.TestKit.Attributes.IntegrationTestDiscoverer", "Honua.TestKit")]
+[TraitDiscoverer("Honua.TestKit.Attributes.IntegrationTestDiscoverer", "Honua.TestKit.Abstractions")]
 public sealed class IntegrationTheoryAttribute : TheoryAttribute, ITraitAttribute
 {
 }

@@ -16,7 +16,7 @@ namespace Honua.TestKit.Attributes;
 /// workflow (real upstream credentials, e.g. Esri Geoportal); the existing nightly
 /// slow-tier workflow scopes to Category=Emulator. See ADR-0037.
 /// </summary>
-[TraitDiscoverer("Honua.TestKit.Attributes.ExternalServiceTestDiscoverer", "Honua.TestKit")]
+[TraitDiscoverer("Honua.TestKit.Attributes.ExternalServiceTestDiscoverer", "Honua.TestKit.Abstractions")]
 public sealed class ExternalServiceTestAttribute : FactAttribute, ITraitAttribute
 {
     public ExternalServiceTestAttribute(params string[] requiredEnvironmentVariables)

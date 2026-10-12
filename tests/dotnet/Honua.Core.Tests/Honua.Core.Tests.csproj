@@ -9,8 +9,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
-    <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Core/Honua.TestKit.Core.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Scene\Honua.Scene.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../../src/Honua.Geocoding/Honua.Geocoding.csproj" />
+    <ProjectReference Include="../../../src/Honua.Hosting/Honua.Hosting.csproj" />
+    <Compile Include="../Honua.TestKit/Infrastructure/TestMetadataV2GraphProvider.cs" Link="Shared/TestMetadataV2GraphProvider.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -29,6 +35,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Moq" />
+    <PackageReference Include="Newtonsoft.Json.Schema" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

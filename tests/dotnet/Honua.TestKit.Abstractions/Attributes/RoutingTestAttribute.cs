@@ -17,7 +17,7 @@ namespace Honua.TestKit.Attributes;
 /// developer/CI explicitly opts in (e.g. <c>HONUA_ROUTING_TEST=1</c>).
 /// See issue #1266 and ADR-0050.
 /// </summary>
-[TraitDiscoverer("Honua.TestKit.Attributes.RoutingTestDiscoverer", "Honua.TestKit")]
+[TraitDiscoverer("Honua.TestKit.Attributes.RoutingTestDiscoverer", "Honua.TestKit.Abstractions")]
 public sealed class RoutingTestAttribute : FactAttribute, ITraitAttribute
 {
     /// <summary>

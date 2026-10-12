@@ -19,7 +19,7 @@ namespace Honua.TestKit.Attributes;
 /// change tier scheduling. Always include the reason and a tracking issue
 /// reference.
 /// </remarks>
-[TraitDiscoverer("Honua.TestKit.Attributes.FlakyTestDiscoverer", "Honua.TestKit")]
+[TraitDiscoverer("Honua.TestKit.Attributes.FlakyTestDiscoverer", "Honua.TestKit.Abstractions")]
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
 public sealed class FlakyTestAttribute : Attribute, ITraitAttribute
 {
