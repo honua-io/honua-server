@@ -12776,6 +12776,52 @@
       "capability": "routing.solve"
     },
     {
+      "id": "get-rest-services-serviceid-naserver-taskname-jobs-jobid",
+      "route": "/rest/services/{serviceId}/NAServer/{taskName}/jobs/{jobId}",
+      "method": "GET",
+      "family": "GeoServices REST NAServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingAsyncWebToolTests.SubmitJob_NaServerAliases_ExposeDurableStatusAndNamedResults",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingAsyncWebToolTests.SubmitJob_NaServerGetAlias_UsesTheSameDurableJobAndResults",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingAsyncWebToolTests.SubmitJob_StockFeatureSet_CompletesWithNamedResultsAndInputIdentity"
+      ],
+      "proof_ledger_surface": "naserver-routing",
+      "maturity": "implemented",
+      "capability": "routing.solve"
+    },
+    {
+      "id": "get-rest-services-serviceid-naserver-taskname-jobs-jobid-results-paramname",
+      "route": "/rest/services/{serviceId}/NAServer/{taskName}/jobs/{jobId}/results/{paramName}",
+      "method": "GET",
+      "family": "GeoServices REST NAServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingAsyncWebToolTests.SubmitJob_NaServerAliases_ExposeDurableStatusAndNamedResults",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingAsyncWebToolTests.SubmitJob_StockFeatureSet_CompletesWithNamedResultsAndInputIdentity"
+      ],
+      "proof_ledger_surface": "naserver-routing",
+      "maturity": "implemented",
+      "capability": "routing.solve"
+    },
+    {
+      "id": "get-rest-services-serviceid-naserver-taskname-submitjob",
+      "route": "/rest/services/{serviceId}/NAServer/{taskName}/submitJob",
+      "method": "GET",
+      "family": "GeoServices REST NAServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingAsyncWebToolTests.SubmitJob_NaServerAliases_ExposeDurableStatusAndNamedResults",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingAsyncWebToolTests.SubmitJob_NaServerGetAlias_UsesTheSameDurableJobAndResults"
+      ],
+      "proof_ledger_surface": "naserver-routing",
+      "maturity": "implemented",
+      "capability": "routing.solve"
+    },
+    {
       "id": "get-rest-services-serviceid-vectortileserver",
       "route": "/rest/services/{serviceId}/VectorTileServer",
       "method": "GET",
@@ -23057,6 +23103,23 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerMetadataEndpointTests.ServiceAreaLayer_IsAddressableByFormPost"
+      ],
+      "proof_ledger_surface": "naserver-routing",
+      "maturity": "implemented",
+      "capability": "routing.solve"
+    },
+    {
+      "id": "post-rest-services-serviceid-naserver-taskname-submitjob",
+      "route": "/rest/services/{serviceId}/NAServer/{taskName}/submitJob",
+      "method": "POST",
+      "family": "GeoServices REST NAServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingAsyncWebToolTests.SubmitJob_LocationAllocation_ReportsAssignedAndUnassignedDemandUsingOriginalObjectIds",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingAsyncWebToolTests.SubmitJob_MalformedFeatureSpatialReference_ReturnsValidationErrorBeforeSolver",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingAsyncWebToolTests.SubmitJob_NaServerAliases_ExposeDurableStatusAndNamedResults",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingAsyncWebToolTests.SubmitJob_StockFeatureSet_CompletesWithNamedResultsAndInputIdentity"
       ],
       "proof_ledger_surface": "naserver-routing",
       "maturity": "implemented",

@@ -1581,10 +1581,10 @@
       "category": "Routing",
       "edition": "Pro",
       "status": null,
-      "entryCount": 28,
-      "provingTestCount": 110,
+      "entryCount": 32,
+      "provingTestCount": 121,
       "maturity": {
-        "implemented": 28
+        "implemented": 32
       },
       "noSurface": null,
       "cite": [],

@@ -541,7 +541,9 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
         using var client = fixture.CreateAdminClient();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            ["f"] = "json", ["Incidents"] = FirstPoint, ["Facilities"] = SecondPoint
+            ["f"] = "json",
+            ["Incidents"] = FirstPoint,
+            ["Facilities"] = SecondPoint
         });
         using var post = await client.PostAsync($"/rest/services/{ServiceId}/NAServer/FindClosestFacilities/submitJob", content);
         post.StatusCode.Should().Be(HttpStatusCode.OK);
