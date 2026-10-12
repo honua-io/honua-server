@@ -2200,7 +2200,6 @@ jobs:
       HONUA_LAYER_ID: '0'
       # Published Metadata V2 layer index, not service binding order.
       HONUA_MCP_LAYER_ID: '10'
-      HONUA_DEV_AUTH: "true"
       HONUA_API_KEY: "ci-admin-password"
     outputs:
       # Matrix job: GHA keeps the last-finishing leg's output.
