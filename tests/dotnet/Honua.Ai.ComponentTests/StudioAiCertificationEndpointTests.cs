@@ -11,14 +11,21 @@ using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 using Honua.Ai.StudioAiProxy.Domain;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.TestKit;
+using Honua.TestKit.Hosting;
+using Honua.Core.Features.AuditLog;
+using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Studio;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.MultiTenancy;
+using Honua.Server.Features.Studio.Ai;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Crypto.Signers;
@@ -74,36 +81,56 @@ public sealed class StudioAiCertificationEndpointTests
         var factory = Substitute.For<IBedrockChatClientFactory>();
         factory.Create("fixture-model", Arg.Any<string>(), Arg.Any<string?>()).Returns(bedrock);
 
-        await using var fixture = new WebAppFixture()
-            .ConfigureWebHost(builder =>
+        var adminKey = "Aa1!" + Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+        await using var fixture = await ComponentTestHost.StartAsync(builder =>
+        {
+            builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                builder.UseEnvironment("Test");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-                builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
-                    new Dictionary<string, string?>
-                    {
-                        ["StudioAiProxy:Enabled"] = "true",
-                        ["StudioAiProxy:DefaultProvider"] = "fixture",
-                        ["StudioAiProxy:Providers:fixture:Kind"] = kind,
-                        ["StudioAiProxy:Providers:fixture:Endpoint"] = "https://fixture.invalid/v1",
-                        ["StudioAiProxy:Providers:fixture:Model"] = "fixture-model",
-                        ["StudioAiProxy:Providers:fixture:ApiKey"] = "secret://fixture-provider-key",
-                        ["StudioAiProxy:TranscriptSigning:KeyId"] = "fixture-signer",
-                        ["StudioAiProxy:TranscriptSigning:PrivateKeyReference"] = "secret://fixture-signing-key",
-                        ["StudioAiProxy:TranscriptSigning:LifetimeSeconds"] = "900"
-                    }));
-            })
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<ISecretProvider>();
-                services.AddSingleton(secrets);
-                services.RemoveAll<IBedrockChatClientFactory>();
-                services.AddSingleton(factory);
-                services.AddHttpClient("studio-ai-proxy").ConfigurePrimaryHttpMessageHandler(() => upstream);
+                ["HONUA_ADMIN_PASSWORD"] = adminKey,
+                ["StudioAiProxy:Enabled"] = "true",
+                ["StudioAiProxy:DefaultProvider"] = "fixture",
+                ["StudioAiProxy:Providers:fixture:Kind"] = kind,
+                ["StudioAiProxy:Providers:fixture:Endpoint"] = "https://fixture.invalid/v1",
+                ["StudioAiProxy:Providers:fixture:Model"] = "fixture-model",
+                ["StudioAiProxy:Providers:fixture:ApiKey"] = "secret://fixture-provider-key",
+                ["StudioAiProxy:TranscriptSigning:KeyId"] = "fixture-signer",
+                ["StudioAiProxy:TranscriptSigning:PrivateKeyReference"] = "secret://fixture-signing-key",
+                ["StudioAiProxy:TranscriptSigning:LifetimeSeconds"] = "900"
             });
-        await fixture.InitializeAsync();
-        using var client = fixture.CreateAdminClient();
+            builder.Services.AddSingleton(secrets);
+            builder.Services.AddSingleton(factory);
+            builder.Services.AddStudioAiProxy(builder.Configuration);
+            builder.Services.AddHttpClient("studio-ai-proxy").ConfigurePrimaryHttpMessageHandler(() => upstream);
+            builder.Services.AddApiKeyAuthentication(builder.Configuration);
+            builder.Services.Configure<ApiKeyAuthenticationOptions>(options =>
+            {
+                options.AdminPassword = adminKey;
+                options.EnvironmentName = builder.Environment.EnvironmentName;
+                options.IsDevelopmentMode = false;
+                options.IsTestMode = false;
+            });
+            builder.Services.AddSingleton<IOperatorAuthorizationEvaluator, OperatorAuthorizationEvaluator>();
+            builder.Services.AddStudioPackageLifecycle(builder.Configuration);
+            builder.Services.AddHonuaTenantContext(builder.Configuration);
+            builder.Services.AddSingleton<IAuditLog>(NullAuditLog.Instance);
+            builder.Services.AddHonuaAuditActionResolver();
+            builder.Services.AddApiVersioning(options =>
+            {
+                options.ApiVersionReader = new Asp.Versioning.UrlSegmentApiVersionReader();
+                options.DefaultApiVersion = new Asp.Versioning.ApiVersion(1, 0);
+                options.AssumeDefaultVersionWhenUnspecified = false;
+            });
+        }, app =>
+        {
+            app.UseGlobalExceptionHandling();
+            app.UseAuthentication();
+            app.UseAuthorization();
+            app.UseHonuaAuditLog();
+            app.UseHonuaTenantContext();
+            app.MapStudioAiProxyEndpoints();
+        });
+        var client = fixture.Client;
+        client.DefaultRequestHeaders.Add("X-API-Key", adminKey);
         using var request = new StringContent(RequestJson, Encoding.UTF8, "application/json");
         var before = DateTimeOffset.UtcNow;
         using var response = await client.PostAsync("/api/v1/studio/ai/chat", request);

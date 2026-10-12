@@ -142,4 +142,8 @@
     <InternalsVisibleTo Include="Honua.Scene.UnitTests" />
     <InternalsVisibleTo Include="Honua.Core.Tests" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Ai.ComponentTests" />
+  </ItemGroup>
 </Project>

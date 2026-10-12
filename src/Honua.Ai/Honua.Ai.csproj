@@ -100,4 +100,7 @@
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Ai.ComponentTests" />
+  </ItemGroup>
 </Project>
