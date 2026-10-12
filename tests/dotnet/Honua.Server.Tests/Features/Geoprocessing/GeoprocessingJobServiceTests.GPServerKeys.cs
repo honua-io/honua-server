@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.ControlPlane;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
 using Honua.TestKit.Attributes;
