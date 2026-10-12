@@ -3,6 +3,7 @@
 
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.Models;
 
 namespace Honua.Protocols.GeoServices.GPServer;
 
