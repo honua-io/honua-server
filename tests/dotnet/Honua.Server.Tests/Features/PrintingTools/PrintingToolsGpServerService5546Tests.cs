@@ -26,6 +26,7 @@ public sealed class PrintingToolsGpServerService5546Tests : IAsyncLifetime
     private const string SoapPath = "/services/Utilities/PrintingTools/GPServer";
     private const string QualifiedName = "Utilities/PrintingTools";
     private const string ArcGisSoapNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
+    private static readonly string[] SoapNameOperations = ["GetTaskNames", "GetToolNames"];
 
     private readonly WebAppFixture _fixture = new();
     private HttpClient _client = null!;
@@ -125,13 +126,29 @@ public sealed class PrintingToolsGpServerService5546Tests : IAsyncLifetime
         var toolNames = tools.Document.Descendants().Where(element => element.Name.LocalName == "GPToolInfo")
             .Select(tool => tool.Elements().Single(element => element.Name.LocalName == "Name").Value)
             .ToArray();
-        toolNames.Should().Equal("Export Web Map Task", "Get Layout Templates Info Task");
+        toolNames.Should().Equal("ExportWebMapTask", "GetLayoutTemplatesInfoTask");
         var exportTool = tools.Document.Descendants().Single(element =>
             element.Name.LocalName == "GPToolInfo" &&
-            element.Elements().Single(child => child.Name.LocalName == "Name").Value == "Export Web Map Task");
+            element.Elements().Single(child => child.Name.LocalName == "Name").Value == "ExportWebMapTask");
+        exportTool.Elements().Single(element => element.Name.LocalName == "DisplayName")
+            .Value.Should().Be("Export Web Map");
         exportTool.Descendants().Single(element => element.Name.LocalName == "Name" && element.Value == "Format")
             .Parent!.Elements().Single(element => element.Name.LocalName == "ChoiceList")
             .Elements().Select(element => element.Value).Should().Contain("PNG32");
+
+        foreach (var operation in SoapNameOperations)
+        {
+            var names = await PostSoapAsync(SoapPath, operation);
+            names.StatusCode.Should().Be(HttpStatusCode.OK, names.Body);
+            names.Document.Descendants().Where(element => element.Name.LocalName == "String")
+                .Select(element => element.Value).Should().Equal(toolNames);
+        }
+
+        var taskInfos = await PostSoapAsync(SoapPath, "GetTaskInfos");
+        taskInfos.StatusCode.Should().Be(HttpStatusCode.OK, taskInfos.Body);
+        taskInfos.Document.Descendants().Where(element => element.Name.LocalName == "GPToolInfo")
+            .Select(tool => tool.Elements().Single(element => element.Name.LocalName == "Name").Value)
+            .Should().Equal(toolNames);
 
         var executionType = await PostSoapAsync(SoapPath, "GetExecutionType");
         executionType.StatusCode.Should().Be(HttpStatusCode.OK, executionType.Body);
@@ -246,6 +263,68 @@ public sealed class PrintingToolsGpServerService5546Tests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, response.Body);
         response.Document.Descendants().Should().Contain(element =>
             element.Name.LocalName == "Value" && element.Value.Contains("MAP_ONLY", StringComparison.Ordinal));
+    }
+
+    [IntegrationTheory]
+    [InlineData("ExportWebMapTask", "ExportWebMapTask")]
+    [InlineData("Export Web Map Task", "ExportWebMapTask")]
+    [InlineData("GetLayoutTemplatesInfoTask", "GetLayoutTemplatesInfoTask")]
+    [InlineData("Get Layout Templates Info Task", "GetLayoutTemplatesInfoTask")]
+    [Operation(Operations.Print)]
+    [Endpoint("POST /services/Utilities/PrintingTools/GPServer")]
+    public async Task PrintingTools_SoapToolInfo_ResolvesCallableAndLegacyNames(string name, string callableName)
+    {
+        var response = await PostSoapAsync(SoapPath, "GetToolInfo", $"<ToolName>{name}</ToolName>");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, response.Body);
+        response.Document.Descendants().Single(element => element.Name.LocalName == "Result")
+            .Elements().Single(element => element.Name.LocalName == "Name").Value.Should().Be(callableName);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Print)]
+    [Endpoint("POST /services/Utilities/PrintingTools/GPServer")]
+    public async Task PrintingTools_SoapCallableNames_ExecuteOriginalLayoutAndPngContracts()
+    {
+        var layouts = await PostSoapAsync(SoapPath, "Execute", """
+            <ToolName>GetLayoutTemplatesInfoTask</ToolName>
+            <Values />
+            """);
+        layouts.StatusCode.Should().Be(HttpStatusCode.OK, layouts.Body);
+        layouts.Document.Descendants().Should().Contain(element =>
+            element.Name.LocalName == "Value" && element.Value.Contains("MAP_ONLY", StringComparison.Ordinal));
+
+        var unsupportedJob = await PostSoapAsync(SoapPath, "SubmitJob", """
+            <ToolName>GetLayoutTemplatesInfoTask</ToolName>
+            <Values />
+            """);
+        unsupportedJob.StatusCode.Should().Be(HttpStatusCode.BadRequest, unsupportedJob.Body);
+        unsupportedJob.Body.Should().Contain("executes synchronously");
+
+        var printed = await PostSoapAsync(SoapPath, "Execute", $"""
+            <ToolName>ExportWebMapTask</ToolName>
+            {ExportValues()}
+            """);
+        printed.StatusCode.Should().Be(HttpStatusCode.OK, printed.Body);
+        var url = printed.Document.Descendants().Single(element => element.Name.LocalName == "URL").Value;
+        using var download = await _client.GetAsync(url);
+        download.StatusCode.Should().Be(HttpStatusCode.OK, await download.Content.ReadAsStringAsync());
+        download.Content.Headers.ContentType!.MediaType.Should().Be("image/png");
+        var bytes = await download.Content.ReadAsByteArrayAsync();
+        bytes.Take(8).Should().Equal(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
+
+        var submitted = await PostSoapAsync(SoapPath, "SubmitJob", $"""
+            <ToolName>ExportWebMapTask</ToolName>
+            {ExportValues()}
+            """);
+        submitted.StatusCode.Should().Be(HttpStatusCode.OK, submitted.Body);
+        var jobId = submitted.Document.Descendants().Single(element => element.Name.LocalName == "Result").Value;
+        jobId.Should().NotBeNullOrWhiteSpace();
+        var jobTool = await PostSoapAsync(SoapPath, "GetJobToolName", $"<JobID>{jobId}</JobID>");
+        jobTool.StatusCode.Should().Be(HttpStatusCode.OK, jobTool.Body);
+        jobTool.Document.Descendants().Single(element => element.Name.LocalName == "Result").Value
+            .Should().Be("ExportWebMapTask");
+        var cancelled = await PostSoapAsync(SoapPath, "CancelJob", $"<JobID>{jobId}</JobID>");
+        cancelled.StatusCode.Should().Be(HttpStatusCode.OK, cancelled.Body);
     }
 
     private static string ExportValues()
