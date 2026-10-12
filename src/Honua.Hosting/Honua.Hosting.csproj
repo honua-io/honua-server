@@ -122,6 +122,8 @@
     <InternalsVisibleTo Include="Honua.Geoprocessing" />
     <InternalsVisibleTo Include="Honua.Worker.Gdal" />
     <InternalsVisibleTo Include="Honua.Scene" />
+    <InternalsVisibleTo Include="Honua.OData.TestHost" />
+    <InternalsVisibleTo Include="Honua.Protocols.OData.ComponentTests" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 

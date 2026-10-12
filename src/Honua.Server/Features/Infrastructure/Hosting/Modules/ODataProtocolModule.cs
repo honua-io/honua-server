@@ -19,20 +19,20 @@ namespace Honua.Infrastructure.Hosting.Modules;
 /// </summary>
 public sealed class ODataProtocolModule : IHonuaProtocolModule
 {
+    private readonly Honua.Protocols.OData.ODataProtocolModule _module = new();
+
     /// <inheritdoc />
-    public string Name => "OData";
+    public string Name => _module.Name;
 
     /// <inheritdoc />
     public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
-        ArgumentNullException.ThrowIfNull(services);
-        services.AddOData(configuration);
+        _module.ConfigureServices(services, configuration);
     }
 
     /// <inheritdoc />
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        ArgumentNullException.ThrowIfNull(endpoints);
-        endpoints.MapODataEndpoints();
+        _module.MapEndpoints(endpoints);
     }
 }

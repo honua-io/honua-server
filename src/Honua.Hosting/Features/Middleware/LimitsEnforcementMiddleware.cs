@@ -5,7 +5,7 @@ using Honua.Core.Configuration;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
-using InfrastructureLog = Honua.Infrastructure.Logging.Log;
+using InfrastructureLog = Honua.Infrastructure.Logging.ProtocolRequestLog;
 
 namespace Honua.Infrastructure.Middleware;
 
