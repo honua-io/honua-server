@@ -1493,6 +1493,7 @@ echo "Checking shard headroom audit and its drain guard..."
 
 echo "Checking shard filter/test-class coverage in both directions..."
 "${PYTHON_BIN}" scripts/ci/test-geoservices-support-partition.py
+"${PYTHON_BIN}" scripts/ci/test-admin-authorization-partition.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
   --assert-owner \
