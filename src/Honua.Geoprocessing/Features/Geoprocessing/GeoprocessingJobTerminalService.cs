@@ -163,7 +163,7 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
     public Task<GeoprocessingCancelResult> CancelGPServerAsync(
         string jobId, string serviceId, string taskName, ClaimsPrincipal principal,
         TimeSpan timeout, CancellationToken clientDisconnect = default)
-        => CancelCoreAsync(jobId, principal, timeout, isOrphanCleanup: false, clientDisconnect, serviceId, taskName);
+        => CancelCoreAsync(jobId, principal, timeout, isOrphanCleanup: false, gpServiceId: serviceId, gpTaskName: taskName, clientDisconnect: clientDisconnect);
 
     public void DispatchGPServerOrphanedCancellation(
         string jobId, string serviceId, string taskName, ClaimsPrincipal principal, TimeSpan timeout)
@@ -179,7 +179,7 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
         ClaimsPrincipal principal,
         TimeSpan timeout,
         CancellationToken clientDisconnect = default)
-        => CancelCoreAsync(jobId, principal, timeout, isOrphanCleanup: false, clientDisconnect);
+        => CancelCoreAsync(jobId, principal, timeout, isOrphanCleanup: false, clientDisconnect: clientDisconnect);
 
     public void DispatchOrphanedCancellation(
         string jobId,
@@ -204,7 +204,7 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
         ClaimsPrincipal principal,
         TimeSpan timeout,
         CancellationToken clientDisconnect = default)
-        => CancelCoreAsync(jobId, principal, timeout, isOrphanCleanup: true, clientDisconnect);
+        => CancelCoreAsync(jobId, principal, timeout, isOrphanCleanup: true, clientDisconnect: clientDisconnect);
 
     private async Task CancelOrphanedInBackgroundAsync(
         string jobId,
@@ -217,7 +217,7 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
         {
             var result = await CancelCoreAsync(
                 jobId, principal, timeout, isOrphanCleanup: true,
-                CancellationToken.None, gpServiceId, gpTaskName).ConfigureAwait(false);
+                gpServiceId, gpTaskName, CancellationToken.None).ConfigureAwait(false);
             if (result.Outcome is not GeoprocessingCancelOutcome.Cancelled
                 and not GeoprocessingCancelOutcome.AlreadyTerminal)
             {
@@ -235,9 +235,9 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
         ClaimsPrincipal principal,
         TimeSpan timeout,
         bool isOrphanCleanup,
-        CancellationToken clientDisconnect,
         string? gpServiceId = null,
-        string? gpTaskName = null)
+        string? gpTaskName = null,
+        CancellationToken clientDisconnect = default)
     {
         ValidateTimeout(timeout);
         using var timeoutSource = _timeoutSourceFactory(timeout);

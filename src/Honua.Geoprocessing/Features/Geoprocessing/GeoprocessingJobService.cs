@@ -202,7 +202,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         => SubmitJobCoreAsync(
             plan, idempotencyKey, principal, protocolMetadata, resumingApproved: false,
             submitterSecurityContext: null, inheritsSubmitterSecurityContext: false,
-            processCatalog: _processCatalog, cancellationToken, execution);
+            processCatalog: _processCatalog, gpExecution: execution, cancellationToken: cancellationToken);
 
     public async Task<ExecutionJobRecord> GetGPServerJobAsync(
         string jobId, string serviceId, string? taskName, ClaimsPrincipal principal,
@@ -250,8 +250,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     public Task CancelGPServerJobAsync(
         string jobId, string serviceId, string? taskName, ClaimsPrincipal principal,
         bool isOrphanCleanup = false, CancellationToken cancellationToken = default)
-        => CancelJobCoreAsync(jobId, principal, requireApproval: !isOrphanCleanup, cancellationToken,
-            gpServiceId: serviceId, gpTaskName: taskName);
+        => CancelJobCoreAsync(jobId, principal, requireApproval: !isOrphanCleanup,
+            gpServiceId: serviceId, gpTaskName: taskName, cancellationToken: cancellationToken);
 
     public async Task<AnalysisPlan> EnsurePlanExecutionTierAuthorizedAsync(
         AnalysisPlan plan,
@@ -414,7 +414,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         => SubmitJobCoreAsync(
             plan, idempotencyKey, principal, protocolMetadata, resumingApproved: false,
             submitterSecurityContext: null, inheritsSubmitterSecurityContext: false,
-            processCatalog: _processCatalog, cancellationToken);
+            processCatalog: _processCatalog, cancellationToken: cancellationToken);
 
     public Task<ExecutionJobRecord> SubmitProtocolJobAsync(
         AnalysisPlan plan,
@@ -428,7 +428,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return SubmitJobCoreAsync(
             plan, idempotencyKey, principal, protocolMetadata, resumingApproved: false,
             submitterSecurityContext: null, inheritsSubmitterSecurityContext: false,
-            processCatalog: protocolCatalog, cancellationToken);
+            processCatalog: protocolCatalog, cancellationToken: cancellationToken);
     }
 
     public Task<ExecutionJobRecord> SubmitJobWithSecurityContextAsync(
@@ -441,7 +441,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         => SubmitJobCoreAsync(
             plan, idempotencyKey, principal, protocolMetadata, resumingApproved: false,
             submitterSecurityContext, inheritsSubmitterSecurityContext: true,
-            processCatalog: _processCatalog, cancellationToken);
+            processCatalog: _processCatalog, cancellationToken: cancellationToken);
 
     /// <summary>
     /// Allows a staged raster source only when its full object identity can be traced to a
@@ -613,8 +613,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         JobSecurityContext? submitterSecurityContext,
         bool inheritsSubmitterSecurityContext,
         IProcessCatalog processCatalog,
-        CancellationToken cancellationToken = default,
-        GPServerExecutionContext? gpExecution = null)
+        GPServerExecutionContext? gpExecution = null,
+        CancellationToken cancellationToken = default)
     {
         // Resolve the submitter's row/field security identity once, before any gate can
         // divert the submission onto the approval lane (#3068). The approval lane persists
@@ -832,7 +832,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         {
             await EnsureApprovedAsync(
                 principal, plan, idempotencyKey, protocolMetadata, isCustomCode,
-                resolvedSecurityContext, processCatalog, cancellationToken, gpExecution)
+                resolvedSecurityContext, processCatalog, gpExecution, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -1317,21 +1317,21 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         string jobId,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default)
-        => CancelJobCoreAsync(jobId, principal, requireApproval: true, cancellationToken);
+        => CancelJobCoreAsync(jobId, principal, requireApproval: true, cancellationToken: cancellationToken);
 
     public Task CancelAbandonedJobAsync(
         string jobId,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default)
-        => CancelJobCoreAsync(jobId, principal, requireApproval: false, cancellationToken);
+        => CancelJobCoreAsync(jobId, principal, requireApproval: false, cancellationToken: cancellationToken);
 
     private async Task CancelJobCoreAsync(
         string jobId,
         ClaimsPrincipal principal,
         bool requireApproval,
-        CancellationToken cancellationToken,
         string? gpServiceId = null,
-        string? gpTaskName = null)
+        string? gpTaskName = null,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(jobId))
         {
@@ -1570,8 +1570,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         bool isCustomCode,
         JobSecurityContext submitterSecurityContext,
         IProcessCatalog processCatalog,
-        CancellationToken cancellationToken,
-        GPServerExecutionContext? gpExecution = null)
+        GPServerExecutionContext? gpExecution,
+        CancellationToken cancellationToken)
     {
         var approvalGatedProcessId = ProcessDestructiveClassifier.FindFirstApprovalGatedProcessId(
             plan,
@@ -1658,7 +1658,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 submitterSecurityContext: payload.SubmitterSecurityContext,
                 inheritsSubmitterSecurityContext: true,
                 processCatalog: _processCatalog,
-                cancellationToken)
+                cancellationToken: cancellationToken)
             .ConfigureAwait(false);
     }
 
