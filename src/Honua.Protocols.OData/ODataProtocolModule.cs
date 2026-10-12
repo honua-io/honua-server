@@ -9,13 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Protocols.OData;
 
 /// <summary>
-/// OData v4 protocol module. Wraps the existing
-/// <see cref="ODataServiceCollectionExtensions.AddOData"/> and
-/// <see cref="ODataEndpoints.MapODataEndpoints"/> registration calls behind
-/// the <see cref="IHonuaProtocolModule"/> contract so the host can iterate
-/// protocols uniformly. The wrapper is additive — the existing direct calls
-/// in <c>FeatureRegistrationExtensions</c> still own the canonical wiring
-/// until a follow-up PR migrates them to module-based dispatch.
+/// OData v4 production service and endpoint registration, reusable by protocol-specific hosts.
 /// </summary>
 public sealed class ODataProtocolModule : IHonuaProtocolModule
 {
