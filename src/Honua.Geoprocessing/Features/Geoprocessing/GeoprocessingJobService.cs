@@ -191,6 +191,65 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return _authorizer.EnsureAuthorizedAsync(principal, resourceType, operation, cancellationToken);
     }
 
+    public Task EnsureGPServerExecutionAuthorizedAsync(
+        ClaimsPrincipal principal, GPServerExecutionContext execution, CancellationToken cancellationToken = default)
+        => _authorizer.EnsureGPServerExecutionAuthorizedAsync(principal, execution, cancellationToken);
+
+    public Task<ExecutionJobRecord> SubmitGPServerJobAsync(
+        AnalysisPlan plan, string? idempotencyKey, ClaimsPrincipal principal,
+        GPServerExecutionContext execution, IReadOnlyDictionary<string, string>? protocolMetadata = null,
+        CancellationToken cancellationToken = default)
+        => SubmitJobCoreAsync(
+            plan, idempotencyKey, principal, protocolMetadata, resumingApproved: false,
+            submitterSecurityContext: null, inheritsSubmitterSecurityContext: false,
+            processCatalog: _processCatalog, cancellationToken, execution);
+
+    public async Task<ExecutionJobRecord> GetGPServerJobAsync(
+        string jobId, string serviceId, string? taskName, ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+    {
+        if (!principal.IsInRole("scoped-api-key") && !principal.IsInRole("layer-write-key"))
+        {
+            return await GetJobAsync(jobId, principal, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Read the owned record before deriving any scoped authority. Generic entrypoints never
+        // use this binding, and request-controlled protocol parameter bags cannot produce it.
+        var job = await GetJobForTerminalAsync(jobId, principal, cancellationToken).ConfigureAwait(false);
+        var binding = job.Spec.GPServerBinding;
+        if (binding is not null
+            && job.Spec.Kind == ExecutionJobKind.Geoprocessing
+            && string.Equals(job.Spec.Parameters.GetValueOrDefault(ExecutionJobParameterKeys.GeoprocessingProcessDefinitions),
+                binding.ProcessId, StringComparison.Ordinal)
+            && string.Equals(serviceId, binding.ServiceId, StringComparison.OrdinalIgnoreCase)
+            && (taskName is null || string.Equals(taskName, binding.TaskName, StringComparison.OrdinalIgnoreCase)))
+        {
+            var execution = new GPServerExecutionContext(binding.ServiceId, binding.TaskName, binding.ProcessId);
+            if (execution.IsGranted(principal))
+            {
+                return job;
+            }
+        }
+
+        await _authorizer.EnsureAuthorizedAsync(principal, OperatorResourceType.Job, OperatorOperation.Read, cancellationToken)
+            .ConfigureAwait(false);
+        return job;
+    }
+
+    public async Task<AnalysisResultPackage> GetGPServerJobResultsAsync(
+        string jobId, string serviceId, string taskName, ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+    {
+        await GetGPServerJobAsync(jobId, serviceId, taskName, principal, cancellationToken).ConfigureAwait(false);
+        return await GetJobResultsForTerminalAsync(jobId, principal, cancellationToken).ConfigureAwait(false);
+    }
+
+    public Task CancelGPServerJobAsync(
+        string jobId, string serviceId, string? taskName, ClaimsPrincipal principal,
+        bool isOrphanCleanup = false, CancellationToken cancellationToken = default)
+        => CancelJobCoreAsync(jobId, principal, requireApproval: !isOrphanCleanup, cancellationToken,
+            gpServiceId: serviceId, gpTaskName: taskName);
+
     public async Task<AnalysisPlan> EnsurePlanExecutionTierAuthorizedAsync(
         AnalysisPlan plan,
         ClaimsPrincipal principal,
@@ -551,7 +610,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         JobSecurityContext? submitterSecurityContext,
         bool inheritsSubmitterSecurityContext,
         IProcessCatalog processCatalog,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        GPServerExecutionContext? gpExecution = null)
     {
         // Resolve the submitter's row/field security identity once, before any gate can
         // divert the submission onto the approval lane (#3068). The approval lane persists
@@ -595,11 +655,28 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // (#2263). Adapters that already call EnsureCallerAuthorizedAsync before
         // submit stay correct — this evaluation is idempotent and never
         // double-fails an authorized caller.
-        await _authorizer.EnsureAuthorizedAsync(
-            resumingApproved ? authorizationPrincipal : principal,
-            OperatorResourceType.Process,
-            OperatorOperation.Execute,
-            cancellationToken).ConfigureAwait(false);
+        if (gpExecution is null)
+        {
+            await _authorizer.EnsureAuthorizedAsync(
+                resumingApproved ? authorizationPrincipal : principal,
+                OperatorResourceType.Process,
+                OperatorOperation.Execute,
+                cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await _authorizer.EnsureGPServerExecutionAuthorizedAsync(principal, gpExecution, cancellationToken)
+                .ConfigureAwait(false);
+            // The resolved task is the execution boundary. A grant for one task may not
+            // authorize another step, even when an adapter supplies additional metadata.
+            if (plan.Steps.Count == 0 || plan.Steps.Any(step =>
+                !string.Equals(step.ProcessId, gpExecution.ProcessId, StringComparison.Ordinal)))
+            {
+                throw new GeoprocessingAuthorizationException(false,
+                    "The submitted plan does not match the authorized GPServer process.",
+                    OperatorResourceType.Process, OperatorOperation.Execute);
+            }
+        }
 
         ValidatePlanStructure(plan);
         EnsurePlanExecutable(plan);
@@ -936,6 +1013,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     : ResolveRequiredRuntimeProfile(plan, processCatalog);
                 var spec = BuildSpec(
                     plan, specParams, requestMetadataKeys, workload, requiredRuntimeProfile, resourceProfile);
+                if (gpExecution is not null)
+                {
+                    spec = spec with
+                    {
+                        GPServerBinding = new GPServerJobBinding(
+                            gpExecution.ServiceId, gpExecution.TaskName, gpExecution.ProcessId)
+                    };
+                }
 
                 jobRecord = new ExecutionJobRecord
                 {
@@ -1237,18 +1322,24 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         string jobId,
         ClaimsPrincipal principal,
         bool requireApproval,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? gpServiceId = null,
+        string? gpTaskName = null)
     {
         if (string.IsNullOrWhiteSpace(jobId))
         {
             throw new GeoprocessingValidationException("Job identifier is required.");
         }
 
-        await _authorizer.EnsureAuthorizedAsync(
-            principal,
-            OperatorResourceType.Job,
-            OperatorOperation.Execute,
-            cancellationToken).ConfigureAwait(false);
+        var gpJob = gpServiceId is null ? null
+            : await GetGPServerJobAsync(jobId, gpServiceId, gpTaskName, principal, cancellationToken).ConfigureAwait(false);
+        var gpBinding = gpJob?.Spec.GPServerBinding;
+        if (gpBinding is null || !new GPServerExecutionContext(
+            gpBinding.ServiceId, gpBinding.TaskName, gpBinding.ProcessId).IsGranted(principal))
+        {
+            await _authorizer.EnsureAuthorizedAsync(
+                principal, OperatorResourceType.Job, OperatorOperation.Execute, cancellationToken).ConfigureAwait(false);
+        }
 
         var jobStore = RequireJobStore();
         var job = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);

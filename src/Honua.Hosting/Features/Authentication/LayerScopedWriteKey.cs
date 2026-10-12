@@ -39,6 +39,13 @@ namespace Honua.Infrastructure.Authentication;
 /// always name their service. Wildcard reads still pass through the same field
 /// mask, row-level and tenant filters as a named <c>read:</c> grant.
 /// </para>
+/// <para>
+/// GPServer execution uses an additional exact grant: <c>execute:{service}/{canonical-process-id}</c>,
+/// for example <c>execute:test/geometry.area</c>. No wildcard, service-wide, read, or write grant
+/// implies execution. GP discovery still requires a separate <c>read:</c> grant. Execution grants
+/// apply only to the named GP task and its owned, service-bound jobs; they confer no generic
+/// operator, OGC Processes, WPS, or MCP authority.
+/// </para>
 /// </remarks>
 internal static class LayerScopedWriteKey
 {
@@ -51,6 +58,20 @@ internal static class LayerScopedWriteKey
     /// Prefix that identifies a scoped read permission grant.
     /// </summary>
     public const string ReadPermissionPrefix = "read:";
+
+    /// <summary>Exact GPServer service/canonical-process execution grant prefix.</summary>
+    public const string ExecutePermissionPrefix = "execute:";
+
+    /// <summary>Checks an exact GP execution grant. Neither service-wide nor wildcard forms exist.</summary>
+    public static bool AllowsGPExecution(ClaimsPrincipal principal, string service, string processId)
+        => IsExactExecutionIdentifier(service) && IsExactExecutionIdentifier(processId)
+            && principal.FindAll("permission").Any(claim =>
+                !IsMalformedResourceGrant(claim.Value)
+                && string.Equals(claim.Value.Trim(), $"{ExecutePermissionPrefix}{service}/{processId}", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsExactExecutionIdentifier(string value)
+        => !string.IsNullOrWhiteSpace(value) && value == value.Trim()
+            && !value.Any(character => character is '*' or '/' or ':' || char.IsWhiteSpace(character));
 
     /// <summary>
     /// Wildcard token accepted in <c>read:</c> grants: <c>read:*</c> (any service)
@@ -252,9 +273,10 @@ internal static class LayerScopedWriteKey
         => GrantMatchesResource(grant, WritePermissionPrefix, service, layer, allowWildcard: false);
 
     /// <summary>
-    /// Determines whether a <c>read:</c> or <c>write:</c> grant fails to name a valid
+    /// Determines whether a <c>read:</c>, <c>write:</c>, or <c>execute:</c> grant fails to name a valid
     /// target. Read grants accept <c>read:*</c> and <c>read:{service}/*</c>; write
-    /// grants accept no wildcard. Grants with other prefixes are not resource grants
+    /// grants accept no wildcard. Execute grants require exact service and canonical process identities.
+    /// Grants with other prefixes are not resource grants
     /// and are never reported as malformed.
     /// </summary>
     /// <param name="grant">The permission grant.</param>
@@ -265,6 +287,15 @@ internal static class LayerScopedWriteKey
         if (string.IsNullOrEmpty(trimmed))
         {
             return false;
+        }
+
+        if (trimmed.StartsWith(ExecutePermissionPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var executionScope = trimmed[ExecutePermissionPrefix.Length..];
+            var separator = executionScope.IndexOf('/', StringComparison.Ordinal);
+            return separator < 1
+                || !IsExactExecutionIdentifier(executionScope[..separator])
+                || !IsExactExecutionIdentifier(executionScope[(separator + 1)..]);
         }
 
         bool allowWildcard;
