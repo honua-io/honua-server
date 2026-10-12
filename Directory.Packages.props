@@ -63,6 +63,7 @@
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" Version="10.0.6" />
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.6" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.6" />
+    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.6" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.6" />
     <!-- Pin Microsoft.OpenApi to the patched 2.7.5: Microsoft.AspNetCore.OpenApi 10.0.6
          pulls Microsoft.OpenApi 2.0.0 transitively, which trips the NU1903 audit
