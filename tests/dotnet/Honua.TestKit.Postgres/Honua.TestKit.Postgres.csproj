@@ -25,4 +25,7 @@
                       Link="Migrations/%(Filename)%(Extension)"
                       LogicalName="Honua.Server.Migrations.%(Filename)%(Extension)" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Protocols.GeoServices.ComponentTests" />
+  </ItemGroup>
 </Project>
