@@ -1267,6 +1267,16 @@ measurement. The original failed run remains failed. The
 [bounded evidence record](imageserver-shard-capacity-20261012.json) retains
 source/run/artifact identities, file hashes, class intervals and timing data.
 
+Focused run [38189708636](https://github.com/honua-io/honua-server/actions/runs/38189708636)
+at `a6fafdae55fea39460bcddea12a3d3efdde8a2d7` ran each child twice.
+Raster Rendering passed 73/73 cases in 651 and 460 seconds (63.83% and 74.44%
+measured headroom). Support passed 169/169 in 526 seconds (70.78% headroom),
+then failed 1 of 169 in 501 seconds: the WorldCRS84Quad pipeline test received
+an image but found no raster-store invocation. That failed iteration has no
+passing capacity verdict. Raw TRX/timing/log hashes and the exact failure are
+retained in the evidence record; a green report-mode workflow badge does not
+replace these test verdicts. The merge hold remains pending repair and replay.
+
 Both partitions retain the original test project and every source trigger.
 The existing exact-partition contract now checks all three descendants of the
 older Catalog/support split, including Catalog/Tiles. It rejects missing,

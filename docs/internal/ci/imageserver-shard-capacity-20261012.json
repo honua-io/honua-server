@@ -222,7 +222,7 @@
       "baselineUnionSeconds": 803.710106,
       "testBudgetSeconds": 1800,
       "jobBudgetSeconds": 2400,
-      "freshRunStatus": "pending"
+      "freshRunStatus": "passed twice"
     },
     {
       "partition": "rendering-and-support",
@@ -230,12 +230,221 @@
       "baselineUnionSeconds": 615.130927,
       "testBudgetSeconds": 1800,
       "jobBudgetSeconds": 2400,
-      "freshRunStatus": "pending"
+      "freshRunStatus": "one passed; second failed"
     }
   ],
   "limitations": [
     "One completed baseline is not a p90 estimate.",
     "Partition estimates exclude fixed per-job setup overhead.",
-    "New source inventory contains additional methods; current hosted results are still required."
+    "Current hosted support inventory ran 169 cases; raster inventory ran 73. Source-method counts and historical case totals are distinct.",
+    "Initial post-split support iteration 2 failed its raster-store invocation assertion. No all-partitions passing or full-server qualification claim is made."
+  ],
+  "focusedExecutions": [
+    {
+      "runId": 38189708636,
+      "source": "a6fafdae55fea39460bcddea12a3d3efdde8a2d7",
+      "overallTestVerdict": "failed",
+      "workflowBadgeIsTestVerdict": false,
+      "iterations": [
+        {
+          "artifactId": 11722021430,
+          "timing": {
+            "shard": "GeoServices ImageServer Raster Rendering",
+            "log_name": "flake-geoservices-imageserver-raster-rendering__iter1",
+            "status": "passed",
+            "exit_code": 0,
+            "started_at": "2026-10-12T01:15:56Z",
+            "completed_at": "2026-10-12T01:26:47Z",
+            "duration_seconds": 651,
+            "timeout_minutes": 30,
+            "timeout_seconds": 1800,
+            "timed_out": false,
+            "kill_escalated": false,
+            "headroom_ratio": 0.3617,
+            "headroom_warn_ratio": 0.8,
+            "capacity_status": "ok",
+            "idle_seconds_at_exit": 5,
+            "stall_seconds": 300,
+            "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRawPixelExportTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsReprojectionTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests)&Tier!=Slow)&Tier!=Fast"
+          },
+          "testCounters": {
+            "total": 73,
+            "executed": 73,
+            "passed": 73,
+            "failed": 0,
+            "error": 0,
+            "timeout": 0,
+            "aborted": 0,
+            "inconclusive": 0,
+            "passedButRunAborted": 0,
+            "notRunnable": 0,
+            "notExecuted": 0,
+            "disconnected": 0,
+            "warning": 0,
+            "completed": 0,
+            "inProgress": 0,
+            "pending": 0
+          },
+          "testVerdict": "passed",
+          "measuredHeadroomPercent": 63.83,
+          "failures": [],
+          "fileSha256": {
+            "flake-geoservices-imageserver-raster-rendering__iter1.timing.json": "ec8c952275238de1d6b4f2497c3fd1125876af1ffa2fc84c5ae02dcb61f8f3dd",
+            "flake-geoservices-imageserver-raster-rendering__iter1.trx": "872e54895600e35801c36f1e94e161472594b7a36a7615835285e25b49da56c7",
+            "flake-geoservices-imageserver-raster-rendering__iter1.log": "f87cbdb3c2cff9f5696524432dc943a22ed3c5183758d2ec37e78acd0fb4cfe3"
+          }
+        },
+        {
+          "artifactId": 11722021430,
+          "timing": {
+            "shard": "GeoServices ImageServer Raster Rendering",
+            "log_name": "flake-geoservices-imageserver-raster-rendering__iter2",
+            "status": "passed",
+            "exit_code": 0,
+            "started_at": "2026-10-12T01:26:47Z",
+            "completed_at": "2026-10-12T01:34:27Z",
+            "duration_seconds": 460,
+            "timeout_minutes": 30,
+            "timeout_seconds": 1800,
+            "timed_out": false,
+            "kill_escalated": false,
+            "headroom_ratio": 0.2556,
+            "headroom_warn_ratio": 0.8,
+            "capacity_status": "ok",
+            "idle_seconds_at_exit": 5,
+            "stall_seconds": 300,
+            "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRawPixelExportTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsReprojectionTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests)&Tier!=Slow)&Tier!=Fast"
+          },
+          "testCounters": {
+            "total": 73,
+            "executed": 73,
+            "passed": 73,
+            "failed": 0,
+            "error": 0,
+            "timeout": 0,
+            "aborted": 0,
+            "inconclusive": 0,
+            "passedButRunAborted": 0,
+            "notRunnable": 0,
+            "notExecuted": 0,
+            "disconnected": 0,
+            "warning": 0,
+            "completed": 0,
+            "inProgress": 0,
+            "pending": 0
+          },
+          "testVerdict": "passed",
+          "measuredHeadroomPercent": 74.44,
+          "failures": [],
+          "fileSha256": {
+            "flake-geoservices-imageserver-raster-rendering__iter2.timing.json": "dfd534bd3014f4bfabb17ccd89c20554ec3ca00f13cb8edfcec414e8d3092776",
+            "flake-geoservices-imageserver-raster-rendering__iter2.trx": "bfa1fc39dfac1f32d32488aea903d7daadf9dc1b00d03b19a0183fe5d9358dcd",
+            "flake-geoservices-imageserver-raster-rendering__iter2.log": "4b4fa338f4636422a8f55cdd055cc6654967b79d75985e014d86dd22c03808e9"
+          }
+        },
+        {
+          "artifactId": 11722121198,
+          "timing": {
+            "shard": "GeoServices ImageServer Rendering and Support",
+            "log_name": "flake-geoservices-imageserver-rendering-and-support__iter1",
+            "status": "passed",
+            "exit_code": 0,
+            "started_at": "2026-10-12T01:18:13Z",
+            "completed_at": "2026-10-12T01:26:59Z",
+            "duration_seconds": 526,
+            "timeout_minutes": 30,
+            "timeout_seconds": 1800,
+            "timed_out": false,
+            "kill_escalated": false,
+            "headroom_ratio": 0.2922,
+            "headroom_warn_ratio": 0.8,
+            "capacity_status": "ok",
+            "idle_seconds_at_exit": 5,
+            "stall_seconds": 300,
+            "filter": "((((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Protocols.GeoServices.Tests.Source.ImageServer)&FullyQualifiedName!~ImageServerEndpointsTests)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRawPixelExportTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsReprojectionTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests)&Tier!=Slow)&Tier!=Fast"
+          },
+          "testCounters": {
+            "total": 169,
+            "executed": 169,
+            "passed": 169,
+            "failed": 0,
+            "error": 0,
+            "timeout": 0,
+            "aborted": 0,
+            "inconclusive": 0,
+            "passedButRunAborted": 0,
+            "notRunnable": 0,
+            "notExecuted": 0,
+            "disconnected": 0,
+            "warning": 0,
+            "completed": 0,
+            "inProgress": 0,
+            "pending": 0
+          },
+          "testVerdict": "passed",
+          "measuredHeadroomPercent": 70.78,
+          "failures": [],
+          "fileSha256": {
+            "flake-geoservices-imageserver-rendering-and-support__iter1.timing.json": "616c48f93132051f29e94deef9545d3a666e6dfa4f5445fa015d9431688b3c08",
+            "flake-geoservices-imageserver-rendering-and-support__iter1.trx": "753c3159f32c8c9f16ff7e79fa808c15e626db42af658ecfeec5d94ec5bc480d",
+            "flake-geoservices-imageserver-rendering-and-support__iter1.log": "4d8d3489c4a186836a11878f88eed3e1a49823be42b10cf7872d5aefbd2fded4"
+          }
+        },
+        {
+          "artifactId": 11722121198,
+          "timing": {
+            "shard": "GeoServices ImageServer Rendering and Support",
+            "log_name": "flake-geoservices-imageserver-rendering-and-support__iter2",
+            "status": "failed",
+            "exit_code": 1,
+            "started_at": "2026-10-12T01:26:59Z",
+            "completed_at": "2026-10-12T01:35:20Z",
+            "duration_seconds": 501,
+            "timeout_minutes": 30,
+            "timeout_seconds": 1800,
+            "timed_out": false,
+            "kill_escalated": false,
+            "headroom_ratio": 0.2783,
+            "headroom_warn_ratio": 0.8,
+            "capacity_status": "not_assessed",
+            "idle_seconds_at_exit": 5,
+            "stall_seconds": 300,
+            "filter": "((((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Protocols.GeoServices.Tests.Source.ImageServer)&FullyQualifiedName!~ImageServerEndpointsTests)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRawPixelExportTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsReprojectionTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests)&Tier!=Slow)&Tier!=Fast"
+          },
+          "testCounters": {
+            "total": 169,
+            "executed": 169,
+            "passed": 168,
+            "failed": 1,
+            "error": 0,
+            "timeout": 0,
+            "aborted": 0,
+            "inconclusive": 0,
+            "passedButRunAborted": 0,
+            "notRunnable": 0,
+            "notExecuted": 0,
+            "disconnected": 0,
+            "warning": 0,
+            "completed": 0,
+            "inProgress": 0,
+            "pending": 0
+          },
+          "testVerdict": "failed",
+          "measuredHeadroomPercent": null,
+          "failures": [
+            {
+              "testName": "Wmts GetTile WorldCrs84QuadEnabled RendersThroughSharedGridsetPipeline",
+              "message": "System.InvalidOperationException : Sequence contains no matching element",
+              "stackTrace": "   at System.Linq.ThrowHelper.ThrowNoMatchException()\n   at System.Linq.Enumerable.Single[TSource](IEnumerable`1 source, Func`2 predicate)\n   at Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetTile_WorldCrs84QuadEnabled_RendersThroughSharedGridsetPipeline() in /_/tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerWmtsMatrixSetTests.cs:line 162\n   at Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetTile_WorldCrs84QuadEnabled_RendersThroughSharedGridsetPipeline() in /_/tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerWmtsMatrixSetTests.cs:line 174\n--- End of stack trace from previous location ---"
+            }
+          ],
+          "fileSha256": {
+            "flake-geoservices-imageserver-rendering-and-support__iter2.timing.json": "b2ff9ecceb62f0338e1a06c555c878e0311dfa606185776905a3da8a354547a2",
+            "flake-geoservices-imageserver-rendering-and-support__iter2.trx": "f5ee6d059a26b271da82265698a3ad893b6fbbc363bf303ed39cddbfd3184cf7",
+            "flake-geoservices-imageserver-rendering-and-support__iter2.log": "ba708d622dd9e7aaf82060ed188fccdb109fe11551131c92ad6fa0cddbcea2ec"
+          }
+        }
+      ]
+    }
   ]
 }
