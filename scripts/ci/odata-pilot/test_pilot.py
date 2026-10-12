@@ -185,6 +185,28 @@ class InputTests(unittest.TestCase):
         self.assertEqual("key", argv[2])
         self.assertTrue(any(arg.startswith("-getItem:") for arg in argv))
 
+    def test_item_timestamps_do_not_change_identity_but_source_and_metadata_do(self):
+        timestamp = "2026-01-01"
+        semantic = "PreserveNewest"
+        def evaluated_with_metadata(argv, root):
+            raw = self.fake_command(argv, root)
+            if any(arg.startswith("-getItem:") for arg in argv):
+                value = json.loads(raw)
+                value["Items"]["Compile"][0].update(ModifiedTime=timestamp, CreatedTime=timestamp, AccessedTime=timestamp, CopyToOutputDirectory=semantic)
+                return json.dumps(value)
+            return raw
+        def identity():
+            with patch.object(pilot, "command", side_effect=evaluated_with_metadata):
+                return pilot.evaluated_inputs(self.root, "src/Selected/Selected.csproj", "Release", "full", self.output)
+        first = identity()
+        timestamp = "2027-02-02"
+        self.assertEqual(first["key"], identity()["key"])
+        semantic = "Always"
+        self.assertNotEqual(first["key"], identity()["key"])
+        semantic = "PreserveNewest"
+        self.source.write_text("class Source { int changed; }")
+        self.assertNotEqual(first["key"], identity()["key"])
+
     def test_image_runtime_properties_are_explicit_and_identity_bound(self):
         portable = pilot.props("Release", "full")
         self.assertFalse(any("RuntimeIdentifier" in arg for arg in portable))

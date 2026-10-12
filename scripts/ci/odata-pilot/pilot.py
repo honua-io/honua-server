@@ -203,7 +203,17 @@ def evaluated_inputs(root, project, configuration, composition, evidence, measur
             continue
         key = str(path.relative_to(root)) if path.is_relative_to(root) else str(path)
         inputs[key] = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else "MISSING"
-    evaluated = normalize({"graph": graph, "evaluations": evaluations}, root)
+    # Only the three documented filesystem timestamps are nonsemantic item
+    # metadata. Keep every other evaluated item value in the hashed identity;
+    # raw query output remains untouched in its evidence stage output.log.
+    stable_evaluations = json.loads(json.dumps(evaluations))
+    for evaluation in stable_evaluations.values():
+        for items in evaluation["Items"].values():
+            for item in items:
+                for key in list(item):
+                    if key.lower() in {"modifiedtime", "createdtime", "accessedtime"}:
+                        del item[key]
+    evaluated = normalize({"graph": graph, "evaluations": stable_evaluations}, root)
     identity = {"sdk": command(["dotnet", "--version"], root), "os": platform.system(), "osVersion": platform.release(), "architecture": platform.machine(),
                 "configuration": configuration, "composition": composition, "buildProperties": props(configuration, composition, runtime), "evaluatedGraph": evaluated, "inputs": inputs}
     return {"key": digest(identity), "identity": identity, "projectCount": len(projects),
