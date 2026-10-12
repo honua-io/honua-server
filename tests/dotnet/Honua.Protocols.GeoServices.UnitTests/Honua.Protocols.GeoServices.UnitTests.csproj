@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Newtonsoft.Json.Schema" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj" />
+    <ProjectReference Include="../../../src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Core/Honua.TestKit.Core.csproj" />
+    <ProjectReference Include="../../../src/Honua.Hosting/Honua.Hosting.csproj" />
+    <Compile Include="../Honua.TestKit/Infrastructure/TestMetadataV2GraphProvider.cs" Link="Shared/TestMetadataV2GraphProvider.cs" />
+    <Compile Include="../Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs" Link="Shared/GeoServicesErrorAssertions.cs" />
+    <Compile Include="../Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs" Link="Shared/PbfQueryFormatterTests.Shared.cs" />
+    <Compile Include="../Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs" Link="Shared/ImageServerMultidimensionalSoapAssertions.cs" />
+    <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

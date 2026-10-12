@@ -59,4 +59,13 @@
     <ProjectReference Include="..\..\..\src\Honua.Plugins\Honua.Plugins.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs" Link="Shared/GeoServicesErrorAssertions.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs" Link="Shared/PbfQueryFormatterTests.Shared.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs" Link="Shared/ImageServerMultidimensionalSoapAssertions.cs" />
+  </ItemGroup>
 </Project>

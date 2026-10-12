@@ -47,11 +47,17 @@
     <InternalsVisibleTo Include="Honua.Protocols.OData.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.OgcApi" />
     <InternalsVisibleTo Include="Honua.Protocols.OgcApi.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcApi.UnitTests" />
     <InternalsVisibleTo Include="Honua.Protocols.OgcClassic.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcClassic.UnitTests" />
     <InternalsVisibleTo Include="Honua.Protocols.GeoServices.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.GeoServices.UnitTests" />
     <InternalsVisibleTo Include="Honua.Ai.Tests" />
+    <InternalsVisibleTo Include="Honua.Ai.UnitTests" />
     <InternalsVisibleTo Include="Honua.Protocols.Scene.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.Scene.UnitTests" />
     <InternalsVisibleTo Include="Honua.Protocols.Stac.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.Stac.UnitTests" />
     <InternalsVisibleTo Include="Honua.Aws" />
     <InternalsVisibleTo Include="Honua.Azure" />
     <InternalsVisibleTo Include="Honua.Geoprocessing" />
