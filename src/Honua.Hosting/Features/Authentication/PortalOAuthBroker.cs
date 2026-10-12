@@ -90,7 +90,10 @@ internal sealed class PortalOAuthBroker(
             return null;
         }
 
-        var idpState = GenerateRandomString(32);
+        // State crosses the server's query-input scanner on the callback. Hex retains
+        // all 256 random bits without the SQL-comment punctuation (for example "--")
+        // that the PKCE unreserved alphabet can generate by chance.
+        var idpState = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
         var idpVerifier = GenerateRandomString(64);
         var idpChallenge = WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(idpVerifier)));
 
@@ -115,7 +118,7 @@ internal sealed class PortalOAuthBroker(
         // without a cookie (ArcGIS Pro's embedded browser is hostile to cookies).
         //
         // CSRF posture (#1484, see ADR-0049 "CSRF posture"): the cookieless binding
-        // is judged adequate. `idpState` (32 random chars) plus `brokerSessionId`
+        // is judged adequate. `idpState` (256 random bits) plus `brokerSessionId`
         // (256-bit cache-key entropy) are both unguessable; the callback consumes the
         // session single-use by id and constant-time-compares `idpState` before
         // proceeding. The secret lives server-side in the single-use, 15-minute
@@ -149,12 +152,10 @@ internal sealed class PortalOAuthBroker(
             return PortalOAuthCallbackResult.Failure("invalid_request", "Missing authorization response parameters.");
         }
 
-        // Split on the LAST '.' — the idpState half is drawn from the RFC 3986
-        // unreserved alphabet, which INCLUDES '.', so it can legitimately contain
-        // dots. The brokerSessionId half is always lowercase hex (see
-        // PortalOAuthStore.CreateValue) and never contains a '.', so the final dot
-        // is unambiguously the delimiter. Splitting on the first '.' corrupted the
-        // session id whenever the random idpState happened to contain a dot.
+        // Split on the LAST '.' for existing sessions whose idpState used the RFC
+        // 3986 unreserved alphabet, including '.'. Newly minted state and the
+        // brokerSessionId are lowercase hex, but accepting the earlier format
+        // avoids invalidating a login already in progress during an upgrade.
         var separator = combinedState.LastIndexOf('.');
         if (separator <= 0 || separator >= combinedState.Length - 1)
         {
