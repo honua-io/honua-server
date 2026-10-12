@@ -354,3 +354,10 @@ The parser preflight discovers only the selected PATH `dotnet` shim's real
 `HONUA_FLOW_RESERVATION_HELPER`. Other Flow checkouts do not govern the selected
 executor. If an outer recording wrapper hides that shim, configure the helper
 that wrapper actually delegates to; a missing explicit helper fails closed.
+
+
+Artifact hashing excludes only the evaluated item's `ModifiedTime`,
+`CreatedTime`, and `AccessedTime` filesystem metadata, as defined by
+[MSBuild well-known item metadata](https://learn.microsoft.com/en-us/visualstudio/msbuild/msbuild-well-known-item-metadata).
+Raw evaluation output remains in stage logs. Source bytes and all other item
+metadata, including reference and copy behavior, remain identity inputs.
