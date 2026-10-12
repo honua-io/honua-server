@@ -350,7 +350,8 @@ def ensure_runtime_only(directory):
             def contains_credentials(item):
                 if isinstance(item, dict):
                     for key, child in item.items():
-                        if isinstance(child, str) and child and (key.lower() in {"password", "clientsecret", "apikey", "secretaccesskey", "accesskey", "token"}
+                        field = re.sub(r"[^a-z0-9]", "", re.split(r":|__", key.lower())[-1])
+                        if isinstance(child, str) and child and (field in {"password", "adminpassword", "masterkey", "clientsecret", "apikey", "secretaccesskey", "accesskey", "token", "signingkey", "privatesigningkey", "privatekey", "encryptionkey", "symmetricsecuritykey"}
                             or re.search(r"(?:Password|Pwd)\s*=\s*[^;]+", child, re.I)):
                             return True
                         if contains_credentials(child):

@@ -316,3 +316,14 @@ Git-derived metadata for the closure experiment: unrelated commits must not
 silently change compiler outputs while retaining the same input key. Production
 build properties are unchanged. The pilot still rebuilds before execution; it
 does not claim byte-for-byte reproducibility or restore external binary caches.
+
+
+For the Production runtime probe, provide a fresh connection-encryption master
+key through `HONUA_ODATA_PILOT_MASTER_KEY` outside the image (mapped to
+`Security__ConnectionEncryption__MasterKey`). Generate an ephemeral key using the
+existing fixture/bootstrap surface and do not retain it in publish output or
+receipts. Provide a strong, unique `HONUA_ODATA_PILOT_ADMIN_PASSWORD`; Production
+requires at least 12 characters and rejects shipped placeholder passwords. The
+runtime context check rejects nonempty JSON admin passwords, master keys,
+private/signing/encryption keys, and the other recognized credential fields,
+including nested objects and flattened configuration names.

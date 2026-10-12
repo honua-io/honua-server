@@ -193,6 +193,18 @@ class InputTests(unittest.TestCase):
                 pilot.ensure_runtime_only(runtime)
             path.unlink()
 
+    def test_runtime_json_rejects_nested_and_flat_secret_key_fields(self):
+        runtime = self.root / "secret-publish"
+        runtime.mkdir()
+        settings = runtime / "appsettings.json"
+        for key in ("MasterKey", "AdminPassword", "SigningKey", "PrivateKey", "EncryptionKey",
+                    "Security:ConnectionEncryption:MasterKey", "Security__Signing_Key"):
+            settings.write_text(json.dumps({"Security": [{key: "sensitive-value"}]}))
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                pilot.ensure_runtime_only(runtime)
+        settings.write_text(json.dumps({"Security": {"MasterKey": "", "AdminPassword": None, "PublicKey": "public-material"}}))
+        pilot.ensure_runtime_only(runtime)
+
     def test_managed_builder_requires_fresh_matching_bounds_and_reservation(self):
         config = self.root / "builder.json"
         receipt = self.root / "builder-receipt.json"
