@@ -96,6 +96,15 @@ runs:
         cache: 'npm'
         cache-dependency-path: honua-sdk-js/mcp/package-lock.json
 
+    - name: Build the selected SDK source for the MCP file peer
+      if: steps.check-scripts.outputs.cert == 'true' || steps.check-scripts.outputs.smoke == 'true'
+      shell: bash
+      working-directory: honua-sdk-js
+      run: |
+        echo "HONUA_SUITE_GIT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+        npm ci
+        npm run build
+
     - name: Install MCP test dependencies
       if: steps.check-scripts.outputs.cert == 'true' || steps.check-scripts.outputs.smoke == 'true'
       shell: bash
