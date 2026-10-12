@@ -48,7 +48,7 @@ set -euo pipefail
 # hits before you commit to a run.
 #
 # CLI flags (aliases for the escape-hatch env vars below): --full, --fast,
-# --dry-run, --base <ref>, --unit-only (feedback only; no PR validation).
+# --dry-run, --base <ref>, --unit-only, --affected-tests (feedback only).
 #
 # Escape hatches:
 #   HONUA_PRE_PR_FULL=1     force the full suite (recommended before a release
@@ -86,10 +86,12 @@ FULL="${HONUA_PRE_PR_FULL:-0}"
 FAST="${HONUA_PRE_PR_FAST:-0}"
 DRY_RUN="${HONUA_PRE_PR_DRY_RUN:-0}"
 UNIT_ONLY=0
+AFFECTED_TESTS=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --unit-only) UNIT_ONLY=1; shift ;;
+        --affected-tests) AFFECTED_TESTS=1; shift ;;
         --full) FULL=1; shift ;;
         --fast) FAST=1; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
@@ -114,6 +116,17 @@ done
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${REPO_ROOT}"
+
+# Shared-router affected unit/component feedback, without the full collector.
+if [[ "${AFFECTED_TESTS}" == "1" ]]; then
+    if [[ "${FULL}" == "1" || "${FAST}" == "1" || "${UNIT_ONLY}" == "1" ]]; then
+        echo "--affected-tests cannot be combined with fast/full/unit-only modes" >&2
+        exit 2
+    fi
+    feedback_operation=run
+    [[ "${DRY_RUN}" != "1" ]] || feedback_operation=plan
+    exec python3 scripts/ci/local-test-feedback.py "${feedback_operation}" --base "${BASE_REF}"
+fi
 
 # Explicit developer feedback lane; never substitutes for fast/full PR gates.
 if [[ "${UNIT_ONLY}" == "1" ]]; then
@@ -390,7 +403,7 @@ UNIT_TEST_PROJECTS='tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj
 tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj
 tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj
 tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj
-tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj'
+tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj'
 ARCHITECTURE_TEST_PROJECT="tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj"
 MONOLITH_TEST_PROJECT="tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
 
@@ -627,6 +640,8 @@ else
     done <<< "${candidates}"
     # Architecture.Tests always runs, so it is always part of the build set.
     kept+="${ARCHITECTURE_TEST_PROJECT}"${HONUA_NL}
+    kept+="${MONOLITH_TEST_PROJECT}"${HONUA_NL}
+    kept+="$(python3 scripts/ci/test-projects.py gate-fast-projects)"${HONUA_NL}
     projects_json="$(printf '%s' "${kept}" \
         | sed '/^$/d' \
         | while IFS= read -r proj; do sln_literal_path "${proj}"; printf '\n'; done \
@@ -683,15 +698,17 @@ else
     # Diagnostic verbosity makes dotnet-format log every analyzed document —
     # on a 76-project solution that is minutes of pure console I/O. The
     # failure output at normal verbosity still names each unformatted file.
-    if ! dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --verify-no-changes; then
+    if ! dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --no-restore --verify-no-changes; then
         echo "❌ Format check failed. Running 'dotnet format' to fix..."
-        dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}"
+        dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --no-restore
         echo "✅ Code formatted. Please review changes and commit if needed."
         exit 1
     fi
 fi
 
-if [[ "${DRY_RUN}" == "1" ]]; then
+if [[ "${FAST}" == "1" ]] && ! affected_contains "Honua.Postgres.Tests.csproj" && ! affected_contains "Honua.LoadTests.csproj"; then
+    echo "5. No selected database suites in FAST mode; skipping PostGIS pre-pull."
+elif [[ "${DRY_RUN}" == "1" ]]; then
     echo "5. [dry-run] Would pre-pull Docker images and run .NET tests (see selection below)."
 else
     echo "5. Pre-pulling Docker images for faster tests..."
@@ -714,6 +731,7 @@ fi
 echo "6. Running .NET tests..."
 mkdir -p ./tests/TestResults
 
+COMPLETED_UNIT_FULL_SUITES=()
 run_unit_project() {
     local proj="$1"
     if [[ "${AFFECTED}" == "ALL" ]] || affected_contains "$(basename "${proj}")"; then
@@ -729,6 +747,10 @@ run_unit_project() {
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults \
             -- RunConfiguration.MaxCpuCount=1
+        case "${proj}" in
+            tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj|tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj)
+                COMPLETED_UNIT_FULL_SUITES+=(--completed-full-suite "${proj}") ;;
+        esac
     else
         echo "   - skip ${proj} (not affected)"
     fi
@@ -739,13 +761,30 @@ run_unit_project tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Test
 run_unit_project tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj
 run_unit_project tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj
 
+# Mirror the retained Server Fast smoke as well as the migrated unit smoke.
+if [[ "${DRY_RUN}" == "1" ]]; then
+    echo "   - [dry-run] would run Honua.Server.Tests (Tier=Fast; no build/restore)"
+else
+    dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+        --no-build --no-restore --configuration Release --filter "Tier=Fast" \
+        --logger "console;verbosity=minimal" --results-directory ./tests/TestResults \
+        -- RunConfiguration.MaxCpuCount=1
+fi
+
+# Preserve migrated Fast coverage even when --fast skips integration shards.
+if [[ "${DRY_RUN}" == "1" ]]; then
+    echo "   - [dry-run] would run catalogued isolated units (Tier=Fast; no build/restore)"
+else
+    python3 scripts/ci/test-projects.py gate-fast "${COMPLETED_UNIT_FULL_SUITES[@]}"
+fi
+
 # Service-free MCP registry/taxonomy governance mirrors the required lean gate.
 # Keep this class-level filter broad so new drift tests are covered automatically.
 if [[ "${DRY_RUN}" == "1" ]]; then
-    echo "   - [dry-run] would run tests/dotnet/Honua.Ai.Tests (MCP registry/taxonomy drift)"
+    echo "   - [dry-run] would run tests/dotnet/Honua.Ai.UnitTests (MCP registry/taxonomy drift)"
 else
-    echo "   - tests/dotnet/Honua.Ai.Tests (MCP registry/taxonomy drift)"
-    dotnet test tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj \
+    echo "   - tests/dotnet/Honua.Ai.UnitTests (MCP registry/taxonomy drift)"
+    dotnet test tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj \
         --no-build \
         --no-restore \
         --configuration Release \

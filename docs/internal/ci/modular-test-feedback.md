@@ -176,3 +176,38 @@ gates and hosted PR verification remain pending. These partial runs are not a
 completion receipt. OData image/performance qualification remains a separate
 opt-in pilot with its documented missing managed lifecycle evidence; ordinary
 component execution above does not certify those measurements.
+
+## Affected unit and component feedback
+
+Local SMART checks already use `.github/ci-shards.json`, the canonical hosted
+shard router and the same shard executor. Their extra cost comes from full
+Architecture collection and gate work, not a separate local shard registry.
+For an earlier feedback loop, use the explicit shared-router mode:
+
+```bash
+scripts/ci/pre-pr-check.sh --affected-tests --dry-run --base origin/trunk
+scripts/ci/pre-pr-check.sh --affected-tests --base origin/trunk
+```
+
+This selects affected isolated units plus the canonical uncapped shard selection,
+builds their combined project set once without the Architecture collector, runs
+selected unit projects fully, and runs remaining shards serially. A unit project
+already run fully suppresses its duplicate shard. Fresh test result files must
+report a positive executed test count. Components retain their declared resources
+and owned cleanup; the mode does not bypass build admission or resource limits.
+`--unit-only` restricts feedback to pure units; `--affected-tests` also includes
+selected component/integration shards; normal SMART/`--fast`/`--full` remain
+separate gate modes. The feedback modes cannot be combined.
+
+Its JSON is explicitly feedback-only and cannot serve as a PR validation receipt.
+Supervisor plan-adapter consolidation is separate work: this change does not
+activate a backend, change the supervisor's default gate, or replace the required
+PR/Review gates. Finish with the normal developer/hosted checks.
+
+The lean gate and local gate now build catalogued isolated unit Fast projects in
+the same combined build, then run them without building/restoring again. The
+retained Server Fast smoke stays present, and MCP taxonomy/capability governance
+runs in its actual Ai.UnitTests assembly. Local Core/Core.Security full-suite
+success suppresses only their duplicate Fast invocation; hosted coverage remains
+unchanged. Local format reuses restored assets, and a service-free FAST selection
+without selected Postgres/Load suites skips unnecessary PostGIS pre-pull.

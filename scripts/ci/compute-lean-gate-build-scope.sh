@@ -62,8 +62,16 @@ SOLUTION="Honua.sln"
 REQUIRED_TEST_PROJECTS=(
   "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
   "tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj"
-  "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj"
+  "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj"
 )
+
+# The catalog is validated before either build mode. The same project set is
+# consumed by the no-build Fast smoke; failure must stop the gate, not narrow it.
+unit_fast_projects="$(python3 scripts/ci/test-projects.py gate-fast-projects)"
+UNIT_FAST_TEST_PROJECTS=()
+if [[ -n "${unit_fast_projects}" ]]; then
+  mapfile -t UNIT_FAST_TEST_PROJECTS <<< "${unit_fast_projects}"
+fi
 
 build_scope="${BUILD_SCOPE:-full}"
 event_name="${GITHUB_EVENT_NAME:-}"
@@ -122,7 +130,7 @@ while IFS= read -r project; do
   [[ -z "${project}" ]] && continue
   wanted["${project}"]=1
 done <<< "${affected}"
-for project in "${REQUIRED_TEST_PROJECTS[@]}"; do
+for project in "${REQUIRED_TEST_PROJECTS[@]}" "${UNIT_FAST_TEST_PROJECTS[@]}"; do
   wanted["${project}"]=1
 done
 
@@ -136,7 +144,7 @@ declare -a selected=()
 for project in "${!wanted[@]}"; do
   windows_path="${project//\//\\}"
   if [[ "${solution_text}" != *"\"${windows_path}\""* ]]; then
-    if [[ " ${REQUIRED_TEST_PROJECTS[*]} " == *" ${project} "* ]]; then
+    if [[ " ${REQUIRED_TEST_PROJECTS[*]} ${UNIT_FAST_TEST_PROJECTS[*]} " == *" ${project} "* ]]; then
       full "required test project '${project}' is missing from ${SOLUTION}"
     fi
     echo "::debug::skipping '${project}': not a member of ${SOLUTION}"

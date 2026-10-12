@@ -257,6 +257,46 @@ class CatalogTests(unittest.TestCase):
         self.assertTrue(entry['coverageRequired'])
         self.assertFalse(entry['isolated'])
 
+    def test_gate_fast_selection_keeps_units_on_unrelated_changes_and_no_build_execution(self):
+        self.assertEqual([self.unit], catalog.gate_fast_projects(self.entries))
+        with patch.object(catalog.subprocess, 'run') as run:
+            catalog.execute_gate_fast(self.root, catalog.gate_fast_projects(self.entries))
+        command = run.call_args.args[0]
+        self.assertEqual(['dotnet', 'test', self.unit], command[:3])
+        self.assertIn('--no-build', command)
+        self.assertIn('--no-restore', command)
+        self.assertEqual('Tier=Fast', command[command.index('--filter') + 1])
+        self.assertNotIn(self.integration, command)
+
+    def test_fast_smoke_only_skips_full_suites_that_actually_completed(self):
+        self.assertEqual([self.unit], catalog.gate_fast_projects(self.entries))
+        self.assertEqual([], catalog.gate_fast_projects(self.entries, completed=[self.unit]))
+        self.assertEqual([self.unit], catalog.gate_fast_projects(self.entries, completed=[self.integration]))
+
+    def test_discovery_prunes_artifact_directories_before_traversal(self):
+        artifacts = (self.root / self.unit).parent / 'obj' / 'nested'
+        artifacts.mkdir(parents=True)
+        (artifacts / 'Broken.csproj').write_text('not XML')
+        (artifacts / 'Generated.cs').write_text('generated')
+        visited = []
+        real_scandir = catalog.os.scandir
+        def scan(path):
+            visited.append(Path(path))
+            return real_scandir(path)
+        with patch.object(catalog.os, 'scandir', side_effect=scan):
+            self.assertNotIn('Broken.csproj', str(catalog.discover(self.root)))
+            self.assertNotIn('Generated.cs', str(catalog.sources(self.root, self.unit)))
+        self.assertFalse(any({'bin', 'obj'} & set(path.parts) for path in visited))
+
+    def test_planner_memoizes_shared_inputs_only_within_one_call(self):
+        second = self.project('tests/dotnet/Honua.Second.UnitTests', [self.owner])
+        self.entries['projects'][second] = dict(role='unit', runtimeOwners=[self.owner], resources=[], isolated=True, coverageRequired=True)
+        with patch.object(catalog, 'sources', wraps=catalog.sources) as sources:
+            catalog.plan(self.root, self.entries, [])
+            self.assertEqual(1, sum(call.args[1] == self.owner for call in sources.call_args_list))
+            catalog.plan(self.root, self.entries, [])
+            self.assertEqual(2, sum(call.args[1] == self.owner for call in sources.call_args_list))
+
     def test_shared_change_selects_units_only(self):
         result = catalog.plan(self.root, self.entries, ['Directory.Build.props'])
         self.assertEqual([self.unit], result['selectedProjects'])

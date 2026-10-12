@@ -3,6 +3,7 @@
 import argparse
 import glob
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -79,13 +80,21 @@ def closure(root, project):
     return seen
 
 
+def source_files(directory, suffix):
+    for parent, directories, filenames in os.walk(directory):
+        directories[:] = [name for name in directories if name not in {'bin', 'obj'}]
+        for name in filenames:
+            if name.endswith(suffix):
+                yield Path(parent) / name
+
+
 def discover(root):
-    return sorted(p.relative_to(root).as_posix() for p in (root / 'tests/dotnet').rglob('*.csproj') if not {'bin', 'obj'} & set(p.parts))
+    return sorted(p.relative_to(root).as_posix() for p in source_files(root / 'tests/dotnet', '.csproj'))
 
 
 def sources(root, project):
     directory = (root / project).parent
-    return set(p.relative_to(root).as_posix() for p in directory.rglob('*.cs') if not {'bin', 'obj'} & set(p.parts)) | set(items(root, project, 'Compile'))
+    return {p.relative_to(root).as_posix() for p in source_files(directory, '.cs')} | set(items(root, project, 'Compile'))
 
 
 def proposed(root, project):
@@ -180,11 +189,17 @@ def plan(root, catalog, changed):
     eligible_inputs = set()
     eligible_directories = []
     candidates = []
+    reference_inputs = {}
+    project_closures = {}
     for project, entry in catalog['projects'].items():
         if entry['role'] != 'unit' or not entry['isolated']:
             continue
         refs = closure(root, project)
-        inputs = set().union(*(sources(root, p) | set(items(root, p, 'Content')) | set(items(root, p, 'EmbeddedResource')) for p in refs)) | refs
+        project_closures[project] = refs
+        for reference in refs:
+            if reference not in reference_inputs:
+                reference_inputs[reference] = sources(root, reference) | set(items(root, reference, 'Content')) | set(items(root, reference, 'EmbeddedResource'))
+        inputs = set().union(*(reference_inputs[p] for p in refs)) | refs
         directories = [(root / p).parent.relative_to(root).as_posix() + '/' for p in refs]
         eligible_inputs |= inputs
         eligible_directories.extend(directories)
@@ -196,12 +211,31 @@ def plan(root, catalog, changed):
     for project, inputs, directories in candidates:
         if broad or any(p in inputs or any(p.startswith(d) for d in directories) for p in changed):
             selected.append(project)
-    dependencies = sorted(set().union(*(closure(root, p) for p in selected)) if selected else set())
+    dependencies = sorted(set().union(*(project_closures[p] for p in selected)) if selected else set())
     return {'schema': 'honua.unit-feedback/v1', 'feedbackOnly': True, 'validatesPullRequest': False,
             'selectedProjects': sorted(selected), 'forwardBuildClosure': dependencies,
             'selectionReasons': reasons,
             'commands': ([['dotnet', 'build', '<temporary-unit-selection.slnf>', '--configuration', 'Release', '-p:TreatWarningsAsErrors=true', '-p:UseSharedCompilation=false']] if selected else []) + [['dotnet', 'test', p, '--no-build', '--no-restore', '--configuration', 'Release'] for p in sorted(selected)],
             'fullGatesRequired': True, 'shardRoutingAuthority': '.github/ci-shards.json'}
+
+
+def gate_fast_projects(catalog, completed=()):
+    # Unconditional, like the original Server Fast smoke: source moves must not
+    # drop required coverage on an unrelated/docs-only change.
+    return sorted(p for p, entry in catalog['projects'].items()
+                  if entry['role'] == 'unit' and entry['isolated'] and p not in completed)
+
+
+def execute_gate_fast(root, projects):
+    for project in projects:
+        subprocess.run(['dotnet', 'test', project, '--no-build', '--no-restore',
+                        '--configuration', 'Release', '--filter',
+                        ('Tier=Fast&FullyQualifiedName!~McpTaxonomyAlignmentTests&FullyQualifiedName!~CapabilityRegistryConformanceTests'
+                         if Path(project).stem == 'Honua.Ai.UnitTests' else 'Tier=Fast'),
+                        '--logger', 'trx;LogFileName=lean-fast-' + Path(project).stem + '.trx',
+                        '--logger', 'console;verbosity=minimal',
+                        '--results-directory', str(root / 'tests/TestResults')],
+                       cwd=root, check=True)
 
 
 def execute(root, result):
@@ -220,8 +254,11 @@ def execute(root, result):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=['update', 'validate', 'plan', 'run', 'role'])
+    parser.add_argument('operation', choices=['update', 'validate', 'plan', 'run', 'role', 'gate-fast-projects', 'gate-fast'])
     parser.add_argument('--project')
+    parser.add_argument('--completed-full-suite', action='append', default=[], choices=[
+        'tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj',
+        'tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj'])
     parser.add_argument('--root', type=Path, default=ROOT)
     parser.add_argument('--base', default='origin/trunk')
     parser.add_argument('--changed', action='append')
@@ -254,6 +291,13 @@ def main():
         return
     validate(root, catalog)
     if args.operation == 'validate':
+        return
+    if args.operation in {'gate-fast-projects', 'gate-fast'}:
+        projects = gate_fast_projects(catalog, args.completed_full_suite)
+        if args.operation == 'gate-fast-projects':
+            print('\n'.join(projects))
+        else:
+            execute_gate_fast(root, projects)
         return
     changed = args.changed
     if changed is None:

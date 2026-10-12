@@ -316,7 +316,7 @@ assert_exact_shards \
 assert_exact_shards \
   "stac-capacity-split-source" \
   "src/Honua.Protocols.Stac/StacEndpoints.cs" \
-  '["STAC Protocol","STAC Items and Collections","STAC and API Governance"]'
+  '["Protocols Stac Components","Protocols Stac Units","STAC Items and Collections","STAC Protocol","STAC and API Governance"]'
 # --- #3204 September 2026 shard-headroom rebalance --------------------------
 # Every capacity split below leaves both children on the same source tree, so a
 # change under that tree must select BOTH children; a one-shard answer would mean
@@ -627,11 +627,11 @@ assert_excludes_shard \
 assert_exact_shards \
   "scene-targeted" \
   "src/Honua.Protocols.Scene/SceneServerEndpoints.cs" \
-  '["Scene","Scene I3S Resources"]'
+  '["Protocols Scene Components","Protocols Scene Units","Scene","Scene I3S Resources"]'
 assert_exact_shards \
   "scene-assets-targeted" \
   "src/Honua.Scene/Assets/HostedI3sSceneResourceProvider.cs" \
-  '["Scene","Scene I3S Resources","Operator Eval Harness","gRPC Protocol and Scene"]'
+  '["Operator Eval Harness","Postgres Units","Protocols Scene Components","Protocols Scene Units","Scene","Scene I3S Resources","Scene Units","gRPC Protocol and Scene"]'
 assert_exact_shards \
   "scene-tests-targeted" \
   "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sProductionResourceEndpointTests.cs" \
@@ -1007,7 +1007,7 @@ assert_descriptor \
 assert_exact_shards \
   "mcp-studio-source-includes-server-dashboard-proof" \
   "src/Honua.Ai/Features/Protocols/Mcp/Mcp/Studio/StudioCompositionTools.cs" \
-  '["MCP and Sessions","Operator Eval Harness","Server Features Analytics Studio Export and Reporting","MCP Authentication and Governance","Server Features Studio Packaging"]'
+  '["Ai Components","Ai Units","MCP Authentication and Governance","MCP and Sessions","Operator Eval Harness","Server Features Analytics Studio Export and Reporting","Server Features Studio Packaging"]'
 assert_excludes_shard \
   "studio-source-excludes-collaboration-child" \
   "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs" \
@@ -1103,7 +1103,7 @@ assert_descriptor \
 assert_exact_shards \
   "shared-wmts-formatter-bounded-owners" \
   "src/Honua.Protocols.Ogc.Shared/Common/WmtsTileMatrixFormatting.cs" \
-  '["OGC Classic WMTS","OGC API Tiles Coverages and Processes","GeoServices ImageServer"]'
+  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes","OGC Classic WMTS","Protocols OgcApi Components","Protocols OgcApi Units","Protocols OgcClassic Components","Protocols OgcClassic Units","Protocols Stac Components","Protocols Stac Units"]'
 
 # An endpoint-ADDING feature PR touches the registration plumbing AND a feature
 # dir under a shard's paths: it runs the smoke subset PLUS that feature's owning
@@ -1955,5 +1955,12 @@ fi
 
 echo "Validating .NET Foundation Tests family split..."
 scripts/ci/validate-foundation-families.sh
+
+echo "Validating shared-router local test feedback..."
+if [[ -n "${PYTHON_BIN}" ]]; then
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-local-test-feedback.py
+else
+  echo "⚠️  Skipping local feedback fixtures (no working Python 3)."
+fi
 
 echo "CI router validation passed."
