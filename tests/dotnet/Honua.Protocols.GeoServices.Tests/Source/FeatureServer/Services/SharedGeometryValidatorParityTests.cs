@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.TestKit.Attributes;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Geometry.Domain;
@@ -16,7 +17,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 
 public sealed class SharedGeometryValidatorParityTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData("POINT (1 2)")]
     [InlineData("LINESTRING (0 0, 1 1, 2 2)")]
     [InlineData("POLYGON ((0 0, 0 1, 1 1, 0 0))")]

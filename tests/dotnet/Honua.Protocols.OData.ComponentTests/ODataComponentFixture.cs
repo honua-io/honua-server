@@ -1,3 +1,6 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
 using Honua.OData.TestHost;
 using Honua.TestKit;
 using Microsoft.AspNetCore.Builder;
@@ -47,7 +50,8 @@ public sealed class ODataComponentFixture : IAsyncLifetime
                 {
                     ["ConnectionStrings:DefaultConnection"] = _connection,
                     ["HONUA_ADMIN_PASSWORD"] = adminKey,
-                    ["OData:MaxPageSize"] = "2"
+                    ["OData:MaxPageSize"] = "2",
+                    ["Limits:Edits:MaxPayloadSize"] = "4096"
                 });
             });
             await _app.StartAsync();

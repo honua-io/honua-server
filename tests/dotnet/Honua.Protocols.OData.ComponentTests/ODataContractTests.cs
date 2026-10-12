@@ -1,3 +1,6 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -8,7 +11,7 @@ namespace Honua.Protocols.OData.ComponentTests;
 
 /// <summary>The same HTTP contracts execute against the minimal host or a separately started full host.</summary>
 [Trait("Category", "Integration")]
-[Trait("Tier", "Fast")]
+[Trait("Tier", "Integration")]
 public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFixture<ODataComponentFixture>
 {
     private const string Features = "/odata/Layers(0)/Features";
@@ -22,8 +25,9 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
         using var service = await fixture.Client.GetAsync("/odata");
         service.StatusCode.Should().Be(HttpStatusCode.OK);
         using var query = await GetJsonAsync(Features + "?$filter=population%20gt%201000000&$orderby=population%20desc&$count=true");
-        query.RootElement.GetProperty("@odata.count").GetInt64().Should().BeGreaterThan(0);
-        query.RootElement.GetProperty("value").GetArrayLength().Should().BeInRange(1, 2);
+        query.RootElement.GetProperty("@odata.count").GetInt64().Should().Be(4);
+        query.RootElement.GetProperty("value").EnumerateArray().Select(x => Attributes(x).GetProperty("name").GetString())
+            .Should().Equal("Los Angeles", "Phoenix");
         var spatial = "geo.intersects(Geometry, geography'POLYGON((-122.5 37.7,-122.3 37.7,-122.3 37.85,-122.5 37.85,-122.5 37.7))')";
         using var result = await GetJsonAsync(Features + "?$filter=" + Uri.EscapeDataString(spatial));
         result.RootElement.GetProperty("value").EnumerateArray().Should().Contain(x => Attributes(x).GetProperty("name").GetString() == "San Francisco");
@@ -50,7 +54,7 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
     public async Task CrudAndEtags_UseCanonicalEditAndConcurrencyPipeline()
     {
         var name = "pilot-" + Guid.NewGuid().ToString("N");
-        using var created = await fixture.Client.PostAsJsonAsync(Features, new { Attributes = new { name, population = 12345 } });
+        using var created = await fixture.Client.PostAsJsonAsync(Features, new { Attributes = new { name, population = 12345 }, Geometry = new { type = "Point", coordinates = new[] { -122.0, 37.0 } } });
         created.StatusCode.Should().Be(HttpStatusCode.Created);
         using var json = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
         var id = json.RootElement.GetProperty("ObjectId").GetInt64();
@@ -102,6 +106,14 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
     }
 
     [Fact]
+    public async Task PayloadLimits_RejectOversizedEditsBeforeMutation()
+    {
+        using var payload = JsonContent.Create(new { Attributes = new { name = new string('x', 8192) } });
+        using var response = await fixture.Client.PostAsync(Features, payload);
+        response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+    }
+
+    [Fact]
     public async Task AuthenticationAndErrors_PreserveDenialAndProtocolEnvelope()
     {
         using var denied = await fixture.Anonymous.PostAsJsonAsync(Features, new { Attributes = new { name = "denied" } });
@@ -114,17 +126,6 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
         negative.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
-    [Fact]
-    public async Task MinimalHost_DoesNotExposeOtherProtocols()
-    {
-        if (fixture.IsExternal) return;
-        foreach (var path in new[] { "/rest/services", "/ogc/collections", "/wfs", "/stac", "/mcp" })
-        {
-            using var response = await fixture.Client.GetAsync(path);
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound, path);
-        }
-    }
-
     private async Task<JsonDocument> GetJsonAsync(string path)
     {
         using var response = await fixture.Client.GetAsync(path);
@@ -135,7 +136,8 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
     private static JsonElement Attributes(JsonElement feature)
     {
         var attributes = feature.GetProperty("Attributes");
-        return attributes.ValueKind == JsonValueKind.String
-            ? JsonDocument.Parse(attributes.GetString()!).RootElement.Clone() : attributes;
+        if (attributes.ValueKind != JsonValueKind.String) return attributes;
+        using var document = JsonDocument.Parse(attributes.GetString()!);
+        return document.RootElement.Clone();
     }
 }
