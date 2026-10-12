@@ -92,3 +92,83 @@ not duplicated merely because their catalog role is component.
 Coverage inventory keys include both project and fully qualified class name.
 Partial migrations may preserve the same class name in multiple assemblies;
 each assembly retains its own methods, source files, and shard ownership.
+
+## Current suite and support topology
+
+Runtime and protocol `*.UnitTests` projects contain reviewed in-process cases and
+reference their owning runtime closure. Narrowed Core/Core.Security and
+Postgres.Security suites retain their existing project names. Io startup cases
+remain in Server.Tests; there is no Io.UnitTests project. Hosting middleware
+cases that need TestServer run in Hosting.ComponentTests, outside unit feedback.
+
+Protocol component suites cover Ai, GeoServices, OData, OgcApi, OgcClassic,
+Scene, SensorThings and Stac through minimal hosts. Postgres-backed suites use
+bounded fixture containers; Ai, Hosting and Scene component cases use in-process
+hosts without a database. Remaining mixed protocol and Server.Tests assemblies
+retain full-host integration coverage and existing fast/full policies.
+
+| Support project | Intended consumers |
+| --- | --- |
+| TestKit.Abstractions | Shared attributes and fixture-independent contracts |
+| TestKit.Core | Pure Core/Geometry helpers; no host or provider fixtures |
+| TestKit.Hosting | Minimal component TestServer composition |
+| TestKit.Postgres / TestKit.Redis | Explicit bounded service fixtures |
+| TestKit.Postgres.Hosting | Minimal Postgres-backed component composition |
+| Legacy TestKit | Retained full-host integration suites |
+
+Canonical linked graph fakes and `tests/dotnet/Shared/SceneUnitSupport` remain
+source inputs of their actual consumers. Changing a linked helper selects those
+consumers without importing its former executable test assembly.
+
+## Running one component suite
+
+Use the admitted PATH `dotnet` command in the checked-out worktree. Run build
+and test sequentially, and await completion before starting another resource
+consumer. For example, the OData contracts use the same runner for the minimal
+host and explicitly configured external parity; the default below starts its
+owned minimal host and bounded Postgres fixture.
+
+```bash
+dotnet build tests/dotnet/Honua.Protocols.OData.ComponentTests/Honua.Protocols.OData.ComponentTests.csproj --configuration Release /p:UseSharedCompilation=false
+dotnet test tests/dotnet/Honua.Protocols.OData.ComponentTests/Honua.Protocols.OData.ComponentTests.csproj --configuration Release --no-build --no-restore --filter 'FullyQualifiedName~Honua.Protocols.OData.ComponentTests.ODataContractTests'
+```
+
+The filter above runs shared protocol contracts; omit it to include host isolation
+and fixture lifecycle cases. The component project declares its runtime/support
+closure and requires no full Server.Tests or Architecture.Tests build. Use the
+corresponding catalogued component project for another protocol. Database-backed
+components require Docker and the existing shared admission/resource policy;
+resource-free units still require normal build admission. Do not bypass the
+worker shim, claim an inherited reservation, or launch concurrent standalone
+containers to evade that policy.
+
+Fixtures own and dispose their hosts, clients, databases and containers. Let
+normal test cancellation finish cleanup before releasing the job or worktree.
+After interruption, inspect the owning job and its recorded resources; clean up
+only that job's processes and named/labeled containers after confirming ownership.
+Do not kill unrelated testhosts, remove shared locks, or prune Docker globally.
+
+## Validation and completion
+
+Affected unit feedback is useful before the normal developer gate:
+
+```bash
+scripts/ci/pre-pr-check.sh --dry-run --base origin/trunk
+scripts/ci/pre-pr-check.sh --base origin/trunk
+# Deliberate full validation retains Architecture and integration discovery:
+scripts/ci/pre-pr-check.sh --full --base origin/trunk
+```
+
+A unit feedback result does not validate a PR. Full discovery still checks every
+required assembly, endpoint coverage, tier reachability and assembly-specific
+shard ownership. Moving source preserves test identity and assertions, but an
+untiered test does not inherit a baseline waiver from a different assembly:
+reviewed pure cases need an explicit Fast tier, component cases an explicit
+Integration tier, and existing Slow/integration choices must remain intact.
+
+At this rollout checkpoint, catalog/selection fixtures and static shard coverage
+have passed. The expanded .NET graph, live architecture/tier guards, full
+integration gates and hosted PR verification remain pending; this runbook is not
+a completion receipt. OData image/performance qualification remains a separate
+opt-in pilot with its documented missing managed lifecycle evidence; ordinary
+component execution above does not certify those measurements.
