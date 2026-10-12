@@ -8,7 +8,7 @@ namespace Honua.Infrastructure.Middleware;
 
 /// <summary>
 /// Stamps every response with the <c>Honua-Instance</c> header carrying
-/// <see cref="IServerInstanceIdentity.InstanceId"/>, so a caller behind a load balancer or Lambda
+/// <see cref="Honua.Core.Features.Infrastructure.Abstractions.IInstanceIdentity.InstanceId"/>, so a caller behind a load balancer or Lambda
 /// alias can tell which replica answered.
 /// </summary>
 /// <remarks>

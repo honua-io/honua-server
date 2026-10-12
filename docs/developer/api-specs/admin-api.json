@@ -2738,7 +2738,21 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "additionalProperties": true,
+                  "properties": {
+                    "runner": {
+                      "type": "string",
+                      "enum": [
+                        "batch",
+                        "in-process"
+                      ],
+                      "description": "Where the background import runs: `batch` (a batch-compute execution worker, AWS Batch on the serverless topology) or `in-process` (a long-lived server process). Absent on records written before 2026.1."
+                    },
+                    "instanceId": {
+                      "type": "string",
+                      "description": "Honua-Instance identity of the process running the import (the AWS Batch job id for `batch`); until a worker claims a durable job, the instance that accepted it."
+                    }
+                  }
                 }
               }
             }

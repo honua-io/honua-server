@@ -742,7 +742,8 @@ internal static class ServiceCollectionExtensions
             var logger = serviceProvider.GetRequiredService<ILogger<UniversalImportJobService>>();
             return new UniversalImportJobService(scopeFactory, progressStore, performanceMonitor, logger,
                 serviceProvider.GetService<Honua.Core.Features.Licensing.Abstractions.ILicenseOperationPolicy>(),
-                serviceProvider.GetRequiredService<Core.Features.Import.Domain.ImportLimits>());
+                serviceProvider.GetRequiredService<Core.Features.Import.Domain.ImportLimits>(),
+                serviceProvider.GetService<Honua.Core.Features.Infrastructure.Abstractions.IInstanceIdentity>()?.InstanceId);
         });
 
         // Register ArcGIS REST client for Geoservices service imports with resilience

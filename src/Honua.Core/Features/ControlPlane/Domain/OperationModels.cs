@@ -234,7 +234,14 @@ public enum ExecutionJobKind
     /// the generation from <c>dirty</c> to <c>ready</c> (or <c>failed</c>) without ever
     /// touching the active solve tables.
     /// </summary>
-    NetworkTopologyRebuild
+    NetworkTopologyRebuild,
+
+    /// <summary>
+    /// Background file import (honua-server#5916): the accepting host stages the source in
+    /// file storage and the worker downloads it and runs the streaming import pipeline,
+    /// reporting progress through the import job document.
+    /// </summary>
+    FileImport
 }
 
 /// <summary>
