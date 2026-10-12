@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/Honua.Protocols.GeoServices/GPServer/GPServerEsriTaskAliases.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerEsriTaskAliasesTests.cs'
+      - 'tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/OgcProcessesEndpointsTests.cs'
       - 'docs/gis/data/geoservices-parity-judgment.json'
       - '.github/workflows/gp-alias-contract.yml'
 
@@ -66,4 +67,62 @@ jobs:
         with:
           name: gp-alias-contract-results
           path: alias-results/
+          if-no-files-found: error
+  ogc-process-list:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TESTCONTAINERS_RYUK_DISABLED: false
+      TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ''
+      HONUA_TEST_CONFIGURATION: Release
+      HONUA_TEST_DB_URL: 'Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=ci-${{ github.run_id }}-${{ github.run_attempt }}'
+    services:
+      postgres:
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-dotnet-ci
+        with:
+          nuget-cache-read-only: 'true'
+      - name: Run the actual OGC HTTP process-list regression
+        run: |
+          dotnet test tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj \
+            --configuration Release -m:1 \
+            --filter 'FullyQualifiedName~OgcProcessesEndpointsTests.ProcessList_ReturnsAtLeastOneProcess' \
+            --logger 'trx;LogFileName=ogc-process-list.trx' --results-directory process-list-results
+      - name: Verify the selected HTTP test executed and passed
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse('process-list-results/ogc-process-list.trx').getroot()
+          ns = {'t': 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010'}
+          counters = root.find('t:ResultSummary/t:Counters', ns)
+          assert counters is not None
+          counts = counters.attrib
+          assert counts['total'] == counts['executed'] == counts['passed'] == '1', counts
+          assert counts['failed'] == '0', counts
+          result = root.find('t:Results/t:UnitTestResult', ns)
+          assert result is not None and result.attrib['testName'].endswith('.ProcessList_ReturnsAtLeastOneProcess')
+          print('Actual OGC HTTP process-list regression: 1 executed and passed, 0 failed.')
+          PY
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ogc-process-list-results
+          path: process-list-results/
           if-no-files-found: error
