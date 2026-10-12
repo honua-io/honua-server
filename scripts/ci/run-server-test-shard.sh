@@ -29,6 +29,12 @@ heartbeat_tail_lines="${HONUA_SERVER_TEST_HEARTBEAT_TAIL_LINES:-40}"
 console_verbosity="${HONUA_SERVER_TEST_CONSOLE_VERBOSITY:-normal}"
 exclude_slow="${HONUA_SERVER_TEST_EXCLUDE_SLOW:-true}"
 exclude_fast="${HONUA_SERVER_TEST_EXCLUDE_FAST:-true}"
+# This independent unit assembly owns its Fast tests; it is not duplicated in
+# foundation's integration-project Fast loop. Keep every existing shard's policy.
+odata_unit_project="tests/dotnet/Honua.Protocols.OData.UnitTests/Honua.Protocols.OData.UnitTests.csproj"
+if [[ "${test_csproj}" == "${odata_unit_project}" || "${test_csproj}" == "${REPO_ROOT}/${odata_unit_project}" ]]; then
+  exclude_fast=false
+fi
 # #3054 headroom monitoring. `poll_seconds` is how often the supervisor samples
 # the child and the log; it is deliberately much smaller than the heartbeat
 # interval so `duration_seconds` is the child's real runtime instead of being

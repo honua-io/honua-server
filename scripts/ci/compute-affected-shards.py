@@ -43,7 +43,7 @@ ORDERING ("largest-impact first")
          literally execute the test the diff touched.
 
          Scored against the EFFECTIVE runner filter. run-server-test-shard.sh
-         composes every shard filter with `&Tier!=Slow&Tier!=Fast`, so a
+         composes integration filters with `&Tier!=Slow&Tier!=Fast`, so a
          changed class whose tests are all Fast or all Slow is run by none of
          the 71 families and must credit none of them -- otherwise the shard
          claiming it by name receives the top-priority ranking signal for tests
@@ -126,9 +126,14 @@ COVERAGE_MODULE = "scripts/ci/check-server-test-shard-coverage.py"
 # is. Discovered from the source rather than hard-coded, for the same reason the
 # coverage guard discovers its test-method attributes: a new tiered attribute
 # must not silently stop being recognised.
-TIER_ATTRIBUTE_DIR = "tests/dotnet/Honua.TestKit/Attributes"
+TIER_ATTRIBUTE_DIRS = (
+    "tests/dotnet/Honua.TestKit/Attributes",
+    "tests/dotnet/Honua.TestKit.Abstractions/Attributes",
+)
+ODATA_UNIT_PROJECT = "tests/dotnet/Honua.Protocols.OData.UnitTests/Honua.Protocols.OData.UnitTests.csproj"
 
-# Tiers scripts/ci/run-server-test-shard.sh excludes from EVERY shard it runs.
+# Default exclusions for integration shards. The independent OData unit project
+# owns Fast cases as well (see runnable_methods and the runner project override).
 # It composes the shard's own `filter` with `&Tier!=Slow` and then `&Tier!=Fast`
 # (HONUA_SERVER_TEST_EXCLUDE_SLOW / _EXCLUDE_FAST, both defaulting to true, and
 # pr-gate.yml sets neither), so a changed test carrying one of these tiers is
@@ -295,10 +300,8 @@ def load_shard_coverage(root: Path) -> tuple[Any, dict[str, dict[str, Any]]]:
 def tier_attributes(root: Path) -> dict[str, str]:
     """`{attribute short name: tier}` for every TestKit attribute that emits one."""
     mapping: dict[str, str] = {}
-    directory = root / TIER_ATTRIBUTE_DIR
-    if not directory.is_dir():
-        return mapping
-    for path in sorted(directory.glob("*.cs")):
+    paths = (path for directory in TIER_ATTRIBUTE_DIRS for path in (root / directory).glob("*.cs"))
+    for path in sorted(paths):
         text = path.read_text(encoding="utf-8", errors="replace")
         emitted = _TIER_EMITTER_RE.search(text)
         if not emitted:
@@ -386,6 +389,9 @@ def runnable_methods(root: Path, fqn: str, entry: dict[str, Any]) -> list[str]:
     A method with no Tier trait at all survives `Tier!=X`, which is why the
     untiered majority is unaffected.
     """
+    # The fixture-independent OData unit shard owns Fast tests too; foundation
+    # jobs still exclude Fast from every existing integration shard.
+    excluded_tiers = EXCLUDED_TIERS - {"Fast"} if entry.get("csproj") == ODATA_UNIT_PROJECT else EXCLUDED_TIERS
     simple = fqn.rsplit(".", 1)[-1]
     class_tiers: set[str] = set()
     method_tiers: dict[str, set[str]] = {}
@@ -394,12 +400,12 @@ def runnable_methods(root: Path, fqn: str, entry: dict[str, Any]) -> list[str]:
         class_tiers |= classes.get(simple, set())
         for name, tiers in methods.items():
             method_tiers.setdefault(name, set()).update(tiers)
-    if class_tiers & EXCLUDED_TIERS:
+    if class_tiers & excluded_tiers:
         return []
     return [
         method
         for method in entry["methods"]
-        if not (method_tiers.get(method, set()) & EXCLUDED_TIERS)
+        if not (method_tiers.get(method, set()) & excluded_tiers)
     ]
 
 
@@ -431,7 +437,7 @@ def count_test_class_hits(
     hits: dict[str, int] = {}
     try:
         # Restricted to the methods a selectable shard would ACTUALLY execute.
-        # run-server-test-shard.sh composes every shard filter with
+        # run-server-test-shard.sh composes integration shard filters with
         # `&Tier!=Slow&Tier!=Fast`, so a changed class whose tests are all Fast
         # -- the class-level `[Trait("Tier", "Fast")]` on
         # ServingObservabilityContractTests is the shape -- is run by none of

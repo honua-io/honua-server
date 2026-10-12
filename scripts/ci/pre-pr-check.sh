@@ -271,6 +271,8 @@ if [[ "${FULL}" != "1" ]]; then
         'Directory.Build.props' \
         'Directory.Packages.props' \
         'tests/dotnet/Honua.TestKit/' \
+        'tests/dotnet/Honua.TestKit.Abstractions/' \
+        'tests/dotnet/Honua.TestKit.Postgres/' \
         '.github/ci-shards.json' \
         'scripts/ci/capability-impact.py' \
         'docs/gis/data/feature-catalog.json' \
