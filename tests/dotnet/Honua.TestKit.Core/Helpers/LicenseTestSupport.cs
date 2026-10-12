@@ -118,17 +118,6 @@ public static class LicenseTestSupport
             .Replace('+', '-')
             .Replace('/', '_');
 
-    public static WebAppFixture WithTestLicense(
-        this WebAppFixture fixture,
-        HonuaEdition edition,
-        LicenseValidationState validationState = LicenseValidationState.Valid,
-        string[]? entitlements = null)
-    {
-        var license = new TestLicenseEntitlementService(edition, validationState, entitlements);
-        return fixture
-            .ReplaceService<ILicenseEntitlementService>(license)
-            .ReplaceService<ILicenseStatusProvider>(license);
-    }
 }
 
 public sealed record SignedLicenseTestFile(byte[] LicenseData, string PublicKeySetting);
