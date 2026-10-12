@@ -108,12 +108,14 @@ internal sealed record GeocodeServerInfoResponse
     [JsonPropertyName("capabilities")]
     public required string Capabilities { get; init; }
 
-    // Output fields present on every candidate's attribute bag. ArcGIS clients
-    // introspect candidateFields to discover the result schema; Honua advertises
-    // only the fields it consistently emits rather than a full Esri locator schema.
+    // Candidate result schema includes the location and score as well as attributes.
+    // Shape/Score are the Esri field names for those always-present result members;
+    // do not advertise Status or locator-engine fields that Honua does not emit.
     [JsonPropertyName("candidateFields")]
     public GeocodeAddressField[] CandidateFields { get; init; } =
     [
+        new GeocodeAddressField { Name = "Shape", Alias = "Shape", Type = "esriFieldTypeGeometry", Length = null },
+        new GeocodeAddressField { Name = "Score", Alias = "Score", Type = "esriFieldTypeDouble", Length = null },
         new GeocodeAddressField { Name = "Match_addr", Alias = "Match Address" },
         new GeocodeAddressField { Name = "Provider", Alias = "Provider" }
     ];
@@ -126,16 +128,28 @@ internal sealed record GeocodeServerInfoResponse
     public string[] Categories { get; init; } = GeocodeSupportedCategories.All;
 
     // Populated per active provider by the handler (#2147): SuggestedBatchSize is derived from the
-    // provider's MaxBatchSize and is present only when batch is supported. The default carries just
-    // the locator name so an unconfigured response never falsely advertises a batch capability.
+    // provider's MaxBatchSize and is present only when batch is supported. Defaults omit numeric
+    // batch limits and mark batch/suggest unavailable until the handler supplies provider facts.
     [JsonPropertyName("locatorProperties")]
-    public Dictionary<string, string> LocatorProperties { get; init; } = new(StringComparer.Ordinal)
-    {
-        ["LocatorName"] = "World"
-    };
+    public GeocodeLocatorProperties LocatorProperties { get; init; } = new();
 
     [JsonPropertyName("spatialReference")]
     public required GeocodeSpatialReference SpatialReference { get; init; }
+}
+
+internal sealed record GeocodeLocatorProperties
+{
+    public string LocatorName { get; init; } = "World";
+    public string Provider { get; init; } = string.Empty;
+    public string SupportsSuggest { get; init; } = "false";
+    public string SupportsBatch { get; init; } = "false";
+    public string MaxResultsPerRequest { get; init; } = "0";
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? MaxBatchSize { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? SuggestedBatchSize { get; init; }
 }
 
 internal sealed record GeocodeAddressField
@@ -150,7 +164,8 @@ internal sealed record GeocodeAddressField
     public string Type { get; init; } = "esriFieldTypeString";
 
     [JsonPropertyName("length")]
-    public int Length { get; init; } = 255;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Length { get; init; } = 255;
 }
 
 internal sealed record GeocodeSpatialReference
