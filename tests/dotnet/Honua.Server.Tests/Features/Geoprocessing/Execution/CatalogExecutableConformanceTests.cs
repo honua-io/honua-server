@@ -8,6 +8,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Honua.Protocols.GeoServices.GPServer;
+using Honua.Routing.Features.Routing.Domain;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -30,10 +31,10 @@ public sealed class CatalogExecutableConformanceTests
     {
         var definitions = _catalog.ListProcesses();
 
-        definitions.Should().HaveCount(98);
+        definitions.Should().HaveCount(101);
         definitions.Should().OnlyHaveUniqueItems(process => process.ProcessId);
         definitions.Should().NotContain(process => process.ExecutionKind == ProcessExecutionKind.Unclassified);
-        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.Job).Should().Be(82);
+        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.Job).Should().Be(85);
         definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.ProtocolOnly).Should().Be(4);
         definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.WorkflowOnly).Should().Be(12);
         definitions.Should().NotContain(
@@ -264,6 +265,7 @@ public sealed class CatalogExecutableConformanceTests
                 Substitute.For<IServiceScopeFactory>(),
                 NullLogger<ImportDatasetJobExecutor>.Instance,
                 Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>()),
+            new RoutingJobExecutor(monitor, Options.Create(new RoutingConfiguration())),
             new ImageryInferenceJobExecutor(
                 Substitute.For<IOptionsMonitor<Honua.Geoprocessing.Inference.ImageryInferenceOptions>>(),
                 monitor,
