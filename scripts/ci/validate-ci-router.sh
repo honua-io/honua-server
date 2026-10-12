@@ -37,6 +37,7 @@ scripts/ci/validate-review-first-dispatch.sh
 echo "Validating PR Gate impact observation..."
 if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-mcp-server-auth.py
   HONUA_PR_GATE_IMPACT_PYTHON="${PYTHON_BIN}" scripts/ci/validate-pr-gate-impact.sh
   "${PYTHON_BIN}" scripts/ci/audit-impact-routing-evidence.test.py
   "${PYTHON_BIN}" scripts/ci/collect-impact-routing-runs.test.py
