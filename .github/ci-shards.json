@@ -22,7 +22,8 @@
     "src/Honua.Server/Features/Infrastructure/Services/",
     "src/Honua.Server/Features/Infrastructure/Monitoring/",
     "src/Honua.Server/Startup/",
-    "tests/dotnet/Honua.TestKit.Abstractions/"
+    "tests/dotnet/Honua.TestKit.Abstractions/",
+    "tests/dotnet/Honua.TestKit.Postgres/"
   ],
   "_unmapped_source_run_all_prefixes_comment": "Safety net (#1897): a changed file under one of these prefixes that is NOT claimed by any shard's `paths` escalates to run_all. Per-prefix rationale — src/Honua.Core/, src/Honua.Db/Postgres/, src/Honua.Server/, src/Honua.Db/DuckDB/, tests/dotnet/Honua.Server.Tests/: shared canonical pipeline + provider + integration-test host whose unmapped slices cut across every shard. src/Honua.Geometry/, src/Honua.Jobs/, src/Honua.Routing/, src/Honua.Hosting/: cross-cutting geometry/job/routing/host primitives remain fail-safe by default; bounded ownership exceptions are declared in shard paths (for example Routing/Features/Routing -> GPServer/NAServer and Hosting/Features/Tiles -> tile/ImageServer owners). src/Honua.Cloud/Aws/, src/Honua.Cloud/Azure/: cloud-provider runtime whose tests are spread across the Cloud/FileImport/Infra shards; over-include via run_all (moved here from infrastructure_paths so a project-add no longer trips it). src/Honua.Protocols., src/Honua.Scene/, src/Honua.Ai/, src/Honua.Geoprocessing/, src/Honua.Geocoding/, src/Honua.Io/, src/Honua.Import/: their mapped subdirs are claimed by owning shards below (so normal feature PRs stay targeted); the net only fires for a NOT-YET-MAPPED new top-level area under them, e.g. a brand-new src/Honua.Protocols.SensorThings/ project whose tests have no shard yet.",
   "unmapped_source_run_all_prefixes": [

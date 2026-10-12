@@ -707,6 +707,7 @@ def check_failure_injections(config: dict[str, Any]) -> None:
 
 
 def main() -> int:
+    subprocess.run([sys.executable, str(REPO_ROOT / "scripts/ci/fixtures/validate-odata-unit-routing.py")], check=True, cwd=REPO_ROOT)
     config = selector.load_config(CONFIG_PATH)
     covered = check_feature_namespace_selects_its_shard(config)
     check_cap_is_enforced(config)
