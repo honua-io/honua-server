@@ -1134,15 +1134,15 @@ BEGIN
                 'title', 'CI compatibility seed'
             ),
             'catalogs', '[]'::jsonb,
-            'resources', COALESCE((SELECT jsonb_agg(value ORDER BY sort_key) FROM resource_rows), '[]'::jsonb),
+            'resources', COALESCE((SELECT jsonb_agg(value ORDER BY sort_key) FROM (SELECT DISTINCT value, sort_key FROM resource_rows) dr), '[]'::jsonb),
             'connections', jsonb_build_array(jsonb_build_object(
                 'metadata', jsonb_build_object('id', 'conn-postgres', 'name', 'postgres'),
                 'type', 'managed',
                 'provider', 'postgres',
                 'status', (SELECT value FROM status_doc)
             )),
-            'storageBindings', COALESCE((SELECT jsonb_agg(value ORDER BY sort_key) FROM storage_rows), '[]'::jsonb),
-            'services', COALESCE((SELECT jsonb_agg(value ORDER BY sort_key) FROM service_rows), '[]'::jsonb),
+            'storageBindings', COALESCE((SELECT jsonb_agg(value ORDER BY sort_key) FROM (SELECT DISTINCT value, sort_key FROM storage_rows) sr), '[]'::jsonb),
+            'services', COALESCE((SELECT jsonb_agg(value ORDER BY sort_key) FROM (SELECT DISTINCT value, sort_key FROM service_rows) svc), '[]'::jsonb),
             'publications', COALESCE((SELECT jsonb_agg(value ORDER BY service_part, layer_id, sort_order) FROM publication_rows), '[]'::jsonb),
             'projectionProfiles', '[]'::jsonb,
             'policies', '[]'::jsonb,

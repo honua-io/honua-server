@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -88,6 +89,10 @@ public sealed class ClientCompatSeedSequenceTests : IAsyncLifetime
             snapshots.Keys.Should().BeEquivalentTo(["default", "Development", "Test", "Production"]);
             foreach (var snapshot in snapshots.Values)
             {
+                var graph = JsonSerializer.Deserialize(snapshot, MetadataV2JsonContext.Default.MetadataV2Graph);
+                graph.Should().NotBeNull();
+                MetadataV2GraphValidator.Validate(graph!).Errors.Should().BeEmpty(
+                    "a layer shared by two services must have unique resource and storage IDs");
                 using var document = JsonDocument.Parse(snapshot);
                 var publications = document.RootElement.GetProperty("publications").EnumerateArray()
                     .Where(publication => publication.GetProperty("publicationType").GetString() == "esri-feature-layer")

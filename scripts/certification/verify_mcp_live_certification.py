@@ -32,6 +32,9 @@ def verify(report: dict, *, transport: str, base_url: str, sdk_source: str) -> N
         if type(summary.get(key)) is not int or summary[key] <= 0:
             raise ValueError(f"MCP report has no actual {key} evidence")
 
+    if summary["contractsPassed"] != summary["contractsChecked"]:
+        raise ValueError("MCP checked contracts must all pass; skipped contracts are counted separately")
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)

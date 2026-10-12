@@ -45,6 +45,7 @@ class McpLiveCertificationTests(unittest.TestCase):
             ("summary", "contractsBlocked", 1),
             ("summary", "toolsRoundTripped", 0),
             ("summary", "contractsChecked", 0),
+            ("summary", "contractsPassed", 1),
         ]
         for section, key, value in controls:
             with self.subTest(section=section, key=key):
@@ -52,6 +53,10 @@ class McpLiveCertificationTests(unittest.TestCase):
                 report[section][key] = value
                 with self.assertRaises(ValueError):
                     self.check(report)
+
+    def test_allows_explicit_skips_outside_checked_total(self):
+        self.report["summary"]["contractsSkipped"] = 2
+        self.check(self.report)
 
     def test_refuses_missing_report_or_non_exact_source(self):
         with self.assertRaises(ValueError):
