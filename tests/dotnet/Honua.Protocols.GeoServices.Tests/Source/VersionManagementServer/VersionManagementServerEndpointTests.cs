@@ -267,6 +267,74 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer/versions")]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}")]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer/versionInfos")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versionInfos")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "create")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "versions")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "versionInfo")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "versionInfos")]
+    public async Task VersionNames_BareAndQualifiedCreateInputs_ReturnSameQualifiedIdentityAcrossResponses()
+    {
+        BranchVersioningPublicationFixture.ConfigureManagedPublications(_fixture);
+        const string service = BranchVersioningPublicationFixture.ServiceName;
+        foreach (var alreadyQualified in new[] { false, true })
+        {
+            var name = $"wire_identity_{Guid.NewGuid():N}";
+            var qualifiedName = $"admin.{name}";
+            using var create = await PostFormAsync(
+                $"/rest/services/{service}/VersionManagementServer/create",
+                ("versionName", alreadyQualified ? qualifiedName : name),
+                ("accessPermission", "private"), ("f", "json"));
+            create.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var createdDocument = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
+            var created = createdDocument.RootElement.GetProperty("versionInfo");
+            var guid = created.GetProperty("versionGuid").GetString();
+            created.GetProperty("versionName").GetString().Should().Be(qualifiedName);
+            created.GetProperty("owner").GetString().Should().Be("admin");
+
+            using var listed = await _fixture.Client.GetAsync(
+                $"/rest/services/{service}/VersionManagementServer/versions?f=json");
+            listed.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var listedDocument = JsonDocument.Parse(await listed.Content.ReadAsStringAsync());
+            var listedVersion = listedDocument.RootElement.GetProperty("versions").EnumerateArray()
+                .Single(version => version.GetProperty("versionGuid").GetString() == guid);
+            listedVersion.GetProperty("versionName").GetString().Should().Be(qualifiedName);
+
+            using var gotVersion = await _fixture.Client.GetAsync(
+                $"/rest/services/{service}/VersionManagementServer/versions/{guid}?f=json");
+            using var postedVersion = await PostFormAsync(
+                $"/rest/services/{service}/VersionManagementServer/versions/{guid}", ("f", "json"));
+            foreach (var response in new[] { gotVersion, postedVersion })
+            {
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                document.RootElement.GetProperty("versionGuid").GetString().Should().Be(guid);
+                document.RootElement.GetProperty("versionName").GetString().Should().Be(qualifiedName);
+                document.RootElement.GetProperty("owner").GetString().Should().Be("admin");
+            }
+
+            using var gotInfos = await _fixture.Client.GetAsync(
+                $"/rest/services/{service}/VersionManagementServer/versionInfos?f=json");
+            using var postedInfos = await PostFormAsync(
+                $"/rest/services/{service}/VersionManagementServer/versionInfos", ("f", "json"));
+            foreach (var response in new[] { gotInfos, postedInfos })
+            {
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                var versions = document.RootElement.GetProperty("versions").EnumerateArray().ToArray();
+                versions.Single(version => version.GetProperty("versionGuid").GetString() == guid)
+                    .GetProperty("versionName").GetString().Should().Be(qualifiedName);
+                versions[0].GetProperty("versionName").GetString().Should().Be("sde.DEFAULT");
+            }
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]
     [InterfaceOperation(TestProtocols.VersionManagementServer, "create")]
     public async Task Create_IgnoresCallerSuppliedOwner()
     {
