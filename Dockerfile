@@ -16,6 +16,17 @@ ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291
 ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0@sha256:a4556ed033fa96f984bb7a8d348851cb2d36b1281dd2420070045f664fbb5f94
 
 # Build stage
+# Extract restore inputs with their directory structure. Source-only edits
+# rerun this inexpensive extraction but leave the downstream restore input tree
+# unchanged, so restoring does not depend on every .cs file.
+FROM ${DOTNET_SDK_IMAGE} AS restore-inputs
+RUN --mount=type=bind,target=/context \
+    mkdir -p /restore-inputs && cd /context && \
+    find . -type d \( -name bin -o -name obj -o -name .git \) -prune -o \
+      -type f \( -name '*.csproj' -o -name '*.props' -o -name '*.targets' \
+        -o -name '*.sln' -o -name '*.json' -o -name '*.config' -o -name '.editorconfig' \) \
+      -exec cp --parents -p '{}' /restore-inputs/ \;
+
 FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
 
@@ -23,16 +34,10 @@ WORKDIR /src
 RUN groupadd --gid 1001 --system builduser && \
     useradd --uid 1001 --gid 1001 --system --no-create-home --shell /usr/sbin/nologin builduser
 
-# Copy solution and source project graph first for restore. The modularized
-# assembly graph changes often enough that a hand-maintained csproj list is
-# more brittle than copying src/ into the restore layer.
-COPY Honua.sln Directory.Build.props Directory.Packages.props NuGet.config .editorconfig ./
-COPY eng/Honua.BuildProfiles.props eng/
+# Restore sees project/configuration inputs only. The extraction stage tracks
+# additions automatically without tying NuGet restore to every source edit.
+COPY --from=restore-inputs /restore-inputs/ ./
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
-COPY src/ src/
-COPY docs/developer/api-specs/admin-api.json docs/developer/api-specs/
-COPY docs/gis/data/feature-catalog.json docs/gis/data/
-COPY samples/Honua.StacOpsDemo/*.csproj samples/Honua.StacOpsDemo/
 
 ARG TARGETARCH
 # Slim by default: set HONUA_INCLUDE_STAC_OPS_DEMO=true to keep the hosted STAC ops demo assets.

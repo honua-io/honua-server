@@ -85,12 +85,19 @@ BASE_REF="${HONUA_PRE_PR_BASE:-origin/trunk}"
 FULL="${HONUA_PRE_PR_FULL:-0}"
 FAST="${HONUA_PRE_PR_FAST:-0}"
 DRY_RUN="${HONUA_PRE_PR_DRY_RUN:-0}"
+PLAN_JSON=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --full) FULL=1; shift ;;
         --fast) FAST=1; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
+        --plan-json)
+            PLAN_JSON="${2:-}"
+            [[ -n "${PLAN_JSON}" ]] || { echo "--plan-json requires a path" >&2; exit 2; }
+            DRY_RUN=1
+            shift 2
+            ;;
         --base)
             BASE_REF="${2:-}"
             if [[ -z "${BASE_REF}" ]]; then
@@ -201,9 +208,23 @@ if [[ "${FULL}" != "1" ]]; then
     PRE_PR_CHANGED_FILES="$(tail -n +2 <<< "${scope_output}")"
 fi
 
+# Freeze one complete manifest for every local selector.
+if [[ "${PRE_PR_SCOPE}" == "UNKNOWN" ]]; then
+    FULL=1
+    FAST=0
+fi
+LOCAL_CHANGED_FILES="$(mktemp)"
+CLEANUP_PATHS+=("${LOCAL_CHANGED_FILES}")
+printf '%s\n' "${PRE_PR_CHANGED_FILES}" | sed '/^$/d' > "${LOCAL_CHANGED_FILES}"
+export HONUA_CHANGED_FILES_FILE="${LOCAL_CHANGED_FILES}"
+
 if [[ "${PRE_PR_SCOPE}" == "CI_ONLY" ]]; then
     echo "    Mode: CI-SHELL-ONLY (committed + working tree vs ${BASE_REF})."
     if [[ "${DRY_RUN}" == "1" ]]; then
+        if [[ -n "${PLAN_JSON}" ]]; then
+            jq -n --arg base "${BASE_REF}" --rawfile files "${LOCAL_CHANGED_FILES}" \
+                '{schemaVersion:1,mode:"ci-shell-only",base:$base,changedFiles:($files|split("\n")|map(select(length>0))),buildProjects:[],serverShards:[],formatFiles:[]}' > "${PLAN_JSON}"
+        fi
         changed_count="$(printf '%s\n' "${PRE_PR_CHANGED_FILES}" | sed '/^$/d' | wc -l | tr -d ' ')"
         echo ""
         echo "📋 Selection summary"
@@ -340,8 +361,8 @@ if [[ "${FULL}" == "1" ]]; then
 else
     echo "    Mode: SMART (diff vs ${BASE_REF}; set HONUA_PRE_PR_FULL=1 to force full)."
     AFFECTED="$(BASE_REF="${BASE_REF}" scripts/ci/compute-affected-projects.sh 2>/dev/null || echo ALL)"
-    TARGETED="$(scripts/ci/honua-server-targeted-tests.sh --base "${BASE_REF}" 2>/dev/null || echo '{"run_all":true,"reason":"router_error"}')"
-    CHANGED_CS="$(git diff --name-only "${BASE_REF}...HEAD" -- '*.cs' 2>/dev/null || true)"
+    TARGETED="$(scripts/ci/honua-server-targeted-tests.sh --stdin < "${LOCAL_CHANGED_FILES}" 2>/dev/null || echo '{"run_all":true,"reason":"router_error"}')"
+    CHANGED_CS="$(grep -E '\.cs$' "${LOCAL_CHANGED_FILES}" || true)"
 fi
 
 affected_contains() {
@@ -504,7 +525,7 @@ fi
 
 # Full committed diff — used to keep directly-edited test projects in the
 # build even when they will not run locally.
-CHANGED_FILES_ALL="$(git diff --name-only "${BASE_REF}...HEAD" 2>/dev/null || true)"
+CHANGED_FILES_ALL="${PRE_PR_CHANGED_FILES}"
 
 test_project_kept() {
     # Usage: test_project_kept <csproj-path> -> 0 keep, 1 prune.
@@ -630,6 +651,18 @@ else
         # -p: not /p: — see the FULL-mode build above (MSB1008 under Git Bash).
         dotnet build "${SLNF}" --no-restore --configuration Release -p:TreatWarningsAsErrors=true
     fi
+fi
+
+if [[ -n "${PLAN_JSON}" ]]; then
+    plan_projects='["ALL"]'
+    [[ "${FULL}" == "1" ]] || plan_projects="$(jq '.solution.projects' "${SLNF}")"
+    jq -n --arg base "${BASE_REF}" --arg full "${FULL}" --arg fast "${FAST}" \
+        --argjson projects "${plan_projects}" --argjson shards "${TARGETED}" \
+        --rawfile files "${LOCAL_CHANGED_FILES}" --arg format "${CHANGED_CS:-}" \
+        '{schemaVersion:1,base:$base,mode:(if $full=="1" then "full" else "smart" end),
+          fast:($fast=="1"),changedFiles:($files|split("\n")|map(select(length>0))),
+          buildProjects:$projects,serverShards:$shards,
+          formatFiles:(if $full=="1" then ["ALL"] else ($format|split("\n")|map(select(length>0))) end)}' > "${PLAN_JSON}"
 fi
 
 echo "4. Checking code format..."

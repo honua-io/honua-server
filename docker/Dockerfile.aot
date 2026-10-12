@@ -17,6 +17,17 @@ ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291
 ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:9b37bbaf06fc653cb0e757215081139fb493658e1f864a738f6a478620c9196f
 
 # Build stage with security hardening
+# Extract restore inputs with their directory structure. Source-only edits
+# rerun this inexpensive extraction but leave the downstream restore input tree
+# unchanged, so restoring does not depend on every .cs file.
+FROM ${DOTNET_SDK_IMAGE} AS restore-inputs
+RUN --mount=type=bind,target=/context \
+    mkdir -p /restore-inputs && cd /context && \
+    find . -type d \( -name bin -o -name obj -o -name .git \) -prune -o \
+      -type f \( -name '*.csproj' -o -name '*.props' -o -name '*.targets' \
+        -o -name '*.sln' -o -name '*.json' -o -name '*.config' -o -name '.editorconfig' \) \
+      -exec cp --parents -p '{}' /restore-inputs/ \;
+
 FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
 
@@ -33,13 +44,10 @@ RUN apt-get update && \
 
 # Copy the full project graph (all .csproj) plus build/config files first so the
 # RID-specific restore below covers every transitive project the publish needs.
-# We copy the whole src/ tree's project files via the source checkout to avoid a
-# hand-maintained csproj copy-list that rots whenever projects are added/split
-# (e.g. the #1236 modularization). The dedicated restore layer keeps caching.
-COPY Honua.sln Directory.Build.props Directory.Build.targets Directory.Packages.props NuGet.config .editorconfig ./
-COPY eng/Honua.BuildProfiles.props eng/
+# The extraction stage discovers project/configuration files automatically;
+# ordinary source edits do not invalidate this restore-input tree.
+COPY --from=restore-inputs /restore-inputs/ ./
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
-COPY src/ src/
 
 ARG TARGETARCH
 ARG HONUA_BUILD_PROFILE=full
