@@ -196,8 +196,8 @@ public sealed class GatedBootExitTests
             scripts.Add(reader.GetString(0));
         }
 
-        scripts.Should().Equal(SeededJournalScript,
-            "a refused migration batch must leave the existing database journal unchanged");
+        scripts.Should().Equal([SeededJournalScript],
+            because: "a refused migration batch must leave the existing database journal unchanged");
     }
 
     [UnitTheory]
