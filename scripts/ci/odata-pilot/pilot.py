@@ -7,6 +7,7 @@ import ctypes
 import datetime
 import hashlib
 import json
+import math
 import os
 import platform
 from pathlib import Path
@@ -263,7 +264,7 @@ def stage(name, argv, root, evidence, timeout):
     elapsed = time.monotonic() - start
     finished_epoch = time.time()
     result = {"name": name, "argv": argv, "seconds": elapsed, "startedEpochSeconds": started_epoch,
-              "finishedEpochSeconds": finished_epoch, "clockSkewSeconds": abs(finished_epoch - started_epoch - elapsed), "exitCode": process.returncode, "error": str(failure) if failure else None,
+              "startedMonotonicSeconds": start, "finishedEpochSeconds": finished_epoch, "clockSkewSeconds": abs(finished_epoch - started_epoch - elapsed), "exitCode": process.returncode, "error": str(failure) if failure else None,
               "peakProcessTreeRssBytes": peak or None, "queueWaitSeconds": sum(waits) if waits else None,
               "queueWaitUnavailableReason": None if waits else "No isolated Flow build-slot ledger emitted",
               "peakJobMemoryBytes": None, "jobMemoryUnavailableReason": "Harness does not own an exclusive job cgroup"}
@@ -467,7 +468,7 @@ def run(args):
                     if (host.get("inputKey") != inputs["key"] or host.get("mode") != expected_mode
                         or host.get("bounded") is not True or host.get("ready") is not True
                         or host.get("seedManifest") != "odata.yaml" or not isinstance(host.get("startupSeconds"), (int, float))
-                        or host["startupSeconds"] < 0 or host.get("pageLimit") != 2 or host.get("editPayloadLimit") != 4096):
+                        or not finite_between(host["startupSeconds"], 0, args.timeout) or host.get("pageLimit") != 2 or host.get("editPayloadLimit") != 4096):
                         raise ValueError("Orchestrated host receipt does not match current graph, seed/config, bounded readiness, or startup timing")
                     receipt["host"] = host
                 trx = evidence / "trx"
@@ -479,9 +480,9 @@ def run(args):
                 starts = [datetime.datetime.fromisoformat(r["startedAt"].replace("Z", "+00:00")).timestamp()
                           for r in receipt["tests"] if r["startedAt"]]
                 first = min(starts) if len(starts) == len(receipt["tests"]) else None
-                if first is not None and first_build["startedEpochSeconds"] <= first <= stages[-1]["finishedEpochSeconds"]:
-                    receipt["firstTestSeconds"] = first - first_build["startedEpochSeconds"] + (host["startupSeconds"] if host else 0)
-                    receipt["firstTestClock"] = "TRX UTC start minus harness UTC build start; wall-clock based"
+                if first is not None and stages[-1]["startedEpochSeconds"] <= first <= stages[-1]["finishedEpochSeconds"]:
+                    receipt["firstTestSeconds"] = stages[-1]["startedMonotonicSeconds"] - first_build["startedMonotonicSeconds"] + first - stages[-1]["startedEpochSeconds"] + (host["startupSeconds"] if host else 0)
+                    receipt["firstTestClock"] = "Monotonic build-to-test-stage span plus TRX UTC offset within checked test-stage clock"
                     if host:
                         receipt["firstTestClock"] += "; plus separately measured external host startup (not part of the stage span)"
                 else:
@@ -493,6 +494,10 @@ def run(args):
     finally:
         write(evidence / "receipt.json", receipt)
     return receipt
+
+
+def finite_between(value, low, high):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and low <= value <= high
 
 
 def compare(receipts, selection):
@@ -527,12 +532,12 @@ def compare(receipts, selection):
             comparable_timing = True
             for receipt in sides.values():
                 timed = [s for s in receipt.get("stages", []) if s["name"].startswith("build") or s["name"] == "test"]
-                if len(timed) < 2 or any(s.get("queueWaitSeconds") != 0 or s.get("clockSkewSeconds", 1) > .1 for s in timed):
+                if len(timed) < 2 or any(s.get("queueWaitSeconds") != 0 or not finite_between(s.get("clockSkewSeconds"), 0, .1) for s in timed):
                     comparable_timing = False
             for receipt in sides.values():
                 if selection == "component":
                     host = receipt.get("host", {})
-                    if host.get("queueWaitSeconds") != 0 or host.get("clockSkewSeconds", 1) > .1:
+                    if host.get("queueWaitSeconds") != 0 or not finite_between(host.get("clockSkewSeconds"), 0, .1):
                         comparable_timing = False
             if not comparable_timing:
                 issues.append(f"{scenario}/{pair}: unknown/nonzero queue delay or invalid stage clocks; promotion ineligible")
@@ -550,7 +555,7 @@ def compare(receipts, selection):
                     for segment in path:
                         value = value.get(segment) if isinstance(value, dict) else None
                     values.append(value)
-                if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 for v in values):
+                if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v > 0 for v in values):
                     issues.append(f"{scenario}/{pair}: missing or invalid {name} metric")
                     continue
                 metrics[name] = {"baseline": values[0], "candidate": values[1], "reduction": 1 - values[1] / values[0]}

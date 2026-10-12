@@ -272,3 +272,26 @@ standalone minimal host are not a durable container owner or generic reservation
 service. Do not substitute manually asserted receipt fields for these missing
 interfaces. Runtime Compose is a bounded manual probe and does not qualify as a
 managed lifecycle receipt.
+
+
+### Developer component tests without promotion measurements
+
+After the projects are integrated, run the component project directly through
+existing admitted .NET execution. Its default mode creates the minimal in-process
+host and provisions canonical seeds with `PostgresFixture`; Docker must already
+be available to that fixture. This does not require a promotion host receipt:
+
+```bash
+dotnet test tests/dotnet/Honua.Protocols.OData.ComponentTests/Honua.Protocols.OData.ComponentTests.csproj \
+  --configuration Release \
+  --filter FullyQualifiedName~Honua.Protocols.OData.ComponentTests.ODataContractTests
+```
+
+Use the canonical Flow .NET shim or an admitted supervisor job for that command
+on a shared worker. For a separately managed full host, set
+`HONUA_ODATA_TEST_BASE_URL` and `HONUA_ODATA_TEST_ADMIN_KEY` outside the source
+before the same command; provision the canonical isolated store and required
+limits first. The external mode runs the same six shared contracts. Its result
+proves those contracts only; it does not prove measured resource improvements,
+container lifetime containment, or pilot promotion. Candidate-only route
+isolation lives in `ODataHostIsolationTests` and runs only with the minimal host.
