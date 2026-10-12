@@ -76,4 +76,14 @@
     <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Databricks.UnitTests" />
+    <InternalsVisibleTo Include="Honua.MySql.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Oracle.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Redshift.UnitTests" />
+    <InternalsVisibleTo Include="Honua.SqlServer.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Postgres.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Snowflake.UnitTests" />
+  </ItemGroup>
+
 </Project>

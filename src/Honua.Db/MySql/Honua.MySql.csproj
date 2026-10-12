@@ -35,4 +35,8 @@
     <ProjectReference Include="..\..\Honua.Core\Honua.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.MySql.UnitTests" />
+  </ItemGroup>
+
 </Project>

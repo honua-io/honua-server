@@ -64,4 +64,8 @@
     <EmbeddedResource Include="Migrations\*.sql" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Postgres.UnitTests" />
+  </ItemGroup>
+
 </Project>

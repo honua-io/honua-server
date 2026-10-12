@@ -49,4 +49,8 @@
     <ProjectReference Include="..\..\Honua.Core\Honua.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Postgres.UnitTests" />
+  </ItemGroup>
+
 </Project>
