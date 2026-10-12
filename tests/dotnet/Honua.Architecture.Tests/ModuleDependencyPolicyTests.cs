@@ -591,6 +591,7 @@ public sealed class ModuleDependencyPolicyTests
         // consumers may reference anything.
         if (projectName.EndsWith(".Tests", StringComparison.Ordinal) ||
             projectName.EndsWith(".UnitTests", StringComparison.Ordinal) ||
+            projectName.EndsWith(".ComponentTests", StringComparison.Ordinal) ||
             projectName.EndsWith(".Cli", StringComparison.Ordinal) ||
             projectName.Equals("Honua.TestKit", StringComparison.Ordinal) ||
             projectName.Equals("Honua.TestKit.Abstractions", StringComparison.Ordinal))
