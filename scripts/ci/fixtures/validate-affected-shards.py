@@ -545,7 +545,7 @@ def check_unrouted_test_selects_its_owning_shard(config: dict[str, Any]) -> str:
     # Unit projects have broad directory routes, so a real routing gap need not
     # exist among the first classes after modularization. Create a precise gap
     # in a copied map while preserving every filter/assembly ownership rule.
-    for source, owner in candidates[:40]:
+    for source, owner in candidates:
         if owner in config.get("default_shards_when_no_match", []):
             continue
         probe_config = copy.deepcopy(config)

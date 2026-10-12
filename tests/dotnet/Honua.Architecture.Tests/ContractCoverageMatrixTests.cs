@@ -3,6 +3,7 @@
 
 using System.Reflection;
 using FluentAssertions;
+using Honua.Architecture.Tests;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 
@@ -121,7 +122,7 @@ public sealed class ContractCoverageMatrixTests
     [Trait("Category", "Architecture")]
     public void Admin_EndpointCoverage_MeetsMinimumDepth()
     {
-        var adminTestTypes = typeof(ContractCoverageMatrixTests).Assembly.GetTypes()
+        var adminTestTypes = ArchitectureTestHelpers.IntegrationTestAssemblies().SelectMany(assembly => assembly.GetTypes())
             .Where(type => type.Namespace is not null
                 && (type.Namespace.Contains("Admin", StringComparison.Ordinal)
                     || type.Name.Contains("Admin", StringComparison.Ordinal)))
@@ -137,7 +138,7 @@ public sealed class ContractCoverageMatrixTests
     [Trait("Category", "Architecture")]
     public void Geocoding_EndpointCoverage_MeetsMinimumDepth()
     {
-        var geocodingTestTypes = typeof(ContractCoverageMatrixTests).Assembly.GetTypes()
+        var geocodingTestTypes = ArchitectureTestHelpers.IntegrationTestAssemblies().SelectMany(assembly => assembly.GetTypes())
             .Where(type => type.Namespace is not null
                 && type.Namespace.Contains("Geocoding", StringComparison.Ordinal))
             .ToArray();
@@ -152,12 +153,7 @@ public sealed class ContractCoverageMatrixTests
     [Trait("Category", "Architecture")]
     public void GeometryService_EndpointCoverage_MeetsMinimumDepth()
     {
-        // The GeometryService scenario tests were extracted into
-        // Honua.Protocols.GeoServices.Tests, so scan that assembly alongside
-        // Server.Tests (referenced by this project for exactly this reflection).
-        var geometryServiceTestAssembly =
-            System.Reflection.Assembly.Load("Honua.Protocols.GeoServices.Tests");
-        var geometryTestTypes = new[] { typeof(ContractCoverageMatrixTests).Assembly, geometryServiceTestAssembly }
+        var geometryTestTypes = ArchitectureTestHelpers.IntegrationTestAssemblies()
             .SelectMany(assembly => assembly.GetTypes())
             .Where(type => type.Namespace is not null
                 && type.Namespace.Contains("GeometryService", StringComparison.Ordinal))
@@ -173,7 +169,7 @@ public sealed class ContractCoverageMatrixTests
     [Trait("Category", "Architecture")]
     public void AdminDeploy_Endpoints_HaveMultipleScenarioCoverage()
     {
-        var deployTestType = typeof(ContractCoverageMatrixTests).Assembly.GetTypes()
+        var deployTestType = ArchitectureTestHelpers.IntegrationTestAssemblies().SelectMany(assembly => assembly.GetTypes())
             .Single(type => type.Name == "DeployControlEndpointsTests");
 
         var endpointCounts = CountEndpointScenarios([deployTestType]);
@@ -199,7 +195,7 @@ public sealed class ContractCoverageMatrixTests
     [Trait("Category", "Architecture")]
     public void Admin_AllEndpointGroups_HaveAuthorizationTests()
     {
-        var authTestType = typeof(ContractCoverageMatrixTests).Assembly.GetTypes()
+        var authTestType = ArchitectureTestHelpers.IntegrationTestAssemblies().SelectMany(assembly => assembly.GetTypes())
             .SingleOrDefault(type => type.Name == "AdminAuthorizationTests");
 
         authTestType.Should().NotBeNull("AdminAuthorizationTests class must exist");

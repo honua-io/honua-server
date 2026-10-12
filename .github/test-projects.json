@@ -273,7 +273,7 @@
       ],
       "isolated": false,
       "coverageRequired": false,
-      "shardRouted": false
+      "shardRouted": true
     },
     "tests/dotnet/Honua.Db.MySql.Tests/Honua.MySql.Tests.csproj": {
       "role": "mixed",
@@ -715,6 +715,31 @@
       "coverageRequired": false,
       "shardRouted": false
     },
+    "tests/dotnet/Honua.Protocols.GeoServices.ComponentTests/Honua.Protocols.GeoServices.ComponentTests.csproj": {
+      "role": "component",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
+        "src/Honua.Db/Postgres/Honua.Postgres.csproj",
+        "src/Honua.Geocoding/Honua.Geocoding.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Jobs/Honua.Jobs.csproj",
+        "src/Honua.Plugins.Abstractions/Honua.Plugins.Abstractions.csproj",
+        "src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj",
+        "src/Honua.Routing/Honua.Routing.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [
+        "docker",
+        "postgres"
+      ],
+      "isolated": false,
+      "coverageRequired": true
+    },
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj": {
       "role": "mixed",
       "runtimeOwners": [
@@ -803,7 +828,7 @@
       ],
       "isolated": false,
       "coverageRequired": true,
-      "shardRouted": false
+      "shardRouted": true
     },
     "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj": {
       "role": "mixed",
@@ -866,6 +891,29 @@
       "isolated": true,
       "coverageRequired": true,
       "shardRouted": true
+    },
+    "tests/dotnet/Honua.Protocols.OgcApi.ComponentTests/Honua.Protocols.OgcApi.ComponentTests.csproj": {
+      "role": "component",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
+        "src/Honua.Db/Postgres/Honua.Postgres.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Jobs/Honua.Jobs.csproj",
+        "src/Honua.Protocols.Ogc.Shared/Honua.Protocols.Ogc.Shared.csproj",
+        "src/Honua.Protocols.OgcApi/Honua.Protocols.OgcApi.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [
+        "docker",
+        "postgres"
+      ],
+      "isolated": false,
+      "coverageRequired": true
     },
     "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj": {
       "role": "mixed",
@@ -999,6 +1047,22 @@
       "isolated": true,
       "coverageRequired": true
     },
+    "tests/dotnet/Honua.Protocols.Scene.ComponentTests/Honua.Protocols.Scene.ComponentTests.csproj": {
+      "role": "component",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Protocols.Scene/Honua.Protocols.Scene.csproj",
+        "src/Honua.Scene/Honua.Scene.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [],
+      "isolated": false,
+      "coverageRequired": true
+    },
     "tests/dotnet/Honua.Protocols.Scene.Tests/Honua.Protocols.Scene.Tests.csproj": {
       "role": "mixed",
       "runtimeOwners": [
@@ -1058,6 +1122,26 @@
       ],
       "resources": [],
       "isolated": true,
+      "coverageRequired": true
+    },
+    "tests/dotnet/Honua.Protocols.SensorThings.ComponentTests/Honua.Protocols.SensorThings.ComponentTests.csproj": {
+      "role": "component",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
+        "src/Honua.Db/Postgres/Honua.Postgres.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Protocols.SensorThings/Honua.Protocols.SensorThings.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [
+        "docker",
+        "postgres"
+      ],
+      "isolated": false,
       "coverageRequired": true
     },
     "tests/dotnet/Honua.Protocols.SensorThings.Tests/Honua.Protocols.SensorThings.Tests.csproj": {
@@ -1122,6 +1206,27 @@
       ],
       "resources": [],
       "isolated": true,
+      "coverageRequired": true
+    },
+    "tests/dotnet/Honua.Protocols.Stac.ComponentTests/Honua.Protocols.Stac.ComponentTests.csproj": {
+      "role": "component",
+      "shardRouted": true,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
+        "src/Honua.Db/Postgres/Honua.Postgres.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.Protocols.Ogc.Shared/Honua.Protocols.Ogc.Shared.csproj",
+        "src/Honua.Protocols.Stac/Honua.Protocols.Stac.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [
+        "docker",
+        "postgres"
+      ],
+      "isolated": false,
       "coverageRequired": true
     },
     "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj": {
@@ -1245,7 +1350,6 @@
       "shardRouted": true,
       "runtimeOwners": [
         "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
         "src/Honua.Routing/Honua.Routing.csproj"
       ],
       "resources": [],
@@ -1395,6 +1499,25 @@
       "shardRouted": false,
       "runtimeOwners": [],
       "resources": [],
+      "isolated": false,
+      "coverageRequired": false
+    },
+    "tests/dotnet/Honua.TestKit.Postgres.Hosting/Honua.TestKit.Postgres.Hosting.csproj": {
+      "role": "support",
+      "shardRouted": false,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
+        "src/Honua.Db/Postgres/Honua.Postgres.csproj",
+        "src/Honua.Geometry/Honua.Geometry.csproj",
+        "src/Honua.Hosting/Honua.Hosting.csproj",
+        "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
+      ],
+      "resources": [
+        "docker",
+        "postgres"
+      ],
       "isolated": false,
       "coverageRequired": false
     },

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
-  "_comment": "Single source of truth for the Honua.Server.Tests shard matrix. Owned by ADR-0037. Each entry under `shards` carries both routing fields (`paths`) and matrix-runtime fields (`shard_name`, `artifact_suffix`, `log_name`, `timeout_minutes`, `test_timeout_minutes`, `max_cpu_count`, `upload_operator_eval_report`, `upload_odata_evidence`, `filter`). The `targeted-shards` job in ci.yml reads this file, runs scripts/ci/honua-server-targeted-tests.sh to pick the active shards for the diff, and emits a filtered `matrix_include` that ci.yml::server-tests consumes via `strategy.matrix.include: fromJson(...)`. `timeout_minutes` is the GitHub runner job cap; `test_timeout_minutes` is the inner dotnet-test cap used by scripts/ci/run-server-test-shard.sh so logs and timing artifacts are uploaded before the runner is cancelled. `infrastructure_paths` short-circuits to run_all on first match. Keep infrastructure paths limited to shared runtime/test wiring exercised by EVERY shard (the TestKit harness, the Core/Postgres canonical query/filter/paging/CRS pipeline, the Core/Postgres project files and shared Models/Configuration/Exceptions, the Postgres connection/migration layer, Honua.ServiceDefaults, the cross-cutting server hosting/middleware/monitoring infrastructure and Startup); feature-slice Core/Postgres/protocol paths must be mapped to shard `paths` instead of forcing run_all. NOTE (#1897): Honua.sln is intentionally NOT an infrastructure_path — a project add/remove with no other signal routes to the smoke shard via default_shards_when_no_match rather than running all 40 shards. CI router and workflow changes are validated by scripts/ci/validate-ci-router.sh instead of forcing the server-test matrix. `unmapped_source_run_all_prefixes` forces run_all when a changed file under one of those prefixes is not matched by any shard's `paths` — this is the safety net for genuinely cross-cutting source (the shared Core/Postgres/Server runtime, Honua.Geometry, Honua.Jobs, cloud providers) and for new TOP-LEVEL source areas that have not yet been mapped to an owning shard. Per #1897 the protocol source dirs (src/Honua.Protocols.*, src/Honua.Scene, src/Honua.Ai, src/Honua.Geoprocessing, src/Honua.Import slices) are claimed by their owning shards' `paths` below so a normal feature PR stays targeted instead of tripping this net. `default_shards_when_no_match` is only consulted when no source code under those prefixes was touched (e.g. doc-only, CI-only, or sln-only diffs). Widely-shared-but-shard-localizable Core areas (e.g. src/Honua.Core/Features/Validation/, the ResourceValidator/CommonQueryValidator pipeline) are mapped to every protocol shard whose query/edit/metadata path exercises them rather than added to infrastructure_paths, so a validation-only diff stays targeted instead of escalating to run_all. CORRECTNESS INVARIANT (#1897): every src/ prefix is either (a) claimed by the shard(s) whose filter selects the tests that exercise it, or (b) intentionally left in unmapped_source_run_all_prefixes / infrastructure_paths as cross-cutting. When a source area's tests are shared across several shards (e.g. anything directly under a protocol project root rather than a protocol-specific subdir), it is over-included to ALL of that project's shards rather than risk under-testing.",
+  "_comment": "Single source of truth for the Honua.Server.Tests shard matrix. Owned by ADR-0037. Each entry under `shards` carries both routing fields (`paths`) and matrix-runtime fields (`shard_name`, `artifact_suffix`, `log_name`, `timeout_minutes`, `test_timeout_minutes`, `max_cpu_count`, `upload_operator_eval_report`, `upload_odata_evidence`, `filter`). The `targeted-shards` job in ci.yml reads this file, runs scripts/ci/honua-server-targeted-tests.sh to pick the active shards for the diff, and emits a filtered `matrix_include` that ci.yml::server-tests consumes via `strategy.matrix.include: fromJson(...)`. `timeout_minutes` is the GitHub runner job cap; `test_timeout_minutes` is the inner dotnet-test cap used by scripts/ci/run-server-test-shard.sh so logs and timing artifacts are uploaded before the runner is cancelled. `infrastructure_paths` short-circuits to run_all on first match. Keep infrastructure paths limited to shared runtime/test wiring exercised by EVERY shard (the TestKit harness, the Core/Postgres canonical query/filter/paging/CRS pipeline, the Core/Postgres project files and shared Models/Configuration/Exceptions, the Postgres connection/migration layer, Honua.ServiceDefaults, the cross-cutting server hosting/middleware/monitoring infrastructure and Startup); feature-slice Core/Postgres/protocol paths must be mapped to shard `paths` instead of forcing run_all. NOTE (#1897): Honua.sln is intentionally NOT an infrastructure_path \u2014 a project add/remove with no other signal routes to the smoke shard via default_shards_when_no_match rather than running all 40 shards. CI router and workflow changes are validated by scripts/ci/validate-ci-router.sh instead of forcing the server-test matrix. `unmapped_source_run_all_prefixes` forces run_all when a changed file under one of those prefixes is not matched by any shard's `paths` \u2014 this is the safety net for genuinely cross-cutting source (the shared Core/Postgres/Server runtime, Honua.Geometry, Honua.Jobs, cloud providers) and for new TOP-LEVEL source areas that have not yet been mapped to an owning shard. Per #1897 the protocol source dirs (src/Honua.Protocols.*, src/Honua.Scene, src/Honua.Ai, src/Honua.Geoprocessing, src/Honua.Import slices) are claimed by their owning shards' `paths` below so a normal feature PR stays targeted instead of tripping this net. `default_shards_when_no_match` is only consulted when no source code under those prefixes was touched (e.g. doc-only, CI-only, or sln-only diffs). Widely-shared-but-shard-localizable Core areas (e.g. src/Honua.Core/Features/Validation/, the ResourceValidator/CommonQueryValidator pipeline) are mapped to every protocol shard whose query/edit/metadata path exercises them rather than added to infrastructure_paths, so a validation-only diff stays targeted instead of escalating to run_all. CORRECTNESS INVARIANT (#1897): every src/ prefix is either (a) claimed by the shard(s) whose filter selects the tests that exercise it, or (b) intentionally left in unmapped_source_run_all_prefixes / infrastructure_paths as cross-cutting. When a source area's tests are shared across several shards (e.g. anything directly under a protocol project root rather than a protocol-specific subdir), it is over-included to ALL of that project's shards rather than risk under-testing.",
   "infrastructure_paths": [
     "tests/dotnet/Honua.TestKit/",
     "src/Honua.Core/Honua.Core.csproj",
@@ -29,7 +29,7 @@
     "tests/dotnet/Honua.TestKit.Hosting/",
     "tests/dotnet/Honua.TestKit.Postgres.Hosting/"
   ],
-  "_unmapped_source_run_all_prefixes_comment": "Safety net (#1897): a changed file under one of these prefixes that is NOT claimed by any shard's `paths` escalates to run_all. Per-prefix rationale — src/Honua.Core/, src/Honua.Db/Postgres/, src/Honua.Server/, src/Honua.Db/DuckDB/, tests/dotnet/Honua.Server.Tests/: shared canonical pipeline + provider + integration-test host whose unmapped slices cut across every shard. src/Honua.Geometry/, src/Honua.Jobs/, src/Honua.Routing/, src/Honua.Hosting/: cross-cutting geometry/job/routing/host primitives remain fail-safe by default; bounded ownership exceptions are declared in shard paths (for example Routing/Features/Routing -> GPServer/NAServer and Hosting/Features/Tiles -> tile/ImageServer owners). src/Honua.Cloud/Aws/, src/Honua.Cloud/Azure/: cloud-provider runtime whose tests are spread across the Cloud/FileImport/Infra shards; over-include via run_all (moved here from infrastructure_paths so a project-add no longer trips it). src/Honua.Protocols., src/Honua.Scene/, src/Honua.Ai/, src/Honua.Geoprocessing/, src/Honua.Geocoding/, src/Honua.Io/, src/Honua.Import/: their mapped subdirs are claimed by owning shards below (so normal feature PRs stay targeted); the net only fires for a NOT-YET-MAPPED new top-level area under them, e.g. a brand-new src/Honua.Protocols.SensorThings/ project whose tests have no shard yet.",
+  "_unmapped_source_run_all_prefixes_comment": "Safety net (#1897): a changed file under one of these prefixes that is NOT claimed by any shard's `paths` escalates to run_all. Per-prefix rationale \u2014 src/Honua.Core/, src/Honua.Db/Postgres/, src/Honua.Server/, src/Honua.Db/DuckDB/, tests/dotnet/Honua.Server.Tests/: shared canonical pipeline + provider + integration-test host whose unmapped slices cut across every shard. src/Honua.Geometry/, src/Honua.Jobs/, src/Honua.Routing/, src/Honua.Hosting/: cross-cutting geometry/job/routing/host primitives remain fail-safe by default; bounded ownership exceptions are declared in shard paths (for example Routing/Features/Routing -> GPServer/NAServer and Hosting/Features/Tiles -> tile/ImageServer owners). src/Honua.Cloud/Aws/, src/Honua.Cloud/Azure/: cloud-provider runtime whose tests are spread across the Cloud/FileImport/Infra shards; over-include via run_all (moved here from infrastructure_paths so a project-add no longer trips it). src/Honua.Protocols., src/Honua.Scene/, src/Honua.Ai/, src/Honua.Geoprocessing/, src/Honua.Geocoding/, src/Honua.Io/, src/Honua.Import/: their mapped subdirs are claimed by owning shards below (so normal feature PRs stay targeted); the net only fires for a NOT-YET-MAPPED new top-level area under them, e.g. a brand-new src/Honua.Protocols.SensorThings/ project whose tests have no shard yet.",
   "unmapped_source_run_all_prefixes": [
     "src/Honua.Core/",
     "src/Honua.Db/Postgres/",
@@ -52,13 +52,13 @@
   "default_shards_when_no_match": [
     "Core and Cloud Contracts"
   ],
-  "_shard_budget_policy_comment": "Timeout budgets (#3054). `test_timeout_minutes` is the INNER cap that scripts/ci/run-server-test-shard.sh applies to `dotnet test`; `timeout_minutes` is the OUTER GitHub job cap. Policy: (1) the outer cap must exceed the inner cap by at least `shard_budget_policy.min_job_overhead_minutes` so the inner timeout always fires first and the log/timing/TRX artifacts still upload — measured non-test job overhead (checkout, setup-dotnet, restore/materialize, uploads) is p90 ~7.2 min and max ~9.7 min across recent batch runs, so the required gap is 10; scripts/ci/validate-ci-router.sh enforces it. (2) A shard's measured p90 test-step duration should sit at or below `shard_budget_policy.target_utilization` of its inner cap. The inner cap exists to bound a genuine HANG, not to bound normal test growth, so a shard that legitimately needs more time gets a bigger budget rather than an intermittent exit-124. (3) run-server-test-shard.sh emits HONUA_SHARD_LOW_HEADROOM once a PASSING shard consumes `shard_budget_policy.warn_utilization` of its budget, which is the signal to re-run this audit and either raise the budget or split the shard. Budgets in this file were last re-based from 20 batch-CI runs on 2026-07-29, then revised on 2026-08-16 by two evidence-driven capacity splits rather than cap increases: 'Infra and Security' into three 30/40 children, and 'Server Features Data and Sharing' into a 30/40 Streaming child and a 38/48 enrichment/sharing child (#3229). See docs/internal/ci/shard-timeout-budgets.md.",
+  "_shard_budget_policy_comment": "Timeout budgets (#3054). `test_timeout_minutes` is the INNER cap that scripts/ci/run-server-test-shard.sh applies to `dotnet test`; `timeout_minutes` is the OUTER GitHub job cap. Policy: (1) the outer cap must exceed the inner cap by at least `shard_budget_policy.min_job_overhead_minutes` so the inner timeout always fires first and the log/timing/TRX artifacts still upload \u2014 measured non-test job overhead (checkout, setup-dotnet, restore/materialize, uploads) is p90 ~7.2 min and max ~9.7 min across recent batch runs, so the required gap is 10; scripts/ci/validate-ci-router.sh enforces it. (2) A shard's measured p90 test-step duration should sit at or below `shard_budget_policy.target_utilization` of its inner cap. The inner cap exists to bound a genuine HANG, not to bound normal test growth, so a shard that legitimately needs more time gets a bigger budget rather than an intermittent exit-124. (3) run-server-test-shard.sh emits HONUA_SHARD_LOW_HEADROOM once a PASSING shard consumes `shard_budget_policy.warn_utilization` of its budget, which is the signal to re-run this audit and either raise the budget or split the shard. Budgets in this file were last re-based from 20 batch-CI runs on 2026-07-29, then revised on 2026-08-16 by two evidence-driven capacity splits rather than cap increases: 'Infra and Security' into three 30/40 children, and 'Server Features Data and Sharing' into a 30/40 Streaming child and a 38/48 enrichment/sharing child (#3229). See docs/internal/ci/shard-timeout-budgets.md.",
   "shard_budget_policy": {
     "min_job_overhead_minutes": 10,
     "target_utilization": 0.7,
     "warn_utilization": 0.8
   },
-  "_targeted_override_prefixes_comment": "Narrows over-broad run_all triggers (ADR-0037 targeting follow-up). A changed file under one of these prefixes is CLAIMED by the listed shard subset instead of escalating to run_all: it is excluded from the infrastructure_paths short-circuit and the unmapped_source_run_all_prefixes net, and the listed shards are unioned into the targeted result. Evaluated AFTER the empty-diff guard and BEFORE the infrastructure_paths check. Two over-broad triggers are narrowed: (1) endpoint-registration PLUMBING — src/Honua.Server/EndpointRegistry.cs, src/Honua.Server/Program.cs, and src/Honua.Server/Startup/JsonContextRegistration.cs — which almost every feature PR touches; these route to a representative SMOKE subset spanning the main protocol families (FeatureServer, OGC API Features, one classic OGC = WMS, OData, MCP) plus the always-on API/governance and admin-infrastructure shards, NOT all shards. The architecture/governance guards that run on EVERY PR (EndpointRegistry/OperationRegistry drift + coverage, proof-ledger, in Honua.Architecture.Tests on the build job) are the safety net that catches a registration mistake regardless of which server-test shards run, which is what makes a smoke subset safe here. (2) shared FEATURE-AREA dirs under src/Honua.Hosting/ — Authentication/ and Security/ — route to the auth/security-relevant shards (Infrastructure Contract and Comprehensive, Security and Authorization, Admin & Infrastructure, OData Core which carries ODataAuthorizationTests), NOT all shards. IMPORTANT: keep these prefixes SPECIFIC. They MUST be narrower than the genuinely cross-cutting paths that must stay run_all: do NOT add Honua.Core abstractions, DI/host bootstrap (Honua.Hosting.csproj, Startup/InfrastructureCompositionRoot.cs), or unmapped src/Honua.Hosting/Features areas (Rendering/Caching/etc. stay run_all via the unmapped net; bounded Tiles ownership is declared directly on its shards), Directory.Build.props/Directory.Packages.props, .github/workflows/**, ci-shards.json, the router scripts, or *.sln here. A registration override prefix must point at a SPECIFIC plumbing file, not a whole shared directory.",
+  "_targeted_override_prefixes_comment": "Narrows over-broad run_all triggers (ADR-0037 targeting follow-up). A changed file under one of these prefixes is CLAIMED by the listed shard subset instead of escalating to run_all: it is excluded from the infrastructure_paths short-circuit and the unmapped_source_run_all_prefixes net, and the listed shards are unioned into the targeted result. Evaluated AFTER the empty-diff guard and BEFORE the infrastructure_paths check. Two over-broad triggers are narrowed: (1) endpoint-registration PLUMBING \u2014 src/Honua.Server/EndpointRegistry.cs, src/Honua.Server/Program.cs, and src/Honua.Server/Startup/JsonContextRegistration.cs \u2014 which almost every feature PR touches; these route to a representative SMOKE subset spanning the main protocol families (FeatureServer, OGC API Features, one classic OGC = WMS, OData, MCP) plus the always-on API/governance and admin-infrastructure shards, NOT all shards. The architecture/governance guards that run on EVERY PR (EndpointRegistry/OperationRegistry drift + coverage, proof-ledger, in Honua.Architecture.Tests on the build job) are the safety net that catches a registration mistake regardless of which server-test shards run, which is what makes a smoke subset safe here. (2) shared FEATURE-AREA dirs under src/Honua.Hosting/ \u2014 Authentication/ and Security/ \u2014 route to the auth/security-relevant shards (Infrastructure Contract and Comprehensive, Security and Authorization, Admin & Infrastructure, OData Core which carries ODataAuthorizationTests), NOT all shards. IMPORTANT: keep these prefixes SPECIFIC. They MUST be narrower than the genuinely cross-cutting paths that must stay run_all: do NOT add Honua.Core abstractions, DI/host bootstrap (Honua.Hosting.csproj, Startup/InfrastructureCompositionRoot.cs), or unmapped src/Honua.Hosting/Features areas (Rendering/Caching/etc. stay run_all via the unmapped net; bounded Tiles ownership is declared directly on its shards), Directory.Build.props/Directory.Packages.props, .github/workflows/**, ci-shards.json, the router scripts, or *.sln here. A registration override prefix must point at a SPECIFIC plumbing file, not a whole shared directory.",
   "targeted_override_prefixes": [
     {
       "prefix": "src/Honua.Server/EndpointRegistry.cs",
@@ -380,7 +380,7 @@
       "dispatch_rank": 26.3,
       "artifact_suffix": "core-endpoints",
       "log_name": "server-tests-core-endpoints",
-      "_comment": "ADR-0037 finer-sharding: carved from Core. Isolates the FeatureServerEndpointTests classes (the ~114-test FeatureServerEndpointTests plus the related StreamingFeatureServerEndpointTests) — the dominant driver of the old ~46m Core monolith. Bare substring selector mirrors the Core catch-all's bare !~FeatureServerEndpointTests exclusion so the two stay a clean partition (a qualified selector would orphan StreamingFeatureServerEndpointTests). September 2026 capacity rebalance: owns AdvancedSpatialQueryTests from Core and Cloud Contracts; whole-class move with unchanged budgets.",
+      "_comment": "ADR-0037 finer-sharding: carved from Core. Isolates the FeatureServerEndpointTests classes (the ~114-test FeatureServerEndpointTests plus the related StreamingFeatureServerEndpointTests) \u2014 the dominant driver of the old ~46m Core monolith. Bare substring selector mirrors the Core catch-all's bare !~FeatureServerEndpointTests exclusion so the two stay a clean partition (a qualified selector would orphan StreamingFeatureServerEndpointTests). September 2026 capacity rebalance: owns AdvancedSpatialQueryTests from Core and Cloud Contracts; whole-class move with unchanged budgets.",
       "timeout_minutes": 51,
       "test_timeout_minutes": 41,
       "max_cpu_count": "",
@@ -428,7 +428,7 @@
       "dispatch_rank": 16.7,
       "artifact_suffix": "core-cloud-contracts",
       "log_name": "server-tests-core-cloud-contracts",
-      "_comment": "September 2026 capacity rebalance (runs 34025905230 and 34028070097). #4354 added PatchConcurrencyTests to the serialized [Collection(\"Database\")], whose 40 cases run one at a time at ~16.3s each — about 10.9 minutes appended to whichever shard owns them — and the shard went from a passing 17.4m (run 34022872366) to exit 124 at the 26m cap with the class still running. PatchConcurrencyTests moves to Core Mutation Concurrency; CrsTransformationCorrectnessTests moves to Core Attachments and Records, AdvancedSpatialQueryTests to Core Endpoints, and ApiSurfaceComplianceTests plus TestQualityValidationTests to STAC and API Governance so the remainder keeps headroom under the runner contention seen in the failing runs. The catch-all and the 26-minute budget are unchanged; the Core partition guards lossless ownership.",
+      "_comment": "September 2026 capacity rebalance (runs 34025905230 and 34028070097). #4354 added PatchConcurrencyTests to the serialized [Collection(\"Database\")], whose 40 cases run one at a time at ~16.3s each \u2014 about 10.9 minutes appended to whichever shard owns them \u2014 and the shard went from a passing 17.4m (run 34022872366) to exit 124 at the 26m cap with the class still running. PatchConcurrencyTests moves to Core Mutation Concurrency; CrsTransformationCorrectnessTests moves to Core Attachments and Records, AdvancedSpatialQueryTests to Core Endpoints, and ApiSurfaceComplianceTests plus TestQualityValidationTests to STAC and API Governance so the remainder keeps headroom under the runner contention seen in the failing runs. The catch-all and the 26-minute budget are unchanged; the Core partition guards lossless ownership.",
       "timeout_minutes": 36,
       "test_timeout_minutes": 26,
       "max_cpu_count": "",
@@ -448,7 +448,6 @@
         "src/Honua.Server/Hosting/",
         "tests/dotnet/Honua.Server.Tests/ApiExplorerEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Cloud/",
-        "tests/dotnet/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs",
         "tests/dotnet/Honua.Server.Tests/Contract/",
         "tests/dotnet/Honua.Server.Tests/DatabaseMigrationTests.cs",
         "tests/dotnet/Honua.Server.Tests/HealthEndpointTests.cs",
@@ -787,7 +786,7 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
-      "_comment": "ADR-0037 finer-sharding CATCH-ALL: the Wfs20 + Wcs20 + Wps20 namespaces EXCEPT Wfs20EndpointsTests (a single 74-test class isolated into WFS Endpoints). NOTE: this also FIXES pre-existing coverage gaps — Wcs20EndpointsTests (28 [IntegrationTest]s) and Wps20EndpointsTests previously matched no shard filter and never ran in CI; they now run here. Complementary with WFS Endpoints (which selects only Wfs20EndpointsTests).",
+      "_comment": "ADR-0037 finer-sharding CATCH-ALL: the Wfs20 + Wcs20 + Wps20 namespaces EXCEPT Wfs20EndpointsTests (a single 74-test class isolated into WFS Endpoints). NOTE: this also FIXES pre-existing coverage gaps \u2014 Wcs20EndpointsTests (28 [IntegrationTest]s) and Wps20EndpointsTests previously matched no shard filter and never ran in CI; they now run here. Complementary with WFS Endpoints (which selects only Wfs20EndpointsTests).",
       "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20)&FullyQualifiedName!~Wfs20EndpointsTests)|FullyQualifiedName~Honua.Protocols.Ogc.Classic.Wps20.Wps20ConformanceEchoTests",
       "paths": [
         "src/Honua.Protocols.OgcClassic/Wfs20/",
@@ -877,7 +876,7 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj",
-      "_comment": "OData CATCH-ALL (#1899): converted from a class-name-keyed selector to a namespace-prefix selector so new OData test classes are auto-covered instead of silently falling outside every OData shard (the original #1899 finding — e.g. ODataBboxShorthandTests, ODataInOperatorTests, ODataParquetFormatTests, ODataServerPagingEndpointTests, ODataChangesetEditionGateTests, ODataQueryParameterAdapterOrderByTests all matched no OData filter). Selects everything in the Honua.Server.Tests.Features.Protocols.OData namespace EXCEPT the classes/sub-namespaces carved into the OData Query and Spatial, OData Mutations and Batch, and OData Client Certification sibling shards. The trailing FullyQualifiedName!~ exclusions mirror those siblings' selectors exactly, so the four OData shards partition the OData suite with no gaps; any newly added OData test class falls here by default.",
+      "_comment": "OData CATCH-ALL (#1899): converted from a class-name-keyed selector to a namespace-prefix selector so new OData test classes are auto-covered instead of silently falling outside every OData shard (the original #1899 finding \u2014 e.g. ODataBboxShorthandTests, ODataInOperatorTests, ODataParquetFormatTests, ODataServerPagingEndpointTests, ODataChangesetEditionGateTests, ODataQueryParameterAdapterOrderByTests all matched no OData filter). Selects everything in the Honua.Server.Tests.Features.Protocols.OData namespace EXCEPT the classes/sub-namespaces carved into the OData Query and Spatial, OData Mutations and Batch, and OData Client Certification sibling shards. The trailing FullyQualifiedName!~ exclusions mirror those siblings' selectors exactly, so the four OData shards partition the OData suite with no gaps; any newly added OData test class falls here by default.",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.OData&FullyQualifiedName!~ODataAdvancedFeaturesTests&FullyQualifiedName!~ODataFilterFunctionTests&FullyQualifiedName!~ODataFilterMatrixTests&FullyQualifiedName!~ODataPaginationTests&FullyQualifiedName!~ODataSkipTokenTests&FullyQualifiedName!~ODataSpatialMatrixTests&FullyQualifiedName!~ODataSpatialReferenceTests&FullyQualifiedName!~ODataTemporalFilteringTests&FullyQualifiedName!~ODataCrudEndpointTests&FullyQualifiedName!~ODataCrudExceptionMappingTests&FullyQualifiedName!~ODataDeltaTests&FullyQualifiedName!~ODataETagConcurrencyTests&FullyQualifiedName!~ODataGeometryCrudTests&FullyQualifiedName!~ODataMultipartBatchTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.OData.Services&FullyQualifiedName!~ODataClientCertificationTests&FullyQualifiedName!~ODataClientIntegrationTests&FullyQualifiedName!~ODataErrorHandlingTests&FullyQualifiedName!~ODataV4ConformanceEndpointTests&FullyQualifiedName!~ODataLimitsEnforcementTests&FullyQualifiedName!~ODataExpansionBudgetRegressionTests",
       "paths": [
         "src/Honua.Protocols.OData/",
@@ -957,7 +956,7 @@
       "dispatch_rank": 13.7,
       "artifact_suffix": "core-mutation-concurrency",
       "log_name": "server-tests-core-mutation-concurrency",
-      "_comment": "September 2026 capacity split of Core and Cloud Contracts (runs 34025905230, 34028070097). PatchConcurrencyTests arrived with #4354 under [Collection(\"Database\")] — the one database collection still declared DisableParallelization — so its cases execute strictly one at a time and add their full duration to whichever shard owns them rather than overlapping with it. Measured on the two timeout runs: 15 of 40 cases in 246.6s on 34025905230 (16.4s per case) and 26 of 40 in 422.3s on 34028070097 (16.2s per case), the class still running when the 26m cap fired both times — about 10.9 minutes for all 40. Isolating the class follows the shard_budget_policy preference for an evidence-driven split over a cap increase, and gives the write-path concurrency family room to grow without re-saturating Core and Cloud Contracts.",
+      "_comment": "September 2026 capacity split of Core and Cloud Contracts (runs 34025905230, 34028070097). PatchConcurrencyTests arrived with #4354 under [Collection(\"Database\")] \u2014 the one database collection still declared DisableParallelization \u2014 so its cases execute strictly one at a time and add their full duration to whichever shard owns them rather than overlapping with it. Measured on the two timeout runs: 15 of 40 cases in 246.6s on 34025905230 (16.4s per case) and 26 of 40 in 422.3s on 34028070097 (16.2s per case), the class still running when the 26m cap fired both times \u2014 about 10.9 minutes for all 40. Isolating the class follows the shard_budget_policy preference for an evidence-driven split over a cap increase, and gives the write-path concurrency family room to grow without re-saturating Core and Cloud Contracts.",
       "timeout_minutes": 30,
       "test_timeout_minutes": 20,
       "max_cpu_count": "",
@@ -1032,7 +1031,7 @@
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",
       "_comment": "Capacity split #5006: Basic and Conformance took ~360s, the remaining Maps and Records ~407s in run 35164215061 attempt 2. Both retain the original 22m test / 32m job budgets. Maps paths select both children; the exact partition preserves all original classes, including future Maps/Records tests. See docs/internal/ci/shard-rebalance-5006.md.",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsConformanceTests",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests",
       "paths": [
         "src/Honua.Protocols.OgcApi/Maps/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Maps/",
@@ -1606,7 +1605,7 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.SensorThings.Tests/Honua.Protocols.SensorThings.Tests.csproj",
-      "_comment": "Coverage fix (#1899): the OGC SensorThings (STA v1.1) module landed in #1842 with a Honua.Protocols.SensorThings.Tests project but NO shard, so its integration tests (Honua.Server.Tests.Features.Protocols.SensorThings) matched no filter and never ran in CI — the same orphaned-coverage class as #1899. #1899 listed 'add a SensorThings shard' as a non-goal while #1842 was open; #1842 has since merged without one, leaving the tests dead, so this minimal shard claims them. It also targets the correct SensorThings.Tests csproj (a Server.Tests-assembly filter could never discover them).",
+      "_comment": "Coverage fix (#1899): the OGC SensorThings (STA v1.1) module landed in #1842 with a Honua.Protocols.SensorThings.Tests project but NO shard, so its integration tests (Honua.Server.Tests.Features.Protocols.SensorThings) matched no filter and never ran in CI \u2014 the same orphaned-coverage class as #1899. #1899 listed 'add a SensorThings shard' as a non-goal while #1842 was open; #1842 has since merged without one, leaving the tests dead, so this minimal shard claims them. It also targets the correct SensorThings.Tests csproj (a Server.Tests-assembly filter could never discover them).",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.SensorThings",
       "paths": [
         "src/Honua.Protocols.SensorThings/",
@@ -1665,7 +1664,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "ADR-0037: GeocodeServer feature tests (Honua.Server.Tests.Features.Geocoding) were claimed by NO shard filter, so they only ran under run_all (orphaned — same class as #1899). This shard claims those tests and the geocoding source dirs (including the standalone Honua.Geocoding project) so a geocoding-only change targets one shard instead of falling through the unmapped-source net to run_all.",
+      "_comment": "ADR-0037: GeocodeServer feature tests (Honua.Server.Tests.Features.Geocoding) were claimed by NO shard filter, so they only ran under run_all (orphaned \u2014 same class as #1899). This shard claims those tests and the geocoding source dirs (including the standalone Honua.Geocoding project) so a geocoding-only change targets one shard instead of falling through the unmapped-source net to run_all.",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Geocoding",
       "paths": [
         "src/Honua.Geocoding/",
@@ -2372,7 +2371,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "ADR-0037 finer-sharding (#2422/#2424/#2425 rebalance): carved from the 'Server Features Misc' catch-all, which — after the #2422 split — still ran ~24 classes (~356 executed tests with Theory expansion) and hit the 48-min inner test timeout (exit 124). This shard runs the OpenAPI/gRPC spec, printing/layout, and static-map slice: Honua.Server.Tests.Features.{Spec,PrintingTools,StaticMap}.*. Partitioned by sub-namespace; the trailing FullyQualifiedName!~ exclusions for these three namespaces are appended to the 'Server Features Misc' catch-all so the two shards partition the old catch-all's classes with no gaps and no overlaps (verified by scripts/ci/check-server-test-shard-coverage.py). 'Server Features Misc' remains the #1899 keystone catch-all for every other/new Features.* namespace. Paths remain broad for the existing split except Protocols/Zarr and Streaming, which route only to their executable shard owners.",
+      "_comment": "ADR-0037 finer-sharding (#2422/#2424/#2425 rebalance): carved from the 'Server Features Misc' catch-all, which \u2014 after the #2422 split \u2014 still ran ~24 classes (~356 executed tests with Theory expansion) and hit the 48-min inner test timeout (exit 124). This shard runs the OpenAPI/gRPC spec, printing/layout, and static-map slice: Honua.Server.Tests.Features.{Spec,PrintingTools,StaticMap}.*. Partitioned by sub-namespace; the trailing FullyQualifiedName!~ exclusions for these three namespaces are appended to the 'Server Features Misc' catch-all so the two shards partition the old catch-all's classes with no gaps and no overlaps (verified by scripts/ci/check-server-test-shard-coverage.py). 'Server Features Misc' remains the #1899 keystone catch-all for every other/new Features.* namespace. Paths remain broad for the existing split except Protocols/Zarr and Streaming, which route only to their executable shard owners.",
       "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Spec.|FullyQualifiedName~Honua.Server.Tests.Features.PrintingTools.|FullyQualifiedName~Honua.Server.Tests.Features.StaticMap.)",
       "paths": [
         "tests/dotnet/Honua.Server.Tests/Features/",
@@ -3632,6 +3631,192 @@
         "tests/dotnet/Honua.Snowflake.UnitTests/"
       ],
       "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate."
+    },
+    {
+      "name": "DuckDB Tests Components",
+      "shard_name": "DuckDB Tests Components",
+      "dispatch_rank": 1.1,
+      "artifact_suffix": "honua-duckdb-tests",
+      "log_name": "server-tests-honua-duckdb-tests",
+      "timeout_minutes": 20,
+      "test_timeout_minutes": 10,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Db.DuckDB.Tests/Honua.DuckDB.Tests.csproj",
+      "filter": "FullyQualifiedName~Honua",
+      "paths": [
+        "src/Honua.Core.Abstractions/",
+        "src/Honua.Core/",
+        "src/Honua.Db/DuckDB/",
+        "src/Honua.Geometry/",
+        "tests/dotnet/Honua.Db.DuckDB.Tests/"
+      ],
+      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
+    },
+    {
+      "name": "Protocols GeoServices Components",
+      "shard_name": "Protocols GeoServices Components",
+      "dispatch_rank": 1.1,
+      "artifact_suffix": "honua-protocols-geoservices-componenttests",
+      "log_name": "server-tests-honua-protocols-geoservices-componenttests",
+      "timeout_minutes": 20,
+      "test_timeout_minutes": 10,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.ComponentTests/Honua.Protocols.GeoServices.ComponentTests.csproj",
+      "filter": "FullyQualifiedName~Honua",
+      "paths": [
+        "src/Honua.Core.Abstractions/",
+        "src/Honua.Core/",
+        "src/Honua.Db/Postgres.Shared/",
+        "src/Honua.Db/Postgres/",
+        "src/Honua.Geocoding/",
+        "src/Honua.Geometry/",
+        "src/Honua.Geoprocessing/",
+        "src/Honua.Hosting/",
+        "src/Honua.Jobs/",
+        "src/Honua.Plugins.Abstractions/",
+        "src/Honua.Protocols.GeoServices/",
+        "src/Honua.Routing/",
+        "src/Honua.ServiceDefaults/",
+        "tests/dotnet/Honua.Protocols.GeoServices.ComponentTests/"
+      ],
+      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
+    },
+    {
+      "name": "Protocols OData Components",
+      "shard_name": "Protocols OData Components",
+      "dispatch_rank": 1.1,
+      "artifact_suffix": "honua-protocols-odata-componenttests",
+      "log_name": "server-tests-honua-protocols-odata-componenttests",
+      "timeout_minutes": 20,
+      "test_timeout_minutes": 10,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.OData.ComponentTests/Honua.Protocols.OData.ComponentTests.csproj",
+      "filter": "FullyQualifiedName~Honua",
+      "paths": [
+        "src/Honua.Core.Abstractions/",
+        "src/Honua.Core/",
+        "src/Honua.Db/Postgres.Shared/",
+        "src/Honua.Db/Postgres/",
+        "src/Honua.Geometry/",
+        "src/Honua.Hosting/",
+        "src/Honua.Protocols.OData/",
+        "src/Honua.ServiceDefaults/",
+        "tests/dotnet/Honua.Protocols.OData.ComponentTests/"
+      ],
+      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
+    },
+    {
+      "name": "Protocols OgcApi Components",
+      "shard_name": "Protocols OgcApi Components",
+      "dispatch_rank": 1.1,
+      "artifact_suffix": "honua-protocols-ogcapi-componenttests",
+      "log_name": "server-tests-honua-protocols-ogcapi-componenttests",
+      "timeout_minutes": 20,
+      "test_timeout_minutes": 10,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.OgcApi.ComponentTests/Honua.Protocols.OgcApi.ComponentTests.csproj",
+      "filter": "FullyQualifiedName~Honua",
+      "paths": [
+        "src/Honua.Core.Abstractions/",
+        "src/Honua.Core/",
+        "src/Honua.Db/Postgres.Shared/",
+        "src/Honua.Db/Postgres/",
+        "src/Honua.Geometry/",
+        "src/Honua.Geoprocessing/",
+        "src/Honua.Hosting/",
+        "src/Honua.Jobs/",
+        "src/Honua.Protocols.Ogc.Shared/",
+        "src/Honua.Protocols.OgcApi/",
+        "src/Honua.ServiceDefaults/",
+        "tests/dotnet/Honua.Protocols.OgcApi.ComponentTests/"
+      ],
+      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
+    },
+    {
+      "name": "Protocols Scene Components",
+      "shard_name": "Protocols Scene Components",
+      "dispatch_rank": 1.1,
+      "artifact_suffix": "honua-protocols-scene-componenttests",
+      "log_name": "server-tests-honua-protocols-scene-componenttests",
+      "timeout_minutes": 20,
+      "test_timeout_minutes": 10,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.Scene.ComponentTests/Honua.Protocols.Scene.ComponentTests.csproj",
+      "filter": "FullyQualifiedName~Honua",
+      "paths": [
+        "src/Honua.Core.Abstractions/",
+        "src/Honua.Core/",
+        "src/Honua.Geometry/",
+        "src/Honua.Hosting/",
+        "src/Honua.Protocols.Scene/",
+        "src/Honua.Scene/",
+        "src/Honua.ServiceDefaults/",
+        "tests/dotnet/Honua.Protocols.Scene.ComponentTests/"
+      ],
+      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
+    },
+    {
+      "name": "Protocols SensorThings Components",
+      "shard_name": "Protocols SensorThings Components",
+      "dispatch_rank": 1.1,
+      "artifact_suffix": "honua-protocols-sensorthings-componenttests",
+      "log_name": "server-tests-honua-protocols-sensorthings-componenttests",
+      "timeout_minutes": 20,
+      "test_timeout_minutes": 10,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.SensorThings.ComponentTests/Honua.Protocols.SensorThings.ComponentTests.csproj",
+      "filter": "FullyQualifiedName~Honua",
+      "paths": [
+        "src/Honua.Core.Abstractions/",
+        "src/Honua.Core/",
+        "src/Honua.Db/Postgres.Shared/",
+        "src/Honua.Db/Postgres/",
+        "src/Honua.Geometry/",
+        "src/Honua.Hosting/",
+        "src/Honua.Protocols.SensorThings/",
+        "src/Honua.ServiceDefaults/",
+        "tests/dotnet/Honua.Protocols.SensorThings.ComponentTests/"
+      ],
+      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
+    },
+    {
+      "name": "Protocols Stac Components",
+      "shard_name": "Protocols Stac Components",
+      "dispatch_rank": 1.1,
+      "artifact_suffix": "honua-protocols-stac-componenttests",
+      "log_name": "server-tests-honua-protocols-stac-componenttests",
+      "timeout_minutes": 20,
+      "test_timeout_minutes": 10,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.Stac.ComponentTests/Honua.Protocols.Stac.ComponentTests.csproj",
+      "filter": "FullyQualifiedName~Honua",
+      "paths": [
+        "src/Honua.Core.Abstractions/",
+        "src/Honua.Core/",
+        "src/Honua.Db/Postgres.Shared/",
+        "src/Honua.Db/Postgres/",
+        "src/Honua.Geometry/",
+        "src/Honua.Hosting/",
+        "src/Honua.Protocols.Ogc.Shared/",
+        "src/Honua.Protocols.Stac/",
+        "src/Honua.ServiceDefaults/",
+        "tests/dotnet/Honua.Protocols.Stac.ComponentTests/"
+      ],
+      "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases."
     }
   ]
 }
