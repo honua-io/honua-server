@@ -11,6 +11,7 @@
     <PackageReference Include="FsCheck.Xunit" />
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="Parquet.Net" />
+    <PackageReference Include="Snappier" />
     <ProjectReference Include="../../../src/Honua.Core/Honua.Core.csproj" />
     <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
   </ItemGroup>
