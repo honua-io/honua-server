@@ -625,6 +625,29 @@ def test_method_partition_rejects_holes_duplicates_and_leaks() -> None:
                                          "Ns.Tests", ("Progress",)) == []
 
 
+def test_method_partition_rejects_unresolved_runnable_methods() -> None:
+    parent = MODULE._FilterParser("FullyQualifiedName~Ns.Tests").parse()
+    children = {"all": parent}
+    for methods, unresolved in (((), False), (("Parsed",), True)):
+        assert "incomplete runnable-method inventory" in MODULE.partition_claim_errors(
+            "split", parent, ["all"], children, "Ns.Tests", methods,
+            "method", unresolved)[0]
+    # Class-granularity validation retains the prior attribute-based contract.
+    assert MODULE.partition_claim_errors("split", parent, ["all"], children,
+                                         "Ns.Tests", (), "class", True) == []
+    found = walk("""
+namespace Ns;
+public class Tests
+{
+    [Fact] public void Parsed() { }
+    [Fact] public unknown_shape;
+}
+""")
+    assert found["Ns.Tests"]["methods"] == {"Parsed"}
+    assert MODULE.runnable_classes(found) == found
+    assert MODULE.unresolved_method_classes(found) == ["Ns.Tests"]
+
+
 def test_gp_nas_partition_preserves_every_runnable_method_and_budget() -> None:
     config = json.loads((REPOSITORY_ROOT / ".github/ci-shards.json").read_text())
     partition = next(p for p in config["shard_partitions"]
@@ -657,6 +680,7 @@ def test_gp_nas_partition_preserves_every_runnable_method_and_budget() -> None:
 
 
 test_method_partition_rejects_holes_duplicates_and_leaks()
+test_method_partition_rejects_unresolved_runnable_methods()
 test_gp_nas_partition_preserves_every_runnable_method_and_budget()
 
 print("shard-filter-dangling-guard=ok")

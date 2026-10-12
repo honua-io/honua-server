@@ -335,6 +335,7 @@ def enumerate_classes() -> dict[str, dict]:
             declared: list[str] = []
             test_methods: dict[str, set[str]] = {}
             attribute_seen: set[str] = set()
+            unresolved_methods: set[str] = set()
             i = 0
             n = len(text)
             while i < n:
@@ -392,6 +393,8 @@ def enumerate_classes() -> dict[str, dict]:
                         method = _method_name_after(text, i)
                         if method:
                             test_methods.setdefault(current_top_class, set()).add(method)
+                        else:
+                            unresolved_methods.add(current_top_class)
                 i += 1
 
             rel = str(path.relative_to(REPO_ROOT)).replace("\\", "/")
@@ -399,12 +402,14 @@ def enumerate_classes() -> dict[str, dict]:
                 fqn = f"{namespace}.{cls}"
                 entry = classes.setdefault(
                     fqn,
-                    {"csproj": csproj, "src": [], "methods": set(), "has_tests": False},
+                    {"csproj": csproj, "src": [], "methods": set(), "has_tests": False,
+                     "unresolved_methods": False},
                 )
                 if rel not in entry["src"]:
                     entry["src"].append(rel)
                 entry["methods"].update(test_methods.get(cls, ()))
                 entry["has_tests"] = entry["has_tests"] or cls in attribute_seen
+                entry["unresolved_methods"] |= cls in unresolved_methods
     return classes
 
 
@@ -431,14 +436,14 @@ def enumerate_test_classes() -> dict[str, dict]:
 
 
 def unresolved_method_classes(all_classes: dict[str, dict]) -> list[str]:
-    """Classes carrying a test attribute whose method name never resolved.
+    """Classes carrying any test attribute whose method name did not resolve.
 
     Non-empty means the enumerator saw a declaration shape it cannot read, so
     method-level filter clauses could be judged dead against an incomplete pool.
     """
     return sorted(
         fqn for fqn, entry in all_classes.items()
-        if entry["has_tests"] and not entry["methods"]
+        if entry["has_tests"] and (not entry["methods"] or entry.get("unresolved_methods", False))
     )
 
 
@@ -736,8 +741,10 @@ def evaluate_assertion(
 
 
 def partition_claim_errors(parent_name, parent_filter, children, parsed, fqn,
-                           methods, granularity="class") -> list[str]:
+                           methods, granularity="class", unresolved_methods=False) -> list[str]:
     """Require exact parent/child coverage at the declared selection granularity."""
+    if granularity == "method" and (not methods or unresolved_methods):
+        return [f"{parent_name}: {fqn} has an empty or incomplete runnable-method inventory"]
     subjects = ([f"{fqn}.{method}" for method in sorted(methods)]
                 if granularity == "method" else [fqn])
     errors = []
@@ -888,10 +895,10 @@ def main() -> int:
     classes = runnable_classes(all_classes)
     unresolved = unresolved_method_classes(all_classes)
     if unresolved:
-        # These classes carry a test attribute the enumerator recognises but no
-        # method name it could parse, so selection_pool() has no runnable FQN for
-        # them and a live method-level filter clause could be misreported as
-        # dead. That is a defect in THIS script, not in the shard map, so it
+        # At least one recognised test attribute did not resolve to a method.
+        # Even if other methods parsed, selection_pool() is incomplete and a
+        # method partition could silently miss a runnable test. This is a
+        # defect in THIS script, not in the shard map, so it
         # fails as a tool error rather than a coverage error.
         print(f"::error::{len(unresolved)} class(es) carry a test attribute whose "
               "method declaration this script could not parse — fix "
@@ -931,6 +938,7 @@ def main() -> int:
             partition_errors.extend(partition_claim_errors(
                 parent_name, parent_filter, children, parsed, fqn,
                 classes[fqn]["methods"], granularity,
+                classes[fqn].get("unresolved_methods", False),
             ))
 
     if args.report:
