@@ -151,6 +151,9 @@ public sealed class GatedBootExitTests
             tail);
         output.Should().Contain(GatedBootShutdown.ContractGateRefusalPrefix);
         output.Should().Contain(PendingContractScript);
+        output.Should().NotContain("Now listening on:", "a refused boot must never start serving");
+        output.Should().NotContain("Unhandled exception", "the gate refusal must be handled by the entry point");
+        await AssertMigrationJournalUnchangedAsync(connectionString);
         dumpsCreated.Should().BeEmpty(
             "refused boot must not write a crash dump. Output tail:{0}{1}",
             Environment.NewLine,
@@ -177,6 +180,24 @@ public sealed class GatedBootExitTests
         command.Parameters.AddWithValue("script", SeededJournalScript);
         command.CommandTimeout = 120;
         await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task AssertMigrationJournalUnchangedAsync(string connectionString)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            "SELECT scriptname FROM public.schema_versions ORDER BY schemaversionsid;",
+            connection);
+        await using var reader = await command.ExecuteReaderAsync();
+        var scripts = new List<string>();
+        while (await reader.ReadAsync())
+        {
+            scripts.Add(reader.GetString(0));
+        }
+
+        scripts.Should().Equal(SeededJournalScript,
+            "a refused migration batch must leave the existing database journal unchanged");
     }
 
     [UnitTheory]
@@ -231,7 +252,8 @@ public sealed class GatedBootExitTests
         catch (OperationCanceledException)
         {
             TryKill(process);
-            return process.WaitForExit(TimeSpan.FromSeconds(15));
+            process.WaitForExit(TimeSpan.FromSeconds(15));
+            return false;
         }
     }
 
