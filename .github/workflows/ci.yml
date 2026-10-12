@@ -2674,6 +2674,11 @@ jobs:
             -o ./publish
         working-directory: src/Honua.Server
 
+      - name: Verify Published Scene Fixture
+        run: |
+          python3 -m unittest discover -s tests/python -p test_scene_fixture_publication.py
+          python3 scripts/ci/verify-scene-fixture-publication.py --publish-dir src/Honua.Server/publish
+
       - name: Verify Binary Size
         run: |
           SIZE=$(stat --printf="%s" ./publish/Honua.Server 2>/dev/null || echo "0")
