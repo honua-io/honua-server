@@ -13,15 +13,17 @@ using Microsoft.Extensions.Options;
 namespace Honua.Server.Tests.Infrastructure.Security;
 
 /// <summary>
-/// PKCE values are client-generated base64url strings. A "--" inside one must not be read as
-/// a SQL comment on the Sharing OAuth2 routes, while the same value stays inspected on
-/// unrelated routes and the broker's hex state stays inspected everywhere.
+/// OAuth state and PKCE values are opaque strings. A "--" inside one must not be read as a SQL
+/// comment on the Sharing OAuth2 routes, while the same value stays inspected on unrelated
+/// routes and non-opaque OAuth2 parameters stay inspected everywhere.
 /// </summary>
 public sealed class OAuth2OpaqueParameterValidationTests
 {
     private const string Base64UrlWithDoubleDash = "Zm9v--YmFy_c3RhdGU.c2Vzc2lvbi--aWQ";
 
     [UnitTheory]
+    [InlineData("/sharing/rest/oauth2/callback", "state")]
+    [InlineData("/sharing/rest/oauth2/authorize", "state")]
     [InlineData("/sharing/rest/oauth2/authorize", "code_challenge")]
     [InlineData("/sharing/rest/oauth2/token", "code_verifier")]
     public async Task OAuth2Route_OpaqueParameterWithDoubleDash_IsAdmitted(string path, string name)
@@ -36,10 +38,9 @@ public sealed class OAuth2OpaqueParameterValidationTests
     }
 
     [UnitTest]
-    public async Task OAuth2Route_StateWithDoubleDash_IsStillInspected()
+    public async Task OAuth2Route_NonOpaqueParameterWithDoubleDash_IsStillInspected()
     {
-        // The broker issues hex state (#5899); an SQL-looking state remains rejected.
-        (await InvokeAsync("/sharing/rest/oauth2/callback", "state")).Should().BeFalse();
+        (await InvokeAsync("/sharing/rest/oauth2/callback", "error_description")).Should().BeFalse();
     }
 
     private static async Task<bool> InvokeAsync(string path, string name)

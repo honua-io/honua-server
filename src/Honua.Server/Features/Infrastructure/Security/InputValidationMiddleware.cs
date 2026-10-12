@@ -423,9 +423,10 @@ internal sealed class InputValidationMiddleware
         "client_secret",
         "client_assertion",
         "assertion",
-        // PKCE values are client-generated base64url strings that can contain "--". They are
-        // hashed and compared, never placed in SQL. The broker's own callback state is hex
-        // (#5899), so "state" stays inspected.
+        // OAuth state and PKCE values are opaque client- or broker-issued strings that can
+        // contain "--". They are compared or hashed, never placed in SQL; the broker rejects
+        // an unknown state itself (SharingOAuth2CallbackE2ETests, #5913).
+        "state",
         "code_challenge",
         "code_verifier",
     };
