@@ -157,6 +157,24 @@ class InputTests(unittest.TestCase):
         return json.dumps({"Properties": {"TargetFramework": "net10.0", "MSBuildAllProjects": str(self.root / "Directory.Build.props")},
             "Items": {"Compile": [{"FullPath": str(self.source)}], "EmbeddedResource": [{"FullPath": str(self.linked)}]}})
 
+    def test_flow_helper_discovery_follows_selected_shim_not_other_checkout(self):
+        tools = self.root / "flow/tools"
+        (tools / "lane-bin").mkdir(parents=True)
+        (tools / "lib").mkdir()
+        shim = tools / "lane-bin/dotnet"
+        shim.write_text("#!/bin/sh")
+        helper = tools / "lib/build-reservation.py"
+        helper.write_text("# selected helper")
+        selected = self.root / "dotnet-link"
+        selected.symlink_to(shim)
+        with patch.dict(os.environ, {}, clear=True), patch.object(pilot.shutil, "which", return_value=str(selected)):
+            self.assertEqual(helper, pilot.flow_reservation_helper())
+        direct = self.root / "sdk/dotnet"
+        with patch.dict(os.environ, {}, clear=True), patch.object(pilot.shutil, "which", return_value=str(direct)):
+            self.assertIsNone(pilot.flow_reservation_helper())
+        with patch.dict(os.environ, {"HONUA_FLOW_RESERVATION_HELPER": str(helper)}, clear=True):
+            self.assertEqual(helper, pilot.flow_reservation_helper())
+
     def test_evaluation_capability_preflight_reports_unsupported_query_before_work(self):
         helper = self.root / "build-reservation.py"
         helper.write_text("# installed helper")

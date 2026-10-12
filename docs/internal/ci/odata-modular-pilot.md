@@ -347,3 +347,10 @@ that capability failure blocks measurements until the Flow parser is reviewed
 and updated. Graph evaluation uses the supported `/verbosity:quiet` spelling.
 Do not bypass shared admission, rename the executable, or manually assert an
 identity receipt to work around this prerequisite.
+
+
+The parser preflight discovers only the selected PATH `dotnet` shim's real
+`lane-bin/../lib/build-reservation.py`, or an explicitly configured
+`HONUA_FLOW_RESERVATION_HELPER`. Other Flow checkouts do not govern the selected
+executor. If an outer recording wrapper hides that shim, configure the helper
+that wrapper actually delegates to; a missing explicit helper fails closed.

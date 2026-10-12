@@ -102,12 +102,30 @@ def normalize(value, root):
     return value.replace(str(root), "$REPO") if isinstance(value, str) else value
 
 
+def flow_reservation_helper():
+    override = os.environ.get("HONUA_FLOW_RESERVATION_HELPER")
+    if override:
+        return Path(override).expanduser().resolve()
+    selected = shutil.which("dotnet")
+    if not selected:
+        return None
+    shim = Path(selected).resolve()
+    # Only the selected lane shim's adjacent library is relevant. A different
+    # checkout installed elsewhere must not govern this executor's arguments.
+    if shim.parent.name != "lane-bin":
+        return None
+    helper = shim.parent.parent / "lib" / "build-reservation.py"
+    return helper if helper.is_file() else None
+
+
 def evaluation_preflight(root, project, configuration, composition, runtime=None, helper=None):
     # The canonical helper's key operation is read-only: it validates argument
     # parsing without acquiring capacity or starting MSBuild.
-    helper = Path(helper or "/home/mike/honua-io/honua-flow-work/tools/lib/build-reservation.py")
-    if not helper.is_file():
+    helper = Path(helper) if helper else flow_reservation_helper()
+    if helper is None:
         return
+    if not helper.is_file():
+        raise ValueError("Configured Flow reservation helper is missing")
     query = ["msbuild", str(root / project), f"-getItem:{ITEMS}", f"-getProperty:{PROPERTIES}",
              *props(configuration, composition, runtime)]
     checked = subprocess.run([sys.executable, str(helper), "key", *query], cwd=root,
