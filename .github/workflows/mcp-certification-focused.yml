@@ -12,6 +12,8 @@ on:
 
 permissions:
   contents: read
+  # The canonical setup restores Honua.Sdk.Admin from github-honua.
+  packages: read
 
 concurrency:
   group: focused-mcp-${{ github.ref }}
