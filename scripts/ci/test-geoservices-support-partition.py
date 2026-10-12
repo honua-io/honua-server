@@ -15,6 +15,8 @@ PARENT = '(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.
 PROJECT = 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj'
 NAMES = ('GeoServices Catalog and ImageServer Support', 'GeoServices ImageServer Rendering and Support')
 CHILDREN = [next(s for s in CONFIG['shards'] if s['name'] == n) for n in NAMES]
+# Rendering was re-based after exhausting 30m on full-matrix run 38182837651 (#5884).
+BUDGETS = {NAMES[0]: (30, 40), NAMES[1]: (43, 53)}
 METHODS = MODULE.selection_pool(MODULE.enumerate_test_classes(), PROJECT)
 EXPECTED = {m for m in METHODS if MODULE._eval(MODULE._FilterParser(PARENT).parse(), m)}
 assert EXPECTED, 'The actual GeoServices source inventory must be present.'
@@ -27,7 +29,7 @@ def check(children):
     assert not sets[0] & sets[1], 'Duplicate method ownership.'
     for s in children:
         assert s['csproj'] == PROJECT
-        assert (s['test_timeout_minutes'], s['timeout_minutes']) == (30, 40)
+        assert (s['test_timeout_minutes'], s['timeout_minutes']) == BUDGETS[s['name']]
     return [len(s) for s in sets]
 
 
@@ -46,4 +48,4 @@ for mutation in ('lost', 'duplicated', 'foreign'):
         pass
     else:
         raise AssertionError(f'{mutation} mutation was accepted')
-print(f'geoservices-support-partition=ok original_methods={len(EXPECTED)} child_methods={counts} negatives=3 budgets=unchanged')
+print(f'geoservices-support-partition=ok original_methods={len(EXPECTED)} child_methods={counts} negatives=3 budgets=pinned')
