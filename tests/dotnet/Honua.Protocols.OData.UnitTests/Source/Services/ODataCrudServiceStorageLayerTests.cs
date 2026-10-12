@@ -13,6 +13,7 @@ using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.OData.Models;
 using Honua.Protocols.OData.Services;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
@@ -78,6 +79,39 @@ public sealed class ODataCrudServiceStorageLayerTests
         result.IsSuccess.Should().BeFalse();
         await reader.Received(1).GetAsync(StorageLayerId, ObjectId, Arg.Any<CancellationToken>());
         await reader.DidNotReceive().GetAsync(RouteLayerId, ObjectId, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task CreateFeatureAsync_UsesAuthorizedFeatureResourceInsteadOfGenericRasterSidecar()
+    {
+        var validator = Substitute.For<IResourceValidator>();
+        validator.ValidateLayerV2Async(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(new MetadataV2Resource
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "raster-sidecar" },
+                Type = MetadataV2ResourceType.RasterDataset
+            }));
+        var featureResource = CreateResource() with
+        {
+            SchemaFields = [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Editable = true }]
+        };
+        var adapter = Substitute.For<IEditParameterAdapter<ODataEditRequest>>();
+        adapter.ConvertAsync(Arg.Any<ODataEditRequest>(), featureResource, Arg.Any<CancellationToken>())
+            .Returns(EditAdapterResult.Failure("Conversion reached the authorized feature resource."));
+        var dependencies = new ODataCrudDependencies(
+            validator, Substitute.For<IFeatureReader>(), Substitute.For<IFeatureWriter>(),
+            Substitute.For<IGeometryService>(), Substitute.For<ICrsRegistry>(), Substitute.For<IETagService>(),
+            new FeatureMutationValidator(Substitute.For<IGeometryValidator>()), adapter,
+            Substitute.For<IEditProcessor>());
+        var service = new ODataCrudService(dependencies, NullLogger<ODataCrudLog>.Instance);
+
+        var result = await service.CreateFeatureAsync(RouteLayerId,
+            new ParsedFeaturePayload { Attributes = new Dictionary<string, object?> { ["name"] = "Canonical City" } },
+            "https://example.test", StorageLayerId, featureResource, CancellationToken.None);
+
+        result.ErrorMessage.Should().Be("Conversion reached the authorized feature resource.");
+        await adapter.Received(1).ConvertAsync(Arg.Any<ODataEditRequest>(), featureResource, Arg.Any<CancellationToken>());
+        await validator.DidNotReceive().ValidateLayerV2Async(Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     private static ODataCrudService CreateService(IFeatureReader reader)

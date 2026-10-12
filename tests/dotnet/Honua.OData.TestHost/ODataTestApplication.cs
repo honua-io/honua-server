@@ -29,12 +29,20 @@ public static class ODataTestApplication
 {
     public static WebApplication Build(string[] args, Action<WebApplicationBuilder>? configure = null)
     {
-        var builder = WebApplication.CreateBuilder(args);
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+        {
+            Args = args,
+            EnvironmentName = Environments.Production
+        });
         configure?.Invoke(builder);
         var connection = builder.Configuration.GetConnectionString("DefaultConnection")
             ?? builder.Configuration["HONUA_ODATA_TEST_CONNECTION_STRING"]
             ?? throw new InvalidOperationException("A provisioned OData test database is required.");
         builder.Configuration["ConnectionStrings:DefaultConnection"] = connection;
+        if (string.IsNullOrWhiteSpace(builder.Configuration["Security:ConnectionEncryption:MasterKey"]))
+        {
+            throw new InvalidOperationException("Security:ConnectionEncryption:MasterKey is required for the production Postgres provider.");
+        }
         builder.Services.AddMemoryCache();
         builder.Services.AddOptions<LimitsOptions>()
             .Bind(builder.Configuration.GetSection(LimitsOptions.SectionName));

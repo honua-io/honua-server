@@ -85,6 +85,46 @@ class ComparisonTests(unittest.TestCase):
         self.assertFalse(pilot.compare(receipts, "unit")["passed"])
 
 
+class AdmissionEvidenceTests(unittest.TestCase):
+    def test_builder_interval_must_be_finite_ordered_and_contained(self):
+        self.assertTrue(pilot.bounded_interval(11, 19, 10, 20))
+        for start, end in ((19, 11), (9, 19), (11, 21), (float("nan"), 19),
+                           (11, float("inf")), (True, 19), ("11", 19), (None, 19)):
+            self.assertFalse(pilot.bounded_interval(start, end, 10, 20))
+
+    def test_builder_numeric_bounds_reject_bool_and_nonfinite_values(self):
+        for value in (True, False, float("nan"), float("inf"), "128", None):
+            self.assertFalse(pilot.finite_between(value, 1, 512))
+        self.assertTrue(pilot.finite_between(128, 1, 512))
+
+    def test_measured_component_rejects_precreated_receipt_before_subprocess(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = Path(directory) / "host.json"
+            receipt.write_text(json.dumps({"bounded": True, "ready": True, "inputKey": "matching"}))
+            args = SimpleNamespace(selection="component", host_receipt=receipt)
+            with patch.object(pilot, "command") as command, patch.object(pilot, "stage") as stage:
+                with self.assertRaisesRegex(ValueError, "managed host lifecycle controller"):
+                    pilot.run(args)
+                command.assert_not_called()
+                stage.assert_not_called()
+
+    def test_component_comparison_cannot_promote_precreated_receipts(self):
+        receipts = ComparisonTests().receipts()
+        for receipt in receipts:
+            receipt["selection"] = "component"
+            receipt["host"] = {"queueWaitSeconds": 0, "clockSkewSeconds": 0}
+        result = pilot.compare(receipts, "component")
+        self.assertFalse(result["passed"])
+        self.assertTrue(any("lifecycle" in issue for issue in result["issues"]))
+
+    def test_component_edit_requires_post_build_host_callback(self):
+        with self.assertRaisesRegex(ValueError, "controller callback"):
+            pilot.validate_scenario("component", "odata-only-edit")
+        pilot.validate_scenario("unit", "odata-only-edit")
+        pilot.validate_scenario("component", "unchanged-incremental")
+
+
 class InputTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -116,6 +156,72 @@ class InputTests(unittest.TestCase):
             return "10.0.100"
         return json.dumps({"Properties": {"TargetFramework": "net10.0", "MSBuildAllProjects": str(self.root / "Directory.Build.props")},
             "Items": {"Compile": [{"FullPath": str(self.source)}], "EmbeddedResource": [{"FullPath": str(self.linked)}]}})
+
+    def test_flow_helper_discovery_follows_selected_shim_not_other_checkout(self):
+        tools = self.root / "flow/tools"
+        (tools / "lane-bin").mkdir(parents=True)
+        (tools / "lib").mkdir()
+        shim = tools / "lane-bin/dotnet"
+        shim.write_text("#!/bin/sh")
+        helper = tools / "lib/build-reservation.py"
+        helper.write_text("# selected helper")
+        selected = self.root / "dotnet-link"
+        selected.symlink_to(shim)
+        with patch.dict(os.environ, {}, clear=True), patch.object(pilot.shutil, "which", return_value=str(selected)):
+            self.assertEqual(helper, pilot.flow_reservation_helper())
+        direct = self.root / "sdk/dotnet"
+        with patch.dict(os.environ, {}, clear=True), patch.object(pilot.shutil, "which", return_value=str(direct)):
+            self.assertIsNone(pilot.flow_reservation_helper())
+        with patch.dict(os.environ, {"HONUA_FLOW_RESERVATION_HELPER": str(helper)}, clear=True):
+            self.assertEqual(helper, pilot.flow_reservation_helper())
+
+    def test_evaluation_capability_preflight_reports_unsupported_query_before_work(self):
+        helper = self.root / "build-reservation.py"
+        helper.write_text("# installed helper")
+        with patch.object(pilot.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, "", "unsupported reservation option: -getItem")) as probe:
+            with self.assertRaisesRegex(ValueError, "No restore or build started"):
+                pilot.evaluation_preflight(self.root, "src/Selected/Selected.csproj", "Release", "full", helper=helper)
+        argv = probe.call_args.args[0]
+        self.assertEqual("key", argv[2])
+        self.assertTrue(any(arg.startswith("-getItem:") for arg in argv))
+
+    def test_image_runtime_properties_are_explicit_and_identity_bound(self):
+        portable = pilot.props("Release", "full")
+        self.assertFalse(any("RuntimeIdentifier" in arg for arg in portable))
+        with patch.object(pilot, "command", self.fake_command):
+            x64 = pilot.evaluated_inputs(self.root, "src/Selected/Selected.csproj", "Release", "full", self.output, runtime="linux-x64")
+            arm = pilot.evaluated_inputs(self.root, "src/Selected/Selected.csproj", "Release", "full", self.output, runtime="linux-arm64")
+        self.assertIn("-p:RuntimeIdentifier=linux-x64", x64["identity"]["buildProperties"])
+        self.assertIn("-p:SelfContained=false", x64["identity"]["buildProperties"])
+        self.assertNotEqual(x64["key"], arm["key"])
+        with self.assertRaisesRegex(ValueError, "only to image"):
+            pilot.plan(self.root, "candidate", "unit", "Release", "full", "", "linux-x64")
+
+    def test_build_only_analyzer_reference_missing_from_restore_graph_fails_closed(self):
+        analyzer = self.root / "src/Honua.Analyzers/Honua.Analyzers.csproj"
+        analyzer.parent.mkdir(parents=True)
+        analyzer.write_text("<Project />")
+        analyzer.with_name("Analyzer.cs").write_text("class BuildOnlyAnalyzer {}")
+        def omitted_analyzer(argv, root):
+            output = self.fake_command(argv, root)
+            if any(arg.startswith("-getItem:") for arg in argv):
+                evaluated = json.loads(output)
+                evaluated["Items"]["ProjectReference"] = [{"FullPath": str(analyzer), "ReferenceOutputAssembly": "false"}]
+                return json.dumps(evaluated)
+            return output
+        with patch.object(pilot, "command", side_effect=omitted_analyzer):
+            with self.assertRaisesRegex(ValueError, "omitted from restore graph.*analyzer closure"):
+                pilot.evaluated_inputs(self.root, "src/Selected/Selected.csproj", "Release", "full", self.output)
+
+    def test_pilot_metadata_controls_are_used_and_part_of_identity(self):
+        from unittest.mock import patch
+        with patch.object(pilot, "command", side_effect=self.fake_command):
+            first = self.identity()
+            for key in ("IncludeSourceRevisionInInformationalVersion", "EnableSourceControlManagerQueries", "EnableSourceLink"):
+                self.assertIn(f"-p:{key}=false", first["identity"]["buildProperties"])
+            with patch.dict(pilot.PILOT_METADATA_PROPERTIES, {"EnableSourceLink": "true"}):
+                changed = self.identity()
+        self.assertNotEqual(first["key"], changed["key"])
 
     def identity(self):
         with patch.object(pilot, "command", self.fake_command):
@@ -164,12 +270,24 @@ class InputTests(unittest.TestCase):
                 pilot.ensure_runtime_only(runtime)
             path.unlink()
 
+    def test_runtime_json_rejects_nested_and_flat_secret_key_fields(self):
+        runtime = self.root / "secret-publish"
+        runtime.mkdir()
+        settings = runtime / "appsettings.json"
+        for key in ("MasterKey", "AdminPassword", "SigningKey", "PrivateKey", "EncryptionKey",
+                    "Security:ConnectionEncryption:MasterKey", "Security__Signing_Key"):
+            settings.write_text(json.dumps({"Security": [{key: "sensitive-value"}]}))
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                pilot.ensure_runtime_only(runtime)
+        settings.write_text(json.dumps({"Security": {"MasterKey": "", "AdminPassword": None, "PublicKey": "public-material"}}))
+        pilot.ensure_runtime_only(runtime)
+
     def test_managed_builder_requires_fresh_matching_bounds_and_reservation(self):
         config = self.root / "builder.json"
         receipt = self.root / "builder-receipt.json"
         config.write_text(json.dumps({"argv": ["managed-builder", "{context}", "{tag}", "{inputKey}", "{receipt}"]}))
         builder = {"schema": "honua.odata-pilot-managed-builder/v1", "inputKey": "key", "image": "tag",
-            "sharedAdmission": True, "boundedBuildKit": True, "reservationId": "owned-job",
+            "platform": "linux/amd64", "sharedAdmission": True, "boundedBuildKit": True, "reservationId": "owned-job",
             "exitCode": 0, "peakJobMemoryBytes": 1000, "startedEpochSeconds": 2, "finishedEpochSeconds": 3,
             "limits": {"memoryMaxBytes": 1024**3, "cpuQuotaPercent": 200, "pidsMax": 128}}
         def fake_stage(name, argv, root, evidence, timeout):
@@ -182,6 +300,11 @@ class InputTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 pilot.managed_builder(config, receipt, self.root, "tag", "pin", "assembly", "key", self.root, self.output, 10)
             receipt.unlink()
+            builder["platform"] = "linux/arm64"
+            with self.assertRaises(ValueError):
+                pilot.managed_builder(config, receipt, self.root, "tag", "pin", "assembly", "key", self.root, self.output, 10)
+            receipt.unlink()
+            builder["platform"] = "linux/amd64"
             builder["sharedAdmission"] = False
             with self.assertRaises(ValueError):
                 pilot.managed_builder(config, receipt, self.root, "tag", "pin", "assembly", "key", self.root, self.output, 10)

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Cryptography;
 using Honua.OData.TestHost;
 using Honua.TestKit;
 using Microsoft.AspNetCore.Builder;
@@ -62,14 +63,15 @@ public sealed class ODataComponentFixture : IAsyncLifetime
                 directory = directory.Parent;
             var seed = Path.Combine(directory?.FullName ?? throw new InvalidOperationException("Canonical OData seed not found."), "tests/seed/odata.yaml");
             _connection = await _postgres.ProvisionODataDatabaseAsync(seed);
-            adminKey = "OData-Pilot-Admin-1a";
+            adminKey = "Aa1!" + Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
             _app = ODataTestApplication.Build([], builder =>
             {
-                builder.WebHost.UseEnvironment("Production").UseTestServer();
+                builder.WebHost.UseTestServer();
                 builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["ConnectionStrings:DefaultConnection"] = _connection,
                     ["HONUA_ADMIN_PASSWORD"] = adminKey,
+                    ["Security:ConnectionEncryption:MasterKey"] = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
                     ["OData:MaxPageSize"] = "2",
                     ["Limits:Edits:MaxPayloadSize"] = "4096"
                 });

@@ -11,7 +11,7 @@ The driver is `scripts/ci/odata-pilot/pilot.py`. Its `plan` operation writes a
 reviewable selection without restoring, evaluating MSBuild, building, testing,
 or invoking Docker. Missing extracted projects are reported as blockers. The
 unit selection names the thirteen unchanged classes moved to the unit assembly;
-its identical filter is applied to the original baseline assembly. Component
+its identical filter is applied to the original baseline assembly. The planned component
 measurements use the same six-contract class in both variants:
 `Honua.Protocols.OData.ComponentTests.ODataContractTests`. The separate minimal
 host isolation class is excluded from cross-host comparison.
@@ -146,22 +146,13 @@ substitute for a paired full-host comparison. Full and minimal hosts must be
 externally provisioned with canonical `odata.yaml`, `OData__MaxPageSize=2`, and
 `Limits__Edits__MaxPayloadSize=4096` before shared contracts run.
 
-`run --selection component` requires `--host-receipt FILE` from that orchestration.
-It must bind the host to the current evaluated `inputKey`, name `mode` as `full`
-for baseline or `minimal` for candidate, provide `bounded: true`, `ready: true`,
-`seedManifest: "odata.yaml"`, `pageLimit: 2`, `editPayloadLimit: 4096`, and measured
-`startupSeconds`. For promotion it also requires measured `queueWaitSeconds: 0`
-and `clockSkewSeconds` ≤0.1. These are external controller evidence, not fields to
-invent by hand. Without a matching orchestration receipt the comparison is
-blocked; a previously running unrelated host cannot qualify.
-
-Build/test elapsed time and separately measured host startup are explicitly
-composed in this mode: the host is already ready before the contract test stage,
-so startup is added rather than silently omitted. The receipt labels this basis.
-This script does not install a host controller or seed infrastructure. Until that
-controller emits trustworthy matching evidence, only unit paired measurements
-are executable independently; ordinary minimal-host component validation remains
-available through its normal dotnet test project.
+`run --selection component` currently fails at preflight before any subprocess
+runs. Component `compare` also fails closed, including for previously produced
+receipts. No installed controller proves live host ownership, freshness, endpoint
+binding or test execution order; a handwritten or precreated receipt is not a
+substitute. Completing that lifecycle implementation is an unfinished slice of
+this pilot. Only unit paired measurements are independently executable today;
+ordinary component validation remains available through its normal test project.
 
 ## Runtime-only image
 
@@ -278,7 +269,7 @@ managed lifecycle receipt.
 
 ### Developer component tests without promotion measurements
 
-After the projects are integrated, run the component project directly through
+Run the component project directly through
 existing admitted .NET execution. Its default mode creates the minimal in-process
 host and provisions canonical seeds with `PostgresFixture`; Docker must already
 be available to that fixture. This does not require a promotion host receipt:
@@ -297,3 +288,89 @@ limits first. The external mode runs the same six shared contracts. Its result
 proves those contracts only; it does not prove measured resource improvements,
 container lifetime containment, or pilot promotion. Candidate-only route
 isolation lives in `ODataHostIsolationTests` and runs only with the minimal host.
+
+
+Component `odata-only-edit` measurement is explicitly blocked. The harness edits
+source before evaluating the graph and compiling; an ordinary `identity` receipt
+and previously started host describe the unedited source and cannot match that
+new input key. A future host-controller callback must receive the edited build
+and its evaluated key before starting the matching runtime. Consequently the
+complete 18-run component comparison cannot currently execute or promote. This
+does not block direct developer component tests or unit measurements.
+
+
+Pilot evaluation, restore, build and publish explicitly use
+`IncludeSourceRevisionInInformationalVersion=false`,
+`EnableSourceControlManagerQueries=false`, and `EnableSourceLink=false` in both
+variants. These exact command properties are included in the artifact identity.
+The installed .NET 10 SDK gates revision assembly metadata, source-control
+initialization, and SourceLink generation on these properties. This controls
+Git-derived metadata for the closure experiment: unrelated commits must not
+silently change compiler outputs while retaining the same input key. Production
+build properties are unchanged. The pilot still rebuilds before execution; it
+does not claim byte-for-byte reproducibility or restore external binary caches.
+
+
+For the Production runtime probe, provide a fresh connection-encryption master
+key through `HONUA_ODATA_PILOT_MASTER_KEY` outside the image (mapped to
+`Security__ConnectionEncryption__MasterKey`). Generate an ephemeral key using the
+existing fixture/bootstrap surface and do not retain it in publish output or
+receipts. Provide a strong, unique `HONUA_ODATA_PILOT_ADMIN_PASSWORD`; Production
+requires at least 12 characters and rejects shipped placeholder passwords. The
+runtime context check rejects nonempty JSON admin passwords, master keys,
+private/signing/encryption keys, and the other recognized credential fields,
+including nested objects and flattened configuration names.
+
+
+Baseline unit comparisons require exactly the same selected cases as candidate,
+including newly added storage-layer regressions. Overlay those tests and any
+corresponding production bug fix onto the baseline so the comparison varies the
+project/reference composition rather than test behavior. A baseline with only
+the original 80 cases cannot be promoted against a candidate with an additional
+regression; exact test identity comparison rejects that mismatch.
+
+## Ownership and cleanup after delivery
+
+Keep the pilot ticket, supervisor session, worker assignments, worktrees, and
+validation receipts in the shared supervisor ledger. A submitted PR remains owned
+until its required checks and review are resolved and its content reaches trunk.
+Keep this pilot on its branch while the preceding delivery PR is still open;
+refresh from trunk and consolidate the earlier OData unit prototype before opening
+the next PR. Do not leave two unit projects claiming the same classes.
+
+After merge, the assigned worker verifies the delivered content on trunk, archives
+test and measurement receipts outside its worktree, and disposes only its recorded
+Postgres databases, containers, and temporary image resources. Remove the worker's
+worktree only after confirming it is clean, fully pushed, and no active reservation
+uses it. Keep shared package caches. Record the delivering PR and trunk SHA, removed
+resource IDs/paths, measured bytes reclaimed, and any retained evidence in the
+ledger cleanup receipt. A failed cleanup stays visible for the supervisor or reaper
+to retry; it is not a successful completion receipt. Unmerged branches and foreign
+worktrees are not cleanup targets.
+
+Image selection defaults to `--runtime linux-x64`; `--runtime linux-arm64` is
+also supported. The image-only RID and `SelfContained=false` are applied
+consistently to restore, graph evaluation, build and publish, and included in the
+artifact identity. Publish remains `--no-build`; there is no second compilation.
+Unit and component commands remain portable and reject `--runtime`.
+The managed-builder argv supports `{platform}` (`linux/amd64` or `linux/arm64`)
+and its receipt must record that same `platform`. The driver independently
+checks the loaded image's Docker OS/architecture before accepting it. This avoids
+packaging all RIDs' native assets or accepting an image built for a different
+architecture; it does not unblock the missing managed builder implementation.
+
+
+On the shared Flow worker, identity/run first use the canonical reservation
+helper's read-only `key` operation to check MSBuild query argument support before
+restore. Older installed parsers reject stock `-getItem:`/`-getProperty:` flags;
+that capability failure blocks measurements until the Flow parser is reviewed
+and updated. Graph evaluation uses the supported `/verbosity:quiet` spelling.
+Do not bypass shared admission, rename the executable, or manually assert an
+identity receipt to work around this prerequisite.
+
+
+The parser preflight discovers only the selected PATH `dotnet` shim's real
+`lane-bin/../lib/build-reservation.py`, or an explicitly configured
+`HONUA_FLOW_RESERVATION_HELPER`. Other Flow checkouts do not govern the selected
+executor. If an outer recording wrapper hides that shim, configure the helper
+that wrapper actually delegates to; a missing explicit helper fails closed.
