@@ -65,12 +65,18 @@ PILOT_METADATA_PROPERTIES = {
 }
 
 
-def props(configuration, composition):
+def props(configuration, composition, runtime=None):
     return [f"-p:Configuration={configuration}", f"-p:HonuaBuildProfile={composition}", "-p:TreatWarningsAsErrors=true", "-p:UseSharedCompilation=false",
-            *[f"-p:{key}={value}" for key, value in PILOT_METADATA_PROPERTIES.items()]]
+            *[f"-p:{key}={value}" for key, value in PILOT_METADATA_PROPERTIES.items()],
+            *([f"-p:RuntimeIdentifier={runtime}", "-p:SelfContained=false"] if runtime else [])]
 
 
-def plan(root, variant, selection, configuration, composition, test_filter):
+def plan(root, variant, selection, configuration, composition, test_filter, runtime=None):
+    if runtime and selection != "image":
+        raise ValueError("--runtime applies only to image selection")
+    runtime = (runtime or "linux-x64") if selection == "image" else None
+    if runtime not in (None, "linux-x64", "linux-arm64"):
+        raise ValueError("Image runtime must be linux-x64 or linux-arm64")
     project = PROJECTS[variant][selection]
     test_filter = test_filter or (UNIT_FILTER if selection == "unit" else COMPONENT_FILTER if selection == "component" else "")
     blockers = [] if (root / project).is_file() else [f"Missing extracted project: {project}"]
@@ -81,9 +87,10 @@ def plan(root, variant, selection, configuration, composition, test_filter):
             "blockers": blockers, "optIn": True, "fullGatesUnchanged": True,
             "entryProjects": [project, "src/Honua.Server/Honua.Server.csproj"] if variant == "baseline" and selection == "component" else [project],
             "externalPrerequisites": ["Orchestrated full/minimal host receipt and external URL/admin key; canonical odata.yaml seeds, page limit2, edit payload4096"] if selection == "component" else ["Managed bounded builder argv and matching fresh shared-admission receipt"] if selection == "image" else [],
-            "commands": [["dotnet", "restore", project, *props(configuration, composition)],
-                         ["dotnet", "build", project, "--no-restore", *props(configuration, composition)],
-                         ["dotnet", "publish" if selection == "image" else "test", project, "--no-build", "--no-restore", *props(configuration, composition)]],
+            "commands": [["dotnet", "restore", project, *props(configuration, composition, runtime)],
+                         ["dotnet", "build", project, "--no-restore", *props(configuration, composition, runtime)],
+                         ["dotnet", "publish" if selection == "image" else "test", project, "--no-build", "--no-restore", *props(configuration, composition, runtime)]],
+            "runtimeIdentifier": runtime, "dockerPlatform": {"linux-x64": "linux/amd64", "linux-arm64": "linux/arm64"}.get(runtime),
             "runtimeImage": runtime_pin(root) if selection == "image" else None}
 
 
@@ -95,7 +102,7 @@ def normalize(value, root):
     return value.replace(str(root), "$REPO") if isinstance(value, str) else value
 
 
-def evaluated_inputs(root, project, configuration, composition, evidence, measure=None):
+def evaluated_inputs(root, project, configuration, composition, evidence, measure=None, runtime=None):
     def invoke(name, argv):
         if measure is None:
             return command(argv, root)
@@ -106,7 +113,7 @@ def evaluated_inputs(root, project, configuration, composition, evidence, measur
     for index, entry in enumerate(entries):
         graph_file = evidence / f"restore-graph-{index}.json"
         invoke(f"evaluate-graph-{index}", ["dotnet", "msbuild", entry, "-t:GenerateRestoreGraphFile", f"-p:RestoreGraphOutputPath={graph_file}",
-                 "-verbosity:quiet", *props(configuration, composition)])
+                 "-verbosity:quiet", *props(configuration, composition, runtime)])
         restored = json.loads(graph_file.read_text())
         graph["projects"].update(restored["projects"])
     projects = sorted(Path(p).resolve() for p in graph["projects"])
@@ -114,7 +121,7 @@ def evaluated_inputs(root, project, configuration, composition, evidence, measur
     evaluations = {}
     for index, path in enumerate(projects):
         raw = invoke(f"evaluate-{index:03d}", ["dotnet", "msbuild", str(path), f"-getItem:{ITEMS}", f"-getProperty:{PROPERTIES}",
-                       *props(configuration, composition)])
+                       *props(configuration, composition, runtime)])
         evaluated = json.loads(raw)
         if evaluated["Properties"].get("TargetFrameworks"):
             raise ValueError(f"Multi-target graph needs explicit per-framework evaluation: {path}")
@@ -164,7 +171,7 @@ def evaluated_inputs(root, project, configuration, composition, evidence, measur
         inputs[key] = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else "MISSING"
     evaluated = normalize({"graph": graph, "evaluations": evaluations}, root)
     identity = {"sdk": command(["dotnet", "--version"], root), "os": platform.system(), "osVersion": platform.release(), "architecture": platform.machine(),
-                "configuration": configuration, "composition": composition, "buildProperties": props(configuration, composition), "evaluatedGraph": evaluated, "inputs": inputs}
+                "configuration": configuration, "composition": composition, "buildProperties": props(configuration, composition, runtime), "evaluatedGraph": evaluated, "inputs": inputs}
     return {"key": digest(identity), "identity": identity, "projectCount": len(projects),
             "compileItemCount": sum(len(e["Items"].get("Compile", [])) for e in evaluations.values()),
             "projects": [str(p.relative_to(root)) for p in projects]}
@@ -373,7 +380,7 @@ def ensure_runtime_only(directory):
                 raise ValueError(f"Embedded credentials prohibited in runtime context: {path.name}")
 
 
-def managed_builder(config_path, receipt_path, context, tag, pin, assembly, input_key, root, evidence, timeout):
+def managed_builder(config_path, receipt_path, context, tag, pin, assembly, input_key, root, evidence, timeout, platform="linux/amd64"):
     config = json.loads(config_path.read_text())
     argv = config.get("argv")
     if not isinstance(argv, list) or not argv or any(not isinstance(value, str) for value in argv):
@@ -381,7 +388,7 @@ def managed_builder(config_path, receipt_path, context, tag, pin, assembly, inpu
     if receipt_path.exists():
         raise ValueError("Builder receipt path must be new")
     substitutions = {"{context}": str(context), "{tag}": tag, "{runtime}": pin, "{assembly}": assembly,
-                     "{inputKey}": input_key, "{receipt}": str(receipt_path)}
+                     "{inputKey}": input_key, "{receipt}": str(receipt_path), "{platform}": platform}
     expanded = []
     for value in argv:
         for key, replacement in substitutions.items():
@@ -392,6 +399,7 @@ def managed_builder(config_path, receipt_path, context, tag, pin, assembly, inpu
     limits = receipt.get("limits", {})
     if (receipt.get("schema") != "honua.odata-pilot-managed-builder/v1"
         or receipt.get("inputKey") != input_key or receipt.get("image") != tag
+        or receipt.get("platform") != platform
         or receipt.get("sharedAdmission") is not True or receipt.get("boundedBuildKit") is not True
         or not receipt.get("reservationId") or receipt.get("exitCode") != 0
         or not isinstance(receipt.get("peakJobMemoryBytes"), int) or isinstance(receipt.get("peakJobMemoryBytes"), bool) or receipt["peakJobMemoryBytes"] <= 0
@@ -416,7 +424,7 @@ def run(args):
     if evidence.exists():
         raise ValueError("Evidence destination must be new; never overwrite a measured run")
     evidence.mkdir(parents=True)
-    planned = plan(root, args.variant, args.selection, args.configuration, args.composition, args.filter)
+    planned = plan(root, args.variant, args.selection, args.configuration, args.composition, args.filter, getattr(args, "runtime", None))
     write(evidence / "plan.json", planned)
     if planned["blockers"]:
         raise ValueError("; ".join(planned["blockers"]))
@@ -426,7 +434,7 @@ def run(args):
         raise ValueError("Component comparison requires orchestrated host receipt and external host URL/admin key for both variants")
     if args.selection == "image" and (not args.builder_json or not args.builder_receipt):
         raise ValueError("Image build requires an explicit managed bounded builder and fresh shared-admission receipt")
-    common = props(args.configuration, args.composition)
+    common = props(args.configuration, args.composition, planned["runtimeIdentifier"])
     stages = []
     receipt = {**planned, "scenario": args.scenario, "pair": args.pair, "qualified": False, "stages": stages,
                "sourceCommit": command(["git", "rev-parse", "HEAD"], root),
@@ -452,7 +460,7 @@ def run(args):
                 result = stage(name, argv, root, evidence, args.timeout)
                 stages.append(result)
                 return result
-            inputs = evaluated_inputs(root, planned["entryProjects"], args.configuration, args.composition, evidence, measure)
+            inputs = evaluated_inputs(root, planned["entryProjects"], args.configuration, args.composition, evidence, measure, planned["runtimeIdentifier"])
             receipt["artifact"] = inputs
             host_build = None
             if args.selection == "component" and args.variant == "baseline":
@@ -477,8 +485,13 @@ def run(args):
                 tag = "honua-odata-pilot:" + receipt["artifact"]["key"][:16]
                 assembly = "Honua.Server" if args.variant == "baseline" else "Honua.OData.TestHost"
                 stages.append(managed_builder(args.builder_json, args.builder_receipt, context, tag, pin, assembly,
-                    receipt["artifact"]["key"], root, evidence, args.timeout))
+                    receipt["artifact"]["key"], root, evidence, args.timeout, planned["dockerPlatform"]))
                 receipt["imageBytes"] = int(command(["docker", "image", "inspect", tag, "--format", "{{.Size}}"], root))
+                inspected_platform = json.loads(command(["docker", "image", "inspect", tag, "--format", "{{json .}}"], root))
+                actual_platform = inspected_platform["Os"] + "/" + inspected_platform["Architecture"]
+                if actual_platform != planned["dockerPlatform"]:
+                    raise ValueError("Built image platform differs from publish runtime")
+                receipt["imagePlatform"] = actual_platform
                 receipt["image"] = tag
                 receipt["tests"] = []
                 receipt["firstTestSeconds"] = None
@@ -623,6 +636,7 @@ def main():
         child.add_argument("--configuration", default="Release")
         child.add_argument("--composition", choices=("full", "no-cloud", "slim"), default="full")
         child.add_argument("--filter", default="")
+        child.add_argument("--runtime", choices=("linux-x64", "linux-arm64"))
         child.add_argument("--output", type=Path, required=True)
         if operation == "run":
             child.add_argument("--scenario", choices=SCENARIOS, required=True)
@@ -639,22 +653,22 @@ def main():
     args = parser.parse_args()
     try:
         if args.operation == "plan":
-            result = plan(args.root.resolve(), args.variant, args.selection, args.configuration, args.composition, args.filter)
+            result = plan(args.root.resolve(), args.variant, args.selection, args.configuration, args.composition, args.filter, getattr(args, "runtime", None))
             write(args.output, result)
             return 0 if not result["blockers"] else 2
         if args.operation == "identity":
             root = args.root.resolve()
-            planned = plan(root, args.variant, args.selection, args.configuration, args.composition, args.filter)
+            planned = plan(root, args.variant, args.selection, args.configuration, args.composition, args.filter, getattr(args, "runtime", None))
             if planned["blockers"]:
                 raise ValueError("; ".join(planned["blockers"]))
             if args.output.exists():
                 raise ValueError("Identity evidence destination must be new")
             args.output.mkdir(parents=True)
             for index, entry in enumerate(planned["entryProjects"]):
-                stage(f"restore-{index}", ["dotnet", "restore", entry, *props(args.configuration, args.composition)], root, args.output, 2400)
+                stage(f"restore-{index}", ["dotnet", "restore", entry, *props(args.configuration, args.composition, planned["runtimeIdentifier"])], root, args.output, 2400)
             def measured(name, argv):
                 return stage(name, argv, root, args.output, 2400)
-            identity = evaluated_inputs(root, planned["entryProjects"], args.configuration, args.composition, args.output, measured)
+            identity = evaluated_inputs(root, planned["entryProjects"], args.configuration, args.composition, args.output, measured, planned["runtimeIdentifier"])
             write(args.output / "artifact.json", identity)
             return 0
         if args.operation == "run":

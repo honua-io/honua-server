@@ -157,6 +157,18 @@ class InputTests(unittest.TestCase):
         return json.dumps({"Properties": {"TargetFramework": "net10.0", "MSBuildAllProjects": str(self.root / "Directory.Build.props")},
             "Items": {"Compile": [{"FullPath": str(self.source)}], "EmbeddedResource": [{"FullPath": str(self.linked)}]}})
 
+    def test_image_runtime_properties_are_explicit_and_identity_bound(self):
+        portable = pilot.props("Release", "full")
+        self.assertFalse(any("RuntimeIdentifier" in arg for arg in portable))
+        with patch.object(pilot, "command", self.fake_command):
+            x64 = pilot.evaluated_inputs(self.root, "src/Selected/Selected.csproj", "Release", "full", self.output, runtime="linux-x64")
+            arm = pilot.evaluated_inputs(self.root, "src/Selected/Selected.csproj", "Release", "full", self.output, runtime="linux-arm64")
+        self.assertIn("-p:RuntimeIdentifier=linux-x64", x64["identity"]["buildProperties"])
+        self.assertIn("-p:SelfContained=false", x64["identity"]["buildProperties"])
+        self.assertNotEqual(x64["key"], arm["key"])
+        with self.assertRaisesRegex(ValueError, "only to image"):
+            pilot.plan(self.root, "candidate", "unit", "Release", "full", "", "linux-x64")
+
     def test_build_only_analyzer_reference_missing_from_restore_graph_fails_closed(self):
         analyzer = self.root / "src/Honua.Analyzers/Honua.Analyzers.csproj"
         analyzer.parent.mkdir(parents=True)
@@ -247,7 +259,7 @@ class InputTests(unittest.TestCase):
         receipt = self.root / "builder-receipt.json"
         config.write_text(json.dumps({"argv": ["managed-builder", "{context}", "{tag}", "{inputKey}", "{receipt}"]}))
         builder = {"schema": "honua.odata-pilot-managed-builder/v1", "inputKey": "key", "image": "tag",
-            "sharedAdmission": True, "boundedBuildKit": True, "reservationId": "owned-job",
+            "platform": "linux/amd64", "sharedAdmission": True, "boundedBuildKit": True, "reservationId": "owned-job",
             "exitCode": 0, "peakJobMemoryBytes": 1000, "startedEpochSeconds": 2, "finishedEpochSeconds": 3,
             "limits": {"memoryMaxBytes": 1024**3, "cpuQuotaPercent": 200, "pidsMax": 128}}
         def fake_stage(name, argv, root, evidence, timeout):
@@ -260,6 +272,11 @@ class InputTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 pilot.managed_builder(config, receipt, self.root, "tag", "pin", "assembly", "key", self.root, self.output, 10)
             receipt.unlink()
+            builder["platform"] = "linux/arm64"
+            with self.assertRaises(ValueError):
+                pilot.managed_builder(config, receipt, self.root, "tag", "pin", "assembly", "key", self.root, self.output, 10)
+            receipt.unlink()
+            builder["platform"] = "linux/amd64"
             builder["sharedAdmission"] = False
             with self.assertRaises(ValueError):
                 pilot.managed_builder(config, receipt, self.root, "tag", "pin", "assembly", "key", self.root, self.output, 10)

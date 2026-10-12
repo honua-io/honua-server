@@ -326,3 +326,15 @@ corresponding production bug fix onto the baseline so the comparison varies the
 project/reference composition rather than test behavior. A baseline with only
 the original 80 cases cannot be promoted against a candidate with an additional
 regression; exact test identity comparison rejects that mismatch.
+
+
+Image selection defaults to `--runtime linux-x64`; `--runtime linux-arm64` is
+also supported. The image-only RID and `SelfContained=false` are applied
+consistently to restore, graph evaluation, build and publish, and included in the
+artifact identity. Publish remains `--no-build`; there is no second compilation.
+Unit and component commands remain portable and reject `--runtime`.
+The managed-builder argv supports `{platform}` (`linux/amd64` or `linux/arm64`)
+and its receipt must record that same `platform`. The driver independently
+checks the loaded image's Docker OS/architecture before accepting it. This avoids
+packaging all RIDs' native assets or accepting an image built for a different
+architecture; it does not unblock the missing managed builder implementation.
