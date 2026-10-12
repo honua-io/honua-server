@@ -13,9 +13,9 @@ using Microsoft.Extensions.Options;
 namespace Honua.Server.Tests.Infrastructure.Security;
 
 /// <summary>
-/// OAuth2 state and PKCE values are random base64url strings. A "--" inside one must not be
-/// read as a SQL comment on the Sharing OAuth2 routes, while the same value stays inspected
-/// on unrelated routes.
+/// Client-owned OAuth2 state and PKCE values are opaque strings. A "--" inside one must not
+/// be read as a SQL comment on the Sharing OAuth2 routes. The broker's generated hex IDs do
+/// not constrain client state, and all three fields stay inspected on unrelated routes.
 /// </summary>
 public sealed class OAuth2OpaqueParameterValidationTests
 {
@@ -31,10 +31,13 @@ public sealed class OAuth2OpaqueParameterValidationTests
         (await InvokeAsync(path, name)).Should().BeTrue();
     }
 
-    [UnitTest]
-    public async Task OtherRoute_StateWithDoubleDash_IsStillInspected()
+    [UnitTheory]
+    [InlineData("state")]
+    [InlineData("code_challenge")]
+    [InlineData("code_verifier")]
+    public async Task OtherRoute_OpaqueOAuthParameterWithDoubleDash_IsStillInspected(string name)
     {
-        (await InvokeAsync("/rest/services/test/FeatureServer/1/query", "state")).Should().BeFalse();
+        (await InvokeAsync("/rest/services/test/FeatureServer/1/query", name)).Should().BeFalse();
     }
 
     private static async Task<bool> InvokeAsync(string path, string name)

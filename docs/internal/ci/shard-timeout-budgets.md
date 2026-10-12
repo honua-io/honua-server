@@ -1239,3 +1239,82 @@ Trunk run [37694901734](https://github.com/honua-io/honua-server/actions/runs/37
 | WFS | 207 | 1 second | 40 / 50 min | 70 / 80 min |
 
 These observations are censored durations, not measured p90 completion times. The bounded increases restore room to obtain a complete run; they do not establish the 70% utilization target. Test selection and every assertion remain enabled, and each outer job retains the required ten-minute overhead. Reassess headroom from the completed branch verification and subsequent timing receipts; persistent growth requires fixture or shard-capacity work rather than unbounded timeout increases.
+
+## ImageServer rendering capacity split (2026-10-12, #5901)
+
+Full run [38182837651](https://github.com/honua-io/honua-server/actions/runs/38182837651/job/114603431264)
+at `01449eaed054a508e1fae691c768c26f0f2f19fb` exhausted the rendering/support
+shard's 30-minute cap after 1,802 seconds, with output eight seconds before
+termination. Its timing receipt records exit 124 and `capacity_exhausted`;
+there is no completed TRX. That duration is a censored lower bound.
+
+The earlier completed [PR run 38151610217](https://github.com/honua-io/honua-server/actions/runs/38151610217)
+at `a8a3a2a953e6e548dd2c42d915533e6f0a35ccf5` passed 236 cases in 1,456 seconds.
+Its summed class spans / whole span ratio is 1.003, so the workload is nearly
+serial. `ImageServerRawPixelExportTests`, `ImageServerWmtsReprojectionTests`
+and `ImageServerMosaicIntegrationTests` move intact to a new
+`GeoServices ImageServer Raster Rendering` shard. The original
+`GeoServices ImageServer Rendering and Support` keeps every other class.
+
+| Partition | Baseline cases | Measured baseline interval union | Unchanged test / job caps |
+|---|---:|---:|---:|
+| Raster Rendering | 73 | 803.7s | 30 / 40 min |
+| Rendering and Support | 163 | 615.1s | 30 / 40 min |
+
+These are estimates from one completed historical run, not a p90 or fresh
+post-split verdict. Fixed job setup and newer tests still need actual hosted
+measurement. The original failed run remains failed. The
+[bounded evidence record](imageserver-shard-capacity-20261012.json) retains
+source/run/artifact identities, file hashes, class intervals and timing data.
+
+Focused run [38189708636](https://github.com/honua-io/honua-server/actions/runs/38189708636)
+at `a6fafdae55fea39460bcddea12a3d3efdde8a2d7` ran each child twice.
+Raster Rendering passed 73/73 cases in 651 and 460 seconds (63.83% and 74.44%
+measured headroom). Support passed 169/169 in 526 seconds (70.78% headroom),
+then failed 1 of 169 in 501 seconds: the WorldCRS84Quad pipeline test received
+an image but found no raster-store invocation. That failed iteration has no
+passing capacity verdict. Raw TRX/timing/log hashes and the exact failure are
+retained in the evidence record; a green report-mode workflow badge does not
+replace these test verdicts. The later repair and replay below preserve this
+initial failure unchanged.
+
+Concurrent trunk PR5903 temporarily raised the unsplit support test/job caps
+to 43/53 minutes. This measured whole-class split supersedes that increase and
+restores both children to the original 30/40-minute limits. Its independent
+OAuth validation changes remain present after integration.
+
+Both partitions retain the original test project and every source trigger.
+The existing exact-partition contract now checks all three descendants of the
+older Catalog/support split, including Catalog/Tiles. It rejects missing,
+duplicated and foreign methods and requires unchanged time limits. Current
+source inventory contains 772 methods across these descendants: 174 Catalog,
+563 remaining support and 35 moved rendering methods, before tier selection
+and theory expansion. This source count is distinct from the historical 236
+executed cases. Cold-render assertions remain intact; the WMTS fixture now
+owns its file-backed storage and additionally proves an identical warm request
+returns the same bytes with one total raster-store invocation.
+
+
+The integrated source `345dcc2717a510bbec4c97191609c2b723303202` passed all
+four actual executions in [focused run 38194212994](https://github.com/honua-io/honua-server/actions/runs/38194212994).
+Each TRX has total = executed = passed, no missing or skipped results, and
+each timing receipt records exit 0 without timeout.
+
+| Partition | Actual cases in each iteration | Durations | Observed headroom against 1,800s | Artifact |
+|---|---:|---:|---:|---:|
+| Rendering and Support | 169/169 | 716s / 666s | 60.22% / 63.00% | 11723770731 |
+| Raster Rendering | 73/73 | 590s / 451s | 67.22% / 74.94% | 11723252616 |
+
+Normal [PR Gate 38194157299](https://github.com/honua-io/honua-server/actions/runs/38194157299)
+also passed at that exact source. Raw affected-shard outcomes were Support
+169/169 in 655s, Raster 73/73 in 771s, Catalog 124/124 in 421s, and endpoint
+113/113 in 820s. Independent [fixture run 38193435664](https://github.com/honua-io/honua-server/actions/runs/38193435664)
+passed 8/8 WMTS tests twice in 35s per iteration, including the cold-render and
+warm-cache controls. The bounded JSON receipt retains every artifact identity
+and SHA-256 of the raw timing, TRX and log files, including the original failed
+attempt.
+
+These observations justified [PR5904](https://github.com/honua-io/honua-server/pull/5904),
+merged as `19e2007ce1381c337aadae646b2856acb51b5aaf`. Two fresh observations
+per child establish observed headroom, not a p90 distribution. Full-server
+qualification and immutable release-image admission remain separate gates.
