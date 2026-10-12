@@ -4,7 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.TestKit;
+using Honua.Protocols.SensorThings.ComponentTests;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
@@ -14,11 +14,10 @@ namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 /// The synthetic datastream (id=1) seeded by migration 059 makes the read path
 /// demoable end-to-end: list/by-id, navigation, and $filter/$orderby/$expand.
 /// </summary>
-[Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
 public sealed class SensorThingsReadEndpointsTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly SensorThingsComponentFixture _fixture = new();
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
 

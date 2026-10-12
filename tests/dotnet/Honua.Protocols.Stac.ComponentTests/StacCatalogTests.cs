@@ -4,7 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.TestKit;
+using Honua.Protocols.Stac.ComponentTests;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 
@@ -14,12 +14,11 @@ namespace Honua.Server.Tests.Features.Protocols.Stac;
 /// Integration tests for the STAC Catalog (root) endpoint.
 /// </summary>
 [Protocol(TestProtocols.Stac)]
-[Collection("Database")]
-public sealed class StacCatalogTests : IClassFixture<WebAppFixture>
+public sealed class StacCatalogTests : IClassFixture<StacComponentFixture>
 {
-    private readonly WebAppFixture _fixture;
+    private readonly StacComponentFixture _fixture;
 
-    public StacCatalogTests(WebAppFixture fixture) => _fixture = fixture;
+    public StacCatalogTests(StacComponentFixture fixture) => _fixture = fixture;
 
     [IntegrationTest]
     [Operation(Operations.StacCatalog)]
