@@ -17,9 +17,9 @@ namespace Honua.Db.Oracle.Tests;
 
 /// <summary>
 /// Real-database lane for the Oracle provider (honua-server#2947). Every other test in this
-/// project (<see cref="OracleFeatureQueryBuilderTests"/>, <see cref="OracleFeatureDataAccessWkbTests"/>,
-/// <see cref="OracleProviderResolutionTests"/>, <see cref="OracleSpatialGuardTests"/>,
-/// <see cref="OracleSpatialMetadataProbeSqlTests"/>) exercises the provider against
+/// project (<c>OracleFeatureQueryBuilderTests</c>, <c>OracleFeatureDataAccessWkbTests</c>,
+/// <c>OracleProviderResolutionTests</c>, <c>OracleSpatialGuardTests</c>,
+/// <c>OracleSpatialMetadataProbeSqlTests</c>) exercises the provider against
 /// <c>ThrowingConnectionFactory</c>/<c>RecordingConnectionFactory</c> fakes — none of it has
 /// ever executed against a real Oracle instance. This class does, via Testcontainers
 /// <c>gvenzl/oracle-free</c>, proving connection open, query build+execute, and WKB/geometry
