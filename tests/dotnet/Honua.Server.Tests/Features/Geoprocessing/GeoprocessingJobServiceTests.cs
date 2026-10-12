@@ -3972,6 +3972,56 @@ public sealed class GeoprocessingJobServiceTests
             Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SubmitJob_AcknowledgementStallsAfterEnqueue_ReturnsQueuedJobWithoutRollback(bool timeout)
+    {
+        // Full CI 38207655715: an 8 s runner stall landed between the queue accepting the delivery
+        // and its durable acknowledgement. The acknowledgement's own budget expired, the submit
+        // rolled the record back and answered 408, and a worker then claimed the queued job anyway.
+        ExecutionJobRecord? createdJob = null;
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                createdJob = call.Arg<ExecutionJobRecord>();
+                return true;
+            });
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => createdJob == null ? null : createdJob with { Version = 1 });
+        Exception stall = timeout
+            ? new TimeoutException("Timeout awaiting response")
+            : new OperationCanceledException();
+        _jobStore.TrySetAsync(
+                Arg.Is<ExecutionJobRecord>(j => j.CurrentPhase == "Queued for execution"),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>())
+            .Returns<Task<bool>>(_ => throw stall);
+
+        var validPlan = CreateValidPlan();
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-ack-stall",
+            IntentId = validPlan.IntentId,
+            Steps = validPlan.Steps
+        };
+
+        var job = await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        job.Status.Should().Be(ExecutionJobStatus.Queued);
+        job.OperationId.Should().Be(createdJob!.OperationId);
+        await _jobQueue.Received(1).EnqueueAsync(
+            createdJob.OperationId, Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>());
+        await _jobStore.DidNotReceive().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Failed),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
     [UnitTest]
     [Operation(Operations.Delete)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
