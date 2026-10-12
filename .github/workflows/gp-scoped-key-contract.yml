@@ -10,6 +10,7 @@ on:
       - 'src/Honua.Hosting/Features/Authentication/ApiKeyAuthenticationHandler.cs'
       - 'src/Honua.Protocols.GeoServices/GPServer/**'
       - 'tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/**'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Eval/EvalHarnessTests.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/**'
       - '.github/workflows/gp-scoped-key-contract.yml'
 
@@ -32,9 +33,10 @@ jobs:
         include:
           - name: shared-authorization
             project: tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
-            filter: FullyQualifiedName~GeoprocessingJobServiceTests|FullyQualifiedName~GeoprocessingJobTerminalServiceTests|FullyQualifiedName~AdminApiKeyEndpointsTests
+            filter: FullyQualifiedName~GeoprocessingJobServiceTests|FullyQualifiedName~GeoprocessingJobTerminalServiceTests|FullyQualifiedName~AdminApiKeyEndpointsTests|FullyQualifiedName~Probes_WhenHttpClientTimeoutFires_ReportFailedWithoutAbortingScenario
             source: tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GeoprocessingJobServiceTests.GPServerKeys.cs
             prefix: GPScopedKey_
+            additional_method: Probes_WhenHttpClientTimeoutFires_ReportFailedWithoutAbortingScenario
           - name: soap-durable-runtime
             project: tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj
             filter: FullyQualifiedName~SoapScopedAPIKey_|FullyQualifiedName~SoapArea_WithProductionExecutor|FullyQualifiedName~SoapJobOperation_OtherCaller|FullyQualifiedName~GetJobStatus_ProgressHint|FullyQualifiedName~GetJobStatus_InvalidProgressHint|FullyQualifiedName~OtherJobOperations_ProgressHint
@@ -78,6 +80,7 @@ jobs:
         env:
           CASE_SOURCE: ${{ matrix.source }}
           CASE_PREFIX: ${{ matrix.prefix }}
+          ADDITIONAL_METHOD: ${{ matrix.additional_method }}
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -99,6 +102,9 @@ jobs:
               expected = len(re.findall(r'\[InlineData\(', attributes)) if kind.endswith('Theory') else 1
               actual = [result for result in results if methods[result.attrib['testId']] == method]
               assert len(actual) == expected and all(result.attrib['outcome'] == 'Passed' for result in actual), (method, expected, actual)
+          if os.environ['ADDITIONAL_METHOD']:
+              additional = [result for result in results if methods[result.attrib['testId']] == os.environ['ADDITIONAL_METHOD']]
+              assert len(additional) == 1 and additional[0].attrib['outcome'] == 'Passed', additional
           print('Actual GP key contract counters:', counters)
           print('Every new canonical method and all source-derived theory cases executed and passed.')
           PY
