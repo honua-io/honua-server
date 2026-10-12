@@ -1301,7 +1301,29 @@ public sealed class GeocodingEndpointTests
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var locatorProperties = payload.RootElement.GetProperty("locatorProperties");
 
-        Assert.Equal("37", locatorProperties.GetProperty("SuggestedBatchSize").GetString());
+        Assert.Equal(37, locatorProperties.GetProperty("SuggestedBatchSize").GetInt32());
+        Assert.Equal(37, locatorProperties.GetProperty("MaxBatchSize").GetInt32());
+        Assert.DoesNotContain("BatchGeocode", payload.RootElement.GetProperty("capabilities").GetString()!);
+        var fields = payload.RootElement.GetProperty("candidateFields").EnumerateArray().ToDictionary(field => field.GetProperty("name").GetString()!);
+        Assert.Equal("esriFieldTypeGeometry", fields["Shape"].GetProperty("type").GetString());
+        Assert.Equal("esriFieldTypeDouble", fields["Score"].GetProperty("type").GetString());
+        Assert.False(fields.ContainsKey("Status"));
+        Assert.False(fields["Shape"].TryGetProperty("length", out _));
+        Assert.False(fields["Score"].TryGetProperty("length", out _));
+        using var candidatesResponse = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&f=json");
+        Assert.Equal(HttpStatusCode.OK, candidatesResponse.StatusCode);
+        using var candidates = JsonDocument.Parse(await candidatesResponse.Content.ReadAsStringAsync());
+        var candidate = candidates.RootElement.GetProperty("candidates")[0];
+        Assert.Equal(JsonValueKind.Number, candidate.GetProperty("score").ValueKind);
+        Assert.Equal(JsonValueKind.Number, candidate.GetProperty("location").GetProperty("x").ValueKind);
+        Assert.Equal(JsonValueKind.Number, candidate.GetProperty("location").GetProperty("y").ValueKind);
+        var tooMany = JsonSerializer.Serialize(Enumerable.Repeat(
+            new { attributes = new { SingleLine = "1600 Pennsylvania Ave NW" } }, 38));
+        using var rejectedBatch = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/geocodeAddresses?records=" + Uri.EscapeDataString(tooMany) + "&f=json");
+        await rejectedBatch.AssertGeoServicesErrorAsync(400);
+
         Assert.Equal("true", locatorProperties.GetProperty("SupportsBatch").GetString());
     }
 
@@ -1335,11 +1357,11 @@ public sealed class GeocodingEndpointTests
         using var largePayload = JsonDocument.Parse(await largeResponse.Content.ReadAsStringAsync());
 
         Assert.Equal(
-            "10",
-            smallPayload.RootElement.GetProperty("locatorProperties").GetProperty("SuggestedBatchSize").GetString());
+            10,
+            smallPayload.RootElement.GetProperty("locatorProperties").GetProperty("SuggestedBatchSize").GetInt32());
         Assert.Equal(
-            "250",
-            largePayload.RootElement.GetProperty("locatorProperties").GetProperty("SuggestedBatchSize").GetString());
+            250,
+            largePayload.RootElement.GetProperty("locatorProperties").GetProperty("SuggestedBatchSize").GetInt32());
     }
 
     // #2147: when the active provider does not support batch, SuggestedBatchSize is ABSENT rather
@@ -1363,6 +1385,7 @@ public sealed class GeocodingEndpointTests
         var locatorProperties = payload.RootElement.GetProperty("locatorProperties");
 
         Assert.False(locatorProperties.TryGetProperty("SuggestedBatchSize", out _));
+        Assert.False(locatorProperties.TryGetProperty("MaxBatchSize", out _));
         Assert.Equal("false", locatorProperties.GetProperty("SupportsBatch").GetString());
         Assert.DoesNotContain("BatchGeocode", payload.RootElement.GetProperty("capabilities").GetString()!, StringComparison.Ordinal);
     }

@@ -18,7 +18,7 @@ internal static class GeocodeServerCapabilities
 
     public static string Format(GeocodeProviderCapabilities capabilities)
     {
-        var availableCapabilities = new List<string>(capacity: 4);
+        var availableCapabilities = new List<string>(capacity: 3);
         if (capabilities.SupportsForwardGeocode)
         {
             availableCapabilities.Add("Geocode");
@@ -34,11 +34,8 @@ internal static class GeocodeServerCapabilities
             availableCapabilities.Add("Suggest");
         }
 
-        if (capabilities.SupportsBatch)
-        {
-            availableCapabilities.Add("BatchGeocode");
-        }
-
+        // Batch support is described by locatorProperties, not an undocumented
+        // capability token. Esri's batch-capable services use these three tokens.
         return string.Join(',', availableCapabilities);
     }
 }
