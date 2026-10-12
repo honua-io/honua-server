@@ -88,12 +88,17 @@ internal sealed partial class ODataCrudService
         string baseUrl,
         IFeatureReader reader,
         int storageLayerId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        MetadataV2Resource? resolvedResource = null)
     {
         try
         {
-            // Verify layer exists via the V2 graph snapshot.
-            var layerResult = await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+            // HTTP callers already resolved and authorized the OData publication. Keep
+            // that exact resource: a generic integer lookup can select a raster sidecar
+            // sharing this layer index and lose the feature schema and access decision.
+            var layerResult = resolvedResource is not null
+                ? ResourceValidationResult.Success(resolvedResource)
+                : await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
             if (!layerResult.IsValid)
             {
                 return CreateLayerErrorResult<Dictionary<string, object?>>(layerResult, layerId);
@@ -151,12 +156,17 @@ internal sealed partial class ODataCrudService
         ParsedFeaturePayload payload,
         string baseUrl,
         int storageLayerId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        MetadataV2Resource? resolvedResource = null)
     {
         try
         {
-            // Verify layer exists via the V2 graph snapshot.
-            var layerResult = await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+            // HTTP callers already resolved and authorized the OData publication. Keep
+            // that exact resource: a generic integer lookup can select a raster sidecar
+            // sharing this layer index and lose the feature schema and access decision.
+            var layerResult = resolvedResource is not null
+                ? ResourceValidationResult.Success(resolvedResource)
+                : await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
             if (!layerResult.IsValid)
             {
                 return CreateLayerErrorResult<Dictionary<string, object?>>(layerResult, layerId);
@@ -260,12 +270,17 @@ internal sealed partial class ODataCrudService
         string? ifNoneMatch,
         int storageLayerId,
         bool replace = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        MetadataV2Resource? resolvedResource = null)
     {
         try
         {
-            // Verify layer exists via the V2 graph snapshot.
-            var layerResult = await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+            // HTTP callers already resolved and authorized the OData publication. Keep
+            // that exact resource: a generic integer lookup can select a raster sidecar
+            // sharing this layer index and lose the feature schema and access decision.
+            var layerResult = resolvedResource is not null
+                ? ResourceValidationResult.Success(resolvedResource)
+                : await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
             if (!layerResult.IsValid)
             {
                 return CreateLayerErrorResult<Dictionary<string, object?>>(layerResult, layerId);
@@ -456,12 +471,17 @@ internal sealed partial class ODataCrudService
         string? ifMatch,
         string? ifNoneMatch,
         int storageLayerId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        MetadataV2Resource? resolvedResource = null)
     {
         try
         {
-            // Verify layer exists via the V2 graph snapshot.
-            var layerResult = await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+            // HTTP callers already resolved and authorized the OData publication. Keep
+            // that exact resource: a generic integer lookup can select a raster sidecar
+            // sharing this layer index and lose the feature schema and access decision.
+            var layerResult = resolvedResource is not null
+                ? ResourceValidationResult.Success(resolvedResource)
+                : await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
             if (!layerResult.IsValid)
             {
                 return CreateLayerErrorResult<object>(layerResult, layerId);
