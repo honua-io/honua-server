@@ -1277,6 +1277,11 @@ passing capacity verdict. Raw TRX/timing/log hashes and the exact failure are
 retained in the evidence record; a green report-mode workflow badge does not
 replace these test verdicts. The merge hold remains pending repair and replay.
 
+Concurrent trunk PR5903 temporarily raised the unsplit support test/job caps
+to 43/53 minutes. This measured whole-class split supersedes that increase and
+restores both children to the original 30/40-minute limits. Its independent
+OAuth validation changes remain present after integration.
+
 Both partitions retain the original test project and every source trigger.
 The existing exact-partition contract now checks all three descendants of the
 older Catalog/support split, including Catalog/Tiles. It rejects missing,

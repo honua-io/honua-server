@@ -521,6 +521,15 @@ public sealed record StudioContentItemPointers
     /// </summary>
     [JsonIgnore]
     public string? TenantId { get; init; }
+
+    /// <summary>
+    /// True when a publication of this item owns a Studio route. False only when the item's
+    /// pointers resolved through a native family bridge (honua-server#5825). An item that
+    /// still lives in the inner Studio store keeps the default, even if a bridge is registered
+    /// for its family. Server-side only.
+    /// </summary>
+    [JsonIgnore]
+    public bool GovernsStudioRoutes { get; init; } = true;
 }
 
 /// <summary>
@@ -565,16 +574,28 @@ public sealed record StudioPublicationRequest
     public required DateTimeOffset CreatedAt { get; init; }
 
     /// <summary>
+    /// True when this publication owns its Studio route and may advertise
+    /// <see cref="PublicationUrl"/>. A request whose item resolved through a native family
+    /// bridge sets this false (honua-server#5825). Defaults to true so a request read back
+    /// from the Studio store still advertises its route. Server-side only.
+    /// </summary>
+    [JsonIgnore]
+    public bool GovernsStudioRoutes { get; init; } = true;
+
+    /// <summary>
     /// Final publication URL (honua-server#5788): the root-relative published-route URL that
     /// serves the item's Active version, the same value as the <c>activeUrl</c> the publication
-    /// operation handle reports. Present only once the request is accepted (Active) and names a
-    /// route; absent while pending and on a rejected request. Derived from the persisted status
-    /// and intent route, so it is never stored and never read back on deserialization.
+    /// operation handle reports. Present only once the request is accepted (Active), names a
+    /// route, and <see cref="GovernsStudioRoutes"/> is true. Absent while pending, on a rejected
+    /// request, and when the publication resolved through a native family store. Derived, so it
+    /// is never stored and never read back on deserialization.
     /// </summary>
     [JsonPropertyName("publicationUrl")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? PublicationUrl
-        => Status == StudioPublicationRequestStatus.Accepted && !string.IsNullOrWhiteSpace(Intent?.Route)
+        => GovernsStudioRoutes
+            && Status == StudioPublicationRequestStatus.Accepted
+            && !string.IsNullOrWhiteSpace(Intent?.Route)
             ? StudioPublishedRoutes.BuildActiveUrl(Intent.Route)
             : null;
 }

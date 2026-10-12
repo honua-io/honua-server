@@ -288,6 +288,63 @@ public sealed class StudioDraftOperationRuntimeTests
         validation.ErrorKind.Should().BeNull();
         validation.ApprovalPlan.Should().NotBeNull();
         (await store.GetPointersAsync(owner.ItemId))!.PublishedVersionId.Should().Be(owner.VersionId);
+
+        var handle = await executor.SubmitAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, PublicationPayload(bridged)),
+            Context("bridged-publication"));
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        handle.ResourceIds.Should().NotContainKey("activeUrl");
+        handle.ResourceIds.Should().NotContainKey("route");
+        handle.ResourceIds.Should().ContainKey("publicationId");
+        (await lifecycle.GetActivePublicationRequestByRouteAsync("/studio/parcels"))!
+            .ItemId.Should().Be(owner.ItemId);
+    }
+
+    // honua-server#5825: a Form saved in the inner store before the bridge existed still owns
+    // Studio routes. The pre-policy check must reject it, or an approval deployment returns
+    // 202 and actuation then fails inside the inner store.
+    [UnitTest]
+    public async Task PublicationRequestValidation_InnerItemOfBridgedFamily_RejectsAsConflict()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var unbridged = BuildLifecycle(store);
+        var legacyDraft = await unbridged.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "legacy-form",
+            WorkspaceId = "studio",
+            OwnerId = "studio-author",
+            ActorId = "studio-author",
+            Envelope = PublicationEnvelope("1=1") with
+            {
+                Family = StudioPackageFamily.Form,
+                Format = "studio_form_package.v1",
+            },
+        });
+        var legacy = await unbridged.SaveDraftAsVersionAsync(legacyDraft.DraftId, "saved before the form bridge", "studio-author");
+        legacy.Should().NotBeNull();
+
+        var lifecycle = BuildLifecycle(store, new StudioFamilyPersistenceBridgeCatalog(
+            [new SingleItemFamilyBridge(StudioPackageFamily.Form)]));
+        var executor = PublicationExecutor(lifecycle);
+        var owner = await SaveFirstVersionAsync(lifecycle);
+        await lifecycle.CreatePublicationRequestAsync(
+            owner.ItemId,
+            owner.VersionId,
+            expectedCurrentVersionId: owner.VersionId,
+            intent: null,
+            warningAcknowledgement: null,
+            actorId: "studio-author");
+
+        var validation = await executor.ValidateAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, PublicationPayload(legacy!)));
+
+        validation.IsValid.Should().BeFalse();
+        validation.Status.Should().Be("invalid");
+        validation.ErrorKind.Should().Be("conflict");
+        validation.ApprovalPlan.Should().BeNull();
+        validation.Messages.Should().ContainSingle()
+            .Which.Should().Be("Route '/studio/parcels' is already claimed by another Studio publication.");
+        (await store.GetPointersAsync(legacy.ItemId))!.PublishedVersionId.Should().BeNull();
     }
 
     [UnitTest]

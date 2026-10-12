@@ -115,6 +115,8 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
         var idpQuery = QueryHelpers.ParseQuery(idpRedirect.Query);
         var combinedState = idpQuery["state"].ToString();
         combinedState.Should().NotBeNullOrWhiteSpace();
+        combinedState.Should().MatchRegex("^[0-9a-f]{64}\\.[0-9a-f]{64}$",
+            "both 256-bit values must survive the unchanged callback input scanner");
 
         // 2. callback: the mock IdP returns to Honua with a code + the combined state.
         //    The broker exchanges the IdP code (stub returns a signed id_token),
@@ -207,10 +209,12 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
         QueryHelpers.ParseQuery(location.Query)["error"].ToString().Should().Be("invalid_request");
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("reject")]
+    [InlineData("wrong-issuer")]
     [Operation(Operations.Security)]
     [Endpoint("GET /sharing/rest/oauth2/callback")]
-    public async Task Callback_IdpExchangeFailure_RedirectsAccessDeniedToClient()
+    public async Task Callback_IdpExchangeFailure_RedirectsAccessDeniedToClient(string idpCode)
     {
         using var client = _fixture.CreateClient(allowAutoRedirect: false);
         var authorizeUrl = QueryHelpers.AddQueryString("/sharing/rest/oauth2/authorize", new Dictionary<string, string?>
@@ -230,7 +234,7 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
         var callbackUrl = QueryHelpers.AddQueryString("/sharing/rest/oauth2/callback", new Dictionary<string, string?>
         {
             ["state"] = combinedState,
-            ["code"] = "reject",
+            ["code"] = idpCode,
         });
 
         using var callbackResponse = await client.GetAsync(callbackUrl);
@@ -282,7 +286,79 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
         query.ContainsKey("code").Should().BeFalse();
     }
 
-    private static string CreateIdToken()
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/oauth2/callback")]
+    public async Task Callback_MismatchedState_RefusesWithoutClientRedirect()
+    {
+        using var client = _fixture.CreateClient(allowAutoRedirect: false);
+        var state = await BeginAuthorizationAsync(client);
+        var changedState = (state[0] == '0' ? "1" : "0") + state[1..];
+
+        using var response = await client.GetAsync(QueryHelpers.AddQueryString(
+            "/sharing/rest/oauth2/callback",
+            new Dictionary<string, string?> { ["state"] = changedState, ["code"] = "mock-idp-authorization-code" }));
+
+        await response.AssertGeoServicesErrorAsync(400);
+        response.Headers.Location.Should().BeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/oauth2/callback")]
+    public async Task Callback_IdpError_ReplayedStateRefusesWithoutClientRedirect()
+    {
+        using var client = _fixture.CreateClient(allowAutoRedirect: false);
+        var state = await BeginAuthorizationAsync(client);
+        var callbackUrl = QueryHelpers.AddQueryString("/sharing/rest/oauth2/callback",
+            new Dictionary<string, string?> { ["state"] = state, ["error"] = "access_denied" });
+
+        using var firstResponse = await client.GetAsync(callbackUrl);
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        using var replayResponse = await client.GetAsync(callbackUrl);
+
+        await replayResponse.AssertGeoServicesErrorAsync(400);
+        replayResponse.Headers.Location.Should().BeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/oauth2/callback")]
+    public async Task Callback_SqlCommentState_IsStillRejectedByInputScanner()
+    {
+        using var client = _fixture.CreateClient(allowAutoRedirect: false);
+        using var response = await client.GetAsync(QueryHelpers.AddQueryString(
+            "/sharing/rest/oauth2/callback",
+            new Dictionary<string, string?> { ["state"] = "opaque--state.0123456789abcdef", ["error"] = "access_denied" }));
+
+        await response.AssertGeoServicesErrorAsync(400);
+        response.Headers.Location.Should().BeNull();
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        body.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString())
+            .Should().Contain("SQL injection attempt detected in query parameter 'state'");
+    }
+
+    private static async Task<string> BeginAuthorizationAsync(HttpClient client)
+    {
+        var url = QueryHelpers.AddQueryString("/sharing/rest/oauth2/authorize", new Dictionary<string, string?>
+        {
+            ["response_type"] = "code",
+            ["client_id"] = ClientId,
+            ["redirect_uri"] = RedirectUri,
+            ["state"] = "client-state-xyz",
+            ["code_challenge"] = "abc",
+            ["code_challenge_method"] = "S256",
+        });
+        using var response = await client.GetAsync(url);
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location.Should().NotBeNull();
+        var state = QueryHelpers.ParseQuery(response.Headers.Location!.Query)["state"].ToString();
+        state.Should().MatchRegex("^[0-9a-f]{64}\\.[0-9a-f]{64}$");
+        return state;
+    }
+
+    private static string CreateIdToken(string issuer = IdpAuthority)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(IdpSigningKey));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -297,7 +373,7 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
         };
 
         var token = new JwtSecurityToken(
-            issuer: IdpAuthority,
+            issuer: issuer,
             audience: IdpClientId,
             claims: claims,
             expires: DateTime.UtcNow.AddMinutes(10),
@@ -341,7 +417,9 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
                 var tokenResponse = JsonSerializer.Serialize(new
                 {
                     access_token = "mock-idp-access-token",
-                    id_token = CreateIdToken(),
+                    id_token = CreateIdToken(form.Contains("code=wrong-issuer", StringComparison.Ordinal)
+                        ? "https://untrusted-idp.test"
+                        : IdpAuthority),
                     token_type = "Bearer",
                     expires_in = 600,
                 });

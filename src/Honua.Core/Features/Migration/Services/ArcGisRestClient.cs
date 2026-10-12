@@ -296,8 +296,9 @@ internal sealed partial class ArcGisRestClient
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
         var query = new FeatureServerQueryParams
         {
-            Where = string.IsNullOrWhiteSpace(whereClause) ? "1=1" : whereClause,
-            ReturnExtentOnly = true
+            // QueryExtentAsync supplies the extent flag. Setting it here as well sends
+            // duplicate parameters, which source services reject instead of returning an extent.
+            Where = string.IsNullOrWhiteSpace(whereClause) ? "1=1" : whereClause
         };
 
         var extent = await ExecuteSourceRequestAsync(
