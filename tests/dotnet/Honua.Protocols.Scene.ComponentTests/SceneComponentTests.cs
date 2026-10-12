@@ -10,6 +10,8 @@ using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
 using Honua.Protocols.Scene;
 using Honua.TestKit.Hosting;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,10 +20,11 @@ using Xunit;
 namespace Honua.Protocols.Scene.ComponentTests;
 
 /// <summary>Production scene serving without a database or unrelated protocols.</summary>
-[Trait("Tier", "Integration")]
+[Protocol(ProtocolNames.Scene)]
 public sealed class SceneComponentTests
 {
-    [Fact]
+    [IntegrationTest]
+    [Endpoint("GET /scenes/{sceneId}/{*assetPath}")]
     public async Task PublicAsset_ConditionalAndRangeRequests_PreserveWireContract()
     {
         await using var host = await StartAsync();
@@ -41,7 +44,8 @@ public sealed class SceneComponentTests
         (await partial.Content.ReadAsByteArrayAsync()).Should().HaveCount(8);
     }
 
-    [Fact]
+    [IntegrationTest]
+    [Endpoint("GET /scenes/{sceneId}/tileset.json")]
     public async Task ProtectedAsset_DeniesAnonymous_AndUnrelatedRoutesAreAbsent()
     {
         await using var host = await StartAsync();
@@ -54,14 +58,14 @@ public sealed class SceneComponentTests
         }
     }
 
-    private static Task<ComponentTestHost> StartAsync()
+    internal static Task<ComponentTestHost> StartAsync(string? assetRoot = null, string sceneId = "public")
     {
-        var root = FindFixture();
+        var root = assetRoot ?? FindFixture();
         return ComponentTestHost.StartAsync(builder =>
         {
             builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Scenes:Datasets:0:Id"] = "public",
+                ["Scenes:Datasets:0:Id"] = sceneId,
                 ["Scenes:Datasets:0:Name"] = "Public fixture",
                 ["Scenes:Datasets:0:AssetRoot"] = root,
                 ["Scenes:Datasets:1:Id"] = "protected",
@@ -71,8 +75,10 @@ public sealed class SceneComponentTests
             });
             builder.Services.AddScene(builder.Configuration);
             builder.Services.Configure<OutputCacheTtlOptions>(_ => { });
+            OutputCachingRegistration.ConfigureOutputCaching(builder.Services, builder.Configuration);
             // The supported production disabled licensing mode, without test entitlements.
             builder.Services.AddSingleton<DisabledLicenseService>();
+            builder.Services.AddSingleton<ILicenseEntitlementService>(sp => sp.GetRequiredService<DisabledLicenseService>());
             builder.Services.AddSingleton<ILicenseStatusProvider>(sp => sp.GetRequiredService<DisabledLicenseService>());
             builder.Services.AddApiKeyAuthentication(builder.Configuration);
             builder.Services.Configure<ApiKeyAuthenticationOptions>(options =>
@@ -86,6 +92,8 @@ public sealed class SceneComponentTests
             app.UseMiddleware<AuthenticationResponseCacheMiddleware>();
             app.UseAuthentication();
             app.UseAuthorization();
+            app.UseWhen(context => OutputCachingRegistration.HasLiveOutputCacheEntitlements(context.RequestServices, false),
+                static entitled => entitled.UseOutputCache());
             app.MapSceneEndpoints();
         });
     }

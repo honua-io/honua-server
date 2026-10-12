@@ -6,6 +6,9 @@
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
     <PackageReference Include="FluentAssertions" />
     <ProjectReference Include="../../../src/Honua.Protocols.Scene/Honua.Protocols.Scene.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
     <ProjectReference Include="../Honua.TestKit.Hosting/Honua.TestKit.Hosting.csproj" />
+    <Compile Include="../Honua.Protocols.Scene.Tests/Source/SceneFixturePaths.cs" Link="Shared/SceneFixturePaths.cs" />
+    <Compile Include="../Honua.Protocols.Scene.Tests/Source/SceneFixtureRoots.cs" Link="Shared/SceneFixtureRoots.cs" />
   </ItemGroup>
 </Project>
