@@ -473,9 +473,10 @@ internal sealed class StudioCreatePublicationRequestExecutor(
         // payload intent falls back to the version envelope, matching actuation.
         var effectiveIntent = payload.Intent ?? version.Envelope.PublicationIntent;
         var effectiveRoute = effectiveIntent?.Route;
-        // honua-server#5825: same skip as StudioPackageLifecycleService. A null capability
-        // payload (a test substitute) keeps the check.
-        if (!string.IsNullOrWhiteSpace(effectiveRoute) && FamilyGovernsStudioRoutes(version.Envelope.Family))
+        // honua-server#5825: same skip as StudioPackageLifecycleService. The pointer flag is
+        // false only when this item resolved through a bridge. A substitute that returns
+        // ordinary pointers keeps the default and still rejects a second native owner.
+        if (!string.IsNullOrWhiteSpace(effectiveRoute) && pointers.GovernsStudioRoutes)
         {
             var governing = await Lifecycle.GetActivePublicationRequestByRouteAsync(
                 effectiveRoute,
@@ -514,13 +515,6 @@ internal sealed class StudioCreatePublicationRequestExecutor(
 
     // Mirrors StudioPackageLifecycleService.FormatValidationFailure so a pre-policy rejection
     // and the actuation-path ArgumentException carry byte-identical diagnostics.
-    private bool FamilyGovernsStudioRoutes(StudioPackageFamily family)
-    {
-        var capabilities = Lifecycle.GetCapabilities();
-        var descriptor = capabilities?.Families.FirstOrDefault(candidate => candidate.Family == family);
-        return descriptor?.GovernsStudioRoutes ?? true;
-    }
-
     private static string FormatIntentValidationFailure(IReadOnlyList<StudioValidationDiagnostic> diagnostics)
         => diagnostics.Count == 0
             ? "Publication intent is invalid."
@@ -568,12 +562,14 @@ internal sealed class StudioCreatePublicationRequestExecutor(
             ["itemId"] = result.ItemId.ToString("D"),
             ["versionId"] = result.VersionId.ToString("D"),
         };
-        if (!string.IsNullOrWhiteSpace(result.Intent?.Route))
+        if (result.PublicationUrl is { } activeUrl && result.Intent?.Route is { } route)
         {
             // honua-server#4907: the intent route is the governed key, not a path the host
             // serves; activeUrl names the resolver that serves the item's Active version there.
-            resources["route"] = result.Intent.Route;
-            resources["activeUrl"] = StudioPublishedRoutes.BuildActiveUrl(result.Intent.Route);
+            // honua-server#5825: a bridge-resolved publication does not govern that resolver,
+            // so PublicationUrl (and therefore these resource ids) stay absent.
+            resources["route"] = route;
+            resources["activeUrl"] = activeUrl;
         }
 
         return resources;
