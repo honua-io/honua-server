@@ -26,6 +26,10 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
     private const string TemporaryPrefix = TemporaryFolder + "/";
     private const string AuthorizedPrincipalMetadataKey = "honua-temp-principal";
     private const string CloudTemporaryFileKeyPrefix = "honua:temporary-files:cloud:";
+    // Distinct from CloudTemporaryFileKeyPrefix. Aspire's Redis IDistributedCache stores that
+    // key as a hash; a raw SET of the same key replaces the hash and the next cache read
+    // fails with WRONGTYPE (#5826).
+    private const string CloudTemporarySharedTokenKeyPrefix = "honua:temporary-files:shared:";
     private const string CloudTemporaryQuotaLeaseKey = "honua:temporary-files:cloud:quota";
     private const long MetadataOverheadBytes = 1024;
     private static readonly TimeSpan CloudTemporaryQuotaLeaseDuration = TimeSpan.FromSeconds(30);
@@ -137,10 +141,21 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
                     uploadResult.File.FileId,
                     cancellationToken).ConfigureAwait(false);
 
-                var publicToken = await CreatePublicTokenAsync(
-                    uploadResult.File.FileId,
-                    expiration ?? _options.DefaultExpiration,
-                    processingToken).ConfigureAwait(false);
+                string publicToken;
+                try
+                {
+                    publicToken = await CreatePublicTokenAsync(
+                        uploadResult.File.FileId,
+                        expiration ?? _options.DefaultExpiration,
+                        processingToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    // The object is already in shared storage and counts against the temporary
+                    // quota. A token that was not published must not leave that object behind.
+                    await DeleteOrphanedCloudObjectAsync(uploadResult.File.FileId).ConfigureAwait(false);
+                    throw;
+                }
                 var publicFileName = $"{publicToken}{extension}";
                 var baseUrl = _options.BaseUrl ?? "/temp";
                 var publicUrl = $"{baseUrl.TrimEnd('/')}/{publicFileName}";
@@ -212,6 +227,23 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
 
         CloudBackedTemporaryFileLog.SharedWriteRejectedRedisLost(_logger);
         throw CreateCloudQuotaLeaseLostException();
+    }
+
+    private async Task DeleteOrphanedCloudObjectAsync(string cloudObjectKey)
+    {
+        try
+        {
+            _ = await _cloudFileStorage.DeleteAsync(cloudObjectKey, CancellationToken.None).ConfigureAwait(false);
+        }
+        // Intentional: publication already failed. Cleanup must not replace that exception.
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            CloudBackedTemporaryFileLog.SharedStorageCleanupAfterLeaseLossFailed(
+                _logger,
+                cloudObjectKey,
+                _cloudFileStorage.Provider,
+                ex);
+        }
     }
 
     private TemporaryStorageLimitExceededException CreateCloudQuotaLeaseLostException()
@@ -486,20 +518,34 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         TimeSpan retention,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         // The public id is opaque. It is never a client-decodable object key.
         var publicToken = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
-        RememberIssuedCloudToken(publicToken, cloudObjectKey, retention);
 
-        if (_distributedCache != null)
+        // A configured multiplexer that is down must not publish a URL only this process
+        // can resolve. Cloud storage already required Redis for the quota lease.
+        if (_redis is not { IsConnected: true })
         {
-            await _distributedCache.SetStringAsync(
-                GetCloudTemporaryFileCacheKey(publicToken),
-                cloudObjectKey,
-                new DistributedCacheEntryOptions
-                {
-                    AbsoluteExpirationRelativeToNow = retention
-                },
-                cancellationToken).ConfigureAwait(false);
+            CloudBackedTemporaryFileLog.SharedWriteRejectedRedisUnavailable(_logger);
+            throw new TemporaryStorageLimitExceededException(
+                "Temporary file coordination is currently unavailable. Please retry shortly.",
+                _options.StorageFullRetryAfterSeconds);
+        }
+
+        var published = await _redis.GetDatabase().StringSetAsync(
+            GetSharedCloudTokenKey(publicToken),
+            cloudObjectKey,
+            retention,
+            false,
+            When.Always,
+            CommandFlags.None).ConfigureAwait(false);
+        if (!published)
+        {
+            CloudBackedTemporaryFileLog.SharedWriteRejectedRedisUnavailable(_logger);
+            throw new TemporaryStorageLimitExceededException(
+                "Temporary file coordination is currently unavailable. Please retry shortly.",
+                _options.StorageFullRetryAfterSeconds);
         }
 
         return publicToken;
@@ -507,6 +553,26 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
 
     private async Task<string?> ResolveCloudObjectKeyAsync(string publicToken, CancellationToken cancellationToken)
     {
+        // Connected Redis is the only mapping that every replica can see. A process-local
+        // cache entry must not keep the issuer serving a token the other replicas already miss.
+        if (_redis is { IsConnected: true })
+        {
+            var shared = await _redis.GetDatabase().StringGetAsync(
+                GetSharedCloudTokenKey(publicToken)).ConfigureAwait(false);
+            if (!shared.IsNullOrEmpty &&
+                TryAcceptIssuedObjectKey(shared.ToString(), out var fromRedis))
+            {
+                return fromRedis;
+            }
+
+            return null;
+        }
+
+        if (_redis != null)
+        {
+            return null;
+        }
+
         if (_distributedCache != null)
         {
             var cachedObjectKey = await _distributedCache.GetStringAsync(
@@ -530,23 +596,6 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         }
 
         return null;
-    }
-
-    private void RememberIssuedCloudToken(string publicToken, string cloudObjectKey, TimeSpan retention)
-    {
-        var now = DateTimeOffset.UtcNow;
-        if (_issuedCloudTokens.Count > 256)
-        {
-            foreach (var entry in _issuedCloudTokens)
-            {
-                if (entry.Value.ExpiresAt <= now)
-                {
-                    _issuedCloudTokens.TryRemove(entry.Key, out _);
-                }
-            }
-        }
-
-        _issuedCloudTokens[publicToken] = new IssuedCloudToken(cloudObjectKey, now.Add(retention));
     }
 
     private static bool TryAcceptIssuedObjectKey(string? objectKey, out string accepted)
@@ -602,17 +651,31 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         }
     }
 
-    private Task DeletePublicTokenAsync(string publicToken, CancellationToken cancellationToken)
+    private async Task DeletePublicTokenAsync(string publicToken, CancellationToken cancellationToken)
     {
         _issuedCloudTokens.TryRemove(publicToken, out _);
-        return _distributedCache == null
-            ? Task.CompletedTask
-            : _distributedCache.RemoveAsync(GetCloudTemporaryFileCacheKey(publicToken), cancellationToken);
+        if (_distributedCache != null)
+        {
+            await _distributedCache.RemoveAsync(
+                GetCloudTemporaryFileCacheKey(publicToken),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        if (_redis is { IsConnected: true })
+        {
+            await _redis.GetDatabase().KeyDeleteAsync(
+                GetSharedCloudTokenKey(publicToken)).ConfigureAwait(false);
+        }
     }
 
     private static string GetCloudTemporaryFileCacheKey(string publicToken)
     {
         return CloudTemporaryFileKeyPrefix + publicToken;
+    }
+
+    private static string GetSharedCloudTokenKey(string publicToken)
+    {
+        return CloudTemporarySharedTokenKeyPrefix + publicToken;
     }
 
     private readonly record struct IssuedCloudToken(string ObjectKey, DateTimeOffset ExpiresAt);
