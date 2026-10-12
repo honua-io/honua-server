@@ -13,13 +13,13 @@ namespace Honua.TestKit.Attributes;
 /// Unit tests run fastest and should comprise ~20% of test suite.
 /// Tier=Fast — included in the PR gate. See ADR-0037.
 /// </summary>
-[TraitDiscoverer("Honua.TestKit.Attributes.UnitTestDiscoverer", "Honua.TestKit")]
+[TraitDiscoverer("Honua.TestKit.Attributes.UnitTestDiscoverer", "Honua.TestKit.Abstractions")]
 public sealed class UnitTestAttribute : FactAttribute, ITraitAttribute
 {
 }
 
 /// <summary>Marks a parameterized test as unit-tier while retaining xUnit theory discovery.</summary>
-[TraitDiscoverer("Honua.TestKit.Attributes.UnitTestDiscoverer", "Honua.TestKit")]
+[TraitDiscoverer("Honua.TestKit.Attributes.UnitTestDiscoverer", "Honua.TestKit.Abstractions")]
 public sealed class UnitTheoryAttribute : TheoryAttribute, ITraitAttribute
 {
 }

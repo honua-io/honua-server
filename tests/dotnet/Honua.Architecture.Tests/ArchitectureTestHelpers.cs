@@ -65,6 +65,7 @@ internal static class ArchitectureTestHelpers
         {
             "Honua.Server.Tests.dll",
             "Honua.Protocols.*.Tests.dll",
+            "Honua.Protocols.*.UnitTests.dll",
             "Honua.Ai.Tests.dll",
             "Honua.Worker.Gdal.Tests.dll",
             // honua-server#2947: provider-http-smoke suite. Named Honua.ProviderSmoke.Tests

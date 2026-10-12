@@ -19,6 +19,11 @@
     {
       "artifact_suffix": "odata",
       "csproj": "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj",
+      "proof_filter": "FullyQualifiedName~ODataQueryHandlerTests"
+    },
+    {
+      "artifact_suffix": "odata-units",
+      "csproj": "tests/dotnet/Honua.Protocols.OData.UnitTests/Honua.Protocols.OData.UnitTests.csproj",
       "proof_filter": "FullyQualifiedName~ODataCrsUtilitiesTests"
     },
     {
