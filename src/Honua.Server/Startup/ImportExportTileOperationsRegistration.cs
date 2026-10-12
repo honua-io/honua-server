@@ -230,6 +230,7 @@ internal static class ImportExportTileOperationsRegistration
             services.TryAddSingleton<ITileCacheJobService, TileCacheJobService>();
         }
 
+        Honua.Server.Features.Import.DurableImportServiceCollectionExtensions.AddDurableBackgroundImports(services);
         return services;
     }
 }

@@ -28,6 +28,13 @@ public static class ReadinessReasonCodes
     /// </summary>
     public const string DatabaseStartupDegraded = "database-startup-degraded";
 
+    /// <summary>
+    /// The host started in degraded mode because the database schema is behind this binary (a
+    /// required numbered migration is not applied yet, for example a cold start before the migration
+    /// task ran) and is re-checking in the background until the migrations land (honua-server#5916).
+    /// </summary>
+    public const string SchemaFloor = "schema-floor";
+
     /// <summary>The database is unavailable.</summary>
     public const string DatabaseUnavailable = "database-unavailable";
 
