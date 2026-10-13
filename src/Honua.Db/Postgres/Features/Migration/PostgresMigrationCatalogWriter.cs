@@ -235,7 +235,8 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
         await using (var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false))
         {
             await using (var createCmd = new NpgsqlCommand(
-                $"CREATE TABLE {targetIdent} (LIKE {sourceIdent} INCLUDING DEFAULTS INCLUDING CONSTRAINTS);",
+                $"CREATE TABLE {targetIdent} (LIKE {sourceIdent} INCLUDING DEFAULTS INCLUDING CONSTRAINTS);"
+                    + ImportTableOwnership.MarkSql(request.TargetSchema, request.TargetTable),
                 connection,
                 transaction))
             {

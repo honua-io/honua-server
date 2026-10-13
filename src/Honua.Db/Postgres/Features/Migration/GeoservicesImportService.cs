@@ -188,6 +188,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         string tableName,
         CancellationToken cancellationToken)
     {
+        await ImportTableOwnership.AssertOwnedAsync(connection, schemaName, tableName, cancellationToken);
         var schema = QuoteIdentifier(schemaName);
         var target = QuoteIdentifier(tableName);
         await using (var swap = connection.CreateCommand())

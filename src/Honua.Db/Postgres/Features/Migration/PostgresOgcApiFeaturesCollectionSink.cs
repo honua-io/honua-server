@@ -102,8 +102,22 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
             """;
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        var physicalTable = target.Table;
+        var existed = await ImportTableOwnership.ExistsAsync(connection, schemaName, physicalTable, cancellationToken).ConfigureAwait(false);
+        if (existed)
+        {
+            await ImportTableOwnership.AssertOwnedAsync(connection, schemaName, physicalTable, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            // A racing creator must fail CREATE, never silently acquire our marker.
+            sql = sql.Replace($"CREATE TABLE IF NOT EXISTS {schema}.{table}", $"CREATE TABLE {schema}.{table}", StringComparison.Ordinal);
+            sql += ImportTableOwnership.MarkSql(schemaName, physicalTable);
+        }
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
         var targetLabel = string.Concat(schemaName, ".", target.Table);
         Log.TargetEnsured(_logger, target.CollectionId, targetLabel, sridLiteral);

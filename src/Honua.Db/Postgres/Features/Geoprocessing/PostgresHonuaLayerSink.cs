@@ -211,16 +211,22 @@ internal sealed partial class PostgresHonuaLayerSink(NpgsqlDataSource dataSource
         string srid,
         CancellationToken cancellationToken)
     {
+        if (await ImportTableOwnership.ExistsAsync(connection, schema, table, cancellationToken).ConfigureAwait(false))
+        {
+            await ImportTableOwnership.AssertOwnedAsync(connection, schema, table, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         var sql = $"""
             CREATE SCHEMA IF NOT EXISTS "{schema}";
-            CREATE TABLE IF NOT EXISTS "{schema}"."{table}" (
+            CREATE TABLE "{schema}"."{table}" (
                 id          BIGSERIAL PRIMARY KEY,
                 "{geometryColumn}" geometry(Geometry, {srid}),
                 attributes  JSONB NOT NULL
             );
             """;
 
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var command = new NpgsqlCommand(sql + ImportTableOwnership.MarkSql(schema, table), connection, transaction);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 

@@ -117,3 +117,30 @@ More help: [troubleshooting](../deploy/troubleshooting.md).
 - [Publish layers](publish-layers.md) — turn the imported table into a live layer.
 - [Import from ArcGIS services](import-from-arcgis-services.md) — import from a live service instead of a file.
 - [Publish rasters](publish-rasters.md) — GeoTIFF and other raster imports use a separate endpoint.
+
+
+## Replacing tables and legacy imports
+
+Imports mark newly created tables with the database comment `honua:import-owned:v1`.
+Replacement and abandoned staging cleanup refuse unmarked tables, including tables
+published from an existing database. The failed job reports `IMPORT_TARGET_NOT_OWNED`;
+file import database failures also carry SQL state `HN409`. Queued requests still
+return their normal job acceptance response; inspect the terminal job outcome.
+
+Tables imported before this ownership marker are **not adopted automatically**.
+A layer catalog entry or an `imported_`/`wfs_` name does not prove that an import
+created a table. Use a new target name, or have the database owner verify the old
+import's provenance and dependencies, take a backup, and explicitly opt in:
+
+```sql
+BEGIN;
+LOCK TABLE honua_data.imported_example IN EXCLUSIVE MODE;
+COMMENT ON TABLE honua_data.imported_example IS 'honua:import-owned:v1';
+COMMIT;
+```
+
+Substitute the verified physical schema and table name. This grants future imports
+permission to replace that table; never apply it to an unrelated customer table.
+Existing table comments must be recorded before this explicit adoption replaces them.
+New imported tables retain the marker through successful staging promotion. WFS
+imports retain the stable `wfs_` prefix for derived target names.
