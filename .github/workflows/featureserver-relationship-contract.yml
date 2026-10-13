@@ -1,0 +1,84 @@
+name: FeatureServer Relationship Contract
+on:
+  pull_request:
+    branches: [trunk]
+    paths:
+      - 'src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerServiceRelationships.cs'
+      - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerRelationshipResourceTests.cs'
+      - '.github/workflows/featureserver-relationship-contract.yml'
+permissions:
+  contents: read
+  packages: read
+concurrency:
+  group: featureserver-relationships-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  relationships:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      TESTCONTAINERS_RYUK_DISABLED: false
+      TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ''
+      HONUA_TEST_CONFIGURATION: Release
+      HONUA_TEST_DB_URL: 'Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=ci-${{ github.run_id }}-${{ github.run_attempt }}'
+    services:
+      postgres:
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-dotnet-ci
+        with:
+          nuget-cache-read-only: 'true'
+      - name: Run actual relationship HTTP regressions
+        run: |
+          dotnet test tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj \
+            --configuration Release -m:1 \
+            --filter 'FullyQualifiedName~FeatureServerRelationshipResourceTests' \
+            --logger 'trx;LogFileName=relationships.trx' --results-directory relationship-results
+      - name: Require every source case to execute and pass
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import xml.etree.ElementTree as ET
+          source = Path('tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerRelationshipResourceTests.cs').read_text()
+          cases = {}
+          for attrs, method in re.findall(r'((?:\s*\[[^\n]+\]\s*)+)public async Task (\w+)\(', source):
+              if '[IntegrationTest]' in attrs or '[IntegrationTheory]' in attrs:
+                  cases[method] = max(1, attrs.count('[InlineData('))
+          assert cases and cases['Relationships_ReciprocalDirectionalNames_PreservesBothLabels'] == 2
+          root = ET.parse('relationship-results/relationships.trx').getroot()
+          ns = {'t': 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010'}
+          counts = root.find('t:ResultSummary/t:Counters', ns).attrib
+          expected = sum(cases.values())
+          assert counts['total'] == counts['executed'] == counts['passed'] == str(expected), counts
+          assert counts['failed'] == counts['notExecuted'] == '0', counts
+          methods = {test.attrib['id']: test.find('t:TestMethod', ns).attrib['name']
+                     for test in root.findall('t:TestDefinitions/t:UnitTest', ns)}
+          results = root.findall('t:Results/t:UnitTestResult', ns)
+          for method, count in cases.items():
+              actual = [r for r in results if methods[r.attrib['testId']] == method]
+              assert len(actual) == count and all(r.attrib['outcome'] == 'Passed' for r in actual), (method, actual)
+          print(f'Actual relationship HTTP contract: {expected} executed and passed; every source case verified.')
+          PY
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: featureserver-relationship-results
+          path: relationship-results/
+          if-no-files-found: error
