@@ -817,10 +817,10 @@
       "category": "Editing",
       "edition": "Pro",
       "status": null,
-      "entryCount": 19,
-      "provingTestCount": 86,
+      "entryCount": 20,
+      "provingTestCount": 92,
       "maturity": {
-        "experimental": 19
+        "experimental": 20
       },
       "noSurface": null,
       "cite": [],

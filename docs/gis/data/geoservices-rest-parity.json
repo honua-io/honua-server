@@ -3974,6 +3974,24 @@
       "operations": {
         "implemented": [
           {
+            "name": "Alter version; delete version",
+            "status": "implemented",
+            "esriPaths": [
+              "/VersionManagementServer/delete",
+              "/VersionManagementServer/versions/{versionGuid}/alter",
+              "/VersionManagementServer/versions/{versionGuid}/delete"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/VersionManagementServer/delete",
+              "POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/alter",
+              "POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/delete"
+            ],
+            "capabilityMaturity": [
+              "experimental"
+            ],
+            "notes": "Alter updates name/access/description; delete removes the version and returns 409 rather than deleting mid-reconcile/post. Both are owner-or-admin gated. The returned moment is wall-clock time, not a branch generation. The service-level delete route resolves an owner-qualified versionName, or an unqualified name only under the authenticated owner, inside the served service; DEFAULT, malformed or ambiguous names and non-owner deletion remain rejected. It delegates to the same transactional GUID delete and overlay cascade; the stateless read/edit session limitation still applies."
+          },
+          {
             "name": "List versions; version info",
             "status": "implemented",
             "esriPaths": [
@@ -3992,22 +4010,6 @@
               "experimental"
             ],
             "notes": "Lists and resolves real versions from the version manager, filtered by the access policy (private versions are visible to owner/admin only). versionInfos (GET or POST) lists DEFAULT first, and version info (GET or POST) answers DEFAULT at its fixed GUID; the Honua-named versions route omits DEFAULT. A non-visible version returns 404 rather than 403, so existence is not leaked; an invalid GUID returns 400. Providers without versioning return an empty list rather than an error."
-          },
-          {
-            "name": "Alter version; delete version",
-            "status": "implemented",
-            "esriPaths": [
-              "/VersionManagementServer/versions/{versionGuid}/alter",
-              "/VersionManagementServer/versions/{versionGuid}/delete"
-            ],
-            "honuaEndpoints": [
-              "POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/alter",
-              "POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/delete"
-            ],
-            "capabilityMaturity": [
-              "experimental"
-            ],
-            "notes": "Alter updates name/access/description; delete removes the version and returns 409 rather than deleting mid-reconcile/post. Both are owner-or-admin gated. The returned moment is wall-clock time, not a branch generation."
           },
           {
             "name": "Reconcile; post; resolveConflicts; inspectConflicts",
