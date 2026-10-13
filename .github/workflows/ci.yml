@@ -1299,6 +1299,14 @@ jobs:
       - name: Create Test Results Directory
         run: mkdir -p ./tests/TestResults
 
+      - name: Restore missing package tooling for verified binaries
+        if: steps.managed-status.outputs.restored == 'true' || steps.shard-cache-materialize.outputs.restored == 'true'
+        timeout-minutes: 10
+        run: >-
+          python3 scripts/ci/managed-test-build.py fallback
+          --projects-file "${RUNNER_TEMP}/shard-projects.json"
+          --restored-file "${RUNNER_TEMP}/shard-projects.json"
+
       - name: Build server test binaries
         id: shard-cache-build
         if: steps.managed-status.outputs.restored != 'true' && steps.shard-cache-materialize.outputs.restored != 'true'

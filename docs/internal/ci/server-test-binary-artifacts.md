@@ -5,9 +5,82 @@ retains neutral Unix plus `linux`/`linux-x64` runtime assets, and removes every
 other RID directory. It preserves PDBs, test data, configuration, and NuGet
 `obj` state so a clean consumer can run `dotnet test --no-build --no-restore`.
 
-This contract does not enable a shared CI producer. Issue #2708 owns that
-orchestration decision after the hosted transfer benchmark in #2722. The
-payload implementation and integrity proof are tracked by #2721.
+The same-run producer/consumer path is described below. The historical v1
+shard cache remains compatible; its original payload work is tracked by #2721.
+
+## Build once, verify in consumers (#5998)
+
+`PR Gate` and full `ci.yml` use an explicit managed build producer. The producer
+restores the exact solution or solution filter it compiles, with Release,
+warnings as errors, analyzers enabled, and shared compilation disabled. The
+selected shard projects are unioned with required gate/foundation projects.
+Full formatting runs independently with its complete restore context.
+
+The producer publishes one pristine artifact per selected test project before
+any test or coverage collector can instrument outputs. Transfers are sequential:
+only one temporary archive is staged at a time. A ten-minute total transfer
+budget bounds outages; remaining projects then use the fallback path. Each consumer downloads only its
+project set, verifies it, and runs its existing tests with `--no-build
+--no-restore`. Coverlet operates on the consumer's private copy. The full
+reflection architecture collector remains required; splitting source guards
+does not remove or defer that coverage.
+
+The same-run v2 contract adds workflow run ID, Linux/x64 platform, configuration,
+canonical build properties, and project-registry digest to the exact checkout
+SHA and SDK identity. The SHA is the checked-out merge commit on pull requests.
+Artifacts are named by producer attempt, so rerunning a failed consumer can use
+the successful producer's original attempt in that same workflow run. Retention
+is one day. No branch-prefix lookup or cross-run artifact search is used; the
+existing v1 exact-head shard cache remains a separate fallback in full CI.
+
+Restore stages and verifies the whole payload before replacing any output root.
+Installation is transactional and rolls back on failure. The strict
+`Honua.Server.Tests` artifact additionally includes and verifies the canonical
+`src/Honua.Server/bin/Release` host output used by the boot/migrations smoke.
+Static assets and runtime dependencies remain part of verification.
+
+Missing, expired, corrupt, oversized, or unavailable artifacts leave a project
+unrestored. The consumer restores/builds the union of missing projects once,
+then runs the unchanged test commands. If binaries are valid but the NuGet
+cache lacks their test tooling, it restores that selected dependency graph
+without compiling the valid projects. A well-formed payload with a conflicting
+identity or malformed producer plan fails the job. Neither case turns missing
+test evidence into success. Advisory-only compilation retains its existing
+consumer-side, non-gating behavior.
+
+Set repository variable `HONUA_MANAGED_TEST_ARTIFACTS=false` to disable the
+same-run transport. Consumers then use the scoped restore/build fallback;
+required tests and review admission still run. This switch does not activate the
+separate `PR_GATE_BUILD_CACHE` or change `HONUA_SERVER_TEST_PREBUILD_CONSUME`.
+NuGet continues to cache dependencies, not internal compiled test outputs.
+
+Planning is read-only and does not invoke dotnet or Docker:
+
+```bash
+python3 scripts/ci/managed-test-build.py projects --lane pr --output /tmp/pr-projects.json
+python3 scripts/ci/managed-test-build.py projects --lane foundation --family server --output /tmp/foundation-projects.json
+scripts/ci/pre-pr-check.sh --dry-run
+```
+
+For quick local architecture feedback, the source-only project builds only its
+abstractions and analyzer dependencies:
+
+```bash
+dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj --configuration Release
+```
+
+Use the existing admitted local CI entry point for builds. Normal, `--fast`, and
+full pre-PR checks still run both architecture suites; `--fast` has not become a
+way to omit the full collector. The moved-class inventory and dependency guards
+prevent source tests from silently regaining runtime references or disappearing
+from required verification.
+
+The transport writes per-project receipts with artifact IDs, source and archive
+hashes, restoration status, and fallback reasons in the runner temporary
+directory, with durable per-project outcomes in the job summary. Existing TRX, shard timing, and required aggregate checks remain the
+execution evidence. The artifact SDK is pinned with a lockfile in
+`.github/actions/managed-test-artifacts`; no NuGet package is published to move
+these outputs.
 
 ## Bounds and integrity
 

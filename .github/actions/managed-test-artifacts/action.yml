@@ -33,10 +33,12 @@ runs:
   using: composite
   steps:
     - name: Install pinned artifact SDK
+      id: sdk
       if: inputs.enabled != 'false'
+      continue-on-error: true
       shell: bash
       working-directory: ${{ github.action_path }}
-      run: npm ci --ignore-scripts --no-audit --no-fund
+      run: timeout 120s npm ci --ignore-scripts --no-audit --no-fund
     - name: Transport verified outputs sequentially
       id: transport
       uses: actions/github-script@v9
@@ -44,7 +46,7 @@ runs:
         HONUA_MANAGED_ACTION_PATH: ${{ github.action_path }}
         HONUA_MANAGED_MODE: ${{ inputs.mode }}
         HONUA_MANAGED_PROJECTS: ${{ inputs.projects-file }}
-        HONUA_MANAGED_ENABLED: ${{ inputs.enabled }}
+        HONUA_MANAGED_ENABLED: ${{ inputs.enabled != 'false' && steps.sdk.outcome == 'success' && 'true' || 'false' }}
         HONUA_MANAGED_ATTEMPT: ${{ inputs.producer-attempt }}
         HONUA_MANAGED_CONFIGURATION: ${{ inputs.configuration }}
         HONUA_MANAGED_PROPERTIES: ${{ inputs.build-properties }}
@@ -59,3 +61,12 @@ runs:
           core.setOutput('restored-projects-file', result.restoredProjectsFile);
           core.setOutput('receipt-file', result.receiptFile);
           core.setOutput('producer-attempt', result.producerAttempt);
+          const {readFile} = await import('node:fs/promises');
+          const receipt = JSON.parse(await readFile(result.receiptFile, 'utf8'));
+          await core.summary.addHeading('Managed test artifacts', 3)
+            .addRaw(`Run ${receipt.workflowRunId}, producer attempt ${receipt.producerAttempt}; checkout ${receipt.sourceSha || 'transport disabled'}.\n`)
+            .addTable([
+              [{data: 'Project', header: true}, {data: 'Status', header: true},
+               {data: 'Artifact ID', header: true}, {data: 'Reason', header: true}],
+              ...receipt.projects.map(p => [p.project, p.status, String(p.artifactId || ''), p.reason || ''])
+            ]).write();

@@ -6,6 +6,7 @@ import io
 import json
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -28,6 +29,8 @@ class ManagedBuildTests(unittest.TestCase):
             target = self.root / p
             target.parent.mkdir(parents=True)
             target.write_text('<Project />')
+            (target.parent / 'obj').mkdir()
+            (target.parent / 'obj/project.assets.json').write_text(json.dumps({'libraries': {}, 'packageFolders': {}}))
         (self.root / '.github').mkdir()
         (self.root / '.github/test-projects.json').write_text(json.dumps({'projects': {p: {} for p in self.literal}}))
         (self.root / 'Honua.sln').write_text('\n'.join(
@@ -76,6 +79,84 @@ class ManagedBuildTests(unittest.TestCase):
         with patch.object(managed.subprocess, 'run') as execute, contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual([], managed.fallback(self.root, [self.a, self.b], [self.b, self.a]))
         execute.assert_not_called()
+
+    def package_assets(self, project, *, exists):
+        cache = self.root / 'nuget'
+        relative = 'adapter/1.0/build/adapter.props'
+        if exists:
+            target = cache / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text('<Project />')
+        assets = {'libraries': {'adapter/1.0': {'type': 'package', 'path': 'adapter/1.0',
+                    'files': ['build/adapter.props']}}, 'packageFolders': {str(cache): {}}}
+        path = self.root / Path(project).parent / 'obj/project.assets.json'
+        path.write_text(json.dumps(assets))
+        return path
+
+    def test_verified_binaries_with_missing_packages_restore_without_build(self):
+        self.package_assets(self.a, exists=False)
+        calls = []
+        def execute(command, **kwargs):
+            selection = next(Path(item) for item in command if str(item).endswith('.slnf'))
+            calls.append((command, json.loads(selection.read_text())))
+        with patch.object(managed.subprocess, 'run', side_effect=execute), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual([], managed.fallback(self.root, [self.a, self.b], [self.a, self.b]))
+        self.assertEqual(1, len(calls))
+        self.assertEqual('bash', calls[0][0][0])
+        self.assertIn('-p:Configuration=Release', calls[0][0])
+        self.assertEqual([self.literal[self.a]], calls[0][1]['solution']['projects'])
+
+    def test_restore_union_includes_cache_miss_but_compile_excludes_verified_binary(self):
+        self.package_assets(self.a, exists=False)
+        calls = []
+        def execute(command, **kwargs):
+            selection = next(Path(item) for item in command if str(item).endswith('.slnf'))
+            calls.append((command, json.loads(selection.read_text())['solution']['projects']))
+        with patch.object(managed.subprocess, 'run', side_effect=execute), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual([self.b], managed.fallback(self.root, [self.a, self.b], [self.a]))
+        self.assertEqual(2, len(calls))
+        self.assertEqual(sorted(self.literal.values()), calls[0][1])
+        self.assertEqual([self.literal[self.b]], calls[1][1])
+        self.assertIn('--no-restore', calls[1][0])
+
+    def test_complete_package_files_need_no_sdk_invocation(self):
+        self.package_assets(self.a, exists=True)
+        with patch.object(managed.subprocess, 'run') as execute, contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual([], managed.fallback(self.root, [self.a], [self.a]))
+        execute.assert_not_called()
+
+    def test_missing_malformed_and_traversing_assets_conservatively_restore(self):
+        assets = self.root / Path(self.a).parent / 'obj/project.assets.json'
+        invalid = [None, 'not-json', '{}', json.dumps({'libraries': [], 'packageFolders': {}})]
+        for value in invalid:
+            if value is None:
+                assets.unlink(missing_ok=True)
+            else:
+                assets.write_text(value)
+            self.assertFalse(managed.package_dependencies_ready(self.root, self.a))
+        for value in ('../escape', '/absolute', 'C:\\escape', 'build/../escape'):
+            path = self.package_assets(self.a, exists=True)
+            data = json.loads(path.read_text())
+            data['libraries']['adapter/1.0']['files'] = [value]
+            path.write_text(json.dumps(data))
+            self.assertFalse(managed.package_dependencies_ready(self.root, self.a))
+        with patch.object(managed.subprocess, 'run') as execute, contextlib.redirect_stdout(io.StringIO()):
+            managed.fallback(self.root, [self.a], [self.a])
+        self.assertEqual(1, execute.call_count)
+        self.assertEqual('bash', execute.call_args.args[0][0])
+
+    def test_restore_failure_never_starts_compilation(self):
+        self.package_assets(self.a, exists=False)
+        filters = []
+        def fail_restore(command, **kwargs):
+            filters.extend(Path(item) for item in command if str(item).endswith('.slnf'))
+            raise subprocess.CalledProcessError(1, command)
+        with patch.object(managed.subprocess, 'run', side_effect=fail_restore) as execute, contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(subprocess.CalledProcessError):
+                managed.fallback(self.root, [self.a, self.b], [self.a])
+        self.assertEqual(1, execute.call_count)
+        self.assertTrue(filters)
+        self.assertTrue(all(not path.exists() for path in filters))
 
     def test_invalid_restore_receipts_fail_before_execution(self):
         for receipt in ([self.b], ['tests/dotnet/Missing/Missing.csproj'], {}, [False]):

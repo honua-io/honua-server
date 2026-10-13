@@ -8,7 +8,9 @@ import sys
 stage, destination, manifest = map(Path, sys.argv[1:4])
 project, configuration = sys.argv[4:6]
 roots = [f"{project}/bin/{configuration}", f"{project}/obj"]
-roots += json.loads(manifest.read_text())["static_web_asset_content_roots"]["payload"]
+metadata = json.loads(manifest.read_text())
+roots += metadata["static_web_asset_content_roots"]["payload"]
+roots += metadata.get("required_dependency_output_roots", [])
 # Nested static roots are already contained in a larger replacement.
 roots = sorted(set(roots), key=lambda value: (len(Path(value).parts), value))
 selected = []

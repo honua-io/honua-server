@@ -5,7 +5,8 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
-from pathlib import Path
+import re
+from pathlib import Path, PurePosixPath
 import subprocess
 import tempfile
 
@@ -18,8 +19,12 @@ PROPERTIES = ['-p:TreatWarningsAsErrors=true', '-p:RunAnalyzers=true', '-p:UseSh
 
 def family_projects(root, family, *, advisory=False):
     operation = 'projects' if advisory else 'build-projects'
-    return subprocess.check_output(['bash', str(root / 'scripts/ci/run-foundation-family.sh'),
-                                    operation, family], cwd=root, text=True).splitlines()
+    projects = subprocess.check_output(['bash', str(root / 'scripts/ci/run-foundation-family.sh'),
+                                        operation, family], cwd=root, text=True).splitlines()
+    if family == 'server':
+        # Fresh projections need all three emitters before either architecture suite.
+        projects.extend([SOURCE, 'tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj'])
+    return sorted(set(projects))
 
 
 def gate_projects(root):
@@ -54,8 +59,53 @@ def validate_projects(root, projects):
 
 def write_filter(root, projects, target):
     # Forward P2P references are traversed by restore and graphBuild.
+    members = {path.replace('\\', '/'): path for path in re.findall(
+        r'^Project\([^\n]+? = "[^"]+", "([^"]+\.csproj)"',
+        (root / 'Honua.sln').read_text(), re.MULTILINE)}
+    normalized = {path.replace('\\', '/') for path in projects}
+    unknown = normalized - members.keys()
+    if unknown:
+        raise ValueError(f'Projects missing from Honua.sln: {sorted(unknown)}')
     target.write_text(json.dumps({'solution': {'path': str(root / 'Honua.sln'),
-                                             'projects': sorted(set(projects))}}, indent=2) + '\n')
+                                             'projects': [members[p] for p in sorted(normalized)]}}, indent=2) + '\n')
+
+
+def package_dependencies_ready(root, project):
+    """A binary receipt does not prove that MSBuild's NuGet imports are available."""
+    assets = root / Path(project).parent / 'obj/project.assets.json'
+    try:
+        data = json.loads(assets.read_text())
+        libraries, folders = data['libraries'], data['packageFolders']
+        if not isinstance(libraries, dict) or not isinstance(folders, dict):
+            return False
+        package_roots = [Path(folder) for folder in folders]
+        if any(not folder.is_absolute() for folder in package_roots):
+            return False
+        for library in libraries.values():
+            if not isinstance(library, dict) or library.get('type') not in {'package', 'project'}:
+                return False
+            if library['type'] != 'package':
+                continue
+            files = library.get('files')
+            package_path = library.get('path')
+            if not isinstance(package_path, str) or not isinstance(files, list) or not files:
+                return False
+            relative_paths = [package_path, *files]
+            for value in relative_paths:
+                if not isinstance(value, str):
+                    return False
+                normalized = value.replace('\\', '/')
+                path = PurePosixPath(normalized)
+                if not normalized or path.is_absolute() or ':' in normalized or any(part in {'.', '..', ''} for part in normalized.split('/')):
+                    return False
+            # A package must be complete in one declared package folder. Mixing
+            # partial copies across folders cannot satisfy generated import paths.
+            if not any(all((folder / package_path / file.replace('\\', '/')).is_file()
+                           for file in files) for folder in package_roots):
+                return False
+        return True
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
 
 
 def fallback(root, projects, restored, *, execute=True):
@@ -64,18 +114,27 @@ def fallback(root, projects, restored, *, execute=True):
     if not set(restored) <= set(requested):
         raise ValueError('Restore receipt contains unrequested projects')
     missing = sorted(set(requested) - set(restored))
-    if not missing:
-        print('All managed-test outputs verified; no restore or compilation needed.')
+    missing_dependencies = [project for project in restored if not package_dependencies_ready(root, project)]
+    restore_projects = sorted(set(missing + missing_dependencies))
+    if not restore_projects:
+        print('All managed-test outputs and package dependencies verified; no restore or compilation needed.')
         return missing
-    print('Scoped artifact fallback: ' + ', '.join(missing), flush=True)
+    print('Scoped dependency restore: ' + ', '.join(restore_projects), flush=True)
+    if missing:
+        print('Scoped artifact compilation fallback: ' + ', '.join(missing), flush=True)
     if execute:
         with tempfile.TemporaryDirectory(prefix='honua-managed-fallback-') as directory:
-            selection = Path(directory) / 'selected.slnf'
-            write_filter(root, missing, selection)
-            subprocess.run(['bash', str(root / 'scripts/ci/dotnet-restore-retry.sh'), str(selection),
+            selection = Path(directory) / 'restore.slnf'
+            write_filter(root, restore_projects, selection)
+            subprocess.run(['bash', str(root / 'scripts/ci/dotnet-restore-retry.sh'), str(selection), '-p:Configuration=Release',
                             *PROPERTIES], cwd=root, check=True)
-            subprocess.run(['dotnet', 'build', str(selection), '--no-restore', '-c', 'Release',
-                            '-graphBuild', *PROPERTIES], cwd=root, check=True)
+            if missing:
+                build_selection = selection
+                if missing != restore_projects:
+                    build_selection = Path(directory) / 'build.slnf'
+                    write_filter(root, missing, build_selection)
+                subprocess.run(['dotnet', 'build', str(build_selection), '--no-restore', '-c', 'Release',
+                                '-graphBuild', *PROPERTIES], cwd=root, check=True)
     return missing
 
 
@@ -104,7 +163,7 @@ def main():
         elif args.lane == 'shard':
             if not args.project:
                 parser.error('--project required')
-            result = [args.project]
+            result = validate_projects(root, [args.project])
         else:
             result = gate_projects(root) if args.lane == 'pr' else []
             if args.lane == 'ci':
@@ -114,11 +173,15 @@ def main():
             if args.matrix_file:
                 matrix = json.loads(args.matrix_file.read_text())
                 if isinstance(matrix, dict):
-                    matrix = matrix.get('matrix_include', matrix.get('include', []))
+                    matrix = matrix.get('matrix_include', matrix.get('include', matrix.get('executionMatrix')))
                 if isinstance(matrix, str):
                     matrix = json.loads(matrix)
-                if not isinstance(matrix, list):
+                if not isinstance(matrix, list) or any(not isinstance(row, dict) for row in matrix):
                     raise ValueError('Invalid shard matrix')
+                if any(not isinstance(row.get('advisory', False), bool) for row in matrix):
+                    raise ValueError('Shard advisory must be a boolean')
+                if any(not isinstance(row.get('shard_name'), str) or not row['shard_name'] for row in matrix):
+                    raise ValueError('Shard name is required')
                 # Advisory-only compilation stays in its original consumer.
                 result.extend(s.get('csproj') or SERVER for s in matrix if not s.get('advisory', False))
             result = validate_projects(root, result)

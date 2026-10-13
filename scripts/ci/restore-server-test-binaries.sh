@@ -74,7 +74,15 @@ registry_sha256=""
 if [[ -n "${workflow_run_id}" ]]; then
   registry_sha256="$(sha256sum "${REGISTRY}" | cut -d' ' -f1)"
 fi
+dependency_roots_json='[]'
+host_output_contract=""
+if [[ "${CONTRACT}" == honua.server-test-binaries.v2 && "${expected_project}" == tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj ]]; then
+  dependency_roots_json="$(jq -nc --arg root "src/Honua.Server/bin/${HONUA_SERVER_TEST_ARTIFACT_CONFIGURATION:-Release}" '[$root]')"
+  host_output_contract="honua.server-boot-output.v1"
+fi
 jq -e \
+  --arg host_output_contract "${host_output_contract}" \
+  --argjson dependency_roots "${dependency_roots_json}" \
   --arg registry_sha256 "${registry_sha256}" \
   --arg workflow_run_id "${workflow_run_id}" \
   --arg build_properties "${build_properties}" \
@@ -84,6 +92,8 @@ jq -e \
   --arg source_sha "${expected_source_sha,,}" \
   --arg dotnet_sdk "${dotnet_sdk}" '
     .contract == $contract and
+    ((.required_dependency_output_roots // []) == $dependency_roots) and
+    (if $host_output_contract != "" then .host_output_contract == $host_output_contract else true end) and
     (if $contract == "honua.server-test-binaries.v2" then
       .build_identity == {workflow_run_id:$workflow_run_id,build_properties:$build_properties,
         configuration:$configuration,os:"Linux",architecture:"x86_64",registry_sha256:$registry_sha256}
@@ -139,6 +149,9 @@ allowed_root_args=(
   --allowed-root "${project_relative_dir}/bin/${configuration}"
   --allowed-root "${project_relative_dir}/obj"
 )
+while IFS= read -r dependency_root; do
+  allowed_root_args+=(--allowed-root "${dependency_root}")
+done < <(jq -r '.required_dependency_output_roots[]?' "${manifest}")
 while IFS= read -r payload_root; do
   allowed_root_args+=(--allowed-root "${payload_root}")
 done < <(jq -r '.static_web_asset_content_roots.payload[]' "${manifest}")
@@ -183,6 +196,45 @@ for pattern in '*.deps.json' '*.runtimeconfig.json'; do
   }
 done
 
+if [[ -n "${host_output_contract}" ]]; then
+  host_output="${stage_root}/src/Honua.Server/bin/${configuration}/net10.0"
+  python3 - "${host_output}" <<'HOSTPY'
+import json
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+for name in ('Honua.Server.dll', 'Honua.Server.pdb', 'Honua.Server.deps.json', 'Honua.Server.runtimeconfig.json'):
+    if not (root / name).is_file():
+        raise ValueError(f'Missing required canonical boot-host output: {name}')
+config = json.loads((root / 'Honua.Server.runtimeconfig.json').read_text())
+if not isinstance(config.get('runtimeOptions'), dict):
+    raise ValueError('Invalid boot-host runtime configuration')
+deps = json.loads((root / 'Honua.Server.deps.json').read_text())
+targets = deps.get('targets')
+if not isinstance(targets, dict) or not targets:
+    raise ValueError('Invalid boot-host dependency manifest')
+for target in targets.values():
+    for library in target.values():
+        for section in ('runtime', 'native', 'resources', 'runtimeTargets'):
+            for asset, metadata in library.get(section, {}).items():
+                if section == 'runtimeTargets' and metadata.get('rid') not in ('linux', 'linux-x64', 'unix'):
+                    continue
+                path = Path(asset)
+                if path.is_absolute() or '..' in path.parts:
+                    raise ValueError(f'Unsafe host dependency path: {asset}')
+                if path.name == '_._':
+                    continue
+                candidates = [root / path, root / path.name]
+                if section == 'resources':
+                    locale = metadata.get('locale')
+                    if not isinstance(locale, str) or '/' in locale or '\\' in locale or locale in ('.', '..'):
+                        raise ValueError(f'Invalid resource locale: {asset}')
+                    candidates = [root / path, root / locale / path.name]
+                if not any(candidate.is_file() for candidate in candidates):
+                    raise ValueError(f'Missing boot-host dependency: {asset}')
+HOSTPY
+fi
+
 # Every static web asset content root the restored host opens must exist, or this
 # shard would silently serve 404 where a building shard serves 200 (#4453). Roots
 # under the packaging repository are checked at the same relative path here.
@@ -208,7 +260,7 @@ while IFS= read -r -d '' swa_manifest; do
     fi
     [[ -d "${root}" ]] || missing_roots+=("${root}")
   done <<<"${roots}"
-done < <(find "${project_dir}/bin/${configuration}" -type f -name '*.staticwebassets.runtime.json' -print0)
+done < <(find "${stage_root}" -type f -name '*.staticwebassets.runtime.json' -print0)
 if (( ${#missing_roots[@]} > 0 )); then
   echo "::error::Restored payload is missing static web asset content roots a local build serves from: ${missing_roots[*]}" >&2
   exit 1

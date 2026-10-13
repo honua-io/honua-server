@@ -277,7 +277,8 @@ GATED = (
     "|| github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'"
 )
 fmt = job("format", "pr-gate")
-gate = job("pr-gate", "affected-shards-select")
+gate = job("pr-gate", "pr-gate-tests")
+consumer = job("pr-gate-tests", "affected-shards-select")
 select = job("affected-shards-select", "affected-shard")
 problems = []
 if text.count(CALL) != 3:
@@ -287,10 +288,20 @@ for label, body in (("format", fmt), ("pr-gate", gate), ("affected-shards-select
         problems.append(f"{label} must classify once, as step id docs-only")
 if fmt.count(GATED) != 3:
     problems.append(f"format must gate Setup .NET, Restore and Format Check on the verdict ({fmt.count(GATED)})")
-if gate.count(GATED) != 13:
-    problems.append(f"pr-gate must gate its thirteen expensive steps on the verdict ({gate.count(GATED)})")
+for name in ("Free disk space", "Setup .NET", "Plan managed test producer", "Lean gate (managed build producer)", "Publish pristine managed test outputs"):
+    block = gate.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
+    if GATED not in block:
+        problems.append(f"producer step {name} must obey docs-only and review verdicts")
+CONSUMER_GATED = GATED.replace("steps.docs-only.outputs.docs_only", "needs.pr-gate.outputs.docs_only")
+SKIP_GATED = GATED.replace("steps.docs-only.outputs.docs_only", "needs.pr-gate.outputs.skip")
+for name in ("Setup .NET", "Plan managed test consumer", "Restore verified managed test outputs", "Build missing managed test outputs", "Lean gate (fast unit and architecture verification)"):
+    block = consumer.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
+    if CONSUMER_GATED not in block and SKIP_GATED not in block:
+        problems.append(f"consumer step {name} must obey inherited docs-only and review verdicts")
+if "needs: pr-gate" not in consumer:
+    problems.append("consumer must depend on admitted producer")
 image_step = "- name: Prepare secondary Testcontainers proof images"
-if image_step not in gate or GATED not in gate.split(image_step, 1)[1].split("- name:", 1)[0]:
+if image_step not in consumer or CONSUMER_GATED not in consumer.split(image_step, 1)[1].split("- name:", 1)[0]:
     problems.append("secondary proof-image preparation must obey the docs-only and exact-head review verdicts")
 order = [
     "- name: Revalidate exact-head review before verification",
