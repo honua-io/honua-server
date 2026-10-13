@@ -107,6 +107,25 @@ honua query default/0 --count
 
 Use the actual service and layer ID from the publish result. The same catalog entry also drives OGC API Features, GeoServices, OData, vector tiles, and the other enabled protocol adapters.
 
+## Large-table publication
+
+Tables above `LayerPublishing:AsyncPublishRowThreshold` (10,000 rows by default)
+return HTTP 202 with a job handle instead of holding the request open for the
+snapshot copy. The response's `data` contains `jobId`, `statusUrl`, `rowsTotal`,
+and `status`. Follow that same-origin relative status URL with the accepting
+tenant's admin credentials. Each poll returns `jobId`, `status`,
+`rowsMaterialized`, `rowsTotal`, `layerId`, and `errorMessage` in `data`.
+`Queued` and `Processing` are pending states; `Completed`, `Failed`, and
+`Cancelled` are terminal. Use the completed `layerId` for subsequent queries.
+Do not treat acceptance as publication completion.
+
+Accepted work uses its own publication budget and survives a disconnected
+request. Small tables retain the HTTP 201 layer response. Lambda needs a
+configured remote durable runner for large tables; without one it returns a
+typed 503 rather than accepting work that cannot finish. See
+[AWS Batch worker configuration](../../operator/geoprocessing-aws-batch.md#large-layer-publishes)
+for the API and worker rollout prerequisites.
+
 ## Troubleshoot
 
 - **401 or 403** — verify the admin key and required connection/layer permissions.

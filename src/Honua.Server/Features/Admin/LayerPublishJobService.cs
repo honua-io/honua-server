@@ -36,7 +36,7 @@ internal sealed record LayerPublishAdmission(
 /// Accepts a layer publish. At or under the row threshold the publish runs to completion on the
 /// publication budget, not on <see cref="CancellationToken"/> from the request. Above the threshold
 /// it becomes a pollable job on the shared execution-job queue, or an in-process task when that
-/// queue is absent. A frozen host is refused.
+/// queue is absent. A frozen host requires a remote durable worker.
 /// </summary>
 internal interface ILayerPublishJobs
 {
@@ -62,7 +62,8 @@ internal sealed partial class LayerPublishJobService(
     ILogger<LayerPublishJobService> logger,
     ISchemaContext? schemaContext = null,
     IExecutionJobStore? jobStore = null,
-    IJobQueue? jobQueue = null) : ILayerPublishJobs
+    IJobQueue? jobQueue = null,
+    IEnumerable<IBatchComputeBackend>? backends = null) : ILayerPublishJobs
 {
     private static readonly TimeSpan DispatchTimeout = TimeSpan.FromSeconds(30);
     private const string WorkloadPrefix = "layer-publish:";
@@ -115,6 +116,7 @@ internal sealed partial class LayerPublishJobService(
             RowsTotal = rowCount,
             ConnectionId = connectionId,
             ConnectionKey = routeId,
+            TenantId = tenantContext.TenantId,
             StartedAt = DateTimeOffset.UtcNow,
             CurrentPhase = "Queued",
         };
@@ -131,7 +133,7 @@ internal sealed partial class LayerPublishJobService(
             return Queued(jobId, rowCount, routeId);
         }
 
-        if (jobStore is null || jobQueue is null)
+        if (jobStore is null || (decision.Mode == LayerPublishRunnerMode.DurableLocal && jobQueue is null))
         {
             throw new InvalidOperationException("The durable layer-publish runner is not composed.");
         }
@@ -145,9 +147,21 @@ internal sealed partial class LayerPublishJobService(
 
         try
         {
+            job = await jobStore.GetAsync(jobId, dispatch.Token).ConfigureAwait(false) ?? job;
             await progressStore.SetProgressAsync(jobId, queued, LayerPublishJobWork.ProgressRetention, dispatch.Token)
                 .ConfigureAwait(false);
-            await jobQueue.EnqueueAsync(jobId, cancellationToken: dispatch.Token).ConfigureAwait(false);
+            if (decision.Mode == LayerPublishRunnerMode.DurableLocal)
+            {
+                await jobQueue!.EnqueueAsync(jobId, cancellationToken: dispatch.Token).ConfigureAwait(false);
+            }
+            else
+            {
+                var backend = (backends ?? []).Resolve(job.Spec.Backend, job.Spec.TargetKind)
+                    ?? throw new InvalidOperationException("The selected remote layer-publish backend is not composed.");
+                await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
+                    job, backend, jobStore, progressStore, LayerPublishJobWork.ProgressRetention, logger, dispatch.Token)
+                    .ConfigureAwait(false);
+            }
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
@@ -171,7 +185,12 @@ internal sealed partial class LayerPublishJobService(
     {
         var progress = await progressStore.GetProgressAsync<LayerPublishJobProgress>(jobId, cancellationToken)
             .ConfigureAwait(false);
-        if (progress is null || IsTerminal(progress.Status) || jobStore is null)
+        if (progress is null || !string.Equals(progress.TenantId, tenantContext.TenantId, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (IsTerminal(progress.Status) || jobStore is null)
         {
             return progress;
         }
@@ -190,6 +209,18 @@ internal sealed partial class LayerPublishJobService(
             return progress;
         }
 
+        var completion = LayerPublishCompletionReceipt.Read(job);
+        if (job.Status == ExecutionJobStatus.Succeeded && (progress.LayerId ?? completion?.LayerId) is not > 0)
+        {
+            return progress with
+            {
+                Status = OperationStatus.Failed,
+                CompletedAt = job.CompletedAt ?? job.UpdatedAt,
+                CurrentPhase = "Failed",
+                ErrorMessage = "Layer publish finished without a recorded result.",
+            };
+        }
+
         return job.Status switch
         {
             ExecutionJobStatus.Succeeded => progress with
@@ -197,7 +228,9 @@ internal sealed partial class LayerPublishJobService(
                 Status = OperationStatus.Completed,
                 CompletedAt = job.CompletedAt ?? job.UpdatedAt,
                 CurrentPhase = job.CurrentPhase ?? "Completed",
-                LayerId = progress.LayerId ?? TryReadLayerId(job),
+                LayerId = progress.LayerId ?? completion?.LayerId,
+                RowsMaterialized = completion?.RowsMaterialized ?? progress.RowsMaterialized,
+                RowsTotal = completion?.RowsTotal ?? progress.RowsTotal,
             },
             ExecutionJobStatus.Failed => progress with
             {
@@ -219,12 +252,19 @@ internal sealed partial class LayerPublishJobService(
     private static LayerPublishAdmission Queued(string jobId, long rowCount, string routeId)
         => new(LayerPublishAdmissionKind.Queued, null, jobId, rowCount, StatusUrl(routeId, jobId));
 
-    private static ExecutionJobRecord BuildJobRecord(
+    private ExecutionJobRecord BuildJobRecord(
         string jobId,
         LayerPublishJobPayload payload,
         string table,
         DateTimeOffset now)
-        => new()
+    {
+        var workload = decision.Workload;
+        var parameters = workload is null
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : new Dictionary<string, string>(workload.Parameters, StringComparer.Ordinal);
+        parameters[LayerPublishJobPayload.ParameterName] = payload.ToJson();
+        parameters["rowsTotal"] = payload.RowCount.ToString(CultureInfo.InvariantCulture);
+        return new ExecutionJobRecord
         {
             OperationId = jobId,
             Status = ExecutionJobStatus.Queued,
@@ -236,16 +276,17 @@ internal sealed partial class LayerPublishJobService(
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.LayerPublish,
-                TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = LocalBatchComputeBackend.BackendId,
-                WorkloadName = WorkloadPrefix + table,
-                Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    [LayerPublishJobPayload.ParameterName] = payload.ToJson(),
-                    ["rowsTotal"] = payload.RowCount.ToString(CultureInfo.InvariantCulture),
-                },
+                TargetKind = workload?.TargetKind ?? BatchComputeTargetKind.KubernetesJob,
+                Backend = workload?.Backend ?? LocalBatchComputeBackend.BackendId,
+                WorkloadId = workload?.WorkloadId,
+                WorkloadName = workload?.WorkloadName ?? WorkloadPrefix + table,
+                Artifact = workload?.ArtifactReference,
+                RuntimeProfile = workload?.RuntimeProfile,
+                ContractVersion = workload?.ContractVersion ?? 1,
+                Parameters = parameters,
             },
         };
+    }
 
     private async Task TryWriteFailedAsync(string jobId, LayerPublishJobProgress queued)
     {
@@ -263,21 +304,6 @@ internal sealed partial class LayerPublishJobService(
         {
             Log.DispatchFailed(logger, jobId, exception);
         }
-    }
-
-    private static int? TryReadLayerId(ExecutionJobRecord job)
-    {
-        const string prefix = "layer-publish:";
-        foreach (var reference in job.CommittedEffectReferences.Concat(job.ArtifactReferences))
-        {
-            if (reference.StartsWith(prefix, StringComparison.Ordinal)
-                && int.TryParse(reference[prefix.Length..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
-            {
-                return layerId;
-            }
-        }
-
-        return null;
     }
 
     private static bool IsTerminal(OperationStatus status)

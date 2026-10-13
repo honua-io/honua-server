@@ -32,6 +32,9 @@ public sealed record LayerPublishJobProgress : IOperationProgress
     /// <summary>Route key the caller used, when it was not itself the connection id.</summary>
     public string? ConnectionKey { get; init; }
 
+    /// <summary>Tenant that accepted the job; null denotes the unscoped tenant.</summary>
+    public string? TenantId { get; init; }
+
     /// <summary>When the job was accepted.</summary>
     public required DateTimeOffset StartedAt { get; init; }
 

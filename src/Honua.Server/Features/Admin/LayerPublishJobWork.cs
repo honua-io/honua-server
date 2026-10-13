@@ -104,7 +104,8 @@ internal static partial class LayerPublishJobWork
 
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(jobToken);
         budget.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-        using var progress = LayerSnapshotProgressScope.Begin(new StoreProgress(progressStore, jobId));
+        var observedProgress = new StoreProgress(progressStore, jobId);
+        using var progress = LayerSnapshotProgressScope.Begin(observedProgress);
 
         PublishedLayerSummary summary;
         try
@@ -149,23 +150,12 @@ internal static partial class LayerPublishJobWork
             return NonRetryable(SafeFailureMessage);
         }
 
-        await WriteTerminalAsync(
-            progressStore,
-            jobId,
-            OperationStatus.Completed,
-            summary.LayerId,
-            errorMessage: null).ConfigureAwait(false);
-        await InvalidateCatalogAsync(services, logger, summary.ServiceName, summary.LayerId).ConfigureAwait(false);
-        var notifications = services.GetService<IMcpNotificationPublisher>();
-        notifications?.BroadcastResourcesListChanged();
-        notifications?.BroadcastToolsListChanged();
-
         if (context is not null)
         {
             try
             {
                 await context.RecordCommittedEffectAsync(
-                    $"layer-publish:{summary.LayerId.ToString(CultureInfo.InvariantCulture)}",
+                    LayerPublishCompletionReceipt.Create(summary.LayerId, observedProgress.LastSnapshot),
                     CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception exception) when (exception is not OutOfMemoryException)
@@ -173,6 +163,31 @@ internal static partial class LayerPublishJobWork
                 // The publication transaction already committed. A rejected receipt must not retry it.
                 Log.ReceiptFailed(logger, jobId, summary.LayerId, exception);
             }
+        }
+
+        // The database transaction has committed. A progress projection failure must not turn
+        // this into a retry of the publication; the durable receipt also lets polling recover
+        // the layer id from the execution record after a transient terminal-write failure.
+        try
+        {
+            await WriteTerminalAsync(progressStore, jobId, OperationStatus.Completed, summary.LayerId,
+                errorMessage: null, observedProgress.LastSnapshot).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            Log.TerminalWriteFailed(logger, jobId, exception);
+        }
+
+        await InvalidateCatalogAsync(services, logger, summary.ServiceName, summary.LayerId).ConfigureAwait(false);
+        try
+        {
+            var notifications = services.GetService<IMcpNotificationPublisher>();
+            notifications?.BroadcastResourcesListChanged();
+            notifications?.BroadcastToolsListChanged();
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            Log.NotificationFailed(logger, jobId, exception);
         }
 
         return JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true };
@@ -205,7 +220,8 @@ internal static partial class LayerPublishJobWork
         string jobId,
         OperationStatus status,
         int? layerId,
-        string? errorMessage)
+        string? errorMessage,
+        (long RowsMaterialized, long RowsTotal)? snapshot = null)
     {
         var current = await progressStore.GetProgressAsync<LayerPublishJobProgress>(jobId, CancellationToken.None)
             .ConfigureAwait(false);
@@ -223,6 +239,8 @@ internal static partial class LayerPublishJobWork
         {
             Status = status,
             LayerId = layerId ?? current.LayerId,
+            RowsMaterialized = snapshot?.RowsMaterialized ?? current.RowsMaterialized,
+            RowsTotal = snapshot?.RowsTotal ?? current.RowsTotal,
             CompletedAt = DateTimeOffset.UtcNow,
             ErrorMessage = errorMessage,
             CurrentPhase = status.ToString(),
@@ -289,9 +307,13 @@ internal static partial class LayerPublishJobWork
 
     private sealed class StoreProgress(IUniversalProgressStore store, string jobId) : ILayerSnapshotProgress
     {
+        internal (long RowsMaterialized, long RowsTotal)? LastSnapshot { get; private set; }
+
         public async Task ReportAsync(long rowsMaterialized, long rowsTotal, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            // Keep the actual page observation even if the best-effort progress store is down.
+            LastSnapshot = (rowsMaterialized, rowsTotal);
             var current = await store.GetProgressAsync<LayerPublishJobProgress>(jobId, CancellationToken.None)
                 .ConfigureAwait(false);
             if (current is null || IsTerminal(current.Status))
@@ -311,6 +333,9 @@ internal static partial class LayerPublishJobWork
 
     private static partial class Log
     {
+        [LoggerMessage(EventId = 8217, Level = LogLevel.Warning, Message = "Layer publish {JobId} committed but catalog notification failed")]
+        public static partial void NotificationFailed(ILogger logger, string jobId, Exception exception);
+
         [LoggerMessage(EventId = 8210, Level = LogLevel.Error, Message = "In-process layer publish {JobId} faulted")]
         public static partial void InProcessFaulted(ILogger logger, string jobId, Exception exception);
 
