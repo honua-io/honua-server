@@ -8,6 +8,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Geoprocessing;
 using Honua.Infrastructure.Licensing;
 using Honua.Server.Startup;
 using Honua.TestKit.Attributes;
