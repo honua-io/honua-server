@@ -14,6 +14,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -226,6 +227,7 @@ public sealed class RoutingUtilityServiceTests : IClassFixture<NAServerEndpointT
             services.RemoveAll<IRoutingProvider>();
             services.AddScoped<IRoutingProvider, TestRoutingProvider>();
         });
+        fixture.ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false"));
         await fixture.InitializeAsync();
         return fixture;
     }
