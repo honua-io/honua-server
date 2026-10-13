@@ -545,3 +545,62 @@ than the declaring method, `catch (Exception)` handlers that must translate
 any failure, and the `GC.Collect` calls in `GatedBootShutdown` that run
 native-handle finalizers before modules unload. Release builds of the changed
 projects were clean with warnings as errors.
+
+## 2026-10-13 remaining release disposition
+
+Read-only API review for #5729 found zero open Dependabot alerts and 25 open
+code-scanning alerts: six CodeQL and 19 Trivy. This updates the disposition;
+it does not assert that the October source comments automatically cleared
+the findings. The current CodeQL workflow uploads its analysis directly and
+does not apply a source-comment dismissal integration. The comments remain
+review evidence, not proof that GitHub has dismissed an alert. After independent
+source review, the six CodeQL alerts below were individually dismissed as false
+positives with per-alert rationale linked to #5729 and PR #5986. The 19 Trivy
+alerts remain open. No ignore entries were added.
+
+The source reviewed was `3b8fa2e15f99fda592bc600deb635a71f1f16ddb`. The SQL policy,
+attachment handlers and Lambda AOT Dockerfile have no diff from candidate
+`0e03bdd06b3ca3fb1b82388110bb5dfa19b9f8fa` at the time of review.
+
+| Reviewed alerts | Evidence and bounded disposition |
+| --- | --- |
+| #3465, #3466, #3467 (`cs/user-controlled-bypass`) | In attachment add/update/delete, `TryValidateLayerAccessAsync` runs before the form-null check; null returns immediately. A supplied form cannot bypass the earlier authorization. These are supported false-positive dispositions for those specific conditions, not authorization waivers. |
+| #3488 (`cs/insecure-sql-connection`) | `SqlServerConnectionSecurity.RequireEncryption` re-parses input and sets `Encrypt = true` before returning it. `TestConnectionAsync` opens only that returned string. `SqlServerConnectionSecurityTests` covers omitted encryption, explicit false and preservation of certificate validation. |
+| #3730 (`cs/insecure-sql-connection`) | The flagged builder is in `InspectConnectionString`, which only inspects and returns host/encryption metadata. It never opens a connection. The actual probe calls `RequireEncryption` first. Do not change the inspector to force encryption: it must detect the incoming policy honestly. |
+| #3701 (`cs/sensitive-data-transmission`) | The flagged location is the integration test's token transport helper, using `WebAppFixture` clients and test-issued credentials to verify the documented GeoServices token transport. It is not a production response leaking credentials. Keep the regression coverage. |
+| #3731–#3733 (three HIGH Go stdlib CVEs) | Latest instances belong to `trivy-lambda-arm64`, the **Lambda Development JIT Image** built from `docker/Dockerfile.lambda`, at `004e1d203f1977b05a23eb190b0f4f7e5178c4c8`. Their binary is `/usr/local/bin/aws-lambda-rie`, inherited from the Lambda provided base. The release candidate uses `docker/Dockerfile.lambda.aot`, based on .NET runtime-deps with a native server entrypoint and no RIE copy. Keep the JIT alerts open; verify the AOT candidate inventory before concluding they are absent from the shipping digest. |
+| Remaining 16 Trivy alerts | These are the documented OS findings with no fixed version, from scan source `0f663b066900658f035c07e303f47116d99613c5`. They remain visible and are not added to an allowlist. An old empty fixed version is not a substitute for a current scan. |
+
+### Scan the existing candidate without rebuilding or deploying
+
+`Security Nightly` now accepts `existing_image`, `existing_image_platform`,
+and `existing_image_revision`. Supplying the image selects a read-only scan
+and skips the normal rebuild, NuGet and filesystem jobs. Omitting it leaves
+the normal nightly path intact. This path accepts only a digest-qualified
+`ghcr.io/honua-io/honua-server` reference, verifies the pulled platform and
+OCI source revision, then binds the Trivy inventory to its repository digest
+and image configuration ID. It retains all severities and unfixed findings,
+uses a fresh empty ignore file, and fails on fixed HIGH/CRITICAL findings.
+The artifact contains the raw inspection, full inventory, identity and
+verdict with the inventory SHA-256. It does not upload candidate results into
+the default branch's SARIF category or dismiss existing alerts.
+
+For the current Lambda AOT amd64 candidate, the immutable manifest is
+`sha256:3d6a38e38f3fcef66a571be1dddf7855d64bbe60d252221ae3e67404079991ab`
+and the expected revision is `0e03bdd06b3ca3fb1b82388110bb5dfa19b9f8fa`.
+[Read-only scan 38352335588](https://github.com/honua-io/honua-server/actions/runs/38352335588)
+completed successfully for exactly that digest, `linux/amd64`, source revision,
+and image config `sha256:fe2f7293a84c3a07872b089af54d6c3af39433efe3d1ec1df49b77143d185833`.
+Artifact `existing-image-security-38352335588-1` retains 14 findings: nine MEDIUM
+and five LOW, with zero HIGH/CRITICAL findings. Its only scanned target is Ubuntu
+24.04; there is no RIE binary target in the report. The inventory SHA-256 is
+`41d401cde763cfb724a62a9ad9e291d6cf26ccf18dbde6c872d1949d66869f52`.
+This result establishes the finding set for this Lambda AOT candidate only;
+the development JIT RIE alerts and 16 historical no-fix OS alerts remain open.
+The first scan attempt, 38352034509, verified the image identity but stopped
+before scanning because the action rejects `/dev/null` as an ignore file;
+the completed run uses a fresh empty regular file.
+
+A passing generic Security Nightly run does not establish the result for
+another image digest. The general 260-item quality cleanup is not additional
+RC security acceptance.
