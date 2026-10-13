@@ -127,6 +127,31 @@ public sealed class DatabaseMigrationSafetyTests
         => MigrationSafetyClassifier.Classify("new.sql", "ALTER TABLE honua.features ALTER COLUMN note DROP  NOT NULL;")
             .Classification.Should().Be(MigrationSafetyClassification.Expand);
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("Honua.Server.Migrations.")]
+    [InlineData("src/Honua.Server/Migrations/")]
+    public void MigrationClassifier_ReviewedImportGuardDefinitions_RequireExactNameAndBytes(string prefix)
+    {
+        var root = FindProjectRoot(Directory.GetCurrentDirectory());
+        const string name = "129_ProtectImportTableOwnership.sql";
+        var sql = File.ReadAllText(Path.Join(root, "src", "Honua.Server", "Migrations", name));
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("drop-table",
+            "routine body inspection must remain enabled; only the exact reviewed installation is additive");
+        MigrationSafetyClassifier.Classify(prefix + name, sql).Classification.Should()
+            .Be(MigrationSafetyClassification.Expand);
+        MigrationSafetyClassifier.Classify(prefix + "future.sql", sql).IsBreaking.Should().BeTrue();
+        foreach (var suffix in new[]
+        {
+            "\n-- changed",
+            "\nDROP TABLE honua.features;",
+            "\nDO $$ BEGIN EXECUTE 'DROP TABLE honua.features'; END $$;"
+        })
+        {
+            MigrationSafetyClassifier.Classify(prefix + name, sql + suffix).IsBreaking.Should().BeTrue();
+        }
+    }
+
     private static IEnumerable<string> RollingUpgradeViolations(
         Dictionary<string, string> scripts, Dictionary<string, string> baseline,
         Dictionary<string, string>? hashes = null)
