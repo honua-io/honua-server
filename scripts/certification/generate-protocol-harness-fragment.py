@@ -11,6 +11,8 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 
+from harness_context import bind_context, operation_key
+
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 RESULTS = {"Passed": "pass", "Failed": "fail"}
@@ -137,7 +139,7 @@ def parse_trx(path: Path, expected_ids: set[str]) -> dict[str, str]:
     return matched
 
 
-def build_fragment(contract: dict, outcomes: dict[str, str], args: argparse.Namespace) -> dict:
+def validate_candidate(args: argparse.Namespace) -> None:
     for value, pattern, label in (
         (args.source_sha, SHA_RE, "source SHA"),
         (args.producer_source_sha, SHA_RE, "producer source SHA"),
@@ -145,12 +147,18 @@ def build_fragment(contract: dict, outcomes: dict[str, str], args: argparse.Name
     ):
         if pattern.fullmatch(value) is None:
             raise ValueError(f"invalid {label}")
+    timestamp(args.candidate_cut_at)
+
+
+def build_fragment(contract: dict, outcomes: dict[str, str], args: argparse.Namespace) -> dict:
+    validate_candidate(args)
     started = timestamp(args.started_at)
     completed = timestamp(args.completed_at)
     generated = timestamp(args.generated_at)
     cut = timestamp(args.candidate_cut_at)
     if not cut <= started <= completed <= generated:
         raise ValueError("candidate/test/generation timestamps are not monotonic")
+    context, governed, producer_run = bind_context(contract, args)
     execution_image_digest = (
         None if contract["deployment_target"] == "source-test-host" else args.image_digest
     )
@@ -161,10 +169,18 @@ def build_fragment(contract: dict, outcomes: dict[str, str], args: argparse.Name
     contract_revision = f"server-protocol-harness@{revision}+{producer_sha}"
     observations = []
     for assignment in contract["assignments"]:
+        requirement = governed.get(operation_key(assignment))
+        if requirement is None:
+            continue
         test_ids = assignment["test_ids"]
         result = "pass" if all(outcomes[test_id] == "pass" for test_id in test_ids) else "fail"
         facets = {facet: result for facet in assignment["scenario_facets"]}
         identity = {
+            "maturity": requirement["maturity"],
+            "required_tier": requirement["required_tier"],
+            "requirements_revision": context["requirements_revision"],
+            "candidate_cut_at": args.candidate_cut_at,
+            "producer_run": producer_run,
             "capability_key": assignment["capability_key"],
             "surface": assignment["surface"],
             "operation": assignment["operation"],
@@ -181,12 +197,24 @@ def build_fragment(contract: dict, outcomes: dict[str, str], args: argparse.Name
             "completed_at": args.completed_at,
             "test_ids": test_ids,
         }
+        execution = {
+            "client_id": contract["canonical_client"],
+            "runner_lane": contract["client_lane"],
+            "protocol_version": contract["revision"],
+            "protocol_profile": "source-test-host-http-adapter",
+            "performed_by": contract["canonical_client"],
+            # TRX identifies in-memory HTTP test methods, not a captured request
+            # URL. Never invent an endpoint from a templated operation label.
+            "request_url": None,
+            "exercised_capabilities": assignment["scenario_facets"],
+        }
         payload = {
+            "execution": execution,
             "contract_revision": contract_revision,
             "test_outcomes": {test_id: outcomes[test_id] for test_id in test_ids},
         }
         receipt = {
-            "schema": "honua.certification-evidence-receipt/v1",
+            "schema": "honua.certification-evidence-receipt/v2",
             "identity": identity,
             "result": result,
             "facets": facets,
@@ -194,6 +222,11 @@ def build_fragment(contract: dict, outcomes: dict[str, str], args: argparse.Name
         }
         digest = "sha256:" + hashlib.sha256(canonical_bytes(receipt)).hexdigest()
         observations.append({
+            **execution,
+            "capability_key": assignment["capability_key"],
+            "maturity": requirement["maturity"],
+            "required_tier": requirement["required_tier"],
+            "requirements_revision": context["requirements_revision"],
             "surface": assignment["surface"],
             "operation": assignment["operation"],
             "canonical_client": contract["canonical_client"],
@@ -230,7 +263,7 @@ def build_fragment(contract: dict, outcomes: dict[str, str], args: argparse.Name
         },
         "operation_scope": {
             "complete": True,
-            "expected": len(contract["assignments"]),
+            "expected": len(governed),
             "observed": len(observations),
         },
         "observations": observations,
@@ -242,6 +275,9 @@ def main() -> int:
     parser.add_argument("--contract", required=True, type=Path)
     parser.add_argument("--print-filter", action="store_true")
     parser.add_argument("--project")
+    parser.add_argument("--requirements-context", type=Path)
+    parser.add_argument("--matrix", type=Path, default=Path(__file__).resolve().parents[2] / "docs/gis/data/capability-matrix.v1.json")
+    parser.add_argument("--validate-context", action="store_true")
     parser.add_argument("--trx", action="append", type=Path)
     parser.add_argument("--trx-exit-code", action="append", type=int)
     parser.add_argument("--source-sha")
@@ -256,6 +292,15 @@ def main() -> int:
     contract = load_contract(args.contract)
     if args.print_filter:
         print(test_filter(contract, args.project))
+        return 0
+    identity_fields = ("source_sha", "producer_source_sha", "image_digest", "candidate_cut_at", "requirements_context")
+    missing = [name for name in identity_fields if getattr(args, name) is None]
+    if missing:
+        parser.error("certification requires " + ", ".join(missing))
+    validate_candidate(args)
+    if args.validate_context:
+        _context, governed, _execution = bind_context(contract, args)
+        print(f"Validated {len(governed)} governed operations; all {len(contract['assignments'])} declared operations remain executable")
         return 0
     required = ("trx", "trx_exit_code", "source_sha", "producer_source_sha", "image_digest",
                 "candidate_cut_at", "started_at", "completed_at", "generated_at", "output")

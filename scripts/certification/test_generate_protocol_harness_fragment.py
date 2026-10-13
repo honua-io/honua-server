@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import copy
+import os
+from contextlib import contextmanager
+from unittest.mock import patch
 import re
 import tempfile
 import unittest
@@ -40,6 +44,7 @@ def contract():
         "client_lane": "server-protocol-harness",
         "deployment_target": "source-test-host",
         "auth_policy_revision": "server-test-host-v1",
+        "required_tier": "nightly",
         "assignments": [{
             "capability_key": "serve.example",
             "surface": "example",
@@ -48,6 +53,52 @@ def contract():
             "scenario_facets": ["positive", "media-schema"],
         }],
     }
+
+
+@contextmanager
+def governed_fixture(value, args):
+    """Explicit synthetic context for producer controls, never a live receipt."""
+    with tempfile.TemporaryDirectory() as directory:
+        prepared = copy.copy(args)
+        prepared.matrix = Path(directory) / "matrix.json"
+        prepared.requirements_context = Path(directory) / "context.json"
+        prepared.matrix.write_text(json.dumps({"capabilities": [
+            {"key": key, "maturity": {"implemented": 1}}
+            for key in sorted({row["capability_key"] for row in value["assignments"]})
+        ]}))
+        producer = args.producer_source_sha
+        context = {
+            "schema": "honua.protocol-producer-context/v1",
+            "producer": "server-protocol-harness", "producer_source_sha": producer,
+            "requirements_revision": "fixture-requirements.1",
+            "candidate": {"source_sha": args.source_sha, "image_digest": args.image_digest,
+                          "cut_at": args.candidate_cut_at},
+            "requirements": [{**{field: copy.deepcopy(row[field]) for field in (
+                "capability_key", "surface", "operation", "test_ids", "scenario_facets")},
+                "canonical_client": value["canonical_client"], "client_lane": value["client_lane"],
+                "client_version": f"source@{producer}", "deployment_target": "source-test-host",
+                "fixture_revision": f"server-test-fixtures@{producer}",
+                "contract_revision": f"server-protocol-harness@{value['revision']}+{producer}",
+                "auth_policy_revision": "server-test-host-v1", "maturity": "supported",
+                "required_tier": "nightly",
+            } for row in value["assignments"]],
+        }
+        prepared.requirements_context.write_text(json.dumps(context))
+        ref = "refs/tags/nightly-candidate/" + producer
+        environment = {
+            "GITHUB_REPOSITORY": "honua-io/honua-server", "GITHUB_SHA": producer,
+            "GITHUB_REF": ref, "GITHUB_EVENT_NAME": "workflow_dispatch",
+            "GITHUB_WORKFLOW_REF": f"honua-io/honua-server/.github/workflows/protocol-harness-certification.yml@{ref}",
+            "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "2",
+            "NIGHTLY_DISPATCH_ID": "nightly-certification-456-1",
+        }
+        with patch.dict(os.environ, environment, clear=True):
+            yield prepared
+
+
+def build_fixture(value, outcomes, args):
+    with governed_fixture(value, args) as prepared:
+        return module.build_fragment(value, outcomes, prepared)
 
 
 class ProtocolHarnessFragmentTests(unittest.TestCase):
@@ -171,12 +222,12 @@ class ProtocolHarnessFragmentTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "missing governed test results"):
                 module.parse_trx(path, expected)
         args = Namespace(
-            source_sha="a" * 40, producer_source_sha="b" * 40,
+            source_sha="a" * 40, producer_source_sha="a" * 40,
             image_digest="sha256:" + "c" * 64,
             candidate_cut_at="2026-08-21T00:00:00Z", started_at="2026-08-21T01:00:00Z",
             completed_at="2026-08-21T01:01:00Z", generated_at="2026-08-21T01:02:00Z",
         )
-        observations = module.build_fragment(value, outcomes, args)["observations"]
+        observations = build_fixture(value, outcomes, args)["observations"]
         self.assertEqual(5, len(observations))
         for row in observations:
             self.assertEqual("fail" if row["operation"] == "GET /wps?request=GetStatus" else "pass", row["result"])
@@ -221,12 +272,12 @@ class ProtocolHarnessFragmentTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "missing governed test results"):
                 module.parse_trx(path, expected)
         args = Namespace(
-            source_sha="a" * 40, producer_source_sha="b" * 40,
+            source_sha="a" * 40, producer_source_sha="a" * 40,
             image_digest="sha256:" + "c" * 64,
             candidate_cut_at="2026-08-21T00:00:00Z", started_at="2026-08-21T01:00:00Z",
             completed_at="2026-08-21T01:01:00Z", generated_at="2026-08-21T01:02:00Z",
         )
-        observations = module.build_fragment(value, outcomes, args)["observations"]
+        observations = build_fixture(value, outcomes, args)["observations"]
         self.assertEqual(4, len(observations))
         for row in observations:
             expected_result = "fail" if row["operation"].startswith("POST ") else "pass"
@@ -240,12 +291,12 @@ class ProtocolHarnessFragmentTests(unittest.TestCase):
             path.write_text(trx([("ExampleTests.Get_ReturnsDocument", "Passed")]), encoding="utf-8")
             outcomes = module.parse_trx(path, {"ExampleTests.Get_ReturnsDocument"})
         args = Namespace(
-            source_sha="a" * 40, producer_source_sha="b" * 40,
+            source_sha="a" * 40, producer_source_sha="a" * 40,
             image_digest="sha256:" + "c" * 64,
             candidate_cut_at="2026-08-21T00:00:00Z", started_at="2026-08-21T01:00:00Z",
             completed_at="2026-08-21T01:01:00Z", generated_at="2026-08-21T01:02:00Z",
         )
-        fragment = module.build_fragment(contract(), outcomes, args)
+        fragment = build_fixture(contract(), outcomes, args)
         observation = fragment["observations"][0]
         self.assertEqual(["ExampleTests.Get_ReturnsDocument"], observation["test_ids"])
         self.assertEqual(observation["test_ids"], observation["evidence_receipt"]["identity"]["test_ids"])
