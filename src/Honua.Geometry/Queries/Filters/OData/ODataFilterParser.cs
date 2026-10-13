@@ -970,7 +970,13 @@ public sealed class ODataFilterParser
             // false when both are null, plain '<>' when both are non-null.
             return new BinaryExpression(
                 new BinaryExpression(
-                    notEqual,
+                    new BinaryExpression(
+                        notEqual,
+                        BinaryOperator.And,
+                        new BinaryExpression(
+                            new UnaryExpression(UnaryOperator.IsNotNull, left),
+                            BinaryOperator.And,
+                            new UnaryExpression(UnaryOperator.IsNotNull, right))),
                     BinaryOperator.Or,
                     new BinaryExpression(
                         new UnaryExpression(UnaryOperator.IsNull, left),

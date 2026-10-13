@@ -579,7 +579,8 @@ public class ODataFilterParserTests
     [Fact]
     public void Parse_NotEqualTwoProperties_RewritesToIsDistinctFromExpansion()
     {
-        // ((state <> country) OR (state IS NULL AND country IS NOT NULL))
+        // ((state <> country AND state IS NOT NULL AND country IS NOT NULL)
+        //   OR (state IS NULL AND country IS NOT NULL))
         //   OR (state IS NOT NULL AND country IS NULL)
         var result = _parser.Parse("state ne country");
 
@@ -589,7 +590,13 @@ public class ODataFilterParserTests
 
         var innerOr = (BinaryExpression)outerOr.Left;
         innerOr.Operator.Should().Be(BinaryOperator.Or);
-        ((BinaryExpression)innerOr.Left).Operator.Should().Be(BinaryOperator.NotEqual);
+        var nonNullArm = (BinaryExpression)innerOr.Left;
+        nonNullArm.Operator.Should().Be(BinaryOperator.And);
+        ((BinaryExpression)nonNullArm.Left).Operator.Should().Be(BinaryOperator.NotEqual);
+        var bothNonNull = (BinaryExpression)nonNullArm.Right;
+        bothNonNull.Operator.Should().Be(BinaryOperator.And);
+        ((UnaryExpression)bothNonNull.Left).Operator.Should().Be(UnaryOperator.IsNotNull);
+        ((UnaryExpression)bothNonNull.Right).Operator.Should().Be(UnaryOperator.IsNotNull);
 
         var leftNullArm = (BinaryExpression)innerOr.Right;
         leftNullArm.Operator.Should().Be(BinaryOperator.And);
@@ -748,6 +755,57 @@ public class ODataFilterParserTests
             .Should().Be(bothNullMatches);
         InMemoryFilterEvaluator.Evaluate(_parser.Parse($"not (null {op} null)"), empty)
             .Should().Be(!bothNullMatches);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("eq", null, null, true)]
+    [InlineData("ne", null, null, false)]
+    [InlineData("eq", null, 1, false)]
+    [InlineData("ne", null, 1, true)]
+    [InlineData("eq", 1, null, false)]
+    [InlineData("ne", 1, null, true)]
+    [InlineData("eq", 1, 1, true)]
+    [InlineData("ne", 1, 1, false)]
+    [InlineData("eq", 1, 2, false)]
+    [InlineData("ne", 1, 2, true)]
+    public void Parse_NestedEqualityNegation_EvaluatesODataNullTruthTable(
+        string op, int? left, int? right, bool expected)
+    {
+        var properties = new Dictionary<string, JsonElement>
+        {
+            ["A"] = JsonSerializer.SerializeToElement(left),
+            ["B"] = JsonSerializer.SerializeToElement(right)
+        };
+
+        InMemoryFilterEvaluator.Evaluate(_parser.Parse($"A {op} B"), properties)
+            .Should().Be(expected);
+        InMemoryFilterEvaluator.Evaluate(_parser.Parse($"not (A {op} B)"), properties)
+            .Should().Be(!expected);
+        InMemoryFilterEvaluator.Evaluate(_parser.Parse($"not (not (A {op} B))"), properties)
+            .Should().Be(expected);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(null, null, true)]
+    [InlineData(null, 1, false)]
+    [InlineData(1, null, false)]
+    [InlineData(1, 1, true)]
+    [InlineData(1, 2, false)]
+    public void Parse_NestedMembershipNegation_UsesNullSafeEquality(
+        int? left, int? right, bool expected)
+    {
+        var properties = new Dictionary<string, JsonElement>
+        {
+            ["A"] = JsonSerializer.SerializeToElement(left),
+            ["B"] = JsonSerializer.SerializeToElement(right)
+        };
+
+        InMemoryFilterEvaluator.Evaluate(_parser.Parse("not (A in (B))"), properties)
+            .Should().Be(!expected);
+        InMemoryFilterEvaluator.Evaluate(_parser.Parse("not (not (A in (B)))"), properties)
+            .Should().Be(expected);
     }
 
     private static bool ContainsIsNull(FilterExpression expression, string property)
