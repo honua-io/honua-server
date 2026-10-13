@@ -793,12 +793,15 @@ public sealed class StudioPackageLifecycleServiceTests
         var draftId = Guid.NewGuid();
         var itemId = Guid.NewGuid();
         var versionId = Guid.NewGuid();
-        var stoppedActivities = new ConcurrentQueue<string>();
+        using var activityScope = new Activity(nameof(ReadAndDeleteLifecycleActivities_CoverStoreWork))
+            .SetIdFormat(ActivityIdFormat.W3C)
+            .Start();
+        var stoppedActivities = new ConcurrentQueue<Activity>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == StudioPackageLifecycleService.ActivitySourceName,
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
-            ActivityStopped = activity => stoppedActivities.Enqueue(activity.OperationName),
+            ActivityStopped = stoppedActivities.Enqueue,
         };
         ActivitySource.AddActivityListener(listener);
 
@@ -1082,26 +1085,49 @@ public sealed class StudioPackageLifecycleServiceTests
 
     private static async Task<T> AssertActivityCoversBlockedStoreCallAsync<T>(
         BlockingStudioPackageStore store,
-        ConcurrentQueue<string> stoppedActivities,
+        ConcurrentQueue<Activity> stoppedActivities,
         string storeOperation,
         string activityName,
         Func<Task<T>> action)
     {
-        var stoppedBefore = CountStopped(stoppedActivities, activityName);
+        var parentId = Activity.Current?.Id
+            ?? throw new InvalidOperationException("The lifecycle test requires its own parent activity.");
+        Assert.Equal(0, CountStopped(stoppedActivities, activityName, parentId));
         store.BlockNext(storeOperation);
         var operation = action();
 
-        await store.WaitForBlockedAsync().ConfigureAwait(false);
-        Assert.Equal(stoppedBefore, CountStopped(stoppedActivities, activityName));
+        try
+        {
+            await store.WaitForBlockedAsync().ConfigureAwait(false);
+            Assert.False(operation.IsCompleted);
 
-        store.ReleaseBlocked();
+            // A second real call emits the same operation from the same source while the
+            // first store call stays blocked. It must not affect this parent's assertions.
+            using (var unrelatedScope = new Activity("unrelated-lifecycle-call").Start())
+            {
+                Assert.NotEqual(parentId, unrelatedScope.Id);
+                _ = await action().ConfigureAwait(false);
+                Assert.Equal(1, CountStopped(stoppedActivities, activityName, unrelatedScope.Id!));
+            }
+
+            Assert.False(operation.IsCompleted);
+            Assert.Equal(0, CountStopped(stoppedActivities, activityName, parentId));
+        }
+        finally
+        {
+            store.ReleaseBlocked();
+        }
+
         var result = await operation.ConfigureAwait(false);
-        Assert.True(CountStopped(stoppedActivities, activityName) > stoppedBefore);
+        Assert.Equal(1, CountStopped(stoppedActivities, activityName, parentId));
         return result;
     }
 
-    private static int CountStopped(ConcurrentQueue<string> stoppedActivities, string activityName)
-        => stoppedActivities.Count(name => string.Equals(name, activityName, StringComparison.Ordinal));
+    private static int CountStopped(
+        ConcurrentQueue<Activity> stoppedActivities, string activityName, string parentId)
+        => stoppedActivities.Count(activity =>
+            string.Equals(activity.OperationName, activityName, StringComparison.Ordinal) &&
+            string.Equals(activity.ParentId, parentId, StringComparison.Ordinal));
 
     private static StudioPackageEnvelope BuildEnvelope(string where, string dependencyRef)
         => BuildEnvelope(
