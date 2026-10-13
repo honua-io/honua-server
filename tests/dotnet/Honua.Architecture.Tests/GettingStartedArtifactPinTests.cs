@@ -55,7 +55,7 @@ public sealed class GettingStartedArtifactPinTests
 
         var journey = string.Join('\n', quickstart, firstDataset, firstMap, linuxPackages,
             registryClients, windowsPackages, dotnetGettingStarted);
-        journey.Should().Contain("honua-sdk==0.1.15");
+        journey.Should().Contain("honua-sdk==0.1.16");
         journey.Should().Contain("honua-admin==0.1.12");
         journey.Should().NotContain("@sha256:",
             "no getting-started page hand-copies an image digest");
