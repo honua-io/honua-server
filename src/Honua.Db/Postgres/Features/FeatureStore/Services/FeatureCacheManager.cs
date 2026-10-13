@@ -198,10 +198,16 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
 
             await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
 
+            // Unqualified features can resolve after current_schema() on the search path.
+            // Inspect the relation the writer uses, not an empty leading namespace.
             const string sql = """
                 SELECT data_type, udt_name
                 FROM information_schema.columns
-                WHERE table_schema = COALESCE(@schema, current_schema())
+                WHERE table_schema = COALESCE(@schema, (
+                    SELECT namespace.nspname
+                    FROM pg_class relation
+                    JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+                    WHERE relation.oid = to_regclass(@table)))
                   AND table_name = @table
                   AND column_name = @column
                 """;
