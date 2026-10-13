@@ -12,7 +12,7 @@ internal sealed record MethodEntry(string TestClass, string DeclaringClass, stri
     SortedDictionary<string, string[]> CoverageValues);
 internal sealed record InputEntry(string Path, string Sha256);
 internal sealed record InventoryDocument(string Schema, string Project, SortedDictionary<string, string> Configuration,
-    InputEntry[] Sources, InputEntry[] References, MethodEntry[] Methods, string[] Diagnostics);
+    InputEntry[] Sources, InputEntry[] References, MethodEntry[] Methods, string[] Diagnostics, bool BinarySourceBindingVerified = false);
 
 internal static class Inventory
 {

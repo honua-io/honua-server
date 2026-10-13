@@ -50,8 +50,19 @@ and artifact validation remain responsible for binary provenance.
 `RuntimeTraitSemanticsVerified`. Arbitrary custom Fact constructors and
 executable ITrait discoverers are not modeled. Known UnitTest/Integration
 metadata can match while their runtime discovery semantics remain unverified.
+The reflection exporter reuses the source document input/configuration labels;
+these are not independently proven binary provenance. Every public inventory and
+comparison explicitly reports `BinarySourceBindingVerified=false`. Even clean
+metadata agreement has `Status=metadataParity`, `Qualified=false`, and driver
+exit 3. No exact qualification is claimed without a separate future binding
+contract.
+
 Even matching unsupported inventories produce `Status=notQualified`,
 `Qualified=false`, `ValidatesPullRequest=false`; they are never a partial green.
+Parsing and SHA-256 identities use the same captured source bytes. Reference
+metadata is also constructed from captured bytes; all inputs are rechecked after
+inspection, with missing/changed inputs blocking agreement.
+
 Empty inventories, changed constants, changed conditional selection and input
 identity mismatches also fail qualification. Exit 3 means not qualified;
 malformed input/tool execution failures remain nonzero.
@@ -84,8 +95,8 @@ cases prove changed coverage and conditional discovery cannot qualify.
 ## Local pilot observation limitation
 
 The focused CI-tool build passed Release warnings-as-errors with zero warnings
-and errors; all eleven executed synthetic semantic/reflection assertions and
-four offline driver fixtures passed. The local design-time driver smoke did
+and errors; all fourteen executed synthetic semantic/reflection assertions and
+five offline driver fixtures passed. The local design-time driver smoke did
 **not** qualify source inventory: the shared Flow admission parser returned exit
 75 for an unsupported read-only MSBuild inventory option before starting the SDK.
 No wrapper bypass, admission change, inspected compilation or production build

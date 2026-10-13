@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Collections.Immutable;
 using System.Text.Json;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -25,22 +26,25 @@ static int Run(string[] args)
                 Path.Join(root, Path.GetDirectoryName(args[3]), value.GetProperty("Identity").GetString()))).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
         var sources = Paths("Compile");
         var references = Paths("ReferencePath");
-        var diagnostics = sources.Concat(references).Where(path => !File.Exists(path)).Select(path => "missing-evaluated-input:" + Relative(root, path)).ToList();
+        var diagnostics = new List<string>();
+        var sourceInputs = sources.Select(path => CapturedInput.Read(path, diagnostics)).OfType<CapturedInput>().ToArray();
+        var referenceInputs = references.Select(path => CapturedInput.Read(path, diagnostics)).OfType<CapturedInput>().ToArray();
         if (!LanguageVersionFacts.TryParse(configuration.GetValueOrDefault("LangVersion", "preview"), out var language))
         {
             diagnostics.Add("unsupported-language-version:" + configuration.GetValueOrDefault("LangVersion"));
             language = LanguageVersion.Preview;
         }
         var parse = new CSharpParseOptions(language, preprocessorSymbols: configuration.GetValueOrDefault("DefineConstants", "").Split(';', StringSplitOptions.RemoveEmptyEntries));
-        var trees = sources.Where(File.Exists).Select(path => CSharpSyntaxTree.ParseText(File.ReadAllText(path), parse, path)).ToArray();
-        var metadata = references.Where(File.Exists).Select(path => MetadataReference.CreateFromFile(path)).ToArray();
+        var trees = sourceInputs.Select(input => CSharpSyntaxTree.ParseText(input.SourceText(), parse, input.Path)).ToArray();
+        var metadata = referenceInputs.Select(input => MetadataReference.CreateFromImage(ImmutableArray.CreateRange(input.Bytes), filePath: input.Path)).ToArray();
         var compilation = CSharpCompilation.Create(configuration.GetValueOrDefault("AssemblyName", "InventoryPilot"), trees, metadata,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: configuration.GetValueOrDefault("AllowUnsafeBlocks") == "true",
                 nullableContextOptions: Enum.TryParse<NullableContextOptions>(configuration.GetValueOrDefault("Nullable"), true, out var nullable) ? nullable : NullableContextOptions.Disable));
         var result = SourceReader.Read(compilation);
+        diagnostics.AddRange(sourceInputs.Concat(referenceInputs).Select(input => input.VerifyUnchanged()).OfType<string>());
         configuration["InventoryCompilerVersion"] = typeof(CSharpCompilation).Assembly.GetName().Version!.ToString();
         var document = new InventoryDocument(Inventory.Schema, args[3].Replace('\\', '/'), configuration,
-            sources.Where(File.Exists).Select(path => Input(root, path)).ToArray(), references.Where(File.Exists).Select(path => Input(root, path)).ToArray(),
+            sourceInputs.Select(input => new InputEntry(Relative(root, input.Path), input.Sha256)).ToArray(), referenceInputs.Select(input => new InputEntry(Relative(root, input.Path), input.Sha256)).ToArray(),
             result.Methods, diagnostics.Concat(result.Diagnostics).Distinct().Order(StringComparer.Ordinal).ToArray());
         File.WriteAllText(args[4], Inventory.Serialize(document) + "\n");
         return 0;
@@ -61,7 +65,7 @@ static int Run(string[] args)
     var reflection = JsonSerializer.Deserialize<InventoryDocument>(File.ReadAllText(args[2]))!;
     var comparison = Compare(source, reflection);
     File.WriteAllText(args[4], Inventory.Serialize(comparison) + "\n");
-    return comparison.Status == "exactParity" ? 0 : 3;
+    return 3; // Metadata agreement does not prove binary-to-source binding.
 }
 
 static InputEntry Input(string root, string path) => new(Relative(root, path), Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path))));
@@ -71,4 +75,4 @@ static string Relative(string root, string path) => path.StartsWith(root + Path.
 static Comparison Compare(InventoryDocument source, InventoryDocument reflection)
     => PilotFixtures.Compare(source, reflection);
 
-internal sealed record Comparison(string Schema, string Status, bool Qualified, bool ValidatesPullRequest, bool MetadataMatch, bool RuntimeTraitSemanticsVerified, int SourceMethods, int ReflectionMethods, string[] Diagnostics);
+internal sealed record Comparison(string Schema, string Status, bool Qualified, bool ValidatesPullRequest, bool MetadataMatch, bool RuntimeTraitSemanticsVerified, bool BinarySourceBindingVerified, int SourceMethods, int ReflectionMethods, string[] Diagnostics);

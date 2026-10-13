@@ -56,6 +56,26 @@ class DriverTests(unittest.TestCase):
             self.assertFalse(result['projects'][0]['runtimeTraitSemanticsVerified'])
             self.assertTrue((root / 'evidence/result.json').is_file())
 
+    def test_metadata_agreement_still_has_no_public_qualification(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binary = root / 'existing.dll'
+            binary.write_text('existing-output')
+            def execute(command, **kwargs):
+                if command[1] == 'msbuild':
+                    kwargs['stdout'].write(json.dumps({'Properties': {'TargetPath': str(binary)}}))
+                if 'compare' in command:
+                    Path(command[-1]).write_text(json.dumps({'Status': 'metadataParity', 'MetadataMatch': True,
+                        'RuntimeTraitSemanticsVerified': True, 'Diagnostics': []}))
+                return type('Result', (), {'returncode': 3 if 'compare' in command else 0})()
+            with patch.object(pilot.subprocess, 'run', side_effect=execute):
+                result = pilot.run(root, root / 'tool.dll', ['example.csproj'], root / 'evidence')
+            self.assertEqual('metadataParity', result['status'])
+            self.assertFalse(result['qualified'])
+            self.assertFalse(result['binarySourceBindingVerified'])
+            self.assertFalse(result['projects'][0]['qualified'])
+            self.assertFalse(result['projects'][0]['binarySourceBindingVerified'])
+
     def test_invalid_evaluation_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

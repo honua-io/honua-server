@@ -24,10 +24,11 @@ internal static class PilotFixtures
         if (source.Methods.Length == 0 || reflection.Methods.Length == 0) diagnostics.Add("empty-test-inventory");
         var metadataMatch = !diagnostics.Any(value => value == "inventory-input-identity-mismatch" ||
             value == "method-or-attribute-parity-mismatch" || value == "empty-test-inventory" ||
-            value.StartsWith("compiler-error:", StringComparison.Ordinal) || value.StartsWith("reflection-", StringComparison.Ordinal));
+            value.StartsWith("compiler-error:", StringComparison.Ordinal) || value.StartsWith("reflection-", StringComparison.Ordinal) ||
+            value.StartsWith("missing-evaluated-input", StringComparison.Ordinal) || value.StartsWith("input-changed-", StringComparison.Ordinal));
         var runtimeTraitsVerified = !diagnostics.Any(value => value.StartsWith("unsupported-", StringComparison.Ordinal));
-        var qualified = metadataMatch && diagnostics.Count == 0;
-        return new("honua.ci.semantic-test-parity/v1", qualified ? "exactParity" : "notQualified", qualified, false, metadataMatch, runtimeTraitsVerified,
+        var agreement = metadataMatch && diagnostics.Count == 0;
+        return new("honua.ci.semantic-test-parity/v1", agreement ? "metadataParity" : "notQualified", false, false, metadataMatch, runtimeTraitsVerified, false,
             source.Methods.Length, reflection.Methods.Length, diagnostics.Order(StringComparer.Ordinal).ToArray());
     }
 
@@ -55,21 +56,38 @@ internal static class PilotFixtures
             if (!condition) throw new InvalidOperationException(name + "\n" + Inventory.Serialize(Compare(source, reflection)));
             Console.WriteLine("PASS " + name);
         }
-        Require(Compare(source, reflection).Qualified, "aliases/inherited attributes/overrides/partial/overloads/generic signature/conditional/custom coverage constants");
+        Require(Compare(source, reflection).MetadataMatch && Compare(source, reflection).Diagnostics.Length == 0, "aliases/inherited attributes/overrides/partial/overloads/generic signature/conditional/custom coverage constants");
         Require(source.Methods.Count(value => value.Signature.Contains(" Work``", StringComparison.Ordinal)) == 2, "overloads retain separate complete signatures");
         Require(source.Methods.Any(value => value.Signature.Contains(" Conditional``", StringComparison.Ordinal)), "evaluated define selects conditional method");
         Require(source.Methods.Any(value => value.EffectiveAttributes.Any(attribute => attribute.Inherited)), "inherited metadata retained explicitly");
         var mutation = Document(SourceReader.Read(Compile(sources.Select(value => value.Replace("scene-pilot", "changed-protocol", StringComparison.Ordinal)), parse)));
-        Require(!Compare(mutation, reflection).Qualified, "coverage constant mutation breaks parity");
-        Require(!Compare(Document(SourceReader.Read(Compile(sources, parse.WithPreprocessorSymbols(Array.Empty<string>())))), reflection).Qualified, "conditional discovery mutation breaks parity");
-        Require(!Compare(source with { Configuration = new(StringComparer.Ordinal) { ["DefineConstants"] = "OTHER" } }, reflection).Qualified, "configuration mismatch fails qualification");
-        Require(!Compare(source with { Methods = [] }, reflection with { Methods = [] }).Qualified, "empty inventories cannot qualify");
+        Require(!Compare(mutation, reflection).MetadataMatch, "coverage constant mutation breaks parity");
+        Require(!Compare(Document(SourceReader.Read(Compile(sources, parse.WithPreprocessorSymbols(Array.Empty<string>())))), reflection).MetadataMatch, "conditional discovery mutation breaks parity");
+        Require(!Compare(source with { Configuration = new(StringComparer.Ordinal) { ["DefineConstants"] = "OTHER" } }, reflection).MetadataMatch, "configuration mismatch fails qualification");
+        Require(!Compare(source with { Methods = [] }, reflection with { Methods = [] }).MetadataMatch, "empty inventories cannot qualify");
         var unsupported = Document(SourceReader.Read(Compile(sources.Append(CustomFact), parse)));
         Require(unsupported.Diagnostics.Any(value => value.StartsWith("unsupported-custom-fact", StringComparison.Ordinal)), "executable custom fact semantics explicitly unsupported");
         Require(!Compare(unsupported, unsupported).Qualified, "matching unsupported inventories cannot qualify");
         var unresolved = Document(SourceReader.Read(Compile(sources.Append("class Bad { MissingSymbol field; }"), parse)));
-        Require(unresolved.Diagnostics.Any(value => value.StartsWith("compiler-error:", StringComparison.Ordinal)) && !Compare(unresolved, unresolved).Qualified,
+        Require(unresolved.Diagnostics.Any(value => value.StartsWith("compiler-error:", StringComparison.Ordinal)) && !Compare(unresolved, unresolved).MetadataMatch,
             "unresolved semantic input cannot qualify");
+        Require(!Compare(source, reflection).Qualified && !Compare(source, reflection).BinarySourceBindingVerified &&
+            Compare(source, reflection).Status == "metadataParity", "metadata agreement never claims public binary-source qualification");
+        var temporary = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(temporary, "captured original");
+            var inputDiagnostics = new List<string>();
+            var captured = CapturedInput.Read(temporary, inputDiagnostics)!;
+            File.WriteAllText(temporary, "mutated after capture");
+            Require(captured.SourceText() == "captured original" && captured.VerifyUnchanged()!.StartsWith("input-changed-", StringComparison.Ordinal),
+                "parsing and identity use captured bytes and detect later mutation");
+            File.Delete(temporary);
+            Require(captured.VerifyUnchanged()!.StartsWith("missing-evaluated-input", StringComparison.Ordinal) &&
+                CapturedInput.Read(temporary, inputDiagnostics) is null && inputDiagnostics.Count == 1,
+                "missing captured input blocks inspection explicitly");
+        }
+        finally { File.Delete(temporary); }
         context.Unload();
         return 0;
     }

@@ -74,11 +74,12 @@ def run(root, tool, projects, output):
             parity = json.loads(comparison.read_text())
             row.update(status=parity['Status'], metadataMatch=parity['MetadataMatch'],
                        runtimeTraitSemanticsVerified=parity['RuntimeTraitSemanticsVerified'],
+                       binarySourceBindingVerified=False, qualified=False,
                        diagnostics=parity['Diagnostics'], comparison=str(comparison))
     result = {'schema': 'honua.ci.semantic-test-pilot/v1', 'feedbackOnly': True,
-              'validatesPullRequest': False, 'collectorRemainsAuthoritative': True,
+              'validatesPullRequest': False, 'collectorRemainsAuthoritative': True, 'binarySourceBindingVerified': False, 'qualified': False,
               'referenceMetadataPrerequisite': 'existing normal-validation outputs; build floor not removed',
-              'status': 'exactParity' if rows and all(row['status'] == 'exactParity' for row in rows) else 'notQualified',
+              'status': 'metadataParity' if rows and all(row['status'] == 'metadataParity' for row in rows) else 'notQualified',
               'projects': rows}
     (output / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
     return result
@@ -98,7 +99,7 @@ def main():
         parser.error('--tool must name an already-built tool')
     result = run(root, tool, args.project or DEFAULT_PROJECTS, output)
     print(json.dumps(result, indent=2))
-    return 0 if result['status'] == 'exactParity' else 3
+    return 3  # No producer binding proof: metadata observation remains advisory.
 
 
 if __name__ == '__main__':
