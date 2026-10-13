@@ -56,6 +56,51 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
+    [InlineData("<VID />")]
+    [InlineData("")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetView")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task GetView_DefaultViewUsesResolvedRasterMetadata(string viewIdElement)
+    {
+        var rasters = await _fixture.GetService<IRasterStore>()
+            .ListRastersAsync(WebAppFixture.TestLayerId, CancellationToken.None);
+        var reference = rasters.First(raster => raster.Extent.HasValue);
+        var response = await PostSoapAsync($"""<GetView xmlns="{ArcGisNamespace}">{viewIdElement}</GetView>""");
+        response.Status.Should().Be(HttpStatusCode.OK, response.Body);
+        var result = Element(response.Document, "Result");
+        result.Attribute(XName.Get("type", XsiNamespace))!.Value.Should().Be("tns:ImageView");
+        result.Elements().Select(element => element.Name.LocalName).Should().Equal(
+            "VID", "Description", "Extent", "PixelSizeX", "PixelSizeY", "BandCount", "PixelType");
+        Child(result, "VID").Value.Should().BeEmpty();
+        var extent = Child(result, "Extent");
+        double.Parse(Child(extent, "XMin").Value, CultureInfo.InvariantCulture)
+            .Should().Be(rasters.Min(raster => raster.Extent!.Value.XMin));
+        double.Parse(Child(extent, "YMin").Value, CultureInfo.InvariantCulture)
+            .Should().Be(rasters.Min(raster => raster.Extent!.Value.YMin));
+        double.Parse(Child(extent, "XMax").Value, CultureInfo.InvariantCulture)
+            .Should().Be(rasters.Max(raster => raster.Extent!.Value.XMax));
+        double.Parse(Child(extent, "YMax").Value, CultureInfo.InvariantCulture)
+            .Should().Be(rasters.Max(raster => raster.Extent!.Value.YMax));
+        Child(result, "BandCount").Value.Should().Be(reference.BandCount.ToString(CultureInfo.InvariantCulture));
+        Child(result, "PixelType").Value.Should().Be("U8");
+        double.Parse(Child(result, "PixelSizeX").Value, CultureInfo.InvariantCulture)
+            .Should().BeApproximately(ServiceLowCellSize, 1e-9);
+        double.Parse(Child(result, "PixelSizeY").Value, CultureInfo.InvariantCulture)
+            .Should().BeApproximately(ServiceHighCellSize, 1e-9);
+    }
+
+    [IntegrationTest]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetView")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task GetView_UnknownNamedViewIsNotTheDefaultView()
+    {
+        var response = await PostSoapAsync($"""<GetView xmlns="{ArcGisNamespace}"><VID>foreign-view</VID></GetView>""");
+        response.Status.Should().Be(HttpStatusCode.NotFound, response.Body);
+        response.Body.Should().Contain("Image view was not found");
+        response.Document.Descendants().Should().NotContain(element => element.Name.LocalName == "Result");
+    }
+
+    [IntegrationTheory]
     [InlineData(4326, "GeographicCoordinateSystem")]
     [InlineData(3857, "ProjectedCoordinateSystem")]
     [Operation(Operations.GetServiceInfo)]
