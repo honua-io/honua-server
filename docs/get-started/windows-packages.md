@@ -21,12 +21,13 @@ this journey uses a small synchronous import and does not require durable jobs.
 
 ## Artifact identity and qualification
 
-The commands use the anonymously published 2026.1 release channel image
-`ghcr.io/honua-io/honua-server:rc` (`ghcr.io/honua-io/honua-server:ga` once 2026.1
-is generally available; only release promotion moves that tag) with Docker Desktop
-Linux containers; this journey selects `linux/amd64`. The exact digest for a release is `server.image` in that release's [customer install manifest](https://honua.io/data/customer-install-manifest.json).
-The `rc` tag is published by the release bundle when the first certified lock (`2026.1-rc.3`) is promoted; until then pull the server by the digest in the public [customer install manifest](https://honua.io/data/customer-install-manifest.json).
-Set `$Image` to that digest to pin an installation exactly; `docker pull` below
+The server image is the 2026.1 release channel
+`ghcr.io/honua-io/honua-server:2026.1-rc` (`ghcr.io/honua-io/honua-server:2026.1` at GA);
+only release promotion moves that tag.
+The exact digest is in the release's `customer-install-manifest.json`
+(`server.image` in that release's [customer install manifest](https://honua.io/data/customer-install-manifest.json)).
+Docker Desktop runs Linux containers; this journey selects `linux/amd64`.
+Set `$Image` and `HONUA_IMAGE` to that digest to pin an installation exactly; `docker pull` below
 resolves the tag, and the support step records the digest that ran. The control-plane package is
 [honua-admin 0.1.10](https://pypi.org/project/honua-admin/0.1.10/); the data-plane
 package is [honua-sdk 0.1.13](https://pypi.org/project/honua-sdk/0.1.13/).
@@ -74,12 +75,12 @@ function New-InstallSecret {
     try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
     return ([BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
 }
-$Image = 'ghcr.io/honua-io/honua-server:rc'
+$Image = 'ghcr.io/honua-io/honua-server:2026.1-rc'
 $Port = 18080
 $KeyringPassword = New-InstallSecret
 @"
 COMPOSE_PROJECT_NAME=$Project
-HONUA_IMAGE=$Image
+HONUA_IMAGE=ghcr.io/honua-io/honua-server:2026.1-rc
 HONUA_HTTP_PORT=$Port
 POSTGRES_PASSWORD=$(New-InstallSecret)
 HONUA_ADMIN_PASSWORD=Aa1!$(New-InstallSecret)
