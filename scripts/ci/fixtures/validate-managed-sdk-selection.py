@@ -35,6 +35,8 @@ def bash_path(path):
 class ManagedSdkSelectionTests(unittest.TestCase):
     def run_script(self, name, directory, **environment):
         env = dict(os.environ, **environment)
+        # Shell startup hooks must not replace the fake hosts selected by the fixture.
+        env.pop('BASH_ENV', None)
         script = directory / 'sdk-command.sh'
         script.write_bytes(step_script(name).encode('utf-8'))
         # Resolve PATH explicitly on Windows instead of System32's WSL launcher.
@@ -108,6 +110,20 @@ class ManagedSdkSelectionTests(unittest.TestCase):
                 PATH=(root / 'host').as_posix() + os.pathsep + os.environ['PATH'])
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual((root / 'output').read_text(), 'version=10.0.402\n')
+
+    def test_inherited_bash_startup_hook_cannot_override_fixture_shell(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fake_host(root / 'host', '10.0.402')
+            startup = root / 'startup.sh'
+            startup.write_bytes(b'echo unexpected-startup-hook >&2\nexit 99\n')
+            result = self.run_script('Record actual SDK identity', root,
+                EXPECTED_DOTNET_SDK='', GITHUB_OUTPUT=(root / 'output').as_posix(),
+                BASH_ENV=bash_path(startup),
+                PATH=(root / 'host').as_posix() + os.pathsep + os.environ['PATH'])
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((root / 'output').read_text(), 'version=10.0.402\n')
+            self.assertNotIn('unexpected-startup-hook', result.stderr)
 
     def test_all_managed_consumers_use_their_actual_producer_sdk(self):
         for workflow, producer, output, consumers in (
