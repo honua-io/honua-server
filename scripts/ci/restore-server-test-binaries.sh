@@ -4,6 +4,19 @@
 set -euo pipefail
 
 CONTRACT="honua.server-test-binaries.v1"
+# Explicit opt-in keeps rerun-cache v1 readable while build-once requires same-run proof.
+workflow_run_id="${HONUA_SERVER_TEST_ARTIFACT_WORKFLOW_RUN_ID:-}"
+build_properties="${HONUA_SERVER_TEST_ARTIFACT_BUILD_PROPERTIES:-}"
+if [[ -n "${workflow_run_id}" ]]; then
+  [[ "${workflow_run_id}" =~ ^[1-9][0-9]*$ && -n "${build_properties}" ]] || {
+    echo "::error::Strict artifacts require a positive workflow run id and explicit build properties." >&2; exit 2;
+  }
+  [[ "$(uname -s)/$(uname -m)" == Linux/x86_64 ]] || {
+    echo "::error::Artifact native payload supports Linux/x86_64 only." >&2; exit 2;
+  }
+  CONTRACT="honua.server-test-binaries.v2"
+fi
+
 # Must match package-server-test-binaries.sh (#4453 re-base).
 MAX_ARCHIVE_BYTES="${HONUA_SERVER_TEST_ARTIFACT_MAX_ARCHIVE_BYTES:-335544320}"
 MAX_UNPACKED_BYTES="${HONUA_SERVER_TEST_ARTIFACT_MAX_UNPACKED_BYTES:-805306368}"
@@ -32,9 +45,10 @@ if [[ -z "${manifest}" || -z "${destination}" || -z "${expected_project}" || -z 
   usage
   exit 2
 fi
-for command in date jq python3 sha256sum tar; do
+for command in date jq python3 sha256sum tar timeout; do
   command -v "${command}" >/dev/null || { echo "::error::Required command '${command}' is unavailable." >&2; exit 2; }
 done
+REGISTRY="${HONUA_SERVER_TEST_ARTIFACT_REGISTRY:-${destination}/.github/server-test-artifact-projects.json}"
 verify_start_ns="$(date +%s%N)"
 [[ -f "${manifest}" ]] || { echo "::error::Artifact manifest is missing." >&2; exit 1; }
 mkdir -p "${destination}"
@@ -46,18 +60,34 @@ if [[ -z "${dotnet_sdk}" ]]; then
   command -v dotnet >/dev/null || { echo "::error::Required command 'dotnet' is unavailable." >&2; exit 2; }
   dotnet_sdk="$(dotnet --version)"
 fi
+if [[ -n "${workflow_run_id}" && ! "${dotnet_sdk}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
+  echo "::error::Strict artifacts require a valid SDK version." >&2; exit 2
+fi
+
 now_epoch="${HONUA_SERVER_TEST_ARTIFACT_NOW_EPOCH:-$(date +%s)}"
 if [[ ! "${now_epoch}" =~ ^[0-9]+$ ]] || [[ ! "${MAX_EVIDENCE_TTL_SECONDS}" =~ ^[0-9]+$ ]]; then
   echo "::error::Evidence time bounds must be positive integers." >&2
   exit 2
 fi
 
+registry_sha256=""
+if [[ -n "${workflow_run_id}" ]]; then
+  registry_sha256="$(sha256sum "${REGISTRY}" | cut -d' ' -f1)"
+fi
 jq -e \
+  --arg registry_sha256 "${registry_sha256}" \
+  --arg workflow_run_id "${workflow_run_id}" \
+  --arg build_properties "${build_properties}" \
+  --arg configuration "${HONUA_SERVER_TEST_ARTIFACT_CONFIGURATION:-Release}" \
   --arg contract "${CONTRACT}" \
   --arg project "${expected_project}" \
   --arg source_sha "${expected_source_sha,,}" \
   --arg dotnet_sdk "${dotnet_sdk}" '
     .contract == $contract and
+    (if $contract == "honua.server-test-binaries.v2" then
+      .build_identity == {workflow_run_id:$workflow_run_id,build_properties:$build_properties,
+        configuration:$configuration,os:"Linux",architecture:"x86_64",registry_sha256:$registry_sha256}
+    else true end) and
     .project == $project and
     .source_sha == $source_sha and
     .dotnet_sdk == $dotnet_sdk and
@@ -117,16 +147,26 @@ done < <(jq -r '.static_web_asset_content_roots.payload[]' "${manifest}")
 # must lie inside the test project's output or a declared static web asset payload
 # root; symlinks, hardlinks, devices, FIFOs, control characters, and expansion bombs
 # are rejected even when their archive digest is otherwise valid.
-python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/validate-server-test-archive.py" \
+timeout 120 python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/validate-server-test-archive.py" \
   --archive "${archive_path}" \
   --max-unpacked-bytes "${MAX_UNPACKED_BYTES}" \
   "${allowed_root_args[@]}"
 
 verify_end_ns="$(date +%s%N)"
 unpack_start_ns="${verify_end_ns}"
-tar --no-same-owner --no-same-permissions -xzf "${archive_path}" -C "${destination}"
+stage_root="$(mktemp -d "${destination}/.honua-artifact-stage.XXXXXX")"
+trap 'rm -rf "${stage_root}"' EXIT
+timeout 120 tar --no-same-owner --no-same-permissions -xzf "${archive_path}" -C "${stage_root}"
 unpack_end_ns="$(date +%s%N)"
-project_dir="${destination}/${project_relative_dir}"
+[[ "$(find "${stage_root}" -type f | wc -l)" -eq "$(jq -r '.file_count' "${manifest}")" ]] || {
+  echo "::error::Restored file count does not match manifest." >&2; exit 1;
+}
+while IFS= read -r payload_root; do
+  [[ -d "${stage_root}/${payload_root}" ]] || {
+    echo "::error::Missing staged static asset payload root: ${payload_root}" >&2; exit 1;
+  }
+done < <(jq -r '.static_web_asset_content_roots.payload[]' "${manifest}")
+project_dir="${stage_root}/${project_relative_dir}"
 [[ -f "${project_dir}/obj/project.assets.json" ]] || { echo "::error::Restored project assets are missing." >&2; exit 1; }
 find "${project_dir}/bin/${configuration}" -type f -name '*.dll' -print -quit | grep -q . || {
   echo "::error::Restored test binaries are missing." >&2
@@ -136,6 +176,12 @@ find "${project_dir}/bin/${configuration}" -type f -name '*.pdb' -print -quit | 
   echo "::error::Restored PDB failure-attribution evidence is missing." >&2
   exit 1
 }
+
+for pattern in '*.deps.json' '*.runtimeconfig.json'; do
+  find "${project_dir}/bin/${configuration}" -type f -name "${pattern}" -print -quit | grep -q . || {
+    echo "::error::Restored output missing ${pattern}." >&2; exit 1;
+  }
+done
 
 # Every static web asset content root the restored host opens must exist, or this
 # shard would silently serve 404 where a building shard serves 200 (#4453). Roots
@@ -153,7 +199,12 @@ while IFS= read -r -d '' swa_manifest; do
     root="${root%/}"
     [[ -n "${root}" ]] || continue
     if [[ "${root}" == "${packaged_repo_root}"/* ]]; then
-      root="${destination}/${root#"${packaged_repo_root}/"}"
+      relative_root="${root#"${packaged_repo_root}/"}"
+      if [[ -d "${stage_root}/${relative_root}" ]]; then
+        root="${stage_root}/${relative_root}"
+      else
+        root="${destination}/${relative_root}"
+      fi
     fi
     [[ -d "${root}" ]] || missing_roots+=("${root}")
   done <<<"${roots}"
@@ -162,6 +213,11 @@ if (( ${#missing_roots[@]} > 0 )); then
   echo "::error::Restored payload is missing static web asset content roots a local build serves from: ${missing_roots[*]}" >&2
   exit 1
 fi
+
+# Install only after all validation, replacing whole output roots. Roll back every
+# replaced root if installation fails; staging resides on the destination filesystem.
+python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install-server-test-artifact.py" \
+  "${stage_root}" "${destination}" "${manifest}" "${project_relative_dir}" "${configuration}"
 
 if [[ -n "${timing_file}" ]]; then
   mkdir -p "$(dirname "${timing_file}")"
