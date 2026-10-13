@@ -10253,6 +10253,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerRelationshipResourceTests.Relationships_DistinctClassesWithSameId_RejectsAmbiguousMetadata",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerRelationshipResourceTests.Relationships_NoDeclarations_AdvertisesAnImplementedEmptyResource",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerRelationshipResourceTests.Relationships_OneEndpointIsUnauthorized_HidesTheClassAndRootSummary",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerRelationshipResourceTests.Relationships_ReciprocalDirectionalNames_PreservesBothLabels",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerRelationshipResourceTests.Relationships_ReciprocalOrDestinationOnly_ReturnsOneOrientedServiceClass",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.CreateReplica_SyncModelNone_ReturnsScopedDataWithoutRegisteringAReplica",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.ServiceMetadata_SyncEnabled_AdvertisesSyncCapabilities",
@@ -10403,6 +10404,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerRelationshipResourceTests.Relationships_DistinctClassesWithSameId_RejectsAmbiguousMetadata",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerRelationshipResourceTests.Relationships_NoDeclarations_AdvertisesAnImplementedEmptyResource",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerRelationshipResourceTests.Relationships_OneEndpointIsUnauthorized_HidesTheClassAndRootSummary",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerRelationshipResourceTests.Relationships_ReciprocalDirectionalNames_PreservesBothLabels",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerRelationshipResourceTests.Relationships_ReciprocalOrDestinationOnly_ReturnsOneOrientedServiceClass",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerRelationshipResourceTests.Relationships_ZeroIdAndStringPrimaryKey_PreservesDeclaredIdentity"
       ],

@@ -68,7 +68,7 @@ internal static partial class FeatureServerEndpoints
             var cardinality = MapEsriCardinality(relationship.Cardinality);
             var identity = new ServiceRelationshipClassIdentity(origin.Resource.Metadata.Id,
                 destination.Resource.Metadata.Id, originPrimaryKey, originForeignKey,
-                relationship.Name, cardinality, relationship.Composite);
+                cardinality, relationship.Composite);
             if (identities.TryGetValue(id, out var existing))
             {
                 if (existing.Class != identity || existing.DestinationSide == destinationSide || !reciprocals.Add(id))
@@ -78,6 +78,9 @@ internal static partial class FeatureServerEndpoints
                     throw new InvalidOperationException($"Relationship class id {id} is ambiguous within the service.");
                 }
 
+                // Resource-local names describe traversal in each direction, not
+                // the identity of the shared relationship class.
+                result[id].BackwardPathLabel = relationship.Name;
                 continue;
             }
 
@@ -107,5 +110,5 @@ internal static partial class FeatureServerEndpoints
 
     private sealed record ServiceRelationshipClassIdentity(
         string OriginResourceId, string DestinationResourceId, string OriginPrimaryKey,
-        string OriginForeignKey, string Name, string Cardinality, bool Composite);
+        string OriginForeignKey, string Cardinality, bool Composite);
 }
