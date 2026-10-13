@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from argparse import Namespace
 from pathlib import Path
@@ -26,6 +27,38 @@ def execution_args():
 
 
 class HarnessContextTests(unittest.TestCase):
+    def test_workflow_preserves_validated_cut_through_context_and_receipt(self):
+        workflow = (REPOSITORY_ROOT / '.github/workflows/protocol-harness-certification.yml').read_text()
+        identity = workflow.split('      - name: Resolve candidate identity\n', 1)[1]
+        script = textwrap.dedent(identity.split('        run: |\n', 1)[1].split('\n      - name:', 1)[0])
+        for cut in ('2026-08-21T00:00:00Z', '2026-08-21T00:00:00+00:00',
+                    '2026-08-20T14:00:00-10:00', '2026-08-21T00:00:00.000000Z'):
+            with self.subTest(cut=cut), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / 'producer').symlink_to(REPOSITORY_ROOT, target_is_directory=True)
+                output = root / 'output'
+                result = subprocess.run(['bash', '-c', script], cwd=root, capture_output=True, text=True,
+                                        env={**os.environ, 'REQUESTED_SHA': '', 'REQUESTED_CUT': cut,
+                                             'GITHUB_OUTPUT': str(output)})
+                self.assertEqual(result.returncode, 0, result.stderr)
+                resolved = dict(line.split('=', 1) for line in output.read_text().splitlines())
+                args = execution_args()
+                args.candidate_cut_at = cut
+                value = contract()
+                with governed_fixture(value, args) as prepared:
+                    prepared.candidate_cut_at = resolved['requested_cut']
+                    fragment = module.build_fragment(value, {'ExampleTests.Get_ReturnsDocument': 'pass'}, prepared)
+                    self.assertEqual(fragment['candidate']['cut_at'], cut)
+                    self.assertEqual(fragment['observations'][0]['evidence_receipt']['identity']['candidate_cut_at'], cut)
+        for cut in ('2026-08-21T00:00:00', 'not-a-date', '2026-08-21T00:00:00Z\nother=value'):
+            with self.subTest(invalid=cut), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / 'producer').symlink_to(REPOSITORY_ROOT, target_is_directory=True)
+                result = subprocess.run(['bash', '-c', script], cwd=root, capture_output=True, text=True,
+                                        env={**os.environ, 'REQUESTED_SHA': '', 'REQUESTED_CUT': cut,
+                                             'GITHUB_OUTPUT': str(root / 'output')})
+                self.assertNotEqual(result.returncode, 0)
+
     def test_v2_digest_binds_governed_context_run_and_source_host_identity(self):
         value = contract()
         outcomes = {'ExampleTests.Get_ReturnsDocument': 'pass'}
