@@ -773,13 +773,13 @@ jobs:
 
       - name: Build production PDAL native tools
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
-        timeout-minutes: 30
-        run: |
-          docker buildx build --load --target native-tools -f docker/worker-gdal/Dockerfile \
-            --cache-from type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-worker-gdal-amd64 \
-            -t honua-pdal-proof .
-          echo "HONUA_PDAL_PROOF_IMAGE=$(docker image inspect --format '{{.Id}}' honua-pdal-proof)" >> "$GITHUB_ENV"
-          echo "HONUA_GDAL_PROOF_USER=$(id -u):$(id -g)" >> "$GITHUB_ENV"
+        # A verified digest avoids rebuilding native tools. Every miss preserves
+        # the existing 30-minute production build; actual PDAL proofs stay below.
+        timeout-minutes: 35
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HONUA_NATIVE_TOOLS_REUSE: ${{ vars.HONUA_NATIVE_TOOLS_REUSE != 'false' && 'true' || 'false' }}
+        run: python3 scripts/ci/native-tools-image.py resolve --output tests/TestResults/native-tools-proof.json
 
       - name: Prove point-cloud execution with production PDAL
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
@@ -794,7 +794,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: pdal-execution-proof
-          path: tests/TestResults/pdal-execution-proof.trx
+          path: |
+            tests/TestResults/pdal-execution-proof.trx
+            tests/TestResults/native-tools-proof.json
 
       - name: Upload raster execution proof
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'

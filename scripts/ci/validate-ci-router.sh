@@ -37,6 +37,8 @@ scripts/ci/validate-review-first-dispatch.sh
 echo "Validating PR Gate impact observation..."
 if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-native-tools-image.py
+  "${PYTHON_BIN}" scripts/ci/source-inventory-pilot/test_run.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-mcp-server-auth.py
   HONUA_PR_GATE_IMPACT_PYTHON="${PYTHON_BIN}" scripts/ci/validate-pr-gate-impact.sh
   "${PYTHON_BIN}" scripts/ci/audit-impact-routing-evidence.test.py
@@ -1536,6 +1538,7 @@ echo "Checking shard headroom audit and its drain guard..."
 # --max-utilization guard is what names a crowded shard on the PR that fills it.
 # Untested, a wrong "latest run" reading would silently stop reporting.
 "${PYTHON_BIN}" scripts/ci/audit-shard-headroom.test.py
+"${PYTHON_BIN}" scripts/ci/fixtures/validate-shard-timing-plan.py
 
 echo "Checking shard filter/test-class coverage in both directions..."
 "${PYTHON_BIN}" scripts/ci/test-geoservices-support-partition.py

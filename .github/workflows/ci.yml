@@ -820,6 +820,42 @@ jobs:
           projects-file: ${{ runner.temp }}/managed-projects.json
           enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' }}
 
+      # Observe where the normal producer has all inspected/reference outputs.
+      # The complete collector remains required in the downstream server family;
+      # this adds only a small CI tool build, no inspected build or transport.
+      - name: Build source inventory observation tool
+        if: vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'
+        timeout-minutes: 5
+        run: >-
+          dotnet build eng/ci/Honua.Ci.SourceInventory/Honua.Ci.SourceInventory.csproj
+          --configuration Release -p:TreatWarningsAsErrors=true -p:UseSharedCompilation=false
+
+      - name: Verify source inventory fixture semantics
+        if: vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'
+        timeout-minutes: 3
+        run: |
+          dotnet eng/ci/Honua.Ci.SourceInventory/bin/Release/net10.0/Honua.Ci.SourceInventory.dll self-test
+          python3 scripts/ci/source-inventory-pilot/test_run.py
+
+      - name: Observe source inventory metadata parity
+        if: vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'
+        timeout-minutes: 15
+        continue-on-error: true
+        run: >-
+          python3 scripts/ci/source-inventory-pilot/run.py
+          --tool eng/ci/Honua.Ci.SourceInventory/bin/Release/net10.0/Honua.Ci.SourceInventory.dll
+
+      - name: Upload producer source inventory observations
+        if: always() && vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'
+        uses: actions/upload-artifact@v7
+        timeout-minutes: 3
+        with:
+          name: source-inventory-pilot-${{ github.run_attempt }}
+          path: tests/TestResults/source-inventory-pilot/
+          if-no-files-found: warn
+          retention-days: 7
+
+
   format:
     name: Format Check
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
@@ -1649,13 +1685,13 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build production PDAL native tools for execution proofs
-        timeout-minutes: 30
-        run: |
-          docker buildx build --load --target native-tools -f docker/worker-gdal/Dockerfile \
-            --cache-from type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-worker-gdal-amd64 \
-            -t honua-pdal-proof .
-          echo "HONUA_PDAL_PROOF_IMAGE=$(docker image inspect --format '{{.Id}}' honua-pdal-proof)" >> "$GITHUB_ENV"
-          echo "HONUA_GDAL_PROOF_USER=$(id -u):$(id -g)" >> "$GITHUB_ENV"
+        # A verified digest avoids rebuilding native tools. Every miss preserves
+        # the existing 30-minute production build; actual PDAL proofs stay below.
+        timeout-minutes: 35
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HONUA_NATIVE_TOOLS_REUSE: ${{ vars.HONUA_NATIVE_TOOLS_REUSE != 'false' && 'true' || 'false' }}
+        run: python3 scripts/ci/native-tools-image.py resolve --output tests/TestResults/native-tools-proof.json
 
       - name: Prepare GDAL Testcontainers images
         timeout-minutes: 12

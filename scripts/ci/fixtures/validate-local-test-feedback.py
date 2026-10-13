@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Service-free contracts for local affected-test feedback orchestration."""
 import importlib.util
+from datetime import datetime, timezone
 import json
 import os
 import shutil
@@ -35,6 +36,38 @@ class FeedbackTests(unittest.TestCase):
         return feedback.make_plan(self.catalog, {'selectedProjects': selected or []},
                                   {'run_all': all_shards, 'shards': routed or [], 'reason': 'fixture'},
                                   self.registry, ['src/Owner/Changed.cs'])
+
+    def test_timing_order_preserves_exact_selected_entries(self):
+        root = SCRIPT.parents[2]
+        config = json.loads((root / '.github/ci-shards.json').read_text())
+        catalog = json.loads((root / '.github/test-projects.json').read_text())['projects']
+        monolith = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
+        selected = [next(shard for shard in config['shards']
+                         if catalog[shard.get('csproj') or monolith]['role'] == role)
+                    for role in ('unit', 'component', 'mixed')]
+        original = [{'name': s['shard_name'], 'effectiveFilter': s['filter'], 'marker': i}
+                    for i, s in enumerate(selected)]
+        with tempfile.TemporaryDirectory() as directory:
+            timings = Path(directory)
+            for i, shard in enumerate(selected):
+                expected_filter = '(' + shard['filter'] + ')&Tier!=Slow'
+                if i == 2:  # Only the legacy/mixed role excludes Fast cases.
+                    expected_filter = '(' + expected_filter + ')&Tier!=Fast'
+                (timings / f'{i}.timing.json').write_text(json.dumps({
+                    'shard': shard['shard_name'], 'status': 'passed', 'duration_seconds': (i + 1) * 10,
+                    'started_at': datetime.now(timezone.utc).isoformat(),
+                    'filter': expected_filter}))
+            plan = {'shards': original.copy(), 'projects': ['keep'], 'resources': ['postgres']}
+            feedback.order_shards(root, plan, timings)
+            self.assertEqual(plan['shards'], original[::-1])
+            self.assertTrue(plan['ordering']['changed'])
+            self.assertEqual(plan['projects'], ['keep'])
+            self.assertEqual(plan['resources'], ['postgres'])
+            (timings / '0.timing.json').unlink()
+            plan['shards'] = original.copy()
+            feedback.order_shards(root, plan, timings)
+            self.assertEqual(plan['shards'], original)
+            self.assertFalse(plan['ordering']['changed'])
 
     def test_full_unit_owns_overlap_but_retains_component_and_mixed_filters(self):
         result = self.plan([self.unit], ['unit-id', 'Component', 'Mixed'])

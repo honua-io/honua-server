@@ -41,6 +41,7 @@ named on the PR that fills it rather than on the next red trunk.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import math
 import sys
@@ -273,6 +274,8 @@ def main(argv: list[str] | None = None) -> int:
         help="directory searched recursively for *.timing.json shard artifacts",
     )
     parser.add_argument("--markdown", action="store_true", help="emit a markdown table instead of JSON")
+    parser.add_argument("--rebalance", action="store_true", help="emit read-only class-group rebalance proposals instead of timeout advice")
+    parser.add_argument("--groups-file", type=Path, help="reviewed collection/fixture grouping map for --rebalance")
     parser.add_argument(
         "--fail-on-warn",
         action="store_true",
@@ -304,6 +307,19 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     config = json.loads(args.config.read_text(encoding="utf-8"))
+    if args.rebalance:
+        if args.markdown or args.fail_on_warn or args.max_utilization is not None or args.advisory:
+            parser.error('--rebalance is a separate read-only report; do not combine with headroom gate flags')
+        spec = importlib.util.spec_from_file_location('shard_timing_plan', Path(__file__).with_name('shard-timing-plan.py'))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        try:
+            groups = json.loads(args.groups_file.read_text()) if args.groups_file else None
+            print(json.dumps(module.recommend(config, module.observations(config, args.timings_dir), groups), indent=2))
+        except (ValueError, OSError, KeyError) as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        return 0
     rows = audit(config, load_timings(args.timings_dir))
 
     if args.markdown:

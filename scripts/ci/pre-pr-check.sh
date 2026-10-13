@@ -923,6 +923,14 @@ else
             fi
         done <<< "${SELECTED_SHARDS}"
     else
+        # Timing hints only reorder the canonical selection. Missing or invalid
+        # evidence retains the original order and cannot remove a selected shard.
+        if ordered_shards="$("${PYTHON_BIN}" scripts/ci/shard-timing-plan.py order \
+            --timings-dir "${HONUA_LOCAL_CI_TIMINGS:-tests/TestResults}" <<< "${SELECTED_SHARDS}")"; then
+            SELECTED_SHARDS="${ordered_shards}"
+        else
+            echo "   ⚠️ timing ordering unavailable; preserving canonical shard order"
+        fi
         SHARD_PARALLELISM="${HONUA_PRE_PR_SHARD_PARALLELISM:-2}"
         SHARD_STATUS_DIR="$(mktemp -d)"
         echo "   (parallelism=${SHARD_PARALLELISM}; per-shard logs under ${SHARD_STATUS_DIR})"
