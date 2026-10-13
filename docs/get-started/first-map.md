@@ -13,10 +13,10 @@ You'll turn a published layer into a live MapLibre map using vector tiles, TileJ
 > access-policy MCP tool ([honua-server#5741](https://github.com/honua-io/honua-server/pull/5741)).
 > The exact client block below still needs a successful executable-docs replay against the
 > selected release candidate ([honua-server#5737](https://github.com/honua-io/honua-server/issues/5737)).
-> The browser fetches tiles without credentials, so steps 2?6 require anonymous reads to be
+> The browser fetches tiles without credentials, so steps 2–6 require anonymous reads to be
 > enabled on the published service. Do not proceed after a refused policy change.
 
-Every published layer is automatically served as Mapbox Vector Tiles at `/tiles/{layerId}/{z}/{x}/{y}.mvt`, described by TileJSON at `/tiles/{layerId}/tile.json`, with a ready-made MapLibre style at `/api/styles/{layerId}.json` â€” no tile cache to build, no style to author.
+Every published layer is automatically served as Mapbox Vector Tiles at `/tiles/{layerId}/{z}/{x}/{y}.mvt`, described by TileJSON at `/tiles/{layerId}/tile.json`, with a ready-made MapLibre style at `/api/styles/{layerId}.json` — no tile cache to build, no style to author.
 
 ## Steps
 
@@ -65,10 +65,10 @@ PY
 ```
 
 MCP tool calls authenticate with the `X-API-Key` header; HTTP Basic auth is refused.
-`$HONUA_BASE_URL` and `$HONUA_API_KEY` come from your quickstart install's `.env` â€” see
+`$HONUA_BASE_URL` and `$HONUA_API_KEY` come from your quickstart install's `.env` — see
 [Publish your first dataset](first-dataset.md) for the two lines that read them.
 
-The interactive API explorer at `/docs` is served only when `HONUA_SERVE_API_DOCS=true` â€” it defaults on in `Development` and off in `Production`, which is what the packaged Compose profiles run, so on a default install that URL is a 404. The [admin OpenAPI document](../developer/api-specs/admin-api.json) is the client-generation contract.
+The interactive API explorer at `/docs` is served only when `HONUA_SERVE_API_DOCS=true` — it defaults on in `Development` and off in `Production`, which is what the packaged Compose profiles run, so on a default install that URL is a 404. The [admin OpenAPI document](../developer/api-specs/admin-api.json) is the client-generation contract.
 
 2. Fetch the TileJSON. It carries the tile URL template, zoom range, data bounds, the vector layer schema, and a link to the auto-generated style.
 
@@ -77,7 +77,7 @@ Open `$HONUA_BASE_URL/tiles/$HONUA_LAYER_ID/tile.json` in a browser (`http://loc
 ```text
 {"tilejson":"3.0.0","name":"hawaii-cities","scheme":"xyz",
  "tiles":["http://localhost:18080/tiles/1/{z}/{x}/{y}.mvt"],
- "minzoom":0,"maxzoom":22,"bounds":[â€¦],"vector_layers":[{"id":"layer",â€¦}],
+ "minzoom":0,"maxzoom":22,"bounds":[…],"vector_layers":[{"id":"layer",…}],
  "style":"http://localhost:18080/api/styles/1.json"}
 ```
 
@@ -98,7 +98,7 @@ const server = 'http://localhost:18080', layerId = 1; // your HONUA_BASE_URL and
 fetch(`${server}/tiles/${layerId}/tile.json`).then(r => r.json()).then(tj => {
   const map = new maplibregl.Map({container:'map', style:{version:8,
     sources:{
-      osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'Â© OpenStreetMap'},
+      osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap'},
       honua:{type:'vector',tiles:tj.tiles,minzoom:tj.minzoom,maxzoom:tj.maxzoom}},
     layers:[
       {id:'osm',type:'raster',source:'osm'},
@@ -142,14 +142,14 @@ In the browser developer tools, confirm the TileJSON and vector-tile requests re
 
 ## Troubleshoot
 
-- **Tile or TileJSON requests return 401** â€” anonymous read is not enabled on the service (step 1), or the layer was published to a service other than `default`.
-- **404 on `/tiles/{id}/tile.json`** â€” wrong `layerId`; use the `layerId` from the publish response, and confirm the layer is enabled.
-- **CORS errors in the browser console** â€” the page's origin is not in `Cors__AllowedOrigins__*` (step 5); `file://` pages are always blocked.
-- **Map loads but no features visible** â€” confirm `'source-layer':'layer'` is set on the style layer and that the map view covers your data's bounds.
+- **Tile or TileJSON requests return 401** — anonymous read is not enabled on the service (step 1), or the layer was published to a service other than `default`.
+- **404 on `/tiles/{id}/tile.json`** — wrong `layerId`; use the `layerId` from the publish response, and confirm the layer is enabled.
+- **CORS errors in the browser console** — the page's origin is not in `Cors__AllowedOrigins__*` (step 5); `file://` pages are always blocked.
+- **Map loads but no features visible** — confirm `'source-layer':'layer'` is set on the style layer and that the map view covers your data's bounds.
 - More help: [Troubleshooting](../guides/deploy/troubleshooting.md)
 
 ## Next steps
 
-- [Style maps](../guides/style/style-maps.md) â€” replace the defaults with your own renderers and themes
-- [MapLibre web maps](../guides/connect/maplibre-web-maps.md) â€” production patterns for web clients
-- [Publish tiles](../guides/publish/publish-tiles.md) â€” tile caching, PMTiles, and OGC API Tiles
+- [Style maps](../guides/style/style-maps.md) — replace the defaults with your own renderers and themes
+- [MapLibre web maps](../guides/connect/maplibre-web-maps.md) — production patterns for web clients
+- [Publish tiles](../guides/publish/publish-tiles.md) — tile caching, PMTiles, and OGC API Tiles
