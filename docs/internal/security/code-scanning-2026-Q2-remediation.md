@@ -553,14 +553,16 @@ code-scanning alerts: six CodeQL and 19 Trivy. This updates the disposition;
 it does not assert that the October source comments automatically cleared
 the findings. The current CodeQL workflow uploads its analysis directly and
 does not apply a source-comment dismissal integration. The comments remain
-review evidence, not proof that GitHub has dismissed an alert. No alerts were
-dismissed during this review, and no ignore entries were added.
+review evidence, not proof that GitHub has dismissed an alert. After independent
+source review, the six CodeQL alerts below were individually dismissed as false
+positives with per-alert rationale linked to #5729 and PR #5986. The 19 Trivy
+alerts remain open. No ignore entries were added.
 
 The source reviewed was `3b8fa2e15f99fda592bc600deb635a71f1f16ddb`. The SQL policy,
 attachment handlers and Lambda AOT Dockerfile have no diff from candidate
 `0e03bdd06b3ca3fb1b82388110bb5dfa19b9f8fa` at the time of review.
 
-| Open alerts | Evidence and bounded disposition |
+| Reviewed alerts | Evidence and bounded disposition |
 | --- | --- |
 | #3465, #3466, #3467 (`cs/user-controlled-bypass`) | In attachment add/update/delete, `TryValidateLayerAccessAsync` runs before the form-null check; null returns immediately. A supplied form cannot bypass the earlier authorization. These are supported false-positive dispositions for those specific conditions, not authorization waivers. |
 | #3488 (`cs/insecure-sql-connection`) | `SqlServerConnectionSecurity.RequireEncryption` re-parses input and sets `Encrypt = true` before returning it. `TestConnectionAsync` opens only that returned string. `SqlServerConnectionSecurityTests` covers omitted encryption, explicit false and preservation of certificate validation. |
