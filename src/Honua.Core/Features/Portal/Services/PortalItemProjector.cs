@@ -31,6 +31,7 @@ public sealed class PortalItemProjector : IPortalItemProjector
 
     private readonly IAccessPolicyEvaluator _accessPolicyEvaluator;
     private readonly IEsriConstructCapabilityRegistry _capabilityRegistry;
+    private readonly IPortalResourceReadAuthorizer _readAuthorizer;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PortalItemProjector"/> class.
@@ -47,14 +48,18 @@ public sealed class PortalItemProjector : IPortalItemProjector
     /// facade?" verdict from the registry instead of a private table, so the
     /// facade, importer, and GP lanes stay aligned on one source of truth.
     /// </param>
+    /// <param name="readAuthorizer">Resource-aware canonical read authorization, including service group audiences.</param>
     public PortalItemProjector(
         IAccessPolicyEvaluator accessPolicyEvaluator,
-        IEsriConstructCapabilityRegistry capabilityRegistry)
+        IEsriConstructCapabilityRegistry capabilityRegistry,
+        IPortalResourceReadAuthorizer readAuthorizer)
     {
         ArgumentNullException.ThrowIfNull(accessPolicyEvaluator);
         ArgumentNullException.ThrowIfNull(capabilityRegistry);
         _accessPolicyEvaluator = accessPolicyEvaluator;
         _capabilityRegistry = capabilityRegistry;
+        ArgumentNullException.ThrowIfNull(readAuthorizer);
+        _readAuthorizer = readAuthorizer;
     }
 
     /// <inheritdoc />
@@ -153,7 +158,7 @@ public sealed class PortalItemProjector : IPortalItemProjector
             }
 
             anyResource = true;
-            if (IsAllowed(principal, resource!.AccessPolicy, service.AccessPolicy))
+            if (_readAuthorizer.Evaluate(principal, resource, service, publication).IsAllowed)
             {
                 anyVisible = true;
                 firstVisibleResource ??= resource;
@@ -177,7 +182,7 @@ public sealed class PortalItemProjector : IPortalItemProjector
                 return null;
             }
         }
-        else if (!IsAllowed(principal, layerPolicy: null, service.AccessPolicy))
+        else if (!_readAuthorizer.Evaluate(principal, resource: null, service).IsAllowed)
         {
             return null;
         }
@@ -185,9 +190,6 @@ public sealed class PortalItemProjector : IPortalItemProjector
         var access = DeriveAccessTier(firstVisibleResource?.AccessPolicy, service.AccessPolicy);
         return BuildItem(service, firstVisibleResource, itemType, urlType, access, baseUrl);
     }
-
-    private bool IsAllowed(ClaimsPrincipal principal, AccessPolicy? layerPolicy, AccessPolicy? servicePolicy)
-        => _accessPolicyEvaluator.Evaluate(principal, layerPolicy, servicePolicy, scope: null).IsAllowed;
 
     /// <summary>
     /// Projects the composed (resource, service) access policy into the Esri

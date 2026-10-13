@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Portal.Abstractions;
 using Honua.Core.Features.Portal.Domain;
 using Honua.Infrastructure.Authentication;
@@ -145,6 +146,11 @@ internal static class SharingCommunityEndpoints
             return StandardErrorHelpers.CreateUnauthorized(context, "Authentication is required to create a group.");
         }
 
+        if (!PortalResourceReadAuthorizer.TryGetTrustedTenant(context, out _))
+        {
+            return StandardErrorHelpers.CreateForbidden(context, "A trusted request tenant context is required.");
+        }
+
         var form = await ReadFormOrQueryAsync(context).ConfigureAwait(false);
         var title = form.Get("title");
         if (string.IsNullOrWhiteSpace(title))
@@ -157,7 +163,8 @@ internal static class SharingCommunityEndpoints
                 Title: title!,
                 Description: form.Get("description"),
                 Access: form.Get("access") ?? PortalGroupAccess.Private,
-                Tags: SplitList(form.Get("tags"))),
+                Tags: SplitList(form.Get("tags")),
+                TenantId: TenantScopeHelpers.ResolveRequestTenantId(context)),
             owner,
             context.RequestAborted).ConfigureAwait(false);
 
@@ -183,7 +190,7 @@ internal static class SharingCommunityEndpoints
         }
 
         var record = await groupStore.GetAsync(groupId, context.RequestAborted).ConfigureAwait(false);
-        if (record is null || !CanSeeGroup(record, context.User))
+        if (record is null || !PortalResourceReadAuthorizer.IsGroupTenantVisible(context, record) || !CanSeeGroup(record, context.User))
         {
             // Don't distinguish "not found" from "not visible" so a private group's
             // existence is never leaked to a non-member.
@@ -194,11 +201,18 @@ internal static class SharingCommunityEndpoints
     }
 
     internal static async Task<IReadOnlyList<GroupResponse>> GetUserGroupsAsync(
-        IPortalGroupStore groupStore, string username, CancellationToken cancellationToken)
+        HttpContext context, IPortalGroupStore groupStore, string username, CancellationToken cancellationToken)
     {
+        if (!PortalResourceReadAuthorizer.TryGetTrustedTenant(context, out _)
+            || !string.Equals(context.User.FindFirstValue(ClaimTypes.NameIdentifier), username, StringComparison.OrdinalIgnoreCase))
+        {
+            return [];
+        }
+
         var groups = await groupStore.ListAsync(cancellationToken).ConfigureAwait(false);
-        return groups.Where(group => string.Equals(group.Owner, username, StringComparison.OrdinalIgnoreCase) ||
-                group.Members.Contains(username, StringComparer.OrdinalIgnoreCase))
+        return groups.Where(group => PortalResourceReadAuthorizer.IsGroupTenantVisible(context, group)
+                && (string.Equals(group.Owner, username, StringComparison.OrdinalIgnoreCase)
+                    || group.Members.Contains(username, StringComparer.OrdinalIgnoreCase)))
             .OrderBy(group => group.Id, StringComparer.Ordinal)
             .Select(ToGroup).ToArray();
     }
@@ -227,7 +241,8 @@ internal static class SharingCommunityEndpoints
         var group = await groupStore.GetAsync(groupId, context.RequestAborted).ConfigureAwait(false);
         // Group content is limited to its owner/members. Public/org visibility of
         // the group description does not authorize reading the content collection.
-        if (group is null || (!string.Equals(group.Owner, caller, StringComparison.OrdinalIgnoreCase) &&
+        if (group is null || !PortalResourceReadAuthorizer.IsGroupTenantVisible(context, group)
+            || (!string.Equals(group.Owner, caller, StringComparison.OrdinalIgnoreCase) &&
                 !group.Members.Contains(caller, StringComparer.OrdinalIgnoreCase)))
         {
             return StandardErrorHelpers.CreateNotFound(context, "Group does not exist or is inaccessible.");
@@ -279,7 +294,7 @@ internal static class SharingCommunityEndpoints
         }
 
         var record = await groupStore.GetAsync(groupId, context.RequestAborted).ConfigureAwait(false);
-        if (record is null)
+        if (record is null || !PortalResourceReadAuthorizer.IsGroupTenantVisible(context, record))
         {
             return StandardErrorHelpers.CreateNotFound(context, "Group does not exist.");
         }
@@ -328,7 +343,7 @@ internal static class SharingCommunityEndpoints
         }
 
         var record = await groupStore.GetAsync(groupId, context.RequestAborted).ConfigureAwait(false);
-        if (record is null)
+        if (record is null || !PortalResourceReadAuthorizer.IsGroupTenantVisible(context, record))
         {
             return StandardErrorHelpers.CreateNotFound(context, "Group does not exist.");
         }
@@ -358,20 +373,26 @@ internal static class SharingCommunityEndpoints
         HttpContext context,
         string itemId,
         [FromServices] IPortalItemSharingStore sharingStore,
+        [FromServices] IPortalGroupStore groupStore,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] ILogger<SharingRestLog> logger)
-        => ApplySharingAsync(context, itemId, sharingStore, logger, share: true);
+        => ApplySharingAsync(context, itemId, sharingStore, groupStore, graphProvider, logger, share: true);
 
     private static Task<IResult> HandleUnshareItemAsync(
         HttpContext context,
         string itemId,
         [FromServices] IPortalItemSharingStore sharingStore,
+        [FromServices] IPortalGroupStore groupStore,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] ILogger<SharingRestLog> logger)
-        => ApplySharingAsync(context, itemId, sharingStore, logger, share: false);
+        => ApplySharingAsync(context, itemId, sharingStore, groupStore, graphProvider, logger, share: false);
 
     private static async Task<IResult> ApplySharingAsync(
         HttpContext context,
         string itemId,
         IPortalItemSharingStore sharingStore,
+        IPortalGroupStore groupStore,
+        IMetadataV2GraphProvider graphProvider,
         ILogger<SharingRestLog> logger,
         bool share)
     {
@@ -387,19 +408,23 @@ internal static class SharingCommunityEndpoints
             return StandardErrorHelpers.CreateUnauthorized(context, "Authentication is required to change item sharing.");
         }
 
-        // The in-memory sharing overlay is not read by item access. Do not record a
-        // share or unshare, and do not report the requested audiences as applied.
-        // An existing overlay owner is still the only non-admin who may attempt the
-        // operation; that check does not itself change access.
-        var owner = await sharingStore.GetOwnerAsync(itemId, context.RequestAborted).ConfigureAwait(false);
-        var isAdmin = IsAdmin(context.User);
-        if (owner is not null &&
-            !isAdmin &&
-            !string.Equals(owner, caller, StringComparison.OrdinalIgnoreCase))
+        var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+        var service = snapshot.Graph.Services.FirstOrDefault(candidate =>
+            string.Equals(candidate.Metadata.Id, itemId, StringComparison.Ordinal));
+        if (service is null || !service.IsRoutable()
+            || service.PrimaryProtocol is not (ServiceProtocols.FeatureServer or ServiceProtocols.MapServer or ServiceProtocols.ImageServer)
+            || !TenantScopeHelpers.IsTenantVisible(context, resource: null, service))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Item does not exist or is inaccessible.");
+        }
+
+        // Metadata publisher is the actual owner; first sharing cannot seize ownership.
+        if (!IsAdmin(context.User)
+            && (string.IsNullOrWhiteSpace(service.Metadata.Publisher)
+                || !string.Equals(service.Metadata.Publisher, caller, StringComparison.OrdinalIgnoreCase)))
         {
             return StandardErrorHelpers.CreateForbidden(
-                context,
-                "Only the item's owner or an administrator may change its sharing.");
+                context, "Only the item's publisher or an administrator may change its sharing.");
         }
 
         var form = await ReadFormOrQueryAsync(context).ConfigureAwait(false);
@@ -425,8 +450,35 @@ internal static class SharingCommunityEndpoints
             notSharedWith.Add("org");
         }
 
-        notSharedWith.AddRange(groups);
-        SharingRestLog.ItemSharingNotApplied(logger, itemId, share ? "share" : "unshare");
+        var existingState = sharingStore.Get(itemId);
+        var eligibleGroups = new List<string>();
+        foreach (var groupId in groups)
+        {
+            var group = await groupStore.GetAsync(groupId, context.RequestAborted).ConfigureAwait(false);
+            if ((!share && existingState.GroupIds.Contains(groupId, StringComparer.Ordinal))
+                || (group is not null && PortalResourceReadAuthorizer.IsGroupTenantVisible(context, group)
+                    && (string.Equals(group.Owner, caller, StringComparison.OrdinalIgnoreCase)
+                    || group.Members.Contains(caller, StringComparer.OrdinalIgnoreCase))))
+            {
+                eligibleGroups.Add(groupId);
+            }
+            else
+            {
+                notSharedWith.Add(groupId);
+            }
+        }
+
+        var state = eligibleGroups.Count == 0
+            ? sharingStore.Get(itemId)
+            : share
+                ? await sharingStore.ShareAsync(itemId, service.Metadata.Publisher ?? caller,
+                    new PortalItemShareRequest(false, false, eligibleGroups), context.RequestAborted).ConfigureAwait(false)
+                : await sharingStore.UnshareAsync(itemId,
+                    new PortalItemShareRequest(false, false, eligibleGroups), context.RequestAborted).ConfigureAwait(false);
+        if (notSharedWith.Count > 0)
+        {
+            SharingRestLog.ItemSharingNotApplied(logger, itemId, share ? "share" : "unshare");
+        }
 
         var response = new ItemSharingResponse
         {
@@ -436,7 +488,7 @@ internal static class SharingCommunityEndpoints
             {
                 Everyone = false,
                 Org = false,
-                Groups = [],
+                Groups = state.GroupIds,
             },
         };
         return Results.Json(response, SharingRestJsonContext.Default.ItemSharingResponse, contentType: JsonContentType);
@@ -489,7 +541,12 @@ internal static class SharingCommunityEndpoints
                 c.Type == ClaimTypes.Role && string.Equals(c.Value, AdminRole, StringComparison.OrdinalIgnoreCase));
 
     private static string? RequireAuthenticatedUser(HttpContext context)
-        => context.User.Identity?.IsAuthenticated == true ? ResolveUsername(context.User) : null;
+    {
+        var subject = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return context.User.Identity?.IsAuthenticated == true && !string.IsNullOrWhiteSpace(subject)
+            ? subject
+            : null;
+    }
 
     private static string ResolveUsername(ClaimsPrincipal principal)
         => principal.FindFirstValue(ClaimTypes.NameIdentifier)
