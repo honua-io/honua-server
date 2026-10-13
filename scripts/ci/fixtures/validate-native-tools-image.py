@@ -4,7 +4,6 @@ import importlib.util
 import json
 from pathlib import Path
 import shutil
-import sys
 import time
 import tempfile
 import unittest
@@ -70,7 +69,7 @@ class NativeToolsTests(unittest.TestCase):
             self.assertNotIn('--push', argv)
             self.assertEqual(argv[argv.index('--target') + 1], 'native-tools')
             return ''
-        self.fail(f'Unexpected command {argv}')
+        raise AssertionError(f'Unexpected command {argv}')
 
     def built(self):
         return any(argv[:3] == ['docker', 'buildx', 'build'] for argv, _ in self.calls)

@@ -180,6 +180,7 @@ def command(argv, root, timeout):
             try:
                 os.killpg(process.pid, sig)
             except ProcessLookupError:
+                # The owned group already exited; nothing remains to signal.
                 pass
         stop(signal.SIGTERM)
         try:
@@ -252,6 +253,7 @@ def resolve(root, *, platform='linux/amd64', reuse=True, overrides=(), run=comma
     except UnsafeProcessGroup:
         raise
     except (RuntimeError, TimeoutError, ValueError, OSError, IndexError, KeyError, TypeError, AttributeError):
+        # A lookup/verification miss deliberately falls through to the bounded build.
         pass
     local_tag = 'honua-pdal-proof-' + uuid.uuid4().hex[:12]
     build = ['docker', 'buildx', 'build', '--load', '--platform', platform, '--target', 'native-tools',
