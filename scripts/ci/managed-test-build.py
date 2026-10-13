@@ -128,6 +128,11 @@ def fallback(root, projects, restored, *, execute=True):
             write_filter(root, restore_projects, selection)
             subprocess.run(['bash', str(root / 'scripts/ci/dotnet-restore-retry.sh'), str(selection), '-p:Configuration=Release',
                             *PROPERTIES], cwd=root, check=True)
+            still_missing = [project for project in missing_dependencies
+                             if not package_dependencies_ready(root, project)]
+            if still_missing:
+                raise ValueError('Scoped restore completed but package dependencies remain missing: '
+                                 + ', '.join(still_missing))
             if missing:
                 build_selection = selection
                 if missing != restore_projects:

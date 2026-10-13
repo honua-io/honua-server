@@ -99,6 +99,7 @@ class ManagedBuildTests(unittest.TestCase):
         def execute(command, **kwargs):
             selection = next(Path(item) for item in command if str(item).endswith('.slnf'))
             calls.append((command, json.loads(selection.read_text())))
+            self.package_assets(self.a, exists=True)
         with patch.object(managed.subprocess, 'run', side_effect=execute), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual([], managed.fallback(self.root, [self.a, self.b], [self.a, self.b]))
         self.assertEqual(1, len(calls))
@@ -112,6 +113,8 @@ class ManagedBuildTests(unittest.TestCase):
         def execute(command, **kwargs):
             selection = next(Path(item) for item in command if str(item).endswith('.slnf'))
             calls.append((command, json.loads(selection.read_text())['solution']['projects']))
+            if command[0] == 'bash':
+                self.package_assets(self.a, exists=True)
         with patch.object(managed.subprocess, 'run', side_effect=execute), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual([self.b], managed.fallback(self.root, [self.a, self.b], [self.a]))
         self.assertEqual(2, len(calls))
@@ -140,8 +143,16 @@ class ManagedBuildTests(unittest.TestCase):
             data['libraries']['adapter/1.0']['files'] = [value]
             path.write_text(json.dumps(data))
             self.assertFalse(managed.package_dependencies_ready(self.root, self.a))
-        with patch.object(managed.subprocess, 'run') as execute, contextlib.redirect_stdout(io.StringIO()):
+        with patch.object(managed.subprocess, 'run', side_effect=lambda *args, **kwargs: self.package_assets(self.a, exists=True)) as execute, contextlib.redirect_stdout(io.StringIO()):
             managed.fallback(self.root, [self.a], [self.a])
+        self.assertEqual(1, execute.call_count)
+        self.assertEqual('bash', execute.call_args.args[0][0])
+
+    def test_successful_restore_with_incomplete_cache_fails_before_compilation(self):
+        self.package_assets(self.a, exists=False)
+        with patch.object(managed.subprocess, 'run') as execute, contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(ValueError, 'restore completed but package dependencies remain missing'):
+                managed.fallback(self.root, [self.a, self.b], [self.a])
         self.assertEqual(1, execute.call_count)
         self.assertEqual('bash', execute.call_args.args[0][0])
 
