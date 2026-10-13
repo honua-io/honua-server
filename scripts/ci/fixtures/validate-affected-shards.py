@@ -290,6 +290,39 @@ def check_changed_test_file_selects_its_running_shard(config: dict[str, Any]) ->
     return len(exclusive)
 
 
+def check_wps_and_h3_tests_select_both_owners(config: dict[str, Any]) -> None:
+    """A routed WPS file must not hide an unlisted H3 file in the same diff."""
+    wps = "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/Wps20EndpointsTests.cs"
+    h3_paths = [
+        f"tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/{name}.cs"
+        for name in ("ProviderRoutedTileAndH3EndpointTests", "FeatureServerH3EntitlementTests")
+    ]
+    expected = {"WFS", "FeatureServer Endpoints Query Services and Replication"}
+
+    def check(candidate: dict[str, Any], path: Path) -> None:
+        for h3 in h3_paths:
+            changed = [wps, h3]
+            result = select_offline(
+                candidate, changed, descriptor=router(candidate, changed, config_path=path),
+            )
+            if not expected.issubset(result["shards"]):
+                raise FixtureError(f"mixed WPS/H3 diff omitted an owning shard: {result['shards']}")
+
+    check(config, CONFIG_PATH)
+    mutated = copy.deepcopy(config)
+    for shard in mutated["shards"]:
+        shard["paths"] = [path for path in shard.get("paths", []) if path not in h3_paths]
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "ci-shards.json"
+        path.write_text(json.dumps(mutated), encoding="utf-8")
+        try:
+            check(mutated, path)
+        except FixtureError:
+            pass
+        else:
+            raise FixtureError("mixed WPS/H3 control accepted removal of the H3 routing paths")
+
+
 def check_non_runnable_tiers_are_not_credited(config: dict[str, Any]) -> int:
     """A changed test NO shard would execute must credit no shard at all.
 
@@ -724,6 +757,7 @@ def main() -> int:
     check_cap_is_enforced(config)
     check_largest_impact_first(config)
     owned = check_changed_test_file_selects_its_running_shard(config)
+    check_wps_and_h3_tests_select_both_owners(config)
     tiered = check_non_runnable_tiers_are_not_credited(config)
     unrouted = check_unrouted_test_selects_its_owning_shard(config)
     roots = check_shard_owned_roots_are_product_code(config)

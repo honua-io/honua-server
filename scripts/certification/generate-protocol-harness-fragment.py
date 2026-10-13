@@ -15,6 +15,8 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 RESULTS = {"Passed": "pass", "Failed": "fail"}
 PROJECT_BY_CLASS = {
+    "ProviderRoutedTileAndH3EndpointTests": "Honua.Protocols.GeoServices.Tests",
+    "FeatureServerH3EntitlementTests": "Honua.Protocols.GeoServices.Tests",
     "VectorTileServerEndpointTests": "Honua.Protocols.GeoServices.Tests",
     "FeatureServerTemporalExtentEndpointTests": "Honua.Protocols.GeoServices.Tests",
     "FeatureServerTemporalTests": "Honua.Protocols.GeoServices.Tests",
@@ -22,6 +24,7 @@ PROJECT_BY_CLASS = {
     "FeatureServerMutationScenarioTests": "Honua.Protocols.GeoServices.Tests",
     "EdrEndpointsTests": "Honua.Protocols.OgcApi.Tests",
     "OgcFeaturesMutationScenarioTests": "Honua.Protocols.OgcApi.Tests",
+    "Wps20EndpointsTests": "Honua.Protocols.OgcClassic.Tests",
     "Wfs20MutationScenarioTests": "Honua.Protocols.OgcClassic.Tests",
     "SensorThingsReadEndpointsTests": "Honua.Protocols.SensorThings.Tests",
     "SensorThingsIngestEndpointsTests": "Honua.Protocols.SensorThings.Tests",

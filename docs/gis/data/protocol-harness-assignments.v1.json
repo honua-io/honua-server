@@ -86,6 +86,58 @@
       "scenario_facets": ["positive", "media-schema"]
     },
     {
+      "capability_key": "analytics.h3",
+      "surface": "ogc-api-features",
+      "operation": "GET /ogc/features/collections/{collectionId}/h3",
+      "test_ids": [
+        "ProviderRoutedTileAndH3EndpointTests.OgcH3_SourceBackedLayer_UsesBindingScopedFeatureReader",
+        "FeatureServerH3EntitlementTests.OgcH3_CommunityEdition_ReturnsPaymentRequired"
+      ],
+      "scenario_facets": [
+        "positive",
+        "negative"
+      ]
+    },
+    {
+      "capability_key": "analytics.h3",
+      "surface": "feature-server",
+      "operation": "GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryH3",
+      "test_ids": [
+        "ProviderRoutedTileAndH3EndpointTests.QueryH3_SourceBackedLayer_UsesBindingScopedFeatureReader",
+        "FeatureServerH3EntitlementTests.QueryH3Get_CommunityEdition_ReturnsPaymentRequired"
+      ],
+      "scenario_facets": [
+        "positive",
+        "negative"
+      ]
+    },
+    {
+      "capability_key": "analytics.h3",
+      "surface": "feature-server",
+      "operation": "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryH3",
+      "test_ids": [
+        "ProviderRoutedTileAndH3EndpointTests.QueryH3Post_SourceBackedLayer_UsesBindingScopedFeatureReader",
+        "FeatureServerH3EntitlementTests.QueryH3Post_CommunityEdition_ReturnsPaymentRequired"
+      ],
+      "scenario_facets": [
+        "positive",
+        "negative"
+      ]
+    },
+    {
+      "capability_key": "analytics.h3",
+      "surface": "ogc-api-features",
+      "operation": "GET /tiles/{layerId}/h3/{z}/{x}/{y}.mvt",
+      "test_ids": [
+        "ProviderRoutedTileAndH3EndpointTests.H3Tile_SourceBackedLayer_UsesBindingScopedTileProvider",
+        "FeatureServerH3EntitlementTests.H3Tile_CommunityEdition_ReturnsPaymentRequired"
+      ],
+      "scenario_facets": [
+        "positive",
+        "negative"
+      ]
+    },
+    {
       "capability_key": "analytics.line-of-sight",
       "surface": "elevation-query-profile",
       "operation": "POST /elevation/{datasetId}/line-of-sight",
@@ -333,6 +385,74 @@
       "operation": "GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins",
       "test_ids": ["FeatureServerQueryDateBinsTests.QueryDateBins_CalendarBin_ReturnsBins"],
       "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "serve.wps",
+      "surface": "wps-2.0.2",
+      "operation": "GET /wps?request=GetCapabilities",
+      "test_ids": [
+        "Wps20EndpointsTests.GetCapabilities_AdvertisesAsyncExecutionForCanonicalProcesses"
+      ],
+      "scenario_facets": [
+        "positive",
+        "media-schema"
+      ]
+    },
+    {
+      "capability_key": "serve.wps",
+      "surface": "wps-2.0.2",
+      "operation": "GET /wps?request=DescribeProcess",
+      "test_ids": [
+        "Wps20EndpointsTests.DescribeProcess_Kvp_ReturnsNamespaceCorrectDescription",
+        "Wps20EndpointsTests.DescribeProcess_NonJobProcess_ReturnsNoSuchProcess"
+      ],
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "media-schema"
+      ]
+    },
+    {
+      "capability_key": "serve.wps",
+      "surface": "wps-2.0.2",
+      "operation": "POST /wps",
+      "test_ids": [
+        "Wps20EndpointsTests.Execute_XmlInputId_SubmitsCanonicalPlan",
+        "Wps20EndpointsTests.Execute_WithoutDurableJobStore_ProjectsCapabilityUnavailableReceiptIntoExceptionReport",
+        "Wps20EndpointsTests.Execute_XmlWithDtd_IsRejectedWithoutEntityExpansion"
+      ],
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "media-schema"
+      ]
+    },
+    {
+      "capability_key": "serve.wps",
+      "surface": "wps-2.0.2",
+      "operation": "GET /wps?request=GetStatus",
+      "test_ids": [
+        "Wps20EndpointsTests.GetStatus_CanonicalRunningJob_ReturnsIdentityAndProgress",
+        "Wps20EndpointsTests.GetStatus_UnknownJob_ReturnsOwsExceptionReport"
+      ],
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "media-schema"
+      ]
+    },
+    {
+      "capability_key": "serve.wps",
+      "surface": "wps-2.0.2",
+      "operation": "GET /wps?request=GetResult",
+      "test_ids": [
+        "Wps20EndpointsTests.GetResult_MapsAdvertisedResultIdentifierAndLiteralMediaType",
+        "Wps20EndpointsTests.GetResult_ExposesEveryArtifactOutput"
+      ],
+      "scenario_facets": [
+        "positive",
+        "media-schema"
+      ]
     }
   ]
 }
