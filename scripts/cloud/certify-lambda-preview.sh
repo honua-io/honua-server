@@ -6,6 +6,7 @@ set -euo pipefail
 # Invalidate any previous receipt before validating the remaining inputs.
 if [[ -n "${HONUA_LAMBDA_PREVIEW_RECEIPT:-}" ]]; then
 mkdir -p "$(dirname "$HONUA_LAMBDA_PREVIEW_RECEIPT")"
+rm -f "$(dirname "$HONUA_LAMBDA_PREVIEW_RECEIPT")/deployment-execution-inputs.json" "$(dirname "$HONUA_LAMBDA_PREVIEW_RECEIPT")/deployment-binding.json"
 printf '%s\n' '{"schema":"honua.lambda-preview-certification/v1","result":"fail","serving":{"result":"noProof"}}' > "$HONUA_LAMBDA_PREVIEW_RECEIPT"
 fi
 
@@ -350,6 +351,10 @@ if [[ "$(aws logs describe-log-groups --log-group-name-prefix "$log_group" \
   exit 94
 fi
 
+# Capture the final, measured ECR pin and actual runtime inputs before any deployment.
+# This can fill only the canonical pending mirror sentinel; a conflicting bound pin refuses.
+python3 "$script_dir/lambda-certification.py" capture "$scratch" "$ecr_digest"
+
 # Everything this group will ever hold belongs to this run: the group is created here, is named
 # for the run, and is deleted at teardown. Anchoring the evidence queries to its creation (with
 # slack for clock skew) is therefore both bounded and complete — unlike a window measured back
@@ -634,4 +639,11 @@ jq -n \
 
 jq -e '.result == "pass" and (.artifact.ecrDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourcePlatformDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourceConfigDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.mirrorOutcome | test("^(pushed|skipped-existing|replaced-stale)$")) and .artifact.configDigestPreserved and .artifact.rootfsPreserved and .verification.responseVerified and .verification.cloudWatchLogsVerified and .teardown.functionDeleted and .teardown.logGroupDeleted and .serving.result == "pass" and (.serving.deniedKey.source == "override" or (.serving.deniedKey.created and .serving.deniedKey.revoked and .serving.deniedKey.activeAfterTeardown == 0)) and .verification.coldStartInitDurationMs > 0 and .verification.coldStartEnvironmentForced and .verification.coldStartInvokeAttempts >= 1' \
   "$HONUA_LAMBDA_PREVIEW_RECEIPT" >/dev/null
+if [[ -n "${HONUA_LAMBDA_PREPARED_MANIFEST:-}" ]]; then
+  binding="$(dirname "$HONUA_LAMBDA_PREVIEW_RECEIPT")/deployment-binding.json"
+  test -s "$binding"
+  # Only append the capture after serving and teardown succeeded. Legacy runs have no binding.
+  bound_receipt="$(jq -s '.[0] + .[1]' "$HONUA_LAMBDA_PREVIEW_RECEIPT" "$binding")"
+  printf '%s\n' "$bound_receipt" > "$HONUA_LAMBDA_PREVIEW_RECEIPT"
+fi
 echo "Lambda Preview certification passed; ECR digest: ${ecr_digest}"
