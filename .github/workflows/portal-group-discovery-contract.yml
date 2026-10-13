@@ -6,9 +6,15 @@ on:
     paths:
       - 'src/Honua.Protocols.GeoServices/Sharing/**'
       - 'src/Honua.Core.Abstractions/Features/Portal/**'
+      - 'src/Honua.Core/Features/Portal/**'
+      - 'src/Honua.Core/Features/Security/Abstractions/IPortalResourceReadAuthorizer.cs'
+      - 'src/Honua.Hosting/Features/Authentication/PortalResourceReadAuthorizer.cs'
+      - 'src/Honua.Hosting/Features/Authentication/AccessPolicyHelpers.cs'
       - 'src/Honua.Hosting/Features/Authentication/PortalGroupStore.cs'
       - 'src/Honua.Hosting/Features/Authentication/PortalItemSharingStore.cs'
       - 'tests/dotnet/Honua.Server.Tests/Features/Sharing/**'
+      - 'tests/dotnet/Honua.Hosting.UnitTests/Source/Features/Infrastructure/Authentication/PortalResourceReadAuthorizerTests.cs'
+      - 'tests/dotnet/Honua.Core.Tests/Features/Portal/**'
       - '.github/workflows/portal-group-discovery-contract.yml'
 
 permissions:
@@ -54,29 +60,45 @@ jobs:
       - name: Run actual Portal HTTP read and sharing regressions
         run: |
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release -m:1 \
-            --filter 'FullyQualifiedName~SharingCommunityTests|FullyQualifiedName~SharingRestReadTests' \
+            --filter 'FullyQualifiedName~SharingCommunityTests|FullyQualifiedName~SharingRestReadTests|FullyQualifiedName~PortalCanonicalGroupSharingTests' \
             --logger 'trx;LogFileName=portal-contract.trx' --results-directory portal-results
+          dotnet test tests/dotnet/Honua.Hosting.UnitTests/Honua.Hosting.UnitTests.csproj --configuration Release -m:1 \
+            --filter 'FullyQualifiedName~PortalResourceReadAuthorizerTests|FullyQualifiedName~OperatorAuthorizationEvaluatorTests|FullyQualifiedName~LayerAccessAuthorizerTests' \
+            --logger 'trx;LogFileName=portal-authorizer.trx' --results-directory portal-results
+          dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj --configuration Release -m:1 \
+            --filter 'FullyQualifiedName~PortalItemProjectorTests' \
+            --logger 'trx;LogFileName=portal-projector.trx' --results-directory portal-results
       - name: Require the new read and denial cases to execute and pass
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import re
           import xml.etree.ElementTree as ET
-          source = Path('tests/dotnet/Honua.Server.Tests/Features/Sharing/SharingCommunityTests.cs').read_text()
-          methods = re.findall(r'public async Task ((?:UserGroups_|GroupContent_)\w+)\(', source)
-          assert len(methods) == 4 and len(set(methods)) == 4, methods
-          root = ET.parse('portal-results/portal-contract.trx').getroot()
           ns = {'t': 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010'}
-          counters = root.find('t:ResultSummary/t:Counters', ns).attrib
-          assert int(counters['executed']) > 0 and counters['failed'] == '0', counters
-          definitions = {test.attrib['id']: test.find('t:TestMethod', ns).attrib['name']
-                         for test in root.findall('t:TestDefinitions/t:UnitTest', ns)}
-          results = root.findall('t:Results/t:UnitTestResult', ns)
-          for method in methods:
-              actual = [result for result in results if definitions[result.attrib['testId']] == method]
-              assert len(actual) == 1 and actual[0].attrib['outcome'] == 'Passed', (method, actual)
-          print('Actual Portal contract counters:', counters)
-          print('All new source-derived read, paging and authorization methods executed and passed.')
+          suites = {
+              'portal-contract.trx': [
+                  'tests/dotnet/Honua.Server.Tests/Features/Sharing/SharingCommunityTests.cs',
+                  'tests/dotnet/Honua.Server.Tests/Features/Sharing/PortalCanonicalGroupSharingTests.cs',
+              ],
+              'portal-authorizer.trx': ['tests/dotnet/Honua.Hosting.UnitTests/Source/Features/Infrastructure/Authentication/PortalResourceReadAuthorizerTests.cs'],
+              'portal-projector.trx': ['tests/dotnet/Honua.Core.Tests/Features/Portal/PortalItemProjectorTests.cs'],
+          }
+          for trx, sources in suites.items():
+              root = ET.parse(Path('portal-results') / trx).getroot()
+              counters = root.find('t:ResultSummary/t:Counters', ns).attrib
+              assert int(counters['executed']) > 0 and counters['failed'] == '0', counters
+              definitions = {test.attrib['id']: test.find('t:TestMethod', ns).attrib['name']
+                             for test in root.findall('t:TestDefinitions/t:UnitTest', ns)}
+              results = root.findall('t:Results/t:UnitTestResult', ns)
+              for source in sources:
+                  methods = re.findall(r'public (?:async )?(?:Task|void) (\w+)\(', Path(source).read_text())
+                  methods = [name for name in methods if name not in {'Dispose', 'InitializeAsync', 'DisposeAsync'}]
+                  assert methods and len(set(methods)) == len(methods), (source, methods)
+                  for method in methods:
+                      actual = [result for result in results if definitions[result.attrib['testId']] == method]
+                      assert actual and all(result.attrib['outcome'] == 'Passed' for result in actual), (source, method, actual)
+              print('Actual Portal contract counters:', trx, counters)
+          print('All source-derived sharing, tenant, denial, SQL read and projector methods executed and passed.')
           PY
       - uses: actions/upload-artifact@v7
         if: always()

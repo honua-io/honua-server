@@ -240,7 +240,8 @@ internal static class AccessPolicyHelpers
             }
         }
 
-        return RequireAccess(context, null, service.AccessPolicy, ScopeForOperation(operation));
+        return CreateAccessDeniedResult(context, EvaluateServicePolicy(
+            context.RequestServices, context.User, null, service, ScopeForOperation(operation), operation));
     }
 
     /// <summary>
@@ -356,12 +357,8 @@ internal static class AccessPolicyHelpers
 
         // No matching grant (or no service context): preserve current behavior
         // by falling back to the coarse AccessPolicy evaluation.
-        var evaluator = services.GetRequiredService<IAccessPolicyEvaluator>();
-        return evaluator.Evaluate(
-            principal,
-            resource.AccessPolicy,
-            service?.AccessPolicy,
-            ScopeForOperation(operation));
+        return EvaluateServicePolicy(
+            services, principal, resource.AccessPolicy, service, ScopeForOperation(operation), operation);
     }
 
     /// <summary>
@@ -395,7 +392,7 @@ internal static class AccessPolicyHelpers
 
     // Scoped API-key grants must be checked against the target before any coarse
     // policy or role grant can authorize the request. A missing target fails closed.
-    private static AccessDecision? EvaluateScopedKeyAccess(
+    internal static AccessDecision? EvaluateScopedKeyAccess(
         ClaimsPrincipal principal, string? serviceName, string? layerName, AuthorizationOperation operation)
     {
         if (!LayerScopedWriteKey.IsScopeGovernedPrincipal(principal))
@@ -530,7 +527,8 @@ internal static class AccessPolicyHelpers
         var scopedKeyDecision = EvaluateScopedKeyAccess(context.User, service.Metadata.Name, null, DefaultOperationForScope(scope));
         return scopedKeyDecision is { } decision
             ? CreateAccessDeniedResult(context, decision)
-            : RequireAccess(context, null, service.AccessPolicy, scope);
+            : CreateAccessDeniedResult(context, EvaluateServicePolicy(
+                context.RequestServices, context.User, null, service, scope));
     }
 
     public static bool IsResourceAccessible(
@@ -572,7 +570,31 @@ internal static class AccessPolicyHelpers
         }
 
         return EvaluateScopedKeyAccess(context.User, service?.Metadata.Name, resource.Metadata.Name, DefaultOperationForScope(scope))
-            ?? EvaluateAccess(context, resource.AccessPolicy, service?.AccessPolicy, scope);
+            ?? EvaluateServicePolicy(context.RequestServices, context.User, resource.AccessPolicy, service, scope);
+    }
+
+    // An explicit group audience is an alternative service READ grant only.
+    // Resource policy remains authoritative, and callers enforce tenant/key scope first.
+    internal static AccessDecision EvaluateServicePolicy(
+        IServiceProvider services,
+        ClaimsPrincipal principal,
+        AccessPolicy? resourcePolicy,
+        MetadataV2Service? service,
+        AccessScope scope,
+        AuthorizationOperation operation = AuthorizationOperation.Query)
+    {
+        var servicePolicy = service?.AccessPolicy;
+        if (scope == AccessScope.Read
+            && (operation is AuthorizationOperation.Query or AuthorizationOperation.Read
+                or AuthorizationOperation.Metadata or AuthorizationOperation.Export)
+            && service is not null
+            && services.GetService<IPortalResourceReadAuthorizer>()?.HasServiceAudience(principal, service) == true)
+        {
+            servicePolicy = null;
+        }
+
+        return services.GetRequiredService<IAccessPolicyEvaluator>()
+            .Evaluate(principal, resourcePolicy, servicePolicy, scope);
     }
 
     /// <summary>
