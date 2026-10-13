@@ -8,6 +8,7 @@ using Honua.Db.Postgres.Features.FeatureStore;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using NetTopologySuite.Geometries;
@@ -20,6 +21,7 @@ namespace Honua.Server.Tests;
 /// Integration tests for PostgresFeatureStore using real PostgreSQL database.
 /// </summary>
 [Collection("Database.CoreFeatureStore")]
+[Protocol(ProtocolNames.Infrastructure)]
 public class PostgresFeatureStoreTests : IAsyncLifetime
 {
     private readonly DatabaseFixtureAdapter _fixture;
@@ -269,6 +271,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
     [InlineData(1, 2, 0, false)]
     [InlineData(null, 0, 2, false)]
     [InlineData(int.MaxValue, 0, 2, false)]
+    [Operation(Operations.ContractTesting)]
     public async Task QueryAsync_DistinctFallback_ReportsWhetherAnotherProjectedRowExists(
         int? limit, int offset, int expectedItems, bool expectedHasMore)
     {
@@ -310,6 +313,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
     [InlineData(1, 3, 0, false)]
     [InlineData(null, 0, 3, false)]
     [InlineData(int.MaxValue, 0, 3, false)]
+    [Operation(Operations.ContractTesting)]
     public async Task QueryAsync_ReturnDistanceFallback_PreservesPageGeometryAndContinuation(
         int? limit, int offset, int expectedItems, bool expectedHasMore)
     {
