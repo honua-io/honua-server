@@ -22,6 +22,10 @@ on:
         description: Exact 40-character server revision bound to the image
         required: true
         type: string
+      prepared_manifest:
+        description: Optional prepared execution-manifest projection and operating-envelope digest as JSON
+        required: false
+        type: string
       use_denied_key_override:
         description: Use the deprecated scoped-key secret instead of minting a key (one release only)
         type: boolean
@@ -59,6 +63,7 @@ jobs:
       HONUA_LAMBDA_PREVIEW_REPOSITORY: ${{ vars.REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY }}
       HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN: ${{ vars.REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN }}
       HONUA_LAMBDA_PREVIEW_RECEIPT: evidence/lambda-preview-receipt.json
+      HONUA_LAMBDA_PREPARED_MANIFEST: ${{ inputs.prepared_manifest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -136,7 +141,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: lambda-preview-certification-receipt
-          path: evidence/lambda-preview-receipt.json
+          path: |
+            evidence/lambda-preview-receipt.json
+            evidence/deployment-execution-inputs.json
           if-no-files-found: error
           retention-days: 30
 

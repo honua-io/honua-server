@@ -8,6 +8,34 @@ CloudWatch, ownership and teardown checks. The ECR mirror is a release output,
 as in the original lane; functions, log groups, written rows and the candidate
 published version are temporary.
 
+## Prepared deployment qualification inputs
+
+The optional `prepared_manifest` dispatch input carries JSON data with schema
+`honua.prepared-deployment-manifest/v1`, the release producer's projected
+`manifest`, and `operatingEnvelope` containing the exact policy path and SHA-256.
+The server never executes code from this input. Bound runs must execute this
+workflow on trunk and the supplied server source, Lambda image digest and
+architecture must match the independently supplied lane inputs.
+
+After verifying the actual ECR mirror, before any candidate function or log group is created, the lane records
+`deployment-execution-inputs.json`. It may replace only the canonical
+`pending-ecr-mirror` sentinel with the measured mirror digest; any conflicting
+already bound digest fails. Release admission verifies this sole bootstrap change
+before adopting the final pins for subsequent EKS proof. It captures the actual workflow revision,
+fixture hash, effective environment and VPC fingerprints, standing configuration,
+role and target fingerprints, memory and timeout settings. Secrets Manager
+references in the candidate environment are pinned to the immutable versions
+observed during preparation. Only reference fingerprints and version IDs enter
+the capture; environment values and credentials remain private.
+
+A successful raw receipt includes the capture digest and the actual Actions run
+identity only after serving and teardown pass. Both files are uploaded together.
+A legacy invocation without prepared inputs has no execution-input binding, and
+an old receipt cannot be converted into a new bound proof after execution.
+Release admission independently checks the capture, raw proof, artifact provenance
+and current operating-envelope hash. This scoped pre-cut proof does not discharge
+the separate GA upgrade/rollback requirement involving two certified locks.
+
 The lane is fail-closed. A failed or absent serving check produces `serving.result:
 noProof` and a nonzero exit; it never treats missing live inputs as a skipped pass.
 The workflow serializes with `real-aws-certification` because both use the standing
