@@ -13,9 +13,9 @@ using Honua.Server.Tests.Features.Protocols.GeoServices.NAServer;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
@@ -209,13 +209,11 @@ public sealed class RoutingUtilityServiceTests : IClassFixture<NAServerEndpointT
                 }
             ]
         };
-        var provider = Substitute.For<IMetadataV2GraphProvider>();
-        provider.GetCurrentAsync(Arg.Any<CancellationToken>())
-            .Returns(new ValueTask<MetadataV2GraphSnapshot>(new MetadataV2GraphSnapshot(graph, "routing-collision", DateTimeOffset.UtcNow)));
+        var provider = new TestMetadataV2GraphProvider(graph, "routing-collision");
         var fixture = new WebAppFixture().ConfigureServices(services =>
         {
             services.RemoveAll<IMetadataV2GraphProvider>();
-            services.AddSingleton(provider);
+            services.AddSingleton<IMetadataV2GraphProvider>(provider);
             services.RemoveAll<IRoutingProvider>();
             services.AddScoped<IRoutingProvider, TestRoutingProvider>();
         });
