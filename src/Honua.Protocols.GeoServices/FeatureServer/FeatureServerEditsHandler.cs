@@ -328,7 +328,14 @@ internal sealed class FeatureServerEditsHandler(
             FeatureEditResult editResult;
             for (var attempt = 0; ; attempt++)
             {
-                editContext = await ProcessEditOperationsAsync(request, resource, storageLayerId.Value, editPrincipal, lockScope, cancellationToken);
+                editContext = await ProcessEditOperationsAsync(
+                    request,
+                    resource,
+                    storageLayerId.Value,
+                    editPrincipal,
+                    lockScope,
+                    retryStaleUpdate,
+                    cancellationToken);
                 editContext.GuardUpdateSnapshot = retryStaleUpdate;
                 await ApplyPluginEditPipelineAsync(serviceId, layerId, resource, editContext, cancellationToken)
                     .ConfigureAwait(false);
@@ -495,6 +502,7 @@ internal sealed class FeatureServerEditsHandler(
         int storageLayerId,
         EditPrincipal principal,
         EditLockScope? lockScope,
+        bool guardUpdateSnapshot,
         CancellationToken cancellationToken)
     {
         var context = new EditOperationContext
@@ -506,7 +514,14 @@ internal sealed class FeatureServerEditsHandler(
         };
 
         await ProcessAddOperationsAsync(request, context, resource, principal, cancellationToken);
-        await ProcessUpdateOperationsAsync(request, context, resource, storageLayerId, principal, cancellationToken);
+        await ProcessUpdateOperationsAsync(
+            request,
+            context,
+            resource,
+            storageLayerId,
+            principal,
+            guardUpdateSnapshot,
+            cancellationToken);
         await ProcessDeleteOperationsAsync(request, resource, storageLayerId, context, principal, cancellationToken);
 
         return context;
@@ -597,6 +612,7 @@ internal sealed class FeatureServerEditsHandler(
         MetadataV2Resource resource,
         int storageLayerId,
         EditPrincipal principal,
+        bool guardUpdateSnapshot,
         CancellationToken cancellationToken)
     {
         if (request.Updates == null)
@@ -703,11 +719,27 @@ internal sealed class FeatureServerEditsHandler(
 
                 var internalObjectId = existingFeature.Value.Id;
                 context.InternalObjectIdsByPublicObjectId[objectId] = internalObjectId;
-                context.UpdateSnapshotPreconditions[internalObjectId] = new FeatureEditPrecondition
+                if (guardUpdateSnapshot)
                 {
-                    ObjectId = internalObjectId,
-                    ExpectedStateToken = FeatureStateToken.Compute(existingFeature.Value)
-                };
+                    // QueryAsync masks in SQL and does not stamp ReadStateToken. GetAsync
+                    // hashes the full row first, then strips masked keys before returning.
+                    var precondition = await TryCreateGuardedUpdatePreconditionAsync(
+                        _featureReader,
+                        storageLayerId,
+                        internalObjectId,
+                        cancellationToken).ConfigureAwait(false);
+                    if (precondition is not { } guarded)
+                    {
+                        context.HasValidationErrors = true;
+                        context.UpdateResults![i] = CreateFailureResult(
+                            code: GeoServicesEditErrorCodes.NotFound,
+                            description: "Feature not found",
+                            objectId: objectId);
+                        continue;
+                    }
+
+                    context.UpdateSnapshotPreconditions[internalObjectId] = guarded;
+                }
                 // Capture request intent BEFORE BuildFeatureFromGeoServicesAsync runs;
                 // that helper preserves existingFeature.Geometry when update.Geometry is
                 // null, so the post-merge feature's WKB cannot distinguish an attribute-
@@ -1884,15 +1916,51 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         var edited = Feature.Create(objectId, geometry, attributes.ToImmutable());
-        if (OwnerEditPolicyFieldAccess.ShouldPreserveStoredOwner(
+        var isPartialUpdate = existingFeature is not null && !feature.ReplaceAttributes;
+        edited = MarkPartialGeoServicesUpdate(edited, isPartialUpdate);
+        if (!edited.PreserveOmittedMaskedAttributes &&
+            OwnerEditPolicyFieldAccess.ShouldPreserveStoredOwner(
                 resource.OwnerEditPolicy,
-                existingFeature is not null && !feature.ReplaceAttributes,
+                isPartialUpdate,
                 attributes.Keys))
         {
             edited = edited with { PreserveOmittedMaskedAttributes = true };
         }
 
         return edited;
+    }
+
+    /// <summary>
+    /// Marks a partial update so the writer keeps omitted attributes, including masked ones.
+    /// A full attribute replacement leaves the flag unset.
+    /// </summary>
+    internal static Feature MarkPartialGeoServicesUpdate(Feature edited, bool isPartialUpdate)
+        => isPartialUpdate
+            ? edited with { PreserveOmittedMaskedAttributes = true }
+            : edited;
+
+    /// <summary>
+    /// Loads the single-update edit snapshot and returns its full-row state token.
+    /// Returns null when the row is gone. Does not attach a precondition for multi-row batches.
+    /// </summary>
+    internal static async Task<FeatureEditPrecondition?> TryCreateGuardedUpdatePreconditionAsync(
+        IFeatureReader reader,
+        int storageLayerId,
+        long storageFeatureId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        if (await reader.GetAsync(storageLayerId, storageFeatureId, cancellationToken).ConfigureAwait(false)
+            is not { } editSnapshot)
+        {
+            return null;
+        }
+
+        return new FeatureEditPrecondition
+        {
+            ObjectId = editSnapshot.Id,
+            ExpectedStateToken = FeatureStateToken.FromReadSnapshot(editSnapshot)
+        };
     }
 
     /// <summary>
