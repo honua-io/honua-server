@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.Admin.Abstractions;
@@ -15,7 +16,6 @@ using Honua.Db.Postgres.Features.Admin;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Migration;
-using RedisJobQueue = Honua.ControlPlane.RedisJobQueue;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin;
 using Honua.TestKit.Attributes;
@@ -37,7 +37,7 @@ namespace Honua.Server.Tests.Admin;
 public sealed partial class LayerPublishingIntegrationTests
 {
     [IntegrationTest]
-    [Operation(Operations.Read)]
+    [Operation(Operations.OperationsProgress)]
     [Endpoint("GET /api/v1/admin/connections/{id}/layers/jobs/{jobId}")]
     public async Task PollLayerPublish_UnknownJob_ReturnsTypedNotFound()
     {
@@ -47,7 +47,8 @@ public sealed partial class LayerPublishingIntegrationTests
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("The requested resource was not found.");
-        body.Should().Contain("\"success\":false");
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
     }
 
     [IntegrationTheory]
