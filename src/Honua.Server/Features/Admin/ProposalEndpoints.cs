@@ -373,12 +373,16 @@ internal static class ProposalEndpoints
         // A decision may release the proposer's authority into an actuator. Require
         // the deciding bearer to possess the same canonical operation-family scope;
         // read-only approval must not bypass the original submission's scope ceiling.
-        var legacyId = LegacyOperationIds.For(proposal.Kind);
-        var operationId = proposal.OperationId ?? legacyId;
+        var legacyId = proposal.Kind is OperationClass.Deploy or OperationClass.Seed
+            or OperationClass.AdminConfigChange or OperationClass.MetadataRelease
+            or OperationClass.Geoprocess or OperationClass.ServicePublish
+            ? LegacyOperationIds.For(proposal.Kind)
+            : null;
+        var operationId = proposal.OperationId ?? legacyId ?? string.Empty;
         var request = new OperationRequest
         {
             OperationId = operationId,
-            GatewayRequest = string.Equals(operationId, legacyId, StringComparison.Ordinal)
+            GatewayRequest = legacyId is not null && string.Equals(operationId, legacyId, StringComparison.Ordinal)
                 ? new OperationGatewayRequest
                 {
                     Kind = proposal.Kind,

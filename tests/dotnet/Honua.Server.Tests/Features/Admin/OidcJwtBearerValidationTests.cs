@@ -12,6 +12,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Honua.TestKit;
 using Microsoft.AspNetCore.Hosting;
@@ -225,8 +226,8 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/operations/proposals/{id}/approve")]
-    [Endpoint("POST /api/v1/admin/operations/proposals/{id}/reject")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/reject")]
     public async Task ProposalDecision_SignedAdminWithoutRequiredScope_LeavesProposalUnchanged()
     {
         foreach (var action in new[] { "approve", "reject" })
@@ -239,6 +240,7 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
                 ("unknown.scope", "studio.content.create-publication-request"),
                 ("", "studio.content.create-publication-request"),
                 ("honua.mcp.full", "unknown.operation"),
+                ("honua.mcp.full", (string?)null),
             })
             {
                 var proposal = PrepareProposal(operationId);
@@ -246,7 +248,7 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
                 client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
                     "Bearer", CreateToken(scope: scope, tenant: "public"));
                 using var response = await client.PostAsJsonAsync(
-                    $"/api/v1/admin/operations/proposals/{proposal.ProposalId}/{action}",
+                    $"/api/v1/admin/proposals/{proposal.ProposalId}/{action}",
                     new { reason = "scope boundary regression" });
 
                 response.StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{scope} cannot {action} a publication");
@@ -260,8 +262,8 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/operations/proposals/{id}/approve")]
-    [Endpoint("POST /api/v1/admin/operations/proposals/{id}/reject")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/reject")]
     public async Task ProposalDecision_SignedAdminWithPublishScope_ReachesResolution()
     {
         foreach (var action in new[] { "approve", "reject" })
@@ -279,7 +281,7 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
                 client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
                     "Bearer", CreateToken(scope: scope, tenant: "public"));
                 using var response = await client.PostAsJsonAsync(
-                    $"/api/v1/admin/operations/proposals/{proposal.ProposalId}/{action}",
+                    $"/api/v1/admin/proposals/{proposal.ProposalId}/{action}",
                     new { reason = "authorized decision" });
 
                 response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
@@ -290,14 +292,64 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
         }
     }
 
-    private OperationProposal PrepareProposal(string operationId = "studio.content.create-publication-request")
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/reject")]
+    public async Task ProposalDecision_LegacyRollback_RequiresRollbackScope()
+    {
+        foreach (var action in new[] { "approve", "reject" })
+        {
+            foreach (var operationId in new[] { null, LegacyOperationIds.For(OperationClass.Deploy) })
+            {
+                foreach (var scope in new[] { "honua.mcp.read", "honua.mcp.publish", "honua.mcp.rollback", "honua.mcp.full" })
+                {
+                    var proposal = PrepareProposal(operationId, OperationClass.Deploy, "deploy.rollback");
+                    _proposalGateway.ApplyApprovedProposalAsync(proposal.ProposalId,
+                        Arg.Any<OperationProposalApprovalContext>(), Arg.Any<CancellationToken>())
+                        .Returns(proposal with { Status = OperationProposalStatus.Succeeded });
+                    _proposalGateway.RejectProposalAsync(proposal.ProposalId, Arg.Any<string>(),
+                        Arg.Any<string>(), Arg.Any<CancellationToken>())
+                        .Returns(proposal with { Status = OperationProposalStatus.Rejected });
+                    using var client = _fixture.CreateClient();
+                    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+                        "Bearer", CreateToken(scope: scope, tenant: "public"));
+                    using var response = await client.PostAsJsonAsync(
+                        $"/api/v1/admin/proposals/{proposal.ProposalId}/{action}",
+                        new { reason = "legacy rollback scope boundary" });
+
+                    if (scope is "honua.mcp.rollback" or "honua.mcp.full")
+                    {
+                        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+                        _proposalGateway.ReceivedCalls().Should().ContainSingle();
+                        _proposalGateway.ReceivedCalls().Single().GetMethodInfo().Name.Should().Be(
+                            action == "approve" ? "ApplyApprovedProposalAsync" : "RejectProposalAsync");
+                    }
+                    else
+                    {
+                        response.StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{scope} cannot {action} a rollback");
+                        _proposalGateway.ReceivedCalls().Should().BeEmpty();
+                        (await _proposalStore.GetAsync(proposal.ProposalId)).Should().BeSameAs(proposal);
+                        proposal.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+                        proposal.ResolvedAt.Should().BeNull();
+                        _proposalStore.ReceivedCalls().Should().OnlyContain(call => call.GetMethodInfo().Name == "GetAsync");
+                    }
+                }
+            }
+        }
+    }
+
+    private OperationProposal PrepareProposal(
+        string? operationId = "studio.content.create-publication-request",
+        OperationClass kind = OperationClass.StudioDraftMutation,
+        string? actionDiscriminator = null)
     {
         var proposal = new OperationProposal
         {
             ProposalId = $"proposal-scope-{Guid.NewGuid():N}",
             TenantId = "public",
             OperationId = operationId,
-            Kind = OperationClass.StudioDraftMutation,
+            Kind = kind,
+            ActionDiscriminator = actionDiscriminator,
             RequestedBy = "different-proposer",
             Status = OperationProposalStatus.AwaitingApproval,
             CreatedAt = DateTimeOffset.UtcNow,
