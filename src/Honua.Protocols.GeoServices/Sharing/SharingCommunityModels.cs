@@ -2,8 +2,28 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Portal.Domain;
 
 namespace Honua.Protocols.GeoServices.Sharing;
+
+/// <summary>One-based page of readable items explicitly shared with a group.</summary>
+internal sealed record GroupContentResponse
+{
+    [JsonPropertyName("total")]
+    public int Total { get; init; }
+
+    [JsonPropertyName("start")]
+    public int Start { get; init; }
+
+    [JsonPropertyName("num")]
+    public int Num { get; init; }
+
+    [JsonPropertyName("nextStart")]
+    public int NextStart { get; init; }
+
+    [JsonPropertyName("items")]
+    public IReadOnlyList<PortalItem> Items { get; init; } = Array.Empty<PortalItem>();
+}
 
 /// <summary>
 /// ArcGIS-compatible community group document (#1868) returned by

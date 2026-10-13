@@ -279,7 +279,8 @@ public sealed class PortalItemProjectorTests
             resourceAccess: AnonymousPolicy());
         var projector = new PortalItemProjector(
             new FakeAccessPolicyEvaluator(),
-            new EsriConstructCapabilityRegistry(NonServableFacadeDescriptors()));
+            new EsriConstructCapabilityRegistry(NonServableFacadeDescriptors()),
+            new FakePortalReadAuthorizer());
 
         var items = projector.ProjectVisibleItems(snapshot, Anonymous(), ProxyBaseUrl);
 
@@ -301,7 +302,8 @@ public sealed class PortalItemProjectorTests
     private static PortalItemProjector CreateProjector()
         => new(
             new FakeAccessPolicyEvaluator(),
-            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors));
+            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
+            new FakePortalReadAuthorizer());
 
     private static EsriConstructCapabilityDescriptor[] NonServableFacadeDescriptors()
         =>
@@ -406,6 +408,15 @@ public sealed class PortalItemProjectorTests
     /// (anonymous flag → authenticated → role membership) so the projector's RBAC
     /// behaviour is exercised end to end without referencing Honua.Hosting.
     /// </summary>
+    private sealed class FakePortalReadAuthorizer : IPortalResourceReadAuthorizer
+    {
+        public AccessDecision Evaluate(ClaimsPrincipal principal, MetadataV2Resource? resource, MetadataV2Service service,
+            MetadataV2Publication? publication = null)
+            => new FakeAccessPolicyEvaluator().Evaluate(principal, resource?.AccessPolicy, service.AccessPolicy);
+
+        public bool HasServiceAudience(ClaimsPrincipal principal, MetadataV2Service service) => false;
+    }
+
     private sealed class FakeAccessPolicyEvaluator : IAccessPolicyEvaluator
     {
         public Task<AccessDecision> EvaluateAsync(ClaimsPrincipal principal, string resource, string action)
