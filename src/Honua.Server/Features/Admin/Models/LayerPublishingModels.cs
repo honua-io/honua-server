@@ -161,6 +161,44 @@ public sealed class PublishLayerRequest
     public IReadOnlyList<string>? Capabilities { get; init; }
 }
 
+/// <summary>Accepted large-table publish (honua-server#5948).</summary>
+public sealed class LayerPublishAcceptedResponse
+{
+    /// <summary>Poll id for the publication job.</summary>
+    public required string JobId { get; init; }
+
+    /// <summary>Relative URL that reports rows materialized and, once committed, the layer id.</summary>
+    public required string StatusUrl { get; init; }
+
+    /// <summary>Source rows counted when the publish was accepted.</summary>
+    public required long RowsTotal { get; init; }
+
+    /// <summary>Job status at acceptance. Always <c>Queued</c>.</summary>
+    public required string Status { get; init; }
+}
+
+/// <summary>Poll body for a large-table publish.</summary>
+public sealed class LayerPublishJobStatusResponse
+{
+    /// <summary>Poll id.</summary>
+    public required string JobId { get; init; }
+
+    /// <summary>Queued, Processing, Completed, Failed, or Cancelled.</summary>
+    public required string Status { get; init; }
+
+    /// <summary>Rows copied into the canonical features table.</summary>
+    public required long RowsMaterialized { get; init; }
+
+    /// <summary>Source rows counted when the publish was accepted.</summary>
+    public required long RowsTotal { get; init; }
+
+    /// <summary>Published layer id after the publication transaction commits.</summary>
+    public int? LayerId { get; init; }
+
+    /// <summary>Failure text when the publish did not commit.</summary>
+    public string? ErrorMessage { get; init; }
+}
+
 /// <summary>
 /// Request payload for validating a selected table before publishing it as a layer.
 /// </summary>

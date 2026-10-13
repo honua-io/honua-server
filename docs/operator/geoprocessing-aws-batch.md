@@ -58,6 +58,35 @@ proposal gateway or HTTP surface. It never submits jobs to AWS Batch, so the job
 connection, `ConnectionStrings__redis` and the operation key-ring certificate. Without Redis it
 refuses to start, because nobody could see the result.
 
+### Large layer publishes
+
+Layer publishing also uses this shared execution worker. Above
+`LayerPublishing:AsyncPublishRowThreshold`, the accepting host prefers a configured
+remote `LayerPublish` workload, then a managed `Geoprocessing` workload. The
+workload must have a registered backend, a managed runtime profile, and the
+existing durable Redis job substrate. Native and custom-code workloads are not
+eligible. Publishing reads a database table, so it does not require the shared
+file-storage prerequisite used by file imports.
+
+The API returns an accepted job and its relative status URL. A disconnected
+request does not cancel accepted dispatch or the worker's publication budget.
+The worker resolves the secure connection after restoring the accepting tenant
+and operational schema; connection strings are not persisted in job parameters.
+Poll documents are scoped to that tenant. The durable execution record retains
+the selected workload, backend, provider operation ID, and execution attempt for
+operator evidence.
+
+Deploy a worker image that includes the `LayerPublish` executor and remote
+publish support before enabling this route. Both the API and the Batch job
+definition must use that implementation and share the database, Redis, and
+connection-encryption key material. Advancing only the API image is insufficient.
+Use immutable images and a versioned job definition when qualifying the rollout.
+
+A Lambda host without a compatible remote durable runner returns the existing
+typed 503 (`durable-runner-required`) for large publishes, including Redis-off
+deployments. A long-lived host retains the local durable runner or its in-process
+fallback. Tables at or below the threshold retain synchronous publication.
+
 ## The activation gate
 
 The committed `geoprocessing-aws-batch` workload has **empty** ARN parameters,

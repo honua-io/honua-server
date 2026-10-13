@@ -79,6 +79,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     private readonly ILogger<PostgreSqlLayerPublishingService> _logger = logger;
     private readonly int _materializationTimeoutSeconds =
         (publishingOptions ?? new LayerPublishingOptions()).GetValidatedMaterializationTimeoutSeconds();
+    private readonly int _materializationBatchSize =
+        (publishingOptions ?? new LayerPublishingOptions()).GetValidatedMaterializationBatchSize();
     private readonly Honua.Core.Features.Styling.Abstractions.IStyleCatalog? _styleCatalog = styleCatalog;
 
     // The Honua-managed metadata schema that owns the shared `features` table
@@ -1033,6 +1035,18 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             Level = LogLevel.Information,
             Message = "Rebuilt canonical feature snapshot with {FeatureCount} features for published layer {LayerId}")]
         public static partial void LayerSnapshotRefreshed(ILogger logger, int layerId, int featureCount);
+
+        [LoggerMessage(
+            EventId = 8204,
+            Level = LogLevel.Information,
+            Message = "Materialized {RowsMaterialized} of {RowsTotal} features for layer {LayerId}")]
+        public static partial void SnapshotBatchMaterialized(ILogger logger, long rowsMaterialized, long rowsTotal, int layerId);
+
+        [LoggerMessage(
+            EventId = 8205,
+            Level = LogLevel.Warning,
+            Message = "Layer {LayerId} snapshot progress was not recorded")]
+        public static partial void SnapshotProgressFailed(ILogger logger, int layerId, Exception exception);
     }
 
     private sealed record LayerFieldInsert(

@@ -498,6 +498,12 @@ internal static class ServiceCollectionExtensions
             .Validate(
                 static options => LayerPublishingOptions.IsValidMaterializationTimeout(options.MaterializationTimeoutSeconds),
                 $"{LayerPublishingOptions.SectionName}:MaterializationTimeoutSeconds must be between 1 and {LayerPublishingOptions.MaximumMaterializationTimeoutSeconds}.")
+            .Validate(
+                static options => LayerPublishingOptions.IsValidAsyncPublishRowThreshold(options.AsyncPublishRowThreshold),
+                $"{LayerPublishingOptions.SectionName}:AsyncPublishRowThreshold must be zero or greater.")
+            .Validate(
+                static options => LayerPublishingOptions.IsValidMaterializationBatchSize(options.MaterializationBatchSize),
+                $"{LayerPublishingOptions.SectionName}:MaterializationBatchSize must be at least 1.")
             .ValidateOnStart();
         services.AddScoped<ILayerPublishingService>(serviceProvider =>
             new PostgreSqlLayerPublishingService(

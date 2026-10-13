@@ -17,6 +17,7 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin;
 using Honua.Infrastructure.Security;
 
 namespace Honua.Server.Features.Operations;
@@ -32,6 +33,15 @@ internal static class OperationsEndpoints
     private const int MaxIdempotencyKeyLength = 200;
 
     internal sealed class OperationsEndpointsLog;
+
+    /// <summary>
+    /// Only a queued or running <c>service.publish</c> is 202. Every other submit stays 200.
+    /// </summary>
+    internal static int SubmissionStatusCode(OperationHandle handle)
+        => handle.OperationId == ServicePublishOperation.OperationId
+            && handle.Status is OperationHandleStatus.Queued or OperationHandleStatus.Running
+            ? StatusCodes.Status202Accepted
+            : StatusCodes.Status200OK;
 
     public static void MapOperationsEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -258,7 +268,15 @@ internal static class OperationsEndpoints
                 .ConfigureAwait(false);
             return Results.Json(
                 ApiResponse<OperationHandle>.CreateSuccess(handle),
-                OperationsJsonContext.Default.ApiResponseOperationHandle);
+                OperationsJsonContext.Default.ApiResponseOperationHandle,
+                statusCode: SubmissionStatusCode(handle));
+        }
+        catch (CapabilityUnavailableException ex) when (string.Equals(
+            ex.MissingDependency,
+            LayerPublishRunnerDecision.RunnerDependency,
+            StringComparison.Ordinal))
+        {
+            return LayerPublishRefusals.ToResult(context);
         }
         catch (OperationNotFoundException)
         {
@@ -298,6 +316,22 @@ internal static class OperationsEndpoints
         if (handle is null || !OperationTenantAuthorization.CanAccess(context, handle.TenantId))
         {
             return NotFound(context, $"Operation handle '{handleId}' was not found.");
+        }
+
+        if (string.Equals(handle.OperationId, ServicePublishOperation.OperationId, StringComparison.Ordinal)
+            && handle.Status is OperationHandleStatus.Queued or OperationHandleStatus.Running
+            && !string.IsNullOrWhiteSpace(handle.JobId))
+        {
+            var executor = context.RequestServices.GetServices<IOperationExecutor>()
+                .FirstOrDefault(candidate => string.Equals(
+                    candidate.OperationId, ServicePublishOperation.OperationId, StringComparison.Ordinal));
+            if (executor is not null)
+            {
+                var live = await executor.GetStatusAsync(handle, cancellationToken).ConfigureAwait(false);
+                return Results.Json(
+                    ApiResponse<OperationStatus>.CreateSuccess(live),
+                    OperationsJsonContext.Default.ApiResponseOperationStatus);
+            }
         }
 
         var status = new OperationStatus

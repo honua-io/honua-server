@@ -1782,6 +1782,20 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "get-api-v1-admin-connections-id-layers-jobs-jobid",
+      "route": "/api/v1/admin/connections/{id}/layers/jobs/{jobId}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PollLayerPublish_UnknownJob_ReturnsTypedNotFound"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "get-api-v1-admin-connections-id-tables",
       "route": "/api/v1/admin/connections/{id}/tables",
       "method": "GET",

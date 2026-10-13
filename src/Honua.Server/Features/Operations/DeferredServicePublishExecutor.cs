@@ -109,7 +109,8 @@ internal sealed class DeferredServicePublishExecutor(IServiceProvider services) 
             connectionResolver!,
             graphProvider!,
             clock!,
-            services.GetService<IMcpNotificationPublisher>());
+            services.GetService<IMcpNotificationPublisher>(),
+            services.GetService<ILayerPublishJobs>());
         unavailable = null;
         return true;
     }
