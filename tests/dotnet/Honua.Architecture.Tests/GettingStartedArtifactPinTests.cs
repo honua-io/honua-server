@@ -49,9 +49,9 @@ public sealed class GettingStartedArtifactPinTests
         firstDataset.Should().Contain("@honua/sdk-js@0.1.16");
         registryClients.Should().Contain("`@honua/sdk-js@0.1.16`");
         registryClients.Should().Contain("`create-honua-app@0.1.9`");
-        registryClients.Should().Contain("`Honua.Sdk` `1.11.0`");
-        registryClients.Should().Contain("`Honua.Sdk.Admin` `1.11.0`");
-        dotnetGettingStarted.Should().Contain("Honua.Sdk --version 1.11.0");
+        registryClients.Should().Contain("`Honua.Sdk` `1.11.1`");
+        registryClients.Should().Contain("`Honua.Sdk.Admin` `1.11.1`");
+        dotnetGettingStarted.Should().Contain("Honua.Sdk --version 1.11.1");
 
         var journey = string.Join('\n', quickstart, firstDataset, firstMap, linuxPackages,
             registryClients, windowsPackages, dotnetGettingStarted);
