@@ -153,6 +153,39 @@ public sealed class FeatureServerRelationshipResourceTests
     }
 
     [IntegrationTheory]
+    [InlineData("origin", "destination")]
+    [InlineData("esriRelRoleOrigin", "esriRelRoleDestination")]
+    [Operation(Operations.QueryRelationships)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/relationships")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    public async Task Relationships_ReciprocalDirectionalNames_PreservesBothLabels(
+        string originRole, string destinationRole)
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(
+            () => new RelationshipCatalog(originRole, destinationRole, destinationName: "Back to origin"));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "reader", "related-reader");
+
+        using var metadata = await GetJsonAsync(client, "");
+        metadata.RootElement.GetProperty("relationships").GetArrayLength().Should().Be(1);
+        metadata.RootElement.GetProperty("relationships")[0].GetProperty("name").GetString()
+            .Should().Be("Origin to destination");
+        using var response = await GetJsonAsync(client, "/relationships");
+        var relationships = response.RootElement.GetProperty("relationships");
+        relationships.GetArrayLength().Should().Be(1);
+        var relationship = relationships[0];
+        relationship.GetProperty("id").GetInt32().Should().Be(7);
+        relationship.GetProperty("originLayerId").GetInt32().Should().Be(10);
+        relationship.GetProperty("destinationLayerId").GetInt32().Should().Be(20);
+        relationship.GetProperty("originPrimaryKey").GetString().Should().Be("origin_id");
+        relationship.GetProperty("originForeignKey").GetString().Should().Be("origin_fk");
+        relationship.GetProperty("forwardPathLabel").GetString().Should().Be("Origin to destination");
+        relationship.GetProperty("backwardPathLabel").GetString().Should().Be("Back to origin");
+        using var destination = await GetJsonAsync(client, "/20");
+        destination.RootElement.GetProperty("relationships")[0].GetProperty("name").GetString()
+            .Should().Be("Back to origin", "the layer-local traversal name remains unchanged");
+    }
+
+    [IntegrationTheory]
     [InlineData(false)]
     [InlineData(true)]
     [Operation(Operations.QueryRelationships)]
@@ -197,7 +230,8 @@ public sealed class FeatureServerRelationshipResourceTests
         bool destinationStringKey = false,
         bool collision = false,
         bool fallbackId = false,
-        bool destinationOnCurrentService = true) : ITestMetadataV2GraphSource
+        bool destinationOnCurrentService = true,
+        string destinationName = "Origin to destination") : ITestMetadataV2GraphSource
     {
         public TestMetadataV2GraphProvider BuildProvider()
         {
@@ -276,7 +310,7 @@ public sealed class FeatureServerRelationshipResourceTests
             {
                 Id = "relationship",
                 EsriRelationshipId = fallbackId ? null : relationshipId,
-                Name = "Origin to destination",
+                Name = related == "origin" ? destinationName : "Origin to destination",
                 RelatedResourceId = related,
                 Role = role,
                 Cardinality = "one-to-many",
