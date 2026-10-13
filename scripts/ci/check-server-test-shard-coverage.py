@@ -87,6 +87,8 @@ TEST_PROJECT_DIRS = {
         "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj",
     "tests/dotnet/Honua.Protocols.GeoServices.Tests":
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj",
+    "tests/dotnet/Honua.Protocols.OData.UnitTests":
+        "tests/dotnet/Honua.Protocols.OData.UnitTests/Honua.Protocols.OData.UnitTests.csproj",
     "tests/dotnet/Honua.Protocols.OData.Tests":
         "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj",
     "tests/dotnet/Honua.Protocols.OgcApi.Tests":
@@ -104,6 +106,12 @@ TEST_PROJECT_DIRS = {
     "tests/dotnet/Honua.Geoprocessing.Cli.Tests":
         "tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj",
 }
+
+# Every isolated unit assembly is independently routed; retain legacy integration
+# mappings and discover new units from the reviewed catalog.
+for project, entry in json.loads((REPO_ROOT / ".github/test-projects.json").read_text())["projects"].items():
+    if entry.get("shardRouted"):
+        TEST_PROJECT_DIRS[str(Path(project).parent)] = project
 
 # Namespaces that ci-shards.json intentionally leaves to a non-PR lane and so
 # are exempt from the "must be claimed by a shard" rule. Keep this list TINY and
@@ -284,7 +292,7 @@ def _method_name_after(text: str, index: int) -> str | None:
 
 @functools.cache
 def enumerate_classes() -> dict[str, dict]:
-    """Return {fully_qualified_class_name: {"csproj", "src", "methods"}} for
+    """Return {"csproj::fully_qualified_class_name": {"fqn", "csproj", "src", "methods"}} for
     EVERY top-level class in the test projects.
 
     Only TOP-LEVEL (namespace-scoped) classes count — xUnit reports a test's
@@ -401,8 +409,8 @@ def enumerate_classes() -> dict[str, dict]:
             for cls in declared:
                 fqn = f"{namespace}.{cls}"
                 entry = classes.setdefault(
-                    fqn,
-                    {"csproj": csproj, "src": [], "methods": set(), "has_tests": False,
+                    f"{csproj}::{fqn}",
+                    {"fqn": fqn, "csproj": csproj, "src": [], "methods": set(), "has_tests": False,
                      "unresolved_methods": False},
                 )
                 if rel not in entry["src"]:
@@ -575,6 +583,12 @@ def iter_clauses(node) -> list[tuple[str, str, str]]:
     return [(node[1], node[2], node[3])]
 
 
+def claiming_shards(entry: dict, parsed: dict, shard_csproj: dict) -> list[str]:
+    """Resolve one assembly's class without merging identical names elsewhere."""
+    return [name for name, node in parsed.items()
+            if shard_csproj[name] == entry["csproj"] and _eval(node, entry["fqn"])]
+
+
 def selection_pool(classes: dict[str, dict], csproj: str) -> list[str]:
     """Every runnable test FullyQualifiedName xUnit can report for `csproj`.
 
@@ -586,7 +600,7 @@ def selection_pool(classes: dict[str, dict], csproj: str) -> list[str]:
     for fqn, entry in classes.items():
         if entry["csproj"] != csproj:
             continue
-        pool.extend(f"{fqn}.{method}" for method in entry["methods"])
+        pool.extend(f"{entry.get('fqn', fqn)}.{method}" for method in entry["methods"])
     return pool
 
 
@@ -706,7 +720,7 @@ def evaluate_assertion(
         # strings; matching them proves nothing about the class. Look the class
         # up in the sources so a typo'd, renamed or deleted class fails here
         # instead of reporting a passing assertion for a class that is gone.
-        entry = all_classes.get(fqn)
+        entry = all_classes.get(f"{csproj}::{fqn}") or all_classes.get(fqn)
         if entry is None:
             return AssertionResult(
                 1,
@@ -916,29 +930,27 @@ def main() -> int:
     multi: list[tuple[str, list[str]]] = []
     partition_errors: list[str] = []
     claim_map: dict[str, list[str]] = {}
-    for fqn in sorted(classes):
+    for key in sorted(classes):
+        fqn = classes[key]["fqn"]
         if is_exempt(fqn):
             continue
-        cls_csproj = classes[fqn]["csproj"]
+        cls_csproj = classes[key]["csproj"]
         # A shard can only discover/run a class if it targets that class's
         # assembly AND its filter matches the FQN.
-        claiming = [
-            name for name, node in parsed.items()
-            if shard_csproj[name] == cls_csproj and _eval(node, fqn)
-        ]
-        claim_map[fqn] = claiming
+        claiming = claiming_shards(classes[key], parsed, shard_csproj)
+        claim_map[key] = claiming
         if not claiming:
-            orphans.append(fqn)
+            orphans.append(key)
         elif len(claiming) > 1:
-            multi.append((fqn, claiming))
+            multi.append((key, claiming))
 
         for parent_name, parent_filter, children, parent_csproj, granularity in parsed_partitions:
             if cls_csproj != parent_csproj:
                 continue
             partition_errors.extend(partition_claim_errors(
                 parent_name, parent_filter, children, parsed, fqn,
-                classes[fqn]["methods"], granularity,
-                classes[fqn].get("unresolved_methods", False),
+                classes[key]["methods"], granularity,
+                classes[key].get("unresolved_methods", False),
             ))
 
     if args.report:

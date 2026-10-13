@@ -15,6 +15,7 @@ namespace Honua.ControlPlane.Lambda.Tests;
 /// </summary>
 public sealed class ReconcileForwarderTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReconcileBatchEventAsync_PostsProviderIdAndTokenHeader()
     {
@@ -34,6 +35,7 @@ public sealed class ReconcileForwarderTests
             .Which.Should().Be("secret-token");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReconcileBatchEventAsync_BlankProviderId_DoesNotPost()
     {
@@ -48,6 +50,7 @@ public sealed class ReconcileForwarderTests
         handler.LastRequest.Should().BeNull("a blank provider id resolves to no active job");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RunBackstopAsync_PostsToBackstopRoute()
     {
@@ -63,6 +66,7 @@ public sealed class ReconcileForwarderTests
         handler.LastRequest.Headers.Contains("X-Honua-ControlPlane-Token").Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void FromEnvironment_UsesLwaPortAndToken()
     {
@@ -76,6 +80,7 @@ public sealed class ReconcileForwarderTests
         options.EventToken.Should().Be("tok");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void FromEnvironment_DefaultsPortTo8080()
     {

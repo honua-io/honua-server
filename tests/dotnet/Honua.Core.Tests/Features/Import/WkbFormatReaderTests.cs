@@ -23,6 +23,7 @@ public sealed class WkbFormatReaderTests
         return features;
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_ConcatenatedWkbPoints_ReturnsGeometryFeatures()
     {
@@ -40,6 +41,7 @@ public sealed class WkbFormatReaderTests
         features[1].Geometry!.Coordinate.Y.Should().Be(20.90);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_SingleWkbPolygon_ReturnsPolygon()
     {

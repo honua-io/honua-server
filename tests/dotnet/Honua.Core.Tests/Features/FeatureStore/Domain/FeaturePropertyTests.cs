@@ -24,6 +24,7 @@ public class FeaturePropertyTests
     /// <summary>
     /// Validates that features maintain data integrity across serialization.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(RealisticFeatureArbs) })]
     public bool FeatureSerializationPreservesData(Feature feature)
     {
@@ -68,6 +69,7 @@ public class FeaturePropertyTests
     /// <summary>
     /// Validates that features handle various geometry types correctly.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(RealisticFeatureArbs) })]
     public bool FeatureHandlesAllGeometryTypes(Feature feature)
     {
@@ -91,6 +93,7 @@ public class FeaturePropertyTests
     /// <summary>
     /// Validates that features with null geometries are handled correctly.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(AttributeVariantsArbs) })]
     public bool NullGeometryHandling(long id, ImmutableDictionary<string, object?> attributes)
     {
@@ -106,6 +109,7 @@ public class FeaturePropertyTests
     /// <summary>
     /// Validates that features handle edge case attribute values correctly.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(EdgeCaseFeatureArbs) })]
     public bool EdgeCaseAttributeHandling(Feature feature)
     {
@@ -124,6 +128,7 @@ public class FeaturePropertyTests
     /// <summary>
     /// Validates that feature IDs are handled consistently across all value ranges.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(FeatureIdArbs) })]
     public bool FeatureIdConsistency(long id)
     {
@@ -137,6 +142,7 @@ public class FeaturePropertyTests
     /// <summary>
     /// Validates that features maintain immutability where expected.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(RealisticFeatureArbs) })]
     public bool FeatureImmutabilityRespected(Feature originalFeature)
     {
@@ -166,6 +172,7 @@ public class FeaturePropertyTests
     /// <summary>
     /// Validates that geometry bytes preserve coordinate values from the source geometry.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(SridArbs), typeof(ValidCoordinateArbs) })]
     public bool SpatialReferencePreservation(int srid, Coordinate coord, int id)
     {
@@ -196,6 +203,7 @@ public class FeaturePropertyTests
     /// <summary>
     /// Validates that large attribute dictionaries are handled efficiently.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(AttributeCountArbs) })]
     public bool LargeAttributeDictionaryHandling(int attributeCount)
     {
@@ -220,6 +228,7 @@ public class FeaturePropertyTests
     /// <summary>
     /// Validates that features handle Unicode and special characters in attributes.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(UnicodeStringArbs) })]
     public bool UnicodeAttributeHandling(string unicodeValue)
     {
@@ -293,6 +302,7 @@ public class FeatureEdgeCaseTests
     /// <summary>
     /// Tests that features handle extremely large coordinate values gracefully.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Feature_HandlesExtremeCoordinates()
     {
@@ -327,6 +337,7 @@ public class FeatureEdgeCaseTests
     /// <summary>
     /// Tests that features reject invalid coordinate values appropriately.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Feature_RejectsInvalidCoordinates()
     {
@@ -366,6 +377,7 @@ public class FeatureEdgeCaseTests
     /// <summary>
     /// Tests that features handle complex nested attribute structures.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Feature_HandlesComplexNestedAttributes()
     {

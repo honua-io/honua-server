@@ -24,6 +24,7 @@ public sealed class CapabilityGateResolverTests
     // remains built-experimental and gated off by default.)
     private const string ExperimentalId = "versioning.branch";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_LifecycleOnlyPreview_StillRequiresItsEdition()
     {
@@ -74,6 +75,7 @@ public sealed class CapabilityGateResolverTests
         return options;
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Experimental_WithFlagsOff_IsDisabledWithExperimentalReason()
     {
@@ -83,6 +85,7 @@ public sealed class CapabilityGateResolverTests
         resolution.ReasonCode.Should().Be(CapabilityReasonCodes.ExperimentalDisabled);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Experimental_WithGlobalFlagOn_IsEnabled()
     {
@@ -92,6 +95,7 @@ public sealed class CapabilityGateResolverTests
         resolution.ReasonCode.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Experimental_WithPerCapabilityFlagOn_IsEnabled()
     {
@@ -103,6 +107,7 @@ public sealed class CapabilityGateResolverTests
         resolution.ReasonCode.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Experimental_WithPerCapabilityFlagExplicitlyOff_IsDisabled()
     {
@@ -114,6 +119,7 @@ public sealed class CapabilityGateResolverTests
         resolution.ReasonCode.Should().Be(CapabilityReasonCodes.ExperimentalDisabled);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Experimental_WithPerCapabilityFlagForDifferentId_IsDisabled()
     {
@@ -125,6 +131,7 @@ public sealed class CapabilityGateResolverTests
         resolution.ReasonCode.Should().Be(CapabilityReasonCodes.ExperimentalDisabled);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Experimental_WithGlobalFlagOn_ButWrongEdition_FailsOnEditionNotFlag()
     {
@@ -137,6 +144,7 @@ public sealed class CapabilityGateResolverTests
         resolution.ReasonCode.Should().NotBe(CapabilityReasonCodes.ExperimentalDisabled);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Experimental_WithPerCapabilityFlagOn_ButWrongEdition_FailsOnEdition()
     {
@@ -148,6 +156,7 @@ public sealed class CapabilityGateResolverTests
         resolution.ReasonCode.Should().Be(CapabilityReasonCodes.LicenseRequired);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Experimental_WithFlagOn_AndSatisfiedEdition_IsEnabled()
     {
@@ -159,6 +168,7 @@ public sealed class CapabilityGateResolverTests
         resolution.ReasonCode.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void NonExperimental_IsEnabled_EvenWithFlagsOff()
     {
@@ -168,6 +178,7 @@ public sealed class CapabilityGateResolverTests
         resolution.ReasonCode.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void NonExperimental_IsEnabled_EvenWhenEditionBelowMinimum()
     {
@@ -181,6 +192,7 @@ public sealed class CapabilityGateResolverTests
         resolution.ReasonCode.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void UnknownDescriptor_IsNotRegistered()
     {
@@ -190,6 +202,7 @@ public sealed class CapabilityGateResolverTests
         resolution.ReasonCode.Should().Be(CapabilityReasonCodes.NotRegistered);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Registry_UnknownId_IsNotRegistered()
     {
@@ -201,6 +214,7 @@ public sealed class CapabilityGateResolverTests
         resolution.ReasonCode.Should().Be(CapabilityRegistry.NotRegisteredReasonCode);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Registry_RegisteredImplementedCapability_ResolvesEnabledUnderDefaultContext()
     {
@@ -213,6 +227,7 @@ public sealed class CapabilityGateResolverTests
         resolution.ReasonCode.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsExperimentalEnabled_GlobalSwitch_OverridesMissingPerCapability()
     {
@@ -221,6 +236,7 @@ public sealed class CapabilityGateResolverTests
         options.IsExperimentalEnabled("anything.at.all").Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsExperimentalEnabled_DefaultOptions_AreAllOff()
     {
@@ -230,6 +246,7 @@ public sealed class CapabilityGateResolverTests
         options.IsExperimentalEnabled(ExperimentalId).Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Bind_ReadsGlobalSwitchAndPerCapabilityOverrides()
     {
@@ -254,6 +271,7 @@ public sealed class CapabilityGateResolverTests
         options.Capabilities.Should().NotContainKey("Enabled");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Bind_DefaultsToAllOff_WhenSectionAbsent()
     {
@@ -266,6 +284,7 @@ public sealed class CapabilityGateResolverTests
         options.Capabilities.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("VERSIONING.BRANCH", true)]
     [InlineData("VeRsIoNiNg.BrAnCh", true)]
@@ -298,6 +317,7 @@ public sealed class CapabilityGateResolverTests
             .Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsExperimentalEnabled_FromConfiguration_HonorsGlobalSwitch()
     {
@@ -312,6 +332,7 @@ public sealed class CapabilityGateResolverTests
             .Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AddCapabilityFlagOptions_BindsFromConfigurationIntoOptions()
     {

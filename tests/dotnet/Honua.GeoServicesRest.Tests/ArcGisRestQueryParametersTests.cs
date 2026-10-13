@@ -10,6 +10,7 @@ public class ArcGisRestQueryParametersTests
 {
     private const string ServiceUrl = "https://services.arcgis.com/org/arcgis/rest/services/parcels/FeatureServer";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildFeatureQueryUrl_EncodesWherePagingAndOutFields()
     {
@@ -33,6 +34,7 @@ public class ArcGisRestQueryParametersTests
         Assert.Contains("resultRecordCount=20", url, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildFeatureQueryUrl_StacCandidateInWhere_ForwardsPredicate()
     {
@@ -45,6 +47,7 @@ public class ArcGisRestQueryParametersTests
         Assert.DoesNotContain("SqlFilter", url, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildFeatureQueryUrl_EmptyWhereDefaultsToOneEqualsOne()
     {
@@ -54,6 +57,7 @@ public class ArcGisRestQueryParametersTests
         Assert.Contains("outFields=" + Uri.EscapeDataString("*"), url, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildFeatureQueryUrl_DoesNotPlaceTokenInUrl()
     {
@@ -65,6 +69,7 @@ public class ArcGisRestQueryParametersTests
         Assert.DoesNotContain("token=", url, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildFeatureQueryUrl_DistinctValues_DisablesGeometry()
     {
@@ -80,6 +85,7 @@ public class ArcGisRestQueryParametersTests
         Assert.Contains("returnGeometry=false", url, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AllArcGisUrls_DoesNotPlaceTokenInUrl()
     {
@@ -101,6 +107,7 @@ public class ArcGisRestQueryParametersTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildAuthorizationHeader_CarriesTokenAsBearer()
     {
@@ -108,6 +115,7 @@ public class ArcGisRestQueryParametersTests
         Assert.Null(ArcGisRestQueryParameters.BuildAuthorizationHeader(null));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildFeatureQueryUrl_EnvelopeSpatialFilter_EmitsEnvelopeGeometryAndIntersectsRel()
     {
@@ -131,6 +139,7 @@ public class ArcGisRestQueryParametersTests
         Assert.Contains("inSR=4326", url, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildFeatureQueryUrl_OrderBy_EmitsAscDescClauses()
     {
@@ -144,6 +153,7 @@ public class ArcGisRestQueryParametersTests
         Assert.Contains("orderByFields=" + Uri.EscapeDataString("name ASC,created DESC"), url, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildCountUrl_ReturnsCountOnlyParameter()
     {
@@ -153,6 +163,7 @@ public class ArcGisRestQueryParametersTests
         Assert.Contains("where=" + Uri.EscapeDataString("X=1"), url, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildExtentUrl_ReturnsExtentOnlyParameter()
     {
@@ -162,6 +173,7 @@ public class ArcGisRestQueryParametersTests
         Assert.Contains("outSR=3857", url, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildObjectIdsUrl_ReturnsIdsOnlyParameter()
     {
@@ -170,6 +182,7 @@ public class ArcGisRestQueryParametersTests
         Assert.Contains("returnIdsOnly=true", url, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildLayerMetadataUrl_TargetsLayerRootJson()
     {

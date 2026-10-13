@@ -15,6 +15,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class MigrationRequestCountingHandlerTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SendAsync_WithAmbientRecorder_IncrementsSourceRequestPerCall()
     {
@@ -42,6 +43,7 @@ public sealed class MigrationRequestCountingHandlerTests
         totals.SourceRequestCount.Should().Be(4);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SendAsync_WithContentLength_RecordsBytesRead()
     {
@@ -69,6 +71,7 @@ public sealed class MigrationRequestCountingHandlerTests
         totals.BytesRead.Should().Be(Encoding.UTF8.GetByteCount("hello-bytes"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SendAsync_WithoutAmbientRecorder_DoesNotThrow()
     {
@@ -88,6 +91,7 @@ public sealed class MigrationRequestCountingHandlerTests
         await act.Should().NotThrowAsync();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SendAsync_WhenTransportFails_StillCountsRequest()
     {
@@ -108,6 +112,7 @@ public sealed class MigrationRequestCountingHandlerTests
         recorder.SnapshotTotals().SourceRequestCount.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DiscoveryThroughGeoServerRestClient_RecordsMultipleSourceRequests()
     {
@@ -147,6 +152,7 @@ public sealed class MigrationRequestCountingHandlerTests
         totals.SourceRequestCount!.Value.Should().BeGreaterThan(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SendAsync_PerRunScoping_RecordersDoNotShareCounts()
     {
@@ -176,6 +182,7 @@ public sealed class MigrationRequestCountingHandlerTests
         runB.SnapshotTotals().SourceRequestCount.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SendAsync_NoAmbientRecorder_DoesNotLeakIntoPreviouslyActiveRecorder()
     {
@@ -197,6 +204,7 @@ public sealed class MigrationRequestCountingHandlerTests
         recorder.SnapshotTotals().SourceRequestCount.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void PushRecorder_NestedScopes_RestorePreviousRecorderOnDispose()
     {

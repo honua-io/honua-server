@@ -16,6 +16,7 @@ public class CfTimeAxisIndexerTests
     private static readonly DateTimeOffset AxisEnd = new(2026, 1, 5, 0, 0, 0, TimeSpan.Zero);
     private const long FiveSamples = 5;
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("2026-01-01T00:00:00Z", 0)]
     [InlineData("2026-01-03T00:00:00Z", 2)]
@@ -34,6 +35,7 @@ public class CfTimeAxisIndexerTests
         high.Should().Be(expectedIndex);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Interval_UsesCeilForLowAndFloorForHigh()
     {
@@ -49,6 +51,7 @@ public class CfTimeAxisIndexerTests
         high.Should().Be(3);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Interval_ExactBoundsSelectFullRange()
     {
@@ -60,6 +63,7 @@ public class CfTimeAxisIndexerTests
         high.Should().Be(4);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void OpenEndedStart_SelectsFromIndexZero()
     {
@@ -74,6 +78,7 @@ public class CfTimeAxisIndexerTests
         high.Should().Be(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void OpenEndedEnd_SelectsToLastIndex()
     {
@@ -88,6 +93,7 @@ public class CfTimeAxisIndexerTests
         high.Should().Be(4);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Instant_OutOfRange_ReturnsError()
     {
@@ -100,6 +106,7 @@ public class CfTimeAxisIndexerTests
         error.Should().NotBeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Interval_BeforeAxis_ReturnsError()
     {
@@ -113,6 +120,7 @@ public class CfTimeAxisIndexerTests
         error.Should().NotBeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Interval_AfterAxis_ReturnsError()
     {
@@ -126,6 +134,7 @@ public class CfTimeAxisIndexerTests
         error.Should().NotBeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Interval_SpanningAxis_ClampsToFullRange()
     {
@@ -140,6 +149,7 @@ public class CfTimeAxisIndexerTests
         high.Should().Be(4);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SingleSample_BracketingRequest_SelectsIndexZero()
     {
@@ -154,6 +164,7 @@ public class CfTimeAxisIndexerTests
         high.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SingleSample_ExactInstant_SelectsIndexZero()
     {
@@ -165,6 +176,7 @@ public class CfTimeAxisIndexerTests
         high.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SingleSample_NonIntersectingInterval_ReturnsError()
     {
@@ -178,6 +190,7 @@ public class CfTimeAxisIndexerTests
         error.Should().NotBeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ZeroStepCount_ReturnsError()
     {
@@ -188,6 +201,7 @@ public class CfTimeAxisIndexerTests
         error.Should().NotBeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void NonPositiveSpacing_ReturnsError()
     {

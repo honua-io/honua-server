@@ -16,6 +16,7 @@ namespace Honua.Core.Tests.Features.Styling;
 /// </summary>
 public sealed class StyleSuggestionServiceTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(MetadataV2GeometryType.Polygon)]
     [InlineData(MetadataV2GeometryType.MultiPolygon)]
@@ -68,6 +69,7 @@ public sealed class StyleSuggestionServiceTests
             "polygon-like geometries should prefer numeric fields for choropleth");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(HonuaEdition.Pro)]
     [InlineData(HonuaEdition.Enterprise)]
@@ -95,6 +97,7 @@ public sealed class StyleSuggestionServiceTests
         result.Edition.Should().Be(edition);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SuggestAsync_GeometryOnlyFallback_PropagatesEdition()
     {

@@ -35,4 +35,8 @@
     <ProjectReference Include="..\..\Honua.Geometry\Honua.Geometry.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.SqlServer.UnitTests" />
+  </ItemGroup>
+
 </Project>

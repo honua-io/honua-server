@@ -29,6 +29,12 @@ heartbeat_tail_lines="${HONUA_SERVER_TEST_HEARTBEAT_TAIL_LINES:-40}"
 console_verbosity="${HONUA_SERVER_TEST_CONSOLE_VERBOSITY:-normal}"
 exclude_slow="${HONUA_SERVER_TEST_EXCLUDE_SLOW:-true}"
 exclude_fast="${HONUA_SERVER_TEST_EXCLUDE_FAST:-true}"
+# The catalogued unit assembly owns all its cases, including Fast tests.
+# Existing integration shards retain their exclusions.
+project_role="$(python3 "${SCRIPT_DIR}/test-projects.py" role --project "${test_csproj}")"
+if [[ "${project_role}" == unit || "${project_role}" == component ]]; then
+  exclude_fast=false
+fi
 # #3054 headroom monitoring. `poll_seconds` is how often the supervisor samples
 # the child and the log; it is deliberately much smaller than the heartbeat
 # interval so `duration_seconds` is the child's real runtime instead of being

@@ -26,6 +26,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// </summary>
 public sealed partial class OgcApiFeaturesSchemaMappingDiagnosticTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithCompatibleSchema_EmitsNoMappingDiagnostics()
     {
@@ -44,6 +45,7 @@ public sealed partial class OgcApiFeaturesSchemaMappingDiagnosticTests
         result.MappingDiagnostics.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithIntToBigintWidening_EmitsAssistedDiagnostic()
     {
@@ -67,6 +69,7 @@ public sealed partial class OgcApiFeaturesSchemaMappingDiagnosticTests
         diagnostic.TargetColumnType.Should().Be("bigint");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithVarcharNarrowing_EmitsManualReviewDiagnostic()
     {
@@ -91,6 +94,7 @@ public sealed partial class OgcApiFeaturesSchemaMappingDiagnosticTests
         result.Warnings.Should().Contain(w => w.Contains("Schema mapping manualreview", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithUnknownProperty_EmitsUnsupportedDiagnostic()
     {
@@ -115,6 +119,7 @@ public sealed partial class OgcApiFeaturesSchemaMappingDiagnosticTests
         diagnostic.Reason.Should().Contain("no matching column");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithoutSchemaEndpoint_InfersFromFirstPageFeatures()
     {
@@ -136,6 +141,7 @@ public sealed partial class OgcApiFeaturesSchemaMappingDiagnosticTests
                           d.Classification == OgcApiFeaturesSchemaMappingClassification.Unsupported);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithSinkReportingNoColumns_SkipsDiagnostics()
     {
@@ -150,6 +156,7 @@ public sealed partial class OgcApiFeaturesSchemaMappingDiagnosticTests
         result.MappingDiagnostics.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void OgcApiFeaturesImportResult_WithMappingDiagnostics_RoundTripsThroughJsonContext()
     {

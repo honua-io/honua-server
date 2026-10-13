@@ -1,0 +1,273 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using FluentAssertions;
+using Honua.Core.Features.Raster.Domain;
+using Honua.Infrastructure.Raster;
+using Honua.Protocols.GeoServices.ImageServer.Services;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
+
+namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
+
+/// <summary>
+/// Unit tests for <see cref="ImageServerMosaicRule"/> parsing and ordering resolution, with a
+/// focus on the non-date <c>esriMosaicAttribute</c> support added in #1870.
+/// </summary>
+[Protocol(TestProtocols.ImageServer)]
+public class ImageServerMosaicRuleTests
+{
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Operation(Operations.Export)]
+    [InlineData("OBJECTID", "id")]
+    [InlineData("BandCount", "band_count")]
+    [InlineData("num_bands", "band_count")]
+    [InlineData("width", "width")]
+    [InlineData("height", "height")]
+    [InlineData("SRID", "srid")]
+    public void TryParse_ByAttributeAllowlistedColumn_MapsToPhysicalColumn(string sortField, string expectedColumn)
+    {
+        var ok = ImageServerMosaicRule.TryParse(
+            $"{{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"{sortField}\"}}",
+            out var rule, out var error, out var notImplemented);
+
+        ok.Should().BeTrue();
+        error.Should().BeEmpty();
+        notImplemented.Should().BeFalse();
+        rule.Method.Should().Be(MosaicMethod.Attribute);
+        rule.AttributeSortColumn.Should().Be(expectedColumn);
+        rule.ToOrdering().Should().Be(RasterMosaicOrdering.Attribute);
+
+        var sort = rule.ToAttributeSort();
+        sort.Should().NotBeNull();
+        sort!.Value.Column.Should().Be(expectedColumn);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void TryParse_ByAttributeAscending_SetsAscendingSort()
+    {
+        var ok = ImageServerMosaicRule.TryParse(
+            "{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"BandCount\",\"ascending\":true}",
+            out var rule, out _, out _);
+
+        ok.Should().BeTrue();
+        rule.Method.Should().Be(MosaicMethod.Attribute);
+        rule.Ascending.Should().BeTrue();
+        rule.ToAttributeSort()!.Value.Ascending.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void TryParse_ByAttributeUnknownField_StaysUnsupported()
+    {
+        var ok = ImageServerMosaicRule.TryParse(
+            "{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"SensorAzimuth\"}",
+            out var rule, out _, out _);
+
+        ok.Should().BeTrue();
+        rule.Method.Should().Be(MosaicMethod.Unsupported);
+        rule.AttributeSortColumn.Should().BeNull();
+        rule.ToAttributeSort().Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void TryParse_ByAttributeDateField_UsesAcquisitionOrdering()
+    {
+        var ok = ImageServerMosaicRule.TryParse(
+            "{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"AcquisitionDate\"}",
+            out var rule, out _, out _);
+
+        ok.Should().BeTrue();
+        rule.Method.Should().Be(MosaicMethod.ByDate);
+        rule.ToOrdering().Should().Be(RasterMosaicOrdering.AcquisitionNewest);
+        rule.ToAttributeSort().Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void TryParse_NadirMethod_ResolvesToNadirOrdering()
+    {
+        var ok = ImageServerMosaicRule.TryParse(
+            "{\"mosaicMethod\":\"esriMosaicNadir\"}",
+            out var rule, out var error, out var notImplemented);
+
+        ok.Should().BeTrue();
+        error.Should().BeEmpty();
+        notImplemented.Should().BeFalse();
+        rule.Method.Should().Be(MosaicMethod.Nadir);
+        rule.ToOrdering().Should().Be(RasterMosaicOrdering.Nadir);
+        // Nadir ranks by sensor off-nadir angle in the store, not by an allowlisted attribute sort.
+        rule.ToAttributeSort().Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void TryParse_CenterMethod_StaysUnsupported()
+    {
+        var ok = ImageServerMosaicRule.TryParse(
+            "{\"mosaicMethod\":\"esriMosaicCenter\"}",
+            out var rule, out _, out _);
+
+        ok.Should().BeTrue();
+        rule.Method.Should().Be(MosaicMethod.Unsupported);
+        rule.ToAttributeSort().Should().BeNull();
+    }
+
+    // #4063: the raster store orders ByAttribute by the attribute itself, not by distance from a
+    // base sortValue, so a base value is unsupported while a direction token still executes.
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Operation(Operations.Export)]
+    [InlineData("AcquisitionDate", "2024/01/01", MosaicMethod.Unsupported, false)]
+    [InlineData("OBJECTID", "5", MosaicMethod.Unsupported, false)]
+    [InlineData("AcquisitionDate", "asc", MosaicMethod.ByDate, true)]
+    [InlineData("AcquisitionDate", "Descending", MosaicMethod.ByDate, false)]
+    [InlineData("OBJECTID", "", MosaicMethod.Attribute, false)]
+    public void TryParse_ByAttributeSortValue_OnlyDirectionTokensExecute(
+        string sortField, string sortValue, MosaicMethod expectedMethod, bool expectedAscending)
+    {
+        var ok = ImageServerMosaicRule.TryParse(
+            $"{{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"{sortField}\",\"sortValue\":\"{sortValue}\"}}",
+            out var rule, out _, out _);
+
+        ok.Should().BeTrue();
+        rule.Method.Should().Be(expectedMethod);
+        rule.Ascending.Should().Be(expectedAscending);
+    }
+
+    // #4063: service metadata advertises exactly the methods the parser executes. Every advertised
+    // token, sent back as its esriMosaic* rule, must classify as executable; the Esri methods the
+    // service cannot execute (501 on a multi-raster request) must not be advertised.
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public void AllowedMosaicMethods_AdvertisesExactlyTheExecutableEsriMethods()
+    {
+        var advertised = ImageServerMosaicRule.AllowedMosaicMethods.Split(',');
+        advertised.Should().Equal("None", "NorthWest", "LockRaster", "ByAttribute", "Nadir", "Seamline");
+
+        foreach (var token in advertised)
+        {
+            var wireMethod = ImageServerMosaicRule.ToMosaicMethodWireValue(token);
+            if (token == "ByAttribute")
+            {
+                wireMethod.Should().Be("esriMosaicAttribute");
+            }
+
+            var json = token == "LockRaster"
+                ? "{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[1]}"
+                : $"{{\"mosaicMethod\":\"{wireMethod}\"}}";
+
+            var ok = ImageServerMosaicRule.TryParse(json, out var rule, out var error, out var notImplemented);
+
+            ok.Should().BeTrue($"advertised method {token} must parse: {error}");
+            notImplemented.Should().BeFalse();
+            rule.Method.Should().NotBe(MosaicMethod.Unsupported, $"advertised method {token} must be executable");
+        }
+
+        foreach (var token in new[] { "Center", "Viewpoint" })
+        {
+            ImageServerMosaicRule.TryParse($"{{\"mosaicMethod\":\"esriMosaic{token}\"}}", out var rule, out _, out _)
+                .Should().BeTrue();
+            rule.Method.Should().Be(MosaicMethod.Unsupported);
+            advertised.Should().NotContain(token);
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public void DefaultMosaicMethod_DescribesTheOrderingOfARuleLessRequest()
+    {
+        ImageServerMosaicRule.TryParse(null, out var ruleLess, out _, out _).Should().BeTrue();
+
+        var wireMethod = ImageServerMosaicRule.ToMosaicMethodWireValue(ImageServerMosaicRule.DefaultMosaicMethod);
+        wireMethod.Should().Be("esriMosaicAttribute");
+
+        var ok = ImageServerMosaicRule.TryParse(
+            $"{{\"mosaicMethod\":\"{wireMethod}\",\"sortField\":\"{ImageServerMosaicRule.DefaultSortField}\"}}",
+            out var advertisedDefault, out _, out _);
+
+        ok.Should().BeTrue();
+        advertisedDefault.Method.Should().Be(MosaicMethod.ByDate);
+        advertisedDefault.ToOrdering().Should().Be(RasterMosaicOrdering.AcquisitionNewest);
+        advertisedDefault.ToOrdering().Should().Be(ruleLess.ToOrdering());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void TryParse_MosaicOperationFirst_MatchesAdvertisedFirstOperator()
+    {
+        var ok = ImageServerMosaicRule.TryParse(
+            "{\"mosaicOperation\":\"MT_FIRST\"}",
+            out var rule, out var error, out var notImplemented);
+
+        ok.Should().BeTrue(error);
+        notImplemented.Should().BeFalse();
+        rule.Operation.Should().Be(RasterMergeStrategy.Newest);
+        RasterMosaicUtilities.ResolveMergeStrategy(null, "{\"mosaicOperation\":\"MT_FIRST\"}")
+            .Should().Be(RasterMergeStrategy.Newest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void TryParse_MosaicOperationLast_SelectsOldest()
+    {
+        var ok = ImageServerMosaicRule.TryParse(
+            "{\"mosaicOperation\":\"MT_LAST\"}",
+            out var rule, out _, out var notImplemented);
+
+        ok.Should().BeTrue();
+        notImplemented.Should().BeFalse();
+        rule.Operation.Should().Be(RasterMergeStrategy.Oldest);
+        RasterMosaicUtilities.ResolveMergeStrategy(null, "{\"mosaicOperation\":\"last\"}")
+            .Should().Be(RasterMergeStrategy.Oldest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void TryParse_MosaicOperationBlend_IsNotImplemented()
+    {
+        var ok = ImageServerMosaicRule.TryParse(
+            "{\"mosaicOperation\":\"MT_BLEND\"}",
+            out _, out var error, out var notImplemented);
+
+        ok.Should().BeFalse();
+        notImplemented.Should().BeTrue();
+        error.Should().Contain("not implemented");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void TryParse_MosaicWhereAndFids_AreNotImplemented()
+    {
+        ImageServerMosaicRule.TryParse(
+            "{\"mosaicMethod\":\"esriMosaicNone\",\"where\":\"Category = 2\"}",
+            out _, out var whereError, out var whereNotImplemented)
+            .Should().BeFalse();
+        whereNotImplemented.Should().BeTrue();
+        whereError.Should().Contain("where");
+
+        ImageServerMosaicRule.TryParse(
+            "{\"mosaicMethod\":\"esriMosaicNone\",\"fids\":[4,9]}",
+            out _, out var fidsError, out var fidsNotImplemented)
+            .Should().BeFalse();
+        fidsNotImplemented.Should().BeTrue();
+        fidsError.Should().Contain("fids");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public void TryParse_TrivialWhereAndEmptyFids_Succeed()
+    {
+        ImageServerMosaicRule.TryParse(
+            "{\"mosaicMethod\":\"esriMosaicNone\",\"where\":\"1 = 1\",\"fids\":[]}",
+            out var rule, out var error, out var notImplemented)
+            .Should().BeTrue(error);
+        notImplemented.Should().BeFalse();
+        rule.Method.Should().Be(MosaicMethod.None);
+    }
+}

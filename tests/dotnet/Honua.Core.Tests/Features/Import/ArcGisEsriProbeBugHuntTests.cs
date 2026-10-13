@@ -19,6 +19,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
     private static readonly Func<string, CancellationToken, Task<IPAddress[]>> PublicResolver =
         (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") });
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task TokenCredential_DoesNotPutSecretInRequestUrl()
     {
@@ -42,6 +43,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
         Assert.Equal("Bearer esri-secret-token", handler.LastEsriAuthorization);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task OAuthCredential_SendsResolvedAccessToken()
     {
@@ -62,6 +64,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
         Assert.Equal("Bearer oauth-access-token", handler.LastEsriAuthorization);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ServiceMetadata_200ErrorEnvelope_IsRejected()
     {
@@ -76,6 +79,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
         Assert.Equal(ArcGisAuthenticationFailureKind.CredentialRequired, exception.Kind);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task LayerMetadata_ReadsNestedPaginationCapability()
     {
@@ -94,6 +98,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
         Assert.False(layer.SupportsPagination);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task LayerMetadata_200ErrorEnvelope_IsRejected()
     {
@@ -108,6 +113,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
             CancellationToken.None));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task LayerCount_200ErrorEnvelope_IsRejected()
     {
@@ -124,6 +130,7 @@ public sealed class ArcGisEsriProbeBugHuntTests
             CancellationToken.None));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Query_429RetryAfter_IsRetried()
     {

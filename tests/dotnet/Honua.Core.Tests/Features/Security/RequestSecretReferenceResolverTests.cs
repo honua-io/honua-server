@@ -84,6 +84,7 @@ public sealed class RequestSecretReferenceResolverTests
         resolver.Evaluate("aws:secretsmanager:IMPORT_TOKEN").IsPermitted.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null)]
     [InlineData("")]

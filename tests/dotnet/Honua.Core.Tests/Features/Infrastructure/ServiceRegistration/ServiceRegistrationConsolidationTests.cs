@@ -12,6 +12,7 @@ namespace Honua.Core.Tests.Features.Infrastructure.ServiceRegistration;
 /// </summary>
 public class ServiceRegistrationConsolidationTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ServiceRegistrationHelpers_AddScopedService_RegistersCorrectly()
     {
@@ -29,6 +30,7 @@ public class ServiceRegistrationConsolidationTests
         Assert.IsType<TestService>(service);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ServiceRegistrationHelpers_AddScopedService_WithFactory_RegistersCorrectly()
     {
@@ -46,6 +48,7 @@ public class ServiceRegistrationConsolidationTests
         Assert.IsType<TestService>(service);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ServiceRegistrationHelpers_AddSingletonService_RegistersCorrectly()
     {
@@ -65,6 +68,7 @@ public class ServiceRegistrationConsolidationTests
         Assert.Same(service1, service2); // Should be same instance for singleton
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ServiceRegistrationPatterns_AddSimpleCoreFeature_RegistersCorrectly()
     {
@@ -82,6 +86,7 @@ public class ServiceRegistrationConsolidationTests
         Assert.IsType<TestService>(service);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ServiceRegistrationPatterns_AddPerformanceOptimizedObjectPools_RegistersCorrectly()
     {

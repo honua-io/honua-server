@@ -15,6 +15,7 @@ namespace Honua.Core.Tests.Features.Compliance;
 /// </summary>
 public sealed class ComplianceReportExporterTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_Csv_ReturnsCsvArtifact()
     {
@@ -27,6 +28,7 @@ public sealed class ComplianceReportExporterTests
         artifact.Content.Length.Should().BeGreaterThan(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_Pdf_ReturnsPdfArtifact()
     {
@@ -39,6 +41,7 @@ public sealed class ComplianceReportExporterTests
         artifact.Content.Length.Should().BeGreaterThan(100);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_UnknownFormat_Throws()
     {

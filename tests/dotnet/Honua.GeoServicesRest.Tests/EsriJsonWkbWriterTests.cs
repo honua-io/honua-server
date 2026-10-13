@@ -10,12 +10,14 @@ namespace Honua.GeoServicesRest.Tests;
 
 public class EsriJsonWkbWriterTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Write_NullElement_ReturnsNull()
     {
         Assert.Null(EsriJsonWkbWriter.Write(geometry: null, MetadataV2GeometryType.Point));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Write_Point_EmitsLittleEndianPointWkb()
     {
@@ -30,6 +32,7 @@ public class EsriJsonWkbWriterTests
         Assert.Equal(47.6, BinaryPrimitives.ReadDoubleLittleEndian(wkb.AsSpan(13, 8)));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Write_MultiPoint_EmitsMultiPointWkbWithChildCount()
     {
@@ -43,6 +46,7 @@ public class EsriJsonWkbWriterTests
         Assert.Equal(3u, BinaryPrimitives.ReadUInt32LittleEndian(wkb.AsSpan(5, 4)));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Write_PolylineSinglePath_EmitsLineStringWkb()
     {
@@ -56,6 +60,7 @@ public class EsriJsonWkbWriterTests
         Assert.Equal(3u, BinaryPrimitives.ReadUInt32LittleEndian(wkb.AsSpan(5, 4))); // point count
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Write_PolylineMultiplePaths_EmitsMultiLineStringWkb()
     {
@@ -69,6 +74,7 @@ public class EsriJsonWkbWriterTests
         Assert.Equal(2u, BinaryPrimitives.ReadUInt32LittleEndian(wkb.AsSpan(5, 4))); // line count
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Write_Polygon_EmitsPolygonWkb()
     {
@@ -83,6 +89,7 @@ public class EsriJsonWkbWriterTests
         Assert.Equal(5u, BinaryPrimitives.ReadUInt32LittleEndian(wkb.AsSpan(9, 4))); // points in first ring
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Write_PolygonTwoShellRings_EmitsMultiPolygonWkb()
     {
@@ -108,6 +115,7 @@ public class EsriJsonWkbWriterTests
         Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(wkb.AsSpan(14, 4))); // single shell ring
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CheckedBufferSize_WithCountThatOverflowsInt32_Throws()
     {
@@ -120,6 +128,7 @@ public class EsriJsonWkbWriterTests
             () => EsriJsonWkbWriter.CheckedBufferSize(headerBytes: 4, count: int.MaxValue, elementSize: 16));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CheckedBufferSize_WithReasonableCount_ReturnsComputedSize()
     {
@@ -129,6 +138,7 @@ public class EsriJsonWkbWriterTests
         Assert.Equal(4 + (10 * 16), size);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CheckedTotalSize_WithRunningSumAboveCap_Throws()
     {
@@ -138,6 +148,7 @@ public class EsriJsonWkbWriterTests
             () => EsriJsonWkbWriter.CheckedTotalSize((256L * 1024 * 1024) + 1));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Write_EmptyPolygonAndPolyline_ReturnsNullGeometry()
     {
@@ -148,6 +159,7 @@ public class EsriJsonWkbWriterTests
         Assert.Null(EsriJsonWkbWriter.Write(polyline, MetadataV2GeometryType.MultiLineString));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Write_UnsupportedShape_Throws()
     {

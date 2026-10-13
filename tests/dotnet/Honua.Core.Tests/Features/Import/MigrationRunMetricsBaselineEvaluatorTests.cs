@@ -25,6 +25,7 @@ public sealed class MigrationRunMetricsBaselineEvaluatorTests
         WriteIndented = false
     };
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Catalog_SeedsGeoServerSmall_Only()
     {
@@ -46,6 +47,7 @@ public sealed class MigrationRunMetricsBaselineEvaluatorTests
             .Should().BeFalse("GeoServer Medium seed is deferred");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WithMetricsInsideAllPassBands_EmitsPassStatus()
     {
@@ -72,6 +74,7 @@ public sealed class MigrationRunMetricsBaselineEvaluatorTests
         result.Summary.Should().Contain("within baseline");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_OnUpperBoundWarnBoundary_EmitsWarnStatus()
     {
@@ -91,6 +94,7 @@ public sealed class MigrationRunMetricsBaselineEvaluatorTests
         duration.Observed.Should().Be(60_000);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_OnUpperBoundFailBoundary_EmitsFailStatus()
     {
@@ -109,6 +113,7 @@ public sealed class MigrationRunMetricsBaselineEvaluatorTests
             .Should().Be(MigrationMetricBaselineStatuses.Fail);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_OnUpperBoundJustBelowWarn_EmitsPassStatus()
     {
@@ -126,6 +131,7 @@ public sealed class MigrationRunMetricsBaselineEvaluatorTests
             .Should().Be(MigrationMetricBaselineStatuses.Pass);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_OnLowerBoundWarnBoundary_EmitsWarnStatus()
     {
@@ -144,6 +150,7 @@ public sealed class MigrationRunMetricsBaselineEvaluatorTests
             .Should().Be(MigrationMetricBaselineStatuses.Warn);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_OnLowerBoundFailBoundary_EmitsFailStatus()
     {
@@ -162,6 +169,7 @@ public sealed class MigrationRunMetricsBaselineEvaluatorTests
             .Should().Be(MigrationMetricBaselineStatuses.Fail);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WithMissingMetric_EmitsWarnSignalNotMeasured()
     {
@@ -181,6 +189,7 @@ public sealed class MigrationRunMetricsBaselineEvaluatorTests
         result.Status.Should().Be(MigrationMetricBaselineStatuses.Warn);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_WithNegativeObserved_EmitsFailSignal()
     {
@@ -200,6 +209,7 @@ public sealed class MigrationRunMetricsBaselineEvaluatorTests
         result.Status.Should().Be(MigrationMetricBaselineStatuses.Fail);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryEvaluate_ResolvesBaselineFromCatalog()
     {
@@ -227,6 +237,7 @@ public sealed class MigrationRunMetricsBaselineEvaluatorTests
         result!.Status.Should().Be(MigrationMetricBaselineStatuses.Pass);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryEvaluate_WithUnseededFamily_ReturnsNull()
     {
@@ -241,6 +252,7 @@ public sealed class MigrationRunMetricsBaselineEvaluatorTests
         result.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Baseline_RoundTripsThroughJson_PreservesShape()
     {
@@ -258,6 +270,7 @@ public sealed class MigrationRunMetricsBaselineEvaluatorTests
         restored.Bands.Select(b => b.Metric).Should().Equal(baseline.Bands.Select(b => b.Metric));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Artifact_RoundTripsThroughJson_PreservesShape()
     {

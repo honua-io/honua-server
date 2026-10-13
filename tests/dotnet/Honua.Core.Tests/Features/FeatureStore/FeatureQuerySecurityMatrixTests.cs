@@ -86,6 +86,7 @@ public sealed class FeatureQuerySecurityMatrixTests
         }];
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [MemberData(nameof(MaskedQueryCases))]
     public void EveryReadPathRejectsMaskedFieldReferences(string path, FeatureQuery query)
@@ -101,6 +102,7 @@ public sealed class FeatureQuerySecurityMatrixTests
         act.Should().Throw<ArgumentException>().WithMessage("*secret*");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("outStatistics")]
     [InlineData("summary")]
@@ -137,6 +139,7 @@ public sealed class FeatureQuerySecurityMatrixTests
         act.Should().Throw<ArgumentException>().WithMessage("*secret*");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("numeric bins")]
     [InlineData("date bins")]
@@ -157,6 +160,7 @@ public sealed class FeatureQuerySecurityMatrixTests
         act.Should().Throw<ArgumentException>().WithMessage("*secret*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void JsonAccessorMatrixMatchesTheCompleteAttributeKey()
     {
@@ -171,6 +175,7 @@ public sealed class FeatureQuerySecurityMatrixTests
         act.Should().NotThrow();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("owner", "alice", "alice", false, true)]
     [InlineData("other owner", "alice", "bob", false, false)]
@@ -188,6 +193,7 @@ public sealed class FeatureQuerySecurityMatrixTests
         ReplicaSecurity.CanAccess(ownerId, principalId, isAdmin).Should().Be(expected);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ReplicaChangeMatrixFiltersCurrentRowsAndFailsClosedForDeletes()
     {
@@ -208,6 +214,7 @@ public sealed class FeatureQuerySecurityMatrixTests
         filtered.DeleteIds.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ReplicaChangeMatrixClassifiesUpdatesAndDeletesFromThePreChangeImage()
     {

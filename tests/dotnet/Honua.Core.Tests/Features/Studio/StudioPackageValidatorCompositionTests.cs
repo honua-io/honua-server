@@ -10,6 +10,7 @@ namespace Honua.Core.Tests.Features.Studio;
 
 public sealed class StudioPackageValidatorCompositionTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("{\"layers\":\"bad\"}")]
     [InlineData("{\"layers\":null}")]

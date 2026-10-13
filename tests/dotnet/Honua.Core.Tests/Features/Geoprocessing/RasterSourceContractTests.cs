@@ -26,6 +26,7 @@ public sealed class RasterSourceContractTests
             Inline([1, 2, 3, 4]),
         };
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [MemberData(nameof(DescriptorCases))]
     public void Serialize_Descriptor_RoundTripsWithSourceGeneratedContract(RasterSourceDescriptor descriptor)
@@ -39,6 +40,7 @@ public sealed class RasterSourceContractTests
         Assert.DoesNotContain("credential", json, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Deserialize_SameVersionWithUnknownOptionalProperty_RemainsCompatible()
     {
@@ -50,6 +52,7 @@ public sealed class RasterSourceContractTests
         Assert.IsType<ObjectStoreCogRasterSourceDescriptor>(descriptor);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Deserialize_LegacyVersionOneStagedDescriptor_RemainsReadableButNotExecutable()
     {
@@ -73,6 +76,7 @@ public sealed class RasterSourceContractTests
         Assert.Contains(validation.Errors, error => error.Field == "declaredDimensions");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Deserialize_SourceTypeAfterDescriptorProperties_IsAccepted()
     {
@@ -84,6 +88,7 @@ public sealed class RasterSourceContractTests
         Assert.IsType<ObjectStoreCogRasterSourceDescriptor>(descriptor);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Deserialize_OmittedSourceContractVersion_IsRejected()
     {
@@ -93,6 +98,7 @@ public sealed class RasterSourceContractTests
         Assert.Throws<JsonException>(() => RasterSourceJson.Deserialize(document.ToJsonString()));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_FutureContractVersion_IsRejectedForRollingUpgradeSafety()
     {
@@ -107,6 +113,7 @@ public sealed class RasterSourceContractTests
         Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.UnsupportedContractVersion);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Deserialize_UnknownSourceType_IsRejected()
     {
@@ -121,6 +128,7 @@ public sealed class RasterSourceContractTests
         Assert.Throws<JsonException>(() => RasterSourceJson.Deserialize(json));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Deserialize_InlinePayloadWithOversizedEscapedToken_IsRejectedBeforeBase64Decode()
     {
@@ -134,6 +142,7 @@ public sealed class RasterSourceContractTests
         Assert.Contains("contract ceiling", exception.Message, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Deserialize_InlinePayloadWithLegalJsonEscapes_UsesLogicalBase64Length()
     {
@@ -150,6 +159,7 @@ public sealed class RasterSourceContractTests
         Assert.Equal(payload, inline.Payload);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AnalysisContentJsonContext_InlinePayloadAboveDecodedCeiling_IsRejected()
     {
@@ -171,6 +181,7 @@ public sealed class RasterSourceContractTests
         Assert.Contains("contract ceiling", exception.Message, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("../secret.tif")]
     [InlineData("/vsis3/private-bucket/secret.tif")]
@@ -189,6 +200,7 @@ public sealed class RasterSourceContractTests
         Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.UnsafeLocator);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("folder/a file.tif")]
     [InlineData("folder/hash#colon:source.tif")]
@@ -201,6 +213,7 @@ public sealed class RasterSourceContractTests
         Assert.True(result.IsValid);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("artifact%00secret")]
     [InlineData("artifact%0asecret")]
@@ -213,6 +226,7 @@ public sealed class RasterSourceContractTests
         Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.UnsafeLocator);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_StagedArtifactWithoutProducerDimensions_IsRejected()
     {
@@ -225,6 +239,7 @@ public sealed class RasterSourceContractTests
             && error.Field == "declaredDimensions");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("https://example.com/context")]
     [InlineData("context?access_key=secret")]
@@ -243,6 +258,7 @@ public sealed class RasterSourceContractTests
         Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.InvalidSecurityContext);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_ObjectStoreReferenceWithoutImmutablePin_IsRejected()
     {
@@ -258,6 +274,7 @@ public sealed class RasterSourceContractTests
         Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.ImmutableIdentityRequired);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_InlinePayloadAboveConfiguredCeiling_IsRejected()
     {
@@ -270,6 +287,7 @@ public sealed class RasterSourceContractTests
         Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.InlinePayloadTooLarge);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_ConfiguredInlineCeilingCannotExceedWireContractLimit()
     {
@@ -281,6 +299,7 @@ public sealed class RasterSourceContractTests
         Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.InlinePayloadTooLarge);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_InlinePayloadChecksumMismatch_IsRejected()
     {
@@ -290,6 +309,7 @@ public sealed class RasterSourceContractTests
         Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.ChecksumMismatch);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("content")]
     [InlineData("checksumFields")]
@@ -333,6 +353,7 @@ public sealed class RasterSourceContractTests
         Assert.False(RasterSourceDescriptorValidator.Validate(descriptor).IsValid);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidatePlan_CountNameAndSerializedBudgets_AreBounded()
     {
@@ -356,6 +377,7 @@ public sealed class RasterSourceContractTests
         Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.SerializedBudgetExceeded);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidatePlan_UnsafeParameterName_IsRejected()
     {
@@ -367,6 +389,7 @@ public sealed class RasterSourceContractTests
         Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.InvalidParameterName);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidatePlan_DescriptorFailure_ReportsStepBindingAndFieldPath()
     {
@@ -384,6 +407,7 @@ public sealed class RasterSourceContractTests
             && error.Field == "objectKey");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SecurityContext_CallerCannotMarkReferenceTrusted()
     {
@@ -395,6 +419,7 @@ public sealed class RasterSourceContractTests
         Assert.False(descriptor.SecurityContext.IsTrusted);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AnalysisContentJsonContext_NestedRasterDescriptor_RoundTrips()
     {
@@ -410,6 +435,7 @@ public sealed class RasterSourceContractTests
         Assert.IsType<ObjectStoreCogRasterSourceDescriptor>(source);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AnalysisContentJsonContext_SourceTypeAfterDescriptorProperties_IsAccepted()
     {
@@ -429,6 +455,7 @@ public sealed class RasterSourceContractTests
         Assert.IsType<ObjectStoreCogRasterSourceDescriptor>(descriptor);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AnalysisContentPersistencePolicy_InlineRaster_IsRejected()
     {
@@ -442,6 +469,7 @@ public sealed class RasterSourceContractTests
         Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.InlinePersistenceDenied);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AnalysisContentPersistencePolicy_NonGeoprocessRasterBinding_IsRejected()
     {
@@ -459,6 +487,7 @@ public sealed class RasterSourceContractTests
             && error.Field == "steps[step-0].raster_sources.source");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_BoundedWindowBandsTimeAndDimensions_AreAccepted()
     {
@@ -480,6 +509,7 @@ public sealed class RasterSourceContractTests
         Assert.True(result.IsValid, string.Join("; ", result.Errors.Select(error => error.Message)));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_SelectionCountCeilings_DoNotEnumerateOversizedCollections()
     {
@@ -504,6 +534,7 @@ public sealed class RasterSourceContractTests
             && error.Message.Contains("configured count limit", StringComparison.Ordinal)));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveAsync_MetadataMatchesPinnedDescriptor_ReturnsAvailable()
     {
@@ -520,6 +551,7 @@ public sealed class RasterSourceContractTests
         Assert.Equal(RasterSourceMetadataStatus.Available, result.Status);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveAsync_ChecksumDoesNotMatch_ReturnsIntegrityMismatch()
     {
@@ -539,6 +571,7 @@ public sealed class RasterSourceContractTests
         Assert.Equal(RasterSourceMetadataStatus.IntegrityMismatch, result.Status);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveAsync_MediaTypeDoesNotMatch_ReturnsIntegrityMismatch()
     {
@@ -556,6 +589,7 @@ public sealed class RasterSourceContractTests
         Assert.Equal("source_integrity_mismatch", result.FailureCode);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveAsync_VersionDoesNotMatch_ReturnsStale()
     {
@@ -572,6 +606,7 @@ public sealed class RasterSourceContractTests
         Assert.Equal(RasterSourceMetadataStatus.Stale, result.Status);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveAsync_MissingArtifact_PreservesMissingStatus()
     {
@@ -585,6 +620,7 @@ public sealed class RasterSourceContractTests
         Assert.Equal("artifact_missing", result.FailureCode);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveAsync_Cancellation_IsPropagatedToResolver()
     {

@@ -30,7 +30,7 @@ public sealed class ErrorHandlingPolicyTests
     private const string FeaturesRelativePath = "src/Honua.Server/Features";
     private const string ServerRelativePath = "src/Honua.Server";
     private const string GlobalMiddlewareRelativePath =
-        "src/Honua.Server/Features/Infrastructure/Middleware/GlobalExceptionMiddleware.cs";
+        "src/Honua.Hosting/Features/Middleware/GlobalExceptionMiddleware.cs";
     private const string ProgramRelativePath = "src/Honua.Server/Program.cs";
 
     /// <summary>
@@ -112,7 +112,7 @@ public sealed class ErrorHandlingPolicyTests
         var programPath = ArchitectureTestHelpers.CombinePath(repoRoot, ProgramRelativePath);
 
         File.Exists(middlewarePath).Should().BeTrue(
-            "the audit relies on src/Honua.Server/.../GlobalExceptionMiddleware.cs being present "
+            "the audit relies on src/Honua.Hosting/.../GlobalExceptionMiddleware.cs being present "
             + "as the safety net for unhandled exceptions");
         File.Exists(programPath).Should().BeTrue(
             "Program.cs is expected to wire the global exception handler");

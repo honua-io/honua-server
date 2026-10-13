@@ -13,6 +13,7 @@ namespace Honua.Core.Tests.Features.Spec;
 /// </summary>
 public class SpecDagResolverTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_LinearChain_ReturnsTopologicalOrder()
     {
@@ -32,6 +33,7 @@ public class SpecDagResolverTests
         Assert.Empty(resolution.Dependencies["a"]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_Diamond_ResolvesWithStableOrder()
     {
@@ -57,6 +59,7 @@ public class SpecDagResolverTests
         Assert.Equal("c", resolution.Order[2]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_SameDocumentTwice_ProducesIdenticalOrder()
     {
@@ -71,6 +74,7 @@ public class SpecDagResolverTests
         Assert.Equal(first.Order, second.Order);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_DuplicateNodeId_EmitsErrorAndBlocks()
     {
@@ -88,6 +92,7 @@ public class SpecDagResolverTests
         Assert.Equal("a", diag.NodeId);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_UnresolvedReference_EmitsError()
     {
@@ -104,6 +109,7 @@ public class SpecDagResolverTests
         Assert.Contains("missing", diag.Message, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_SelfCycle_EmitsDagCycle()
     {
@@ -118,6 +124,7 @@ public class SpecDagResolverTests
         Assert.Contains("a -> a", diag.Message, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_TwoNodeCycle_EmitsDagCycle()
     {
@@ -132,6 +139,7 @@ public class SpecDagResolverTests
         Assert.Equal(SpecDiagnosticCodes.DagCycle, diag.Code);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_ScalarInputs_AreNotTreatedAsReferences()
     {
@@ -145,6 +153,7 @@ public class SpecDagResolverTests
         Assert.Empty(resolution.Dependencies["a"]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_DuplicateReference_DeduplicatesDependencies()
     {
@@ -158,6 +167,7 @@ public class SpecDagResolverTests
         Assert.Equal(new[] { "src" }, resolution.Dependencies["a"]);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("")]
     [InlineData(" ")]
@@ -183,6 +193,7 @@ public class SpecDagResolverTests
         Assert.Equal(SpecDiagnosticSeverity.Error, diag.Severity);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_MultipleBlankIds_EmitOnePerOffendingNode()
     {

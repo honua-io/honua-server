@@ -26,6 +26,7 @@ public sealed class MigrationArtifactSchemaStabilityTests
         WriteIndented = true
     };
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(typeof(MigrationSourceInventoryArtifact), "honua.migration.source-inventory.schema.json")]
     [InlineData(typeof(MigrationManifestArtifact), "honua.migration.manifest.schema.json")]

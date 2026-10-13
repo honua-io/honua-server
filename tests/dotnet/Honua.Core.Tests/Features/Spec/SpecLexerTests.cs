@@ -14,6 +14,7 @@ namespace Honua.Core.Tests.Features.Spec;
 /// </summary>
 public sealed class SpecLexerTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_TracksLineAndColumnAcrossNewlines()
     {
@@ -42,6 +43,7 @@ public sealed class SpecLexerTests
         kindValue.Span.Column.Should().Be(6);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_HandlesCrlfLineEndings()
     {
@@ -55,6 +57,7 @@ public sealed class SpecLexerTests
         tokens[2].Span.Column.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_BoolAndNullKeywords()
     {
@@ -68,6 +71,7 @@ public sealed class SpecLexerTests
         tokens[8].Type.Should().Be(SpecTokenType.Null);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_ParsesUnitLiteralAsSeparateTokens()
     {
@@ -85,6 +89,7 @@ public sealed class SpecLexerTests
         tokens[4].Text.Should().Be("m");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_AllowsDecimalFractionsWithinNumbers()
     {
@@ -96,6 +101,7 @@ public sealed class SpecLexerTests
         tokens[3].Type.Should().Be(SpecTokenType.EndOfInput);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_AllowsScientificNumbers()
     {
@@ -106,6 +112,7 @@ public sealed class SpecLexerTests
         tokens[2].Text.Should().Be("1.5e-3");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_AllowsNegativeNumbers()
     {
@@ -118,6 +125,7 @@ public sealed class SpecLexerTests
         tokens[2].Text.Should().Be("-122.0");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_AllowsNegativeNumbersInArrays()
     {
@@ -131,6 +139,7 @@ public sealed class SpecLexerTests
             .Should().Equal("-180", "-90", "180", "90");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_ReferenceCapturesAtPrefix()
     {
@@ -141,6 +150,7 @@ public sealed class SpecLexerTests
         tokens[2].Text.Should().Be("@hospitals");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_StringEscapesResolve()
     {
@@ -151,6 +161,7 @@ public sealed class SpecLexerTests
         tokens[2].Text.Should().Be("line1\nline2\t\"quoted\"");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_CollectsHashLineComments()
     {
@@ -163,6 +174,7 @@ public sealed class SpecLexerTests
         lexer.Comments[0].Text.Should().Be("header comment");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_CollectsDoubleSlashLineComments()
     {
@@ -175,6 +187,7 @@ public sealed class SpecLexerTests
         lexer.Comments[0].Text.Should().Be("a note");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_CollectsBlockComments()
     {
@@ -191,6 +204,7 @@ public sealed class SpecLexerTests
         tokens[0].Span.Line.Should().Be(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_UnterminatedStringReportsSyntaxError()
     {
@@ -204,6 +218,7 @@ public sealed class SpecLexerTests
             d.Severity == SpecDiagnosticSeverity.Error);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_UnterminatedBlockCommentReportsError()
     {
@@ -216,6 +231,7 @@ public sealed class SpecLexerTests
             d.Code == SpecDiagnosticCode.SyntaxError);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_UnknownEscapeReportsError()
     {
@@ -228,6 +244,7 @@ public sealed class SpecLexerTests
             d.Message.Contains("escape", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_BareAtReportsSyntaxError()
     {
@@ -240,6 +257,7 @@ public sealed class SpecLexerTests
             d.Code == SpecDiagnosticCode.SyntaxError);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_AppendsEndOfInputSentinel()
     {
@@ -249,6 +267,7 @@ public sealed class SpecLexerTests
         tokens[0].Type.Should().Be(SpecTokenType.EndOfInput);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_RejectsInputOverLimit()
     {
@@ -259,6 +278,7 @@ public sealed class SpecLexerTests
         act.Should().Throw<ArgumentException>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_SpanOffsetAndLengthArePopulated()
     {

@@ -20,6 +20,7 @@ namespace Honua.Core.Tests.Features.Geocoding;
 /// </summary>
 public sealed class GeocodeCoordinatorTelemetryTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SuggestAsync_Success_EmitsSpanTaggedWithQueryLengthNotRawText()
     {
@@ -61,6 +62,7 @@ public sealed class GeocodeCoordinatorTelemetryTests
         Assert.DoesNotContain(activities, a => a.TagObjects.Any(t => Equals(t.Value, queryText)));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task BatchGeocodeAsync_Success_EmitsSpanTaggedWithBatchSize()
     {

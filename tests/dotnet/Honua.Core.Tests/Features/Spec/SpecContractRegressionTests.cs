@@ -25,6 +25,7 @@ public sealed class SpecContractRegressionTests
     private static readonly SpecCanonicalizer Canonicalizer = new();
     private static readonly SpecValidator Validator = new(new OperatorCatalog());
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task CanonicalJson_WithMapLayerIdStrings_ValidatesAgainstPublishedSchema()
     {
@@ -46,6 +47,7 @@ public sealed class SpecContractRegressionTests
             .Should().BeTrue($"published spec schema must accept canonical map layer ids: {FormatSchemaErrors(errors)}");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CommentSidecarKeys_UseCanonicalArrayIndices()
     {
@@ -76,6 +78,7 @@ public sealed class SpecContractRegressionTests
         parsed.Document.Comments.Keys.Should().Contain(key => key.StartsWith("/outputs/0#", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_RepeatedSourceIdsAcrossRuns_DoNotReuseStaleCatalogTypes()
     {

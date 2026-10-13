@@ -26,6 +26,7 @@ public sealed class DispatchBindingTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Dispatch_OverlappingUnrelatedSuccess_AwaitsIntendedFailure()
     {
@@ -37,6 +38,7 @@ public sealed class DispatchBindingTests
         Assert.DoesNotContain("watch 303", result.Calls, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("valid")]
     [InlineData("qualified-path")]
@@ -56,6 +58,7 @@ public sealed class DispatchBindingTests
         Assert.DoesNotContain("run list", result.Calls, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("missing-dispatch-id", "Dispatch did not return one exact run id")]
     [InlineData("ambiguous-dispatch", "Dispatch did not return one exact run id")]
@@ -87,6 +90,7 @@ public sealed class DispatchBindingTests
         Assert.DoesNotContain("run list", result.Calls, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("ghcr.io/honua-io/server:latest", "ghcr.io/honua-io/server:latest")]
     [InlineData(Image, "ghcr.io/honua-io/server:latest")]
@@ -98,6 +102,7 @@ public sealed class DispatchBindingTests
         Assert.Empty(result.Calls);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Dispatch_DuplicateImageInput_RefusesBeforeDispatch()
     {
@@ -107,6 +112,7 @@ public sealed class DispatchBindingTests
         Assert.Empty(result.Calls);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("merge-train.yml")]
     [InlineData("123456")]
@@ -120,6 +126,7 @@ public sealed class DispatchBindingTests
         Assert.Empty(result.Calls);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Dispatch_DryRun_EmitsSkippedWithoutGitHub()
     {
@@ -129,6 +136,7 @@ public sealed class DispatchBindingTests
         Assert.Empty(result.Calls);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ReleaseBundle_ImageSuiteDispatches_RequireExactImageVerification()
     {
@@ -139,6 +147,7 @@ public sealed class DispatchBindingTests
         Assert.Contains("image=\"${ref}@${digest}\"", workflow, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ReleaseBundle_PullRequestContracts_IsolateDispatchCredentialsAndJobs()
     {
@@ -149,6 +158,7 @@ public sealed class DispatchBindingTests
         Assert.Contains("    needs: workflow-contract-tests\n    if: ${{ github.event_name == 'workflow_dispatch' }}", workflow, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ReleaseRegistry_DispatchableWorkflows_HaveLiteralDispatchDestinations()
     {
@@ -180,6 +190,7 @@ public sealed class DispatchBindingTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task CiteReceipt_RunningCandidate_ProducesExactDispatchImageReceipt()
     {
@@ -193,6 +204,7 @@ public sealed class DispatchBindingTests
         Assert.Equal("conformance.yml", receipt.RootElement.GetProperty("workflow").GetString());
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("container-missing")]
     [InlineData("container-ambiguous")]
@@ -206,6 +218,7 @@ public sealed class DispatchBindingTests
         Assert.Empty(result.Receipt);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CiteWorkflow_ReleaseReceipt_FollowsStrictResultPolicyAndRetainsTestContainer()
     {

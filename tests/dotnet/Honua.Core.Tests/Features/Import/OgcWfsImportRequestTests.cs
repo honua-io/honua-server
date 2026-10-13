@@ -13,6 +13,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// </summary>
 public sealed class OgcWfsImportRequestTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void OgcWfsImportRequest_Defaults_AreSafeForOperatorReview()
     {
@@ -30,6 +31,7 @@ public sealed class OgcWfsImportRequestTests
         request.Version.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void OgcWfsImportResult_Defaults_HaveEmptyCollections()
     {
@@ -53,6 +55,7 @@ public sealed class OgcWfsImportRequestTests
         result.ErrorMessage.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void OgcWfsImportedFeatureType_DefaultsCarryEmptyWarnings()
     {

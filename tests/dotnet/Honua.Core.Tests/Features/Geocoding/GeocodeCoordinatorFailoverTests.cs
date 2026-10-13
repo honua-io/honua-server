@@ -17,6 +17,7 @@ namespace Honua.Core.Tests.Features.Geocoding;
 
 public sealed class GeocodeCoordinatorFailoverTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AddGeocodingCore_WithoutLicenseService_ResolvesProviderCoordinator()
     {
@@ -31,6 +32,7 @@ public sealed class GeocodeCoordinatorFailoverTests
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IGeocodeProviderCoordinator>());
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ForwardGeocodeAsync_CapabilityIncompatibleFirstProvider_DoesNotConsumeFailoverBudget()
     {
@@ -69,6 +71,7 @@ public sealed class GeocodeCoordinatorFailoverTests
         Assert.Equal(0, incapable.ForwardCallCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ForwardGeocodeAsync_ExceedsAdvertisedRateLimit_ThrottlesWithRetryAfter()
     {
@@ -112,6 +115,7 @@ public sealed class GeocodeCoordinatorFailoverTests
         Assert.Equal(1, provider.ForwardCallCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ForwardGeocodeAsync_AllProvidersLackCapability_FailsWithNoProviderSupportsMessage()
     {
@@ -139,6 +143,7 @@ public sealed class GeocodeCoordinatorFailoverTests
         Assert.Empty(result.AttemptedProviders ?? []);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReverseGeocodeAsync_CapabilityIncompatibleFirstProvider_FailsOverToCapableProvider()
     {
@@ -170,6 +175,7 @@ public sealed class GeocodeCoordinatorFailoverTests
         Assert.Equal(1, capable.ReverseCallCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ForwardGeocodeAsync_FailoverBudgetCapsRealAttempts()
     {
@@ -203,6 +209,7 @@ public sealed class GeocodeCoordinatorFailoverTests
         Assert.Equal(0, second.ForwardCallCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

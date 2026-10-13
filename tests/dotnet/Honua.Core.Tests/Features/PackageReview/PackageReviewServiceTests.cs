@@ -11,6 +11,7 @@ namespace Honua.Core.Tests.Features.PackageReview;
 
 public sealed class PackageReviewServiceTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReviewAsync_WithResolvedRequirements_ReturnsReadyAndStableReviewId()
     {
@@ -44,6 +45,7 @@ public sealed class PackageReviewServiceTests
         first.Findings.Should().Contain(f => f.Severity == PackageFindingSeverity.Pass);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReviewAsync_WithWarningOnly_ReturnsWarningWithoutBlockingActions()
     {
@@ -73,6 +75,7 @@ public sealed class PackageReviewServiceTests
         response.Findings.Should().ContainSingle(f => f.Code == "crs_assumption_requires_review");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReviewAsync_WithBlockers_ReturnsBlockedAndActionableFindingsFirst()
     {
@@ -165,6 +168,7 @@ public sealed class PackageReviewServiceTests
         response.Findings.Should().OnlyContain(f => f.RequiredAction != null);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReviewAsync_WithPublishOnlyBlocker_AllowsExecute()
     {
@@ -193,6 +197,7 @@ public sealed class PackageReviewServiceTests
         response.CanPublish.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReviewAsync_WithPreviewRequest_ReturnsReadOnlyPreviewPlan()
     {
@@ -233,6 +238,7 @@ public sealed class PackageReviewServiceTests
         response.PreviewPlan.Operations[0].InputRefs.Should().Contain("layers/parks");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(PackageReviewFamilies.AnalysisPlan)]
     [InlineData(PackageReviewFamilies.Geoprocessing)]
@@ -263,6 +269,7 @@ public sealed class PackageReviewServiceTests
         response.PreviewPlan.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReviewAsync_WithUnsupportedFamily_ReturnsUnsupportedBlocker()
     {
@@ -280,6 +287,7 @@ public sealed class PackageReviewServiceTests
             f.Disposition == PackageFindingDisposition.Unsupported);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReviewAsync_WithExpensiveEstimate_ReturnsWarningAndEchoesEstimate()
     {
@@ -304,6 +312,7 @@ public sealed class PackageReviewServiceTests
         response.Findings.Should().ContainSingle(f => f.Code == "expensive_preview_estimate");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReviewAsync_WithExpensiveDurationSecondsOnly_IncludesDurationInEvidenceSummary()
     {
@@ -325,6 +334,7 @@ public sealed class PackageReviewServiceTests
         summary.Should().Contain("durationSeconds=");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReviewAsync_WithExplicitlyNullRequirementsAndResourceRefs_ReturnsDeterministicResponse()
     {

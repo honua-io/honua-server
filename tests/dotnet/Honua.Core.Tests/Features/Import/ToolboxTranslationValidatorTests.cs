@@ -15,6 +15,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// </summary>
 public sealed class ToolboxTranslationValidatorTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_FullMapping_ClassifiesTranslatedAndRoundTripsSignature()
     {
@@ -43,6 +44,7 @@ public sealed class ToolboxTranslationValidatorTests
         tool.ParameterBindings[1].ValueType.Should().Be(nameof(ProcessParameterValueType.FloatingPoint));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_TargetParameterMatch_IsCaseInsensitiveAndEchoesCatalogCasing()
     {
@@ -58,6 +60,7 @@ public sealed class ToolboxTranslationValidatorTests
             .Should().Equal("wkb", "distance");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_UnknownTargetParameter_ClassifiesPartiallyTranslated()
     {
@@ -76,6 +79,7 @@ public sealed class ToolboxTranslationValidatorTests
         issue.ParameterName.Should().Be("units");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_DuplicateTargetParameter_ReportsIssueAndKeepsFirstBinding()
     {
@@ -94,6 +98,7 @@ public sealed class ToolboxTranslationValidatorTests
         issue.ParameterName.Should().Be("dist_again");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_MissingRequiredParameter_ClassifiesUnsupported()
     {
@@ -109,6 +114,7 @@ public sealed class ToolboxTranslationValidatorTests
         issue.ParameterName.Should().Be("distance");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_RequiredParameterWithDefault_StillRequiresMapping()
     {
@@ -125,6 +131,7 @@ public sealed class ToolboxTranslationValidatorTests
         issue.ParameterName.Should().Be("tolerance");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_AllRequiredParametersMapped_IsTranslated()
     {
@@ -137,6 +144,7 @@ public sealed class ToolboxTranslationValidatorTests
         report.Tools.Single().Classification.Should().Be(ToolboxToolClassifications.Translated);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_NoTargetProcess_ClassifiesUnsupportedWithNoNativeExecutor()
     {
@@ -158,6 +166,7 @@ public sealed class ToolboxTranslationValidatorTests
             ToolboxTranslationIssueCodes.NoNativeExecutor);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_UnknownProcessId_ClassifiesUnsupported()
     {
@@ -171,6 +180,7 @@ public sealed class ToolboxTranslationValidatorTests
         tool.Issues.Single().Code.Should().Be(ToolboxTranslationIssueCodes.UnknownProcess);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_UnsupportedConstructOnExecutableTool_ClassifiesPartiallyTranslated()
     {
@@ -187,6 +197,7 @@ public sealed class ToolboxTranslationValidatorTests
         tool.Issues.Single().Code.Should().Be(ToolboxTranslationIssueCodes.UnsupportedConstruct);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_ProbeReportsMissingConditionalInput_ClassifiesUnsupported()
     {
@@ -206,6 +217,7 @@ public sealed class ToolboxTranslationValidatorTests
         report.Summary.TranslatedCount.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_ProbeSatisfiedByMappedOptionalInput_IsTranslated()
     {
@@ -219,6 +231,7 @@ public sealed class ToolboxTranslationValidatorTests
         tool.Issues.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_WithoutProbe_FallsBackToStaticRequiredFlagsOnly()
     {
@@ -234,6 +247,7 @@ public sealed class ToolboxTranslationValidatorTests
             .OnlyContain(code => code == ToolboxTranslationIssueCodes.UnverifiableConditionalBranches);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_UnmappedDefaultlessParameter_IsNotCertifiedTranslated()
     {
@@ -248,6 +262,7 @@ public sealed class ToolboxTranslationValidatorTests
         report.Tools.Single().Classification.Should().Be(ToolboxToolClassifications.Translated);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_ProbeReportsNoBranchDependentParameter_IsTranslated()
     {
@@ -265,6 +280,7 @@ public sealed class ToolboxTranslationValidatorTests
         tool.Issues.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_ProbeReportsBranchDependentParameter_ClassifiesPartiallyTranslated()
     {
@@ -284,6 +300,7 @@ public sealed class ToolboxTranslationValidatorTests
         issue.ParameterName.Should().Be("source");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_ProbeReportsBranchQualifiedRequirement_ReplacesTheConservativeDowngrade()
     {
@@ -310,6 +327,7 @@ public sealed class ToolboxTranslationValidatorTests
         issue.Message.Should().Contain("mode=exact").And.Contain("mode=strict");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_BranchGapsCoverEveryDiscriminatorValue_DoesNotRecommendConstrainingTheSource()
     {
@@ -339,6 +357,7 @@ public sealed class ToolboxTranslationValidatorTests
         tool.Issues.Should().NotContain(issue => issue.Message.Contains("Every other admissible value executes"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_BranchGapsLeaveOneDiscriminatorValueClear_StillRecommendsConstrainingTheSource()
     {
@@ -359,6 +378,7 @@ public sealed class ToolboxTranslationValidatorTests
         issue.Message.Should().Contain("At least one admissible branch is not covered");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_PartialCollectiveCoverage_DoesNotClaimEveryOtherValueExecutes()
     {
@@ -394,6 +414,7 @@ public sealed class ToolboxTranslationValidatorTests
             issue.Message.Contains("Every other admissible value executes"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_MultiDiscriminatorGapsCoverEveryAssignment_IsUnsupported()
     {
@@ -423,6 +444,7 @@ public sealed class ToolboxTranslationValidatorTests
             issue.Message.Contains("Every admissible discriminator assignment"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_MultiDiscriminatorGapsLeaveOneAssignmentClear_IsPartiallyTranslated()
     {
@@ -449,6 +471,7 @@ public sealed class ToolboxTranslationValidatorTests
             issue.Message.Contains("At least one admissible branch is not covered"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_ProbeReportsBranchRequirementForAMappedParameter_IsIgnored()
     {
@@ -467,6 +490,7 @@ public sealed class ToolboxTranslationValidatorTests
         tool.Issues.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_ProbeNotConsultedWhenStaticRequiredParameterMissing()
     {
@@ -483,6 +507,7 @@ public sealed class ToolboxTranslationValidatorTests
             .OnlyContain(code => code == ToolboxTranslationIssueCodes.MissingRequiredParameter);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_NormalizesToolboxNameAndSourceFormat()
     {

@@ -48,6 +48,7 @@ public static partial class EndpointRegistry
         // ArcGIS Portal community group + item sharing surface (#1868).
         new("POST", "/sharing/rest/community/createGroup"),
         new("GET", "/sharing/rest/community/groups/{groupId}"),
+        new("GET", "/sharing/rest/content/groups/{groupId}"),
         new("POST", "/sharing/rest/community/groups/{groupId}/delete"),
         new("POST", "/sharing/rest/community/groups/{groupId}/addUsers"),
         new("POST", "/sharing/rest/community/groups/{groupId}/removeUsers"),

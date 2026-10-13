@@ -20,6 +20,7 @@ public sealed class MigrationRunRetryResumeTests
 {
     private const string RunId = "retry-resume-run-001";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SimulatedSourceFailure_ResumeFromCheckpoint_ProducesSameFinalArtifact()
     {
@@ -66,6 +67,7 @@ public sealed class MigrationRunRetryResumeTests
         secondRunner.Manifest.Should().Equal(cleanRunner.Manifest, "resume produces the same final manifest as a clean run");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RepeatedApply_IsIdempotent_AndRecordsReplayCounter()
     {
@@ -106,6 +108,7 @@ public sealed class MigrationRunRetryResumeTests
         replayArtifact.Totals.RetryCount.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task CancellationMidRun_LeavesManifestRecoverable()
     {
@@ -141,6 +144,7 @@ public sealed class MigrationRunRetryResumeTests
         resumed.Manifest.Should().HaveCount(6, "the recovered manifest is complete after resume");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task TransientNetworkError_RetriesAndCompletes_RecordsRetryCounter()
     {
@@ -163,6 +167,7 @@ public sealed class MigrationRunRetryResumeTests
         artifact.Totals.ResumeCount.Should().BeNull("transient retries do not re-load the checkpoint");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void MetricSchema_ExposesSlice3Fields_AsAdditiveNullable()
     {

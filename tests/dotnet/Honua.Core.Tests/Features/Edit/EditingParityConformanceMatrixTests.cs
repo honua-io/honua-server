@@ -51,6 +51,7 @@ public sealed class EditingParityConformanceMatrixTests
         return data;
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [MemberData(nameof(SupportedCapabilities))]
     public void Matrix_SupportedCapability_BehavesAsConformanceExpects(string capability)
@@ -61,6 +62,7 @@ public sealed class EditingParityConformanceMatrixTests
         row.Verify();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Matrix_CoversEveryHardenedChildCapability()
     {

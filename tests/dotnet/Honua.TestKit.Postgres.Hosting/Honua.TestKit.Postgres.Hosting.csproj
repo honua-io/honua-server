@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/Honua.Db/Postgres/Honua.Postgres.csproj" />
+    <ProjectReference Include="../../../src/Honua.Hosting/Honua.Hosting.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Postgres/Honua.TestKit.Postgres.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Hosting/Honua.TestKit.Hosting.csproj" />
+    <Compile Include="../../../src/Honua.Server/Startup/ServerCoreSchemaMigrations.cs" Link="Provisioning/ServerCoreSchemaMigrations.cs" />
+    <EmbeddedResource Include="../../../src/Honua.Server/Migrations/*.sql" LogicalName="Honua.Server.Migrations.%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

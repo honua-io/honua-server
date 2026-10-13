@@ -14,6 +14,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class GeoServerRestClientSecurityTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DiscoverServiceAsync_PrivateResolution_ThrowsWithoutSendingRequest()
     {
@@ -35,6 +36,7 @@ public sealed class GeoServerRestClientSecurityTests
         handler.RequestCount.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveAllowedAddressesAsync_MixedPublicAndPrivate_Throws()
     {
@@ -48,6 +50,7 @@ public sealed class GeoServerRestClientSecurityTests
         ex.Message.Should().Contain("disallowed network address");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveAllowedAddressesAsync_LoopbackAllowedForUnsafeLocalUrls_ReturnsAddress()
     {
@@ -60,6 +63,7 @@ public sealed class GeoServerRestClientSecurityTests
         addresses.Should().Equal(IPAddress.Loopback);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CreatePinnedDnsHttpMessageHandler_ConfiguresConnectCallback()
     {
@@ -69,6 +73,7 @@ public sealed class GeoServerRestClientSecurityTests
         socketsHandler.ConnectCallback.Should().NotBeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [LinuxProcFdFact]
     public async Task CreatePinnedDnsHttpMessageHandler_CanceledConnect_DoesNotLeakSockets()
     {

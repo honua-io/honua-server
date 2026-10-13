@@ -14,6 +14,7 @@ public class Cql2ParserTests
 {
     private readonly Cql2Parser _parser = new();
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SimplePropertyComparison_ReturnsCorrectAST()
     {
@@ -37,6 +38,7 @@ public class Cql2ParserTests
         right.Type.Should().Be(LiteralType.Text);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NumericComparison_ReturnsCorrectAST()
     {
@@ -58,6 +60,7 @@ public class Cql2ParserTests
         right.Type.Should().Be(LiteralType.Number);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_BooleanLogic_ReturnsCorrectAST()
     {
@@ -81,6 +84,7 @@ public class Cql2ParserTests
         rightBinary.Operator.Should().Be(BinaryOperator.Like);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NestedParentheses_ReturnsCorrectAST()
     {
@@ -101,6 +105,7 @@ public class Cql2ParserTests
         leftAnd.Operator.Should().Be(BinaryOperator.And);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NotExpression_ReturnsCorrectAST()
     {
@@ -117,6 +122,7 @@ public class Cql2ParserTests
         unary.Operand.Should().BeOfType<BinaryExpression>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_IsNull_ReturnsCorrectAST()
     {
@@ -136,6 +142,7 @@ public class Cql2ParserTests
         property.PropertyName.Should().Be("description");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_IsNotNull_ReturnsCorrectAST()
     {
@@ -151,6 +158,7 @@ public class Cql2ParserTests
         unary.Operator.Should().Be(UnaryOperator.IsNotNull);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_InClause_ReturnsCorrectAST()
     {
@@ -174,6 +182,7 @@ public class Cql2ParserTests
         ((Literal)valueList.Values[2]).Value.Should().Be("completed");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SpatialIntersects_ReturnsCorrectAST()
     {
@@ -198,6 +207,7 @@ public class Cql2ParserTests
         geometry.OriginalFormat.Should().StartWith("POINT");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SpatialIntersects_IsNotGeodesic()
     {
@@ -210,6 +220,7 @@ public class Cql2ParserTests
         ((SpatialPredicate)result).Geodesic.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_WithNestedParenthesesBeyondLimit_ThrowsArgumentException()
     {
@@ -226,6 +237,7 @@ public class Cql2ParserTests
             $"maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("AND")]
     [InlineData("OR")]
@@ -241,6 +253,7 @@ public class Cql2ParserTests
             $"maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("name IN ({0})")]
     [InlineData("A_CONTAINS(tags, ({0}))")]
@@ -256,6 +269,7 @@ public class Cql2ParserTests
         ex.InnerException!.Message.Should().Contain($"maximum of {FilterParserGuard.MaxInListSize} values");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_FlatLogicalSequenceWithinDepthLimit_ReturnsLeftDeepChain()
     {
@@ -267,6 +281,7 @@ public class Cql2ParserTests
         result.Should().BeOfType<BinaryExpression>().Which.Operator.Should().Be(BinaryOperator.And);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_FlatArithmeticSequenceBeyondDepthLimit_ThrowsArgumentException()
     {
@@ -280,6 +295,7 @@ public class Cql2ParserTests
             $"maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SpatialDWithin_ReturnsDistancePredicate()
     {
@@ -298,6 +314,7 @@ public class Cql2ParserTests
         spatial.Distance.Should().BeOfType<Literal>();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("name = 'O''Brien'", "O'Brien")] // Escaped single quote
     [InlineData("value = 42.5", 42.5)] // Decimal number
@@ -316,6 +333,7 @@ public class Cql2ParserTests
         literal.Value.Should().Be(expectedValue);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_ComplexNestedExpression_ReturnsCorrectAST()
     {
@@ -341,6 +359,7 @@ public class Cql2ParserTests
         rightAnd.Operator.Should().Be(BinaryOperator.And);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_BetweenWithText_ReturnsCorrectAST()
     {
@@ -365,6 +384,7 @@ public class Cql2ParserTests
         ((Literal)upper.Right).Value.Should().Be("Z");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_ArithmeticExpression_ReturnsCorrectAST()
     {
@@ -386,6 +406,7 @@ public class Cql2ParserTests
         divideExpr.Operator.Should().Be(BinaryOperator.Divide);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_TemporalPredicateWithInterval_ReturnsTemporalPredicate()
     {
@@ -402,6 +423,7 @@ public class Cql2ParserTests
         temporal.Right.Should().BeOfType<IntervalLiteral>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_ArrayPredicate_ReturnsArrayPredicate()
     {
@@ -418,6 +440,7 @@ public class Cql2ParserTests
         arrayPredicate.Right.Should().BeOfType<ArrayLiteral>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CaseInsensitiveLike_ReturnsFunctionCall()
     {
@@ -437,6 +460,7 @@ public class Cql2ParserTests
         function.FunctionName.Should().Be("CASEI");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_BboxLiteral_ReturnsGeometryLiteral()
     {
@@ -455,6 +479,7 @@ public class Cql2ParserTests
         geometry.OriginalFormat.Should().StartWith("BBOX");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_Bbox_AntimeridianCrossing_ReturnsMultiPolygonGeometry()
     {
@@ -471,6 +496,7 @@ public class Cql2ParserTests
         ((MultiPolygon)parsed).NumGeometries.Should().Be(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_Bbox_OutOfRangeGeographicCoordinates_ThrowsArgumentException()
     {
@@ -484,6 +510,7 @@ public class Cql2ParserTests
             .Which.Message.Should().Contain("Invalid BBOX coordinates");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_Bbox3D_ThrowsArgumentException()
     {
@@ -497,6 +524,7 @@ public class Cql2ParserTests
             .Which.Message.Should().Contain("3D bounding boxes are not supported");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_BboxInvalidValueCount_ThrowsArgumentException()
     {
@@ -511,6 +539,7 @@ public class Cql2ParserTests
             .Which.Message.Should().Contain("got 5");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_Exponent_IsRightAssociative()
     {
@@ -527,6 +556,7 @@ public class Cql2ParserTests
         power.Right.Should().BeOfType<BinaryExpression>();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
@@ -538,6 +568,7 @@ public class Cql2ParserTests
         action.Should().Throw<ArgumentException>();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("name =")]  // Incomplete expression
     [InlineData("AND name = 'John'")] // Invalid start

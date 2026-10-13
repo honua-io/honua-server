@@ -12,6 +12,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class FileGdbFormatDetectionTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DetectFormat_FileGdb_IsZipOnly()
     {
@@ -23,6 +24,7 @@ public sealed class FileGdbFormatDetectionTests
         service.GetSupportedExtensions().Should().NotContain(".gdb");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DetectFormat_UnsupportedAdvertisedFormats_AreRejected()
     {

@@ -31,9 +31,12 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Server" />
+    <InternalsVisibleTo Include="Honua.Protocols.Stac.ComponentTests" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.Stac.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.Stac.UnitTests" />
     <InternalsVisibleTo Include="Honua.Protocols.GeoServices.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.GeoServices.UnitTests" />
     <InternalsVisibleTo Include="Honua.TestKit" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
