@@ -15,6 +15,22 @@ namespace Honua.Server.Tests.Admin;
 
 public sealed class LayerPublishWireContractTests
 {
+    [UnitTheory]
+    [InlineData("", true)]
+    [InlineData(",\"enabled\":true", true)]
+    [InlineData(",\"enabled\":false", false)]
+    public void PublishRequest_SourceGeneratedJson_PreservesEnabledDefaultAndExplicitValues(
+        string enabledProperty, bool expectedEnabled)
+    {
+        // Exercise the endpoint's generated contract directly: serializing a CLR request
+        // first would emit its initializer and conceal an omitted-property regression.
+        var json = "{\"schema\":\"public\",\"table\":\"roads\",\"layerName\":\"Roads\"" + enabledProperty + "}";
+        var request = JsonSerializer.Deserialize(json, LayerPublishingJsonContext.Default.PublishLayerRequest);
+
+        Assert.NotNull(request);
+        Assert.Equal(expectedEnabled, request.Enabled);
+    }
+
     [UnitTest]
     public async Task Accepted_EmitsDocumentedHandleAndLocation_WithoutACompletedLayer()
     {

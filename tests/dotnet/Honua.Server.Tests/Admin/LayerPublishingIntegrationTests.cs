@@ -87,6 +87,60 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
+    [InlineData("", true)]
+    [InlineData(",\"enabled\":true", true)]
+    [InlineData(",\"enabled\":false", false)]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
+    [Protocol(TestProtocols.Admin, TestProtocols.OgcApiFeatures)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task PublishLayer_RawEnabledProperty_PreservesDefaultAndActualReadback(
+        string enabledProperty, bool expectedEnabled)
+    {
+        var json = $$"""
+            {
+              "schema": "{{_schema}}",
+              "table": "{{_tableName}}",
+              "layerName": "Layer {{_tableName}}",
+              "serviceName": "{{_serviceName}}",
+              "geometryColumn": "geom",
+              "geometryType": "Point",
+              "srid": 4326,
+              "primaryKey": "id",
+              "fields": ["id", "name", "population"]{{enabledProperty}}
+            }
+            """;
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers", content);
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {payload}");
+        var api = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(payload, _jsonOptions);
+        api.Should().NotBeNull();
+        api!.Success.Should().BeTrue();
+        api.Data.Should().NotBeNull();
+        var layer = api.Data!;
+        _layerId = layer.LayerId;
+
+        layer.Enabled.Should().Be(expectedEnabled);
+        layer.ServiceName.Should().Be(_serviceName);
+        (await GetSourceRowCountAsync()).Should().Be(1);
+        if (expectedEnabled)
+        {
+            // The expected row and geometry come from our independent database seed.
+            await AssertPublishedCollectionServesSeedRowOnlyAsync(layer.LayerId);
+        }
+        else
+        {
+            using var itemsResponse = await _client.GetAsync(
+                $"/ogc/features/collections/{layer.LayerId}/items?f=json&limit=10");
+            itemsResponse.StatusCode.Should().Be(HttpStatusCode.NotFound,
+                await itemsResponse.Content.ReadAsStringAsync());
+        }
+    }
+
+    [IntegrationTheory]
     [InlineData(false)]
     [InlineData(true)]
     [Operation(Operations.Create)]
