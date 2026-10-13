@@ -25,6 +25,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 [Protocol(TestProtocols.GPServer)]
 public sealed class RoutingUtilityServiceTests : IClassFixture<NAServerEndpointTestsFixture>
 {
+    private const int EsriTokenRequired = 499;
     private readonly WebAppFixture _fixture;
 
     public RoutingUtilityServiceTests(NAServerEndpointTestsFixture wrapper)
@@ -128,9 +129,9 @@ public sealed class RoutingUtilityServiceTests : IClassFixture<NAServerEndpointT
         var fixture = await CreateCatalogCollisionFixtureAsync(gpServerEnabled: true);
         try
         {
-            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer?f=json", 401);
-            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/GetTravelModes?f=json", 401);
-            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/FindRoutes/execute?f=json", 401);
+            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer?f=json", EsriTokenRequired);
+            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/GetTravelModes?f=json", EsriTokenRequired);
+            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/FindRoutes/execute?f=json", EsriTokenRequired);
         }
         finally
         {
@@ -164,9 +165,9 @@ public sealed class RoutingUtilityServiceTests : IClassFixture<NAServerEndpointT
         var fixture = await CreateCatalogCollisionFixtureAsync(gpServerEnabled: true, stableIdCollision: true);
         try
         {
-            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer?f=json", 401);
-            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/GetTravelModes?f=json", 401);
-            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/FindRoutes/execute?f=json", 401);
+            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer?f=json", EsriTokenRequired);
+            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/GetTravelModes?f=json", EsriTokenRequired);
+            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/FindRoutes/execute?f=json", EsriTokenRequired);
             // Stable IDs are ordinal. The lowercase route is absent, and must not
             // create a public synthetic alias for the private uppercase ID.
             await AssertErrorAsync(fixture.Client, "/rest/services/routing/GPServer?f=json", 404);
