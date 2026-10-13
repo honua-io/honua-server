@@ -5,10 +5,13 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -37,7 +40,17 @@ public sealed class SharingCommunityTests : IAsyncLifetime
 
     public SharingCommunityTests()
     {
-        _fixture = new WebAppFixture().ConfigureWebHost(builder =>
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddService("svc-rivers", "Rivers", protocols: [ServiceProtocols.FeatureServer],
+                accessPolicy: new AccessPolicy { AllowedRoles = ["publisher"] })
+            .AddService("svc-owned", "Owned", protocols: [ServiceProtocols.FeatureServer],
+                accessPolicy: new AccessPolicy { AllowedRoles = ["publisher"] })
+            .Build();
+        graph = graph with { Services = graph.Services.Select(service => service with
+            { Metadata = service.Metadata with { Publisher = "alice" } }).ToArray() };
+        _fixture = new WebAppFixture()
+            .ReplaceService<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
+            .ConfigureWebHost(builder =>
         {
             builder.UseEnvironment("Test");
             builder.UseSetting("HONUA_DEV_AUTH", "false");
@@ -198,11 +211,11 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         shared.StatusCode.Should().Be(HttpStatusCode.OK);
         var sharedPayload = await ReadAsync<SharingPayload>(shared);
         sharedPayload.ItemId.Should().Be(itemId);
-        sharedPayload.NotSharedWith.Should().Contain(groupId);
+        sharedPayload.NotSharedWith.Should().NotContain(groupId);
         sharedPayload.NotSharedWith.Should().Contain("org");
         sharedPayload.Sharing!.Org.Should().BeFalse();
         sharedPayload.Sharing.Everyone.Should().BeFalse();
-        sharedPayload.Sharing.Groups.Should().BeEmpty();
+        sharedPayload.Sharing.Groups.Should().BeEquivalentTo([groupId]);
 
         using var unshared = await PostFormAsync(client, $"/sharing/rest/content/items/{itemId}/unshare?token={token}",
             ("groups", groupId),
@@ -231,7 +244,7 @@ public sealed class SharingCommunityTests : IAsyncLifetime
     [Endpoint("POST /sharing/rest/content/items/{itemId}/share")]
     public async Task ShareItem_ByNonOwnerNonAdmin_Returns403()
     {
-        // Sharing does not record an overlay owner or change item access.
+        // Actual metadata publisher ownership is enforced before any sharing state exists.
         var aliceToken = await IssueUserTokenAsync("alice");
         using var aliceClient = CreateUserClient();
         const string itemId = "svc-owned";
@@ -242,17 +255,12 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         firstPayload.NotSharedWith.Should().Contain("org");
         firstPayload.Sharing!.Org.Should().BeFalse();
 
-        // A second user also cannot apply a share. The response must not claim the
-        // item became public while access is unchanged.
+        // A different user cannot seize the actual item through first-share ownership.
         var malloryToken = await IssueUserTokenAsync("mallory");
         using var malloryClient = CreateUserClient();
         using var response = await PostFormAsync(malloryClient, $"/sharing/rest/content/items/{itemId}/share?token={malloryToken}",
             ("everyone", "true"));
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var payload = await ReadAsync<SharingPayload>(response);
-        payload.NotSharedWith.Should().Contain("everyone");
-        payload.Sharing!.Everyone.Should().BeFalse();
-        payload.Sharing.Org.Should().BeFalse();
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
