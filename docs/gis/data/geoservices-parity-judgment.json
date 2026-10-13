@@ -1129,11 +1129,11 @@
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerParameterValidationTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerErrorHandlingTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerEndpointsTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerTileHandlerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/ImageServer/ImageServerTileHandlerTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerMosaicIntegrationTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerCatalogQueryHandlerTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerLegendHandlerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/ImageServer/ImageServerCatalogQueryHandlerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/ImageServer/ImageServerLegendHandlerTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerKmlTests.cs",
           "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/Wcs20EndpointsTests.cs"
         ]
@@ -1724,8 +1724,8 @@
         ],
         "tests": [
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileServerEndpointTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileStyleComposerTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileEmbeddedAssetsTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/VectorTileServer/VectorTileStyleComposerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/VectorTileServer/VectorTileEmbeddedAssetsTests.cs"
         ]
       },
       "operations": [
@@ -1831,10 +1831,10 @@
           "src/Honua.Protocols.GeoServices/GeometryService/Services/GeometryServiceHandler.cs"
         ],
         "tests": [
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceBufferTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.ComponentTests/GeometryService/GeometryServiceBufferTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceProjectTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceSimplifyTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceAdvancedOperationsTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.ComponentTests/GeometryService/GeometryServiceSimplifyTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.ComponentTests/GeometryService/GeometryServiceAdvancedOperationsTests.cs"
         ]
       },
       "operations": [
@@ -2125,9 +2125,9 @@
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerEndpointTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerEsriTaskAliasEndpointTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerDurableRuntimeTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerParameterTranslationTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerStatusMappingTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GeoprocessingJobServiceTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/GPServer/GPServerParameterTranslationTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/GPServer/GPServerStatusMappingTests.cs",
+          "tests/dotnet/Honua.Geoprocessing.UnitTests/Source/Features/Geoprocessing/GeoprocessingJobServiceTests.cs"
         ]
       },
       "operations": [
@@ -2486,7 +2486,7 @@
         ],
         "tests": [
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerEndpointTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerTranslationUnitTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/NAServer/NAServerTranslationUnitTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerMetadataEndpointTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/NetworkAnalysisUtilitiesTaskTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/FindRoutesExecuteTests.cs",
@@ -2644,7 +2644,7 @@
         ],
         "tests": [
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VersionManagementServer/VersionManagementServerEndpointTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VersionManagementServer/VersionAccessPolicyTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/VersionManagementServer/VersionAccessPolicyTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VersionManagementServer/FeatureServerGdbVersionFlowTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/Capabilities/ExperimentalCapabilityGatingIntegrationTests.cs"
         ]
@@ -2828,7 +2828,7 @@
         ],
         "tests": [
           "tests/dotnet/Honua.Server.Tests/Features/Sharing/SharingRestTokenTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Infrastructure/Authentication/PortalTokenIssuerTests.cs"
+          "tests/dotnet/Honua.Hosting.UnitTests/Source/Infrastructure/Authentication/PortalTokenIssuerTests.cs"
         ]
       },
       "operations": [

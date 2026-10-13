@@ -35,7 +35,8 @@ on:
       - 'src/Honua.Hosting/Features/Services/GeoParquet*.cs'
       - 'src/Honua.Core/Configuration/GeoParquetLimits.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/GeoParquetQueryFormatterTests.cs'
-      - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/QueryFormatterTests.cs'
+      - 'tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/FeatureServer/Services/QueryFormatterTests.cs'
+      - 'tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj'
       - 'tests/dotnet/Honua.Server.Tests/GeoParquetBudgetEndpointTests.cs'
   workflow_dispatch:
 
@@ -103,8 +104,15 @@ jobs:
         run: |
           dotnet test tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj \
             --configuration Release --no-build --no-restore \
-            --filter 'FullyQualifiedName~FormatAsGeoParquet_MultipleRowGroups|FullyQualifiedName~FormatAsGeoParquet_WideSingleRow|FullyQualifiedName~FormatAsGeoParquet_InputBudget|FullyQualifiedName~FormatAsGeoParquet_FooterExceedsOutputBudget|FullyQualifiedName~FormatAsGeoParquet_ByteBound|FullyQualifiedName~FormatAsGeoParquet_WideGeometryPage|FullyQualifiedName~FormatQueryResultAsync_Parquet_UsesConfiguredByteBudget' \
+            --filter 'FullyQualifiedName~FormatAsGeoParquet_MultipleRowGroups|FullyQualifiedName~FormatAsGeoParquet_WideSingleRow|FullyQualifiedName~FormatAsGeoParquet_InputBudget|FullyQualifiedName~FormatAsGeoParquet_FooterExceedsOutputBudget|FullyQualifiedName~FormatAsGeoParquet_ByteBound|FullyQualifiedName~FormatAsGeoParquet_WideGeometryPage' \
             --logger 'trx;LogFileName=geoparquet-writer.trx' --results-directory tests/TestResults
+
+      - name: Verify isolated query formatter byte budget
+        if: ${{ !cancelled() }}
+        run: |
+          dotnet test tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj \
+            --configuration Release --filter 'FullyQualifiedName~FormatQueryResultAsync_Parquet_UsesConfiguredByteBudget' \
+            --logger 'trx;LogFileName=geoparquet-writer-unit.trx' --results-directory tests/TestResults
 
       - name: Verify protocol budget refusal and subsequent encoding
         if: ${{ !cancelled() }}
@@ -135,7 +143,7 @@ jobs:
 
           counts = {}
           memory = None
-          for name, expected in {"odata": 3, "import": 9, "schema": 10, "writer": 8, "budget": 4}.items():
+          for name, expected in {"odata": 3, "import": 9, "schema": 10, "writer": 7, "writer-unit": 1, "budget": 4}.items():
               report = Path(f"tests/TestResults/geoparquet-{name}.trx")
               rows = list(ET.parse(report).getroot().iter("{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}UnitTestResult"))
               counts[name] = dict(tests=len(rows), passed=sum(row.get("outcome") == "Passed" for row in rows), expected=expected)

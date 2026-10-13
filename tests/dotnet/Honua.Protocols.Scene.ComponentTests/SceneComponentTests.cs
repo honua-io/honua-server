@@ -25,6 +25,7 @@ namespace Honua.Protocols.Scene.ComponentTests;
 public sealed class SceneComponentTests
 {
     [IntegrationTest]
+    [Operation(Operations.GetTile)]
     [Endpoint("GET /scenes/{sceneId}/{*assetPath}")]
     public async Task PublicAsset_ConditionalAndRangeRequests_PreserveWireContract()
     {
@@ -46,6 +47,7 @@ public sealed class SceneComponentTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /scenes/{sceneId}/tileset.json")]
     public async Task ProtectedAsset_DeniesAnonymous_AndUnrelatedRoutesAreAbsent()
     {

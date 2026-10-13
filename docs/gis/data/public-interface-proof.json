@@ -211,7 +211,7 @@
           "proofMechanism": "Singleton-heavy admin endpoints keep happy-path plus negative-path coverage",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/dotnet/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ContractCoverageMatrixTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminAuthorizationTests.cs"
           ],
           "ownerRepo": "honua-server",
@@ -1809,7 +1809,7 @@
           "proofMechanism": "Geocoding endpoint matrix retains happy-path and negative-path depth",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/dotnet/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ContractCoverageMatrixTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Geocoding/GeocodingEndpointTests.cs"
           ],
           "ownerRepo": "honua-server",
@@ -2057,7 +2057,7 @@
             "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Resources.cs",
             "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.TileMap.cs",
             "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileServerEndpointTests.cs",
-            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileStyleComposerTests.cs"
+            "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/VectorTileServer/VectorTileStyleComposerTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -3093,11 +3093,11 @@
           "proofMechanism": "Geometry service matrix retains happy-path and negative-path depth",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/dotnet/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs",
-            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceAdvancedOperationsTests.cs",
-            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceBufferTests.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ContractCoverageMatrixTests.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.ComponentTests/GeometryService/GeometryServiceAdvancedOperationsTests.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.ComponentTests/GeometryService/GeometryServiceBufferTests.cs",
             "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceProjectTests.cs",
-            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceSimplifyTests.cs"
+            "tests/dotnet/Honua.Protocols.GeoServices.ComponentTests/GeometryService/GeometryServiceSimplifyTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -3247,7 +3247,7 @@
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsReadEndpointsTests.cs",
+            "tests/dotnet/Honua.Protocols.SensorThings.ComponentTests/SensorThingsReadEndpointsTests.cs",
             "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsIngestEndpointsTests.cs",
             "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsStreamEndpointsTests.cs"
           ],
@@ -3274,7 +3274,7 @@
           "proofMechanism": "SensorThings integration tests retain conformance-shaped read envelopes (@iot.id/@iot.selfLink/@iot.navigationLink), $expand=Observations inlining, $filter happy/negative paths, $orderby descending ordering, ingest round-trips (REST single + bulk appear in read queries; datastream.create creates a queryable datastream), and the real-time stream pushes a newly-ingested observation to a subscribed SSE client",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsReadEndpointsTests.cs",
+            "tests/dotnet/Honua.Protocols.SensorThings.ComponentTests/SensorThingsReadEndpointsTests.cs",
             "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsIngestEndpointsTests.cs",
             "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/SensorThingsStreamEndpointsTests.cs"
           ],
@@ -3362,7 +3362,7 @@
           "executionLane": "nightly:ogc-maps-conformance",
           "evidenceLocations": [
             ".github/workflows/ogc-maps-conformance.yml",
-            "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Maps/OgcMapsConformanceTests.cs"
+            "tests/dotnet/Honua.Protocols.OgcApi.ComponentTests/OgcMapsConformanceTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -3506,8 +3506,8 @@
           "evidenceLocations": [
             "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerClientCompatibilityTests.cs",
             "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerEndpointTests.cs",
-            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerParameterTranslationTests.cs",
-            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerStatusMappingTests.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/GPServer/GPServerParameterTranslationTests.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/GPServer/GPServerStatusMappingTests.cs",
             "tests/python/gp_server/test_gpserver_client_compat.py"
           ],
           "ownerRepo": "honua-server",
@@ -3566,7 +3566,7 @@
           "evidenceLocations": [
             "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerDurableRuntimeTests.cs",
             "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerSoapEndpointsTests.Execution.cs",
-            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerSoapExecutionTests.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/GPServer/GPServerSoapExecutionTests.cs",
             "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/EsriToolboxReplay/README.md"
           ],
           "ownerRepo": "honua-server",
@@ -3784,7 +3784,7 @@
           "evidenceLocations": [
             "src/Honua.Server/OperationRegistry.cs",
             "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Legacy.cs",
-            "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/WfsLegacyEndpointsTests.cs"
+            "tests/dotnet/Honua.Protocols.OgcClassic.ComponentTests/WfsLegacyEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -3846,7 +3846,7 @@
           "evidenceLocations": [
             "src/Honua.Server/OperationRegistry.cs",
             "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Legacy.cs",
-            "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/WfsLegacyEndpointsTests.cs"
+            "tests/dotnet/Honua.Protocols.OgcClassic.ComponentTests/WfsLegacyEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -4038,7 +4038,7 @@
           "evidenceLocations": [
             "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneTilesetEndpointTests.cs",
             "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneAuthorizationTests.cs",
-            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneAssetResolverTests.cs",
+            "tests/dotnet/Honua.Protocols.Scene.UnitTests/Source/SceneAssetResolverTests.cs",
             "tests/fixtures/scenes/fixture-tileset/tileset.json",
             "docs/reference/protocols/3d-tiles-and-scenes.md"
           ],
@@ -4053,7 +4053,7 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneAccessEnvelopeEndpointTests.cs",
-            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneAccessEnvelopeServiceTests.cs",
+            "tests/dotnet/Honua.Protocols.Scene.UnitTests/Source/SceneAccessEnvelopeServiceTests.cs",
             "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneAccessEnvelopeMisconfiguredEndpointTests.cs",
             "docs/reference/protocols/3d-tiles-and-scenes.md"
           ],
@@ -4223,7 +4223,7 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Server.Tests/Features/Admin/NetworkDatasetAdminEndpointsTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Routing/NetworkDatasetValidationTests.cs",
+            "tests/dotnet/Honua.Routing.UnitTests/Source/Routing/NetworkDatasetValidationTests.cs",
             "src/Honua.Routing/Features/Routing/Domain/NetworkDatasetValidation.cs",
             "docs/reference/compatibility/geoservices-parity.md"
           ],
@@ -4272,7 +4272,7 @@
             "tests/dotnet/Honua.Core.Tests/Features/Scene/Generation/EcefCoordinateTransformTests.cs",
             "tests/dotnet/Honua.Core.Tests/Features/Scene/Generation/GeometryTileBuilderTests.cs",
             "tests/dotnet/Honua.Core.Tests/Features/Scene/Generation/TilesetDocumentWriterTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Scene/SceneTilesPublishExecutorTests.cs",
+            "tests/dotnet/Honua.Scene.UnitTests/Source/Features/Infrastructure/Scene/SceneTilesPublishExecutorTests.cs",
             "docs/guides/publish/publish-3d-scenes.md"
           ],
           "ownerRepo": "honua-server",
@@ -4531,12 +4531,12 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Ai.Tests/Source/McpEndpointIntegrationTests.cs",
-            "tests/dotnet/Honua.Ai.Tests/Source/McpToolDelegationTests.cs",
-            "tests/dotnet/Honua.Ai.Tests/Source/McpErrorMappingTests.cs",
-            "tests/dotnet/Honua.Ai.Tests/Source/McpAuthorizationTests.cs",
-            "tests/dotnet/Honua.Ai.Tests/Source/PlanAnalysisToolTests.cs",
-            "tests/dotnet/Honua.Ai.Tests/Source/McpResourceSerializationTests.cs",
-            "tests/dotnet/Honua.Ai.Tests/Source/McpTaxonomyAlignmentTests.cs"
+            "tests/dotnet/Honua.Ai.UnitTests/Source/McpToolDelegationTests.cs",
+            "tests/dotnet/Honua.Ai.UnitTests/Source/McpErrorMappingTests.cs",
+            "tests/dotnet/Honua.Ai.UnitTests/Source/McpAuthorizationTests.cs",
+            "tests/dotnet/Honua.Ai.UnitTests/Source/PlanAnalysisToolTests.cs",
+            "tests/dotnet/Honua.Ai.UnitTests/Source/McpResourceSerializationTests.cs",
+            "tests/dotnet/Honua.Ai.UnitTests/Source/McpTaxonomyAlignmentTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -4579,9 +4579,9 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Server.Tests/Features/Grounding/Spec/SpecGroundingEndpointTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Grounding/Spec/SpecGroundingServiceTests.cs",
+            "tests/dotnet/Honua.Ai.UnitTests/Source/Server/Features/Grounding/Spec/SpecGroundingServiceTests.cs",
             "tests/dotnet/Honua.Core.Tests/Features/Spec/SpecContractRegressionTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Grounding/Spec/SpecMutationApplierTests.cs",
+            "tests/dotnet/Honua.Ai.UnitTests/Source/Server/Features/Grounding/Spec/SpecMutationApplierTests.cs",
             "docs/developer/spec-grounding/spec-grounding-v1.0.md"
           ],
           "ownerRepo": "honua-server",

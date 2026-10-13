@@ -56,7 +56,7 @@ public sealed class ODataUnitIsolationTests
             Assert.Equal("Honua.Protocols.OData.UnitTests", type.Assembly.GetName().Name);
             var methods = type.GetMethods().Where(method => method.GetCustomAttributes<FactAttribute>().Any()).ToArray();
             Assert.NotEmpty(methods);
-            Assert.All(methods, method => Assert.StartsWith("Honua.Protocols.OData.Tests:", TierTraitScanner.MethodKey(type, method), StringComparison.Ordinal));
+            Assert.All(methods, method => Assert.StartsWith("Honua.Protocols.OData.UnitTests:", TierTraitScanner.MethodKey(type, method), StringComparison.Ordinal));
         }
         var odataAssemblies = assemblies.Where(assembly => assembly.GetName().Name is "Honua.Protocols.OData.Tests" or "Honua.Protocols.OData.UnitTests");
         var discoveredTypes = odataAssemblies.SelectMany(ArchitectureTestHelpers.GetTypesSafely)
