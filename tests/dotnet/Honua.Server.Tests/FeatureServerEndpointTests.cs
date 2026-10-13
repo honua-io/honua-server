@@ -7,9 +7,12 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -3646,19 +3649,26 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         // error, carrying code 409 in the standard envelope.
         var idempotencyKey = Guid.NewGuid().ToString("n");
         var store = _fixture.Services.GetRequiredService<IApplyEditsIdempotencyStore>();
-        // The store scopes a key to the resolved edit principal. This fixture's client is
-        // unauthenticated, so the handler resolves EditPrincipal.Anonymous and scopes to
-        // "anonymous"; "admin" (the ClaimTypes.Name an admin API key stamps) is reserved as well so
-        // the test does not silently depend on the fixture's auth posture. A principal outside both
-        // cannot make this test pass by accident — the reservation would miss, the edit would apply,
-        // and the assertions below would fail on a success body.
-        var heldScopes = new[] { "anonymous", "admin" }
-            .Select(principal => new ApplyEditsIdempotencyScope(TestServiceId, TestLayerId, principal, idempotencyKey))
-            .ToArray();
-        foreach (var heldScope in heldScopes)
+        // Authenticate the fixture's actual request rather than reserve display-name
+        // guesses. API keys now identify edit owners by their stable api_key_id.
+        using var authenticationScope = _fixture.Services.CreateScope();
+        var context = new DefaultHttpContext { RequestServices = authenticationScope.ServiceProvider };
+        var requestBase = _fixture.Client.BaseAddress!;
+        context.Request.Method = HttpMethods.Post;
+        context.Request.Scheme = requestBase.Scheme;
+        context.Request.Host = HostString.FromUriComponent(requestBase);
+        context.Request.Path = $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits";
+        foreach (var header in _fixture.Client.DefaultRequestHeaders)
         {
-            (await store.TryReserveAsync(heldScope)).Should().NotBeNull();
+            context.Request.Headers[header.Key] = header.Value.ToArray();
         }
+
+        var authentication = await context.AuthenticateAsync();
+        authentication.Succeeded.Should().BeTrue("the fixture's edit client is authenticated");
+        var subject = EditOwnerSubject.Resolve(authentication.Principal);
+        subject.Should().NotBeNullOrWhiteSpace();
+        var heldScope = new ApplyEditsIdempotencyScope(TestServiceId, TestLayerId, subject!, idempotencyKey);
+        (await store.TryReserveAsync(heldScope)).Should().NotBeNull();
 
         var editsRequest = new ApplyEditsRequest
         {
@@ -3688,11 +3698,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         // The loser must not release a reservation it never owned: the in-flight request's key is
         // still held after the conflict, so a third request would still be rejected rather than
         // racing the owner into a duplicate edit.
-        foreach (var heldScope in heldScopes)
-        {
-            (await store.TryReserveAsync(heldScope)).Should().BeNull(
-                "the rejected request must leave the owner's reservation untouched");
-        }
+        (await store.TryReserveAsync(heldScope)).Should().BeNull(
+            "the rejected request must leave the owner's reservation untouched");
 
         // Nothing was written by the rejected request.
         var countResponse = await _fixture.Client.GetAsync(
