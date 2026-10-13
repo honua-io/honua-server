@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
@@ -202,7 +203,7 @@ public sealed class PortalCanonicalGroupSharingTests : IAsyncLifetime
     {
         await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
         await using var command = new NpgsqlCommand("SELECT count(*) FROM features WHERE layer_id = 0", connection);
-        var expected = Convert.ToInt64(await command.ExecuteScalarAsync());
+        var expected = Convert.ToInt64(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
         expected.Should().BeGreaterThan(0, "the read oracle must exercise actual persisted features");
         using var response = await client.GetAsync($"/rest/services/test/FeatureServer/0/query?f=json&where=1%3D1&returnCountOnly=true&token={token}");
         var document = await DocumentAsync(response);
