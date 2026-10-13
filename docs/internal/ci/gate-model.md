@@ -35,7 +35,7 @@ These workflows are merge-blocking for all PRs to trunk:
 
 | Workflow | What it validates | Path filter |
 |---|---|---|
-| `pr-gate.yml` | **Required verification context `PR Gate`.** Admission includes tracked-text UTF-8 validation. The affected-scope warnings-as-errors producer publishes pristine, verified managed test outputs; a downstream consumer runs Fast units, source architecture and full collector architecture, MCP/governance checks, and the existing HTTP/PostGIS, GDAL/PDAL and boot/migration proofs. Independent format and CI-router jobs remain required. `required.needs` includes `pr-gate`, `pr-gate-tests`, `format`, and `ci-router-validation`. See the [artifact contract](server-test-binary-artifacts.md) for same-run identity, bounds, rollback and scoped fallback. | None — a required context must never be path-filtered |
+| `pr-gate.yml` | **Required verification context `PR Gate`.** Admission includes tracked-text UTF-8 validation. The affected-scope warnings-as-errors producer publishes pristine, verified managed test outputs and runs the required boot/migration smoke against its canonical host output; a downstream consumer runs Fast units, source architecture and full collector architecture, MCP/governance checks, and the existing HTTP/PostGIS, GDAL/PDAL proofs. Independent format and CI-router jobs remain required. `required.needs` includes `pr-gate`, `pr-gate-tests`, `format`, and `ci-router-validation`. See the [artifact contract](server-test-binary-artifacts.md) for same-run identity, bounds, rollback and scoped fallback. | None — a required context must never be path-filtered |
 | `review-gate.yml` | **Required admission context `Review Gate`.** Immutable default-branch workflow policy publishes exact-head review evidence from an attesting reviewer (Codex or Claude — see [Attesting reviewers](#attesting-reviewers)) and, in enforce mode, releases one admitted PR Gate rerun. In observe mode it retains a SHA-bound decision receipt for the read-only `review-first-evidence-ledger.yml`; the ledger reports but cannot promote. Review events arrive through the read-only `review-event-bridge.yml`; no PR-authored workflow has status or Actions write authority. | None — it must publish on every PR head |
 | `ci.yml` | **No `pull_request` trigger** (deliberate — see the header comment). PR template compliance, CI router validation, build, .NET foundation tests, targeted server-test shards, architecture gate, JavaScript typecheck, baseline Postgres compatibility all run on the train's `train/batch/*` `workflow_dispatch` and the nightly schedule. Its aggregator context `CI Gate` is produced by the batch CI only and never appears on a PR. | n/a — not PR-triggered |
 | `openapi-contract-governance.yml` | OpenAPI spec stability | `src/**/api-specs/**`, `*.openapi.*` |
@@ -113,7 +113,9 @@ are selected, without making test consumers wait for formatting.
 **Governance and runtime proofs.** The PR test consumer retains the complete
 `Category=Architecture` governance set in `Honua.Server.Tests`, the real
 store-gated host and Testcontainers PostgreSQL, and the existing remote-source,
-raster, layer, geometry/calculate-field, imagery, PDAL and boot/migration proofs.
+raster, layer, geometry/calculate-field, imagery and PDAL proofs. The required
+boot/migration smoke runs on the producer after pristine artifact publication,
+using the canonical host output without duplicating it in test artifacts.
 Moving compilation to the producer does not remove these checks or move them to
 an advisory lane. Source architecture and full collector architecture remain
 separate required executions after fresh projections.

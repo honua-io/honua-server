@@ -72,6 +72,18 @@ class PrManagedBuildTests(unittest.TestCase):
                 with self.assertRaises((AssertionError, ValueError)):
                     contract.main()
 
+    def test_boot_proof_uses_producer_host_after_pristine_publication(self):
+        producer, consumer = job('pr-gate'), job('pr-gate-tests')
+        self.assertLess(producer.index('Pre-pull Testcontainers PostGIS'), producer.index('phase: build'))
+        self.assertLess(producer.index('Publish pristine managed test outputs'), producer.index('Await Testcontainers PostGIS pre-pull'))
+        self.assertLess(producer.index('Await Testcontainers PostGIS pre-pull'), producer.index('timeout 175s scripts/ci/server-boot-smoke.sh'))
+        self.assertNotIn('server-boot-smoke.sh', consumer)
+        proof = producer.split('- name: Honua.Server boot + migrations smoke', 1)[1].split('- name:', 1)[0]
+        self.assertIn("steps.docs-only.outputs.docs_only != 'true'", proof)
+        self.assertIn("steps.generated-only.outputs.generated_only != 'true'", proof)
+        self.assertIn("env.REVIEW_FIRST_MODE != 'enforce'", proof)
+        self.assertNotIn('continue-on-error', proof)
+
     def test_same_canonical_selector_and_runtime_tests(self):
         producer = job('pr-gate')
         selector = job('affected-shards-select')

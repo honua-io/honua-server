@@ -318,6 +318,11 @@ jobs:
           # successful measurement, not a failed change.
           enable-build-cache: ${{ vars.PR_GATE_BUILD_CACHE == 'true' && 'true' || 'false' }}
 
+      # Warm the required boot proof while the managed graph compiles.
+      - name: Pre-pull Testcontainers PostGIS image (background)
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        run: scripts/ci/prepull-testcontainers-postgis.sh
+
       - name: Plan managed test producer
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         env:
@@ -353,6 +358,18 @@ jobs:
           mode: publish
           projects-file: ${{ runner.temp }}/managed-projects.json
           enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' && 'true' || 'false' }}
+
+      # The standalone host needs its canonical bin directory. Verify it here
+      # after publishing pristine test outputs instead of shipping a second host.
+      - name: Await Testcontainers PostGIS pre-pull
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        env:
+          PREPULL_AWAIT_TIMEOUT_SECONDS: '120'
+        run: scripts/ci/prepull-testcontainers-postgis.sh --await
+
+      - name: Honua.Server boot + migrations smoke
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        run: timeout 175s scripts/ci/server-boot-smoke.sh
 
       - name: Revalidate exact-head review before success
         if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
@@ -429,10 +446,8 @@ jobs:
           RESTORED_PROJECTS: ${{ steps.managed-consumer.outputs.restored-projects-file }}
         run: python3 scripts/ci/managed-test-build.py fallback --projects-file "${RUNNER_TEMP}/managed-projects.json" --restored-file "${RESTORED_PROJECTS}"
 
-      # The server boot smoke below uses the same PostGIS image as the
-      # Testcontainers-backed Governance/Drift coverage. Pull it while the
-      # existing lean build runs so the required path pays only sidecar startup
-      # and migrations, not a cold image fetch.
+      # Warm the Testcontainers-backed Governance/Drift coverage independently
+      # on this consumer runner.
       - name: Pre-pull Testcontainers PostGIS image (background)
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
         run: scripts/ci/prepull-testcontainers-postgis.sh
@@ -811,10 +826,6 @@ jobs:
           name: copy-features-execution-proof
           path: tests/TestResults/copy-features-execution-proof.trx
           if-no-files-found: warn
-
-      - name: Honua.Server boot + migrations smoke
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
-        run: timeout 175s scripts/ci/server-boot-smoke.sh
 
       # Exercise all clean and injected-rootfs fixtures here without building a
       # container. The separate serving-image workflow and release/deploy/nightly
