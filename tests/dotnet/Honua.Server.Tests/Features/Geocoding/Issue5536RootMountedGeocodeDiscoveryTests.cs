@@ -20,7 +20,8 @@ namespace Honua.Server.Tests.Features.Geocoding;
 /// The root-mounted GeoServices tree and the <c>/arcgis</c> instance-path alias must answer the
 /// same locator discovery sequence: catalog root, folder, service resource, and REST info.
 /// A client resolves the geocode service from those documents on first contact, so both mounts
-/// publish the conventional instance path in the service URL and in <c>/rest/info</c>.
+/// publish the conventional instance path in service and SOAP URLs. Portal discovery retains
+/// the actual public portal root, including the request mount unless Public:BaseUrl overrides it.
 /// </summary>
 [Protocol(TestProtocols.Geocoding)]
 public sealed class Issue5536RootMountedGeocodeDiscoveryTests
@@ -36,6 +37,8 @@ public sealed class Issue5536RootMountedGeocodeDiscoveryTests
     [Endpoint("GET /rest/services/{folderName}")]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
     [Endpoint("GET /rest/info")]
+    [Endpoint("GET /sharing/rest/info")]
+    [Endpoint("GET /sharing/rest/generateToken")]
     public async Task RootMountedTree_MatchesInstancePathDiscovery(string? publicBaseUrl)
     {
         using var factory = CreateFactory(publicBaseUrl);
@@ -48,17 +51,16 @@ public sealed class Issue5536RootMountedGeocodeDiscoveryTests
         root.FolderUrl.Should().Be(alias.FolderUrl);
         root.SoapUrl.Should().Be(alias.SoapUrl);
         root.SecureSoapUrl.Should().Be(alias.SecureSoapUrl);
-        string.Equals(root.TokenServicesUrl, alias.TokenServicesUrl, StringComparison.Ordinal)
-            .Should().BeTrue();
         root.ServiceBody.Should().Be(alias.ServiceBody);
 
         root.CatalogUrl.Should().EndWith($"{InstanceSegment}/rest/services/{LocatorName}/GeocodeServer");
         root.FolderUrl.Should().Be(root.CatalogUrl);
         root.SoapUrl.Should().EndWith($"{InstanceSegment}/services");
-        if (root.TokenServicesUrl is not null)
-        {
-            root.TokenServicesUrl.Should().EndWith($"{InstanceSegment}/sharing/rest/generateToken");
-        }
+        // SOAP/catalog discovery uses the conventional instance alias, but server and
+        // Sharing auth discovery must agree on the actual owning portal (#5997).
+        var origin = client.BaseAddress!.GetLeftPart(UriPartial.Authority);
+        await AssertPortalDiscoveryAsync(client, root, publicBaseUrl ?? origin);
+        await AssertPortalDiscoveryAsync(client, alias, publicBaseUrl ?? origin + InstanceSegment);
 
         root.CurrentVersion.Should().Be(10.8);
         alias.CurrentVersion.Should().Be(10.8);
@@ -141,6 +143,7 @@ public sealed class Issue5536RootMountedGeocodeDiscoveryTests
             infoRoot.GetProperty("soapUrl").GetString()!,
             secure.ValueKind == JsonValueKind.Null ? null : secure.GetString(),
             tokenServicesUrl,
+            infoRoot.GetProperty("owningSystemUrl").GetString()!,
             infoRoot.GetProperty("currentVersion").GetDouble(),
             infoRoot.TryGetProperty("fullVersion", out _));
     }
@@ -156,6 +159,28 @@ public sealed class Issue5536RootMountedGeocodeDiscoveryTests
             .Which;
         entry.GetProperty("name").GetString().Should().Be(LocatorName);
         return entry.GetProperty("url").GetString()!;
+    }
+
+    private static async Task AssertPortalDiscoveryAsync(HttpClient client, Discovery discovery, string expectedRoot)
+    {
+        discovery.OwningSystemUrl.Should().Be(expectedRoot);
+        discovery.TokenServicesUrl.Should().Be(expectedRoot + "/sharing/rest/generateToken");
+
+        var portalPath = new Uri(expectedRoot).AbsolutePath.TrimEnd('/');
+        using var response = await client.GetAsync(portalPath + "/sharing/rest/info?f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var info = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        info.RootElement.GetProperty("owningSystemUrl").GetString().Should().Be(expectedRoot);
+        info.RootElement.GetProperty("authInfo").GetProperty("tokenServicesUrl").GetString()
+            .Should().Be(discovery.TokenServicesUrl);
+
+        // Follow the advertised token route with an invalid format and no credentials:
+        // its typed refusal proves reachability without minting a token or weakening HTTPS.
+        var tokenPath = new Uri(discovery.TokenServicesUrl!).AbsolutePath;
+        using var tokenResponse = await client.GetAsync(tokenPath + "?f=xml");
+        tokenResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var tokenBody = JsonDocument.Parse(await tokenResponse.Content.ReadAsStringAsync());
+        tokenBody.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
     }
 
     private static async Task AssertReachableAsync(HttpClient client, string urlOrPath)
@@ -175,6 +200,7 @@ public sealed class Issue5536RootMountedGeocodeDiscoveryTests
         string SoapUrl,
         string? SecureSoapUrl,
         string? TokenServicesUrl,
+        string OwningSystemUrl,
         double CurrentVersion,
         bool HasFullVersion);
 }
