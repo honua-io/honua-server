@@ -4,6 +4,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Db.Postgres.Features.Geoprocessing;
 using Honua.TestKit;
@@ -84,11 +85,62 @@ public sealed class PostgisSourceExecutionProofTests(WebAppFixture fixture) : IC
             Action assert = () => AssertSelectedRows(wrong.RootElement);
             assert.Should().Throw<XunitException>();
 
+            await AssertPredicateCannotAdvanceSequenceAsync(connectionString);
         }
         finally
         {
             await registry.DeleteConnectionAsync(registered.ConnectionId);
         }
+    }
+
+    private static async Task AssertPredicateCannotAdvanceSequenceAsync(string connectionString)
+    {
+        // Reuse one physical connection so the proof also catches leaked transaction state.
+        var builder = new NpgsqlConnectionStringBuilder(connectionString) { MaxPoolSize = 1 };
+        await using var dataSource = NpgsqlDataSource.Create(builder.ConnectionString);
+        await using (var setup = dataSource.CreateCommand("CREATE SEQUENCE source_read_guard_seq START WITH 40"))
+        {
+            await setup.ExecuteNonQueryAsync();
+        }
+        await using (var control = dataSource.CreateCommand("SELECT nextval('source_read_guard_seq')"))
+        {
+            (await control.ExecuteScalarAsync()).Should().Be(40L,
+                "the same database credential can mutate this sequence outside the source read");
+        }
+
+        var source = new ExternalPostgisDagSource(dataSource);
+        var request = new DagSourceRequest
+        {
+            PostgisTable = "survey",
+            Where = "nextval('source_read_guard_seq') > 0"
+        };
+        var attempt = async () =>
+        {
+            await foreach (var _ in source.ReadAsync(request))
+            {
+                throw new XunitException("A side-effecting predicate must fail before yielding a feature.");
+            }
+        };
+        var refusal = await attempt.Should().ThrowAsync<PostgresException>();
+        refusal.Which.SqlState.Should().Be(PostgresErrorCodes.ReadOnlySqlTransaction);
+
+        await using (var unchanged = dataSource.CreateCommand("SELECT last_value FROM source_read_guard_seq"))
+        {
+            (await unchanged.ExecuteScalarAsync()).Should().Be(40L,
+                "a sequence increment is not rolled back, so no predicate side effect may occur");
+        }
+
+        var rows = 0;
+        await foreach (var feature in source.ReadAsync(request with { Where = "key = 11" }))
+        {
+            feature.Attributes["key"].Should().Be(11);
+            rows++;
+        }
+        rows.Should().Be(1, "a valid predicate remains usable after the refused read");
+
+        await using var writableAgain = dataSource.CreateCommand("SELECT nextval('source_read_guard_seq')");
+        (await writableAgain.ExecuteScalarAsync()).Should().Be(41L,
+            "read-only transaction state must not leak onto a later pooled connection use");
     }
 
     private static void AssertSelectedRows(JsonElement output)

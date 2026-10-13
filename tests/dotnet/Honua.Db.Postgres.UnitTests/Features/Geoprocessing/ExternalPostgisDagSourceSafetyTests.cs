@@ -23,6 +23,7 @@ public sealed class ExternalPostgisDagSourceSafetyTests
         {
             await foreach (var _ in source.ReadAsync(request))
             {
+                Assert.Fail("An injected predicate must be refused before a feature is yielded.");
             }
         };
 
@@ -46,6 +47,7 @@ public sealed class ExternalPostgisDagSourceSafetyTests
         {
             await foreach (var _ in source.ReadAsync(request))
             {
+                Assert.Fail("A missing secure connection must be refused before a feature is yielded.");
             }
         };
 

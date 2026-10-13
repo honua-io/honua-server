@@ -53,7 +53,16 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
         PostgresSqlSafety.ValidateReadOnlySingleStatement(sql);
 
         await using var connection = await OpenConnectionAsync(request, cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        // A SELECT predicate can invoke a writing function (for example nextval).
+        // Token validation limits statement shape; PostgreSQL must enforce read-only execution.
+        await using (var readOnly = new NpgsqlCommand("SET TRANSACTION READ ONLY", connection, transaction))
+        {
+            await readOnly.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         await using var command = PostgresSqlSafety.CreateReadCommand(connection, sql);
+        command.Transaction = transaction;
         foreach (var (name, value) in parameters)
         {
             // Let PostgreSQL infer the watermark type from its column (timestamp,
