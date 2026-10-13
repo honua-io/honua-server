@@ -169,6 +169,15 @@ verify_end_ns="$(date +%s%N)"
 unpack_start_ns="${verify_end_ns}"
 stage_root="$(mktemp -d "${destination}/.honua-artifact-stage.XXXXXX")"
 trap 'rm -rf "${stage_root}"' EXIT
+# A group TERM can arrive while the installer is rolling back. Bash's EXIT
+# cleanup must wait for that child; otherwise it can delete the backup journal.
+# wait without a PID also covers delivery between background spawn and $! capture.
+cancel_restore() {
+  trap '' TERM INT
+  wait || true
+  exit 143
+}
+trap cancel_restore TERM INT
 timeout 120 tar --no-same-owner --no-same-permissions -xzf "${archive_path}" -C "${stage_root}"
 unpack_end_ns="$(date +%s%N)"
 [[ "$(find "${stage_root}" -type f | wc -l)" -eq "$(jq -r '.file_count' "${manifest}")" ]] || {
@@ -269,7 +278,9 @@ fi
 # Install only after all validation, replacing whole output roots. Roll back every
 # replaced root if installation fails; staging resides on the destination filesystem.
 python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install-server-test-artifact.py" \
-  "${stage_root}" "${destination}" "${manifest}" "${project_relative_dir}" "${configuration}"
+  "${stage_root}" "${destination}" "${manifest}" "${project_relative_dir}" "${configuration}" &
+installer_pid=$!
+wait "${installer_pid}"
 
 if [[ -n "${timing_file}" ]]; then
   mkdir -p "$(dirname "${timing_file}")"

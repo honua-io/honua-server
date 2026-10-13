@@ -1,21 +1,92 @@
 // Same-run transport only. The shell contract owns payload and identity validation.
-import {execFile} from 'node:child_process';
+import {execFile, spawn} from 'node:child_process';
 import {promisify} from 'node:util';
-import {mkdtemp, readFile, writeFile, rm, stat} from 'node:fs/promises';
+import {mkdtemp, readFile, writeFile, rm, stat, readdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 const exec = promisify(execFile);
 const properties = 'TreatWarningsAsErrors=true;RunAnalyzers=true;UseSharedCompilation=false';
 const maxBytes = 335544320;
+// Each shell owns a fresh Linux process group. A timed-out group gets a
+// rollback grace period, then KILL; cleanup waits until no live member remains.
+async function liveGroup(group) {
+  for (const name of await readdir('/proc')) {
+    if (!/^\d+$/.test(name)) continue;
+    try {
+      const text = await readFile(`/proc/${name}/stat`, 'utf8');
+      const fields = text.slice(text.lastIndexOf(')') + 2).split(' ');
+      if (Number(fields[2]) === group && !['Z', 'X'].includes(fields[0])) return true;
+    } catch (error) { if (!['ENOENT', 'ESRCH'].includes(error.code)) throw error; }
+  }
+  return false;
+}
+export async function boundedRunner(file, args, {cwd, env, timeout}) {
+  if (!Number.isFinite(timeout) || timeout <= 0) throw Error('Invalid subprocess timeout');
+  const child = spawn(file, args, {cwd, env, detached:true, stdio:['ignore','pipe','pipe']});
+  let stdout = '', stderr = '', stopping = false;
+  const closed = new Promise((resolve, reject) => {
+    child.once('error', reject);
+    child.once('close', (code, signal) => resolve({code, signal}));
+  });
+  const killGroup = signal => {
+    try { process.kill(-child.pid, signal); }
+    catch (error) { if (error.code !== 'ESRCH') throw error; }
+  };
+  let stopPromise, resolveStopped, rejectStopped;
+  const stopped = new Promise((resolve, reject) => { resolveStopped = resolve; rejectStopped = reject; });
+  const stop = () => {
+    if (stopping) return;
+    stopping = true;
+    stopPromise = (async () => {
+      killGroup('SIGTERM');
+      const grace = Date.now() + 3000;
+      while (await liveGroup(child.pid)) {
+        if (Date.now() >= grace) { killGroup('SIGKILL'); break; }
+        await new Promise(resolve => setTimeout(resolve, 40));
+      }
+      // Zombies cannot write; /proc inspection distinguishes them from live
+      // descendants when the runner's init has not reaped an orphan yet.
+      const reapDeadline = Date.now() + 2000;
+      while (await liveGroup(child.pid)) {
+        if (Date.now() >= reapDeadline) throw Object.assign(Error('Owned process group did not terminate'),
+          {groupNotQuiescent:true});
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+    })();
+    stopPromise = stopPromise.catch(error => {
+      killGroup('SIGKILL');
+      error.groupNotQuiescent = true;
+      throw error;
+    });
+    stopPromise.then(() => resolveStopped({code:null, signal:'SIGKILL'}), rejectStopped);
+  };
+  for (const [stream, field] of [[child.stdout,'stdout'],[child.stderr,'stderr']]) {
+    stream.on('data', data => {
+      if (stopping) return;
+      if (field === 'stdout') stdout += data; else stderr += data;
+      if (Buffer.byteLength(stdout) + Buffer.byteLength(stderr) > 4 * 1024 * 1024) stop();
+    });
+  }
+  const timer = setTimeout(stop, timeout);
+  let result;
+  try {
+    result = await Promise.race([closed, stopped]);
+    if (stopPromise) await stopPromise;
+  } finally { clearTimeout(timer); }
+  if (stopping || result.code !== 0) throw Object.assign(Error(stopping ? 'Subprocess deadline exceeded' : 'Subprocess failed'),
+    {code:stopping ? 'ETIMEDOUT' : result.code, signal:result.signal, killed:stopping, stdout, stderr});
+  return {stdout, stderr};
+}
+
 export async function run(options, deps = {}) {
   const root = options.root ?? process.env.GITHUB_WORKSPACE;
   const env = {...process.env, ...deps.env};
   const now = deps.now ?? Date.now;
   const deadline = now() + 600000;
   const remaining = cap => Math.max(1, Math.min(cap, deadline - now()));
-  const actualRunner = deps.runner ?? (async (file, args, extra = {}, timeout) => exec(file, args, {
-    cwd: root, env: {...env, ...extra}, timeout, maxBuffer: 4 * 1024 * 1024
+  const actualRunner = deps.runner ?? ((file, args, extra = {}, timeout) => boundedRunner(file, args, {
+    cwd: root, env: {...env, ...extra}, timeout
   }));
   const runner = (file, args, extra = {}) => {
     if (now() >= deadline) throw Object.assign(Error('Transport budget exhausted'), {code:'TRANSPORT_BUDGET'});
@@ -112,16 +183,17 @@ export async function run(options, deps = {}) {
           record.status = 'restored'; record.artifactId = found.id;
         }
       } catch (error) {
-        const timedOut = error.code === 'ETIMEDOUT' || error.code === 124 || (error.killed && error.signal === 'SIGTERM');
+        const timedOut = error.code === 'ETIMEDOUT' || error.code === 124 || error.code === 137 || (error.killed && error.signal === 'SIGTERM');
         const packageBudget = packaging && (timedOut ||
           /Staged payload.*exceeds|Archive.*exceeds|Packaging.*exceeds|Packaged archive exceeds limit/.test(
             `${error.stderr ?? ''} ${error.message ?? ''}`));
         record.reason = error.code === 'TRANSPORT_BUDGET' ? 'transport-budget-exhausted' : error.identityFailure ? 'identity-mismatch' : packageBudget ? 'package-budget-exceeded' :
           timedOut ? 'timeout' : 'artifact-unavailable-or-invalid';
+        if (error.groupNotQuiescent) { record.reason = 'owned-process-group-not-quiescent'; record.preservedPayloadDirectory = temp; throw error; }
         if (error.identityFailure || (packaging && !packageBudget && error.code !== 'TRANSPORT_BUDGET')) throw error;
       } finally {
         receipts.push(record);
-        await rm(temp, {recursive: true, force: true});
+        if (!record.preservedPayloadDirectory) await rm(temp, {recursive: true, force: true});
         await save();
       }
     }

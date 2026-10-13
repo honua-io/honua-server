@@ -121,7 +121,7 @@ jobs:
     # silently un-gates trunk or leaves pull requests waiting forever.
     name: PR Gate / Build and tests
     runs-on: ubuntu-latest
-    # Includes the required production PDAL toolchain build and content proof.
+    # Keep the existing producer budget; runtime toolchain proofs run in pr-gate-tests.
     timeout-minutes: 75
     outputs:
       docs_only: ${{ steps.docs-only.outputs.docs_only }}

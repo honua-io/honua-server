@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp, mkdir, writeFile, readFile, readdir, rm, truncate} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {run} from './client.mjs';
+import {run, boundedRunner} from './client.mjs';
 const project = 'tests/dotnet/Fixture.Tests/Fixture.Tests.csproj';
 const sha = 'a'.repeat(40);
 async function fixture(t) {
@@ -149,4 +149,23 @@ test('publish expiration after packaging does not upload or become a fatal contr
  f.artifact.uploadArtifact=async()=>{throw Error('must not upload after deadline');};
  const r=await run({...f.opts,mode:'publish'},f.deps);
  assert.equal((await receipt(r)).projects[0].reason,'transport-budget-exhausted');await cleaned(f.root);
+});
+
+test('bounded shell runner kills TERM-ignoring descendants before payload reuse', async t => {
+ const root = await mkdtemp(path.join(os.tmpdir(), 'managed-process-group-'));
+ t.after(() => rm(root, {recursive:true, force:true}));
+ const payload = path.join(root, 'payload');await mkdir(payload);
+ const marker = path.join(payload, 'late-write');
+ // The owned child ignores TERM and would write after the initial timeout.
+ // The runner must escalate against the whole group, not just the parent bash.
+ const script = 'trap "" TERM; (trap "" TERM; printf ready > "$READY"; sleep 5; printf late > "$MARKER") & wait';
+ await assert.rejects(boundedRunner('bash', ['-c', script], {
+   cwd:root,env:{...process.env,MARKER:marker,READY:path.join(root,'ready')},timeout:250
+ }), error => error.code === 'ETIMEDOUT');
+ assert.equal(await readFile(path.join(root,'ready'),'utf8'),'ready');
+ // Model the action finally cleanup and immediate next project's directory reuse.
+ await rm(payload, {recursive:true,force:true});await mkdir(payload);
+ await writeFile(path.join(payload,'next-project'), 'owned');
+ await new Promise(resolve => setTimeout(resolve, 2300));
+ assert.deepEqual(await readdir(payload), ['next-project']);
 });

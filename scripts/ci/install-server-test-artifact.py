@@ -2,6 +2,7 @@
 """Transactionally install previously validated output roots on one filesystem."""
 import json
 import os
+import signal
 from pathlib import Path
 import sys
 
@@ -20,6 +21,26 @@ for root in roots:
 backup = stage / '.backup'
 backup.mkdir()
 installed, saved = [], []
+termination_signals = {signal.SIGTERM, signal.SIGINT}
+
+
+def interrupted(signum, frame):
+    raise InterruptedError(f'Artifact installation interrupted by signal {signum}')
+
+
+def move_and_record(source, target, journal, entry):
+    # The rename and rollback journal append are one critical section: delivery
+    # between them could otherwise strand an output that rollback cannot find.
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, termination_signals)
+    try:
+        os.replace(source, target)
+        journal.append(entry)
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+
+
+for termination_signal in termination_signals:
+    signal.signal(termination_signal, interrupted)
 try:
     for index, root in enumerate(selected):
         source, target = stage / root, destination / root
@@ -31,11 +52,13 @@ try:
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.exists():
             old = backup / str(index)
-            os.replace(target, old)
-            saved.append((old, target))
-        os.replace(source, target)
-        installed.append((target, source))
+            move_and_record(target, old, saved, (old, target))
+        move_and_record(source, target, installed, (target, source))
 except BaseException:
+    # Rollback is a short sequence of local renames. Further TERM/INT must not
+    # interrupt it; the caller allows a grace period before process-group KILL.
+    for termination_signal in termination_signals:
+        signal.signal(termination_signal, signal.SIG_IGN)
     for target, source in reversed(installed):
         os.replace(target, source)
     for old, target in reversed(saved):
