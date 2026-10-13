@@ -4,6 +4,11 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Guardrails.Domain;
+using NSubstitute;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using FluentAssertions;
@@ -45,6 +50,8 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
     private readonly WireMockServer _idp;
     private readonly string _issuer;
     private readonly WebAppFixture _fixture;
+    private readonly IOperationProposalStore _proposalStore = Substitute.For<IOperationProposalStore>();
+    private readonly IOperationGateway _proposalGateway = Substitute.For<IOperationGateway>();
 
     public OidcJwtBearerValidationTests()
     {
@@ -103,6 +110,10 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
                 // lightweight in-process fake IdP over plain HTTP, so the production validator
                 // is removed here — the JWT validation logic under test is untouched.
                 services.RemoveAll<IValidateOptions<OidcAuthenticationOptions>>();
+                services.RemoveAll<IOperationProposalStore>();
+                services.RemoveAll<IOperationGateway>();
+                services.AddSingleton(_proposalStore);
+                services.AddSingleton(_proposalGateway);
             });
     }
 
@@ -213,6 +224,90 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
         return await _fixture.Client.SendAsync(request);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/proposals/{id}/approve")]
+    [Endpoint("POST /api/v1/admin/operations/proposals/{id}/reject")]
+    public async Task ProposalDecision_SignedAdminWithoutRequiredScope_LeavesProposalUnchanged()
+    {
+        foreach (var action in new[] { "approve", "reject" })
+        {
+            foreach (var (scope, operationId) in new[]
+            {
+                ("honua.mcp.read", "studio.content.create-publication-request"),
+                ("honua.mcp.update", "studio.content.create-publication-request"),
+                ("unknown.scope", "studio.content.create-publication-request"),
+                ("", "studio.content.create-publication-request"),
+                ("honua.mcp.full", "unknown.operation"),
+            })
+            {
+                var proposal = PrepareProposal(operationId);
+                using var client = _fixture.CreateClient();
+                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+                    "Bearer", CreateToken(scope: scope, tenant: "public"));
+                using var response = await client.PostAsJsonAsync(
+                    $"/api/v1/admin/operations/proposals/{proposal.ProposalId}/{action}",
+                    new { reason = "scope boundary regression" });
+
+                response.StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{scope} cannot {action} a publication");
+                _proposalGateway.ReceivedCalls().Should().BeEmpty("a refused decision must not reach resolution or actuation");
+                (await _proposalStore.GetAsync(proposal.ProposalId)).Should().BeSameAs(proposal);
+                proposal.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+                proposal.ResolvedAt.Should().BeNull();
+                _proposalStore.ReceivedCalls().Should().OnlyContain(call => call.GetMethodInfo().Name == "GetAsync");
+            }
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/proposals/{id}/approve")]
+    [Endpoint("POST /api/v1/admin/operations/proposals/{id}/reject")]
+    public async Task ProposalDecision_SignedAdminWithPublishScope_ReachesResolution()
+    {
+        foreach (var action in new[] { "approve", "reject" })
+        {
+            foreach (var scope in new[] { "honua.mcp.publish", "honua.mcp.full" })
+            {
+                var proposal = PrepareProposal();
+                _proposalGateway.ApplyApprovedProposalAsync(proposal.ProposalId,
+                    Arg.Any<OperationProposalApprovalContext>(), Arg.Any<CancellationToken>())
+                    .Returns(proposal with { Status = OperationProposalStatus.Succeeded });
+                _proposalGateway.RejectProposalAsync(proposal.ProposalId, Arg.Any<string>(),
+                    Arg.Any<string>(), Arg.Any<CancellationToken>())
+                    .Returns(proposal with { Status = OperationProposalStatus.Rejected });
+                using var client = _fixture.CreateClient();
+                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+                    "Bearer", CreateToken(scope: scope, tenant: "public"));
+                using var response = await client.PostAsJsonAsync(
+                    $"/api/v1/admin/operations/proposals/{proposal.ProposalId}/{action}",
+                    new { reason = "authorized decision" });
+
+                response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+                _proposalGateway.ReceivedCalls().Should().ContainSingle();
+                _proposalGateway.ReceivedCalls().Single().GetMethodInfo().Name.Should().Be(
+                    action == "approve" ? "ApplyApprovedProposalAsync" : "RejectProposalAsync");
+            }
+        }
+    }
+
+    private OperationProposal PrepareProposal(string operationId = "studio.content.create-publication-request")
+    {
+        var proposal = new OperationProposal
+        {
+            ProposalId = $"proposal-scope-{Guid.NewGuid():N}",
+            TenantId = "public",
+            OperationId = operationId,
+            Kind = OperationClass.StudioDraftMutation,
+            RequestedBy = "different-proposer",
+            Status = OperationProposalStatus.AwaitingApproval,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+        _proposalStore.GetAsync(proposal.ProposalId, Arg.Any<CancellationToken>()).Returns(proposal);
+        _proposalStore.ClearReceivedCalls();
+        _proposalGateway.ClearReceivedCalls();
+        return proposal;
+    }
+
     /// <summary>
     /// Mints an RSA-signed JWT. Defaults describe a fully valid token (correct issuer/audience,
     /// live validity window, real signature, an "admin" role claim so accept-valid isolates JWT
@@ -224,7 +319,9 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
         string? audience = null,
         DateTime? notBefore = null,
         DateTime? expires = null,
-        bool tamperSignature = false)
+        bool tamperSignature = false,
+        string? scope = null,
+        string? tenant = null)
     {
         var handler = new JwtSecurityTokenHandler();
         var claims = new List<Claim>
@@ -238,6 +335,15 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
             new("roles", "admin"),
             new(ClaimTypes.Role, "admin"),
         };
+
+        if (scope is not null)
+        {
+            claims.Add(new Claim("scp", scope));
+        }
+        if (tenant is not null)
+        {
+            claims.Add(new Claim("tenant_id", tenant));
+        }
 
         var token = new JwtSecurityToken(
             issuer: issuer ?? _issuer,
