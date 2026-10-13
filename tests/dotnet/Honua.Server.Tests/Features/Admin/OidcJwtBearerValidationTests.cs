@@ -2,24 +2,24 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.IdentityModel.Tokens.Jwt;
-using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using Honua.Core.Features.ControlPlane.Abstractions;
-using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Core.Features.Guardrails.Domain;
-using NSubstitute;
+using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Infrastructure.Authentication;
-using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using NSubstitute;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 using WireMock.Server;
@@ -233,6 +233,7 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
         {
             foreach (var (scope, operationId) in new[]
             {
+                ((string?)null, "studio.content.create-publication-request"),
                 ("honua.mcp.read", "studio.content.create-publication-request"),
                 ("honua.mcp.update", "studio.content.create-publication-request"),
                 ("unknown.scope", "studio.content.create-publication-request"),
