@@ -200,6 +200,7 @@ public static class OperationRegistry
         new(ImageServer, "GetVersion"),
         new(ImageServer, "IsFixedScaleImage"),
         new(ImageServer, "GetServiceInfo"),
+        new(ImageServer, "GetView"),
         new(ImageServer, "GetFields"),
         new(ImageServer, "GetKeyProperties"),
         new(ImageServer, "GetKeyPropertiesX"),

@@ -2416,6 +2416,7 @@
         "ImageServer::GetVersion",
         "ImageServer::IsFixedScaleImage",
         "ImageServer::GetServiceInfo",
+        "ImageServer::GetView",
         "ImageServer::GetFields",
         "ImageServer::GetKeyProperties",
         "ImageServer::GetKeyPropertiesX",

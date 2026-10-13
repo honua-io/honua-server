@@ -90,7 +90,7 @@ internal static partial class ImageServerSoapEndpoints
         {
             "ExportImage" or "GetImage" or "GetImageTile" => AuthorizationOperation.Export,
             "GetCatalogItemCount" or "GetCatalogItemIDs" or "GetCatalogItems" => AuthorizationOperation.Query,
-            "GetVersion" or "IsFixedScaleImage" or "GetServiceInfo" or "GetFields"
+            "GetVersion" or "IsFixedScaleImage" or "GetServiceInfo" or "GetView" or "GetFields"
                 or "GetKeyProperties" or "GetKeyPropertiesX" or "GetRasterKeyProperties"
                 or "GetMetadata" or "GetMultidimensionalInfo" or "ComputeHistograms"
                 or "GetCacheDescriptionInfo" or "GetTileCacheInfo" or "GetTileImageInfo"
@@ -113,7 +113,7 @@ internal static partial class ImageServerSoapEndpoints
         scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId)
             .WithTag(HonuaTelemetry.Tags.Operation, operationName);
 
-        var requirePrimaryRaster = operationName is "GetServiceInfo" or "ExportImage" or "GetImage";
+        var requirePrimaryRaster = operationName is "GetServiceInfo" or "GetView" or "ExportImage" or "GetImage";
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         try
         {
@@ -154,6 +154,12 @@ internal static partial class ImageServerSoapEndpoints
                         context.RequestServices.GetRequiredService<IOptions<ImageServerTileMetadataOptions>>().Value.Enabled)),
                 "GetServiceInfo" => await HandleGetServiceInfoAsync(
                     serviceId,
+                    rasterRequest,
+                    layerResolver,
+                    rasterStore,
+                    cancellationToken).ConfigureAwait(false),
+                "GetView" => await HandleGetViewAsync(
+                    operation,
                     rasterRequest,
                     layerResolver,
                     rasterStore,
@@ -355,6 +361,48 @@ internal static partial class ImageServerSoapEndpoints
             request.OperationNamespace,
             "GetFieldsResponse",
             BuildFields(srid));
+    }
+
+    private static async Task<IResult> HandleGetViewAsync(
+        XElement operation,
+        SoapRasterRequestContext request,
+        IImageServerLayerResolver layerResolver,
+        IRasterStore rasterStore,
+        CancellationToken cancellationToken)
+    {
+        // Stock Pro requests an empty VID during service discovery. Honua has no
+        // persisted named views: expose only the authorized service's default
+        // raster view, never silently substitute it for an unknown named view.
+        // ImageView's optional fields and order follow the ArcGIS SOAP XSD.
+        var viewId = operation.Elements().FirstOrDefault(element => element.Name.LocalName == "VID")?.Value;
+        if (!string.IsNullOrEmpty(viewId))
+        {
+            return CreateSoapFault("Image view was not found.", StatusCodes.Status404NotFound, request.SoapNamespace);
+        }
+
+        var service = await ReadServiceRastersAsync(
+            request, layerResolver, rasterStore, cancellationToken).ConfigureAwait(false);
+        if (service.ErrorResult is not null)
+        {
+            return service.ErrorResult;
+        }
+
+        var raster = SelectReferenceRaster(service.Rasters);
+        var (pixelSizeX, pixelSizeY) = ImageServerKeyPropertiesHandler.ComputePixelSizes(raster);
+        XNamespace xsi = XmlSchemaInstanceNamespace;
+        return CreateSoapResponse(
+            request.SoapNamespace,
+            request.OperationNamespace,
+            "GetViewResponse",
+            new XElement("Result",
+                new XAttribute(xsi + "type", "tns:ImageView"),
+                new XElement("VID", string.Empty),
+                new XElement("Description", string.Empty),
+                BuildEnvelope(service.Extent!.Value),
+                new XElement("PixelSizeX", FormatDouble(pixelSizeX)),
+                new XElement("PixelSizeY", FormatDouble(pixelSizeY)),
+                new XElement("BandCount", raster.BandCount),
+                new XElement("PixelType", MapPixelType(raster.PixelType))));
     }
 
     private static async Task<IResult> HandleGetServiceInfoAsync(
