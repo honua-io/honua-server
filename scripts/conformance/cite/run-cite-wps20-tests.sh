@@ -200,6 +200,13 @@ python3 scripts/conformance/cite/parse_wps20_results.py \
 parse_exit_code=$?
 set -e
 
+# Supplemental adapter evidence stays separate from all upstream ETS counts.
+set +e
+python3 scripts/conformance/cite/wps20_axis_probe.py \
+    --base-url "$HONUA_BASE_URL" --output "$CITE_RESULTS_DIR"
+axis_exit_code=$?
+set -e
+
 if [[ "$VERBOSE" == "true" || "$parse_exit_code" -ne 0 ]]; then
     cat "$CITE_RESULTS_DIR/ets-runner.log"
     "${COMPOSE_CMD[@]}" -f "$CITE_COMPOSE_FILE" logs --no-color --tail=100 honua-server || true
@@ -208,4 +215,7 @@ fi
 if [[ "$ets_exit_code" -eq 124 ]]; then
     exit 124
 fi
-exit "$parse_exit_code"
+if [[ "$parse_exit_code" -ne 0 ]]; then
+    exit "$parse_exit_code"
+fi
+exit "$axis_exit_code"

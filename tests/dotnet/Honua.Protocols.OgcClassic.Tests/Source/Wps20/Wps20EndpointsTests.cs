@@ -554,6 +554,78 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         content.Should().Contain("<testElement>hello_complex</testElement>");
     }
 
+    [Theory]
+    [InlineData("crs='urn:ogc:def:crs:OGC:1.3:CRS84'", "2")]
+    [InlineData("", "2")]
+    [InlineData("", "02")]
+    [InlineData("", "+2")]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /wps")]
+    public async Task ConformanceEcho_Crs84BoundingBox_PreservesAsymmetricAxisOrder(string crsAttribute, string dimensions)
+    {
+        await using var fixture = CreateConformanceFixture();
+        await fixture.InitializeAsync();
+        var box = $"<ows:BoundingBox {crsAttribute} dimensions='{dimensions}'><ows:LowerCorner>-123.5 37.25</ows:LowerCorner><ows:UpperCorner>-121.75 39.5</ows:UpperCorner></ows:BoundingBox>";
+        using var body = new StringContent(BoundingBoxExecute(box), Encoding.UTF8, "application/xml");
+        using var response = await fixture.Client.PostAsync("/wps", body);
+        var xml = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, xml);
+        var document = XDocument.Parse(xml);
+        XNamespace wps = "http://www.opengis.net/wps/2.0";
+        XNamespace ows = "http://www.opengis.net/ows/2.0";
+        document.Root!.Name.Should().Be(wps + "Result");
+        var output = document.Root.Elements(wps + "Output").Single();
+        output.Element(ows + "Identifier")!.Value.Should().Be("boundingBoxOutput");
+        var actual = output.Element(wps + "Data")!.Elements().Single();
+        actual.Name.Should().Be(ows + "BoundingBox");
+        actual.Attribute("crs")!.Value.Should().Be("urn:ogc:def:crs:OGC:1.3:CRS84");
+        actual.Element(ows + "LowerCorner")!.Value.Should().Be("-123.5 37.25");
+        actual.Element(ows + "UpperCorner")!.Value.Should().Be("-121.75 39.5");
+    }
+
+    [Theory]
+    [InlineData("<ows:BoundingBox crs='urn:unsupported'><ows:LowerCorner>-123 37</ows:LowerCorner><ows:UpperCorner>-121 39</ows:UpperCorner></ows:BoundingBox>")]
+    [InlineData("<ows:BoundingBox>unexpected<ows:LowerCorner>-123 37</ows:LowerCorner><ows:UpperCorner>-121 39</ows:UpperCorner></ows:BoundingBox>")]
+    [InlineData("<ows:BoundingBox crs='urn:ogc:def:crs:OGC:1.3:CRS84'><ows:LowerCorner>-123 37</ows:LowerCorner></ows:BoundingBox>")]
+    [InlineData("<ows:BoundingBox crs='urn:ogc:def:crs:OGC:1.3:CRS84'><ows:LowerCorner>37 -123</ows:LowerCorner><ows:UpperCorner>39 -121</ows:UpperCorner></ows:BoundingBox>")]
+    [InlineData("<ows:BoundingBox crs='urn:ogc:def:crs:OGC:1.3:CRS84'><ows:LowerCorner>NaN 37</ows:LowerCorner><ows:UpperCorner>-121 39</ows:UpperCorner></ows:BoundingBox>")]
+    [InlineData("<BoundingBox xmlns='urn:lookalike' crs='urn:ogc:def:crs:OGC:1.3:CRS84'><LowerCorner>-123 37</LowerCorner><UpperCorner>-121 39</UpperCorner></BoundingBox>")]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /wps")]
+    public async Task ConformanceEcho_MalformedBoundingBox_ReturnsOwsException(string box)
+    {
+        await using var fixture = CreateConformanceFixture();
+        await fixture.InitializeAsync();
+        using var body = new StringContent(BoundingBoxExecute(box), Encoding.UTF8, "application/xml");
+        using var response = await fixture.Client.PostAsync("/wps", body);
+        var xml = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, xml);
+        XNamespace ows = "http://www.opengis.net/ows/2.0";
+        XDocument.Parse(xml).Descendants(ows + "Exception").Single()
+            .Attribute("exceptionCode")!.Value.Should().Be("InvalidParameterValue");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /wps")]
+    public async Task ConformanceEcho_ComplexBoundingBoxLookalike_RemainsComplex()
+    {
+        await using var fixture = CreateConformanceFixture();
+        await fixture.InitializeAsync();
+        const string box = "<BoundingBox xmlns='urn:lookalike'><LowerCorner>uninterpreted text</LowerCorner></BoundingBox>";
+        var request = BoundingBoxExecute(box).Replace("boundingBoxInput", "complexInput", StringComparison.Ordinal)
+            .Replace("boundingBoxOutput", "complexOutput", StringComparison.Ordinal);
+        using var body = new StringContent(request, Encoding.UTF8, "application/xml");
+        using var response = await fixture.Client.PostAsync("/wps", body);
+        var xml = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, xml);
+        XNamespace lookalike = "urn:lookalike";
+        XDocument.Parse(xml).Descendants(lookalike + "LowerCorner").Single().Value.Should().Be("uninterpreted text");
+    }
+
+    private static string BoundingBoxExecute(string box) =>
+        $"<wps:Execute service='WPS' version='2.0.0' mode='sync' response='document' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='boundingBoxInput'><wps:Data>{box}</wps:Data></wps:Input><wps:Output id='boundingBoxOutput' transmission='value'/></wps:Execute>";
+
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /wps")]

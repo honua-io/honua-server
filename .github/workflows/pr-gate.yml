@@ -173,6 +173,12 @@ jobs:
             scripts.certification.test_verify_client_certification_receipts \
             scripts.certification.test_verify_mcp_live_certification
 
+      - name: Verify certification producer context and harness controls
+        run: python3 -m unittest discover -s scripts/certification -p 'test_*.py'
+
+      - name: Verify CITE normalization and supplemental HTTP controls
+        run: python3 -m unittest discover -s scripts/conformance/cite/tests -p 'test_*.py'
+
       - name: Verify review-first admission contract
         run: scripts/ci/validate-review-first-dispatch.sh
 

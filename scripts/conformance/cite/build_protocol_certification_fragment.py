@@ -8,9 +8,19 @@ import base64
 import hashlib
 import json
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urljoin
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from requirements_context import load_context
+from producer_context import run_identity as shared_run_identity
+
+def run_identity(source_sha: str) -> dict:
+    return shared_run_identity(source_sha, "cite-certification.yml")
+
+from wps20_certification_evidence import evidence as wps_evidence
 
 SHA = re.compile(r"^[0-9a-f]{40}$")
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -28,6 +38,7 @@ SUITE_BY_SURFACE = {
     "wcs-2-0": "wcs20",
     "wms-1-3": "wms13",
     "wmts-1-0": "wmts10",
+    "wps-2-0": "wps20",
 }
 
 FIXTURE_BY_SUITE = {
@@ -39,6 +50,7 @@ FIXTURE_BY_SUITE = {
     "wcs20": "docker/cite/wcs20/seed.sql",
     "wms13": "docker/cite/shared/seed/mapserver.sql",
     "wmts10": "docker/cite/shared/seed/mapserver.sql",
+    "wps20": "docker/cite/wps20/crs84-echo.xml",
 }
 
 
@@ -66,11 +78,12 @@ def receipt(
             "client_version", "deployment_target", "source_sha",
             "producer_source_sha", "image_digest", "fixture_revision",
             "contract_revision", "auth_policy_revision", "started_at", "completed_at",
+            "maturity", "required_tier", "requirements_revision", "producer_run",
         )
     }
     identity["candidate_cut_at"] = candidate_cut_at
     value = {
-        "schema": "honua.certification-evidence-receipt/v1",
+        "schema": "honua.certification-evidence-receipt/v2",
         "identity": identity,
         "result": observation["result"],
         "facets": {facet: observation["result"] for facet in facets},
@@ -95,7 +108,12 @@ def build(args: argparse.Namespace) -> dict:
     if generated_at < started_at:
         raise ValueError("CITE execution completed before it started")
     summary = load_json(args.summary)
-    catalog = load_json(args.requirements)
+    catalog = load_context(args.requirements, args.source_sha, args.producer_source_sha,
+                           args.image_digest, args.candidate_cut, SUITE_BY_SURFACE, FIXTURE_BY_SUITE)
+    producer_run = run_identity(args.producer_source_sha)
+    expected_run_url = f"https://github.com/{producer_run['repository']}/actions/runs/{producer_run['run_id']}"
+    if args.run_url != expected_run_url:
+        raise ValueError('CITE run URL does not match authenticated producer run')
     provenance = load_json(args.suite_provenance)
     suites = {suite["id"]: suite for suite in summary.get("suites", [])}
     suite_versions = provenance.get("suites", {})
@@ -144,7 +162,20 @@ def build(args: argparse.Namespace) -> dict:
             else:
                 skip_reason = f"Required CITE suite {suite_id} produced no executed tests."
 
+        wps_proof = None
+        if suite_id == "wps20" and executable:
+            try:
+                wps_proof = wps_evidence(args.wps_evidence, args.source_sha,
+                                         args.producer_source_sha, args.image_digest,
+                                         started_at, generated_at)
+            except (OSError, ValueError) as error:
+                result = "fail"
+                wps_proof = {"failure": str(error)}
         observation = {
+            "maturity": requirement["maturity"],
+            "required_tier": requirement["required_tier"],
+            "requirements_revision": catalog["revision"],
+            "producer_run": producer_run,
             "capability_key": requirement["capability_key"],
             "surface": requirement["surface"],
             "operation": requirement["operation"],
@@ -184,6 +215,8 @@ def build(args: argparse.Namespace) -> dict:
                 "counts": {key: suite[key] for key in ("totalTests", "passed", "failed", "skipped", "cantTell")},
                 "run_url": args.run_url,
             }
+            if wps_proof is not None:
+                payload["wps_facet_evidence"] = wps_proof
             evidence_receipt, evidence_digest = receipt(
                 observation, requirement["scenario_facets"], payload, cut_at
             )
@@ -222,6 +255,7 @@ def main() -> int:
     parser.add_argument("--requirements", type=Path, required=True)
     parser.add_argument("--suite-provenance", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--wps-evidence", type=Path, required=True)
     parser.add_argument("--source-sha", required=True)
     parser.add_argument("--producer-source-sha", required=True)
     parser.add_argument("--image-digest", required=True)

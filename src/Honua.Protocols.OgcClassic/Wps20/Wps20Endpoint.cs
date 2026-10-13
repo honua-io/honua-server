@@ -365,6 +365,11 @@ internal static partial class Wps20Endpoint
             return Exception("InvalidParameterValue", "The conformance echo requires exactly one input.", "input");
         }
         var input = request.Inputs.Values.Single();
+        if (input.Kind == EchoValueKind.Complex && input.Id == "boundingBoxInput")
+        {
+            var box = ValidateEchoBoundingBox(XElement.Parse($"<data>{input.Value}</data>"));
+            input = input with { Kind = EchoValueKind.BoundingBox, Value = box.ToString(SaveOptions.DisableFormatting) };
+        }
         var output = request.Outputs.SingleOrDefault();
         var outputId = output?.Id ?? input.Kind switch
         {
@@ -737,6 +742,59 @@ internal static partial class Wps20Endpoint
             return;
         }
         throw new WpsRequestException("InvalidParameterValue", "Each input requires data or a reference.", name ?? "input");
+    }
+
+    private static XElement ValidateEchoBoundingBox(XElement data)
+    {
+        // The Test-only echo advertises this single two-dimensional CRS. Preserve
+        // its longitude/latitude order; this is not a coordinate transformation.
+        var elements = data.Elements().ToArray();
+        var box = elements.Length == 1 ? elements[0] : null;
+        XNamespace ows = OwsNamespace;
+        if (box is null || box.Name != ows + "BoundingBox"
+            || (box.Attribute("crs")?.Value is string crs && crs != "urn:ogc:def:crs:OGC:1.3:CRS84")
+            || (box.Attribute("dimensions")?.Value is string dimensions
+                && (!int.TryParse(dimensions, NumberStyles.Integer, CultureInfo.InvariantCulture, out var dimensionCount) || dimensionCount != 2))
+            || data.Nodes().OfType<XText>().Any(text => !string.IsNullOrWhiteSpace(text.Value)))
+        {
+            throw new WpsRequestException("InvalidParameterValue", "The bounding box requires a two-dimensional OWS CRS84 value.", "boundingBoxInput");
+        }
+        if (box.Nodes().OfType<XText>().Any(text => !string.IsNullOrWhiteSpace(text.Value)))
+        {
+            throw new WpsRequestException("InvalidParameterValue", "The bounding box cannot contain mixed text.", "boundingBoxInput");
+        }
+        var corners = box.Elements().ToArray();
+        if (corners.Length != 2 || corners[0].Name != ows + "LowerCorner" || corners[1].Name != ows + "UpperCorner")
+        {
+            throw new WpsRequestException("InvalidParameterValue", "The bounding box requires lower and upper corners.", "boundingBoxInput");
+        }
+        var coordinates = new double[4];
+        for (var corner = 0; corner < 2; corner++)
+        {
+            var values = corners[corner].Value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (corners[corner].HasElements || values.Length != 2)
+            {
+                throw new WpsRequestException("InvalidParameterValue", "Each bounding box corner requires two finite coordinates.", "boundingBoxInput");
+            }
+            for (var axis = 0; axis < 2; axis++)
+            {
+                if (!double.TryParse(values[axis], NumberStyles.Float, CultureInfo.InvariantCulture, out var coordinate)
+                    || !double.IsFinite(coordinate))
+                {
+                    throw new WpsRequestException("InvalidParameterValue", "Each bounding box corner requires two finite coordinates.", "boundingBoxInput");
+                }
+                coordinates[corner * 2 + axis] = coordinate;
+            }
+        }
+        if (coordinates[0] < -180 || coordinates[2] > 180 || coordinates[1] < -90 || coordinates[3] > 90
+            || coordinates[0] > coordinates[2] || coordinates[1] > coordinates[3])
+        {
+            throw new WpsRequestException("InvalidParameterValue", "CRS84 corners require ordered longitude and latitude bounds.", "boundingBoxInput");
+        }
+        // WPS BoundingBoxData declares CRS84 as the default when input omits
+        // crs. Make that context explicit on the returned value.
+        box.SetAttributeValue("crs", "urn:ogc:def:crs:OGC:1.3:CRS84");
+        return box;
     }
 
     private static void AddInput(Dictionary<string, EchoInput> inputs, string? name, EchoInput input)

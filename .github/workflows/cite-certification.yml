@@ -1,4 +1,5 @@
 name: Exact-candidate CITE protocol certification
+run-name: CITE Certification [${{ inputs.nightly_dispatch_id }}]
 
 on:
   workflow_dispatch:
@@ -16,6 +17,15 @@ on:
         required: true
         type: string
 
+      nightly_dispatch_id:
+        description: Canonical nightly run and attempt correlation
+        required: true
+        type: string
+      requirements_context:
+        description: Bounded data-only governed CITE requirement context
+        required: true
+        type: string
+
 permissions:
   contents: read
   packages: read
@@ -26,7 +36,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  admit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Admit exact candidate and governed requirement context
+        env:
+          REQUIREMENTS_CONTEXT: ${{ inputs.requirements_context }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          SERVER_IMAGE: ${{ inputs.server_image }}
+          CANDIDATE_CUT: ${{ inputs.candidate_cut }}
+          NIGHTLY_DISPATCH_ID: ${{ inputs.nightly_dispatch_id }}
+        run: python3 scripts/conformance/cite/validate_cite_context.py
+
   cite:
+    needs: admit
     uses: ./.github/workflows/cite-evidence-report.yml
     with:
       publish_pages: false
@@ -55,14 +80,18 @@ jobs:
           SERVER_IMAGE: ${{ inputs.server_image }}
           SOURCE_SHA: ${{ inputs.source_sha }}
           CANDIDATE_CUT: ${{ inputs.candidate_cut }}
+          REQUIREMENTS_CONTEXT: ${{ inputs.requirements_context }}
+          NIGHTLY_DISPATCH_ID: ${{ inputs.nightly_dispatch_id }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          python3 scripts/conformance/cite/validate_cite_context.py --output "$RUNNER_TEMP/cite-requirements-context.json"
           started_at="$(< artifacts/cite-evidence/execution-started-at.txt)"
           completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           python3 scripts/conformance/cite/build_protocol_certification_fragment.py \
             --summary artifacts/cite-evidence/conformance-summary.json \
-            --requirements certification/cite-protocol-requirements.v1.json \
+            --requirements "$RUNNER_TEMP/cite-requirements-context.json" \
+            --wps-evidence artifacts/cite-evidence/reports/wps20 \
             --suite-provenance artifacts/cite-evidence/suite-provenance.json \
             --output artifacts/protocol-certification-fragment.json \
             --source-sha "$SOURCE_SHA" \

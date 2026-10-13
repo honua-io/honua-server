@@ -3,6 +3,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 SCRIPT = Path(__file__).parents[1] / "build_protocol_certification_fragment.py"
@@ -22,6 +23,7 @@ class FragmentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             requirement = {
+                "maturity": "supported", "required_tier": "nightly",
                 "capability_key": "serve.wfs", "surface": "wfs-2-0", "operation": "serve.wfs",
                 "canonical_client": "OGC CITE", "client_lane": "cite-wfs-2-0",
                 "client_version": "WFS 2.0", "deployment_target": "local-docker",
@@ -47,7 +49,13 @@ class FragmentTests(unittest.TestCase):
                 started_at=started_at, completed_at="2026-08-30T00:02:00Z",
                 run_url="https://github.com/honua-io/honua-server/actions/runs/1",
                 target_base_url="http://localhost:8080", output=root / "out.json")
-            return MODULE.build(args)
+            context = {"revision": "fixture-revision", "requirements": [requirement]}
+            run = {"repository": "honua-io/honua-server", "workflow": "cite-certification.yml",
+                   "run_id": 1, "run_attempt": 1, "dispatch_id": "nightly-certification-1-1"}
+            # Fragment normalization is isolated here; context and environment
+            # admission have their own exact positive/negative controls.
+            with patch.object(MODULE, "load_context", return_value=context), patch.object(MODULE, "run_identity", return_value=run):
+                return MODULE.build(args)
 
     def test_pass_is_exact_candidate_and_content_addressed(self):
         fragment = self.build()
@@ -55,6 +63,9 @@ class FragmentTests(unittest.TestCase):
                          fragment["operation_scope"])
         observation = fragment["observations"][0]
         self.assertEqual("pass", observation["result"])
+        self.assertEqual("honua.certification-evidence-receipt/v2", observation["evidence_receipt"]["schema"])
+        for key in ("maturity", "required_tier", "requirements_revision", "producer_run"):
+            self.assertEqual(observation[key], observation["evidence_receipt"]["identity"][key])
         self.assertEqual(SHA, observation["source_sha"])
         self.assertEqual(DIGEST, observation["image_digest"])
         self.assertEqual("OGC CITE", observation["performed_by"])
