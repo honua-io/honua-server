@@ -24354,8 +24354,11 @@
       "code_location": "src/Honua.Protocols.OgcClassic/Wps20/Wps20Endpoint.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_AsyncResultAndReference_AreImmediateAndDereferenceable",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_ComplexBoundingBoxLookalike_RemainsComplex",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_Crs84BoundingBox_PreservesAsymmetricAxisOrder",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_DefaultOffAlias_UsesCanonicalAuthorization",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_Ets11Alias_UsesSameInertEchoBehavior",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_MalformedBoundingBox_ReturnsOwsException",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_ReferenceToPrivateNetwork_IsRejected",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_SyncComplex_PreservesXmlPayload",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_UnresolvableReference_ReturnsOwsException",
