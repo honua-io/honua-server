@@ -54,10 +54,13 @@ public sealed partial class LayerPublishingIntegrationTests
     [IntegrationTheory]
     [InlineData("source")]
     [InlineData("managed")]
-    [Operation(Operations.Create)]
+    [Operation(Operations.ContractTesting)]
     public async Task RemotePublish_AssignedWorker_MaterializesPostGisAndPersistsCompleteProgress(string storageMode)
     {
         await UseServerFeatureStoreConnectionAsync();
+        // The shared fixture seeds one row; exceed the one-row async admission threshold.
+        await InsertPostGisFeatureAsync("Remote worker feature", 200, 2, 2);
+        (await GetSourceRowCountAsync()).Should().Be(2);
         await using var redis = new RedisBuilder("redis:7.2-alpine").Build();
         await redis.StartAsync();
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.GetConnectionString());
