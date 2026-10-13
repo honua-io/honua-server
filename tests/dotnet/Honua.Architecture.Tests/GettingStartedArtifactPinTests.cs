@@ -31,13 +31,14 @@ public sealed class GettingStartedArtifactPinTests
         var windowsPackages = Read(root, "docs", "get-started", "windows-packages.md");
         var dotnetGettingStarted = Read(root, "docs", "sdks", "dotnet", "dotnet-getting-started.md");
 
-        foreach (var page in new[] { quickstart, linuxPackages })
+        foreach (var page in new[] { quickstart, linuxPackages, windowsPackages })
         {
             page.Should().Contain(ReleaseChannelImage);
             page.Should().Contain(GaChannelImage);
             page.Should().Contain(DigestSentence);
             page.Should().Contain(DigestSource);
             page.Should().Contain("Licensing__Mode: Disabled");
+            page.Should().Contain("HONUA_IMAGE=" + ReleaseChannelImage);
         }
 
         var gettingStartedDir = ArchitectureTestHelpers.CombinePath(root, "docs", "get-started");
@@ -45,11 +46,6 @@ public sealed class GettingStartedArtifactPinTests
         {
             File.ReadAllText(file).Should().NotContain("@sha256:", Path.GetFileName(file));
         }
-
-        quickstart.Should().Contain("HONUA_IMAGE=" + ReleaseChannelImage);
-        linuxPackages.Should().Contain("HONUA_IMAGE=" + ReleaseChannelImage);
-        // The Windows package page is outside this change and still names the older channel tag.
-        windowsPackages.Should().Contain("$Image = 'ghcr.io/honua-io/honua-server:rc'");
         firstDataset.Should().Contain("@honua/sdk-js@0.1.13");
         registryClients.Should().Contain("`@honua/sdk-js@0.1.13`");
         registryClients.Should().Contain("`create-honua-app@0.1.6`");
