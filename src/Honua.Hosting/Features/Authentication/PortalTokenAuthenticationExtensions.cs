@@ -206,6 +206,8 @@ public static class PortalTokenAuthenticationExtensions
         services.TryAddSingleton<IPortalGroupStore>(
             sp => new InMemoryPortalGroupStore(sp.GetService<TimeProvider>()));
         services.TryAddSingleton<IPortalItemSharingStore, InMemoryPortalItemSharingStore>();
+        services.AddHttpContextAccessor();
+        services.TryAddSingleton<Honua.Core.Features.Security.Abstractions.IPortalResourceReadAuthorizer, PortalResourceReadAuthorizer>();
 
         // Optional JWT access-token format + RFC 7662 introspection (ADR-0068, #1890)
         // and pluggable IdP/OIDC federation for client_credentials (ADR-0053

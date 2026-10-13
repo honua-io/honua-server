@@ -15,14 +15,18 @@ namespace Honua.Infrastructure.Authentication;
 /// <para>
 /// This is an <em>additive overlay</em>, not a replacement for RBAC. The shared
 /// query/edit pipeline and the <c>IPortalItemProjector</c> remain the authority for
-/// whether a principal may read the underlying service (ADR-0049/#1375). This store
-/// only records sharing intent and answers "is this item shared with this principal"
-/// for the sharing surface, mirroring the established in-memory auth-store pattern
+/// whether a principal may read the underlying service (ADR-0049/#1375). Explicit
+/// group audiences provide an alternative service read grant through that shared
+/// authority; resource policy, tenant isolation and credential scopes still apply.
+/// Everyone/org do not confer authority. The store mirrors the established in-memory auth-store pattern
 /// (no parallel durable store).
 /// </para>
 /// </remarks>
 internal interface IPortalItemSharingStore
 {
+    /// <summary>Reads the current share state without blocking asynchronous I/O.</summary>
+    PortalItemShareState Get(string itemId);
+
     /// <summary>Gets the current share state of an item (default: shared with no one).</summary>
     Task<PortalItemShareState> GetAsync(string itemId, CancellationToken cancellationToken);
 
@@ -83,13 +87,13 @@ internal sealed class InMemoryPortalItemSharingStore : IPortalItemSharingStore
     public Task<PortalItemShareState> GetAsync(string itemId, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (string.IsNullOrWhiteSpace(itemId))
-        {
-            return Task.FromResult(PortalItemShareState.None);
-        }
-
-        return Task.FromResult(_shares.TryGetValue(itemId, out var state) ? state : PortalItemShareState.None);
+        return Task.FromResult(Get(itemId));
     }
+
+    public PortalItemShareState Get(string itemId)
+        => !string.IsNullOrWhiteSpace(itemId) && _shares.TryGetValue(itemId, out var state)
+            ? state
+            : PortalItemShareState.None;
 
     public Task<string?> GetOwnerAsync(string itemId, CancellationToken cancellationToken)
     {

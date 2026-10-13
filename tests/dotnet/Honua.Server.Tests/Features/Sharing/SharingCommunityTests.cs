@@ -7,8 +7,6 @@ using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Security.Domain;
-using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -43,13 +41,26 @@ public sealed class SharingCommunityTests : IAsyncLifetime
     public SharingCommunityTests()
     {
         var graph = new TestMetadataV2GraphBuilder()
+            .AddService("svc-rivers", "Rivers", protocols: [ServiceProtocols.FeatureServer],
+                accessPolicy: new AccessPolicy { AllowedRoles = ["publisher"] })
+            .AddService("svc-owned", "Owned", protocols: [ServiceProtocols.FeatureServer],
+                accessPolicy: new AccessPolicy { AllowedRoles = ["publisher"] })
             .AddService("content-a", "First item", protocols: [ServiceProtocols.FeatureServer],
                 accessPolicy: new AccessPolicy { AllowAnonymous = true })
             .AddService("content-b", "Second item", protocols: [ServiceProtocols.MapServer],
                 accessPolicy: new AccessPolicy { AllowAnonymous = true })
             .AddService("content-private", "Restricted item", protocols: [ServiceProtocols.FeatureServer],
                 accessPolicy: new AccessPolicy { AllowedRoles = ["parcel-admin"] })
+            .AddResource("private-resource", "Private resource", accessPolicy: new AccessPolicy { AllowedRoles = ["parcel-admin"] })
+            .AddStorageBinding("private-binding", "private-resource", "features", storageLayerId: 0)
+            .AddPublication("private-publication", "content-private", "private-resource", layerIndex: 0,
+                storageBindingId: "private-binding", publicationType: MetadataV2PublicationType.EsriFeatureLayer)
             .Build();
+        graph = graph with
+        {
+            Services = graph.Services.Select(service => service with
+            { Metadata = service.Metadata with { Publisher = "alice" } }).ToArray()
+        };
         _fixture = new WebAppFixture()
             .ReplaceService<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
             .ConfigureWebHost(builder =>
@@ -213,11 +224,11 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         shared.StatusCode.Should().Be(HttpStatusCode.OK);
         var sharedPayload = await ReadAsync<SharingPayload>(shared);
         sharedPayload.ItemId.Should().Be(itemId);
-        sharedPayload.NotSharedWith.Should().Contain(groupId);
+        sharedPayload.NotSharedWith.Should().NotContain(groupId);
         sharedPayload.NotSharedWith.Should().Contain("org");
         sharedPayload.Sharing!.Org.Should().BeFalse();
         sharedPayload.Sharing.Everyone.Should().BeFalse();
-        sharedPayload.Sharing.Groups.Should().BeEmpty();
+        sharedPayload.Sharing.Groups.Should().BeEquivalentTo([groupId]);
 
         using var unshared = await PostFormAsync(client, $"/sharing/rest/content/items/{itemId}/unshare?token={token}",
             ("groups", groupId),
@@ -246,7 +257,7 @@ public sealed class SharingCommunityTests : IAsyncLifetime
     [Endpoint("POST /sharing/rest/content/items/{itemId}/share")]
     public async Task ShareItem_ByNonOwnerNonAdmin_Returns403()
     {
-        // Sharing does not record an overlay owner or change item access.
+        // Actual metadata publisher ownership is enforced before any sharing state exists.
         var aliceToken = await IssueUserTokenAsync("alice");
         using var aliceClient = CreateUserClient();
         const string itemId = "svc-owned";
@@ -257,17 +268,12 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         firstPayload.NotSharedWith.Should().Contain("org");
         firstPayload.Sharing!.Org.Should().BeFalse();
 
-        // A second user also cannot apply a share. The response must not claim the
-        // item became public while access is unchanged.
+        // A different user cannot seize the actual item through first-share ownership.
         var malloryToken = await IssueUserTokenAsync("mallory");
         using var malloryClient = CreateUserClient();
         using var response = await PostFormAsync(malloryClient, $"/sharing/rest/content/items/{itemId}/share?token={malloryToken}",
             ("everyone", "true"));
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var payload = await ReadAsync<SharingPayload>(response);
-        payload.NotSharedWith.Should().Contain("everyone");
-        payload.Sharing!.Everyone.Should().BeFalse();
-        payload.Sharing.Org.Should().BeFalse();
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -356,13 +362,13 @@ public sealed class SharingCommunityTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /sharing/rest/content/groups/{groupId}")]
-    public async Task GroupContent_ProductionShareRefusal_RemainsEmpty()
+    public async Task GroupContent_UnsupportedPublicShare_RemainsEmpty()
     {
         var token = await IssueUserTokenAsync("alice");
         using var client = CreateUserClient();
         var group = await CreateGroupAsync(client, token, "No fabricated content");
-        using var share = await PostFormAsync(client, $"/sharing/rest/content/items/content-a/share?token={token}", ("groups", group));
-        (await ReadAsync<SharingPayload>(share)).NotSharedWith.Should().Contain(group);
+        using var share = await PostFormAsync(client, $"/sharing/rest/content/items/content-a/share?token={token}", ("everyone", "true"), ("org", "true"));
+        (await ReadAsync<SharingPayload>(share)).NotSharedWith.Should().BeEquivalentTo(["everyone", "org"]);
         using var response = await client.GetAsync($"/sharing/rest/content/groups/{group}?token={token}&f=json&num=1");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -379,9 +385,9 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         using var client = CreateUserClient();
         var group = await CreateGroupAsync(client, token, "Controlled read-store fixture");
         var other = await CreateGroupAsync(client, token, "Other group");
-        // Direct test-store setup verifies the read adapter only. Production
-        // share/unshare deliberately refuses these associations; this is not a
-        // production setup receipt or native content-certification pass.
+        // Direct controlled-store setup exercises paging and independent resource policy.
+        // Actual production sharing and persisted SQL reads have a separate HTTP regression;
+        // this controlled-store setup is not a native content-certification receipt.
         var store = _fixture.Services.GetRequiredService<IPortalItemSharingStore>();
         foreach (var item in new[] { "content-a", "content-b", "content-private" })
         {

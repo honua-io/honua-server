@@ -596,7 +596,7 @@ public static class SharingRestEndpoints
             Id = ResolveUsername(principal),
             Username = ResolveUsername(principal),
             FullName = ResolveDisplayName(principal),
-            Groups = await SharingCommunityEndpoints.GetUserGroupsAsync(groupStore, ResolveUsername(principal), context.RequestAborted).ConfigureAwait(false),
+            Groups = await SharingCommunityEndpoints.GetUserGroupsAsync(context, groupStore, ResolveUsername(principal), context.RequestAborted).ConfigureAwait(false),
         };
 
         return Results.Json(response, SharingRestJsonContext.Default.CommunitySelfResponse, contentType: JsonContentType);
@@ -621,7 +621,7 @@ public static class SharingRestEndpoints
             return StandardErrorHelpers.CreateNotFound(context, "User does not exist or is inaccessible.");
         }
 
-        var groups = await SharingCommunityEndpoints.GetUserGroupsAsync(groupStore, current, context.RequestAborted).ConfigureAwait(false);
+        var groups = await SharingCommunityEndpoints.GetUserGroupsAsync(context, groupStore, current, context.RequestAborted).ConfigureAwait(false);
         return Results.Json(new CommunitySelfResponse { Id = current, Username = current, FullName = ResolveDisplayName(context.User), Groups = groups }, SharingRestJsonContext.Default.CommunitySelfResponse, contentType: JsonContentType);
     }
 
