@@ -921,8 +921,12 @@ public sealed class ODataFilterParser
                 return new UnaryExpression(UnaryOperator.IsNull, operand);
             }
 
-            // Strict gt/lt are false whenever either operand is null.
-            return new Literal(false, LiteralType.Boolean);
+            // Strict gt/lt are false whenever either operand is null. Keep the
+            // normalized result a predicate; bare literals are invalid $filter inputs.
+            return new BinaryExpression(
+                new Literal(0, LiteralType.Number),
+                BinaryOperator.Equal,
+                new Literal(1, LiteralType.Number));
         }
 
         // OData v4.01 eq/ne use two-valued logic where "the null value is equal to

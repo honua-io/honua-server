@@ -366,10 +366,10 @@ public class ODataFilterParserTests
     public void Parse_NestedNullSafeComparisonsBeyondNodeLimit_ThrowsODataFilterParseException()
     {
         // Each null-safe 'ne' between two nullable operands references its left operand
-        // three times, so twelve nested comparisons expand to 3^12 visited nodes while
-        // staying inside the nesting-depth limit.
+        // four times, so eight nested comparisons exceed the visited-node limit while
+        // their depth of 41 remains inside the nesting-depth limit.
         var filter = "A";
-        for (var i = 0; i < 12; i++)
+        for (var i = 0; i < 8; i++)
         {
             filter = $"({filter} ne B)";
         }
