@@ -727,6 +727,7 @@ jobs:
     needs: [changes, targeted-shards]
     outputs:
       producer_attempt: ${{ steps.managed-publish.outputs.producer-attempt }}
+      managed_sdk_version: ${{ steps.managed-sdk.outputs.dotnet-sdk-version }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -747,6 +748,7 @@ jobs:
           df -h / || true
 
       - name: Setup .NET
+        id: managed-sdk
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
@@ -950,6 +952,7 @@ jobs:
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+          artifact-sdk-version: ${{ needs.build.outputs.managed_sdk_version }}
 
       - name: Select foundation outputs
         run: python3 scripts/ci/managed-test-build.py projects --lane foundation --family '${{ matrix.family }}' --output "${RUNNER_TEMP}/foundation-projects.json"
@@ -1223,6 +1226,7 @@ jobs:
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+          artifact-sdk-version: ${{ needs.build.outputs.managed_sdk_version }}
 
       - name: Select shard managed outputs
         env:
