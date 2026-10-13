@@ -842,7 +842,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
             var targetExists = await ImportTableOwnership.AssertOwnedAsync(connection, schemaName, targetTableName, cancellationToken).ConfigureAwait(false);
-            await ImportTableOwnership.AssertOwnedAsync(connection, schemaName, stagingTableName, cancellationToken).ConfigureAwait(false);
+            await ImportTableOwnership.AssertExistingOwnedAsync(connection, schemaName, stagingTableName, cancellationToken).ConfigureAwait(false);
             command.CommandText = (targetExists ? $"DROP TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(targetTableName)} CASCADE; " : string.Empty) +
                                   $"ALTER TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(stagingTableName)} RENAME TO {QuoteIdentifier(targetTableName)}; " +
                                   $"ALTER INDEX {QuoteIdentifier(schemaName)}.{QuoteIdentifier(BuildSpatialIndexName(stagingTableName))} RENAME TO {QuoteIdentifier(BuildSpatialIndexName(targetTableName))}";

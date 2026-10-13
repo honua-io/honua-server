@@ -119,7 +119,7 @@ internal sealed partial class GeoservicesImportService
             {
                 // Readers keep the prior rows during the transfer; writers wait for the swap rather than
                 // committing edits the swap would silently discard.
-                await ImportTableOwnership.AssertOwnedAsync(connection, targetSchema, request.TableName, cancellationToken);
+                await ImportTableOwnership.AssertExistingOwnedAsync(connection, targetSchema, request.TableName, cancellationToken);
                 await FenceTargetWritesAsync(connection, targetSchema, request.TableName, cancellationToken);
             }
 

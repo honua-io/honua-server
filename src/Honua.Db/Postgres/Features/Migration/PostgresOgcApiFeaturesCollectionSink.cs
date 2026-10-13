@@ -107,7 +107,7 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
         var existed = await ImportTableOwnership.ExistsAsync(connection, schemaName, physicalTable, cancellationToken).ConfigureAwait(false);
         if (existed)
         {
-            await ImportTableOwnership.AssertOwnedAsync(connection, schemaName, physicalTable, cancellationToken).ConfigureAwait(false);
+            await ImportTableOwnership.AssertExistingOwnedAsync(connection, schemaName, physicalTable, cancellationToken).ConfigureAwait(false);
         }
         else
         {

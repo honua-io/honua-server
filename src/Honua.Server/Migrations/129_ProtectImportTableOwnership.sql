@@ -143,7 +143,10 @@ BEGIN
     staging_name := honua.import_staging_table_name(table_name);
 
     PERFORM honua.assert_import_table_owned(schema_name, table_name);
-    PERFORM honua.assert_import_table_owned(schema_name, staging_name);
+    IF NOT honua.assert_import_table_owned(schema_name, staging_name) THEN
+        RAISE EXCEPTION 'IMPORT_TARGET_NOT_OWNED: Required staging table %.% is absent', schema_name, staging_name
+            USING ERRCODE = 'HN409';
+    END IF;
     IF honua.assert_import_table_owned(schema_name, table_name) THEN
         EXECUTE format('DROP TABLE %I.%I CASCADE', schema_name, table_name);
     END IF;

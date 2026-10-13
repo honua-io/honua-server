@@ -148,6 +148,33 @@ public sealed class ImportTableOwnershipTests(PostgresFixture fixture)
         }
     }
 
+    [Fact]
+    public async Task RequiredOwnedTable_AbsentStaging_RefusesBeforeDeletingOwnedTarget()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("ownership_missing");
+        try
+        {
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await InstallHelpersAsync(connection, schema);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{schema}\".target (sentinel text); INSERT INTO \"{schema}\".target VALUES ('original'); "
+                + ImportTableOwnership.MarkSql(schema, "target"));
+            await using (var transaction = await connection.BeginTransactionAsync())
+            {
+                await Assert.ThrowsAsync<ImportTableOwnershipException>(() =>
+                    ImportTableOwnership.AssertExistingOwnedAsync(connection, schema, "target__staging", CancellationToken.None));
+            }
+            var error = await Assert.ThrowsAsync<PostgresException>(() => ExecuteAsync(connection,
+                $"SELECT \"{schema}\".swap_import_table('{schema}', 'target')"));
+            Assert.Equal("HN409", error.SqlState);
+            await using var verify = new NpgsqlCommand($"SELECT sentinel FROM \"{schema}\".target", connection);
+            Assert.Equal("original", await verify.ExecuteScalarAsync());
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private static async Task ExecuteAsync(NpgsqlConnection connection, string sql)
     {
         await using var command = new NpgsqlCommand(sql, connection);

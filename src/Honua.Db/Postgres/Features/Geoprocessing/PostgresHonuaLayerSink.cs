@@ -218,7 +218,7 @@ internal sealed partial class PostgresHonuaLayerSink(NpgsqlDataSource dataSource
             // adopting it. Only wholesale replacement requires importer ownership.
             if (loadMode == HonuaLayerLoadMode.Replace)
             {
-                await ImportTableOwnership.AssertOwnedAsync(connection, schema, table, cancellationToken).ConfigureAwait(false);
+                await ImportTableOwnership.AssertExistingOwnedAsync(connection, schema, table, cancellationToken).ConfigureAwait(false);
             }
             return;
         }

@@ -35,6 +35,15 @@ internal static class ImportTableOwnership
         return true;
     }
 
+    internal static async Task AssertExistingOwnedAsync(NpgsqlConnection connection, string schema, string table,
+        CancellationToken cancellationToken)
+    {
+        if (!await AssertOwnedAsync(connection, schema, table, cancellationToken).ConfigureAwait(false))
+        {
+            throw new ImportTableOwnershipException(schema, table);
+        }
+    }
+
     internal static async Task<bool> ExistsAsync(NpgsqlConnection connection, string schema, string table,
         CancellationToken cancellationToken)
     {
