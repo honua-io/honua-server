@@ -61,8 +61,8 @@ public sealed class RoutingUtilityServiceTests : IClassFixture<NAServerEndpointT
     [Endpoint("POST /rest/services/{serviceId}/GPServer")]
     public async Task RoutingRoot_PostAndAlias_ReturnsTheSameDescriptor()
     {
-        using var response = await _fixture.Client.PostAsync("/arcgis/rest/services/routing/GPServer",
-            new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json" }));
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json" });
+        using var response = await _fixture.Client.PostAsync("/arcgis/rest/services/routing/GPServer", content);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("tasks").EnumerateArray().Select(task => task.GetString())
             .Should().Equal("FindRoutes", "GenerateServiceAreas", "GetTravelModes", "GetToolInfo");
