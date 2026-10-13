@@ -541,7 +541,7 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         return new EditPrincipal(
-            httpContext.User!.Identity!.Name,
+            EditOwnerSubject.Resolve(httpContext.User),
             IsAuthenticated: true,
             IsAdmin: ServiceDataEditorAuthorization.IsAdminPrincipal(httpContext));
     }
@@ -1697,7 +1697,7 @@ internal sealed class FeatureServerEditsHandler(
             FieldNames.ObjectId,
             StringComparison.OrdinalIgnoreCase) != false;
 
-    private async Task<Feature> BuildFeatureFromGeoServicesAsync(
+    internal async Task<Feature> BuildFeatureFromGeoServicesAsync(
         GeoServicesFeature feature,
         long objectId,
         MetadataV2Resource resource,
@@ -1883,6 +1883,7 @@ internal sealed class FeatureServerEditsHandler(
         // unmasked owner read and stamp the owner on insert. That read is not copied into
         // attributes. When the owner was masked, the writer keeps the stored value via
         // PreserveOmittedMaskedAttributes, so the response still omits it.
+        var restoreStoredOwner = false;
         if (resource.OwnerEditPolicy is { Enabled: true } ownerPolicy)
         {
             var updateSnapshot = editEvent == AttributeRuleEditEvent.Insert || existingFeature is not { } existing
@@ -1903,6 +1904,15 @@ internal sealed class FeatureServerEditsHandler(
             {
                 attributes[ownerPolicy.OwnerField] = principal.Name;
             }
+            else if (editEvent != AttributeRuleEditEvent.Insert &&
+                     !principal.IsAdmin &&
+                     CallerSuppliedOwner(feature.Attributes, ownerPolicy.OwnerField) &&
+                     RemoveOwnerAttribute(attributes, ownerPolicy.OwnerField))
+            {
+                // A non-admin cannot reassign the row. Drop the supplied key and keep
+                // PreserveOmittedMaskedAttributes so the locked row restores the stored owner.
+                restoreStoredOwner = true;
+            }
         }
 
         // Contingent-value enforcement (#2133): the effective merged attribute row (existing
@@ -1918,16 +1928,52 @@ internal sealed class FeatureServerEditsHandler(
         var edited = Feature.Create(objectId, geometry, attributes.ToImmutable());
         var isPartialUpdate = existingFeature is not null && !feature.ReplaceAttributes;
         edited = MarkPartialGeoServicesUpdate(edited, isPartialUpdate);
-        if (!edited.PreserveOmittedMaskedAttributes &&
-            OwnerEditPolicyFieldAccess.ShouldPreserveStoredOwner(
-                resource.OwnerEditPolicy,
-                isPartialUpdate,
-                attributes.Keys))
+        if (restoreStoredOwner ||
+            (!edited.PreserveOmittedMaskedAttributes &&
+             OwnerEditPolicyFieldAccess.ShouldPreserveStoredOwner(
+                 resource.OwnerEditPolicy,
+                 isPartialUpdate,
+                 attributes.Keys)))
         {
             edited = edited with { PreserveOmittedMaskedAttributes = true };
         }
 
         return edited;
+    }
+
+    private static bool CallerSuppliedOwner(IReadOnlyDictionary<string, object?>? attributes, string ownerField)
+    {
+        if (attributes is null || string.IsNullOrWhiteSpace(ownerField))
+        {
+            return false;
+        }
+
+        foreach (var key in attributes.Keys)
+        {
+            if (key.Equals(ownerField, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool RemoveOwnerAttribute(
+        ImmutableDictionary<string, object?>.Builder attributes,
+        string ownerField)
+    {
+        string? match = null;
+        foreach (var key in attributes.Keys)
+        {
+            if (key.Equals(ownerField, StringComparison.OrdinalIgnoreCase))
+            {
+                match = key;
+                break;
+            }
+        }
+
+        return match is not null && attributes.Remove(match);
     }
 
     /// <summary>

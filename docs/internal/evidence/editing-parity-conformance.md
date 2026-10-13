@@ -68,6 +68,10 @@ never by parsing the message.
 - Owner-based edit policy compares the row's owner field against the authenticated principal
   name; it is independent of (and composes with) AccessPolicy/RBAC write authorization, which is
   still enforced first in the shared edit pipeline.
+- New owner stamps use a stable subject: `NameIdentifier`, then `sub`, then `api_key_id`, and
+  only then the display name when none of those claims exist. Rows already stamped with a
+  display name or key name will not match until an administrator reassigns them. Stored owner
+  values are not rewritten.
 
 ## Status summary
 

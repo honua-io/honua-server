@@ -477,7 +477,7 @@ internal sealed partial class DeployWorkflowService
 
         if (operation.Kind != WorkflowOperationKind.Deploy || operation.Deploy == null)
         {
-            throw new InvalidOperationException("Only deploy workflow operations can be submitted.");
+            throw new ResourceConflictException("Only deploy workflow operations can be submitted.");
         }
 
         if (operation.Status is WorkflowOperationStatus.Submitted
@@ -519,7 +519,7 @@ internal sealed partial class DeployWorkflowService
         var backend = target == null ? null : ResolveBackend(target);
         if (backend == null)
         {
-            throw new InvalidOperationException(
+            throw new ResourceConflictException(
                 $"No deploy backend is registered for target '{operation.Deploy.TargetId}' ({operation.Deploy.Backend}).");
         }
 
@@ -801,7 +801,7 @@ internal sealed partial class DeployWorkflowService
 
         if (operation.Kind != WorkflowOperationKind.Deploy || operation.Deploy == null)
         {
-            throw new InvalidOperationException("Rollback is only supported for deploy workflow operations.");
+            throw new ResourceConflictException("Rollback is only supported for deploy workflow operations.");
         }
 
         if (operation.Status == WorkflowOperationStatus.RollbackRequested &&
@@ -984,7 +984,7 @@ internal sealed partial class DeployWorkflowService
     {
         if (operation.MetadataRelease == null)
         {
-            throw new InvalidOperationException("Metadata release rollback requires metadata release context.");
+            throw new ResourceConflictException("Metadata release rollback requires metadata release context.");
         }
 
         if (operation.Status is WorkflowOperationStatus.RollbackRequested or WorkflowOperationStatus.RolledBack)
