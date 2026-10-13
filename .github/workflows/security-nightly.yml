@@ -70,6 +70,9 @@ jobs:
           docker pull --platform "$SCAN_PLATFORM" "$SCAN_IMAGE"
           docker image inspect "$SCAN_IMAGE" > existing-image-inspect.json
           python3 scripts/security/existing-image-scan.py identity
+          # The action requires a regular file; /dev/null is rejected. Use a fresh
+          # empty file so no repository ignore entries affect this inventory.
+          : > "$RUNNER_TEMP/existing-image-empty.trivyignore"
       - name: Scan full vulnerability inventory
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         env:
@@ -82,7 +85,7 @@ jobs:
           output: existing-image-trivy.json
           severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           ignore-unfixed: false
-          trivyignores: /dev/null
+          trivyignores: ${{ runner.temp }}/existing-image-empty.trivyignore
           exit-code: '0'
       - name: Bind inventory and enforce fixed high severity findings
         run: python3 scripts/security/existing-image-scan.py verdict

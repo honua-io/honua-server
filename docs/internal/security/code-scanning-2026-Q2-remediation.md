@@ -580,7 +580,7 @@ the normal nightly path intact. This path accepts only a digest-qualified
 `ghcr.io/honua-io/honua-server` reference, verifies the pulled platform and
 OCI source revision, then binds the Trivy inventory to its repository digest
 and image configuration ID. It retains all severities and unfixed findings,
-uses no vulnerability ignore file, and fails on fixed HIGH/CRITICAL findings.
+uses a fresh empty ignore file, and fails on fixed HIGH/CRITICAL findings.
 The artifact contains the raw inspection, full inventory, identity and
 verdict with the inventory SHA-256. It does not upload candidate results into
 the default branch's SARIF category or dismiss existing alerts.
