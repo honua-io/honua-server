@@ -41,6 +41,27 @@ class CatalogTests(unittest.TestCase):
         for path, content in catalog.generated(self.entries).items():
             (self.root / path).write_text(content)
 
+    def test_source_architecture_is_not_unit_or_coverage_collector(self):
+        source = self.project('tests/dotnet/Honua.Architecture.SourceTests')
+        (self.root / source).parent.joinpath('Example.cs').write_text('class Guard { string inspected = "PostgresFixture"; }')
+        entry = catalog.proposed(self.root, source)
+        self.assertEqual('architecture', entry['role'])
+        self.assertFalse(entry['coverageRequired'])
+        self.assertFalse(entry['isolated'])
+        self.assertFalse(entry['shardRouted'])
+        self.assertEqual([], entry['resources'])
+        self.entries['projects'][source] = entry
+        self.generate()
+        catalog.validate(self.root, self.entries)
+        self.assertNotIn(source, catalog.plan(self.root, self.entries, ['unknown/input'])['selectedProjects'])
+
+    def test_source_architecture_rejects_runtime_dependency(self):
+        source = self.project('tests/dotnet/Honua.Architecture.SourceTests', [self.owner])
+        self.entries['projects'][source] = catalog.proposed(self.root, source)
+        self.generate()
+        with self.assertRaisesRegex(ValueError, 'source architecture guards'):
+            catalog.validate(self.root, self.entries)
+
     def test_unit_plan_uses_forward_closure_not_integration_consumer(self):
         catalog.validate(self.root, self.entries)
         result = catalog.plan(self.root, self.entries, ['src/Honua.Protocols.Example/Example.cs'])

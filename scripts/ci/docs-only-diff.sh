@@ -270,11 +270,11 @@ GATE_INPUTS = (
 # while it does in the head tree. `mention`: the text names the path without
 # opening it.
 REFERENCE_ONLY = {
-    ("docs", "tests/dotnet/Honua.Architecture.Tests/BasicArchitectureTests.cs"):
+    ("docs", "tests/dotnet/Honua.Architecture.SourceTests/BasicArchitectureTests.cs"):
         ("existence", "asserts Directory.Exists(docs)"),
-    ("AGENTS.md", "tests/dotnet/Honua.Architecture.Tests/BasicArchitectureTests.cs"):
+    ("AGENTS.md", "tests/dotnet/Honua.Architecture.SourceTests/BasicArchitectureTests.cs"):
         ("existence", "asserts File.Exists(AGENTS.md)"),
-    ("docs/internal", "tests/dotnet/Honua.Architecture.Tests/AuditCoverageMatrixDriftTests.cs"):
+    ("docs/internal", "tests/dotnet/Honua.Architecture.SourceTests/AuditCoverageMatrixDriftTests.cs"):
         ("mention", "assertion-message text; the document it reads keeps its own literal"),
     ("README.md", "scripts/ci/fixtures/validate-affected-shards.py"):
         ("mention", "a synthetic changed path handed to the shard selector, never opened"),

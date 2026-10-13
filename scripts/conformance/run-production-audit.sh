@@ -214,6 +214,9 @@ run_architecture_agent() {
         run_check "architecture" "1" "architecture-tests" "required" \
             "dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj --configuration Release --logger \"trx;LogFileName=architecture-tests.trx\"" || return $?
 
+        run_check "architecture" "1" "source-architecture-tests" "required" \
+            "dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj --configuration Release --logger \"trx;LogFileName=source-architecture-tests.trx\"" || return $?
+
         run_check "architecture" "1" "aot-publish" "required" \
             "dotnet publish src/Honua.Server/Honua.Server.csproj --configuration Release --runtime linux-x64 --self-contained -p:PublishAot=true -p:HonuaSkipAdminClientForAotVerification=true -p:StripSymbols=true -o \"$OUTPUT_DIR/aot-publish\"" || return $?
     fi
