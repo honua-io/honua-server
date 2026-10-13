@@ -4,7 +4,7 @@ This is the prose half of the frozen 2026.1 client-certification fixture, server
 and auth-policy contract. Its machine-readable half is
 [`docs/gis/data/client-certification-fixture.v1.json`](data/client-certification-fixture.v1.json),
 and the two are paired 1:1: `CanonicalFixtureManifestTests` in
-`tests/dotnet/Honua.Architecture.Tests/CanonicalFixtureManifestTests.cs` fails the build if this
+`tests/dotnet/Honua.Architecture.SourceTests/CanonicalFixtureManifestTests.cs` fails the build if this
 document and that manifest disagree about the case-id set, the auth-profile set, or the published
 revisions.
 

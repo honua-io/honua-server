@@ -59,7 +59,7 @@ write src/Lib/Lib.csproj '<Project Sdk="Microsoft.NET.Sdk">
   </ItemGroup>
 </Project>'
 # The reviewed existence-only references keyed to this exact source path.
-write tests/dotnet/Honua.Architecture.Tests/BasicArchitectureTests.cs 'public sealed class BasicArchitectureTests
+write tests/dotnet/Honua.Architecture.SourceTests/BasicArchitectureTests.cs 'public sealed class BasicArchitectureTests
 {
     public void Layout()
     {
@@ -81,6 +81,15 @@ write tests/dotnet/Honua.Architecture.Tests/DocReadingTests.cs 'public sealed cl
         var howto = Directory.EnumerateFiles(Path.Combine(root, "docs", "howto"));
     }
 }'
+write docs/guides/source-governed.md '# Read by a source-only architecture guard'
+write tests/dotnet/Honua.Architecture.SourceTests/SourceDocReadingTests.cs 'public sealed class SourceDocReadingTests
+{
+    public void Reads()
+    {
+        var governed = File.ReadAllText("docs/guides/source-governed.md");
+    }
+}'
+
 g add -A
 g commit -q -m seed
 BASE="$(g rev-parse HEAD)"
@@ -151,6 +160,7 @@ bulk_docs() {
 }
 bulk_400() { bulk_docs 400; }
 bulk_401() { bulk_docs 401; }
+edit_source_governed() { printf 'More.\n' >> "${REPO}/docs/guides/source-governed.md"; }
 edit_governed_segments() { printf 'More.\n' >> "${REPO}/docs/guides/governed.md"; }
 edit_governed_literal() { printf 'More.\n' >> "${REPO}/docs/reference/literal.md"; }
 edit_governed_directory() { write docs/howto/new-step.md '# New step'; }
@@ -178,6 +188,7 @@ case_pr "rename within docs" true rename_within_docs
 case_pr "AGENTS.md (existence-only reference)" true edit_agents
 case_pr "Markdown under docs/gis/data" false edit_generated_markdown
 case_pr "non-prose file under docs" false edit_docs_yaml
+case_pr "document read by source-only architecture guard" false edit_source_governed
 case_pr "document read through path segments" false edit_governed_segments
 case_pr "document read through a path literal" false edit_governed_literal
 case_pr "document under a directory a test reads" false edit_governed_directory
