@@ -856,7 +856,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             var existingByKey = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
             if (existingByKey != null)
             {
-                EnsureMatchingIdempotentRequest(existingByKey, requestFingerprint, ownerId, resolvedSecurityContext.TenantId);
+                EnsureMatchingIdempotentRequest(
+                    existingByKey, requestFingerprint, ownerId, resolvedSecurityContext.TenantId, protocolMetadata);
                 EnsureGPServerReplayBinding(existingByKey, gpExecution, principal);
                 existingByKey = await _dispatcher.RepairLocalDispatchAsync(existingByKey, jobStore, cancellationToken)
                     .ConfigureAwait(false);
@@ -880,7 +881,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     ownedByCaller: !resumingApproved
                         && !inheritsSubmitterSecurityContext
                         && JobOwnershipSecurity.MatchesPriorFormatSubmitter(
-                            priorFormat.Audit, principal, resolvedSecurityContext.TenantId));
+                            priorFormat.Audit, principal, resolvedSecurityContext.TenantId),
+                    protocolMetadata);
                 EnsureGPServerReplayBinding(priorFormat, gpExecution, principal);
                 priorFormat = await _dispatcher.RepairLocalDispatchAsync(priorFormat, jobStore, cancellationToken)
                     .ConfigureAwait(false);
@@ -987,7 +989,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     var existingInWindow = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
                     if (existingInWindow != null)
                     {
-                        EnsureMatchingIdempotentRequest(existingInWindow, requestFingerprint, ownerId, resolvedSecurityContext.TenantId);
+                        EnsureMatchingIdempotentRequest(
+                            existingInWindow, requestFingerprint, ownerId, resolvedSecurityContext.TenantId, protocolMetadata);
                         EnsureGPServerReplayBinding(existingInWindow, gpExecution, principal);
                         existingInWindow = await _dispatcher.RepairLocalDispatchAsync(existingInWindow, jobStore, cancellationToken, admissionWindowHeld: true)
                             .ConfigureAwait(false);
@@ -1072,7 +1075,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     var existing = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
                     if (existing != null)
                     {
-                        EnsureMatchingIdempotentRequest(existing, requestFingerprint, ownerId, resolvedSecurityContext.TenantId);
+                        EnsureMatchingIdempotentRequest(
+                            existing, requestFingerprint, ownerId, resolvedSecurityContext.TenantId, protocolMetadata);
                         EnsureGPServerReplayBinding(existing, gpExecution, principal);
                         existing = await _dispatcher.RepairLocalDispatchAsync(existing, jobStore, cancellationToken, admissionWindowHeld: true)
                             .ConfigureAwait(false);
@@ -2115,6 +2119,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             }
             writer.WriteEndArray();
 
+            // Workspace, overwrite, output CRS, and OGC output selection are compared from
+            // the durable spec in EnsureMatchingIdempotentRequest. They are not written here:
+            // an empty object would change this rolling-deployment byte shape and make a retry
+            // of an already-stored plan with no protocol controls conflict with itself.
             writer.WriteEndObject();
         }
 
@@ -2138,12 +2146,22 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     }
 
     private static void EnsureMatchingIdempotentRequest(
-        ExecutionJobRecord existing, string requestFingerprint, string? ownerId, string? tenantId)
+        ExecutionJobRecord existing,
+        string requestFingerprint,
+        string? ownerId,
+        string? tenantId,
+        IReadOnlyDictionary<string, string>? protocolMetadata)
         => EnsureMatchingIdempotentRequest(
-            existing, requestFingerprint, JobOwnershipSecurity.MatchesSubmitter(existing.Audit, ownerId, tenantId));
+            existing,
+            requestFingerprint,
+            JobOwnershipSecurity.MatchesSubmitter(existing.Audit, ownerId, tenantId),
+            protocolMetadata);
 
     private static void EnsureMatchingIdempotentRequest(
-        ExecutionJobRecord existing, string requestFingerprint, bool ownedByCaller)
+        ExecutionJobRecord existing,
+        string requestFingerprint,
+        bool ownedByCaller,
+        IReadOnlyDictionary<string, string>? protocolMetadata)
     {
         // Reject cross-principal replay: a different caller must not silently
         // receive another principal's job via an idempotency-key collision.
@@ -2153,13 +2171,78 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         var existingFingerprint = existing.Audit.RequestFingerprint;
-        if (!string.IsNullOrWhiteSpace(existingFingerprint) &&
-            string.Equals(existingFingerprint, requestFingerprint, StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(existingFingerprint)
+            || !string.Equals(existingFingerprint, requestFingerprint, StringComparison.Ordinal)
+            || !ProtocolControlsMatch(existing.Spec.Parameters, protocolMetadata))
         {
-            return;
+            throw new GeoprocessingIdempotencyConflictException(existing.OperationId);
+        }
+    }
+
+    private static bool ProtocolControlsMatch(
+        IReadOnlyDictionary<string, string> stored,
+        IReadOnlyDictionary<string, string>? requested)
+        => ScalarControlMatches(stored, requested, GeoprocessingProtocolMetadataKeys.GPServerWorkspace)
+            && ScalarControlMatches(stored, requested, GeoprocessingProtocolMetadataKeys.GPServerOverwriteOutput)
+            && ScalarControlMatches(stored, requested, GeoprocessingProtocolMetadataKeys.GPServerOutSr)
+            && OutputSelectionMatches(stored, requested);
+
+    private static bool ScalarControlMatches(
+        IReadOnlyDictionary<string, string> stored,
+        IReadOnlyDictionary<string, string>? requested,
+        string key)
+    {
+        var storedPresent = stored.TryGetValue(key, out var storedValue);
+        string? requestedValue = null;
+        var requestedPresent = requested is not null && requested.TryGetValue(key, out requestedValue);
+        return storedPresent == requestedPresent
+            && (!storedPresent || string.Equals(storedValue, requestedValue, StringComparison.Ordinal));
+    }
+
+    private static bool OutputSelectionMatches(
+        IReadOnlyDictionary<string, string> stored,
+        IReadOnlyDictionary<string, string>? requested)
+    {
+        var requestedCount = 0;
+        if (requested is not null)
+        {
+            foreach (var entry in requested)
+            {
+                if (!IsOutputSelectionKey(entry.Key))
+                {
+                    continue;
+                }
+
+                requestedCount++;
+                if (!stored.TryGetValue(entry.Key, out var storedValue)
+                    || !string.Equals(storedValue, entry.Value, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
         }
 
-        throw new GeoprocessingIdempotencyConflictException(existing.OperationId);
+        var storedCount = 0;
+        foreach (var entry in stored)
+        {
+            if (IsOutputSelectionKey(entry.Key))
+            {
+                storedCount++;
+            }
+        }
+
+        return storedCount == requestedCount;
+    }
+
+    private static bool IsOutputSelectionKey(string key)
+    {
+        if (!key.StartsWith(GeoprocessingProtocolMetadataKeys.OutputNamePrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var index = key.AsSpan(GeoprocessingProtocolMetadataKeys.OutputNamePrefix.Length);
+        return !index.IsEmpty && !index.ContainsAnyExceptInRange('0', '9');
     }
 
     private static void EnsureSubmissionDidNotRollback(ExecutionJobRecord existing)
