@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Linq;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.OData;
@@ -684,6 +685,69 @@ public class ODataFilterParserTests
 
         result.Should().BeOfType<UnaryExpression>();
         ((UnaryExpression)result).Operator.Should().Be(UnaryOperator.Not);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("ge", null, null, false)]
+    [InlineData("le", null, null, false)]
+    [InlineData("ge", null, 1, true)]
+    [InlineData("le", null, 1, true)]
+    [InlineData("ge", 1, null, true)]
+    [InlineData("le", 1, null, true)]
+    [InlineData("ge", 1, 1, false)]
+    [InlineData("le", 1, 1, false)]
+    [InlineData("ge", 1, 2, true)]
+    [InlineData("le", 1, 2, false)]
+    [InlineData("ge", 2, 1, false)]
+    [InlineData("le", 2, 1, true)]
+    [InlineData("gt", null, null, true)]
+    [InlineData("lt", null, null, true)]
+    public void Parse_NegatedRelationalComparison_EvaluatesODataNullTruthTable(
+        string op, int? left, int? right, bool expected)
+    {
+        var properties = new Dictionary<string, JsonElement>
+        {
+            ["A"] = JsonSerializer.SerializeToElement(left),
+            ["B"] = JsonSerializer.SerializeToElement(right)
+        };
+
+        InMemoryFilterEvaluator.Evaluate(_parser.Parse($"not (A {op} B)"), properties)
+            .Should().Be(expected);
+        InMemoryFilterEvaluator.Evaluate(_parser.Parse($"not (not (A {op} B))"), properties)
+            .Should().Be(!expected);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("ge", true)]
+    [InlineData("le", true)]
+    [InlineData("gt", false)]
+    [InlineData("lt", false)]
+    public void Parse_RelationalComparisonWithLiteralNull_EvaluatesODataTruthTable(
+        string op, bool bothNullMatches)
+    {
+        foreach (int? value in new int?[] { null, 1 })
+        {
+            var properties = new Dictionary<string, JsonElement>
+            {
+                ["A"] = JsonSerializer.SerializeToElement(value)
+            };
+            var expected = value is null && bothNullMatches;
+            foreach (var filter in new[] { $"A {op} null", $"null {op} A" })
+            {
+                InMemoryFilterEvaluator.Evaluate(_parser.Parse(filter), properties)
+                    .Should().Be(expected, filter);
+                InMemoryFilterEvaluator.Evaluate(_parser.Parse($"not ({filter})"), properties)
+                    .Should().Be(!expected, filter);
+            }
+        }
+
+        var empty = new Dictionary<string, JsonElement>();
+        InMemoryFilterEvaluator.Evaluate(_parser.Parse($"null {op} null"), empty)
+            .Should().Be(bothNullMatches);
+        InMemoryFilterEvaluator.Evaluate(_parser.Parse($"not (null {op} null)"), empty)
+            .Should().Be(!bothNullMatches);
     }
 
     private static bool ContainsIsNull(FilterExpression expression, string property)

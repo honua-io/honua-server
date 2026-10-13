@@ -793,8 +793,9 @@ public sealed class ODataFilterParser
     }
 
     // `not (x eq v)` must match bare `x ne v`, including rows whose attribute is null.
-    // Relational comparisons are false when either operand is null, so their negation
-    // must keep those rows. `in` uses the same equality as eq.
+    // Relational comparisons are false with one null operand, so their negation
+    // keeps those rows. Inclusive comparisons are true when both operands are null.
+    // `in` uses the same equality as eq.
     private static FilterExpression RewriteNegatedComparison(FilterExpression operand)
     {
         if (operand is not BinaryExpression binary)
@@ -862,6 +863,20 @@ public sealed class ODataFilterParser
                 new UnaryExpression(UnaryOperator.IsNull, comparison.Right));
         }
 
+        if (comparison.Operator is BinaryOperator.GreaterThanOrEqual or BinaryOperator.LessThanOrEqual
+            && !IsNonNullValue(comparison.Left) && !IsNonNullValue(comparison.Right))
+        {
+            // OData ge/le include equality: null equals null, so their negation
+            // must exclude that row rather than accepting either IS NULL arm.
+            result = new BinaryExpression(
+                result,
+                BinaryOperator.And,
+                new BinaryExpression(
+                    new UnaryExpression(UnaryOperator.IsNotNull, comparison.Left),
+                    BinaryOperator.Or,
+                    new UnaryExpression(UnaryOperator.IsNotNull, comparison.Right)));
+        }
+
         return result;
     }
 
@@ -898,8 +913,15 @@ public sealed class ODataFilterParser
                     : new UnaryExpression(UnaryOperator.IsNotNull, operand);
             }
 
-            // OData v4.01 §5.1.1.1.3–5.1.1.1.6: if any operand of a relational
-            // operator (gt/ge/lt/le) is null, the operator returns false.
+            // OData v4.01 §5.1.1.1.4/.6 include equality: with a literal null,
+            // ge/le are true exactly when the other operand is also null.
+            if (op is BinaryOperator.GreaterThanOrEqual or BinaryOperator.LessThanOrEqual)
+            {
+                var operand = left is Literal { Type: LiteralType.Null } ? right : left;
+                return new UnaryExpression(UnaryOperator.IsNull, operand);
+            }
+
+            // Strict gt/lt are false whenever either operand is null.
             return new Literal(false, LiteralType.Boolean);
         }
 
