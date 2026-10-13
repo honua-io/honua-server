@@ -29,8 +29,8 @@ The exact digest is in the release's `customer-install-manifest.json`
 Docker Desktop runs Linux containers; this journey selects `linux/amd64`.
 Set `$Image` and `HONUA_IMAGE` to that digest to pin an installation exactly; `docker pull` below
 resolves the tag, and the support step records the digest that ran. The control-plane package is
-[honua-admin 0.1.10](https://pypi.org/project/honua-admin/0.1.10/); the data-plane
-package is [honua-sdk 0.1.13](https://pypi.org/project/honua-sdk/0.1.13/).
+[honua-admin 0.1.12](https://pypi.org/project/honua-admin/0.1.12/); the data-plane
+package is [honua-sdk 0.1.15](https://pypi.org/project/honua-sdk/0.1.15/).
 The import step invokes Honua's `honua_ingest_dataset` MCP tool using the
 published [MCP transport client 2.1.1](https://pypi.org/project/mcp/2.1.1/).
 

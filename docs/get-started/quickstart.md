@@ -22,8 +22,8 @@ only release promotion moves that tag.
 The exact digest is in the release's `customer-install-manifest.json`
 (`server.image` in that release's [customer install manifest](https://honua.io/data/customer-install-manifest.json)).
 The clients are pinned:
-[honua-admin 0.1.10](https://pypi.org/project/honua-admin/0.1.10/) and
-[honua-sdk 0.1.13](https://pypi.org/project/honua-sdk/0.1.13/).
+[honua-admin 0.1.12](https://pypi.org/project/honua-admin/0.1.12/) and
+[honua-sdk 0.1.15](https://pypi.org/project/honua-sdk/0.1.15/).
 
 For a lasting deployment, continue to
 [production Compose](../guides/deploy/docker-compose.md). For a locked-down

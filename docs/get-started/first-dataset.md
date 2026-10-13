@@ -7,7 +7,7 @@ description: "Upload a GeoJSON file, publish it as a layer, and query it through
 
 Upload a GeoJSON file, publish it as a layer, and query it through the supported Honua clients.
 
-**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Python 3.11+ with the pinned clients `honua-admin` 0.1.10 and `honua-sdk` 0.1.13 and the MCP Python client `mcp` 2.1.1 (step 2 installs them), and Node.js with `npx`.
+**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Python 3.11+ with the pinned clients `honua-admin` 0.1.12 and `honua-sdk` 0.1.15 and the MCP Python client `mcp` 2.1.1 (step 2 installs them), and Node.js with `npx`.
 
 > **Shell.** Every block on this page is `bash` — heredocs, `export`, and `python3`. On Windows run
 > them in WSL or Git Bash, not PowerShell, and note that a bare `python3` there resolves to the
@@ -195,7 +195,7 @@ npx --yes -p @honua/sdk-js@0.1.16 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" -
 npx --yes -p @honua/sdk-js@0.1.16 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --count
 ```
 
-The `@honua/sdk-js` pin is the release version, 0.1.13. Omit `HONUA_API_KEY` after the service allows anonymous reads.
+The `@honua/sdk-js` pin is the release version, 0.1.16. Omit `HONUA_API_KEY` after the service allows anonymous reads.
 
 The package publishes its CLI as the `honua` binary, so `npx` needs `-p @honua/sdk-js honua`; `npx @honua/sdk-js <command>` looks for a binary named `sdk-js` and fails with `could not determine executable to run`.
 
