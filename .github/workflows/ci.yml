@@ -127,7 +127,7 @@ env:
   # names (certification/full-matrix-checks.yaml there). Every lane here must
   # run on a full-matrix workflow_dispatch -- see the run_all escalation in
   # the `changes` job.
-  CERTIFICATION_LANE_JOBS: 'build dotnet-foundation-tests python-integration-tests test-all ci-gate'
+  CERTIFICATION_LANE_JOBS: 'build format dotnet-foundation-tests python-integration-tests test-all ci-gate'
 
 permissions:
   contents: read
@@ -722,10 +722,12 @@ jobs:
 
   build:
     name: Build & Format Check
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.build_changes == 'true' }}
-    needs: changes
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
+    needs: [changes, targeted-shards]
+    outputs:
+      producer_attempt: ${{ steps.managed-publish.outputs.producer-attempt }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
 
@@ -747,9 +749,6 @@ jobs:
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Restore
-        run: scripts/ci/dotnet-restore-retry.sh Honua.sln
 
       - name: Compute affected projects
         id: affected
@@ -782,28 +781,59 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "::notice::Warnings-as-errors build mode: ${mode}${projects:+ (${projects})}"
 
-      - name: Build (warnings as errors)
+      - name: Select managed producer outputs and build graph
+        id: managed-plan
+        env:
+          SELECTED_MATRIX: ${{ needs.targeted-shards.outputs.matrix_include }}
+          AFFECTED_MODE: ${{ steps.affected.outputs.mode }}
+          AFFECTED_PROJECTS: ${{ steps.affected.outputs.projects }}
         run: |
-          if [[ "${{ steps.affected.outputs.mode }}" == "affected" ]]; then
-            # shellcheck disable=SC2086
-            dotnet build ${{ steps.affected.outputs.projects }} \
-              --no-restore \
-              --configuration Release \
-              -graphBuild \
-              /p:TreatWarningsAsErrors=true
-          else
-            dotnet build Honua.sln \
-              --no-restore \
-              --configuration Release \
-              -graphBuild \
-              /p:TreatWarningsAsErrors=true
+          printf '%s' "${SELECTED_MATRIX:-[]}" > "${RUNNER_TEMP}/managed-matrix.json"
+          python3 scripts/ci/managed-test-build.py projects --lane ci \
+            --matrix-file "${RUNNER_TEMP}/managed-matrix.json" --output "${RUNNER_TEMP}/managed-projects.json"
+          target=Honua.sln
+          if [[ "${AFFECTED_MODE}" == affected ]]; then
+            python3 -c 'import json,os; json.dump({"solution":{"path":"Honua.sln","projects":os.environ["AFFECTED_PROJECTS"].split()}},open(os.environ["RUNNER_TEMP"]+"/affected-base.slnf","w"))'
+            target="${RUNNER_TEMP}/managed-build.slnf"
+            python3 scripts/ci/managed-test-build.py filter --projects-file "${RUNNER_TEMP}/managed-projects.json" \
+              --base-filter "${RUNNER_TEMP}/affected-base.slnf" --output "${target}"
           fi
+          echo "target=${target}" >> "$GITHUB_OUTPUT"
 
+      - name: Restore producer build graph
+        env:
+          BUILD_TARGET: ${{ steps.managed-plan.outputs.target }}
+        run: scripts/ci/dotnet-restore-retry.sh "${BUILD_TARGET}" -p:TreatWarningsAsErrors=true -p:RunAnalyzers=true -p:UseSharedCompilation=false
+
+      - name: Build (warnings as errors)
+        env:
+          BUILD_TARGET: ${{ steps.managed-plan.outputs.target }}
+        run: dotnet build "${BUILD_TARGET}" --no-restore --configuration Release -graphBuild -p:TreatWarningsAsErrors=true -p:RunAnalyzers=true -p:UseSharedCompilation=false
+
+      # Package pristine outputs before any test/coverage process can modify them.
+      - name: Publish managed test outputs
+        id: managed-publish
+        uses: ./.github/actions/managed-test-artifacts
+        with:
+          mode: publish
+          projects-file: ${{ runner.temp }}/managed-projects.json
+          enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' }}
+
+  format:
+    name: Format Check
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore complete format context
+        run: scripts/ci/dotnet-restore-retry.sh Honua.sln
       - name: Format Check
-        # --no-restore: the `Restore` step above already restored Honua.sln and
-        # the build consumed those exact assets, so letting `dotnet format`
-        # re-evaluate restore is pure repeated network/project work with no gain
-        # in format coverage. Identical to the lean gate's own format line.
         run: dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic
 
   # Foundation test FAMILIES (#3567). This lane used to be a single serial job
@@ -823,9 +853,8 @@ jobs:
   dotnet-foundation-family-tests:
     name: .NET Foundation Tests (${{ matrix.family_name }})
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
-    # Each family restores and builds its own closure. Run in parallel with
-    # Build & Format Check; CI Gate still requires every result via `test-all`.
-    needs: changes
+    # Consume the verified producer; misses build only this family closure.
+    needs: [changes, build]
     runs-on: ubuntu-latest
     # Per-family budget. The pre-split job carried a single 110-minute
     # orchestrator timeout covering every step; these are the same
@@ -885,23 +914,26 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Restore
-        run: scripts/ci/dotnet-restore-retry.sh Honua.sln
+      - name: Select foundation outputs
+        run: python3 scripts/ci/managed-test-build.py projects --lane foundation --family '${{ matrix.family }}' --output "${RUNNER_TEMP}/foundation-projects.json"
+
+      - name: Consume managed foundation outputs
+        id: managed-consume
+        uses: ./.github/actions/managed-test-artifacts
+        with:
+          mode: consume
+          projects-file: ${{ runner.temp }}/foundation-projects.json
+          producer-attempt: ${{ needs.build.outputs.producer_attempt }}
+          enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' }}
+
+      - name: Build missing foundation outputs
+        timeout-minutes: 25
+        env:
+          RESTORED_PROJECTS: ${{ steps.managed-consume.outputs.restored-projects-file }}
+        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "${RUNNER_TEMP}/foundation-projects.json" --restored-file "${RESTORED_PROJECTS}"
 
       - name: Create Test Results Directory
         run: mkdir -p ./tests/TestResults
-
-      # The pre-split job computed an affected-project closure (ADR-0043 PR #2)
-      # and built THAT, then ran `dotnet test --no-build` against projects that
-      # closure did not necessarily contain — correct only because the fallback
-      # was a full-solution build. Each family now builds exactly the projects
-      # it is about to test, in ONE MSBuild invocation so the shared closure is
-      # walked once and parallelised. That is both smaller than the
-      # full-solution build for the Protocols/Providers families and immune to
-      # the diff shape, which is what makes `--no-build` safe below.
-      - name: Build foundation family binaries
-        timeout-minutes: 25
-        run: scripts/ci/run-foundation-family.sh build ${{ matrix.family }}
 
       # Trunk validation can start before the post-merge writer finishes. Use
       # fresh projections here too, preserving every authored-input validator.
@@ -911,6 +943,14 @@ jobs:
         run: |
           bash scripts/ci/regenerate-generated-files.sh --configuration Release --no-build --no-restore
           bash scripts/ci/report-generated-file-drift.sh
+
+      - name: Run source architecture after projection regeneration
+        if: matrix.family == 'server'
+        timeout-minutes: 15
+        run: >-
+          dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj
+          --configuration Release --no-build --no-restore
+          --logger "trx;LogFileName=source-architecture-tests.trx" --results-directory ./tests/TestResults
 
       - name: Prepare foundation Testcontainers images
         if: matrix.family != 'core'
@@ -993,8 +1033,12 @@ jobs:
         run: |
           trx_count=$(find tests/TestResults -name '*.trx' 2>/dev/null | wc -l)
           cobertura_count=$(find tests/TestResults -name 'coverage.cobertura.xml' 2>/dev/null | wc -l)
-          expected_trx=$(scripts/ci/run-foundation-family.sh expected-trx-count)
+          expected_trx=$(( $(scripts/ci/run-foundation-family.sh expected-trx-count) + 1 ))
           family_result='${{ needs.dotnet-foundation-family-tests.result }}'
+          if [[ "${family_result}" == success && ! -f tests/TestResults/source-architecture-tests.trx ]]; then
+            echo "::error::Source architecture evidence is missing from successful foundation families."
+            exit 1
+          fi
 
           {
             echo "### .NET Foundation Tests"
@@ -1088,9 +1132,8 @@ jobs:
     # isn't lost. Delete the matrix.advisory clause once #1965 fixes the tests.
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    # Every shard restores and builds its own test project. Waiting for the
-    # independent build/format job added ~14 minutes to the critical path.
-    needs: [changes, targeted-shards]
+    # Explicit producer dependency; only unmaterialized projects compile here.
+    needs: [changes, targeted-shards, build]
     timeout-minutes: ${{ matrix.timeout_minutes }}
     # Advisory shards (matrix.advisory == true in .github/ci-shards.json) RUN and
     # publish results but do NOT gate the merge: continue-on-error is applied to the
@@ -1144,8 +1187,32 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      - name: Select shard managed outputs
+        env:
+          SHARD_CSPROJ: ${{ matrix.csproj }}
+        run: |
+          python3 scripts/ci/managed-test-build.py projects --lane shard \
+            --project "${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}" \
+            --output "${RUNNER_TEMP}/shard-projects.json"
+
+      - name: Consume managed shard outputs
+        id: managed-consume
+        uses: ./.github/actions/managed-test-artifacts
+        with:
+          mode: consume
+          projects-file: ${{ runner.temp }}/shard-projects.json
+          producer-attempt: ${{ needs.build.outputs.producer_attempt }}
+          enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' && matrix.advisory != true }}
+
+      - name: Record managed materialization
+        id: managed-status
+        env:
+          RESTORED_PROJECTS: ${{ steps.managed-consume.outputs.restored-projects-file }}
+        run: echo "restored=$(jq -r 'length > 0' "${RESTORED_PROJECTS}")" >> "$GITHUB_OUTPUT"
+
       - name: Plan shard-local exact-head cache
         id: shard-cache-plan
+        if: steps.managed-status.outputs.restored != 'true'
         shell: bash
         env:
           SHARD_NAME: ${{ matrix.shard_name }}
@@ -1212,6 +1279,7 @@ jobs:
 
       - name: Verify and unpack exact-head shard cache
         id: shard-cache-materialize
+        if: steps.managed-status.outputs.restored != 'true'
         shell: bash
         env:
           CACHE_HIT_FIRST: ${{ steps.shard-cache-download.outputs.cache-hit }}
@@ -1228,33 +1296,16 @@ jobs:
             --cache-hit "${cache_hit}" \
             --read-mode '${{ steps.shard-cache-plan.outputs.restore_mode }}'
 
-      - name: Restore
-        if: steps.shard-cache-materialize.outputs.restored != 'true'
-        # Phase 2 / ADR-0042 routing: each shard targets its declared csproj
-        # (matrix.csproj) and falls back to Honua.Server.Tests.csproj for
-        # legacy shards that have not been migrated to a per-protocol project.
-        env:
-          SHARD_CSPROJ: ${{ matrix.csproj }}
-        run: |
-          csproj="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
-          scripts/ci/dotnet-restore-retry.sh "${csproj}"
-
       - name: Create Test Results Directory
         run: mkdir -p ./tests/TestResults
 
       - name: Build server test binaries
         id: shard-cache-build
-        if: steps.shard-cache-materialize.outputs.restored != 'true'
+        if: steps.managed-status.outputs.restored != 'true' && steps.shard-cache-materialize.outputs.restored != 'true'
         timeout-minutes: 20
         env:
-          SHARD_CSPROJ: ${{ matrix.csproj }}
-        run: |
-          csproj="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
-          dotnet build "${csproj}" \
-            --no-restore \
-            --configuration Release \
-            -graphBuild \
-            /p:RunAnalyzers=false
+          RESTORED_PROJECTS: ${{ steps.managed-consume.outputs.restored-projects-file }}
+        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "${RUNNER_TEMP}/shard-projects.json" --restored-file "${RESTORED_PROJECTS}"
 
       - name: Package shard-local cache payload
         id: shard-cache-package
@@ -1292,7 +1343,7 @@ jobs:
         run: echo "milliseconds=$(( $(date +%s%3N) - ${{ steps.shard-cache-save-start.outputs.epoch_ms }} ))" >> "${GITHUB_OUTPUT}"
 
       - name: Report shard cache decision
-        if: always()
+        if: always() && steps.shard-cache-plan.outcome == 'success'
         shell: bash
         env:
           CACHE_KEY: ${{ steps.shard-cache-plan.outputs.cache_key }}
@@ -2995,7 +3046,7 @@ jobs:
     # NOT this one. Keeping CI Gate off merge_group avoids a misleading all-
     # skipped "pass" status appearing in the queue context.
     if: ${{ github.event_name != 'merge_group' && always() && !cancelled() }}
-    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke]
+    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, format, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
