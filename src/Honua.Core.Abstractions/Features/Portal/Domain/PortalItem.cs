@@ -20,6 +20,11 @@ namespace Honua.Core.Features.Portal.Domain;
 /// </remarks>
 public sealed record PortalItem
 {
+    /// <summary>Category assignments within a group-content response.</summary>
+    [JsonPropertyName("groupCategories")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? GroupCategories { get; init; }
+
     /// <summary>
     /// Stable Portal item identifier. Derived from the Metadata v2 service id so it
     /// is stable across requests and across the search / item-detail endpoints.
