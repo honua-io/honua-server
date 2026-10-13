@@ -336,7 +336,7 @@
     },
     {
       "capability_key": "serve.wps",
-      "surface": "wps",
+      "surface": "wps-2.0.2",
       "operation": "GET /wps?request=GetCapabilities",
       "test_ids": [
         "Wps20EndpointsTests.GetCapabilities_AdvertisesAsyncExecutionForCanonicalProcesses"
@@ -348,7 +348,7 @@
     },
     {
       "capability_key": "serve.wps",
-      "surface": "wps",
+      "surface": "wps-2.0.2",
       "operation": "GET /wps?request=DescribeProcess",
       "test_ids": [
         "Wps20EndpointsTests.DescribeProcess_Kvp_ReturnsNamespaceCorrectDescription",
@@ -362,7 +362,7 @@
     },
     {
       "capability_key": "serve.wps",
-      "surface": "wps",
+      "surface": "wps-2.0.2",
       "operation": "POST /wps",
       "test_ids": [
         "Wps20EndpointsTests.Execute_XmlInputId_SubmitsCanonicalPlan",
@@ -377,7 +377,7 @@
     },
     {
       "capability_key": "serve.wps",
-      "surface": "wps",
+      "surface": "wps-2.0.2",
       "operation": "GET /wps?request=GetStatus",
       "test_ids": [
         "Wps20EndpointsTests.GetStatus_CanonicalRunningJob_ReturnsIdentityAndProgress",
@@ -391,7 +391,7 @@
     },
     {
       "capability_key": "serve.wps",
-      "surface": "wps",
+      "surface": "wps-2.0.2",
       "operation": "GET /wps?request=GetResult",
       "test_ids": [
         "Wps20EndpointsTests.GetResult_MapsAdvertisedResultIdentifierAndLiteralMediaType",

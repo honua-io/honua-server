@@ -144,7 +144,7 @@ class ProtocolHarnessFragmentTests(unittest.TestCase):
         source = (REPOSITORY_ROOT / "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/Wps20EndpointsTests.cs").read_text()
         selected = module.test_filter(value, "Honua.Protocols.OgcClassic.Tests").split("|")
         for row in rows:
-            self.assertEqual("wps", row["surface"])
+            self.assertEqual("wps-2.0.2", row["surface"])
             self.assertIn("positive", row["scenario_facets"])
             for test_id in row["test_ids"]:
                 self.assertEqual("Honua.Protocols.OgcClassic.Tests", module.test_project(test_id))
