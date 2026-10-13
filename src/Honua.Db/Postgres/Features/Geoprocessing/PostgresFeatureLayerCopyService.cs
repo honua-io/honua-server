@@ -74,7 +74,7 @@ internal sealed class PostgresFeatureLayerCopyService(
         long bytes = 0;
         await using (var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false))
         {
-            await using (var create = new NpgsqlCommand(ddl, connection, transaction))
+            await using (var create = new NpgsqlCommand(ddl + "; " + ImportTableOwnership.MarkSql(schema, table), connection, transaction))
             {
                 await create.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -196,8 +196,11 @@ internal sealed class PostgresFeatureLayerCopyService(
         remove.Parameters.AddWithValue("schema", schema);
         remove.Parameters.AddWithValue("table", table);
         await remove.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        await using var drop = new NpgsqlCommand($"DROP TABLE IF EXISTS {Quote(schema)}.{Quote(table)}", connection, transaction);
-        await drop.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        if (await ImportTableOwnership.AssertOwnedAsync(connection, schema, table, cancellationToken).ConfigureAwait(false))
+        {
+            await using var drop = new NpgsqlCommand($"DROP TABLE {Quote(schema)}.{Quote(table)}", connection, transaction);
+            await drop.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
     }
 

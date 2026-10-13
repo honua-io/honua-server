@@ -119,6 +119,7 @@ internal sealed partial class GeoservicesImportService
             {
                 // Readers keep the prior rows during the transfer; writers wait for the swap rather than
                 // committing edits the swap would silently discard.
+                await ImportTableOwnership.AssertExistingOwnedAsync(connection, targetSchema, request.TableName, cancellationToken);
                 await FenceTargetWritesAsync(connection, targetSchema, request.TableName, cancellationToken);
             }
 
@@ -651,6 +652,11 @@ internal sealed partial class GeoservicesImportService
     /// </summary>
     internal static string BuildImportFailureMessage(Exception exception, ImportFailureStage stage)
     {
+        if (exception is ImportTableOwnershipException ownership)
+        {
+            return ownership.Message;
+        }
+
         if (exception is ArcGisAuthenticationException auth)
         {
             return auth.Kind switch
@@ -942,7 +948,7 @@ internal sealed partial class GeoservicesImportService
     {
         var createSql = BuildCreateTableSql(schemaName, tableName, layerInfo, targetSrid);
         await using var createCmd = connection.CreateCommand();
-        createCmd.CommandText = createSql;
+        createCmd.CommandText = createSql + ImportTableOwnership.MarkSql(schemaName, tableName);
         await createCmd.ExecuteNonQueryAsync(cancellationToken);
 
         Log.TableCreated(_logger, tableName);

@@ -731,7 +731,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             // explanation and includes the SQL state code so operators can correlate
             // without leaking provider internals.
             ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
-            errorMessage = $"Import failed: {DescribePostgresError(ex.SqlState)} (SQL state {ex.SqlState}).";
+            errorMessage = ex.SqlState == "HN409"
+                ? $"IMPORT_TARGET_NOT_OWNED: Import target '{request.TableName}' or its staging table is not owned by the importer; it was not modified. Choose a new target or ask the database administrator to adopt a verified legacy import."
+                : $"Import failed: {DescribePostgresError(ex.SqlState)} (SQL state {ex.SqlState}).";
             result = ImportResult.CreateFailure(
                 request.TableName,
                 format ?? SupportedFileFormat.GeoJson,

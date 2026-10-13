@@ -630,7 +630,13 @@ public sealed class PostgresFixture : IAsyncLifetime
     public async Task<string> ProvisionDatabaseAsync(string seedPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(seedPath);
-        var connectionString = await CreateIsolatedDatabaseAsync("odata_pilot").ConfigureAwait(false);
+        // Match the production migration runner and canonical seed. A CI role named
+        // honua otherwise resolves "$user",public to the empty honua.features table.
+        var connectionString = new NpgsqlConnectionStringBuilder(
+            await CreateIsolatedDatabaseAsync("odata_pilot").ConfigureAwait(false))
+        {
+            SearchPath = "public",
+        }.ToString();
         try
         {
             await RunUnderSchemaMutationLockAsync(() =>

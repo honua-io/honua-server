@@ -576,6 +576,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
                 objectid BIGSERIAL PRIMARY KEY,
                 code VARCHAR(3),
                 geom geometry(Point, 4326));
+            COMMENT ON TABLE "{schemaName}"."{TableName}" IS 'honua:import-owned:v1';
             INSERT INTO "{schemaName}"."{TableName}" (code, geom) VALUES
                 ('AAA', ST_SetSRID(ST_MakePoint(-157.0, 21.0), 4326)),
                 ('BBB', ST_SetSRID(ST_MakePoint(-157.5, 21.5), 4326));
