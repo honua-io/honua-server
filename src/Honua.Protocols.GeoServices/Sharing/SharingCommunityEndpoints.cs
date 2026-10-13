@@ -2,7 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Portal.Abstractions;
+using Honua.Core.Features.Portal.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -56,6 +60,16 @@ internal static class SharingCommunityEndpoints
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
             .Produces<GroupResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(StatusCodes.Status404NotFound);
+
+        endpoints.MapGet("/sharing/rest/content/groups/{groupId}", HandleGroupContentAsync)
+            .WithDisplayName("ArcGIS Portal Group Content")
+            .WithName("SharingRestContentGroup")
+            .WithSummary("List readable items shared with a group")
+            .WithTags("GeoServices Sharing")
+            .AllowAnonymous()
+            .Produces<GroupContentResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status404NotFound);
 
         endpoints.MapPost("/sharing/rest/community/groups/{groupId}/delete", HandleDeleteGroupAsync)
@@ -177,6 +191,73 @@ internal static class SharingCommunityEndpoints
         }
 
         return Results.Json(ToGroup(record), SharingRestJsonContext.Default.GroupResponse, contentType: JsonContentType);
+    }
+
+    internal static async Task<IReadOnlyList<GroupResponse>> GetUserGroupsAsync(
+        IPortalGroupStore groupStore, string username, CancellationToken cancellationToken)
+    {
+        var groups = await groupStore.ListAsync(cancellationToken).ConfigureAwait(false);
+        return groups.Where(group => string.Equals(group.Owner, username, StringComparison.OrdinalIgnoreCase) ||
+                group.Members.Contains(username, StringComparer.OrdinalIgnoreCase))
+            .OrderBy(group => group.Id, StringComparer.Ordinal)
+            .Select(ToGroup).ToArray();
+    }
+
+    private static async Task<IResult> HandleGroupContentAsync(
+        HttpContext context,
+        string groupId,
+        [FromServices] IPortalGroupStore groupStore,
+        [FromServices] IPortalItemSharingStore sharingStore,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
+        [FromServices] IPortalItemProjector projector,
+        [FromServices] ILogger<SharingRestLog> logger)
+    {
+        var gate = GateSharingSurface(context, logger);
+        if (gate is not null)
+        {
+            return gate;
+        }
+
+        var caller = RequireAuthenticatedUser(context);
+        if (caller is null)
+        {
+            return StandardErrorHelpers.CreateUnauthorized(context, "Authentication is required to list group content.");
+        }
+
+        var group = await groupStore.GetAsync(groupId, context.RequestAborted).ConfigureAwait(false);
+        // Group content is limited to its owner/members. Public/org visibility of
+        // the group description does not authorize reading the content collection.
+        if (group is null || (!string.Equals(group.Owner, caller, StringComparison.OrdinalIgnoreCase) &&
+                !group.Members.Contains(caller, StringComparer.OrdinalIgnoreCase)))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Group does not exist or is inaccessible.");
+        }
+
+        var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+        var visible = projector.ProjectVisibleItems(snapshot, context.User, BaseUrlResolver.GetBaseUrl(context));
+        var items = new List<PortalItem>();
+        foreach (var item in visible.OrderBy(item => item.Id, StringComparer.Ordinal))
+        {
+            var sharing = await sharingStore.GetAsync(item.Id, context.RequestAborted).ConfigureAwait(false);
+            if (sharing.GroupIds.Contains(groupId, StringComparer.Ordinal))
+            {
+                // The existing store has no category assignments. Sharing is
+                // additive and never bypasses the projector's underlying RBAC.
+                items.Add(item with { GroupCategories = Array.Empty<string>() });
+            }
+        }
+
+        var (start, num) = SharingRestEndpoints.ResolvePaging(context.Request.Query);
+        var skip = start - 1;
+        var page = items.Skip(skip).Take(num).ToArray();
+        return Results.Json(new GroupContentResponse
+        {
+            Total = items.Count,
+            Start = start,
+            Num = page.Length,
+            NextStart = (long)skip + page.Length < items.Count ? start + page.Length : -1,
+            Items = page,
+        }, SharingRestJsonContext.Default.GroupContentResponse, contentType: JsonContentType);
     }
 
     private static async Task<IResult> HandleDeleteGroupAsync(

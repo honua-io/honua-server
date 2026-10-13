@@ -569,9 +569,10 @@ public static class SharingRestEndpoints
         };
     }
 
-    private static IResult HandleCommunitySelfAsync(
+    private static async Task<IResult> HandleCommunitySelfAsync(
         HttpContext context,
         string? f,
+        [FromServices] IPortalGroupStore groupStore,
         [FromServices] ILogger<SharingRestLog> logger)
     {
         var gate = GateReadSurface(context, f, logger);
@@ -595,12 +596,13 @@ public static class SharingRestEndpoints
             Id = ResolveUsername(principal),
             Username = ResolveUsername(principal),
             FullName = ResolveDisplayName(principal),
+            Groups = await SharingCommunityEndpoints.GetUserGroupsAsync(groupStore, ResolveUsername(principal), context.RequestAborted).ConfigureAwait(false),
         };
 
         return Results.Json(response, SharingRestJsonContext.Default.CommunitySelfResponse, contentType: JsonContentType);
     }
 
-    private static IResult HandleCommunityUserAsync(HttpContext context, string username, string? f, ILogger<SharingRestLog> logger)
+    private static async Task<IResult> HandleCommunityUserAsync(HttpContext context, string username, string? f, IPortalGroupStore groupStore, ILogger<SharingRestLog> logger)
     {
         var gate = GateReadSurface(context, f, logger);
         if (gate is not null)
@@ -619,7 +621,8 @@ public static class SharingRestEndpoints
             return StandardErrorHelpers.CreateNotFound(context, "User does not exist or is inaccessible.");
         }
 
-        return Results.Json(new CommunitySelfResponse { Id = current, Username = current, FullName = ResolveDisplayName(context.User) }, SharingRestJsonContext.Default.CommunitySelfResponse, contentType: JsonContentType);
+        var groups = await SharingCommunityEndpoints.GetUserGroupsAsync(groupStore, current, context.RequestAborted).ConfigureAwait(false);
+        return Results.Json(new CommunitySelfResponse { Id = current, Username = current, FullName = ResolveDisplayName(context.User), Groups = groups }, SharingRestJsonContext.Default.CommunitySelfResponse, contentType: JsonContentType);
     }
 
     private static async Task<IResult> HandleContentUserAsync(
@@ -779,7 +782,7 @@ public static class SharingRestEndpoints
         return null;
     }
 
-    private static (int Start, int Num) ResolvePaging(IQueryCollection query)
+    internal static (int Start, int Num) ResolvePaging(IQueryCollection query)
     {
         var start = 1;
         if (int.TryParse(ReadFirst(query["start"]), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedStart) &&

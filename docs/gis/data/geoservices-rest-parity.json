@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "generator": "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityGenerator.cs",
   "trackingIssue": "#2863",
-  "lastReviewed": "2026-09-03",
+  "lastReviewed": "2026-10-12",
   "judgmentSource": "docs/gis/data/geoservices-parity-judgment.json",
   "routeRoster": {
     "derivedFrom": "Honua.Server.EndpointRegistry.All, via the generated feature catalog (tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogGenerator.cs).",
@@ -4234,7 +4234,7 @@
       ],
       "knownGaps": [
         "OAuth2 named-user / authorization-code flow is tracked under a separate ticket",
-        "Portal item, group, and community surfaces (item editing, sharing graph, content listing) are not exposed",
+        "Portal item editing and complete sharing administration are not exposed; current-user/group content reads are partial and production share/unshare refuses all audiences",
         "no refresh-token mechanism; clients re-issue tokens on expiry",
         "no per-token revocation API \u00E2\u20AC\u201D invalidation is TTL- and binding-driven"
       ],
@@ -4381,7 +4381,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "In-memory, single-node, non-durable group overlay (lost on restart, not replicated). Group membership is never consulted by any read path, so it does not affect item visibility. createGroup accepts only title/description/access/tags and silently defaults an unknown access to private; snippet, phone, thumbnail, isViewOnly, isInvitationOnly, capabilities, and membershipAccess are ignored. addUsers/removeUsers ignore admins and return {success, groupId, members} rather than Esri\u0027s notAdded/notRemoved arrays. Private-group existence is not leaked; the owner cannot be removed; owner-or-admin gated."
+            "notes": "In-memory, single-node, non-durable group store (lost on restart, not replicated). Current-user discovery reports actual owner/member groups; membership alone does not grant underlying service access. createGroup accepts title/description/access/tags and defaults unknown access to private; snippet, phone, thumbnail, isViewOnly, isInvitationOnly, capabilities, and membershipAccess are ignored. addUsers/removeUsers ignore admins and return {success, groupId, members} rather than Esri notAdded/notRemoved arrays. Private-group existence is not leaked; the owner cannot be removed; owner-or-admin gated."
           },
           {
             "name": "Community Self",
@@ -4409,7 +4409,21 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Returns id, username and fullName from the authenticated caller\u0027s claims only when the requested username matches the caller (case-insensitive). Anonymous callers get 401; other usernames get 404 without revealing whether they exist. The role remains the fixed org_user value and groups is empty; this is a self-profile projection, not a general user directory or a complete organization profile."
+            "notes": "Returns id, username and fullName from the authenticated caller\u0027s claims only when the requested username matches the caller (case-insensitive). Anonymous callers get 401; other usernames get 404 without revealing whether they exist. The role remains the fixed org_user value and the groups array contains actual owned/member groups from the in-memory community store; this is a self-profile projection, not a general user directory or a complete organization profile."
+          },
+          {
+            "name": "Group Content",
+            "status": "partial",
+            "esriPaths": [
+              "/sharing/rest/content/groups/{groupId}"
+            ],
+            "honuaEndpoints": [
+              "GET /sharing/rest/content/groups/{groupId}"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "Authenticated group owner/member only; missing or inaccessible groups return404 and anonymous requests require authentication. Stable item-id ordering with bounded 1-based start/num pagination, total/start/num/nextStart/items, and empty groupCategories because the store has no categories. Items must satisfy underlying Metadata v2 resource/service RBAC and explicit group sharing state. Production share/unshare currently refuses all audiences, so ordinary API setup cannot create positive shared content; controlled-store tests are not evidence of production sharing authorization. Group and sharing stores are in-memory, single-node and lost on restart."
           },
           {
             "name": "Item; item data",
@@ -4441,7 +4455,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Records sharing intent in an in-memory, single-node store that does not survive restart and is not replicated. It is write-only: no read path consults it, so sharing an item to everyone/org/a group does not change what /search or /content/items/{id} return for any caller \u2014 those project from the Metadata v2 graph and RBAC alone. Item existence is not validated, notSharedWith is always empty (group existence is never checked), and confirmItemControl, bulk items, and folder are ignored. Owner-or-admin gated."
+            "notes": "Requested everyone/org/group audiences are refused and returned in notSharedWith; no sharing state or underlying item authorization is changed. Existing overlay owner or administrator guards remain, but item/group existence and publisher ownership are not validated. confirmItemControl, bulk items, and folder are unsupported. Canonical group-sharing authorization is not yet implemented."
           },
           {
             "name": "User Content",
