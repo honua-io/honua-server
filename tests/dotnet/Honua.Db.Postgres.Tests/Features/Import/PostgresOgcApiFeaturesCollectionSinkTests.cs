@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.FileImport.Abstractions;
@@ -38,6 +39,27 @@ public sealed class PostgresOgcApiFeaturesCollectionSinkTests : IAsyncLifetime
         }
 
         await _fixture.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task EnsureTargetAsync_UnownedTable_RefusesWithoutChangingRowsOrOwnership()
+    {
+        await using var connection = await _fixture.DataSource.OpenConnectionAsync();
+        await using (var create = new NpgsqlCommand($"CREATE TABLE \"{_schema}\".unrelated (sentinel text); INSERT INTO \"{_schema}\".unrelated VALUES ('keep me')", connection))
+        {
+            await create.ExecuteNonQueryAsync();
+        }
+        var target = new OgcApiFeaturesSinkTarget { Schema = _schema!, Table = "unrelated", CollectionId = "roads" };
+
+        await Assert.ThrowsAsync<ImportTableOwnershipException>(
+            () => CreateSink().EnsureTargetAsync(target, CancellationToken.None));
+
+        await using var verify = new NpgsqlCommand($"SELECT sentinel, obj_description('\"{_schema}\".unrelated'::regclass, 'pg_class') FROM \"{_schema}\".unrelated", connection);
+        await using var reader = await verify.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetString(0).Should().Be("keep me");
+        reader.IsDBNull(1).Should().BeTrue();
+        (await reader.ReadAsync()).Should().BeFalse();
     }
 
     [Fact]

@@ -127,6 +127,22 @@ public sealed class OgcApiFeaturesImportServiceTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public async Task ImportCollectionAsync_WithUnownedTarget_ReturnsOwnershipConflictBeforeWriting()
+    {
+        using var httpClient = new HttpClient(new FixtureItemsHandler()) { BaseAddress = new Uri("https://demo.example") };
+        var sink = new UnownedSink();
+        var service = CreateService(httpClient, sink);
+
+        var result = await service.ImportCollectionAsync(NewRequest());
+
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be(ImportTableOwnershipException.Code);
+        result.ErrorMessage.Should().Be(ImportTableOwnershipException.CreateSafeMessage("test_schema.roads"));
+        sink.WriteCalls.Should().Be(0);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public async Task ImportCollectionAsync_WithInvalidServiceUrl_FailsBeforeContactingSource()
     {
         var handler = new FixtureItemsHandler();
@@ -543,6 +559,21 @@ public sealed class OgcApiFeaturesImportServiceTests
             var key = $"{target.Schema}.{target.Table}";
             ScopeSignatures[key] = scopeSignature;
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class UnownedSink : IOgcApiFeaturesCollectionSink
+    {
+        public int WriteCalls { get; private set; }
+
+        public Task EnsureTargetAsync(OgcApiFeaturesSinkTarget target, CancellationToken cancellationToken)
+            => throw new ImportTableOwnershipException(target.Schema, target.Table);
+
+        public Task<int> WriteFeaturesAsync(OgcApiFeaturesSinkTarget target,
+            IReadOnlyList<OgcApiFeaturesSinkFeature> features, CancellationToken cancellationToken)
+        {
+            WriteCalls++;
+            throw new InvalidOperationException("An unowned target must never receive writes.");
         }
     }
 

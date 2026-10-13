@@ -422,6 +422,11 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
                 target: $"{schema}.{table}",
                 warnings: warnings);
         }
+        catch (ImportTableOwnershipException)
+        {
+            return Failure(request, ImportTableOwnershipException.CreateSafeMessage($"{schema}.{table}"),
+                ImportTableOwnershipException.Code, stopwatch.Elapsed, target: $"{schema}.{table}", warnings: warnings);
+        }
         catch (Exception ex) when (IsSinkFailure(ex))
         {
             Log.SinkFailed(_logger, request.CollectionId, $"{schema}.{table}", ex);

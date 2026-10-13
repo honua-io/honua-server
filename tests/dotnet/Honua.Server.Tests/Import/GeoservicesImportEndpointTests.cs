@@ -401,6 +401,58 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/geoservices/start")]
+    [Endpoint("GET /api/v1/admin/import/geoservices/jobs/{jobId}")]
+    public async Task Start_OwnershipConflict_IsAcceptedThenReportsStableTerminalFailure()
+    {
+        const string tableName = "unowned_arcgis_target";
+        var service = Substitute.For<IGeoservicesImportService>();
+        service.ImportLayerAsync(Arg.Any<GeoservicesImportRequest>(), Arg.Any<IProgress<GeoservicesImportProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(call => GeoservicesImportResult.CreateFailure(tableName,
+                call.ArgAt<GeoservicesImportRequest>(0).ServiceUrl, 0,
+                ImportTableOwnershipException.CreateSafeMessage($"honua_data.{tableName}")) with
+            {
+                ErrorCode = ImportTableOwnershipException.Code
+            });
+        var cache = new TrackingDistributedCache();
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise)
+            .ReplaceService<IGeoservicesImportService>(service)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDistributedCache>();
+                services.AddSingleton<IDistributedCache>(cache);
+                services.RemoveAll<IDistributedImportJobManager>();
+                services.AddSingleton<IDistributedImportJobManager>(sp => new RedisImportJobManager(
+                    sp.GetRequiredService<IUniversalProgressStore>(), cache,
+                    sp.GetRequiredService<ILogger<RedisImportJobManager>>(), new StaticHostEnvironment("Test")));
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var response = await fixture.Client.PostAsJsonAsync("/api/v1/admin/import/geoservices/start", new
+            {
+                ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
+                LayerId = 0,
+                TableName = tableName,
+                OverwriteExisting = true,
+                AutoPublish = false
+            });
+            response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+            var accepted = await response.Content.ReadFromJsonAsync<JsonElement>();
+            var jobId = accepted.GetProperty("jobId").GetString()!;
+            using var failed = await WaitForJobStatusAsync(fixture.Client, jobId, GeoservicesImportStatus.Failed, TimeSpan.FromSeconds(20));
+            failed.RootElement.GetProperty("errorCode").GetString().Should().Be(ImportTableOwnershipException.Code);
+            failed.RootElement.GetProperty("errorMessage").GetString().Should().Contain(tableName);
+            failed.RootElement.GetProperty("completedAt").ValueKind.Should().Be(JsonValueKind.String);
+            await service.Received(1).ImportLayerAsync(Arg.Any<GeoservicesImportRequest>(), Arg.Any<IProgress<GeoservicesImportProgress>?>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoservices/start")]
     public async Task Start_WithPlaintextToken_ReturnsBadRequest()
     {
         var request = new

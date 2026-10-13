@@ -344,7 +344,10 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 failedFeatures = currentProgress?.FailedFeatures ?? 0;
                 if (currentProgress != null)
                 {
-                    var clientErrorMessage = result.Success ? result.ErrorMessage : SafeImportFailureMessage;
+                    var clientErrorMessage = result.Success ? result.ErrorMessage
+                        : result.ErrorCode == ImportTableOwnershipException.Code
+                            ? ImportTableOwnershipException.CreateSafeMessage(result.TableName)
+                            : SafeImportFailureMessage;
                     cancellationToken.ThrowIfCancellationRequested();
                     var finalProgress = currentProgress with
                     {
@@ -352,6 +355,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                         FeaturesProcessed = result.FeatureCount,
                         CompletedAt = DateTimeOffset.UtcNow,
                         ErrorMessage = clientErrorMessage,
+                        ErrorCode = result.ErrorCode,
                         Warnings = result.Warnings,
                         DetectedSrid = result.DetectedSrid,
                         CurrentPhase = result.Success ? "Import completed" : "Import failed"

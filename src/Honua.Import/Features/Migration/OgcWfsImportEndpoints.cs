@@ -169,7 +169,9 @@ internal static partial class OgcWfsImportEndpoints
         if (!result.Success)
         {
             await Results.Json(result, OgcWfsImportJsonContext.Default.OgcWfsImportResult,
-                    statusCode: StatusCodes.Status502BadGateway)
+                    statusCode: result.ErrorCode == ImportTableOwnershipException.Code
+                        ? StatusCodes.Status409Conflict
+                        : StatusCodes.Status502BadGateway)
                 .ExecuteAsync(context).ConfigureAwait(false);
             return;
         }

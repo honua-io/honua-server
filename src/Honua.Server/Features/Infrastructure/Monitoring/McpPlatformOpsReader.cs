@@ -194,9 +194,20 @@ internal sealed class McpPlatformOpsReader(
         var action = finding?.RecommendedAction ?? throw new GeoprocessingNotFoundException($"Finding '{findingId}' was not found or has no recommended action.");
         var candidateId = Clean(argument.CandidateId) ?? throw new GeoprocessingValidationException("'candidateId' is required.");
         ValidateFindingCandidateBinding(action.Kind, action.ExecutionPayload, candidateId);
-        if (!OpsFindingEvidenceMap.TryGetActionableRequiredSources(evaluation, finding, out _))
+        if (!OpsFindingEvidenceMap.TryGetActionableRequiredSources(evaluation, finding, out var requiredSources))
             return new McpProposeOperationOutput { Outcome = "Blocked", SupportedKinds = ResolveSupportedKinds(), Message = "evidencePostureNotActionable" };
-        return await SealProposalAsync(principal, action.Kind, action.ExecutionPayload, action.Reason, findingId, cancellationToken, action.ActionDiscriminator).ConfigureAwait(false);
+        return await SealProposalAsync(principal, action.Kind, action.ExecutionPayload, action.Reason, findingId,
+            cancellationToken, action.ActionDiscriminator, new OperationGatewayAutonomyContext
+            {
+                FindingId = finding.Id,
+                Rule = finding.Rule,
+                ActionDiscriminator = action.ActionDiscriminator,
+                ActionMarkedAutoSafe = action.AutoSafe,
+                BlastRadius = Math.Max(1, action.BlastRadius),
+                EvidenceRefs = finding.EvidenceRefs.Concat(requiredSources
+                    .OrderBy(source => source.SourceId, StringComparer.Ordinal)
+                    .Select(source => $"evidence:{source.SourceId}:{source.ObservedAt:O}:{source.Completeness}")).ToArray(),
+            }).ConfigureAwait(false);
     }
 
     internal static void ValidateFindingCandidateBinding(
@@ -318,7 +329,7 @@ internal sealed class McpPlatformOpsReader(
             Clean(argument.IdempotencyKey) ?? $"{idempotencyPrefix}:{targetId}:{desiredRevision}", cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<McpProposeOperationOutput> SealProposalAsync(ClaimsPrincipal principal, OperationClass kind, string? payload, string? reason, string idempotencyKey, CancellationToken cancellationToken, string? actionDiscriminator = null)
+    private async Task<McpProposeOperationOutput> SealProposalAsync(ClaimsPrincipal principal, OperationClass kind, string? payload, string? reason, string idempotencyKey, CancellationToken cancellationToken, string? actionDiscriminator = null, OperationGatewayAutonomyContext? autonomyContext = null)
     {
         var gateway = _services.GetService<IOperationGateway>();
         var envelopeFactory = _services.GetService<IOperationEnvelopeFactory>();
@@ -384,6 +395,7 @@ internal sealed class McpPlatformOpsReader(
             OperationId = LegacyOperationIds.For(kind),
             Kind = kind,
             ActionDiscriminator = actionDiscriminator,
+            AutonomyContext = autonomyContext,
             RequestedBy = actor,
             RequestedByAgent = string.IsNullOrWhiteSpace(actor) ? $"{AgentActorPrefix}mcp" : $"{AgentActorPrefix}{actor}",
             Reason = reason,
