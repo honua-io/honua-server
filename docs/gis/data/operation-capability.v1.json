@@ -7,11 +7,11 @@
     "capabilities": "docs/gis/data/feature-catalog.json"
   },
   "summary": {
-    "operationCount": 496,
+    "operationCount": 497,
     "unresolvedCount": 0,
     "capabilityCount": 23,
     "perSpec": {
-      "admin-api": 403,
+      "admin-api": 404,
       "ogc-api-coverages": 8,
       "ogc-api-features": 19,
       "ogc-api-maps": 10,
@@ -21,7 +21,7 @@
       "studio-api": 23
     },
     "perCapability": {
-      "admin.control-plane": 284,
+      "admin.control-plane": 285,
       "admin.multi-tenancy": 7,
       "alerts.evaluation": 18,
       "analytics.h3": 1,
@@ -656,6 +656,16 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "post-api-v1-admin-connections-id-layers-extents-refresh"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/connections/{id}/layers/jobs/{jobId}",
+      "operationId": "getLayerPublishJobStatus",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-connections-id-layers-jobs-jobid"
     },
     {
       "spec": "admin-api",

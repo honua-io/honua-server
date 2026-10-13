@@ -46,17 +46,17 @@ public sealed class GettingStartedArtifactPinTests
         {
             File.ReadAllText(file).Should().NotContain("@sha256:", Path.GetFileName(file));
         }
-        firstDataset.Should().Contain("@honua/sdk-js@0.1.13");
-        registryClients.Should().Contain("`@honua/sdk-js@0.1.13`");
-        registryClients.Should().Contain("`create-honua-app@0.1.6`");
-        registryClients.Should().Contain("`Honua.Sdk` `1.10.3`");
-        registryClients.Should().Contain("`Honua.Sdk.Admin` `1.10.3`");
-        dotnetGettingStarted.Should().Contain("Honua.Sdk --version 1.10.3");
+        firstDataset.Should().Contain("@honua/sdk-js@0.1.16");
+        registryClients.Should().Contain("`@honua/sdk-js@0.1.16`");
+        registryClients.Should().Contain("`create-honua-app@0.1.9`");
+        registryClients.Should().Contain("`Honua.Sdk` `1.11.0`");
+        registryClients.Should().Contain("`Honua.Sdk.Admin` `1.11.0`");
+        dotnetGettingStarted.Should().Contain("Honua.Sdk --version 1.11.0");
 
         var journey = string.Join('\n', quickstart, firstDataset, firstMap, linuxPackages,
             registryClients, windowsPackages, dotnetGettingStarted);
-        journey.Should().Contain("honua-sdk==0.1.13");
-        journey.Should().Contain("honua-admin==0.1.10");
+        journey.Should().Contain("honua-sdk==0.1.16");
+        journey.Should().Contain("honua-admin==0.1.12");
         journey.Should().NotContain("@sha256:",
             "no getting-started page hand-copies an image digest");
         journey.Should().NotContain(ServerImageDigestPrefix,

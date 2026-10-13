@@ -1432,7 +1432,7 @@
           "Layers"
         ],
         "summary": "Publish Layer",
-        "description": "Publish a PostGIS table as a layer",
+        "description": "Publish a PostGIS table as a layer. Publications at or under the configured asynchronous row threshold return 201. Larger publications return 202 with a polling URL when a background runner is available; hosts without a compatible runner return a typed 503 refusal.",
         "operationId": "publishLayer",
         "parameters": [
           {
@@ -1480,6 +1480,34 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "202": {
+            "description": "Publication accepted for background execution.",
+            "headers": {
+              "Location": {
+                "description": "Relative URL for polling publication progress.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLayerPublishAccepted"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The frozen host has no compatible durable remote publication runner. Redis availability alone does not make a worker available. No publication job is accepted.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerPublishUnavailableProblem"
+                }
+              }
+            }
           }
         }
       }
@@ -20803,6 +20831,57 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/connections/{id}/layers/jobs/{jobId}": {
+      "get": {
+        "tags": [
+          "Layers"
+        ],
+        "summary": "Get Layer Publication Job Status",
+        "description": "Returns publication progress visible to the current tenant and connection. Unknown jobs and jobs outside that tenant or connection return 404. A completed job includes its committed layer identifier.",
+        "operationId": "getLayerPublishJobStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Connection identifier used when publication was accepted.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "description": "Publication job identifier returned by the 202 response.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Publication job progress.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLayerPublishJobStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       }
@@ -48205,6 +48284,167 @@
             "format": "date-time"
           }
         }
+      },
+      "LayerPublishAcceptedResponse": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "statusUrl",
+          "rowsTotal",
+          "status"
+        ],
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "statusUrl": {
+            "type": "string",
+            "description": "Relative URL for polling publication progress."
+          },
+          "rowsTotal": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Queued"
+            ]
+          }
+        }
+      },
+      "LayerPublishJobStatusResponse": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "status",
+          "rowsMaterialized",
+          "rowsTotal"
+        ],
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Queued",
+              "Processing",
+              "Completed",
+              "Failed",
+              "Cancelled"
+            ]
+          },
+          "rowsMaterialized": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Confirmed materialized rows. If live progress expires before completion, zero is a conservative lower bound rather than a current copy measurement; completion uses the recorded actual count."
+          },
+          "rowsTotal": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Source count, updated to the actual materialization observation when reported by the worker."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "description": "Published layer identifier after the transaction commits."
+          },
+          "errorMessage": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ApiResponseLayerPublishAccepted": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LayerPublishAcceptedResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseLayerPublishJobStatus": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LayerPublishJobStatusResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "LayerPublishUnavailableProblem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "type": "object",
+            "required": [
+              "status",
+              "code",
+              "capability",
+              "missingDependency",
+              "remediation",
+              "remediationRef"
+            ],
+            "properties": {
+              "status": {
+                "type": "integer",
+                "enum": [
+                  503
+                ]
+              },
+              "code": {
+                "type": "string",
+                "enum": [
+                  "durable-runner-required"
+                ]
+              },
+              "capability": {
+                "type": "string",
+                "enum": [
+                  "jobs.runner"
+                ]
+              },
+              "missingDependency": {
+                "type": "string",
+                "enum": [
+                  "layer-publish-runner"
+                ]
+              },
+              "remediation": {
+                "type": "string"
+              },
+              "remediationRef": {
+                "type": "string",
+                "format": "uri"
+              }
+            }
+          }
+        ]
       }
     }
   }

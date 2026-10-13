@@ -118,6 +118,12 @@ internal sealed partial class PortalTokenIssuer(
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        if ((request.ClientType is null && request.BindingValue is not null) ||
+            (request.ClientType is not null && string.IsNullOrWhiteSpace(request.BindingValue)))
+        {
+            return null;
+        }
+
         // The presented token authenticates the exchange, so it passes exactly the checks a
         // request presenting it anywhere else passes, binding included (#5491 review).
         var presented = await RestoreBoundRecordAsync(
@@ -128,6 +134,14 @@ internal sealed partial class PortalTokenIssuer(
         {
             return null;
         }
+
+        // ArcGIS federated-server exchanges may send only token and serverUrl.
+        // In that case the new server token keeps the validated portal token's
+        // binding; never infer a new binding from an unauthenticated request.
+        var clientType = request.ClientType ?? presented.ClientType;
+        var bindingValue = request.ClientType is null
+            ? presented.BindingValue
+            : request.BindingValue!;
 
         // Derive from the stored record, not from a reduced view of it: the persisted roles,
         // their claims-mapping provenance and fallback, the tenant's provenance and the backing
@@ -144,9 +158,9 @@ internal sealed partial class PortalTokenIssuer(
             RolesRequireClaimsMappingEntitlement = presented.RolesRequireClaimsMappingEntitlement,
             RolesWithoutClaimsMapping = presented.RolesWithoutClaimsMapping,
             TenantRequiresClaimsMappingEntitlement = presented.TenantRequiresClaimsMappingEntitlement,
-            ClientType = request.ClientType,
-            BindingValue = NormalizeBindingValue(request.ClientType, request.BindingValue),
-            AcceptMissingReferer = request.ClientType == PortalTokenClientType.Referer && presented.AcceptMissingReferer,
+            ClientType = clientType,
+            BindingValue = NormalizeBindingValue(clientType, bindingValue),
+            AcceptMissingReferer = clientType == PortalTokenClientType.Referer && presented.AcceptMissingReferer,
             ExpiresAt = expiresAt,
             Source = presented.Source,
         };
@@ -161,7 +175,8 @@ internal sealed partial class PortalTokenIssuer(
         return new PortalTokenExchange(
             new PortalTokenIssuance(token, expiresAt),
             presented.PrincipalId,
-            presented.TenantId);
+            presented.TenantId,
+            clientType);
     }
 
     /// <inheritdoc />

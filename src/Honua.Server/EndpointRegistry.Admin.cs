@@ -70,6 +70,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/external-services/discover"),
         new("GET", "/api/v1/admin/connections/{id}/layers"),
         new("POST", "/api/v1/admin/connections/{id}/layers"),
+        new("GET", "/api/v1/admin/connections/{id}/layers/jobs/{jobId}"),
         new("POST", "/api/v1/admin/connections/{id}/layers/extents/refresh"),
         new("POST", "/api/v1/admin/connections/{id}/layers/{layerId}/features/refresh"),
         new("PUT", "/api/v1/admin/connections/{id}/layers/{layerId}/enabled"),
