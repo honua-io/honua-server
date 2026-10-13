@@ -26,4 +26,3 @@ public sealed record LayerPublishAdmission(
     string? JobId,
     long RowsTotal,
     string? StatusUrl);
-

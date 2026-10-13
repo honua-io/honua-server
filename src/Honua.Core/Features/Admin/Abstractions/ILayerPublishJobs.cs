@@ -31,4 +31,3 @@ public interface ILayerPublishJobs
     /// <param name="cancellationToken">Cancellation for the read.</param>
     Task<LayerPublishJobProgress?> GetAsync(string jobId, CancellationToken cancellationToken);
 }
-
