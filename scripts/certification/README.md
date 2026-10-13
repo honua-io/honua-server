@@ -47,3 +47,10 @@ Scheduled or manual runs without both context inputs run the same runtime tests
 and retain TRX files under `server-protocol-harness-runtime-<run>-<attempt>`. They
 emit no certification fragment. A nonzero test exit still fails the workflow.
 A dispatch with context also supplies an explicit candidate cut timestamp.
+
+Execution metadata names the canonical source harness and its contract revision,
+with profile `source-test-host-http-adapter`. The TRX records actual test methods
+and outcomes but does not capture an absolute request URL; `request_url` is
+therefore null. The receipt payload binds this execution metadata alongside
+the test outcomes. This profile neither claims a network endpoint nor TLS, and
+requires the corresponding narrowly scoped evidence collector support.

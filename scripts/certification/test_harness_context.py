@@ -1,4 +1,5 @@
 import copy
+import base64
 import hashlib
 import json
 import os
@@ -47,6 +48,27 @@ class HarnessContextTests(unittest.TestCase):
             args.requirements_context.write_text(json.dumps(context))
             changed = module.build_fragment(value, outcomes, args)
             self.assertNotEqual(changed['observations'][0]['evidence_digest'], digest)
+
+    def test_execution_metadata_binds_source_host_semantics_without_inventing_url(self):
+        value = contract()
+        with governed_fixture(value, execution_args()) as args:
+            observation = module.build_fragment(value, {'ExampleTests.Get_ReturnsDocument': 'pass'}, args)['observations'][0]
+            payload = json.loads(base64.b64decode(observation['evidence_receipt']['payload_base64']))
+            execution = payload['execution']
+            self.assertEqual(execution, {key: observation[key] for key in execution})
+            self.assertEqual(execution['client_id'], value['canonical_client'])
+            self.assertEqual(execution['performed_by'], value['canonical_client'])
+            self.assertEqual(execution['runner_lane'], value['client_lane'])
+            self.assertEqual(execution['protocol_version'], value['revision'])
+            self.assertEqual(execution['protocol_profile'], 'source-test-host-http-adapter')
+            self.assertEqual(execution['exercised_capabilities'], value['assignments'][0]['scenario_facets'])
+            self.assertIsNone(execution['request_url'])
+            self.assertEqual(payload['test_outcomes'], {'ExampleTests.Get_ReturnsDocument': 'pass'})
+            before = observation['evidence_digest']
+            payload['execution']['request_url'] = 'https://unobserved.example.test/'
+            changed = copy.deepcopy(observation['evidence_receipt'])
+            changed['payload_base64'] = base64.b64encode(module.canonical_bytes(payload)).decode('ascii')
+            self.assertNotEqual('sha256:' + hashlib.sha256(module.canonical_bytes(changed)).hexdigest(), before)
 
     def test_actual_matrix_emits_only_implemented_rows_but_filters_all_declared_tests(self):
         value = module.load_contract(CONTRACT)

@@ -197,7 +197,19 @@ def build_fragment(contract: dict, outcomes: dict[str, str], args: argparse.Name
             "completed_at": args.completed_at,
             "test_ids": test_ids,
         }
+        execution = {
+            "client_id": contract["canonical_client"],
+            "runner_lane": contract["client_lane"],
+            "protocol_version": contract["revision"],
+            "protocol_profile": "source-test-host-http-adapter",
+            "performed_by": contract["canonical_client"],
+            # TRX identifies in-memory HTTP test methods, not a captured request
+            # URL. Never invent an endpoint from a templated operation label.
+            "request_url": None,
+            "exercised_capabilities": assignment["scenario_facets"],
+        }
         payload = {
+            "execution": execution,
             "contract_revision": contract_revision,
             "test_outcomes": {test_id: outcomes[test_id] for test_id in test_ids},
         }
@@ -210,6 +222,7 @@ def build_fragment(contract: dict, outcomes: dict[str, str], args: argparse.Name
         }
         digest = "sha256:" + hashlib.sha256(canonical_bytes(receipt)).hexdigest()
         observations.append({
+            **execution,
             "capability_key": assignment["capability_key"],
             "maturity": requirement["maturity"],
             "required_tier": requirement["required_tier"],
