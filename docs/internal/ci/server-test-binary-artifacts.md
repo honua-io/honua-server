@@ -18,9 +18,11 @@ Full formatting runs independently with its complete restore context.
 
 The producer publishes one pristine artifact per selected test project before
 any test or coverage collector can instrument outputs. Transfers are sequential:
-only one temporary archive is staged at a time. A ten-minute total transfer
-budget bounds outages; remaining projects then use the fallback path. Each consumer downloads only its
-project set, verifies it, and runs its existing tests with `--no-build
+only one temporary archive is staged at a time. Publication sends
+`Honua.Server.Tests` first because it serves the most consumers; remaining
+projects retain caller order. A ten-minute total transfer budget bounds outages;
+remaining projects then use the fallback path. Each consumer downloads only its
+project set in caller order, verifies it, and runs its existing tests with `--no-build
 --no-restore`. Coverlet operates on the consumer's private copy. The full
 reflection architecture collector remains required; splitting source guards
 does not remove or defer that coverage.
@@ -77,8 +79,8 @@ from required verification.
 
 The transport writes per-project receipts with artifact IDs, source and archive
 hashes, restoration status, and fallback reasons in the runner temporary
-directory, with durable per-project outcomes in the job summary. Existing TRX, shard timing, and required aggregate checks remain the
-execution evidence. The artifact SDK is pinned with a lockfile in
+directory, with durable per-project outcomes in the job summary. Existing TRX,
+shard timing, and required aggregate checks remain the execution evidence. The artifact SDK is pinned with a lockfile in
 `.github/actions/managed-test-artifacts`; no NuGet package is published to move
 these outputs.
 

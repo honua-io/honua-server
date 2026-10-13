@@ -124,6 +124,12 @@ export async function run(options, deps = {}) {
     return {project, suffix: found[0].artifact_suffix};
   });
   if (new Set(entries.map(e => e.suffix)).size !== entries.length) throw Error('Duplicate artifact suffix');
+  // Publish the highest fan-out assembly before spending the shared transfer
+  // budget on other outputs. Consumers preserve their requested restore order.
+  if (options.mode === 'publish') {
+    const server = entries.findIndex(entry => entry.project === 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj');
+    if (server > 0) entries.unshift(...entries.splice(server, 1));
+  }
   sourceSha = (await runner('git', ['rev-parse', 'HEAD'])).stdout.trim();
   if (!/^[a-f0-9]{40}$/.test(sourceSha)) throw Error('Invalid checkout source identity');
   const identity = {HONUA_SERVER_TEST_ARTIFACT_WORKFLOW_RUN_ID: env.GITHUB_RUN_ID,

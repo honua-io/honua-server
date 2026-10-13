@@ -169,3 +169,34 @@ test('bounded shell runner kills TERM-ignoring descendants before payload reuse'
  await new Promise(resolve => setTimeout(resolve, 2300));
  assert.deepEqual(await readdir(payload), ['next-project']);
 });
+
+test('publication gives Server.Tests the budget first; remaining order and consume order stay unchanged',async t=>{
+ const f=await fixture(t);
+ const server='tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj';
+ const other='tests/dotnet/Other.Tests/Other.Tests.csproj';
+ const requested=[project,other,server];
+ const suffixes=new Map([[project,'fixture'],[other,'other'],[server,'server']]);
+ await writeFile(f.opts.projectsFile,JSON.stringify(requested));
+ await writeFile(path.join(f.root,'.github/server-test-artifact-projects.json'),JSON.stringify({projects:requested.map(csproj=>({csproj,artifact_suffix:suffixes.get(csproj)}))}));
+ let now=0;const built=[],published=[];f.deps.now=()=>now;
+ f.deps.runner=async(file,args,identity)=>{
+   if(file==='git')return f.runner(file,args,identity);
+   const current=args[args.indexOf('--project')+1],temp=args[args.indexOf('--output')+1];
+   built.push(current);const suffix=suffixes.get(current);
+   await writeFile(path.join(temp,`server-test-binaries-${suffix}.manifest.json`),JSON.stringify({archive_sha256:'b'.repeat(64)}));
+   await writeFile(path.join(temp,`server-test-binaries-${suffix}.tar.gz`),'payload');return {stdout:''};
+ };
+ f.artifact.uploadArtifact=async name=>{published.push(name);now=600000;return {id:42};};
+ const result=await run({...f.opts,mode:'publish'},f.deps);
+ assert.deepEqual(built,[server]);assert.deepEqual(published,['managed-tests-2-server']);
+ assert.deepEqual((await receipt(result)).projects.map(p=>[p.project,p.status,p.reason]),[
+   [server,'published',undefined],[project,'unrestored','transport-budget-exhausted'],[other,'unrestored','transport-budget-exhausted']]);
+ // With enough budget, only Server.Tests moves; other caller order is stable.
+ now=0;built.length=0;published.length=0;
+ f.artifact.uploadArtifact=async name=>{published.push(name);return {id:42};};
+ await run({...f.opts,mode:'publish'},f.deps);assert.deepEqual(built,[server,project,other]);
+ const retrieved=[];f.deps.runner=f.runner;
+ f.artifact.getArtifact=async name=>{retrieved.push(name);return {artifact:{id:retrieved.length,size:100}};};
+ f.artifact.downloadArtifact=async(id,{path:temp})=>writeFile(path.join(temp,`server-test-binaries-${suffixes.get(requested[id-1])}.manifest.json`),JSON.stringify({archive_sha256:'b'.repeat(64)}));
+ await run(f.opts,f.deps);assert.deepEqual(retrieved,['managed-tests-2-fixture','managed-tests-2-other','managed-tests-2-server']);await cleaned(f.root);
+});
