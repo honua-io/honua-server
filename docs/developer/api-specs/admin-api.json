@@ -1500,11 +1500,11 @@
             }
           },
           "503": {
-            "description": "No compatible background publication runner is available.",
+            "description": "The frozen host has no compatible durable remote publication runner. Redis availability alone does not make a worker available. No publication job is accepted.",
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/LayerPublishUnavailableProblem"
                 }
               }
             }
@@ -48266,11 +48266,15 @@
           },
           "rowsMaterialized": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "minimum": 0,
+            "description": "Actual observed materialized rows."
           },
           "rowsTotal": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "minimum": 0,
+            "description": "Source count, updated to the actual materialization observation when reported by the worker."
           },
           "layerId": {
             "type": "integer",
@@ -48319,6 +48323,57 @@
             "format": "date-time"
           }
         }
+      },
+      "LayerPublishUnavailableProblem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "type": "object",
+            "required": [
+              "status",
+              "code",
+              "capability",
+              "missingDependency",
+              "remediation",
+              "remediationRef"
+            ],
+            "properties": {
+              "status": {
+                "type": "integer",
+                "enum": [
+                  503
+                ]
+              },
+              "code": {
+                "type": "string",
+                "enum": [
+                  "durable-runner-required"
+                ]
+              },
+              "capability": {
+                "type": "string",
+                "enum": [
+                  "jobs.runner"
+                ]
+              },
+              "missingDependency": {
+                "type": "string",
+                "enum": [
+                  "layer-publish-runner"
+                ]
+              },
+              "remediation": {
+                "type": "string"
+              },
+              "remediationRef": {
+                "type": "string",
+                "format": "uri"
+              }
+            }
+          }
+        ]
       }
     }
   }
