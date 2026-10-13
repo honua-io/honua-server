@@ -58,6 +58,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
     [IntegrationTheory]
     [InlineData("<VID />")]
     [InlineData("")]
+    [Operation(Operations.Metadata)]
     [InterfaceOperation(TestProtocols.ImageServer, "GetView")]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task GetView_DefaultViewUsesResolvedRasterMetadata(string viewIdElement)
@@ -90,6 +91,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
     [InterfaceOperation(TestProtocols.ImageServer, "GetView")]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task GetView_UnknownNamedViewIsNotTheDefaultView()
