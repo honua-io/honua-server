@@ -133,6 +133,56 @@ class ProtocolHarnessFragmentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no governed tests belong"):
             module.test_filter(value, "Honua.Server.Tests")
 
+    def test_wps_contract_covers_advertised_operations_in_the_owning_project(self):
+        value = module.load_contract(CONTRACT)
+        rows = [row for row in value["assignments"] if row["capability_key"] == "serve.wps"]
+        self.assertEqual({
+            "GET /wps?request=GetCapabilities", "GET /wps?request=DescribeProcess",
+            "POST /wps?request=Execute", "GET /wps?request=GetStatus", "GET /wps?request=GetResult",
+        }, {row["operation"] for row in rows})
+        self.assertEqual(5, len(rows))
+        source = (REPOSITORY_ROOT / "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/Wps20EndpointsTests.cs").read_text()
+        selected = module.test_filter(value, "Honua.Protocols.OgcClassic.Tests").split("|")
+        for row in rows:
+            self.assertEqual("wps", row["surface"])
+            self.assertIn("positive", row["scenario_facets"])
+            for test_id in row["test_ids"]:
+                self.assertEqual("Honua.Protocols.OgcClassic.Tests", module.test_project(test_id))
+                self.assertIn("FullyQualifiedName~" + test_id, selected)
+                self.assertIn("public async Task " + test_id.split(".")[1] + "()", source)
+                self.assertNotIn("ConformanceEcho", test_id)
+        self.assertNotIn("Wps20EndpointsTests", module.test_filter(value, "Honua.Server.Tests"))
+        self.assertEqual("source-test-host", value["deployment_target"])
+
+    def test_wps_fragment_retains_failed_operation_and_refuses_missing_results(self):
+        value = module.load_contract(CONTRACT)
+        value["assignments"] = [row for row in value["assignments"] if row["capability_key"] == "serve.wps"]
+        expected = {test_id for row in value["assignments"] for test_id in row["test_ids"]}
+        failed = "Wps20EndpointsTests.GetStatus_CanonicalRunningJob_ReturnsIdentityAndProgress"
+        results = [(test_id, "Failed" if test_id == failed else "Passed") for test_id in sorted(expected)]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "wps.trx"
+            path.write_text(trx(results, summary="Failed", counters={
+                "total": len(results), "executed": len(results), "passed": len(results) - 1,
+                "failed": 1, "notExecuted": 0,
+            }))
+            outcomes = module.parse_trx(path, expected)
+            path.write_text(trx([(test_id, "Passed") for test_id in sorted(expected - {failed})]))
+            with self.assertRaisesRegex(ValueError, "missing governed test results"):
+                module.parse_trx(path, expected)
+        args = Namespace(
+            source_sha="a" * 40, producer_source_sha="b" * 40,
+            image_digest="sha256:" + "c" * 64,
+            candidate_cut_at="2026-08-21T00:00:00Z", started_at="2026-08-21T01:00:00Z",
+            completed_at="2026-08-21T01:01:00Z", generated_at="2026-08-21T01:02:00Z",
+        )
+        observations = module.build_fragment(value, outcomes, args)["observations"]
+        self.assertEqual(5, len(observations))
+        for row in observations:
+            self.assertEqual("fail" if row["operation"] == "GET /wps?request=GetStatus" else "pass", row["result"])
+            self.assertEqual(row["test_ids"], row["evidence_receipt"]["identity"]["test_ids"])
+            self.assertIsNone(row["image_digest"])
+
     def test_exact_pass_is_bound_to_test_ids(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "results.trx"

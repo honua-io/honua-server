@@ -333,6 +333,74 @@
       "operation": "GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins",
       "test_ids": ["FeatureServerQueryDateBinsTests.QueryDateBins_CalendarBin_ReturnsBins"],
       "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "serve.wps",
+      "surface": "wps",
+      "operation": "GET /wps?request=GetCapabilities",
+      "test_ids": [
+        "Wps20EndpointsTests.GetCapabilities_AdvertisesAsyncExecutionForCanonicalProcesses"
+      ],
+      "scenario_facets": [
+        "positive",
+        "media-schema"
+      ]
+    },
+    {
+      "capability_key": "serve.wps",
+      "surface": "wps",
+      "operation": "GET /wps?request=DescribeProcess",
+      "test_ids": [
+        "Wps20EndpointsTests.DescribeProcess_Kvp_ReturnsNamespaceCorrectDescription",
+        "Wps20EndpointsTests.DescribeProcess_NonJobProcess_ReturnsNoSuchProcess"
+      ],
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "media-schema"
+      ]
+    },
+    {
+      "capability_key": "serve.wps",
+      "surface": "wps",
+      "operation": "POST /wps?request=Execute",
+      "test_ids": [
+        "Wps20EndpointsTests.Execute_XmlInputId_SubmitsCanonicalPlan",
+        "Wps20EndpointsTests.Execute_WithoutDurableJobStore_ProjectsCapabilityUnavailableReceiptIntoExceptionReport",
+        "Wps20EndpointsTests.Execute_XmlWithDtd_IsRejectedWithoutEntityExpansion"
+      ],
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "media-schema"
+      ]
+    },
+    {
+      "capability_key": "serve.wps",
+      "surface": "wps",
+      "operation": "GET /wps?request=GetStatus",
+      "test_ids": [
+        "Wps20EndpointsTests.GetStatus_CanonicalRunningJob_ReturnsIdentityAndProgress",
+        "Wps20EndpointsTests.GetStatus_UnknownJob_ReturnsOwsExceptionReport"
+      ],
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "media-schema"
+      ]
+    },
+    {
+      "capability_key": "serve.wps",
+      "surface": "wps",
+      "operation": "GET /wps?request=GetResult",
+      "test_ids": [
+        "Wps20EndpointsTests.GetResult_MapsAdvertisedResultIdentifierAndLiteralMediaType",
+        "Wps20EndpointsTests.GetResult_ExposesEveryArtifactOutput"
+      ],
+      "scenario_facets": [
+        "positive",
+        "media-schema"
+      ]
     }
   ]
 }
