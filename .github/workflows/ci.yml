@@ -820,6 +820,42 @@ jobs:
           projects-file: ${{ runner.temp }}/managed-projects.json
           enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' }}
 
+      # Observe where the normal producer has all inspected/reference outputs.
+      # The complete collector remains required in the downstream server family;
+      # this adds only a small CI tool build, no inspected build or transport.
+      - name: Build source inventory observation tool
+        if: vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'
+        timeout-minutes: 5
+        run: >-
+          dotnet build eng/ci/Honua.Ci.SourceInventory/Honua.Ci.SourceInventory.csproj
+          --configuration Release -p:TreatWarningsAsErrors=true -p:UseSharedCompilation=false
+
+      - name: Verify source inventory fixture semantics
+        if: vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'
+        timeout-minutes: 3
+        run: |
+          dotnet eng/ci/Honua.Ci.SourceInventory/bin/Release/net10.0/Honua.Ci.SourceInventory.dll self-test
+          python3 scripts/ci/source-inventory-pilot/test_run.py
+
+      - name: Observe source inventory metadata parity
+        if: vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'
+        timeout-minutes: 15
+        continue-on-error: true
+        run: >-
+          python3 scripts/ci/source-inventory-pilot/run.py
+          --tool eng/ci/Honua.Ci.SourceInventory/bin/Release/net10.0/Honua.Ci.SourceInventory.dll
+
+      - name: Upload producer source inventory observations
+        if: always() && vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'
+        uses: actions/upload-artifact@v7
+        timeout-minutes: 3
+        with:
+          name: source-inventory-pilot-${{ github.run_attempt }}
+          path: tests/TestResults/source-inventory-pilot/
+          if-no-files-found: warn
+          retention-days: 7
+
+
   format:
     name: Format Check
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
@@ -969,30 +1005,6 @@ jobs:
       - name: Run foundation family tests
         timeout-minutes: 45
         run: scripts/ci/run-foundation-family.sh run ${{ matrix.family }}
-
-      # Observe metadata only after the authoritative compiled collector. This
-      # adds one small tool build, never another inspected test-project build.
-      - name: Build source inventory observation tool
-        if: matrix.family == 'server' && vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'
-        timeout-minutes: 5
-        run: >-
-          dotnet build eng/ci/Honua.Ci.SourceInventory/Honua.Ci.SourceInventory.csproj
-          --configuration Release -p:TreatWarningsAsErrors=true -p:UseSharedCompilation=false
-
-      - name: Verify source inventory fixture semantics
-        if: matrix.family == 'server' && vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'
-        timeout-minutes: 3
-        run: |
-          dotnet eng/ci/Honua.Ci.SourceInventory/bin/Release/net10.0/Honua.Ci.SourceInventory.dll self-test
-          python3 scripts/ci/source-inventory-pilot/test_run.py
-
-      - name: Observe source inventory metadata parity
-        if: matrix.family == 'server' && vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'
-        timeout-minutes: 15
-        continue-on-error: true
-        run: >-
-          python3 scripts/ci/source-inventory-pilot/run.py
-          --tool eng/ci/Honua.Ci.SourceInventory/bin/Release/net10.0/Honua.Ci.SourceInventory.dll
 
       - name: Upload foundation family test results
         uses: actions/upload-artifact@v7

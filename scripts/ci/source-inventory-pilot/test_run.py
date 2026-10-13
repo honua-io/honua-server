@@ -4,6 +4,8 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import subprocess
+import xml.etree.ElementTree as ET
 import unittest
 from unittest.mock import patch
 
@@ -75,6 +77,33 @@ class DriverTests(unittest.TestCase):
             self.assertFalse(result['binarySourceBindingVerified'])
             self.assertFalse(result['projects'][0]['qualified'])
             self.assertFalse(result['projects'][0]['binarySourceBindingVerified'])
+
+    def test_hosted_pilot_runs_with_normal_producer_outputs_and_retains_reports(self):
+        root = Path(__file__).resolve().parents[3]
+        workflow = (root / '.github/workflows/ci.yml').read_text()
+        producer = workflow.split('\n  build:\n', 1)[1].split('\n  format:\n', 1)[0]
+        consumer = workflow.split('\n  dotnet-foundation-family-tests:\n', 1)[1].split('\n  dotnet-foundation-tests:\n', 1)[0]
+        ordered = ['- name: Build (warnings as errors)', '- name: Publish managed test outputs',
+                   '- name: Build source inventory observation tool', '- name: Verify source inventory fixture semantics',
+                   '- name: Observe source inventory metadata parity', '- name: Upload producer source inventory observations']
+        positions = [producer.index(step) for step in ordered]
+        self.assertEqual(sorted(positions), positions)
+        self.assertNotIn('source inventory', consumer)
+        observation = producer.split('- name: Observe source inventory metadata parity', 1)[1].split('- name:', 1)[0]
+        self.assertIn('continue-on-error: true', observation)
+        fixtures = producer.split('- name: Verify source inventory fixture semantics', 1)[1].split('- name:', 1)[0]
+        self.assertNotIn('continue-on-error', fixtures)
+        self.assertIn('if: always()', producer.split('- name: Upload producer source inventory observations', 1)[1])
+        self.assertIn('path: tests/TestResults/source-inventory-pilot/', producer)
+        self.assertIn('scripts/ci/run-foundation-family.sh run', consumer)
+        self.assertIn('--lane ci', producer)
+        family = subprocess.check_output(['bash', 'scripts/ci/run-foundation-family.sh', 'build-projects', 'server'], cwd=root, text=True).splitlines()
+        self.assertIn('tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj', family)
+        collector = ET.parse(root / 'tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj')
+        self.assertTrue(any('test-coverage-projects.props' in item.get('Project', '') for item in collector.findall('.//Import')))
+        coverage = ET.parse(root / '.github/test-coverage-projects.props')
+        references = {item.get('Include', '').replace('$(MSBuildThisFileDirectory)../', '') for item in coverage.findall('.//ProjectReference')}
+        self.assertTrue(set(pilot.DEFAULT_PROJECTS) <= references)
 
     def test_invalid_evaluation_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:

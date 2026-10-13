@@ -96,7 +96,7 @@ cases prove changed coverage and conditional discovery cannot qualify.
 
 The focused CI-tool build passed Release warnings-as-errors with zero warnings
 and errors; all fourteen executed synthetic semantic/reflection assertions and
-five offline driver fixtures passed. The local design-time driver smoke did
+six offline driver fixtures passed. The local design-time driver smoke did
 **not** qualify source inventory: the shared Flow admission parser returned exit
 75 for an unsupported read-only MSBuild inventory option before starting the SDK.
 No wrapper bypass, admission change, inspected compilation or production build
@@ -112,9 +112,15 @@ The existing foundation test-results upload retains its evidence. Set repository
 variable `HONUA_SOURCE_INVENTORY_PILOT=false` to disable the pilot without affecting
 any existing checks. Other callers can use the following insertion pattern.
 
-Insert these steps **after existing normal test outputs, projection regeneration
-and the complete collector have run** in the same checkout/job. Do not add
-another solution/test-project build. If a consumer has only restored test outputs
+Insert these steps **in the managed build producer, after its normal managed
+build and pristine output publication**. Its server-family build selection includes
+Architecture.Tests, whose generated coverage references include all three pilot
+projects, and project references materialize their metadata dependencies. The
+complete collector remains mandatory in the downstream server-family consumer;
+this placement does not replace or defer it. A restored consumer does not carry
+the canonical TargetPaths/reference outputs for all three projects, so it is not
+a valid observation location. Do not add another solution/test-project build or
+transport reference outputs solely for this pilot. If a consumer has only restored test outputs
 without reference metadata, an honest not-qualified result is expected; do not
 build reference projects solely to manufacture pilot parity.
 
