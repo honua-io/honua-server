@@ -3,7 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Metadata.Domain.V2;
-using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
+using DomainAccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
 namespace Honua.Core.Features.Security.Abstractions;
 
@@ -16,7 +16,7 @@ public interface IPortalResourceReadAuthorizer
     /// <param name="service">The owning service.</param>
     /// <param name="publication">The exact publication, when discovery resolves one.</param>
     /// <returns>The canonical read decision.</returns>
-    AccessDecision Evaluate(ClaimsPrincipal principal, MetadataV2Resource? resource, MetadataV2Service service, MetadataV2Publication? publication = null);
+    DomainAccessDecision Evaluate(ClaimsPrincipal principal, MetadataV2Resource? resource, MetadataV2Service service, MetadataV2Publication? publication = null);
 
     /// <summary>Whether live group membership grants an alternative service read audience.</summary>
     /// <remarks>Callers must enforce tenant, credential scope, and resource policy separately.</remarks>
