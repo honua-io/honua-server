@@ -409,8 +409,10 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
         service.ImportLayerAsync(Arg.Any<GeoservicesImportRequest>(), Arg.Any<IProgress<GeoservicesImportProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(call => GeoservicesImportResult.CreateFailure(tableName,
                 call.ArgAt<GeoservicesImportRequest>(0).ServiceUrl, 0,
-                ImportTableOwnershipException.CreateSafeMessage($"honua_data.{tableName}"),
-                errorCode: ImportTableOwnershipException.Code));
+                ImportTableOwnershipException.CreateSafeMessage($"honua_data.{tableName}")) with
+            {
+                ErrorCode = ImportTableOwnershipException.Code
+            });
         var cache = new TrackingDistributedCache();
         var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise)
             .ReplaceService<IGeoservicesImportService>(service)

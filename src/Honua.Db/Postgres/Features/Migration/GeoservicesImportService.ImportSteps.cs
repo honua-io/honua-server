@@ -578,8 +578,10 @@ internal sealed partial class GeoservicesImportService
                 request.ServiceUrl,
                 request.LayerId,
                 BuildImportFailureMessage(ex, stage),
-                stopwatch.Elapsed,
-                errorCode: ex is ImportTableOwnershipException ? ImportTableOwnershipException.Code : null);
+                stopwatch.Elapsed) with
+            {
+                ErrorCode = ex is ImportTableOwnershipException ? ImportTableOwnershipException.Code : null
+            };
         }
         finally
         {

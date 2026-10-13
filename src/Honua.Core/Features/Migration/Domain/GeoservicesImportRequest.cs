@@ -516,8 +516,7 @@ public sealed record GeoservicesImportResult
         string sourceServiceUrl,
         int sourceLayerId,
         string errorMessage,
-        TimeSpan duration = default,
-        string? errorCode = null) =>
+        TimeSpan duration = default) =>
         new()
         {
             Success = false,
@@ -525,7 +524,6 @@ public sealed record GeoservicesImportResult
             SourceServiceUrl = sourceServiceUrl,
             SourceLayerId = sourceLayerId,
             ErrorMessage = errorMessage,
-            ErrorCode = errorCode,
             Duration = duration,
             FidelityVerdict = MigrationFidelityVerdicts.Incomplete
         };
