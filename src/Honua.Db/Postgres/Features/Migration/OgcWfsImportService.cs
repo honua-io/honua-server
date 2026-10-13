@@ -160,6 +160,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         var featuresFailed = 0;
         var imported = 0;
         var skipped = 0;
+        string? ownershipFailure = null;
 
         foreach (var resource in selectedResources)
         {
@@ -227,6 +228,10 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
                 // failure is recorded as manual-review so the rest of the selected resources continue
                 // importing instead of aborting the whole run.
                 Log.FeatureTypeImportFailed(_logger, resource.Name, ex);
+                if (ex is ImportTableOwnershipException)
+                {
+                    ownershipFailure = ex.Message;
+                }
                 perFeatureType.Add(new OgcWfsImportedFeatureType
                 {
                     SourceName = resource.Name,
@@ -249,7 +254,8 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
         return new OgcWfsImportResult
         {
-            Success = true,
+            Success = ownershipFailure is null,
+            ErrorMessage = ownershipFailure,
             WasDryRun = request.DryRun,
             SourceServiceUrl = safeSourceUrl,
             SourceVersion = version,

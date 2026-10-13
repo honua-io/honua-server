@@ -38,6 +38,31 @@ public sealed class ImportTableOwnershipTests(PostgresFixture fixture)
     }
 
     [Fact]
+    public async Task SwapImportTable_TargetCreatedAfterStaging_PreservesCompetingTable()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("ownership_race");
+        try
+        {
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await InstallHelpersAsync(connection, schema);
+            await ExecuteAsync(connection, $"SELECT \"{schema}\".create_import_staging_table('{schema}', 'target')");
+            await using (var competing = await fixture.DataSource.OpenConnectionAsync())
+            {
+                await ExecuteAsync(competing, $"CREATE TABLE \"{schema}\".target (sentinel text); INSERT INTO \"{schema}\".target VALUES ('competing owner')");
+            }
+            var error = await Assert.ThrowsAsync<PostgresException>(() => ExecuteAsync(connection,
+                $"SELECT \"{schema}\".swap_import_table('{schema}', 'target')"));
+            Assert.Equal("HN409", error.SqlState);
+            await using var verify = new NpgsqlCommand($"SELECT sentinel FROM \"{schema}\".target", connection);
+            Assert.Equal("competing owner", await verify.ExecuteScalarAsync());
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [Fact]
     public async Task ImportHelpers_OwnedAndExplicitlyAdoptedLegacyTarget_ReplaceAndRetainMarker()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync("ownership_adopt");

@@ -196,9 +196,11 @@ internal sealed class PostgresFeatureLayerCopyService(
         remove.Parameters.AddWithValue("schema", schema);
         remove.Parameters.AddWithValue("table", table);
         await remove.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        await ImportTableOwnership.AssertOwnedAsync(connection, schema, table, cancellationToken).ConfigureAwait(false);
-        await using var drop = new NpgsqlCommand($"DROP TABLE IF EXISTS {Quote(schema)}.{Quote(table)}", connection, transaction);
-        await drop.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        if (await ImportTableOwnership.AssertOwnedAsync(connection, schema, table, cancellationToken).ConfigureAwait(false))
+        {
+            await using var drop = new NpgsqlCommand($"DROP TABLE {Quote(schema)}.{Quote(table)}", connection, transaction);
+            await drop.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
     }
 
