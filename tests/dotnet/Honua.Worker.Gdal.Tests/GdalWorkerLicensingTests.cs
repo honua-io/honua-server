@@ -4,8 +4,10 @@
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using FluentAssertions;
+using Honua.ControlPlane;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Licensing;
@@ -66,6 +68,69 @@ public sealed class GdalWorkerLicensingTests
         {
             await host.StopAsync();
         }
+    }
+
+    [IntegrationTest]
+    public async Task AssignedWorker_TerminalOperation_ExitsWithoutClaimingQueuedWork()
+    {
+        await using var redis = BuildRedis("yes", "always", "noeviction");
+        await redis.StartAsync();
+        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
+        {
+            EnvironmentName = Environments.Development
+        });
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:redis"] = $"{redis.Hostname}:{redis.GetMappedPublicPort(6379)}",
+            ["Licensing:Mode"] = "Disabled",
+        });
+        builder.Services.AddGdalWorker(builder.Configuration);
+        var operationId = $"native-assigned-{Guid.NewGuid():N}";
+        builder.Services.AddAssignedExecutionWorker(new ExecutionWorkerLaunch
+        {
+            OperationId = operationId,
+            JobKind = ExecutionJobKind.Geoprocessing,
+            RuntimeProfile = "native",
+            ExecutionAttempt = 1,
+        });
+        var host = builder.Build();
+        var store = host.Services.GetRequiredService<IExecutionJobStore>();
+        var now = DateTimeOffset.UtcNow;
+        var terminal = new ExecutionJobRecord
+        {
+            OperationId = operationId,
+            Status = ExecutionJobStatus.Succeeded,
+            CreatedAt = now,
+            UpdatedAt = now,
+            AttemptCount = 1,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "honua-kubernetes-job",
+                WorkloadName = "native",
+                RuntimeProfile = "native",
+            },
+        };
+        await store.SetAsync(terminal);
+        var unrelatedId = $"unrelated-{Guid.NewGuid():N}";
+        await store.SetAsync(terminal with { OperationId = unrelatedId, Status = ExecutionJobStatus.Queued });
+        using var observer = await ConnectionMultiplexer.ConnectAsync(
+            $"{redis.Hostname}:{redis.GetMappedPublicPort(6379)}");
+        await observer.GetDatabase().SortedSetAddAsync("controlplane:jobqueue:pending", unrelatedId, 0);
+
+        host.Services.GetRequiredService<IJobQueue>().Should().BeOfType<AssignedExecutionJobQueue>();
+        host.Services.GetServices<IHostedService>().Should().NotContain(service => service is JobReconciliationService);
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var exitCode = await host.RunExecutionWorkerAsync(timeout.Token);
+
+        timeout.IsCancellationRequested.Should().BeFalse("the assigned worker must stop itself");
+        exitCode.Should().Be(0);
+        (await observer.GetDatabase().SortedSetScoreAsync("controlplane:jobqueue:pending", unrelatedId))
+            .Should().Be(0);
+        (await observer.GetDatabase().SortedSetScoreAsync("controlplane:jobqueue:claimed", unrelatedId))
+            .Should().BeNull();
     }
 
     [IntegrationTest]

@@ -54,6 +54,9 @@ internal static class ExecutionWorkerHostComposition
         typeof(IWorkflowOperationReconciler),
         typeof(IMetadataReleaseOperationReconciler),
         typeof(ICoordinatedReleaseReconciler),
+        typeof(ICoordinatedContainerStepExecutor),
+        typeof(ICoordinatedMetadataStepExecutor),
+        typeof(WorkflowOperationBackstopSweepService),
         typeof(IOperationReconcileDispatcher),
         typeof(IScheduledTickDispatcher),
         typeof(IScheduledTickHandler),
@@ -111,65 +114,7 @@ internal static class ExecutionWorkerHostComposition
         // HTTP surface is removed at the server instead: nothing listens.
         services.Replace(ServiceDescriptor.Singleton<IServer, NoHttpServer>());
 
-        services.AddSingleton(launch);
-        services.AddSingleton<ExecutionWorkerExitState>();
-        services.AddSingleton<AssignedExecutionJobQueue>();
-        services.AddSingleton<IJobQueue>(static sp => sp.GetRequiredService<AssignedExecutionJobQueue>());
-        services.TryAddSingleton<ExecutionJobCancellationTokens>();
-
-        // The shared execution loop, fed only by the assigned queue. A provider stop (Spot
-        // interruption, eviction, Job delete) cancels the job and hands the attempt back for
-        // resubmission instead of draining it into a terminal "drain deadline" failure.
-        services.AddHostedService(static sp =>
-        {
-            var loop = ActivatorUtilities.CreateInstance<JobExecutionService>(sp);
-            loop.RequeueOnShutdown = true;
-            return loop;
-        });
-
-        // Registered after the execution loop so the host stops it first on shutdown.
-        services.AddHostedService<ExecutionWorkerLifetimeService>();
-        return services;
-    }
-
-    /// <summary>
-    /// Runs an execution worker host to completion and returns the process exit code decided by
-    /// <see cref="ExecutionWorkerExitState"/>.
-    /// </summary>
-    /// <remarks>
-    /// The exit code is read from the durable job store after the host has stopped (the execution
-    /// loop has finalized or handed back the attempt) but before the host is disposed. Resolving it
-    /// from the root provider after <c>RunAsync</c> returned touched a disposed
-    /// <see cref="IServiceProvider"/> and turned every clean worker exit into an unhandled
-    /// <see cref="ObjectDisposedException"/> (e2e-cloud-aws run 38107383082): a nonzero exit AWS Batch
-    /// records as a failed attempt and may retry natively.
-    /// </remarks>
-    public static async Task<int> RunExecutionWorkerAsync(this IHost host, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(host);
-
-        try
-        {
-            // Captured while the provider is live; it holds the job store and launch it needs.
-            var exitState = host.Services.GetRequiredService<ExecutionWorkerExitState>();
-            await host.StartAsync(cancellationToken).ConfigureAwait(false);
-
-            // Waits for the lifetime service to stop the application, then stops the host
-            // (hosted services, then ApplicationStopped) without disposing it.
-            await host.WaitForShutdownAsync(cancellationToken).ConfigureAwait(false);
-            return await exitState.ResolveAsync().ConfigureAwait(false);
-        }
-        finally
-        {
-            if (host is IAsyncDisposable asyncDisposable)
-            {
-                await asyncDisposable.DisposeAsync().ConfigureAwait(false);
-            }
-            else
-            {
-                host.Dispose();
-            }
-        }
+        return services.AddAssignedExecutionWorker(launch);
     }
 
     /// <summary>

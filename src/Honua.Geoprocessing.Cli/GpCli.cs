@@ -70,14 +70,9 @@ public static class GpCli
         GdalProcessExecutorMode gdalMode = GdalProcessExecutorMode.InProcess,
         GlassBoxCapture? glassBox = null)
     {
-        // Empty in-memory configuration: AddGeoprocessing binds its option sections
-        // from configuration but every option has a valid default, and the
-        // Redis-conditional durable-store registrations are skipped because no
-        // IConnectionMultiplexer is present. The result is the full managed +
-        // native executor set with zero external dependencies.
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection()
-            .Build();
+        // Only the dev container settings are configurable; no Redis or control-plane
+        // services are composed. Native bind mounts use the invoking developer's UID/GID.
+        var configuration = GpContainerConfiguration.Create();
 
         var services = new ServiceCollection();
         services.AddLogging(b => b.AddSimpleConsole(o => o.SingleLine = true).SetMinimumLevel(LogLevel.Warning));
@@ -313,14 +308,17 @@ public static class GpCli
             return GdalProcessExecutorMode.InProcess;
         }
 
-        var imageAvailable = await GdalContainerProbe.IsImageAvailableAsync().ConfigureAwait(false);
+        var configuration = GpContainerConfiguration.Create();
+        var image = configuration["GdalContainer:Image"]!;
+        var imageAvailable = await GdalContainerProbe.IsImageAvailableAsync(
+            image, configuration["GdalContainer:DockerExecutable"]!).ConfigureAwait(false);
 
         if (forceContainer == true)
         {
             if (!imageAvailable)
             {
                 throw new GpCliUsageException(
-                    $"--real-worker requires the '{GdalContainerProbe.DefaultImage}' worker image, which is not " +
+                    $"--real-worker requires the '{image}' worker image, which is not " +
                     "available in the local container runtime. Build it with "
                     + "'docker build -f docker/worker-gdal/Dockerfile -t honua-worker-etl .', or drop "
                     + "--real-worker to use the fast in-process path.");
@@ -1108,6 +1106,7 @@ public static class GpCli
         Console.WriteLine("  --output,-o <dir>   Preview the scaffold under <dir> instead of writing into the checkout.");
         Console.WriteLine("  --glass-box, --debug, -d  DEV-ONLY (run): show the unsanitized native command(s),");
         Console.WriteLine("                      full stdout/stderr, scratch dirs, and a repro hint (also HONUA_GP_GLASSBOX).");
+        Console.WriteLine("  HONUA_GP_WORKER_IMAGE / HONUA_GP_CONTAINER_USER / HONUA_GP_CONTAINER_RUNTIME configure native containers.");
         Console.WriteLine("  --real-worker       Run native gdal.* steps inside the real honua-worker-etl");
         Console.WriteLine("  (--container)       image (docker run) instead of the host GDAL CLIs, so the run");
         Console.WriteLine("                      crosses the same image/CRS/arg boundary a native submit does.");

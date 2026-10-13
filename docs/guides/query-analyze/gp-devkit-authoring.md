@@ -194,10 +194,25 @@ Without the flag, `gp run` stays on the sanitized path (scratch paths redacted, 
 
 The devkit loop is **authoring and test only**. It never deploys. A process reaches staging or production through GitOps, and the path depends on how the process was authored:
 
-- **Built-in (code) processes** — the executors you scaffold and edit here ship with the server image. Once your `.cs` and golden fixture are merged, they ride the normal build and deploy pipeline; there is no per-process publish step. They appear in the [geoprocessing operations](../../reference/geoprocessing-operations.md) catalog of any deployment running that image.
+- **Built-in (code) processes** — managed executors ship with the server image; native executors ship with the separate GDAL/PDAL worker image. Once your `.cs` and golden fixture are merged, they ride the normal build and deploy pipeline; there is no per-process publish step. They appear in the [geoprocessing operations](../../reference/geoprocessing-operations.md) catalog of any deployment running that image.
 - **Console-authored workflows** — graphs of catalog processes (built in Honua Console) go through the workflow-package publish lifecycle on the admin API (`/api/v{n}/console/workflow-packages`): **save** a draft → snapshot an **immutable version** → **validate** → **dry-run** → **publish**. Publication flows into a metadata release, which a governed GitOps reconcile rolls out across environments. See [Automate workflows](automate-workflows.md) for the request/response shapes.
 
-A future `honua gp publish` bridge is planned to take a locally-authored process from the checkout to the package store in one command. It does **not** exist yet — today, code processes ship via the image and workflow packages publish through the console API as above.
+`honua gp publish` implements the workflow-package bridge: save a draft, create
+an immutable version, validate, dry-run, and optionally publish. Run
+`honua gp --help` for its package, server and authentication options.
+This publishes a workflow package that refers to deployed processes; code
+executors still ship in their corresponding image.
+
+For native local development, build the heavy worker and run with
+`--real-worker`. Set `HONUA_GP_WORKER_IMAGE` to the image tag or digest you
+intend to promote. On Linux/macOS the devkit uses your UID/GID for writable
+scratch bind mounts; `HONUA_GP_CONTAINER_USER` and `HONUA_GP_CONTAINER_RUNTIME`
+provide explicit overrides. The heavy worker uses JIT (`PublishAot=false`) and
+supports reflection. Promote the tested image digest with a workload declaring
+`RuntimeProfile: native`. Persistent workers consume the shared Redis queue;
+per-job Kubernetes/Batch launches use the assigned-operation contract and exit
+after recording the durable outcome. Both require the same Redis and output-store
+configuration as the serving host.
 
 ## Next steps
 

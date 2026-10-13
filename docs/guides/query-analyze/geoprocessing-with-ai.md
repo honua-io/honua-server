@@ -60,11 +60,14 @@ const run = await processes.execute({
   },
 });
 const result = await run.results();
-const artifact = result.outputs.outputFeatureLayer;
-console.log(artifact.id, artifact.kind, artifact.href, artifact.type);
+const output = result.outputs.outputFeatureLayer;
+console.log(output.mediaType, output.value);
 ```
 
-Keep the returned artifact `id` and `href`. The `href` is a GeoJSON data URI in the bounded inline result; it is the artifact consumed by the later Studio stage. For durable execution, send `Prefer: respond-async`, poll the returned job URL, and read `/ogc/processes/jobs/{jobId}/results`.
+The OGC result is a qualified output: the bounded inline geometry is in `value`,
+with its `mediaType`. Larger referenced outputs may instead contain `href`.
+These members do not carry the canonical MCP artifact `id` and `kind`. For
+durable execution, use the SDK async mode shown below and await `run.results()`.
 
 ## 3. Run the same governed operation through MCP
 
@@ -117,14 +120,24 @@ const run = await processes.execute({
 });
 
 const result = await run.results();
-const artifact = result.outputs.outputFeatureLayer;
+const output = result.outputs.outputFeatureLayer;
 ```
 
 The SDK handles either legal synchronous or asynchronous response shape. It does not send the non-standard `Prefer: respond-sync`. Cancellation must remain disabled when `dismiss` is not advertised.
 
 ## 5. Continue in Studio
 
-Add the GeoJSON result referenced by `artifact.href` to the same server-resident Studio draft. The `geometry.buffer` result is an inline GeoJSON data-URI artifact, not a materialized database table, so it cannot be passed directly to `honua_publish_result`. A hosted-layer workflow must first import or otherwise materialize the GeoJSON into a table that records `connectionId`, `schema`, and `table` metadata. Save the artifact id, job id, draft id, and draft generation together so the next stage can prove it is using this run rather than a fixture.
+Use the GeoJSON in `output.value` when composing the Studio source. If the
+qualified output contains `href` instead, resolve it through the supported
+artifact contract before importing the GeoJSON. Preserve its CRS; the inline
+example above uses EPSG:4326.
+
+A GP output is not automatically a materialized database table and cannot be
+passed directly to `honua_publish_result`. A hosted-layer workflow must first
+import or materialize the GeoJSON into a table recording `connectionId`,
+`schema`, and `table`. For the MCP path, retain the canonical result artifact
+URI returned by the job resource. Keep the actual job/result reference, draft
+id, and generation together; do not invent artifact fields on the OGC output.
 
 The complete Studio authoring/run UI is a 2026.2 surface. Until then, use the existing [Bring your own model](../../studio/byom.md) and the `honua_studio_*` MCP lifecycle described in [Connect AI agents](../connect/ai-agents-mcp.md). Console job/result inspection is optional and does not define completion of this terminal path.
 

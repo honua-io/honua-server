@@ -115,10 +115,13 @@ public sealed class ExecutionWorkerProfileTests
     // Host composition
     // ---------------------------------------------------------------------
 
-    [UnitTest]
-    public void WorkerProfile_WithRedisConnected_ComposesNoDispatcherReconcilerGatewayOrHttpSurface()
+    [Theory]
+    [InlineData(Environments.Production)]
+    [InlineData(Environments.Development)]
+    [Trait("Tier", "Fast")]
+    public void WorkerProfile_WithRedisConnected_ComposesNoDispatcherReconcilerGatewayOrHttpSurface(string environment)
     {
-        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = Environments.Production });
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environment });
         var services = builder.Services;
         ComposeRedisConnectedControlPlane(services, builder.Configuration, builder.Environment);
 

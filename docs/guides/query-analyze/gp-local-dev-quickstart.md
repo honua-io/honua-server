@@ -18,8 +18,8 @@ edit → rebuild → re-run loop.
 
 ## How local GP runs (so the setup makes sense)
 
-There is no per-job container and no Batch service locally. The lean serving
-image runs the whole job lifecycle itself:
+This Compose stack uses persistent workers and no Batch service. The lean serving
+image coordinates the job lifecycle:
 
 - The serving host registers **both** the durable job-orchestration substrate
   and the **in-process worker loop** (`AddJobOrchestration` + `AddJobWorker` in
@@ -33,8 +33,8 @@ image runs the whole job lifecycle itself:
   backend when no remote workload is configured.
 - The job queue, execution-job store, log store, and result-package store are
   all **Redis-backed**, and the worker loop self-gates on a Redis connection.
-  **So Redis is required** — without it, a submitted job stays in `accepted`
-  and never drains.
+  **So Redis is required** — asynchronous submissions are refused with a typed
+  capability-unavailable response when the durable substrate is unavailable.
 - Redis wiring (`IConnectionMultiplexer`) is only enabled when the Pro
   `caching.redis` entitlement is present at bootstrap. In a non-Production
   environment the bootstrap snapshot honors `Licensing:DevGrantEdition`, so
@@ -48,7 +48,8 @@ raster/surface family. The `geometry.buffer` sample below does not need it.
 ## Prerequisites
 
 - Docker with Compose v2 (`docker compose`).
-- That's all — no cloud account, no license file.
+- Python 3.11+ with the published SDK: `python -m pip install honua-sdk`.
+- .NET 10 SDK for the authoring loop; no cloud account or license file.
 
 ## 1. Bring up the stack
 
@@ -76,25 +77,29 @@ A ready-to-run sample lives in [`samples/gp-local-dev/`](../../../samples/gp-loc
 ./samples/gp-local-dev/submit-buffer.sh
 ```
 
-It buffers `POINT(-122.4194 37.7749)` by 500 m using the `geometry.buffer`
-process over OGC API Processes, then polls and fetches results. There is also a
-`gp-local-dev.http` file for the VS Code / JetBrains HTTP clients.
+It buffers `POINT(0 0)` in EPSG:3857 by 500 metres using the installed Python
+SDK, waits for completion, and validates the returned polygon's bounds and area.
+The expected bounds are `[-500, -500, 500, 500]` in metres. Planar distances use
+the input CRS units; EPSG:4326 coordinates would interpret `500` as degrees.
 
-Doing it by hand (the same flow the script runs):
+The equivalent SDK lifecycle is:
 
-Authorize the [API explorer](../../reference/openapi-and-explorer.md) with `quickstart-admin-password`, then run `POST /ogc/processes/processes/geometry.buffer/execution` with `Prefer: respond-async` and this body:
+```python
+from honua_sdk import HonuaClient
 
-```json
-{
-  "inputs": {
-    "wkb": "AQEAAABQ/Bhz15pewNDVVuwv40JA",
-    "srid": 4326,
-    "distance": 500
-  }
-}
+with HonuaClient("http://localhost:8080", api_key="quickstart-admin-password") as client:
+    gp = client.geoprocessing()
+    job = gp.submit_inputs("geometry.buffer", {
+        "wkb": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "srid": 3857,
+        "distance": 500,
+        "geodesic": False,
+    })
+    terminal = gp.wait(job, timeout=120)
+    if not terminal.succeeded:
+        raise RuntimeError(terminal.message)
+    print(gp.results(job.job_id))
 ```
-
-Use the `jobID` or `Location` value in `GET /ogc/processes/jobs/{jobId}` until the status is `successful`. Then run the sibling `/results` operation and `DELETE /ogc/processes/jobs/{jobId}`.
 
 The same catalog is exposed Esri-style at
 `/rest/services/{serviceId}/GPServer` for ArcGIS clients, and the deterministic
@@ -125,13 +130,15 @@ GP processes are catalog entries backed by job executors. To add or change one:
      ```bash
      docker compose -f docker-compose.gp-dev.yml up --build honua
      ```
-   - **Native (`gdal.*`):** rebuild the worker image and restart it:
+   - **Native (`gdal.*`):** rebuild the worker image and restart it. When adding
+     or changing a catalog definition, rebuild `honua` as well so discovery and
+     validation use the updated process contract:
      ```bash
-     docker compose -f docker-compose.gp-dev.yml --profile gdal-worker up --build gdal-worker
+     docker compose -f docker-compose.gp-dev.yml --profile gdal-worker up --build honua gdal-worker
      ```
 
 4. **Submit against your new process id** (swap `geometry.buffer` for your id in
-   the API explorer operation above). The local backend picks it up automatically: managed
+   the SDK submission above). The local backend picks it up automatically: managed
    ids drain through the in-process loop; native ids are claimed by the GDAL
    worker because they declare `RuntimeProfile: native`.
 

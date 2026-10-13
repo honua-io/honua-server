@@ -9,8 +9,8 @@
 # Admin password (compose default) doubles as the X-API-Key; the admin role
 # holds the process-execute grant.
 @apiKey = quickstart-admin-password
-# POINT(-122.4194 37.7749) as base64-encoded little-endian WKB.
-@wkb = AQEAAABQ/Bhz15pewNDVVuwv40JA
+# POINT(0 0) in EPSG:3857 as base64-encoded little-endian WKB.
+@wkb = AQEAAAAAAAAAAAAAAAAAAAAAAAAA
 
 ### 0. Readiness
 GET {{base}}/healthz/ready
@@ -31,7 +31,7 @@ Prefer: respond-async
 {
   "inputs": {
     "wkb": "{{wkb}}",
-    "srid": 4326,
+    "srid": 3857,
     "distance": 500
   }
 }
