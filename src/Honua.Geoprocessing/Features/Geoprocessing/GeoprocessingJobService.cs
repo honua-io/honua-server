@@ -837,6 +837,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         var jobStore = RequireJobStore();
+        // Resolve once so replay compares the same effective controls that BuildSpec persists.
+        // Workload defaults also apply when the caller omits a control, and declared workload
+        // values override request metadata. This read has no admission or dispatch side effects.
+        var workload = await _dispatcher.ResolveWorkloadAsync(isCustomCode, cancellationToken).ConfigureAwait(false);
+        var effectiveProtocolMetadata = ResolveEffectiveProtocolControls(protocolMetadata, workload);
         var now = DateTimeOffset.UtcNow;
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey;
         var jobId = CreateJobId(resolvedKey, ownerId, resolvedSecurityContext.TenantId);
@@ -857,7 +862,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             if (existingByKey != null)
             {
                 EnsureMatchingIdempotentRequest(
-                    existingByKey, requestFingerprint, ownerId, resolvedSecurityContext.TenantId, protocolMetadata);
+                    existingByKey, requestFingerprint, ownerId, resolvedSecurityContext.TenantId, effectiveProtocolMetadata);
                 EnsureGPServerReplayBinding(existingByKey, gpExecution, principal);
                 existingByKey = await _dispatcher.RepairLocalDispatchAsync(existingByKey, jobStore, cancellationToken)
                     .ConfigureAwait(false);
@@ -882,7 +887,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                         && !inheritsSubmitterSecurityContext
                         && JobOwnershipSecurity.MatchesPriorFormatSubmitter(
                             priorFormat.Audit, principal, resolvedSecurityContext.TenantId),
-                    protocolMetadata);
+                    effectiveProtocolMetadata);
                 EnsureGPServerReplayBinding(priorFormat, gpExecution, principal);
                 priorFormat = await _dispatcher.RepairLocalDispatchAsync(priorFormat, jobStore, cancellationToken)
                     .ConfigureAwait(false);
@@ -990,7 +995,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     if (existingInWindow != null)
                     {
                         EnsureMatchingIdempotentRequest(
-                            existingInWindow, requestFingerprint, ownerId, resolvedSecurityContext.TenantId, protocolMetadata);
+                            existingInWindow, requestFingerprint, ownerId, resolvedSecurityContext.TenantId, effectiveProtocolMetadata);
                         EnsureGPServerReplayBinding(existingInWindow, gpExecution, principal);
                         existingInWindow = await _dispatcher.RepairLocalDispatchAsync(existingInWindow, jobStore, cancellationToken, admissionWindowHeld: true)
                             .ConfigureAwait(false);
@@ -1013,7 +1018,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     }
                 }
 
-                var workload = await _dispatcher.ResolveWorkloadAsync(isCustomCode, cancellationToken).ConfigureAwait(false);
                 // A custom-code job forces the custom-code runtime profile so the claim
                 // fence routes it to the custom-code Batch workload (and away from the lean
                 // dispatcher and the GDAL worker); otherwise stamp the catalog-required profile.
@@ -1076,7 +1080,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     if (existing != null)
                     {
                         EnsureMatchingIdempotentRequest(
-                            existing, requestFingerprint, ownerId, resolvedSecurityContext.TenantId, protocolMetadata);
+                            existing, requestFingerprint, ownerId, resolvedSecurityContext.TenantId, effectiveProtocolMetadata);
                         EnsureGPServerReplayBinding(existing, gpExecution, principal);
                         existing = await _dispatcher.RepairLocalDispatchAsync(existing, jobStore, cancellationToken, admissionWindowHeld: true)
                             .ConfigureAwait(false);
@@ -2177,6 +2181,34 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         {
             throw new GeoprocessingIdempotencyConflictException(existing.OperationId);
         }
+    }
+
+    private static IReadOnlyDictionary<string, string>? ResolveEffectiveProtocolControls(
+        IReadOnlyDictionary<string, string>? requested,
+        ExecutionJobDefinition? workload)
+    {
+        if (workload is null)
+        {
+            return requested;
+        }
+
+        var effective = requested is null
+            ? new Dictionary<string, string>()
+            : new Dictionary<string, string>(requested);
+        foreach (var entry in workload.Parameters)
+        {
+            // These controls are adapter inputs, never server-stamped plan or admission keys.
+            // BuildSpec gives a declared workload value precedence whether requested or omitted.
+            if (entry.Key is GeoprocessingProtocolMetadataKeys.GPServerWorkspace
+                or GeoprocessingProtocolMetadataKeys.GPServerOverwriteOutput
+                or GeoprocessingProtocolMetadataKeys.GPServerOutSr
+                || IsOutputSelectionKey(entry.Key))
+            {
+                effective[entry.Key] = entry.Value;
+            }
+        }
+
+        return effective;
     }
 
     private static bool ProtocolControlsMatch(
