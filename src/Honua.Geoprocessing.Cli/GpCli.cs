@@ -9,7 +9,6 @@ using Honua.Geoprocessing.Cli.Publish;
 using Honua.Geoprocessing.LocalRunner;
 using Honua.Geoprocessing.Testing;
 using Honua.Worker.Gdal;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

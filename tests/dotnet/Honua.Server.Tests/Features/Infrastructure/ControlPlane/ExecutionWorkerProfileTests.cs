@@ -116,8 +116,8 @@ public sealed class ExecutionWorkerProfileTests
     // ---------------------------------------------------------------------
 
     [Theory]
-    [InlineData(Environments.Production)]
-    [InlineData(Environments.Development)]
+    [InlineData("Production")]
+    [InlineData("Development")]
     [Trait("Tier", "Fast")]
     public void WorkerProfile_WithRedisConnected_ComposesNoDispatcherReconcilerGatewayOrHttpSurface(string environment)
     {
