@@ -71,6 +71,28 @@ or a scheduled source of nightly evidence.
 
 Artifacts (markdown summary + raw TeamEngine outputs or TRX) are uploaded with 30-day retention. Preserve anything you need for release or certification evidence outside the normal workflow artifact store.
 
+## Candidate-bound WPS facet receipts
+
+The exact-candidate `cite-certification.yml` dispatcher requires the bounded
+`honua.protocol-producer-context/v1` data context from the staged release catalog.
+It verifies the source-owned suite roster, fixtures and facets before starting
+containers, and emits v2 receipts with the catalog revision, maturity, tier and
+actual workflow run/attempt identity. A context does not supply a test verdict.
+
+For WPS, the upstream Basic/Async ETS report and its original counts remain
+unchanged. A separate HTTP POST of `docker/cite/wps20/crs84-echo.xml` exercises the
+Test-only echo's advertised bounding-box input and output. The supplemental
+assertion requires explicit CRS84 and asymmetric longitude/latitude corners;
+its request, response and observation are retained beside the raw ETS report.
+The normalizer rechecks raw ETS accounting and required method outcomes, exact
+candidate container provenance and the supplemental bytes. Missing, skipped,
+failed or swapped evidence cannot produce a passing facet receipt.
+
+This supplement proves echo serialization and axis order. It does not claim
+coordinate transformation, canonical durable geoprocessing or additional
+upstream ETS tests. Fresh candidate execution is still needed for qualification;
+source tests and historical ETS observations are separate evidence.
+
 ## Common troubleshooting
 
 When a run fails:
